@@ -28,6 +28,8 @@ const screens = {
   mail: "mail",
   // the inbox while nothing is open: the phone's first page
   mailList: "mail-list",
+  // the inbox on a tablet (1024 px): the sidebar is a drawer (opened once the island is live)
+  mailTablet: "mail-tablet",
   record: "record",
   deliveries: "deliveries",
   table: "table",
@@ -50,6 +52,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
   },
   // the mockup's phone shows the list with nothing open
+  // the concept's drawer on a tablet; the mockup draws no tablet, so only the layout rules
+  mailTablet: { 1024: {} },
   mailList: {
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x44"],
@@ -266,6 +270,26 @@ describe("v2 demo screens keep the mockup", () => {
       await list.close();
     }
   }, 30_000);
+
+  // A tablet (1024 px, Mail's workspace 958 px): the sidebar does not fit beside the list and the reader, so it is a
+  // drawer, on the page the server sends. The workspace keeps room for the reader also while no message is open, so the
+  // inbox with nothing open has the drawer too: opening a message never moves the sidebar.
+  for (const name of ["mailTablet", "mailList", "mail"] as const)
+    test(`${name} at 1024 px: the sidebar is a drawer, its button at the start of the head, the reader keeps 400 px`, async () => {
+      const page = await show(name, 1024);
+      try {
+        const found = await page.evaluate(() => ({
+          side: document.querySelector(".k2-ws-side")!.getClientRects().length,
+          toggle: document.querySelector(".k2-ws-toggle")!.getClientRects().length,
+          reader: document.querySelector(".k2-pane[data-detail]")?.getBoundingClientRect().width ?? null,
+        }));
+        expect([found.side, found.toggle]).toEqual([0, 1]);
+        if (found.reader !== null) expect(found.reader).toBeGreaterThanOrEqual(400);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
 
   test("mail at 390 px with a message open: nothing in it is cut, nothing breaks inside", async () => {
     const page = await show("mail", 390);

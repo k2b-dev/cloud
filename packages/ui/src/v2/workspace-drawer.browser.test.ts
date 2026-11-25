@@ -10,10 +10,11 @@ import { measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // The sidebar as a drawer (concept: "Schublade am Tablet"), on the page the server sent and after it came alive.
-// The fixture is Mail's workspace in small: sidebar 248, list 320 to 432, a reader that keeps 400. The sidebar stays a
-// column while the workspace holds it at its default beside every column at its minimum: 248 + 1 + 320 + 1 + 400 and
-// the outer edge of 2 make 972 px. Mail's workspace at a window of 1024 px is 958 px wide, so there the sidebar is a
-// drawer; with the reader closed (one column of 400) it fits.
+// The fixture is Mail's workspace in small: sidebar 248, list 320 to 432, a reader that keeps 400 and that the workspace
+// declares. The sidebar stays a column while the workspace holds it at its default beside every column at its minimum,
+// the declared reader counted also while it is closed: 248 + 1 + 320 + 1 + 400 and the outer edge of 2 make 972 px.
+// Mail's workspace at a window of 1024 px is 958 px wide, so there the sidebar is a drawer, with or without a message
+// open: a click never moves the sidebar between column and drawer.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 // The workspace takes the window less the 66 px that Cloud's shell takes beside Mail (958 px at 1024).
@@ -147,16 +148,31 @@ test("a wide window: the sidebar is a column, no button; the drawer that is open
   });
 });
 
-test("with the reader closed one column of 400 px is left: the sidebar fits at 1024 px and stays a column", async () => {
+test("opening and closing the reader never moves the sidebar; alone the list fills the room", async () => {
   await withPage(async (page) => {
+    const workspace = await box(page.locator(".k2-ws"));
     await page.evaluate(() => window.__k2Reader?.(false));
-    await settled(page);
-    expect((await box(page.locator(".k2-ws-side"))).width).toBe(248);
-    expect(await shown(toggleElement(page))).toBe(false);
-    await page.evaluate(() => window.__k2Reader?.(true));
     await settled(page);
     expect(await shown(page.locator(".k2-ws-side"))).toBe(false);
     expect(await shown(toggleElement(page))).toBe(true);
+    expect((await box(page.locator('section[aria-label="Liste"]'))).width).toBe(workspace.width - 2);
+    expect((await measureV2Layout(page, { root: ".k2-ws" })).problems).toEqual([]);
+    await page.evaluate(() => window.__k2Reader?.(true));
+    await settled(page);
+    expect(await shown(page.locator(".k2-ws-side"))).toBe(false);
+    expect((await box(page.locator('section[aria-label="Liste"]'))).width).toBeGreaterThanOrEqual(320);
+  });
+});
+
+test("a workspace without a detail keeps the sidebar as a column where it fits beside the list", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__k2Reader?.(false);
+      window.__k2Declare?.(false);
+    });
+    await settled(page);
+    expect((await box(page.locator(".k2-ws-side"))).width).toBe(248);
+    expect(await shown(toggleElement(page))).toBe(false);
   });
 });
 

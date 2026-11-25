@@ -61,6 +61,12 @@ export type WorkspaceProps = {
   /** The main action; on the phone it floats at the bottom right. */
   primary?: Action;
   /**
+   * A detail opens beside the columns at times (a reader beside a list): the sidebar makes room for it also while it
+   * is closed, so opening and closing it never moves the sidebar between column and drawer. Keep the `width` of the
+   * column beside it while the detail is closed; alone it fills the room.
+   */
+  detail?: boolean;
+  /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
    */
@@ -71,8 +77,11 @@ const sidebarDefault: Width = { min: 200, default: 248 };
 /** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
 const flexibleMin = 400;
 
-/** A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width. */
-type Column = { readonly need: number };
+/**
+ * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
+ * says so, since the workspace counts it once, open or closed.
+ */
+type Column = { readonly need: number; readonly detail: boolean };
 /** The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. */
 const ColumnsContext = createContext<((column: Column) => void) | undefined>();
 
@@ -81,7 +90,7 @@ const ColumnsContext = createContext<((column: Column) => void) | undefined>();
  * a grip on every line that moves. On the phone the sidebar leaves and columns become pages.
  *
  * The sidebar stands beside the columns while the workspace holds it at its default width and every column at its
- * minimum, with the lines between them. Where it does not (a tablet, a narrow window), the sidebar is a drawer from
+ * minimum, with the lines between them; a detail it declares (`detail`) counts also while it is closed. Where it does not (a tablet, a narrow window), the sidebar is a drawer from
  * the start of the window, opened by a button at the start of the head; picking an entry in it closes it. The
  * stylesheet decides this from the workspace's own width, on the server's page too, so nothing moves when the page
  * comes alive.
@@ -98,10 +107,14 @@ export const Workspace = (props: WorkspaceProps) => {
     setColumns((list) => [...list, column]);
     onCleanup(() => setColumns((list) => list.filter((other) => other !== column)));
   };
-  // the room the sidebar needs beside the columns: its default, every column's minimum, the lines, the outer edge
+  // The room the sidebar needs beside the columns: its default, every column's minimum, the lines, the outer edge.
+  // A detail counts once, open or closed, when the workspace declares one, so the room stays the same when it opens.
   const room = () => {
-    const list = columns();
-    return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + Math.max(0, list.length - 1) + 2;
+    const list = columns().filter((column) => !column.detail);
+    const details = columns().filter((column) => column.detail);
+    const detail = props.detail || details.length > 0 ? Math.max(flexibleMin, ...details.map((column) => column.need)) : 0;
+    const panes = list.length + (detail ? 1 : 0);
+    return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1) + 2;
   };
   const id = createUniqueId();
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
@@ -268,6 +281,9 @@ export const Pane = (props: PaneProps) => {
   useContext(ColumnsContext)?.({
     get need() {
       return props.width?.min ?? flexibleMin;
+    },
+    get detail() {
+      return props.detail === true;
     },
   });
   const head = resolveChildren(() => props.head);
