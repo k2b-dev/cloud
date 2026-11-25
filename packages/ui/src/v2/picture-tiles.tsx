@@ -35,10 +35,10 @@ export type PictureTile = {
 export type PictureTilesProps = {
   items: readonly PictureTile[];
   /**
-   * Tiles with a picture box in a grid, in the size the person chose (the grid view of Files, media): `s` from 128,
-   * `m` from 176, `l` from 248 px wide; the grid fills each line with as many as fit.
+   * Tiles with a picture box in a grid, with pictures as large as the person chose (the grid view of Files, media):
+   * `small` from 128, `medium` from 176, `large` from 248 px wide; the grid fills each line with as many as fit.
    */
-  size: "s" | "m" | "l";
+  pictures: "small" | "medium" | "large";
   /** A name for the tiles, for assistive technology. */
   label: string;
   /** One deed after the tiles, such as "Weitere laden". */
@@ -77,7 +77,7 @@ export const PictureTiles = (props: PictureTilesProps) => {
       <grid.Root
         class="k2-tiles"
         data-k2-part="Tiles"
-        data-size={props.size}
+        data-pictures={props.pictures}
         data-selecting={(props.select?.selected.length ?? 0) > 0 ? "" : undefined}
         role={props.select ? "listbox" : "list"}
         aria-multiselectable={props.select ? "true" : undefined}

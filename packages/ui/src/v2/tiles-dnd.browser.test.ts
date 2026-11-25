@@ -60,17 +60,22 @@ const dragTo = async (page: Page, from: Locator, to: Locator, rest = 0) => {
   await page.mouse.down();
   await page.mouse.move(start.x + start.width / 2 + 12, start.y + start.height / 2 + 12, { steps: 3 });
   await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 8 });
+  await frames(page);
   if (rest) await page.waitForTimeout(rest);
 };
 
+/** The drag follows the pointer once per frame; WebKit's frames can come late. */
+const frames = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+
 test("server markup: picture tiles stand in a grid of their size, each picture over its symbol", () => {
-  expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-size="m"/);
+  expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-pictures="medium"/);
   expect(markup).toMatch(/<span class="k2-tile-pic"[^>]*><i[^>]*ti-photo[^>]*><\/i><img[^>]*loading="lazy"/);
 });
 
 test("tiles: the picture box keeps one shape with a picture, a broken one and none, in every size", async () => {
   await withPage(async (page) => {
-    for (const size of ["s", "m", "l"] as const) {
+    for (const size of ["small", "medium", "large"] as const) {
       await page.evaluate((next) => window.__size?.(next), size);
       await settled(page);
       const boxes = await tiles(page)
@@ -81,7 +86,7 @@ test("tiles: the picture box keeps one shape with a picture, a broken one and no
       const first = boxes[0]!;
       for (const box of boxes) expect(box).toEqual(first);
       expect(first.h).toBe(Math.round((first.w * 3) / 4));
-      expect(first.w).toBeGreaterThanOrEqual({ s: 128, m: 176, l: 248 }[size]);
+      expect(first.w).toBeGreaterThanOrEqual({ small: 128, medium: 176, large: 248 }[size]);
     }
     // the broken picture draws nothing: its symbol shows through
     const broken = tile(page, "Beschädigt.png").locator("img");
@@ -138,6 +143,7 @@ test("drag: a folder that does not take it says so; letting go there, on the zon
     const zone = await page.getByText("Hier loslassen: nichts passiert").boundingBox();
     if (!zone) throw new Error("no zone while dragging");
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2, { steps: 6 });
+    await frames(page);
     await page.mouse.up();
     await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Archiv"));
     await page.keyboard.press("Escape");
@@ -156,6 +162,7 @@ test("drag: resting on a closed folder opens it, so a level below is reached", a
     const box = await year.boundingBox();
     if (!box) throw new Error("2025 not shown");
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
+    await frames(page);
     await page.mouse.up();
     expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>archiv-2025"]);
   });

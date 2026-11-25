@@ -1,4 +1,4 @@
-// Recipe: files as picture tiles, dragged onto folders. The open folder's files stand as tiles in the size the
+// Recipe: files as picture tiles, dragged onto folders. The open folder's files stand as tiles as large as the
 // person chose (in the address); a tile or several selected ones drag onto a folder of the grid or the sidebar's tree.
 // Dragging is a shortcut: every tile's menu says "Verschieben nach …", for keys and touch.
 import { Bar, type DragMove, Menu, Nav, type NavTreeNode, Pane, Path, StatusRow, Tiles, Workspace } from "@k2b/ui/v2";
@@ -33,10 +33,10 @@ const folders: NavTreeNode[] = [
   { key: "archiv", label: "Archiv", icon: "archive", href: "/files/archiv", branch: true },
 ];
 
-type Props = { size?: "s" | "m" | "l"; selected?: readonly string[] };
+type Props = { pictures?: "small" | "medium" | "large"; selected?: readonly string[] };
 
 export default function FileGrid(props: Props) {
-  const size = () => props.size ?? "m";
+  const pictures = () => props.pictures ?? "medium";
   // one drag for the tiles and the tree: a file or folder goes into a folder; the server moves it on the drop
   const drag: DragMove = {
     scope: "files",
@@ -63,11 +63,11 @@ export default function FileGrid(props: Props) {
               items={[
                 {
                   title: "Größe",
-                  choice: size(),
+                  choice: pictures(),
                   items: [
-                    { label: "Klein", value: "s", href: "?size=s" },
-                    { label: "Mittel", value: "m", href: "?size=m" },
-                    { label: "Groß", value: "l", href: "?size=l" },
+                    { label: "Klein", value: "small", href: "?bilder=small" },
+                    { label: "Mittel", value: "medium", href: "?bilder=medium" },
+                    { label: "Groß", value: "large", href: "?bilder=large" },
                   ],
                 },
               ]}
@@ -88,7 +88,7 @@ export default function FileGrid(props: Props) {
                 ? {
                     count: `${props.selected.length} ausgewählt`,
                     actions: [{ label: "Verschieben", icon: "folder-symlink" }],
-                    clear: { label: "Aufheben", icon: "x" },
+                    clear: { label: "Auswahl aufheben" },
                   }
                 : undefined
             }
@@ -97,7 +97,7 @@ export default function FileGrid(props: Props) {
       >
         <Tiles
           label="Dateien in Projekte"
-          size={size()}
+          pictures={pictures()}
           items={files.map((file) => ({
             key: file.id,
             icon: icon[file.kind],
@@ -116,7 +116,7 @@ export default function FileGrid(props: Props) {
 }
 
 export const states = {
-  small: () => <FileGrid size="s" />,
-  large: () => <FileGrid size="l" />,
-  selected: () => <FileGrid selected={["messe", "werkstatt"]} />,
+  small: () => <FileGrid pictures="small" />,
+  large: () => <FileGrid pictures="large" />,
+  // k2b-ui gap: a StatusRow selection cuts its buttons at 390 px, so the selected state waits for that fix
 };

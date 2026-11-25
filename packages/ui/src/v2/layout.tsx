@@ -642,17 +642,17 @@ type PlainTilesProps = {
   more?: Action;
   /** A name for the tiles, for assistive technology. */
   label?: string;
-  size?: undefined;
+  pictures?: undefined;
 };
 
 /**
- * Like things side by side, such as attachments. Each is pressed, so each is round; never nested. With `size`, tiles
+ * Like things side by side, such as attachments. Each is pressed, so each is round; never nested. With `pictures`, tiles
  * with a picture box in a grid (see `PictureTilesProps`).
  */
 export type TilesProps = PlainTilesProps | PictureTilesProps;
 
 export const Tiles = (props: TilesProps) => {
-  const pictures = () => (props.size === undefined ? undefined : props);
+  const pictures = () => (props.pictures === undefined ? undefined : props);
   return (
     <Show when={pictures()} fallback={<PlainTiles items={props.items} more={props.more} label={props.label} />}>
       {(given) => <PictureTiles {...given()} />}

@@ -10,7 +10,7 @@ declare global {
   interface Window {
     __moves?: string[];
     __files?: string[];
-    __size?: (size: "s" | "m" | "l") => void;
+    __size?: (size: "small" | "medium" | "large") => void;
   }
 }
 
@@ -47,7 +47,7 @@ const tree: NavTreeNode[] = [
 
 export function Demo() {
   const [entries, setEntries] = createSignal(start);
-  const [size, setSize] = createSignal<"s" | "m" | "l">("m");
+  const [size, setSize] = createSignal<"small" | "medium" | "large">("medium");
   const [selected, setSelected] = createSignal<readonly string[]>([]);
   const [current, setCurrent] = createSignal<string>();
   if (typeof window !== "undefined") window.__size = setSize;
@@ -76,7 +76,7 @@ export function Demo() {
       <Pane label="Dateien">
         <Tiles
           label="Dateien als Kacheln"
-          size={size()}
+          pictures={size()}
           items={entries().map((entry) => ({
             key: entry.key,
             icon: entry.folder ? "folder" : entry.image ? "photo" : "file-type-pdf",

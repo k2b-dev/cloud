@@ -75,7 +75,7 @@ export default function WorstCase() {
         <Section icon="photo" title="Kacheln">
           <Tiles
             label="Kacheln"
-            size="s"
+            pictures="small"
             items={[
               { key: "a", icon: "photo", title: long, meta: "12,4 MB", image: swatch("#8fb3d9") },
               { key: "b", icon: "photo", title: "Hochformat.jpg", meta: "2 MB", image: swatch("#d98f8f") },

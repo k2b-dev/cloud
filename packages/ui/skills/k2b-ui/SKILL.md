@@ -90,7 +90,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
-| files or media as pictures in a grid | `Tiles` with `size` and `image` | `file-grid.tsx` |
+| files or media as pictures in a grid | `Tiles` with `pictures` and `image` | `file-grid.tsx` |
 | rows, tiles or places dragged onto folders | `drag` on `Table`, `Tiles`, a `Nav` `tree` (same `scope`), plus a menu entry | `file-grid.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |

@@ -14,7 +14,7 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 ## Files as pictures, dragged onto folders
 
-The grid view of Files: each file a tile with its picture in a box of a fixed shape, in the size the person chose (`size`, kept in the address). The symbol of its kind stands in the box while the picture loads, when it fails and when there is none, so nothing moves. The grid is one Tab stop: arrows go to the nearest tile, Space selects, Enter opens. A tile, or all selected ones, drags onto a folder of the grid or of the sidebar's tree (`drag`, one `scope`); a closed folder the pointer rests on opens, a folder that does not take them says so, and a place at the bottom says "Hier loslassen: nichts passiert". Files from the computer drop onto a folder (`onFiles`). Dragging is a shortcut: give each tile a menu entry "Verschieben nach …" for keys and touch, and move nothing before `onDrop`.
+The grid view of Files: each file a tile with its picture in a box of a fixed shape, as large as the person chose (`pictures`, kept in the address). The symbol of its kind stands in the box while the picture loads, when it fails and when there is none, so nothing moves. The grid is one Tab stop: arrows go to the nearest tile, Space selects, Enter opens. A tile, or all selected ones, drags onto a folder of the grid or of the sidebar's tree (`drag`, one `scope`); a closed folder the pointer rests on opens, a folder that does not take them says so, and a place at the bottom says "Hier loslassen: nichts passiert". Files from the computer drop onto a folder (`onFiles`). Dragging is a shortcut: give each tile a menu entry "Verschieben nach …" for keys and touch, and move nothing before `onDrop`.
 
 <Example recipe="file-grid" height="560" default="Medium" />
 
@@ -56,7 +56,7 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file. With `size`, tiles with a picture box in a grid that select and drag like rows.
+Like things to press, such as attachments and media files; each opens its file. With `pictures`, tiles with a picture box in a grid that select and drag like rows.
 
 <Props of="Tiles Tile PictureTile" />
 

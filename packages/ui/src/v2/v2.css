@@ -796,30 +796,30 @@
 /* Tiles with a picture (Files' grid view, media): a grid in the size the person chose. The picture box keeps its
    shape (4:3) before, while and after the picture loads; the type's symbol stands in it until the picture covers it
    and stays when there is none or it fails. Selected tiles draw a second line inside, the outer size stays. */
-.k2-ui .k2-tiles[data-size] {
+.k2-ui .k2-tiles[data-pictures] {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(var(--k2-tile-w), 1fr));
   gap: 12px;
   align-items: start;
   padding: 12px var(--k2-edge);
 }
-.k2-ui .k2-tiles[data-size="s"] {
+.k2-ui .k2-tiles[data-pictures="small"] {
   --k2-tile-w: 128px;
   --k2-tile-icon: 28px;
 }
-.k2-ui .k2-tiles[data-size="m"] {
+.k2-ui .k2-tiles[data-pictures="medium"] {
   --k2-tile-w: 176px;
   --k2-tile-icon: 36px;
 }
-.k2-ui .k2-tiles[data-size="l"] {
+.k2-ui .k2-tiles[data-pictures="large"] {
   --k2-tile-w: 248px;
   --k2-tile-icon: 48px;
 }
-.k2-ui .k2-tiles[data-size] > .k2-btn {
+.k2-ui .k2-tiles[data-pictures] > .k2-btn {
   grid-column: 1 / -1;
   justify-self: start;
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile {
   position: relative;
   display: flex;
   flex-direction: column;
@@ -832,7 +832,7 @@
   outline: none;
   max-width: none;
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile > .k2-tile-pic {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile > .k2-tile-pic {
   position: relative;
   display: grid;
   place-items: center;
@@ -856,32 +856,32 @@
   -webkit-user-drag: none;
 }
 /* the tile itself opens on a press (and drags), so its name is not stretched over it */
-.k2-ui .k2-tiles[data-size] .k2-row-open::after {
+.k2-ui .k2-tiles[data-pictures] .k2-row-open::after {
   content: none;
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile > .k2-tile-text {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile > .k2-tile-text {
   display: flex;
   flex-direction: column;
   min-width: 0;
   padding: 8px 12px;
 }
-.k2-ui .k2-tiles[data-size] .k2-t-meta {
+.k2-ui .k2-tiles[data-pictures] .k2-t-meta {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile:focus-visible {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile:focus-visible {
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile[aria-current] > .k2-tile-text {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile[aria-current] > .k2-tile-text {
   background: var(--k2-app-tint);
   color: var(--k2-app-text);
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile[data-selected] {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile[data-selected] {
   border-color: var(--k2-app);
   box-shadow: inset 0 0 0 1px var(--k2-app);
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile[data-selected]:focus-visible {
+.k2-ui .k2-tiles[data-pictures] > .k2-tile[data-selected]:focus-visible {
   box-shadow: inset 0 0 0 1px var(--k2-app), 0 0 0 3px var(--k2-blue-ring);
 }
 /* the box of a selection: top left on the picture, under the pointer, with the focus, while any tile is selected,
@@ -897,7 +897,7 @@
   background: var(--k2-surface);
   opacity: 0;
 }
-.k2-ui .k2-tiles[data-size] > .k2-tile:is(:hover, :focus-visible, [data-selected]) .k2-tile-check,
+.k2-ui .k2-tiles[data-pictures] > .k2-tile:is(:hover, :focus-visible, [data-selected]) .k2-tile-check,
 .k2-ui .k2-tiles[data-selecting] .k2-tile-check {
   opacity: 1;
 }

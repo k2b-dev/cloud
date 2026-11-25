@@ -106,8 +106,8 @@ fields. A message in a thread is one `Band`.
 Like things to press, such as attachments: `items: { icon, title, meta?,
 href? }[]`, `more` (an action after them), `label`. Never nested.
 
-With `size: "s" | "m" | "l"` (the size the person chose, from 128, 176
-or 248 px wide) the tiles are a grid of picture tiles: each item adds
+With `pictures: "small" | "medium" | "large"` (as large as the person
+chose, from 128, 176 or 248 px wide) the tiles are a grid of picture tiles: each item adds
 `key` and `image` (a thumbnail address; the `icon` stands in the 4:3 box
 while it loads, when it fails and when there is none), `color` (the data
 colour of its kind: the box is tinted, the symbol coloured), `href` or
