@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, child
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
+import { usePhone } from "./overlays";
 import { PageLayer } from "./page-layer";
 import type { OnNavigate } from "./types";
 
@@ -321,7 +322,9 @@ const MenuRoot = (props: MenuProps) => {
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");
+  const phone = usePhone();
   const level = useMenuLevels(() => ({
+    presentation: phone() ? "sheet" : "popover",
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
     },
@@ -359,7 +362,9 @@ const MenuRoot = (props: MenuProps) => {
 export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("start");
+  const phone = usePhone();
   const level = useMenuLevels(() => ({
+    presentation: phone() ? "sheet" : "popover",
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
     },

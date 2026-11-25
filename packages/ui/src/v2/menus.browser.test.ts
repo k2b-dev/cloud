@@ -463,32 +463,50 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
   });
 });
 
-test("phone: the head keeps the '…', its menu opens on screen; toasts stay inside the width", async () => {
+/** Waits until the sheet has slid in: its bottom stands on the bottom of the window. */
+const sheetAtRest = (page: Page) =>
+  page.waitForFunction(() => Math.round(document.querySelector(".k2-menu")?.getBoundingClientRect().bottom ?? 0) === window.innerHeight);
+
+test("phone: the head keeps the '…', its menu is a sheet at the bottom; a submenu is its next step, with the way back", async () => {
   await withPage(
     async (page) => {
       const trigger = headMenu(page);
       expect(await trigger.isVisible()).toBe(true);
       await trigger.tap();
       await page.locator(menu).waitFor();
-      await settled(page);
-      // the menu is a popup beside its kept button: the head's rule that hides other buttons must not hide it
+      await sheetAtRest(page);
+      // the head's rule that hides other buttons must not hide the menu of its kept button
       expect(await page.locator(menu).isVisible()).toBe(true);
+      expect(await page.locator(menu).getAttribute("data-presentation")).toBe("sheet");
       const m = await box(page.locator(menu));
-      expect(m.x).toBeGreaterThanOrEqual(7);
-      expect(m.x + m.width).toBeLessThanOrEqual(390 - 7);
+      expect([m.x, m.width, Math.round(m.y + m.height)]).toEqual([0, 390, 900]);
+      for (const height of await page.locator(`${menu} > .k2-mi`).evaluateAll((all) => all.map((el) => el.getBoundingClientRect().height)))
+        expect(height).toBe(44);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-      await page.keyboard.press("Escape");
+      // the submenu shows in the sheet's place under its entry, which leads back; the other entries give way
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.getByRole("menuitem", { name: "Werkstatt" }).waitFor();
+      await settled(page);
+      const step = await box(page.locator(`${menu}[data-nested]`));
+      expect(step.x).toBeGreaterThanOrEqual(0);
+      expect(step.x + step.width).toBeLessThanOrEqual(390);
+      expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(false);
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.waitForFunction(() => !document.querySelector(".k2-menu[data-nested]"));
+      expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(true);
+      await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.getByRole("menuitem", { name: "Lager" }).tap();
       await closed(page, menu);
-      // the tab "Weitere" opens its menu with a tap, on screen
+      expect(await deeds(page)).toEqual(["move:lager"]);
+      // the tab "Weitere" opens its menu as the same sheet
       await page
         .getByRole("navigation", { name: "Ansichten" })
         .getByRole("button", { name: /Weitere/ })
         .tap();
       await page.locator(menu).waitFor();
-      await settled(page);
+      await sheetAtRest(page);
       const views = await box(page.locator(menu));
-      expect(views.x).toBeGreaterThanOrEqual(7);
-      expect(views.x + views.width).toBeLessThanOrEqual(390 - 7);
+      expect([views.x, views.width]).toEqual([0, 390]);
     },
     { width: 390, touch: true },
   );

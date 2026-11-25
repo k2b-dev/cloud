@@ -37,7 +37,7 @@ const phoneQuery = "not all and (min-width: 768px)";
  * Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. In the browser it is known
  * from the start, so a dialog on the phone is a sheet from its first render on (and core prepares the sheet early).
  */
-const usePhone = () => {
+export const usePhone = () => {
   const [phone, setPhone] = createSignal(!isServer && matchMedia(phoneQuery).matches);
   onMount(() => {
     const media = matchMedia(phoneQuery);

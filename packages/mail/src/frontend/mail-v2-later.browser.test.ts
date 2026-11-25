@@ -128,4 +128,51 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await page.close();
     }
   }, 60_000);
+
+  test("Erinnere mich: Datum und Uhrzeit … asks for any time, starting at the reminder set now", async () => {
+    const { page, errors } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
+      // k2b-ui gap: until the v2 date picker stands in the submenu, the time comes from Mail's form
+      await page.getByRole("dialog").getByText("Erinnere mich am").waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("on the phone the times are the sheet's next step, and one sets the reminder", async () => {
+    const { page, errors, sent } = await open(390);
+    try {
+      await head(page).getByRole("button", { name: "Später" }).tap();
+      const sheet = page.locator('[role="menu"]:not([data-nested])');
+      await sheet.waitFor();
+      expect(await sheet.getAttribute("data-presentation")).toBe("sheet");
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).tap();
+      await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).waitFor();
+      // the step stands on screen in the sheet's place; the entry it came from leads back
+      const step = await page.locator('[role="menu"][data-nested]').boundingBox();
+      expect(step && step.x >= 0 && step.x + step.width <= 390).toBe(true);
+      expect(await page.getByRole("menuitem", { name: "Später anzeigen" }).isVisible()).toBe(false);
+      expect(await entries(page, 1)).toEqual([
+        "Heute, 17:00",
+        "Morgen, 8:00 · Sa., 28. Nov.",
+        "Montag, 8:00 · 30. Nov.",
+        "Datum und Uhrzeit …",
+      ]);
+      await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).tap();
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-11-30T08:00:00.000Z", expectedRevision: null } });
+      // the reminder is set: the menu offers to change and remove it
+      await head(page).getByRole("button", { name: "Später" }).tap();
+      await page.getByRole("menuitem", { name: "Erinnerung ändern" }).waitFor();
+      await page.getByRole("menuitem", { name: "Erinnerung entfernen" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
 });
