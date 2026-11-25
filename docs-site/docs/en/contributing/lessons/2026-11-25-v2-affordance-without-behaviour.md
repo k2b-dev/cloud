@@ -1,0 +1,6 @@
+### A v2 tab drew a menu's chevron and opened nothing, and a phone title was cut beside one button
+
+- **What happened:** The second design QA of Mail on `@k2b/ui/v2` found the tab "Weitere +8" dead: `Tab.menu` was a boolean that only drew a chevron. On the phone the subject of an open message was cut at about 308 px beside the one "…" the head keeps, while the approved picture shows the whole subject. The reader's line of state scrolled away with the message, and the shell's phone menu drew a toggle on rows that never fold.
+- **Root cause:** A prop promised an affordance (a chevron, a toggle) without the behaviour behind it, and the narrow form of a head kept the wide form's one-line rule.
+- **Error class:** A primitive draws the sign of a behaviour (chevron, toggle, cut text) that the data cannot reach or that the place does not need.
+- **Guard:** `Tab.menu` takes the entries of a `Menu`, so a tab with a chevron always opens one (`packages/ui/src/v2/menus.browser.test.ts`). `packages/ui/src/v2/primitives.browser.test.ts` checks that the phone title is never cut beside kept actions and that a pane's status bar stays while the pane scrolls. A navigation row with `disclosure: false` has no toggle (`packages/ui/test/navigation.behavior.test.tsx`).

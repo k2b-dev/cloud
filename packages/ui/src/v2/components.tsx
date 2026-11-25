@@ -1,23 +1,31 @@
-import { createMemo, For, type JSX, children as resolveChildren, Show } from "solid-js";
+import {
+  createComputed,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  Index,
+  type JSX,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
 // ── Nav ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NavItem = {
+type NavEntryBase = {
   label: string;
-  icon: string;
-  href?: string;
-  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
-  onNavigate?: OnNavigate;
-  onClick?: () => void;
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -27,7 +35,46 @@ export type NavItem = {
   dot?: Status;
 };
 
-export type NavGroup = { label?: string; action?: Action; items: readonly NavItem[] };
+/**
+ * An entry of the sidebar: a place to go (`icon`, `href` or `onClick`), or, with `items`, entries tucked away under
+ * one entry that folds open, such as "Mehr" with the archive, the bin and spam. A folding entry has a chevron in the
+ * place of the symbol, starts open while one of its entries is the open one, and remembers nothing.
+ */
+export type NavItem = NavEntryBase &
+  (
+    | {
+        icon: string;
+        href?: string;
+        /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+        onNavigate?: OnNavigate;
+        onClick?: () => void;
+        /**
+         * The deeds of this entry, such as "Anheften" and "Ausblenden" of a mailbox: a "…" at its end that shows
+         * under the pointer and with the keyboard's focus, always reached by Tab.
+         */
+        menu?: readonly MenuEntry[];
+        items?: undefined;
+      }
+    | {
+        /** The entries it folds away; they stand one level further in. */
+        items: readonly NavItem[];
+        icon?: undefined;
+        href?: undefined;
+        onNavigate?: undefined;
+        onClick?: undefined;
+        menu?: undefined;
+      }
+  );
+
+export type NavGroup = {
+  label?: string;
+  /**
+   * The group's one deed as a quiet icon button, or, with `items`, a "…" with the group's deeds, such as "Neues
+   * Postfach" and "Gelöschte Postfächer"; `label` names the button.
+   */
+  action?: Action | { label: string; items: readonly MenuEntry[] };
+  items: readonly NavItem[];
+};
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
@@ -38,7 +85,43 @@ export type NavProps = {
   foot?: readonly NavItem[];
 };
 
-const NavEntry = (props: { item: NavItem }) => (
+/** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
+const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
+
+const NavEnd = (props: { item: NavItem }) => (
+  <>
+    <span class="k2-ni-name">{props.item.label}</span>
+    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+    <Show when={props.item.count !== undefined}>
+      <span class="k2-ni-count">{props.item.count}</span>
+    </Show>
+  </>
+);
+
+const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
+  <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
+    {(items) => <NavFold item={props.item} items={items()} level={levelOf(props.item, props.level)} />}
+  </Show>
+);
+
+const NavPlace = (props: { item: NavItem; level: number }) => (
+  <Show when={props.item.menu} fallback={<NavLink item={props.item} level={props.level} />}>
+    {(menu) => <NavWithMenu item={props.item} level={props.level} menu={menu()} />}
+  </Show>
+);
+
+/** An entry with its own deeds: the entry and its "…" side by side, never one inside the other. */
+const NavWithMenu = (props: { item: NavItem; level: number; menu: readonly MenuEntry[] }) => {
+  const t = useOverlayMessages();
+  return (
+    <div class="k2-ni-row">
+      <NavLink item={props.item} level={props.level} />
+      <Menu label={t().actionsFor({ name: props.item.label })} items={props.menu} />
+    </div>
+  );
+};
+
+const NavLink = (props: { item: NavItem; level: number }) => (
   <Dynamic
     component={linkOr(props.item.href, "button")}
     type={props.item.href !== undefined ? undefined : "button"}
@@ -48,16 +131,50 @@ const NavEntry = (props: { item: NavItem }) => (
     class="k2-ni"
     data-k2-part="Nav.Item"
     aria-current={props.item.current ? "page" : undefined}
-    data-level={props.item.nested ? "2" : undefined}
+    data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon} />
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
+    <Icon name={props.item.icon ?? "point"} />
+    <NavEnd item={props.item} />
   </Dynamic>
 );
+
+/** A folding entry: a button that shows or hides its entries below it, one level further in. */
+const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: number }) => {
+  const id = createUniqueId();
+  const holdsCurrent = () => props.items.some((item) => item.current);
+  const [open, setOpen] = createSignal(untrack(holdsCurrent));
+  // an entry inside that becomes the open one shows itself
+  createComputed(() => {
+    if (holdsCurrent()) setOpen(true);
+  });
+  return (
+    <>
+      <button
+        type="button"
+        id={`${id}-fold`}
+        class="k2-ni"
+        data-k2-part="Nav.Item"
+        data-fold=""
+        aria-expanded={open() ? "true" : "false"}
+        aria-controls={open() ? id : undefined}
+        data-holds-current={holdsCurrent() ? "" : undefined}
+        data-level={props.level > 1 ? String(props.level) : undefined}
+        onClick={() => setOpen(!open())}
+      >
+        <Icon name={open() ? "chevron-down" : "chevron-right"} />
+        <NavEnd item={props.item} />
+      </button>
+      <Show when={open()}>
+        <div class="k2-nav-fold" id={id} role="group" aria-labelledby={`${id}-fold`}>
+          <Index each={props.items}>{(item) => <NavEntry item={item()} level={props.level + 1} />}</Index>
+        </div>
+      </Show>
+    </>
+  );
+};
+
+const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
+const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
 /** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
 export const Nav = (props: NavProps) => (
@@ -66,22 +183,23 @@ export const Nav = (props: NavProps) => (
       <Icon name={props.icon} />
       {props.title}
     </div>
-    <For each={props.groups}>
+    <Index each={props.groups}>
       {(group) => (
         <>
-          <Show when={group.label}>
+          <Show when={group().label}>
             <div class="k2-nav-label">
-              {group.label}
-              <Show when={group.action}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              {group().label}
+              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
-          <For each={group.items}>{(item) => <NavEntry item={item} />}</For>
+          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
         </>
       )}
-    </For>
+    </Index>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
-        <For each={props.foot}>{(item) => <NavEntry item={item} />}</For>
+        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
       </div>
     </Show>
   </nav>
@@ -100,41 +218,57 @@ export type Tab = {
   /** … or switches the view in place. */
   onClick?: () => void;
   current?: boolean;
-  menu?: boolean;
+  /**
+   * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href`, or
+   * `onClick`). It is the menu's button and has no address of its own.
+   */
+  menu?: readonly MenuEntry[];
 };
 
 export type TabsProps = { items: readonly Tab[]; label: string };
 
 /**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
- * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. (The
- * keyboard comes with the behaviour layer.)
+ * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
+ * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views.
  */
 export const Tabs = (props: TabsProps) => (
   <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
     <div class="k2-tabs">
-      <For each={props.items}>
+      <Index each={props.items}>
         {(tab) => (
-          <Dynamic
-            component={linkOr(tab.href, "button")}
-            type={tab.href !== undefined ? undefined : "button"}
-            class="k2-tab"
-            href={tab.href}
-            onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
-            onClick={() => tab.onClick?.()}
-            aria-current={tab.current ? "page" : undefined}
+          <Show
+            when={tab().menu}
+            fallback={
+              <Dynamic
+                component={linkOr(tab().href, "button")}
+                type={tab().href !== undefined ? undefined : "button"}
+                class="k2-tab"
+                href={tab().href}
+                onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
+                onClick={() => tab().onClick?.()}
+                aria-current={tab().current ? "page" : undefined}
+              >
+                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab().label}
+                <Show when={tab().count !== undefined}>
+                  <span class="k2-tab-count">{tab().count}</span>
+                </Show>
+              </Dynamic>
+            }
           >
-            <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
-            {tab.label}
-            <Show when={tab.count !== undefined}>
-              <span class="k2-tab-count">{tab.count}</span>
-            </Show>
-            <Show when={tab.menu}>
-              <Icon name="chevron-down" />
-            </Show>
-          </Dynamic>
+            {(items) => (
+              <MenuTab items={items()} current={tab().current}>
+                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab().label}
+                <Show when={tab().count !== undefined}>
+                  <span class="k2-tab-count">{tab().count}</span>
+                </Show>
+              </MenuTab>
+            )}
+          </Show>
         )}
-      </For>
+      </Index>
     </div>
   </nav>
 );
