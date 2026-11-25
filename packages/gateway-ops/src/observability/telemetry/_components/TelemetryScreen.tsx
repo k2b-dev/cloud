@@ -3,6 +3,7 @@ import {
   Bar,
   Button,
   Chip,
+  type Column,
   Empty,
   FilterBar,
   List,
@@ -144,46 +145,48 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
                   : { icon: "route-off", text: t().noTrafficRange }
               }
               phone={(row) => ({ lines: [row.route, `${row.app} · ${row.requests} · ${row.errorRate}`] })}
-              columns={[
-                { title: t().route, width: { min: 200, default: 320 }, cell: (row) => ({ lines: [row.route, row.app] }) },
-                {
-                  title: t().requests,
-                  width: { min: 90, default: 110 },
-                  align: "end",
-                  sort: sortHref("requests"),
-                  cell: (row) => row.requests,
-                },
-                {
-                  title: t().errorRate,
-                  width: { min: 90, default: 110 },
-                  align: "end",
-                  sort: sortHref("errorRate"),
-                  cell: (row) => (row.problem ? <Text tone="bad">{row.errorRate}</Text> : row.errorRate),
-                },
-                {
-                  title: t().errors,
-                  width: { min: 80, default: 90 },
-                  align: "end",
-                  sort: sortHref("errors"),
-                  cell: (row) => row.errors,
-                  drop: true,
-                },
-                {
-                  title: t().slow,
-                  width: { min: 80, default: 90 },
-                  align: "end",
-                  sort: sortHref("slow"),
-                  cell: (row) => (row.hasSlow ? <Text tone="warn">{row.slow}</Text> : row.slow),
-                  drop: true,
-                },
-                {
-                  title: t().averageMaximum,
-                  align: "end",
-                  sort: sortHref("duration"),
-                  cell: (row) => (row.slowMax ? <Text tone="warn">{row.duration}</Text> : row.duration),
-                  drop: true,
-                },
-              ]}
+              columns={(
+                [
+                  { title: t().route, width: { min: 200, default: 320 }, cell: (row) => ({ lines: [row.route, row.app] }) },
+                  {
+                    title: t().requests,
+                    width: { min: 90, default: 110 },
+                    align: "end",
+                    sort: sortHref("requests"),
+                    cell: (row) => row.requests,
+                  },
+                  {
+                    title: t().errorRate,
+                    width: { min: 90, default: 110 },
+                    align: "end",
+                    sort: sortHref("errorRate"),
+                    cell: (row) => (row.problem ? <Text tone="bad">{row.errorRate}</Text> : row.errorRate),
+                  },
+                  {
+                    title: t().errors,
+                    width: { min: 80, default: 90 },
+                    align: "end",
+                    sort: sortHref("errors"),
+                    cell: (row) => row.errors,
+                    drop: true,
+                  },
+                  {
+                    title: t().slow,
+                    width: { min: 80, default: 90 },
+                    align: "end",
+                    sort: sortHref("slow"),
+                    cell: (row) => (row.hasSlow ? <Text tone="warn">{row.slow}</Text> : row.slow),
+                    drop: true,
+                  },
+                  {
+                    title: t().averageMaximum,
+                    align: "end",
+                    sort: sortHref("duration"),
+                    cell: (row) => (row.slowMax ? <Text tone="warn">{row.duration}</Text> : row.duration),
+                    drop: true,
+                  },
+                ] satisfies Column<TelemetryRouteView>[]
+              ).filter((_, index) => !props.route || index < 3)}
             />
           </Section>
         </Pane>

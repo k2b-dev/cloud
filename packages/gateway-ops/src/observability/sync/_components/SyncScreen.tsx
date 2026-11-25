@@ -137,14 +137,15 @@ export default function SyncScreen(props: SyncScreenProps) {
       toast(error instanceof Error ? error.message : t().syncDeleteFailed, { status: "bad" });
     }
   };
-  const deeds = (target: DeadLetterTarget) => [
+  const deeds = (target: DeadLetterTarget, storeHref?: string) => [
     {
       label: target.kind === "topic" ? t().syncReplay : t().syncRequeue,
       icon: "refresh",
       disabled: !canRetry(target),
-      onClick: () => act(target, "retry"),
+      onClick: () => void act(target, "retry"),
     },
-    { label: t().syncDeleteDeadLetter, icon: "trash", danger: true, onClick: () => act(target, "delete") },
+    ...(storeHref ? [{ label: o().store, icon: "database", href: storeHref }] : []),
+    { label: t().syncDeleteDeadLetter, icon: "trash", danger: true, onClick: () => void act(target, "delete") },
   ];
 
   return (
@@ -239,22 +240,30 @@ export default function SyncScreen(props: SyncScreenProps) {
               empty={{ icon: "mail-check", text: t().syncNoDeadLetters }}
               phone={(row) => ({ lines: [row.reason, `${row.appName} · ${row.store} · ${row.failedAt}`] })}
               columns={[
-                { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.appName, drop: true },
                 {
-                  title: t().syncStore,
-                  width: { min: 120, default: 160 },
-                  cell: (row) => <Text href={row.storeHref}>{`${row.store} · ${row.kind}`}</Text>,
+                  title: t().syncReason,
+                  width: { min: 200, default: 300 },
+                  cell: (row) => ({ lines: [row.reason, `${row.appName} · ${row.store} · ${row.kind}`] }),
                 },
-                { title: t().syncReason, width: { min: 180, default: 260 }, cell: (row) => row.reason },
-                { title: t().syncAttempts, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.attempts, drop: true },
-                { title: t().syncFailedAt, width: { min: 120, default: 150 }, cell: (row) => row.failedAt, drop: true },
-                { title: t().syncPayload, width: { min: 140, default: 200 }, cell: (row) => row.preview, drop: true },
-                {
-                  title: t().actions,
-                  width: { min: 56, default: 56 },
-                  cell: (row) => <Menu label={t().actions} items={deeds(row)} />,
-                  drop: true,
-                },
+                { title: t().syncFailedAt, width: { min: 120, default: 150 }, cell: (row) => row.failedAt },
+                ...(props.entry
+                  ? []
+                  : [
+                      {
+                        title: t().syncAttempts,
+                        width: { min: 70, default: 80 },
+                        align: "end" as const,
+                        cell: (row: SyncDeadLetterView) => row.attempts,
+                        drop: true,
+                      },
+                      {
+                        title: t().syncPayload,
+                        width: { min: 140, default: 180 },
+                        cell: (row: SyncDeadLetterView) => row.preview,
+                        drop: true,
+                      },
+                    ]),
+                { title: t().actions, cell: (row) => <Menu label={t().actions} items={deeds(row, row.storeHref)} />, drop: true },
               ]}
             />
           </Section>
@@ -295,18 +304,16 @@ export default function SyncScreen(props: SyncScreenProps) {
               empty={{ icon: "stack-2", text: t().syncNoResources }}
               phone={(row) => ({ lines: [row.id, `${row.appName} · ${row.kind}`], marks: worded(row.state) })}
               columns={[
-                { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.appName, drop: true },
-                { title: t().syncKind, width: { min: 80, default: 100 }, cell: (row) => row.kind, drop: true },
                 {
                   title: t().syncResourceId,
-                  width: { min: 160, default: 240 },
-                  cell: (row) => (row.natsHref ? <Text href={row.natsHref}>{row.id}</Text> : row.id),
+                  width: { min: 180, default: 260 },
+                  cell: (row) => ({ lines: [row.id, `${row.appName} · ${row.kind}`] }),
                 },
                 { title: t().syncState, width: { min: 120, default: 150 }, cell: (row) => worded(row.state) },
-                { title: t().syncMessages, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.messages, drop: true },
+                { title: t().syncMessages, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.messages, drop: true },
                 {
                   title: t().syncDeadLetters,
-                  width: { min: 90, default: 110 },
+                  width: { min: 90, default: 100 },
                   align: "end",
                   cell: (row) =>
                     row.deadLettersBad ? (
@@ -318,12 +325,7 @@ export default function SyncScreen(props: SyncScreenProps) {
                     ),
                   drop: true,
                 },
-                {
-                  title: t().error,
-                  width: { min: 140, default: 200 },
-                  cell: (row) => (row.error ? <Text tone="bad">{row.error}</Text> : "—"),
-                  drop: true,
-                },
+                { title: t().error, cell: (row) => (row.error ? <Text tone="bad">{row.error}</Text> : "—"), drop: true },
               ]}
             />
           </Section>
@@ -335,16 +337,21 @@ export default function SyncScreen(props: SyncScreenProps) {
               empty={{ icon: "clock-off", text: t().syncNoSchedules }}
               phone={(row) => ({ lines: [row.id, `${row.appName} · ${row.cron} · ${row.nextRun}`], marks: worded(row.handler) })}
               columns={[
-                { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.appName, drop: true },
-                { title: t().syncSchedule, width: { min: 140, default: 200 }, cell: (row) => ({ lines: [row.id, row.schedulerId] }) },
-                { title: t().syncCron, width: { min: 120, default: 160 }, cell: (row) => row.cron, drop: true },
-                { title: t().syncNextRun, width: { min: 120, default: 150 }, cell: (row) => row.nextRun, drop: true },
+                {
+                  title: t().syncSchedule,
+                  width: { min: 180, default: 240 },
+                  cell: (row) => ({ lines: [row.id, row.lastError || `${row.appName} · ${row.schedulerId}`] }),
+                },
+                {
+                  title: t().syncNextRun,
+                  width: { min: 150, default: 190 },
+                  cell: (row) => ({ lines: [row.nextRun, row.cron] }),
+                  drop: true,
+                },
                 { title: o().handler, width: { min: 110, default: 130 }, cell: (row) => worded(row.handler), drop: true },
-                { title: o().lastCompleted, width: { min: 120, default: 150 }, cell: (row) => row.lastCompleted, drop: true },
-                { title: t().syncRuns, width: { min: 60, default: 70 }, align: "end", cell: (row) => row.runs, drop: true },
                 {
                   title: t().syncFailures,
-                  width: { min: 70, default: 90 },
+                  width: { min: 70, default: 80 },
                   align: "end",
                   cell: (row) =>
                     row.failing ? (
@@ -356,10 +363,8 @@ export default function SyncScreen(props: SyncScreenProps) {
                     ),
                   drop: true,
                 },
-                { title: t().syncLastError, width: { min: 140, default: 200 }, cell: (row) => row.lastError || "—", drop: true },
                 {
                   title: t().actions,
-                  width: { min: 160, default: 220 },
                   cell: (row) => <RunNow appId={row.appId} schedulerId={row.schedulerId} scheduleId={row.id} lastRunId={row.lastRunId} />,
                   drop: true,
                 },

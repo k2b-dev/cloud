@@ -4,6 +4,7 @@ import {
   Button,
   Canvas,
   Chip,
+  type Column,
   Empty,
   Facts,
   FilterBar,
@@ -274,7 +275,14 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
               >
                 <Show when={current().families}>{(rows) => <FamiliesTable rows={rows()} empty={current().empty} />}</Show>
                 <Show when={current().runs}>
-                  {(rows) => <RunsTable rows={rows()} empty={current().empty} current={props.detail?.actions.runId} />}
+                  {(rows) => (
+                    <RunsTable
+                      rows={rows()}
+                      empty={current().empty}
+                      current={props.detail?.actions.runId}
+                      compact={Boolean(props.detail)}
+                    />
+                  )}
                 </Show>
                 <Show when={current().effects}>{(rows) => <EffectsTable rows={rows()} empty={current().empty} />}</Show>
                 <Show when={current().events}>{(rows) => <EventsTable rows={rows()} empty={current().empty} />}</Show>
@@ -338,8 +346,8 @@ function FamiliesTable(props: { rows: FamilyView[]; empty: string }) {
       empty={{ icon: "binary-tree", text: props.empty }}
       phone={(row) => ({ lines: [row.name, `${row.runs} · ${row.failed}`], marks: worded(row.latest) })}
       columns={[
-        { title: t().workflowTrigger, width: { min: 220, default: 300 }, cell: (row) => ({ lines: [row.name, row.meta] }) },
-        { title: t().latest, width: { min: 120, default: 150 }, cell: (row) => worded(row.latest) },
+        { title: t().workflowTrigger, width: { min: 200, default: 240 }, cell: (row) => ({ lines: [row.name, row.meta] }) },
+        { title: t().latest, width: { min: 120, default: 140 }, cell: (row) => worded(row.latest) },
         { title: t().runs, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.runs, drop: true },
         {
           title: t().failed,
@@ -348,7 +356,7 @@ function FamiliesTable(props: { rows: FamilyView[]; empty: string }) {
           cell: (row) => toned(row.failed, row.failedBad && "bad"),
           drop: true,
         },
-        { title: t().runtime, width: { min: 110, default: 130 }, align: "end", cell: (row) => row.runtime, drop: true },
+        { title: t().runtime, width: { min: 100, default: 110 }, align: "end", cell: (row) => row.runtime, drop: true },
         {
           title: t().backlog,
           width: { min: 110, default: 130 },
@@ -362,7 +370,7 @@ function FamiliesTable(props: { rows: FamilyView[]; empty: string }) {
   );
 }
 
-function RunsTable(props: { rows: RunView[]; empty: string; current?: string }) {
+function RunsTable(props: { rows: RunView[]; empty: string; current?: string; compact?: boolean }) {
   const locale = useLocale();
   const t = () => gatewayOpsMessages.resolve([locale()]).t;
   return (
@@ -374,26 +382,28 @@ function RunsTable(props: { rows: RunView[]; empty: string; current?: string }) 
       open={(row) => ({ href: row.href })}
       empty={{ icon: "player-play", text: props.empty }}
       phone={(row) => ({ lines: [row.name, row.error ?? `${row.meta} · ${row.created}`], marks: worded(row.state) })}
-      columns={[
-        { title: t().workflowRun, width: { min: 220, default: 300 }, cell: (row) => ({ lines: [row.name, row.error ?? row.meta] }) },
-        { title: t().state, width: { min: 120, default: 150 }, cell: (row) => worded(row.state) },
-        {
-          title: t().startLag,
-          width: { min: 100, default: 110 },
-          align: "end",
-          cell: (row) => toned(row.lag, row.lagWarn && "warn"),
-          drop: true,
-        },
-        { title: t().duration, width: { min: 90, default: 100 }, align: "end", cell: (row) => row.duration, drop: true },
-        {
-          title: t().attempts,
-          width: { min: 80, default: 90 },
-          align: "end",
-          cell: (row) => toned(row.attempts, row.attemptsWarn && "warn"),
-          drop: true,
-        },
-        { title: t().created, align: "end", cell: (row) => row.created, drop: true },
-      ]}
+      columns={(
+        [
+          { title: t().workflowRun, width: { min: 220, default: 300 }, cell: (row) => ({ lines: [row.name, row.error ?? row.meta] }) },
+          { title: t().state, width: { min: 120, default: 150 }, cell: (row) => worded(row.state) },
+          {
+            title: t().startLag,
+            width: { min: 100, default: 110 },
+            align: "end",
+            cell: (row) => toned(row.lag, row.lagWarn && "warn"),
+            drop: true,
+          },
+          { title: t().duration, width: { min: 90, default: 100 }, align: "end", cell: (row) => row.duration, drop: true },
+          {
+            title: t().attempts,
+            width: { min: 80, default: 90 },
+            align: "end",
+            cell: (row) => toned(row.attempts, row.attemptsWarn && "warn"),
+            drop: true,
+          },
+          { title: t().created, align: "end", cell: (row) => row.created, drop: true },
+        ] satisfies Column<RunView>[]
+      ).filter((_, index) => !props.compact || index < 2)}
     />
   );
 }
@@ -410,9 +420,7 @@ function EffectsTable(props: { rows: EffectView[]; empty: string }) {
       empty={{ icon: "bolt", text: props.empty }}
       phone={(row) => ({ lines: [row.workflow, `${row.step} · ${row.age}`], marks: worded(row.state) })}
       columns={[
-        { title: t().workflow, width: { min: 160, default: 220 }, cell: (row) => row.workflow },
-        { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.app, drop: true },
-        { title: t().step, width: { min: 120, default: 160 }, cell: (row) => row.step, drop: true },
+        { title: t().workflow, width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.workflow, `${row.app} · ${row.step}`] }) },
         { title: t().actionLabel, width: { min: 120, default: 160 }, cell: (row) => row.action, drop: true },
         { title: t().state, width: { min: 110, default: 130 }, cell: (row) => worded(row.state) },
         { title: t().unsettledFor, align: "end", cell: (row) => row.age, drop: true },
@@ -432,9 +440,7 @@ function EventsTable(props: { rows: EventView[]; empty: string }) {
       empty={{ icon: "mail-check", text: props.empty }}
       phone={(row) => ({ lines: [row.type, row.error || `${row.app} · ${row.occurred}`], marks: worded(row.state) })}
       columns={[
-        { title: t().event, width: { min: 160, default: 220 }, cell: (row) => row.type },
-        { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.app, drop: true },
-        { title: t().scope, width: { min: 120, default: 180 }, cell: (row) => row.scope, drop: true },
+        { title: t().event, width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.type, `${row.app} · ${row.scope}`] }) },
         { title: t().state, width: { min: 110, default: 130 }, cell: (row) => worded(row.state) },
         { title: t().attempts, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.attempts, drop: true },
         { title: t().occurred, width: { min: 100, default: 120 }, align: "end", cell: (row) => row.occurred, drop: true },

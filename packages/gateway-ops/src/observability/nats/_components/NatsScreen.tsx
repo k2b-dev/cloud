@@ -170,15 +170,22 @@ export default function NatsScreen(props: NatsScreenProps) {
               rowKey={(row) => row.id}
               empty={{ icon: "server-off", text: t().empty }}
               phone={(row) => ({ lines: [row.name, `${row.version} · ${row.storage}`], marks: worded(row.state) })}
-              columns={[
-                { title: t().name, width: { min: 120, default: 160 }, cell: (row) => row.name },
-                { title: t().version, width: { min: 80, default: 90 }, cell: (row) => row.version, drop: true },
-                { title: t().metadataStatus, width: { min: 140, default: 180 }, cell: (row) => worded(row.state) },
-                { title: t().leader, width: { min: 100, default: 130 }, cell: (row) => row.leader, drop: true },
-                { title: t().storage, width: { min: 140, default: 200 }, cell: (row) => row.storage, drop: true },
-                { title: t().memory, width: { min: 90, default: 110 }, align: "end", cell: (row) => row.memory, drop: true },
-                { title: t().streams, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.streams, drop: true },
-              ]}
+              columns={
+                props.stream
+                  ? [
+                      { title: t().name, width: { min: 120, default: 160 }, cell: (row) => row.name },
+                      { title: t().metadataStatus, width: { min: 140, default: 170 }, cell: (row) => worded(row.state) },
+                      { title: t().storage, cell: (row) => row.storage },
+                    ]
+                  : [
+                      { title: t().name, width: { min: 110, default: 140 }, cell: (row) => ({ lines: [row.name, row.version] }) },
+                      { title: t().metadataStatus, width: { min: 140, default: 170 }, cell: (row) => worded(row.state) },
+                      { title: t().leader, width: { min: 90, default: 110 }, cell: (row) => row.leader, drop: true },
+                      { title: t().storage, width: { min: 140, default: 180 }, cell: (row) => row.storage, drop: true },
+                      { title: t().memory, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.memory, drop: true },
+                      { title: t().streams, align: "end", cell: (row) => row.streams, drop: true },
+                    ]
+              }
             />
           </Section>
           <Show when={props.inventoryNotice}>
@@ -204,26 +211,41 @@ export default function NatsScreen(props: NatsScreenProps) {
                 lines: [row.name, [row.kind, row.messages, row.storage].join(" · ")],
                 marks: row.deadLetters ? worded(row.deadLetters) : row.replicaState ? worded(row.replicaState) : undefined,
               })}
-              columns={[
-                { title: t().name, width: { min: 160, default: 240 }, cell: (row) => row.name },
-                { title: t().kind, width: { min: 80, default: 100 }, cell: (row) => row.kind, drop: true },
-                { title: t().owner, width: { min: 120, default: 200 }, cell: (row) => row.owner?.label ?? "—", drop: true },
-                {
-                  title: t().messages,
-                  width: { min: 100, default: 130 },
-                  align: "end",
-                  cell: (row) => (row.deadLetters ? worded(row.deadLetters) : row.messages),
-                },
-                { title: t().storage, width: { min: 140, default: 200 }, cell: (row) => row.storage, drop: true },
-                { title: t().retention, width: { min: 90, default: 110 }, cell: (row) => row.retention, drop: true },
-                {
-                  title: t().replicas,
-                  width: { min: 140, default: 180 },
-                  cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas),
-                  drop: true,
-                },
-                { title: t().consumers, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.consumers, drop: true },
-              ]}
+              columns={
+                props.stream
+                  ? [
+                      { title: t().name, width: { min: 160, default: 240 }, cell: (row) => ({ lines: [row.name, row.kind] }) },
+                      {
+                        title: t().messages,
+                        width: { min: 100, default: 130 },
+                        align: "end",
+                        cell: (row) => (row.deadLetters ? worded(row.deadLetters) : row.messages),
+                      },
+                      { title: t().replicas, cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas) },
+                    ]
+                  : [
+                      {
+                        title: t().name,
+                        width: { min: 160, default: 220 },
+                        cell: (row) => ({ lines: [row.name, row.owner?.label ?? row.kind] }),
+                      },
+                      {
+                        title: t().messages,
+                        width: { min: 100, default: 130 },
+                        align: "end",
+                        cell: (row) => (row.deadLetters ? worded(row.deadLetters) : row.messages),
+                      },
+                      { title: t().storage, width: { min: 140, default: 180 }, cell: (row) => row.storage, drop: true },
+                      { title: t().retention, width: { min: 80, default: 90 }, cell: (row) => row.retention, drop: true },
+                      {
+                        title: t().replicas,
+                        width: { min: 130, default: 160 },
+                        cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas),
+                        drop: true,
+                      },
+                      { title: t().consumers, align: "end", cell: (row) => row.consumers, drop: true },
+                    ]
+              }
             />
           </Section>
           <Show when={props.previousHref || props.nextHref}>
