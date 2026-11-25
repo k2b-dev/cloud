@@ -1,4 +1,4 @@
-import { createMemo, createSignal, createUniqueId, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
@@ -62,6 +62,8 @@ export const LookupSelect = (props: LookupSelectProps) => {
   const field = useField();
   const t = useFilterMessages();
   const nameId = createUniqueId();
+  const popupId = createUniqueId();
+  const sheetId = createUniqueId();
   let trigger: HTMLElement | undefined;
   field?.named(() => trigger?.focus());
 
@@ -97,6 +99,13 @@ export const LookupSelect = (props: LookupSelectProps) => {
     }
   };
 
+  // one value that may stay empty can be taken back: "Auswahl entfernen" in the panel and the sheet
+  const clearable = () => !props.multiple && !field?.required && chosen().length > 0;
+  const clear = () => {
+    if (!props.multiple) props.onChange(undefined);
+    close();
+  };
+
   const [open, setOpen] = createSignal(false);
   const [sheet, setSheet] = createSignal(false);
   const [align, setAlign] = createSignal<"start" | "end">("start");
@@ -112,6 +121,34 @@ export const LookupSelect = (props: LookupSelectProps) => {
       setOpen(next);
     },
   }));
+  // Core's popover owns the trigger's aria-expanded and aria-controls (they name its popup). While the phone's sheet is
+  // open instead, the trigger says so and points at the sheet; when it closes, core's own values come back.
+  let held: [string | null, string | null] | undefined;
+  createEffect(
+    on(
+      sheet,
+      (shown) => {
+        const element = trigger;
+        if (!element) return;
+        const put = (name: string, value: string | null) =>
+          value === null ? element.removeAttribute(name) : element.setAttribute(name, value);
+        if (shown) {
+          held ??= [element.getAttribute("aria-expanded"), element.getAttribute("aria-controls")];
+          put("aria-expanded", "true");
+          // the sheet's dialog has the id core gives it; it is found through the panel inside it, once it is there
+          queueMicrotask(() => {
+            const dialog = document.getElementById(sheetId)?.closest<HTMLElement>('[role="dialog"]');
+            if (sheet() && dialog?.id) put("aria-controls", dialog.id);
+          });
+        } else if (held) {
+          put("aria-expanded", held[0]);
+          put("aria-controls", held[1]);
+          held = undefined;
+        }
+      },
+      { defer: true },
+    ),
+  );
   // The search takes the focus once, as the panel opens (never later, so typing keeps it); the phone's sheet keeps the
   // keyboard down until a tap.
   let popup: HTMLElement | undefined;
@@ -122,16 +159,17 @@ export const LookupSelect = (props: LookupSelectProps) => {
       value={chosen()}
       multiple={props.multiple === true}
       known={[...names().values()]}
+      // names are kept only from an answer that still counts: a search a newer one aborted renames nothing
       load={async (query, context) => {
         const result = await props.load(query, context);
-        remember(result.items);
+        if (!context.signal.aborted) remember(result.items);
         return result;
       }}
       resolve={
         props.resolve &&
         (async (values, context) => {
           const found = await (props.resolve as LookupResolve)(values, context);
-          remember(found);
+          if (!context.signal.aborted) remember(found);
           return found;
         })
       }
@@ -191,9 +229,10 @@ export const LookupSelect = (props: LookupSelectProps) => {
       </popover.Trigger>
       {/* what a form sends: one entry per code under the field's name; `required` blocks a submit while empty */}
       <Show when={props.name ?? field?.name}>
-        {(name) => <For each={[...chosen()]}>{(code) => <input type="hidden" name={name()} value={code} />}</For>}
+        {(name) => <For each={[...chosen()]}>{(code) => <input type="hidden" name={name()} value={code} disabled={props.disabled} />}</For>}
       </Show>
-      <Show when={field?.required && chosen().length === 0}>
+      {/* a disabled field asks for nothing: it is not sent and holds no form back */}
+      <Show when={field?.required && !props.disabled && chosen().length === 0}>
         <input
           class="k2-hidden-text"
           tabindex="-1"
@@ -211,6 +250,7 @@ export const LookupSelect = (props: LookupSelectProps) => {
         ref={(element: HTMLElement) => {
           popup = element;
         }}
+        id={popupId}
         initialFocus={() => popup?.querySelector<HTMLElement>(".k2-lookup-search input") ?? null}
         class="k2-pop k2-lpop"
         data-k2-part="Popover"
@@ -220,6 +260,13 @@ export const LookupSelect = (props: LookupSelectProps) => {
         collisionPadding={8}
       >
         {panel()}
+        <Show when={clearable()}>
+          <div class="k2-lpop-foot">
+            <Button variant="text" icon="x" onClick={clear}>
+              {t().clearChoice}
+            </Button>
+          </div>
+        </Show>
       </popover.Popup>
       <Dialog
         title={field?.text ?? props.label ?? ""}
@@ -228,12 +275,17 @@ export const LookupSelect = (props: LookupSelectProps) => {
           if (!next) close();
         }}
         foot={
-          <Button variant="primary" onClick={close}>
-            {t().done}
-          </Button>
+          <>
+            <Show when={clearable()}>
+              <Button onClick={clear}>{t().clearChoice}</Button>
+            </Show>
+            <Button variant="primary" onClick={close}>
+              {t().done}
+            </Button>
+          </>
         }
       >
-        <div class="k2-fsheet" data-k2-part="LookupSheet">
+        <div class="k2-fsheet" data-k2-part="LookupSheet" id={sheetId}>
           {panel()}
         </div>
       </Dialog>

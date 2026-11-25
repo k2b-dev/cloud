@@ -288,11 +288,11 @@ const TabsRoot = (props: TabsProps) => {
   const inPlace = createMemo(
     () => props.items.every((tab) => tab.href === undefined || tab.menu !== undefined) && props.items.some((tab) => !tab.menu),
   );
-  const stop = () =>
-    Math.max(
-      0,
-      plain().findIndex((tab) => tab.current),
-    );
+  // the one tab stop stands on a tab that shows: the open one, or the first while the open one hides in the menu
+  const stop = () => {
+    const open = plain().findIndex((tab) => tab.current);
+    return open >= 0 && open < fit() ? open : 0;
+  };
   const tabId = (index: number) =>
     props.panel ? (plain()[index]?.current ? `${props.panel}-tab` : `${props.panel}-tab-${index}`) : undefined;
   const roam = (event: KeyboardEvent) => {

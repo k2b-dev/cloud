@@ -23,14 +23,15 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, before = "" }: { width?: number; before?: string } = {}) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${markup}</div></body></html>`,
     );
+    if (before) await page.addScriptTag({ content: before });
     await page.addScriptTag({ content: bundle });
     await page.waitForFunction(() => window.__mounted === true);
     await settled(page);
@@ -105,4 +106,23 @@ test("the arrows, Home and End move the one tab stop and open the tab; Tab goes 
     await list.getByRole("tab", { name: "Code" }).click();
     expect(await list.getByRole("tab", { selected: true }).textContent()).toBe("Code");
   });
+});
+
+test("while the open tab hides in “Mehr”, a tab that shows holds the tab stop, so Tab still reaches the tab list", async () => {
+  await withPage(
+    async (page) => {
+      const list = page.getByRole("tablist", { name: "Beispiel" });
+      // the open tab has no room and stands in the menu of further tabs
+      expect(await list.locator('[role="tab"][aria-selected="true"]').getAttribute("data-overflow")).toBe("");
+      const stops = await list.locator('[role="tab"]').evaluateAll((tabs) =>
+        tabs.filter((tab) => tab.getAttribute("tabindex") === "0").map((tab) => ({ text: tab.textContent, hidden: tab.hasAttribute("data-overflow") })),
+      );
+      expect(stops).toEqual([{ text: "Vorschau", hidden: false }]);
+      // the keys walk only the tabs that show
+      await list.getByRole("tab", { name: "Vorschau" }).focus();
+      await page.keyboard.press("End");
+      expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-overflow"))).toBe(false);
+    },
+    { width: 390, before: "window.__manyTabs = true;" },
+  );
 });

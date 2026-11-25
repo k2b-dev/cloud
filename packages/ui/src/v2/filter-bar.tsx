@@ -846,14 +846,15 @@ const EditorBody = (props: EditorProps) => {
           label={definition.label}
           value={codes(props.value)}
           known={[...props.names.values()]}
+          // names are kept only from an answer that still counts: a search a newer one aborted renames nothing
           load={async (query, context) => {
             const result = await definition.load(query, context);
-            props.onNames(result.items);
+            if (!context.signal.aborted) props.onNames(result.items);
             return result;
           }}
           resolve={async (values, context) => {
             const found = await definition.resolve(values, context);
-            props.onNames(found);
+            if (!context.signal.aborted) props.onNames(found);
             return found;
           }}
           limit={definition.limit}
@@ -1137,7 +1138,7 @@ const RangeBound = (props: {
       sheet={props.sheet}
       onApply={(amount) => {
         const next = rangeWith(props.value, props.bound, amount);
-        if ("error" in next) return t().rangeInvalid;
+        if ("error" in next) return t().amountInvalid;
         if (!props.onChange(next.value)) return t().valueRejected;
         props.onDone();
         return undefined;

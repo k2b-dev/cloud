@@ -15,16 +15,33 @@ const CUSTOMERS: readonly LookupItem[] = [
   { value: "k-58", label: "Bergmann & Söhne", meta: "Emmendingen" },
 ];
 
-type Pending = { resolve: () => void; reject: () => void };
+type Pending = { resolve: (rename?: string) => void; reject: () => void };
 declare global {
   interface Window {
-    __picks?: { calls: { query: string; aborted: () => boolean }[]; answer: () => void; fail: () => void; changes: string[] };
+    __picks?: {
+      calls: { query: string; aborted: () => boolean }[];
+      /** Answers the oldest live search; `rename` gives every match that name, as a renamed record would. */
+      answer: (rename?: string) => void;
+      fail: () => void;
+      /** Answers the oldest search that was aborted, late, as a slow server would. */
+      answerStale: (rename?: string) => void;
+      changes: string[];
+      /** Sets the quantity from outside, as the app would. */
+      setQuantity?: (value: string) => void;
+    };
   }
 }
 const pending: Pending[] = [];
+const stale: Pending[] = [];
 const hooks = () => {
   if (isServer) return undefined;
-  window.__picks ??= { calls: [], answer: () => pending.shift()?.resolve(), fail: () => pending.shift()?.reject(), changes: [] };
+  window.__picks ??= {
+    calls: [],
+    answer: (rename) => pending.shift()?.resolve(rename),
+    fail: () => pending.shift()?.reject(),
+    answerStale: (rename) => stale.shift()?.resolve(rename),
+    changes: [],
+  };
   return window.__picks;
 };
 
@@ -32,13 +49,17 @@ const load = (query: string, context: { signal: AbortSignal; limit: number }) =>
   new Promise<{ items: readonly LookupItem[] }>((resolve, reject) => {
     hooks()?.calls.push({ query, aborted: () => context.signal.aborted });
     const entry: Pending = {
-      resolve: () =>
-        resolve({ items: CUSTOMERS.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).slice(0, context.limit) }),
+      resolve: (rename) =>
+        resolve({
+          items: CUSTOMERS.filter((item) => item.label.toLowerCase().includes(query.toLowerCase()))
+            .slice(0, context.limit)
+            .map((item) => (rename ? { ...item, label: rename } : item)),
+        }),
       reject: () => reject(new Error("offline")),
     };
     context.signal.addEventListener("abort", () => {
       const index = pending.indexOf(entry);
-      if (index >= 0) pending.splice(index, 1);
+      if (index >= 0) stale.push(...pending.splice(index, 1));
     });
     pending.push(entry);
   });
@@ -47,7 +68,10 @@ export function Demo() {
   const [customer, setCustomer] = createSignal<string | undefined>("k-17");
   const [people, setPeople] = createSignal<string[]>([]);
   const [consignor, setConsignor] = createSignal<string | undefined>();
-  const [quantity, setQuantity] = createSignal("1500");
+  // `?quantity=` starts the field with another value (the browser only; the server renders 1500)
+  const [quantity, setQuantity] = createSignal((isServer ? null : new URLSearchParams(location.search).get("quantity")) ?? "1500");
+  const picks = hooks();
+  if (picks) picks.setQuantity = setQuantity;
   return (
     <Workspace head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}>
       <Pane label="Neuer Auftrag">
@@ -101,6 +125,18 @@ export function Demo() {
               placeholder="Einlieferer wählen"
             />
           </Field>
+          {/* disabled fields: never sent, and a required one does not hold the form back */}
+          <Field.Row>
+            <Field name="agent" label="Vertretung" required>
+              <LookupSelect disabled value={undefined} onChange={() => undefined} load={load} placeholder="Nur mit Vollmacht" />
+            </Field>
+            <Field name="store" label="Lager">
+              <LookupSelect disabled multiple value={["k-31"]} onChange={() => undefined} load={load} known={[CUSTOMERS[2]!]} />
+            </Field>
+            <Field name="slots" label="Lagerplätze">
+              <Input type="number" disabled value="3" />
+            </Field>
+          </Field.Row>
         </Band>
       </Pane>
     </Workspace>

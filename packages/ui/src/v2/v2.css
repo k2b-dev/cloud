@@ -3974,6 +3974,11 @@
   padding: 8px 0 0;
   gap: 0;
 }
+/* "Auswahl entfernen" of an optional single LookupSelect: a quiet deed under the panel, on its text edge */
+.k2-ui .k2-lpop-foot {
+  display: flex;
+  padding: 0 4px 6px;
+}
 .k2-ui .k2-fed {
   display: flex;
   flex-direction: column;

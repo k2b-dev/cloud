@@ -114,6 +114,14 @@ test("the sort reads in words: “Sortieren nach” the fields, “Reihenfolge�
       "Älteste zuerst",
     ]);
     expect(await menu.textContent()).not.toMatch(/[↑↓]/);
+  });
+});
+
+test("choosing an order keeps the field; another field keeps the order shown, in its own words", async () => {
+  await withPage(filterBundle, "", async (page) => {
+    const button = page.locator(".k2-order .k2-btn").first();
+    await button.click();
+    await page.locator(".k2-menu").waitFor();
     // the order of the field shown
     await page.getByRole("menuitemradio", { name: "Älteste zuerst" }).click();
     expect(new URL(page.url()).searchParams.get("sort")).toBe("received.asc");
@@ -211,7 +219,7 @@ test("LookupSelect: the first picture is the server's; the field reads like a Se
   const server = [...pickMarkup.matchAll(/<[^>]*data-k2-part="LookupSelect"[^>]*>(.*?)<\/button>/gs)].map((match) =>
     match[1]?.replace(/<[^>]*>/g, ""),
   );
-  expect(server).toEqual(["Familie Oswald", "Personen wählen", "Einlieferer wählen"]);
+  expect(server).toEqual(["Familie Oswald", "Personen wählen", "Einlieferer wählen", "Nur mit Vollmacht", "Stadtwerke Auental"]);
   await withPage(
     pickBundle,
     "",
@@ -444,4 +452,188 @@ test("a number field reads and shows the locale's numbers, without a spinner, th
     },
     { markup: pickMarkup },
   );
+});
+
+// ── Review fixes: what a form sends, validity, reset, disabled, stale names, open surfaces ────────────────────────
+
+/** Wraps the page in a form, as an app's form holds its fields; a send that the browser lets through marks the body. */
+const inForm = (page: Page) =>
+  page.evaluate(() => {
+    const form = document.createElement("form");
+    const root = document.getElementById("root")!;
+    root.replaceWith(form);
+    form.append(root);
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      document.body.dataset.sent = "";
+    });
+  });
+const formData = (page: Page) =>
+  page.evaluate(() => [...new FormData(document.querySelector("form")!)].map(([name, value]) => [name, String(value)]));
+
+test("a form sends each number once, as the plain number, and nothing of a disabled field", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await inForm(page);
+    // the whole form: the customer, the plain quantity; nothing of the disabled agent, store or slots
+    expect(await formData(page)).toEqual([
+      ["customer", "k-17"],
+      ["quantity", "1500"],
+    ]);
+    await page.getByRole("textbox", { name: "Menge" }).fill("2.500,5");
+    expect(await formData(page)).toEqual([
+      ["customer", "k-17"],
+      ["quantity", "2500.5"],
+    ]);
+  });
+  // the server sends the same: one field under the name, the plain number
+  expect([...pickMarkup.matchAll(/name="quantity"/g)].length).toBe(1);
+  expect([...pickMarkup.matchAll(/name="slots"/g)].length).toBe(1);
+  expect(pickMarkup).toMatch(
+    /<input[^>]*type="hidden"[^>]*name="slots"[^>]*disabled|<input[^>]*disabled[^>]*type="hidden"[^>]*name="slots"/,
+  );
+});
+
+test("a number field's validity follows its value from outside, its bounds and what is typed", async () => {
+  await withPage(pickBundle, "quantity=0", async (page) => {
+    const field = page.getByRole("textbox", { name: "Menge" });
+    const message = () => field.evaluate((input) => (input as HTMLInputElement).validationMessage);
+    // a value below `min` is invalid from the start
+    expect(await message()).toBe("Mindestens 1.");
+    await field.fill("zwei");
+    expect(await message()).toBe("Gib eine Zahl ein.");
+    // the app sets a good value: the message goes
+    await page.evaluate(() => window.__picks?.setQuantity?.("2"));
+    await page.waitForFunction(
+      () => (document.querySelector('[data-k2-part="Input"] input[inputmode="decimal"]') as HTMLInputElement).value === "2",
+    );
+    expect(await message()).toBe("");
+  });
+});
+
+test("a number field never sends a number other than the one shown: no rounding, no Infinity", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await inForm(page);
+    const field = page.getByRole("textbox", { name: "Menge" });
+    const message = () => field.evaluate((input) => (input as HTMLInputElement).validationMessage);
+    // more digits than a number holds exactly: refused, never sent rounded
+    await field.fill("9007199254740993");
+    expect(await message()).toBe("Zu viele Stellen für eine Zahl.");
+    await field.fill("9".repeat(400));
+    expect(await message()).toBe("Zu viele Stellen für eine Zahl.");
+    expect(await formData(page)).not.toContainEqual(["quantity", "Infinity"]);
+    // a value from outside in a form the field cannot show exactly stays as it is, and says so
+    await page.evaluate(() => window.__picks?.setQuantity?.("1e-21"));
+    await page.waitForFunction(
+      () => (document.querySelector('[data-k2-part="Input"] input[inputmode="decimal"]') as HTMLInputElement).value === "1e-21",
+    );
+    expect(await message()).toBe("Gib eine Zahl ein.");
+    expect(await formData(page)).toContainEqual(["quantity", "1e-21"]);
+  });
+});
+
+test("a form's reset puts a number field back as a whole: what it shows, what it sends and what the app holds", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await inForm(page);
+    const field = page.getByRole("textbox", { name: "Menge" });
+    await field.fill("4");
+    expect(await formData(page)).toContainEqual(["quantity", "4"]);
+    await page.evaluate(() => document.querySelector("form")?.reset());
+    await page.waitForFunction(() => window.__picks?.changes.at(-1) === "quantity=1500");
+    expect(await field.inputValue()).toBe("1.500");
+    expect(await formData(page)).toContainEqual(["quantity", "1500"]);
+  });
+});
+
+test("a late answer of an aborted search never renames what the newer one named", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    const customer = page.getByRole("combobox", { name: "Kunde" });
+    await customer.click();
+    await page.waitForFunction(() => window.__picks?.calls.length === 1);
+    await page.evaluate(() => window.__picks?.answer());
+    const search = page.getByRole("searchbox", { name: "Kunde suchen" });
+    await search.pressSequentially("Archi");
+    await page.waitForFunction(() => window.__picks?.calls.at(-1)?.query === "Archi");
+    await search.pressSequentially("t");
+    await page.waitForFunction(() => window.__picks?.calls.at(-1)?.query === "Archit");
+    await page.evaluate(() => window.__picks?.answer("Winter (neu)"));
+    await page.getByRole("option", { name: /Winter \(neu\)/ }).click();
+    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    expect(await customer.textContent()).toBe("Winter (neu)");
+    // the aborted "Archi" answers late with an old name
+    await page.evaluate(() => window.__picks?.answerStale("Winter (alt)"));
+    await page.waitForTimeout(100);
+    expect(await customer.textContent()).toBe("Winter (neu)");
+  });
+});
+
+test("disabled lookups send nothing, and a disabled required one does not hold the form back", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await inForm(page);
+    const consignor = page.getByRole("combobox", { name: "Einlieferer" });
+    await consignor.click();
+    await page.waitForFunction(() => window.__picks?.calls.length === 1);
+    await page.evaluate(() => window.__picks?.answer());
+    await page.getByRole("option", { name: /Haus Bergmann/ }).click();
+    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    await page.evaluate(() => document.querySelector("form")?.requestSubmit());
+    expect(await page.evaluate(() => document.body.dataset.sent)).toBe("");
+    expect(await formData(page)).toEqual([
+      ["customer", "k-17"],
+      ["quantity", "1500"],
+      ["consignor", "k-44"],
+    ]);
+  });
+});
+
+test("an optional single LookupSelect can be cleared with a named deed", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    await inForm(page);
+    const customer = page.getByRole("combobox", { name: "Kunde" });
+    await customer.click();
+    await page.getByRole("button", { name: "Auswahl entfernen" }).click();
+    await page.locator(".k2-lpop").waitFor({ state: "hidden" });
+    expect(await customer.textContent()).toBe("Kunde wählen");
+    expect(await page.evaluate(() => window.__picks?.changes)).toEqual(["customer="]);
+    expect(await formData(page)).toEqual([["quantity", "1500"]]);
+    // a required one has no such deed
+    await page.getByRole("combobox", { name: "Einlieferer" }).click();
+    await page.locator(".k2-lpop").waitFor();
+    expect(await page.getByRole("button", { name: "Auswahl entfernen" }).count()).toBe(0);
+  });
+});
+
+test("LookupSelect's field says which surface is open and points at it, on the computer and the phone", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    const customer = page.getByRole("combobox", { name: "Kunde" });
+    expect(await customer.getAttribute("aria-expanded")).toBe("false");
+    await customer.click();
+    await page.locator(".k2-lpop").waitFor();
+    expect(await customer.getAttribute("aria-expanded")).toBe("true");
+    const controls = await customer.getAttribute("aria-controls");
+    expect(await page.evaluate((id) => document.getElementById(id ?? "")?.classList.contains("k2-lpop"), controls)).toBe(true);
+  });
+  await withPage(
+    pickBundle,
+    "",
+    async (page) => {
+      const customer = page.getByRole("combobox", { name: "Kunde" });
+      await customer.tap();
+      await page.getByRole("dialog", { name: "Kunde" }).waitFor();
+      expect(await customer.getAttribute("aria-expanded")).toBe("true");
+      const controls = await customer.getAttribute("aria-controls");
+      expect(await page.evaluate((id) => document.getElementById(id ?? "")?.getAttribute("role"), controls)).toBe("dialog");
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("a number range's refusal speaks of “Ab” and “Bis”", async () => {
+  await withPage(filterBundle, "price=500..", async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    await page.locator(".k2-fpop .k2-fed-bounds .k2-mi", { hasText: /^Bis/ }).click();
+    const field = page.locator(".k2-dpop .k2-nentry input");
+    await field.fill("300");
+    await field.press("Enter");
+    await page.getByText("„Ab“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
+  });
 });

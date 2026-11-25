@@ -326,7 +326,7 @@ test("“+ Filter” adds a dashed statement that applies once it has a value; a
     expect(await to.getAttribute("inputmode")).toBe("decimal");
     await to.fill("300");
     await to.press("Enter");
-    await page.getByText("„Von“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
+    await page.getByText("„Ab“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
     // German marks: "2.000" is two thousand
     await to.fill("2.000");

@@ -7,6 +7,8 @@ import {
   For,
   type JSX,
   on,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
@@ -267,22 +269,30 @@ export const Input = (props: InputProps) => {
               />
             }
           >
+            {/* what the person reads and types has no name; the form gets the plain number from the hidden field */}
             <input
-              {...shared()}
-              name={undefined}
+              id={field?.control}
+              placeholder={props.placeholder}
+              aria-label={field ? undefined : props.label}
+              aria-invalid={field?.invalid ? "true" : undefined}
+              aria-describedby={field?.described}
+              required={field?.required || undefined}
+              disabled={props.disabled}
               value={number.text()}
               ref={(element) => {
-                number.check(element);
+                number.bind(element);
                 forwardRef(props.ref, element);
               }}
               type="text"
               inputmode="decimal"
               autocomplete="off"
-              onInput={(event) => number.input(event.currentTarget)}
-              onBlur={(event) => number.settle(event.currentTarget)}
+              onInput={(event) => number.input(event.currentTarget.value)}
+              onBlur={() => number.settle()}
               onKeyDown={(event) => props.onKeyDown?.(event)}
             />
-            <Show when={shared().name}>{(name) => <input type="hidden" name={name()} value={number.plain()} />}</Show>
+            <Show when={props.name ?? field?.name}>
+              {(name) => <input type="hidden" name={name()} value={number.plain()} disabled={props.disabled} />}
+            </Show>
           </Show>
         }
       >
@@ -300,58 +310,110 @@ export const Input = (props: InputProps) => {
   );
 };
 
+/** Significant digits a number holds exactly (IEEE 754 double); a number with more is refused, never rounded. */
+const exactDigits = 15;
+
 /**
- * The text of a number field: shown in the locale ("1.500" in German), read back with the locale's marks, and the
- * plain number the app and the form get. A number the app sets from outside replaces the text; what is typed stays
- * until the field is left, then it shows in the locale's form.
+ * The text of a number field and the plain number it stands for. The plain number is a decimal string kept apart
+ * from what is shown: typed text is read with the locale's marks into it digit by digit (never through a float),
+ * a value the app sets is kept as given. What is shown follows in the locale's form where it can be shown exactly.
+ * The field's validity (a number, exact, within `min`/`max`) follows text, value, bounds and locale; a form's
+ * reset puts text, plain number and the app's value back to the value the field started with.
  */
 const useNumberText = (props: InputProps) => {
   const locale = useLocale();
   const said = useUiMessages();
-  const format = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(value);
+  /** The plain decimal string of typed text, or why it is none: "" for empty, "invalid", "inexact". */
+  const plainOf = (text: string): string | "invalid" | "inexact" => {
+    const typed = text.trim();
+    if (typed === "") return "";
+    if (parseLocalizedNumber(typed, decimalSeparator(locale())) === "invalid") return "invalid";
+    // the same reading as parseLocalizedNumber, kept as digits: the other mark of . and , groups, the locale's separates
+    const point = decimalSeparator(locale()) === "," ? "," : ".";
+    const group = point === "," ? "." : ",";
+    const grouped = new RegExp(`^-?[1-9]\\d{0,2}(\\${group}\\d{3})+(\\${point}\\d*)?$`).test(typed);
+    const body = grouped ? typed.replaceAll(group, "").replace(point, ".") : typed.replace(/[.,]/, ".");
+    return checkPlain(body);
+  };
+  /** A plain decimal string as it is, or why it cannot be one. */
+  const checkPlain = (value: string): string | "invalid" | "inexact" => {
+    const match = /^(-?)(\d*)(?:\.(\d*))?$/.exec(value);
+    if (!match || !/\d/.test(value)) return "invalid";
+    const digits = `${match[2] ?? ""}${match[3] ?? ""}`.replace(/^0+/, "").replace(/0+$/, "");
+    if (digits.length > exactDigits) return "inexact";
+    return value.endsWith(".") ? value.slice(0, -1) : value;
+  };
+  const format = (value: string) =>
+    new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(Number(value));
+  /** What a plain value shows: in the locale's form where that is exact, else the value as it is (it is refused). */
   const show = (value: string) => {
-    const amount = value.trim() === "" ? Number.NaN : Number(value);
-    return Number.isFinite(amount) ? format(amount) : value;
+    const plain = checkPlain(value.trim());
+    return value.trim() === "" || plain === "invalid" || plain === "inexact" ? value : format(plain);
   };
-  const read = (text: string) => parseLocalizedNumber(text.trim(), decimalSeparator(locale()));
-  const plainOf = (text: string) => {
-    const amount = read(text);
-    return amount === null ? "" : amount === "invalid" ? text : String(amount);
-  };
-  const [text, setText] = createSignal(show(props.value ?? ""));
-  let sent = props.value ?? "";
+  const initial = props.value ?? "";
+  const [text, setText] = createSignal(show(initial));
+  const [plain, setPlain] = createSignal(initial);
   createEffect(
     on(
       () => props.value ?? "",
       (value) => {
-        if (value === sent) return;
-        sent = value;
+        if (value === plain()) return;
+        setPlain(value);
         setText(show(value));
       },
       { defer: true },
     ),
   );
-  const problem = (value: string) => {
-    const amount = read(value);
-    if (amount === null) return "";
-    if (amount === "invalid") return said().numberInvalid;
-    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: format(props.min) });
-    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: format(props.max) });
+  /** Why the shown value is refused, in words; "" when it is fine. */
+  const problem = () => {
+    const value = plain().trim();
+    if (value === "") return "";
+    const checked = checkPlain(value);
+    const typed = plainOf(text());
+    if (checked === "inexact" || typed === "inexact") return said().numberInexact;
+    if (checked === "invalid" || typed === "invalid") return said().numberInvalid;
+    const amount = Number(checked);
+    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: format(String(props.min)) });
+    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: format(String(props.max)) });
     return "";
+  };
+  let element: HTMLInputElement | undefined;
+  createRenderEffect(() => {
+    const message = problem();
+    element?.setCustomValidity(message);
+  });
+  const take = (value: string) => {
+    setText(value);
+    const read = plainOf(value);
+    // text that is no exact number is handed on as typed, so the app sees what is there and the field says why
+    setPlain(read === "invalid" || read === "inexact" ? value : read);
+    props.onInput?.(plain());
   };
   return {
     text,
-    plain: () => plainOf(text()),
-    check: (element: HTMLInputElement) => element.setCustomValidity(problem(element.value)),
-    input: (element: HTMLInputElement) => {
-      setText(element.value);
-      element.setCustomValidity(problem(element.value));
-      sent = plainOf(element.value);
-      props.onInput?.(sent);
+    plain,
+    bind: (input: HTMLInputElement) => {
+      element = input;
+      input.setCustomValidity(problem());
+      // A form's reset: the field, what it sends and the app's value go back to where the field started. The reset
+      // event comes before the browser empties the field, so this runs in the next task, after it. The form is found
+      // at the time of the reset: a field can come into a form after it was made.
+      const reset = (event: Event) => {
+        if (!input.form || event.target !== input.form) return;
+        setTimeout(() => {
+          input.value = show(initial);
+          take(input.value);
+        });
+      };
+      onMount(() => {
+        document.addEventListener("reset", reset, true);
+        onCleanup(() => document.removeEventListener("reset", reset, true));
+      });
     },
-    settle: (element: HTMLInputElement) => {
-      const amount = read(element.value);
-      if (typeof amount === "number") setText(format(amount));
+    input: take,
+    settle: () => {
+      const read = plainOf(text());
+      if (read !== "" && read !== "invalid" && read !== "inexact") setText(format(read));
     },
   };
 };
