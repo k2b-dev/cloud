@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import FilterScreen from "./FilterScreen.island";
 import FormScreen from "./FormScreen.island";
 import KeysScreen from "./KeysScreen.island";
 import MailSelectScreen from "./MailSelectScreen.island";
@@ -21,7 +22,10 @@ export type V2Screen = {
   phone: { app: string } | { back: string };
   /** The rail of the Cloud shell beside the app on wider screens, as the mockup draws it: its apps and the open one. */
   rail?: { apps: readonly string[]; current: string };
-  render: () => JSX.Element;
+  /** The address the Fibel page opens the screen with, such as active filters. */
+  query?: string;
+  /** The screen; `search` is the query of its address, which a screen that keeps its state there reads. */
+  render: (search: string) => JSX.Element;
 };
 
 /** The apps in the rail of the Kundenakte mockup (akte.html), Kunden open. */
@@ -121,6 +125,36 @@ export const v2Screens = {
     phone: { back: "Aufträge" },
     render: () => <MenusScreen />,
   },
+  articles: {
+    title: "Filtern · Artikel",
+    description:
+      "The articles of Warenfluss, filtered by readable statements: fixed values with counts, a price range, a consignor that loads while you type, sort and group in words, and views saved „für mich“ (the store for everyone is locked for this person). Each statement opens its editor; „+ Filter“ adds one; the address holds everything.",
+    mockup: "ui-v2-filter-konzept v4 (Bilder 01–09, 13–15)",
+    app: "#2563eb",
+    phone: { app: "Artikel" },
+    query: "?status=consigned,photographed&category=furniture,clocks&price=500..&sort=price.desc&group=location",
+    render: (search) => <FilterScreen list="articles" search={search} />,
+  },
+  logs: {
+    title: "Filtern · Protokolle",
+    description:
+      "Log entries with a required time range: at its default it is framed like a field and has no ×; changed it is tinted and × returns it to the default. The order is fixed („neueste zuerst“, as text), and views are kept only on this device.",
+    mockup: "ui-v2-filter-konzept v4 (Bilder 10, 11, 16)",
+    app: "#0f766e",
+    phone: { app: "Betrieb" },
+    query: "?level=error,warn",
+    render: (search) => <FilterScreen list="logs" search={search} />,
+  },
+  people: {
+    title: "Filtern · Benutzer",
+    description:
+      "People grouped by their groups: a person in two groups stands in both, and the status row says so. Groups load as a lookup, 2FA is yes or no. The app passes no view store, so there is no „Ansicht ▾“ and nothing to save.",
+    mockup: "ui-v2-filter-konzept v4 (Bild 12)",
+    app: "#7c3aed",
+    phone: { app: "Benutzer" },
+    query: "?role=member,guest&group=groups",
+    render: (search) => <FilterScreen list="people" search={search} />,
+  },
 } satisfies Record<string, V2Screen>;
 
 export type V2ScreenName = keyof typeof v2Screens;
@@ -191,20 +225,20 @@ export const RailPicture = (props: NonNullable<V2Screen["rail"]>) => (
  * A screen on a page of its own, framed like the Cloud shell of the mockup (rail 56 px, the app card inset 8 px; the
  * phone bar 52 px), so it is measured at 1440 and 390 px exactly like the mockup. The frame is Fibel's, not part of v2.
  */
-export const V2ScreenPage = (props: { name: V2ScreenName }) => {
+export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => {
   const screen: V2Screen = v2Screens[props.name];
   return (
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
       <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
-      <div class="ui-v2-screen__card">{screen.render()}</div>
+      <div class="ui-v2-screen__card">{screen.render(props.search ?? "")}</div>
       <V2Inspect />
     </div>
   );
 };
 
 /** The Fibel page of one or more screens: what they show, where the knowledge lives, and each screen in a frame. */
-export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: string }) => {
+export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: string; documentation?: string }) => {
   const frame = (name: V2ScreenName) => `v2-frame-${name}`;
   return (
     <article class="ui-showcase ui-reference-showcase">
@@ -228,7 +262,7 @@ export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: strin
         <For each={props.names}>
           {(name) => {
             const screen: V2Screen = v2Screens[name];
-            const src = `/en/ui/v2/screen/${name}`;
+            const src = `/en/ui/v2/screen/${name}${screen.query ?? ""}`;
             return (
               <section class="ui-v2-demo__screen" aria-label={screen.title}>
                 <h2>{screen.title}</h2>
@@ -240,6 +274,9 @@ export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: strin
             );
           }}
         </For>
+        <Show when={props.documentation}>
+          {(documentation) => <section class="ui-documentation fibel-prose" aria-label="How to use it" innerHTML={documentation()} />}
+        </Show>
       </div>
     </article>
   );
