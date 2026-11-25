@@ -27,7 +27,17 @@ import { isServer } from "solid-js/web";
 import { apiClient } from "../api-client";
 import type { LogEntry, LogLevel } from "../contracts";
 import { logsMessages } from "../messages";
-import { endsNow, LOG_PAGE_MAX, LOG_TIME_PRESETS, LOG_VIEWS, LOGS_PAGE_PATH, LOGS_PER_PAGE, type LogsState, logsHref, logsQuery } from "../query";
+import {
+  endsNow,
+  LOG_PAGE_MAX,
+  LOG_TIME_PRESETS,
+  LOG_VIEWS,
+  LOGS_PAGE_PATH,
+  LOGS_PER_PAGE,
+  type LogsState,
+  logsHref,
+  logsQuery,
+} from "../query";
 import { type LogRow, logRowFormatter } from "../rows";
 import LogEntryPane from "./LogEntryPane";
 
@@ -134,7 +144,13 @@ export default function LogsScreen(props: LogsScreenProps) {
       params.delete("page");
       history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
     }
-    const sameRows = query().serialize({ ...next, group: undefined }).toString() === query().serialize({ ...before, group: undefined }).toString();
+    const sameRows =
+      query()
+        .serialize({ ...next, group: undefined })
+        .toString() ===
+      query()
+        .serialize({ ...before, group: undefined })
+        .toString();
     if (!sameRows) void load(next);
   };
 
@@ -321,10 +337,7 @@ export default function LogsScreen(props: LogsScreenProps) {
               </Notice>
             )}
           </Show>
-          <Show
-            when={!error()}
-            fallback={<Failed text={t().storeUnavailable} onRetry={() => void load(state())} />}
-          >
+          <Show when={!error()} fallback={<Failed text={t().storeUnavailable} onRetry={() => void load(state())} />}>
             <Table
               label={t().logs}
               rows={rows()}
@@ -335,11 +348,20 @@ export default function LogsScreen(props: LogsScreenProps) {
               open={(row) => ({ href: href({ entry: row.id }) })}
               empty={
                 changed()
-                  ? { icon: "filter-off", text: t().noMatches, action: { label: t().resetFilters, icon: "filter-off", href: logsHref(query(), base()) } }
+                  ? {
+                      icon: "filter-off",
+                      text: t().noMatches,
+                      action: { label: t().resetFilters, icon: "filter-off", href: logsHref(query(), base()) },
+                    }
                   : { icon: "list-search", text: t().noEntries }
               }
               phone={(row) => ({
-                lines: [row.message, [row.level === "error" || row.level === "warn" ? levelWord(row.level) : "", row.source, row.requestId, row.duration].filter(Boolean).join(" · ")],
+                lines: [
+                  row.message,
+                  [row.level === "error" || row.level === "warn" ? levelWord(row.level) : "", row.source, row.requestId, row.duration]
+                    .filter(Boolean)
+                    .join(" · "),
+                ],
                 time: row.time.slice(-12, -4),
               })}
               columns={[

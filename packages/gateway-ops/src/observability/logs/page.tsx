@@ -26,7 +26,8 @@ export default ssr<AuthContext>(async (c) => {
   const issues = [...address.issues];
   if (view !== undefined && !isLogView(view)) issues.push({ code: "invalid", param: "view", value: view });
   // A view named alone opens with its whole query, so the address always holds the state.
-  if (isLogView(view) && [...url.searchParams.keys()].every((name) => name === "view")) return c.redirect(logsHref(query, LOG_VIEWS[view](query)));
+  if (isLogView(view) && [...url.searchParams.keys()].every((name) => name === "view"))
+    return c.redirect(logsHref(query, LOG_VIEWS[view](query)));
   const state = isLogView(view) ? address.state : { ...address.state, view: undefined };
 
   const now = new Date();
@@ -53,7 +54,12 @@ export default ssr<AuthContext>(async (c) => {
       ? t.ignoredPartsDetail({ params: issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", ") })
       : null;
   return () => (
-    <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: t.logs }]}>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: t.logs }]}
+    >
       <ObservabilityNavigation label={area.area} current="logs" groups={groups} />
       <LogsScreen
         timeZone={timeZone}
@@ -71,4 +77,3 @@ export default ssr<AuthContext>(async (c) => {
     </Layout>
   );
 });
-

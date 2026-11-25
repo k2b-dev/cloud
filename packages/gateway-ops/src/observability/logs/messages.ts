@@ -36,7 +36,10 @@ export const logsMessages = i18n.define({
       errors: "errors",
       warnings: "warnings",
       groupCounts: ({ errors, warnings }: { errors: number; warnings: number }) =>
-        [errors > 0 ? `${errors} ${errors === 1 ? "error" : "errors"}` : "", warnings > 0 ? `${warnings} ${warnings === 1 ? "warning" : "warnings"}` : ""]
+        [
+          errors > 0 ? `${errors} ${errors === 1 ? "error" : "errors"}` : "",
+          warnings > 0 ? `${warnings} ${warnings === 1 ? "warning" : "warnings"}` : "",
+        ]
           .filter(Boolean)
           .join(" · "),
       minuteHead: ({ time }: { time: string }) => time,
@@ -61,7 +64,7 @@ export const logsMessages = i18n.define({
       at: "Time",
       duration: "Duration",
       liveRetrying: "Live: the log store does not answer, trying again",
-      deleted: ({ count }: { count: number }) => `Deleted ${count} log ${count === 1 ? "entry" : "entries"}`,
+      deleted: ({ count }: { count: number }) => `Deleted ${count} ${count === 1 ? "entry" : "entries"}`,
       cleanupTitle: "Delete old log entries",
       cleanupDays: "Keep entries of the last",
       days: "days",
@@ -70,8 +73,8 @@ export const logsMessages = i18n.define({
       cleanupFailed: "Old entries could not be deleted. Nothing was changed.",
       cleanupConfirm: "Delete",
       cancel: "Cancel",
-      copied: "Entry copied as JSON",
-      copyFailed: "The entry could not be copied.",
+      copied: "Copied as JSON",
+      copyFailed: "Copy failed",
     },
     de: {
       start: "Start",
@@ -139,8 +142,8 @@ export const logsMessages = i18n.define({
       cleanupFailed: "Alte Einträge konnten nicht gelöscht werden. Es wurde nichts geändert.",
       cleanupConfirm: "Löschen",
       cancel: "Abbrechen",
-      copied: "Eintrag als JSON kopiert",
-      copyFailed: "Der Eintrag konnte nicht kopiert werden.",
+      copied: "Als JSON kopiert",
+      copyFailed: "Kopieren fehlgeschlagen",
     },
   },
 });

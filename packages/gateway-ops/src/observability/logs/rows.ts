@@ -29,7 +29,8 @@ const firstText = (metadata: Record<string, unknown> | null, keys: readonly stri
   return null;
 };
 
-const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
+const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
+  parts.find((entry) => entry.type === type)?.value ?? "";
 
 /**
  * Formats log entries for the table in the reader's language and time zone. `today` (YYYY-MM-DD in that zone) comes

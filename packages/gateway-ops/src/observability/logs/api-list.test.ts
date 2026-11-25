@@ -13,7 +13,12 @@ const levels = { debug: 0, info: 3, warn: 1, error: 2 };
 const withAdmin = async (run: (routes: { request: (path: string) => Response | Promise<Response> }) => Promise<void>) => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   const infrastructure = stubRouterInfrastructure();
-  const user = buildProjectedUser({ id: "00000000-0000-4000-8000-000000000001", provider: "local", profile: "user", effective_admin: true });
+  const user = buildProjectedUser({
+    id: "00000000-0000-4000-8000-000000000001",
+    provider: "local",
+    profile: "user",
+    effective_admin: true,
+  });
   const authenticate = spyOn(session, "authenticateRequest").mockResolvedValue({
     user,
     data: { userId: user.id, sid: "test", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00.000Z" },
@@ -56,7 +61,12 @@ test("a filter the declaration does not allow is refused, not ignored", async ()
   const search = spyOn(loggingService.entry, "search").mockResolvedValue({ entries: [], total: 0, levels });
   try {
     await withAdmin(async (routes) => {
-      for (const path of ["/?level=fatal", "/?time=last-2y", "/?colour=red", `/?source=${Array.from({ length: 21 }, (_, i) => `s${i}`).join(",")}`]) {
+      for (const path of [
+        "/?level=fatal",
+        "/?time=last-2y",
+        "/?colour=red",
+        `/?source=${Array.from({ length: 21 }, (_, i) => `s${i}`).join(",")}`,
+      ]) {
         const response = await routes.request(path);
         expect(response.status).toBe(400);
       }

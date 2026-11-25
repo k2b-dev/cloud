@@ -21,7 +21,11 @@ export const LogsScreenFixture = (props: { search: string; locale?: string; stat
         page={address.page}
         entry={address.entry}
         liveOff={address.liveOff}
-        ignored={address.issues.length ? `Nicht angewendet: ${address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ")}. Die Liste zeigt den Rest.` : null}
+        ignored={
+          address.issues.length
+            ? `Nicht angewendet: ${address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ")}. Die Liste zeigt den Rest.`
+            : null
+        }
         data={data}
         error={failed ? "Der Protokollspeicher antwortet nicht." : null}
         selected={address.entry ? { entry: open, error: null } : null}

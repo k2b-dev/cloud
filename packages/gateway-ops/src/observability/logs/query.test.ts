@@ -44,7 +44,9 @@ describe("the log list address", () => {
 
   test("values beyond the list's bounds are dropped and reported, never cut", () => {
     const sources = Array.from({ length: 21 }, (_, index) => `app-${index}`).join(",");
-    const address = read(`q=${"x".repeat(201)}&request=${"r".repeat(129)}&source=${sources}&time=2026-10-01T00:00Z..2026-11-25T00:00Z&page=1001&entry=0`);
+    const address = read(
+      `q=${"x".repeat(201)}&request=${"r".repeat(129)}&source=${sources}&time=2026-10-01T00:00Z..2026-11-25T00:00Z&page=1001&entry=0`,
+    );
     expect(address.state.search).toBeUndefined();
     expect(address.state.filters).toEqual({ time: DEFAULT_LOG_TIME });
     expect(address.issues.map((issue) => issue.param)).toEqual(["q", "request", "source", "time"]);

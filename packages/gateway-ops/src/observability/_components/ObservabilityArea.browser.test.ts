@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, pageErrors, settled } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 import { observabilityAreaBrowserFixture } from "./ObservabilityArea.browser-fixture";
 
 let browser: Browser;

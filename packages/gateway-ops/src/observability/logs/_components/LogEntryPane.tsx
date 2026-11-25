@@ -28,7 +28,8 @@ export default function LogEntryPane(props: Props) {
   // the time to the millisecond, as in the list's row; the day stands before it in words
   const clock = (open: LogEntry) => logRowFormatter(locale(), props.timeZone).row(open, "").time.split(" ").at(-1);
   const entry = () => props.selected?.entry ?? null;
-  const level = (value: LogEntry["level"]) => ({ debug: words().debug, info: words().info, warn: words().warn, error: words().error })[value];
+  const level = (value: LogEntry["level"]) =>
+    ({ debug: words().debug, info: words().info, warn: words().warn, error: words().error })[value];
   const title = () => {
     const open = entry();
     return open ? `${level(open.level)} · ${open.source}` : t().logEntry;
@@ -90,7 +91,14 @@ export default function LogEntryPane(props: Props) {
                 items={[
                   {
                     label: words().level,
-                    value: open().level === "error" ? <Chip status="bad">{level("error")}</Chip> : open().level === "warn" ? <Chip status="warn">{level("warn")}</Chip> : <Chip>{level(open().level)}</Chip>,
+                    value:
+                      open().level === "error" ? (
+                        <Chip status="bad">{level("error")}</Chip>
+                      ) : open().level === "warn" ? (
+                        <Chip status="warn">{level("warn")}</Chip>
+                      ) : (
+                        <Chip>{level(open().level)}</Chip>
+                      ),
                   },
                   { label: words().source, value: open().source },
                   { label: words().at, value: `${dateFormat().format(new Date(open().createdAt))} · ${clock(open())}` },
@@ -103,14 +111,18 @@ export default function LogEntryPane(props: Props) {
                 <Section
                   icon="braces"
                   title={t().metadata}
-                  actions={[
-                    { label: raw() ? t().viewFormatted : t().viewRaw, onClick: () => setRaw(!raw()) },
-                  ]}
+                  actions={[{ label: raw() ? t().viewFormatted : t().viewRaw, onClick: () => setRaw(!raw()) }]}
                 >
                   <Show
                     when={raw()}
                     fallback={
-                      <Facts items={Object.entries(metadata()).map(([key, value]) => ({ label: key, value: valueText(value), mono: typeof value === "object" && value !== null }))} />
+                      <Facts
+                        items={Object.entries(metadata()).map(([key, value]) => ({
+                          label: key,
+                          value: valueText(value),
+                          mono: typeof value === "object" && value !== null,
+                        }))}
+                      />
                     }
                   >
                     <Prose markdown={`\`\`\`json\n${JSON.stringify(metadata(), null, 2)}\n\`\`\``} />

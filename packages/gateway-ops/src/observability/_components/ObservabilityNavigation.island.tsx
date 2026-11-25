@@ -7,7 +7,13 @@ export default function ObservabilityNavigation(props: { label: string; current:
   const navigation = createNavigation({
     items: () =>
       props.groups.flatMap((group): NavigationItem[] => {
-        const items = group.items.map((item) => ({ id: item.id, label: item.label, href: item.href, icon: item.icon, active: item.id === props.current }));
+        const items = group.items.map((item) => ({
+          id: item.id,
+          label: item.label,
+          href: item.href,
+          icon: item.icon,
+          active: item.id === props.current,
+        }));
         return group.title ? [{ id: group.title, label: group.title, children: items }] : items;
       }),
   });

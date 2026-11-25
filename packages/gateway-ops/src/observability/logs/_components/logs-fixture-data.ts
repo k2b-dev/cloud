@@ -11,9 +11,27 @@ export const FIXTURE_TIME_ZONE = "Europe/Berlin";
 export const FIXTURE_TODAY = "2026-11-24";
 
 const ENTRIES: [string, LogLevel, string, string, Record<string, unknown> | null][] = [
-  ["09:43:48.377", "error", "gateway", "Upstream mail: Zeitüberschreitung nach 30 s", { requestId: "7f3a9c", durationMs: 30012, upstream: "mail" }],
-  ["09:43:35.992", "error", "mail", "SMTP-Verbindung: Zeitüberschreitung (timeout) nach 30 s", { requestId: "7f3a9c", durationMs: 30004, host: "smtp.example.org" }],
-  ["09:43:22.648", "error", "mail", "Zustellung fehlgeschlagen: 550 Postfach unbekannt", { requestId: "704879", durationMs: 64, rcpt: "info@stadtwerke.example" }],
+  [
+    "09:43:48.377",
+    "error",
+    "gateway",
+    "Upstream mail: Zeitüberschreitung nach 30 s",
+    { requestId: "7f3a9c", durationMs: 30012, upstream: "mail" },
+  ],
+  [
+    "09:43:35.992",
+    "error",
+    "mail",
+    "SMTP-Verbindung: Zeitüberschreitung (timeout) nach 30 s",
+    { requestId: "7f3a9c", durationMs: 30004, host: "smtp.example.org" },
+  ],
+  [
+    "09:43:22.648",
+    "error",
+    "mail",
+    "Zustellung fehlgeschlagen: 550 Postfach unbekannt",
+    { requestId: "704879", durationMs: 64, rcpt: "info@stadtwerke.example" },
+  ],
   ["09:42:44.820", "error", "gateway", "502 von gustav bei POST /gustav/api/turn", { requestId: "2b2dd8", durationMs: 1392 }],
   ["09:42:28.153", "warn", "mail", "Zustellung verzögert: Greylisting bei stadtwerke.example", { requestId: "cc5031", durationMs: 145 }],
   ["09:42:06.622", "warn", "mail", "IMAP-Abgleich dauert länger als 20 s", { requestId: "31415c", durationMs: 1015, mailbox: "mbx_info" }],
@@ -53,7 +71,10 @@ export const fixtureSearch = (filter: LogSearch, page = 1): LogsData => {
       (!request || (entry.metadata !== null && metadata.includes(request)))
     );
   });
-  const levels = Object.fromEntries(LOG_LEVELS.map((level) => [level, matching.filter((entry) => entry.level === level).length])) as Record<LogLevel, number>;
+  const levels = Object.fromEntries(LOG_LEVELS.map((level) => [level, matching.filter((entry) => entry.level === level).length])) as Record<
+    LogLevel,
+    number
+  >;
   return { entries: matching.slice((page - 1) * LOGS_PER_PAGE, page * LOGS_PER_PAGE), total: matching.length, levels };
 };
 
@@ -77,6 +98,9 @@ export const fixtureArea: { title: string; groups: AdminAreaGroup[]; markLabel: 
         { id: "nats", label: "NATS & Sync", href: "/admin/observability/nats", icon: "ti ti-topology-star-3", mark: "warning" },
       ],
     },
-    { title: "Einrichtung", items: [{ id: "retention", label: "Aufbewahrung", href: "/admin/observability/retention", icon: "ti ti-archive" }] },
+    {
+      title: "Einrichtung",
+      items: [{ id: "retention", label: "Aufbewahrung", href: "/admin/observability/retention", icon: "ti ti-archive" }],
+    },
   ],
 };

@@ -57,7 +57,12 @@ suite("log list search", () => {
     expect(all.total).toBe(4);
     expect(all.entries[0]).toMatchObject({ level: "error", source, metadata: { requestId: "7f3a9c", durationMs: 30004 } });
 
-    const errors = await loggingService.entry.search({ since: since(), sources: [source, other], levels: ["error", "warn"], request: "7f3a9c" });
+    const errors = await loggingService.entry.search({
+      since: since(),
+      sources: [source, other],
+      levels: ["error", "warn"],
+      request: "7f3a9c",
+    });
     expect(errors.entries.map((entry) => entry.message)).toEqual(["SMTP timeout after 30 s", "Upstream timeout"]);
 
     // `%` and `_` in a search are text, not patterns.
@@ -71,7 +76,9 @@ suite("log list search", () => {
   test("one page costs what the list cost before v2: two reads of the log table, one when nothing matches", async () => {
     const reads = (statements: string[]) => statements.filter((statement) => statement.includes("FROM logging.entries"));
     const page = await meter.during(() => loggingService.entry.search({ since: since(), sources: [source], levels: ["error"] }));
-    const before = await meter.during(() => logging.list({ page: 1, perPage: 100, offset: 0 }, { sources: [source], level: "error", sinceHours: 1 }));
+    const before = await meter.during(() =>
+      logging.list({ page: 1, perPage: 100, offset: 0 }, { sources: [source], level: "error", sinceHours: 1 }),
+    );
     expect(reads(page)).toHaveLength(2);
     expect(reads(page)[0]).toContain("SELECT level, COUNT(*)::int AS count");
     expect(page.length).toBeLessThanOrEqual(before.length);

@@ -218,7 +218,13 @@ export const logsHref = (
 
 // Before v2 the address held `window=6h`, `search=…`, one `source=` per source and `level=all`. Links in other apps,
 // bookmarks and the dashboard still use them, so the page answers them with a redirect to the same list.
-const LEGACY_WINDOWS: Record<string, LogTimePreset> = { "1h": "last-1h", "6h": "last-6h", "24h": "last-24h", "7d": "last-7d", "30d": "last-30d" };
+const LEGACY_WINDOWS: Record<string, LogTimePreset> = {
+  "1h": "last-1h",
+  "6h": "last-6h",
+  "24h": "last-24h",
+  "7d": "last-7d",
+  "30d": "last-30d",
+};
 
 const minute = (date: Date): string => `${date.toISOString().slice(0, 16)}Z`;
 

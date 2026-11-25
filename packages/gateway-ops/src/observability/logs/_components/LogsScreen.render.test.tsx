@@ -14,7 +14,13 @@ const { LogsScreenFixture } = await import("./logs-screen.fixture");
 const render = (search: string, state?: "loadfail") => {
   const html = renderToString(() => createComponent(LogsScreenFixture, { search, state }));
   // the text a person reads, without markup
-  return { html, text: html.replace(/<!--[^>]*-->/g, "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ") };
+  return {
+    html,
+    text: html
+      .replace(/<!--[^>]*-->/g, "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " "),
+  };
 };
 
 describe("the log list on the server", () => {

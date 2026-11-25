@@ -87,7 +87,13 @@ const answerList = (url: URL) => {
     json: {
       entries: data.entries,
       levels: data.levels,
-      pagination: { page: address.page, per_page: perPage, total: data.total, total_pages: Math.ceil(data.total / perPage), has_next: false },
+      pagination: {
+        page: address.page,
+        per_page: perPage,
+        total: data.total,
+        total_pages: Math.ceil(data.total / perPage),
+        has_next: false,
+      },
     },
   };
 };
@@ -115,7 +121,8 @@ const open = async (view: View, address: string, options: { locale?: string; sta
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
-    if (url.pathname === "/api/logging/sources") return route.fulfill({ json: { sources: [...new Set(fixtureEntries.map((entry) => entry.source))].sort() } });
+    if (url.pathname === "/api/logging/sources")
+      return route.fulfill({ json: { sources: [...new Set(fixtureEntries.map((entry) => entry.source))].sort() } });
     if (url.pathname === "/api/logging" || url.pathname === "/api/logging/") {
       calls.push(url.search);
       const answer = answerList(url);
@@ -209,7 +216,9 @@ describe("the log list on v2", () => {
         expect(outline).not.toContain("Problems (");
         const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
         // k2b-ui gap (lane B, reported): the filter statement's 12/28 text is not one of the v2 type roles yet.
-        const problems = layout.problems.filter((problem) => !/^text outside the type roles: 12px\/28px (400 in button\.k2-stmt-b|600 in b)( |$)/.test(problem));
+        const problems = layout.problems.filter(
+          (problem) => !/^text outside the type roles: 12px\/28px (400 in button\.k2-stmt-b|600 in b)( |$)/.test(problem),
+        );
         expect({ name, problems }).toEqual({ name, problems: [] });
         await shoot(tab, name);
         expect(errors).toEqual([]);
