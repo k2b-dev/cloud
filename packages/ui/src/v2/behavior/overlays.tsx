@@ -3,8 +3,10 @@
  * focus and typeahead are core's. Each `use…` hook makes one instance and returns its parts as components; the v2
  * primitives add structure and look. No ui-sdk type crosses this module's exports.
  */
+import { isFocusFromKeyboard } from "@ui-sdk/core";
 import { alertDialog as alertDialogPrimitive, createConfirm } from "@ui-sdk/core/alert-dialog";
 import { dialog as dialogPrimitive } from "@ui-sdk/core/dialog";
+import { drawer as drawerPrimitive } from "@ui-sdk/core/drawer";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
 import type { JSX } from "solid-js";
@@ -41,6 +43,17 @@ export type DialogParts = {
  */
 export type Presentation = "auto" | "dialog" | "sheet";
 
+/**
+ * Gives the first focus of an overlay to `element` without a focus ring, unless the last thing the person did was a key
+ * (a dialog opened with Enter shows where the focus stands). A tap, a click or a page that opens with the dialog shows
+ * none, as a button pressed with the pointer shows none; the next key shows the ring. Core then moves the focus to the
+ * same element, which changes nothing. `focusVisible` is a hint the browser may ignore; Chromium and WebKit take it.
+ */
+export const quietFocus = (element: HTMLElement) => {
+  if (isFocusFromKeyboard()) return;
+  element.focus({ preventScroll: true, focusVisible: false });
+};
+
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
 export type DialogOptions = OverlayOptions & {
   modal?: boolean;
@@ -74,6 +87,35 @@ export function useDialog(options: () => DialogOptions = () => ({})): DialogPart
     ),
     Title: slotComponent(handle, "title", "h2"),
     Description: slotComponent(handle, "description", "p"),
+    Close: slotComponent(handle, "close", "button"),
+  };
+}
+
+export type DrawerParts = Omit<DialogParts, "Description">;
+
+/**
+ * A modal panel from an edge of the window: focus moves in and stays in, Escape, a press beside it and a swipe back
+ * toward its edge close it, focus returns to the trigger. Core's drawer.
+ */
+export type DrawerOptions = OverlayOptions & {
+  /** The edge it comes from; `"start"` and `"end"` follow the writing direction. */
+  side?: "start" | "end" | "top" | "bottom";
+};
+
+export function useDrawer(options: () => DrawerOptions = () => ({})): DrawerParts {
+  const t = useBehaviorMessages();
+  const handle = usePrimitive(drawerPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));
+  const Backdrop = popupComponent(handle, "backdrop");
+  const Content = popupComponent(handle, "content");
+  return {
+    Trigger: slotComponent(handle, "trigger", "button"),
+    Popup: (props) => (
+      <>
+        <Backdrop {...(props.backdrop ?? {})} />
+        <Content {...props} backdrop={undefined} />
+      </>
+    ),
+    Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
   };
 }

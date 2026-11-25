@@ -28,6 +28,8 @@ const screens = {
   mail: "mail",
   // the inbox while nothing is open: the phone's first page
   mailList: "mail-list",
+  // the inbox on a tablet (1024 px): the sidebar is a drawer (opened once the island is live)
+  mailTablet: "mail-tablet",
   record: "record",
   deliveries: "deliveries",
   table: "table",
@@ -50,6 +52,8 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
   },
   // the mockup's phone shows the list with nothing open
+  // the concept's drawer on a tablet; the mockup draws no tablet, so only the layout rules
+  mailTablet: { 1024: {} },
   mailList: {
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x44"],
@@ -271,6 +275,26 @@ describe("v2 demo screens keep the mockup", () => {
     }
   }, 30_000);
 
+  // A tablet (1024 px, Mail's workspace 958 px): the sidebar does not fit beside the list and the reader, so it is a
+  // drawer, on the page the server sends. The workspace keeps room for the reader also while no message is open, so the
+  // inbox with nothing open has the drawer too: opening a message never moves the sidebar.
+  for (const name of ["mailTablet", "mailList", "mail"] as const)
+    test(`${name} at 1024 px: the sidebar is a drawer, its button at the start of the head, the reader keeps 400 px`, async () => {
+      const page = await show(name, 1024);
+      try {
+        const found = await page.evaluate(() => ({
+          side: document.querySelector(".k2-ws-side")!.getClientRects().length,
+          toggle: document.querySelector(".k2-ws-toggle")!.getClientRects().length,
+          reader: document.querySelector(".k2-pane[data-detail]")?.getBoundingClientRect().width ?? null,
+        }));
+        expect([found.side, found.toggle]).toEqual([0, 1]);
+        if (found.reader !== null) expect(found.reader).toBeGreaterThanOrEqual(400);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 30_000);
+
   test("mail at 390 px with a message open: nothing in it is cut, nothing breaks inside", async () => {
     const page = await show("mail", 390);
     try {
@@ -367,4 +391,65 @@ describe("v2 demo screens keep the mockup", () => {
         await page.close();
       }
     }, 30_000);
+
+  // akte.html: the record is a favourite, so the star in the head is a toggle that is on, in the orange of the mockup
+  test("record at 1440 px: the favourite star is on", async () => {
+    const page = await show("record", 1440);
+    try {
+      const star = await page.evaluate(() => {
+        const button = document.querySelector('[data-k2-part="Button"][aria-label="Favorit"]')!;
+        return [button.getAttribute("aria-pressed"), getComputedStyle(button.querySelector(".k2-icon")!).color];
+      });
+      expect(star).toEqual(["true", "rgb(180, 83, 9)"]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  // Between 768 and 1440 px the identity in the record's head never runs under the head's actions, and its name stays
+  // in sight: the identifiers give way first, then the name is cut with "…" (akte.html at 1024 px cuts the actions
+  // instead). A long name is set in the page, so the test sees the worst case of real data.
+  for (const name of ["record", "deliveries"] as const)
+    for (const width of [1024, 760] as const)
+      for (const long of [false, true])
+        test(`${name} at ${width} px${long ? " with a long name" : ""}: the head's name stays in sight beside its actions`, async () => {
+          const page = await show(name, width);
+          try {
+            if (long)
+              await page.evaluate(() => {
+                document.querySelector(".k2-record-name")!.textContent =
+                  "Ottilie Wilhelmine Brandner-Maibach, Antiquitäten und Nachlässe aus Oberschöneweide";
+              });
+            const found = await page.evaluate(() => {
+              const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
+              const box = bar.getBoundingClientRect();
+              const start = bar.querySelector(".k2-bar-start")!.getBoundingClientRect();
+              const end = bar.querySelector(".k2-bar-end")!.getBoundingClientRect();
+              const inside = (selector: string) => {
+                const r = bar.querySelector(selector)!.getBoundingClientRect();
+                return (
+                  r.width > 40 * (selector === ".k2-av" ? 0 : 1) &&
+                  r.left >= start.left - 0.5 &&
+                  r.right <= start.right + 0.5 &&
+                  r.top >= box.top &&
+                  r.bottom <= box.bottom
+                );
+              };
+              // the newest entries of the record's main column (400 px at 1024) stand one under the other, so their text
+              // keeps whole lines instead of breaking after every word
+              const digest = document.querySelector(".k2-digest-text")?.getBoundingClientRect().width ?? null;
+              return {
+                apart: start.right <= end.left + 0.5,
+                actions: end.right <= box.right + 0.5,
+                avatar: inside(".k2-av"),
+                name: inside(".k2-record-name"),
+                digest,
+              };
+            });
+            expect(found).toMatchObject({ apart: true, actions: true, avatar: true, name: true });
+            if (name === "record" && width === 1024) expect(found.digest).toBeGreaterThan(300);
+          } finally {
+            await page.close();
+          }
+        }, 30_000);
 });
