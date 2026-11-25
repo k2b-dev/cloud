@@ -11,6 +11,11 @@ export const storageAreaMessages = i18n.define({
     en: {
       area: "Storage",
       areaDescription: "Buckets where apps keep their files.",
+      usageShow: "Show usage",
+      noneOpen: "No bucket open",
+      documentation: "Documentation",
+      state: "State",
+      bucketCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: "1 bucket", other: `${count} buckets` }),
       add: "Add bucket",
       defaultName: "Default",
       further: "Further buckets",
@@ -132,6 +137,11 @@ export const storageAreaMessages = i18n.define({
     de: {
       area: "Speicher",
       areaDescription: "Buckets, in denen Apps ihre Dateien ablegen.",
+      usageShow: "Belegung anzeigen",
+      noneOpen: "Kein Bucket geöffnet",
+      documentation: "Dokumentation",
+      state: "Zustand",
+      bucketCount: ({ count }) => i18n.plural(count, "de", { one: "1 Bucket", other: `${count} Buckets` }),
       add: "Bucket hinzufügen",
       defaultName: "Standard",
       further: "Weitere Buckets",

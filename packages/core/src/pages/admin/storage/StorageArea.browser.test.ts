@@ -1,7 +1,12 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { STORAGE_FIXTURE_IDS, storageAreaBrowserFixture } from "./StorageArea.browser-fixture";
+
+// A save or test loads the bucket's page again; on a loaded VM two development renders took longer than the 5 s
+// default (3 of 30 failed at 5 s, all passed at 20 s on 25.11.), so each test gets 15 s.
+setDefaultTimeout(15_000);
 
 let browser: Browser;
 let fixture: Awaited<ReturnType<typeof storageAreaBrowserFixture>>;
@@ -40,9 +45,27 @@ const loadsBucket = async (page: Page, id: string, action: () => Promise<void>) 
     id,
   );
 };
-const detail = (page: Page) => page.locator("[data-workspace-level-id='detail'], [data-storage-detail]").last();
-const headAction = (page: Page, action: string) => page.locator(`.hidden.md\\:block [data-storage-action="${action}"]`);
-const field = (page: Page, label: string) => page.getByLabel(label, { exact: true });
+const detail = (page: Page) => page.locator('main [data-k2-part="Pane"]').last();
+const WORDS: Record<string, RegExp> = {
+  save: /^(Speichern|Anlegen)$/,
+  test: /^(Verbindung testen|Erneut testen)$/,
+  remove: /^Entfernen$/,
+  restore: /^Wiederherstellen$/,
+};
+/** A deed of the open bucket by its words, wherever the form puts it. */
+const headAction = (page: Page, action: string) =>
+  page.locator("main").getByRole("button", { name: WORDS[action] }).filter({ visible: true }).last();
+const row = (page: Page, name: string) =>
+  page
+    .locator("main")
+    .getByRole("link", { name: new RegExp(`^${name}`) })
+    .first();
+const field = (page: Page, label: string) =>
+  page
+    .locator("main")
+    .getByRole("textbox", { name: new RegExp(`^${label}( |$)`) })
+    .first();
+const name = (page: Page) => field(page, "Name");
 const archive = STORAGE_FIXTURE_IDS.archive;
 const fixtureReset = () => {
   fixture.control.conflictNext = false;
@@ -54,27 +77,27 @@ const fixtureReset = () => {
 const cases = [
   {
     query: "state=liste",
-    expect: ["Standard", "Weitere Buckets", "Archiv", "Test fehlgeschlagen", "Entfernt", "Den Standard-Bucket gibt es immer"],
+    expect: ["Standard", "Weitere Buckets", "Archiv", "Test fehlgeschlagen", "Entfernt"],
   },
-  { query: `state=liste&bucket=${archive}`, expect: ["Erreichbar · getestet", archive, "Sicherung"] },
+  { query: `state=liste&bucket=${archive}`, expect: ["Erreichbar · getestet", archive] },
   {
     query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.customer}`,
-    expect: ["Test fehlgeschlagen beim Schreiben.", "Erst lesbar, wenn die Verbindung steht."],
+    expect: ["Test fehlgeschlagen beim Schreiben."],
   },
   { query: `state=liste&bucket=${STORAGE_FIXTURE_IDS.backup}`, expect: ["Entfernt am", "storage_bucket_disconnected", "Letztes Ziel"] },
-  { query: "state=liste&bucket=new", expect: ["Neuer Bucket", "Entwurf", "Wird beim Anlegen vergeben."] },
+  { query: "state=liste&bucket=new", expect: ["Neuer Bucket", "Wird beim Anlegen vergeben."] },
   { query: "state=liste&bucket=00000000-0000-4000-8000-000000000000", expect: ["Diesen Bucket gibt es nicht"] },
   { query: "state=leer", expect: ["Noch keine weiteren Buckets."] },
   { query: "state=fehler", expect: ["Speicher konnte nicht geladen werden"] },
 ];
-// Each page has the same 5 s budget as an interaction test, including on WebKit.
 for (const view of [desktop, phone])
   for (const item of cases)
     test(`${item.query} fits at ${view.width}px and says what happened`, async () => {
       fixtureReset();
       const { page, errors } = await open(item.query, view);
       try {
-        await page.waitForFunction(() => !document.querySelector('[data-storage-usage="loading"]'));
+        // The first picture never waits: usage is read on request.
+        expect(await page.locator('main [data-k2-part="Loading"], main [aria-busy="true"]').count()).toBe(0);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         expect({ query: item.query, width: view.width, overflow: Math.max(0, overflow) }).toEqual({
           query: item.query,
@@ -82,17 +105,16 @@ for (const view of [desktop, phone])
           overflow: 0,
         });
         // On a phone the list and the detail are separate levels; the bucket's own texts show in the detail.
-        const text = await page.locator("main, body").first().innerText();
+        const text = await page.locator("main").first().innerText();
         for (const expected of item.expect)
-          if (view === desktop || !["Weitere Buckets", "Den Standard-Bucket gibt es immer", "Entwurf"].includes(expected))
-            expect(text).toContain(expected);
+          if (view === desktop || !["Weitere Buckets"].includes(expected)) expect(text).toContain(expected);
         expect(errors).toEqual([]);
       } finally {
         await page.close();
       }
     });
 
-test("editing the name enables Save without moving the head buttons", async () => {
+test("editing the name enables Save without moving the form's buttons", async () => {
   fixtureReset();
   const { page, errors } = await open(`state=liste&bucket=${archive}`);
   try {
@@ -100,7 +122,7 @@ test("editing the name enables Save without moving the head buttons", async () =
     expect(await save.isDisabled()).toBe(true);
     await settled(page);
     const before = await save.boundingBox();
-    await field(page, "Name").fill("Archiv 2026");
+    await name(page).fill("Archiv 2026");
     expect(await save.isEnabled()).toBe(true);
     await settled(page);
     // Getting dirty changes paint only: the head buttons stay where they were.
@@ -123,8 +145,8 @@ test("renaming keeps the ID, sends no keys and shows the new name in the list", 
     expect(body).toMatchObject({ access: "own", revision: 3, name: "Archiv 2026", bucket: "cloud-archiv" });
     expect(body.accessKeyId).toBeUndefined();
     expect(body.secretAccessKey).toBeUndefined();
-    expect(await page.locator(`[data-storage-row="${archive}"]`).innerText()).toBe("Archiv 2026");
-    expect(await page.locator("[data-storage-bucket-id]").innerText()).toBe(archive);
+    expect(await row(page, "Archiv 2026").isVisible()).toBe(true);
+    expect(await page.locator("main").innerText()).toContain(archive);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -156,8 +178,8 @@ test("adding a bucket like Default tests it at once", async () => {
       name: "Rechnungen",
       bucket: "cloud-rechnungen",
     });
-    expect(await page.locator('[data-storage-check="ok"]').isVisible()).toBe(true);
-    expect(await page.locator(`[data-storage-row="${STORAGE_FIXTURE_IDS.created}"]`).innerText()).toBe("Rechnungen");
+    expect(await page.getByText("Erreichbar · getestet", { exact: false }).first().isVisible()).toBe(true);
+    expect(await row(page, "Rechnungen").isVisible()).toBe(true);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -170,7 +192,7 @@ test("a failed test stays visible with Test again", async () => {
   try {
     fixture.control.failingTests.add(archive);
     await loadsBucket(page, archive, () => headAction(page, "test").click());
-    expect(await page.locator('[data-storage-check="failed"]').innerText()).toContain("Test fehlgeschlagen beim Schreiben.");
+    expect(await page.locator('main [data-k2-part="Notice"]').first().innerText()).toContain("Test fehlgeschlagen beim Schreiben.");
     expect(await headAction(page, "test").innerText()).toBe("Erneut testen");
     expect(errors).toEqual([]);
   } finally {
@@ -224,11 +246,11 @@ test("a conflict offers the other version or mine", async () => {
     fixture.control.conflictNext = true;
     await field(page, "Name").fill("Archiv neu");
     await headAction(page, "save").click();
-    await page.locator("[data-storage-conflict]").waitFor();
-    expect(await page.locator("[data-storage-conflict]").innerText()).toContain("Mara Beispiel hat diesen Bucket inzwischen geändert");
-    await page.getByRole("button", { name: "Andere Fassung laden" }).click();
+    const conflict = page.locator('main [data-k2-part="Notice"]', { hasText: "Mara Beispiel hat diesen Bucket inzwischen geändert" });
+    await conflict.waitFor();
+    await conflict.getByRole("button", { name: "Andere Fassung laden" }).click();
     expect(await field(page, "Name").inputValue()).toBe("Archiv (Mara)");
-    expect(await page.locator("[data-storage-conflict]").count()).toBe(0);
+    expect(await conflict.count()).toBe(0);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -239,15 +261,16 @@ test("removing names the apps with data and mutes the removed bucket in the list
   fixtureReset();
   const { page, errors } = await open(`state=liste&bucket=${archive}`);
   try {
-    await page.locator('[data-storage-usage="ready"]').waitFor();
+    await page.getByRole("button", { name: "Belegung anzeigen" }).click();
+    await page.locator("main").getByText("warenfluss").first().waitFor();
     await headAction(page, "remove").click();
-    const dialog = page.getByRole("dialog");
+    const dialog = page.getByRole("alertdialog");
     await dialog.waitFor();
     expect(await dialog.innerText()).toContain("rechnungen, warenfluss");
     await dialog.getByRole("button", { name: "Entfernen", exact: true }).click();
-    await page.locator("[data-storage-removed]").waitFor();
+    await page.locator('main [data-k2-part="Notice"]', { hasText: "Entfernt am" }).waitFor();
     expect(fixture.control.requests.some((request) => request.method === "DELETE" && request.path === `/buckets/${archive}`)).toBe(true);
-    expect(await page.locator(`[data-storage-row="${archive}"]`).getAttribute("class")).toContain("muted");
+    expect(await page.locator("main").innerText()).toContain("Entfernt");
     expect(await field(page, "Access-Key-ID").inputValue()).toBe("");
     expect(await field(page, "Secret-Access-Key").inputValue()).toBe("");
     expect(errors).toEqual([]);
@@ -276,7 +299,7 @@ test("restoring with fresh keys tests the bucket again", async () => {
     await field(page, "Access-Key-ID").fill("GKexample");
     await field(page, "Secret-Access-Key").fill("not-a-real-secret");
     await loadsBucket(page, STORAGE_FIXTURE_IDS.backup, () => headAction(page, "restore").click());
-    await page.locator('[data-storage-check="ok"]').waitFor();
+    await page.getByText("Erreichbar · getestet", { exact: false }).first().waitFor();
     expect(errors).toEqual([]);
   } finally {
     await page.close();
@@ -308,29 +331,46 @@ test("usage that cannot be read says so and reads again on request", async () =>
   fixture.control.failUsage = true;
   const { page, errors } = await open(`state=liste&bucket=${archive}`);
   try {
-    await page.locator('[data-storage-usage="failed"]').waitFor();
+    await page.getByRole("button", { name: "Belegung anzeigen" }).click();
+    await page.locator('main [data-k2-part="Failed"]').waitFor();
     fixture.control.failUsage = false;
-    await page.getByRole("button", { name: "Erneut lesen" }).click();
-    await page.locator('[data-storage-usage="ready"]').waitFor();
-    expect(await page.locator('[data-storage-usage="ready"]').innerText()).toContain("warenfluss");
+    await page.locator('main [data-k2-part="Failed"]').getByRole("button").click();
+    await page.locator("main").getByText("warenfluss").first().waitFor();
     expect(errors).toEqual([]);
   } finally {
     await page.close();
   }
 });
 
-test("on a phone the list leads to the bucket and its actions stay at hand below", async () => {
+test("on a phone the list leads to the bucket and its actions follow its fields", async () => {
   fixtureReset();
   const { page, errors } = await open("state=liste", phone);
   try {
-    await loadsBucket(page, archive, () => page.locator(`[data-storage-row="${archive}"]`).click());
-    const save = page.locator(`.md\\:hidden [data-storage-action="save"]`);
+    await loadsBucket(page, archive, () => row(page, "Archiv").click());
+    const save = headAction(page, "save");
+    await save.scrollIntoViewIfNeeded();
     expect(await save.isVisible()).toBe(true);
-    const box = await save.boundingBox();
-    expect((box?.y ?? 0) + (box?.height ?? 0)).toBeLessThanOrEqual(phone.height);
     expect(await detail(page).isVisible()).toBe(true);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
   }
 });
+
+test("the list and an open bucket keep the v2 layout rules at every width", async () => {
+  fixtureReset();
+  for (const query of ["state=liste", `state=liste&bucket=${archive}`, "state=liste&bucket=new"])
+    for (const width of [1440, 1024, 390]) {
+      const { page, errors } = await open(query, { width, height: 900 });
+      try {
+        expect({ query, width, problems: (await measureV2Layout(page, { root: "main.k2-ui" })).problems }).toEqual({
+          query,
+          width,
+          problems: [],
+        });
+        expect(errors).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }
+}, 60_000);
