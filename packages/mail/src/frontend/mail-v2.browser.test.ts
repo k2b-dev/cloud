@@ -176,6 +176,25 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  test("in a selection each row has its box, which shows and changes what is selected", async () => {
+    const page = await open(MAIL_V2_PATH);
+    try {
+      const status = page.locator('[data-k2-part="StatusRow"]');
+      await status.getByRole("checkbox").click();
+      await page.locator('[data-k2-part="StatusRow"][data-selecting]').waitFor();
+      const boxes = page.locator('[data-k2-part="List"] > [data-k2-part="Row"]').getByRole("checkbox");
+      const count = await boxes.count();
+      expect(count).toBeGreaterThan(1);
+      for (let index = 0; index < count; index += 1) expect(await boxes.nth(index).isChecked()).toBe(true);
+      await boxes.first().click();
+      expect(await boxes.first().isChecked()).toBe(false);
+      expect(await status.textContent()).toContain(`${count - 1}`);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   // v1's menus, built by the same shared parts: no button in the reader stands there without doing something.
   test("the reader's Later and More and each message's More offer v1's entries", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);

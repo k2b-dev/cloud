@@ -316,6 +316,14 @@ export default function MailWorkspaceV2(props: {
               text={text()}
               label={c().t().conversationList}
               onOpen={openRow}
+              selection={
+                selecting()
+                  ? {
+                      selected: (item) => Boolean(item.conversationId && c().selectedConversationIds().has(item.conversationId)),
+                      toggle: (item) => c().toggleConversationSelection(item, false),
+                    }
+                  : undefined
+              }
               onRetry={() => void c().refreshList()}
               onLoadMore={() => void c().loadMoreConversations(c().requestPath())}
             />
