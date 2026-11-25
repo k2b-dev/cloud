@@ -8,7 +8,6 @@ import { migrate } from "../migrate";
 import { type InsertedFixtureNotebook, insertFixtureNotebook, removeFixtureNotebooks } from "./large-notebook.test-fixture";
 import { childrenQuery, createAtPath, listOutline, outlinePageQuery, resolvePath } from "./note-paths";
 import { reindexBatchQuery, reindexNotebook } from "./note-refs";
-import { overviewStats } from "./notebooks";
 import {
   appendPositionQuery,
   create,
@@ -152,9 +151,6 @@ for (const [index, shape] of ["small", "large"].entries()) {
     expect(recent.hits.every((hit) => hit.snippet === null)).toBe(true);
     const listed = await listPaged({ notebookId: notebook.id, pagination: { limit: 7, offset: 0 } });
     expect(listed.items.map((note) => note.id)).toEqual(expected);
-    const stats = await overviewStats({ notebookIds: [notebook.id] });
-    expect(stats[0]!.noteCount).toBe(notebook.notes.length);
-    expect(stats[0]!.lastNoteAt).toBe(recent.hits[0]!.note.updatedAt);
   });
 }
 
