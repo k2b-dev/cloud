@@ -1,10 +1,10 @@
-import { formatDateTime } from "@k2b/cloud/shared";
 import { useLocale } from "@k2b/ui";
 import { Band, Bar, Button, Chip, Empty, Facts, Failed, Pane, Prose, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import type { LogEntry } from "../contracts";
 import { logsMessages } from "../messages";
+import { logRowFormatter } from "../rows";
 
 type Props = {
   selected: { entry: LogEntry | null; error: string | null } | null;
@@ -24,6 +24,9 @@ export default function LogEntryPane(props: Props) {
   const words = () => logsMessages.resolve([locale()]).t;
   const [raw, setRaw] = createSignal(false);
   const toast = useToast();
+  const dateFormat = () => new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, dateStyle: "medium" });
+  // the time to the millisecond, as in the list's row; the day stands before it in words
+  const clock = (open: LogEntry) => logRowFormatter(locale(), props.timeZone).row(open, "").time.split(" ").at(-1);
   const entry = () => props.selected?.entry ?? null;
   const level = (value: LogEntry["level"]) => ({ debug: words().debug, info: words().info, warn: words().warn, error: words().error })[value];
   const title = () => {
@@ -90,7 +93,7 @@ export default function LogEntryPane(props: Props) {
                     value: open().level === "error" ? <Chip status="bad">{level("error")}</Chip> : open().level === "warn" ? <Chip status="warn">{level("warn")}</Chip> : <Chip>{level(open().level)}</Chip>,
                   },
                   { label: words().source, value: open().source },
-                  { label: words().at, value: formatDateTime(open().createdAt, { locale: locale(), timeZone: props.timeZone }) },
+                  { label: words().at, value: `${dateFormat().format(new Date(open().createdAt))} · ${clock(open())}` },
                   { label: "ID", value: open().id, mono: true, copy: open().id },
                 ]}
               />

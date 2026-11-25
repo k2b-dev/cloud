@@ -10,7 +10,7 @@ useUnitClients();
 
 const levels = { debug: 0, info: 3, warn: 1, error: 2 };
 
-const withAdmin = async (run: (routes: { request: (path: string) => Promise<Response> }) => Promise<void>) => {
+const withAdmin = async (run: (routes: { request: (path: string) => Response | Promise<Response> }) => Promise<void>) => {
   const limit = spyOn(server, "rateLimit").mockReturnValue(async (_c, next) => next());
   const infrastructure = stubRouterInfrastructure();
   const user = buildProjectedUser({ id: "00000000-0000-4000-8000-000000000001", provider: "local", profile: "user", effective_admin: true });

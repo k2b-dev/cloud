@@ -251,7 +251,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                 type="search"
                 icon="search"
                 label={t().search}
-                placeholder={t().search}
+                placeholder={t().searchShort}
                 value={state().search ?? ""}
                 onKeyDown={(event) => {
                   if (event.isComposing) return;
@@ -291,11 +291,18 @@ export default function LogsScreen(props: LogsScreenProps) {
                 results={t().entries({ count: number(total()) })}
               />
               <StatusRow
-                lead={t().entriesOf({ count: number(rows().length), total: number(total()) })}
+                lead={data() ? t().entriesOf({ count: number(rows().length), total: number(total()) }) : t().unavailable}
+                // k2b-ui gap: StatusRow keeps its facts in a narrow column (concept 6d drops them below 760 px). Beside an
+                // open entry the list is that narrow, so the counts give way there.
                 facts={[
-                  { value: number(data()?.levels.error ?? 0), after: t().errors },
-                  { value: number(data()?.levels.warn ?? 0), after: t().warnings },
-                  ...(live() ? [{ after: liveFailed() ? t().liveRetrying : t().liveOn }] : []),
+                  ...(props.entry || !data()
+                    ? []
+                    : [
+                        { value: number(data()?.levels.error ?? 0), after: t().errors },
+                        { value: number(data()?.levels.warn ?? 0), after: t().warnings },
+                      ]),
+                  // The switch says live is on; only a refresh that fails needs a sentence (it retries on its own).
+                  ...(live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
                 ]}
                 filters={
                   <>
@@ -322,6 +329,7 @@ export default function LogsScreen(props: LogsScreenProps) {
               label={t().logs}
               rows={rows()}
               rowKey={(row) => row.id}
+              sticky
               current={props.entry ?? undefined}
               group={state().group ? groupOf : undefined}
               open={(row) => ({ href: href({ entry: row.id }) })}
@@ -338,9 +346,9 @@ export default function LogsScreen(props: LogsScreenProps) {
                 { title: t().at, width: { min: 110, default: 120 }, cell: (row) => row.time },
                 { title: t().level, width: { min: 96, default: 110 }, cell: (row) => levelChip(row.level) },
                 { title: t().source, width: { min: 90, default: 120 }, cell: (row) => row.source, drop: true },
-                { title: t().message, width: { min: 240, default: 520 }, cell: (row) => row.message },
+                { title: t().message, width: { min: 240, default: 480 }, cell: (row) => row.message },
                 { title: t().request, width: { min: 90, default: 120 }, cell: (row) => row.requestId ?? "—", drop: true },
-                { title: t().duration, align: "end", cell: (row) => row.duration ?? "—", drop: true },
+                { title: t().duration, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.duration ?? "—", drop: true },
               ]}
             />
             <Show when={pages() > 1}>
