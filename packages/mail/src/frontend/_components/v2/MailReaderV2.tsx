@@ -1,7 +1,7 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
 import { prompts, toast, useLocale } from "@k2b/ui";
-import { Avatar, Band, Bar, Button, Canvas, Chip, Inline, Menu, Notice, Pane, Row, Text, Tiles } from "@k2b/ui/v2";
+import { Avatar, Band, Bar, Button, Canvas, Chip, Cut, Inline, Menu, Notice, Pane, Popover, Row, Text, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, on, Show } from "solid-js";
 import type { DraftDerivationKind, SenderIdentity } from "../../../contracts";
 import type { MailWorkspaceMessage } from "../../../service/workspace";
@@ -44,10 +44,23 @@ const attachmentIcon = (contentType: string, name: string): string => {
   return "file";
 };
 
-const formatSize = (bytes: number, locale: string): string =>
-  bytes < 1024 * 1024
-    ? `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.max(1, Math.round(bytes / 1024)))} KB`
-    : `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(bytes / (1024 * 1024))} MB`;
+/** A file's size as people read it: "0 B", "512 B", "13 KB", "4,5 MB" (never "1 KB" for an empty file). */
+export const formatSize = (bytes: number, locale: string): string => {
+  const size = Math.max(0, bytes);
+  if (size < 1024) return `${new Intl.NumberFormat(locale).format(Math.round(size))} B`;
+  if (size < 1024 * 1024) return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(Math.round(size / 1024))} KB`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(size / (1024 * 1024))} MB`;
+};
+
+/** How many tags and faces of readers the reader's state line shows before "+N" and a count. */
+const SHOWN_TAGS = 3;
+const SHOWN_READERS = 3;
+
+/** How many recipients a message's line names before the rest folds into "+N". */
+const NAMED_RECIPIENTS = 2;
+
+/** An address standing alone as a name: cut in the middle, so its domain stays readable. */
+const isAddress = (text: string) => /^[^\s@]+@[^\s@]+$/.test(text);
 
 /** One message of the open conversation: who wrote it, its text in its own sandboxed frame, its attachments. */
 function MessageV2(props: {
@@ -73,10 +86,27 @@ function MessageV2(props: {
     const own = new Set(
       props.identities.filter((identity) => identity.status === "verified").map((identity) => identity.fromAddress.trim().toLowerCase()),
     );
-    const recipients = props.message.to.map((address) => address.name || address.address).join(", ") || t().undisclosedRecipients;
+    // many recipients fold into "+N" after the first two, so the line stays one line before the time
+    const names = props.message.to.map((address) => address.name || address.address);
+    const rest = names.length - NAMED_RECIPIENTS;
+    const recipients =
+      names.length === 0
+        ? t().undisclosedRecipients
+        : rest > 0
+          ? `${names.slice(0, NAMED_RECIPIENTS).join(", ")} ${props.text.andMore({ count: rest })}`
+          : names.join(", ");
     return !outgoing() && props.message.to.some((recipient) => own.has(recipient.address.trim().toLowerCase()))
       ? t().toMe
       : t().toRecipient({ recipients });
+  };
+  // A sender known only by an address shows it once, cut in the middle; a named sender's address follows quietly.
+  const senderLine = () => {
+    const name = senderName();
+    return isAddress(name) ? <Cut text={name} keep="domain" /> : name;
+  };
+  const senderAddress = () => {
+    const address = sender()?.address;
+    return outgoing() || !address || address === senderName() ? undefined : <Cut text={address} keep="domain" />;
   };
   const when = () => mailV2MessageTime(props.message.sentAt ?? props.message.internalDate, props.dateConfig);
   // Cloud's origin from the server: the frame's typeface loads from there, the same document in SSR and the browser.
@@ -148,7 +178,7 @@ function MessageV2(props: {
   };
   const downloadAll = async () => {
     const files = attachments().map((attachment) => ({
-      name: attachment.filename?.trim() || props.text.attachments,
+      name: attachment.filename?.trim() || props.text.unnamedAttachment,
       href: attachmentHref(attachment.id),
       size: attachment.sizeBytes,
     }));
@@ -169,8 +199,8 @@ function MessageV2(props: {
       <Row
         avatar={{ name: senderName() }}
         strong
-        lines={[senderName(), `${route()} · ${when()}`]}
-        meta={outgoing() ? undefined : sender()?.address}
+        lines={[senderLine(), `${route()} · ${when()}`]}
+        meta={senderAddress()}
         end={
           <>
             <Show when={props.onReply}>
@@ -209,7 +239,7 @@ function MessageV2(props: {
           label={props.text.attachments}
           items={attachments().map((attachment) => ({
             icon: attachmentIcon(attachment.contentType, attachment.filename ?? ""),
-            title: attachment.filename?.trim() || props.text.attachments,
+            title: attachment.filename?.trim() || props.text.unnamedAttachment,
             meta: formatSize(attachment.sizeBytes, locale()),
             href: attachmentHref(attachment.id),
           }))}
@@ -358,13 +388,35 @@ export default function MailReaderV2(props: {
             <Inline>
               <Text type="meta">{props.text.messages({ count: item()?.messageCount ?? data().detailMessages.length })}</Text>
               {statusChip()}
-              <For each={tags()}>
+              {/* At most three tags stand in the line, which stays under the head while the reader scrolls; the rest
+                  wait behind "+N" (break-ui 25.11.: 50 tags left no room to read). */}
+              <For each={tags().slice(0, SHOWN_TAGS)}>
                 {(tag) => (
                   <Chip tag color={tag.color}>
                     {tag.name}
                   </Chip>
                 )}
               </For>
+              <Show when={tags().length > SHOWN_TAGS}>
+                <Popover
+                  variant="ghost"
+                  label={props.text.allTags}
+                  title={props.text.allTags}
+                  content={
+                    <Inline>
+                      <For each={tags()}>
+                        {(tag) => (
+                          <Chip tag color={tag.color}>
+                            {tag.name}
+                          </Chip>
+                        )}
+                      </For>
+                    </Inline>
+                  }
+                >
+                  {props.text.andMore({ count: tags().length - SHOWN_TAGS })}
+                </Popover>
+              </Show>
               {/* What other apps linked to the conversation: one item opens directly, several in a menu (v1's chip). */}
               <Show when={menus.linked().length > 0}>
                 <Show
@@ -397,15 +449,16 @@ export default function MailReaderV2(props: {
             </Inline>
           }
           end={
+            // Who reads along: their faces and how many; their names on the faces and behind the count.
             <Show when={readers().length > 0}>
-              <For each={readers().slice(0, 3)}>{(reader) => <Avatar name={reader.displayName} />}</For>
-              <Text type="meta">
-                {props.text.reading({
-                  names: readers()
-                    .map((reader) => reader.displayName)
-                    .join(", "),
-                })}
-              </Text>
+              <For each={readers().slice(0, SHOWN_READERS)}>{(reader) => <Avatar name={reader.displayName} />}</For>
+              <Popover
+                variant="text"
+                title={props.text.readers}
+                content={<Text>{readers().map((reader) => reader.displayName).join(", ")}</Text>}
+              >
+                {props.text.reading({ count: readers().length })}
+              </Popover>
             </Show>
           }
         />
