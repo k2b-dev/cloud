@@ -30,14 +30,17 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, scale = 1, long = false, touch = false, two = false } = {}) => {
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false } = {},
+) => {
   // a phone: a touch screen with a coarse pointer
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: bundle });
     // another island with its own copy of the library and no Workspace of its own
@@ -505,4 +508,46 @@ for (const touch of [false, true])
       },
       touch ? { width: 390, touch } : {},
     );
+  });
+
+// The first control of a dialog takes the focus when it opens, but shows the focus ring only when the dialog was
+// opened with the keyboard: a tap on the phone or a click opens it without a ring, as a click on a button shows none.
+for (const [how, options] of [
+  ["a tap on the phone", { width: 390, touch: true }],
+  ["a click", {}],
+  ["the keyboard", {}],
+  ["its address on the phone", { width: 390, touch: true, opened: true }],
+  ["its address", { opened: true }],
+] as const)
+  test(`dialog opened with ${how}: its first control has the focus, with a ring only from the keyboard`, async () => {
+    await withPage(async (page) => {
+      const opener = page.getByRole("button", { name: "Zugang anlegen" });
+      if ("opened" in options) {
+        // the page came with the dialog open: nothing was pressed
+      } else if (how === "the keyboard") {
+        await opener.focus();
+        await page.keyboard.press("Enter");
+      } else if (how === "a tap on the phone") await opener.tap();
+      else await opener.click();
+      await page.locator('.k2-dialog:has-text("Neuer Zugang")').waitFor();
+      await settled(page);
+      const focus = await page.evaluate(() => {
+        const active = document.activeElement as HTMLElement | null;
+        return {
+          inside: !!active?.closest(".k2-dialog"),
+          name: active?.textContent?.trim() || (active as HTMLInputElement | null)?.value,
+          ring: !!active?.matches(":focus-visible"),
+        };
+      });
+      expect(focus).toEqual({
+        inside: true,
+        name: "touch" in options ? "Anlegen" : "k2b_live_7Q4mX9",
+        // a text field shows its caret ring whatever opened it; any other control only from the keyboard
+        ring: how === "the keyboard" || !("touch" in options),
+      });
+      // the next key shows where the focus stands
+      await page.keyboard.press("Tab");
+      await settled(page);
+      expect(await page.evaluate(() => !!document.activeElement?.matches(":focus-visible"))).toBe(true);
+    }, options);
   });
