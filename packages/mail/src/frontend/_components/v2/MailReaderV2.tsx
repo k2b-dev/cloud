@@ -8,8 +8,11 @@ import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
 import MailMessageBody from "../MailMessageBody";
 import { createMailMessageMenu } from "../MailSenderMessageActions";
+import { deriveReplyRecipients } from "../mail-compose-derivation";
 import { isOutgoingMessage } from "../mail-conversation-history";
+import { type MailRespondIntent, mailConversationMenuItems } from "../mail-conversation-menu";
 import { buildMailConversationTimeline } from "../mail-conversation-timeline";
+import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
@@ -49,6 +52,8 @@ function MessageV2(props: {
   text: MailV2Text;
   /** Starts the reply to this conversation; absent where the person cannot write. */
   onReply?: () => void;
+  /** Answers this message in the conversation's reply: Reply, Reply all or Forward from the message's "…". */
+  onRespond?: (intent: MailRespondIntent, message: MailWorkspaceMessage) => void;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailMessageMessages.resolve([locale()]).t);
@@ -103,6 +108,16 @@ function MessageV2(props: {
     },
     onReassignMessage: (messageId) => c().reassignMessage(messageId),
     onSplitMessage: (messageId) => c().splitMessage(messageId),
+    // Reply, Reply all and Forward lead, as in v1's message menu (MailMessageCard's response actions).
+    get primaryActions() {
+      const respond = props.onRespond;
+      if (!respond) return [];
+      const replyAll = deriveReplyRecipients(props.message, "reply_all", props.identities).cc.length > 0;
+      return mailConversationMenuItems({
+        t: mailConversationUiMessages.resolve([locale()]).t,
+        respond: { replyAll, run: (intent) => respond(intent, props.message) },
+      });
+    },
   });
   const format = () =>
     resolveMessageBodyFormat(
@@ -228,7 +243,14 @@ export default function MailReaderV2(props: {
   const assignees = () => data().collaborationState?.assignees ?? [];
   const readers = () => c().presence().participants;
   const workStatus = () => c().selectedWorkStatus();
-  const menus = createMailV2ReaderMenus({ controller: c, dateConfig: props.dateConfig });
+  const menus = createMailV2ReaderMenus({
+    controller: c,
+    dateConfig: props.dateConfig,
+    reply: () => {
+      const open = reply();
+      return open?.shown() ? { respond: (intent) => open.respond(intent), canReplyAll: open.canReplyAll } : null;
+    },
+  });
   const run = (actionId: "archive" | "trash") => {
     const open = item();
     const target = open ? c().actionTargetForItem(open, actionId) : null;
@@ -362,6 +384,7 @@ export default function MailReaderV2(props: {
               dateConfig={props.dateConfig}
               text={props.text}
               onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
+              onRespond={reply()?.shown() ? (intent, message) => reply()?.respond(intent, message) : undefined}
             />
           ) : (
             <Notice

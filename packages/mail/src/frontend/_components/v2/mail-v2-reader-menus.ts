@@ -6,7 +6,7 @@ import { createMemo, onCleanup } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import { useMailCloudId } from "../mail-cloud-id";
 import { createMailConversationLinks } from "../mail-conversation-links";
-import { mailConversationMenuItems } from "../mail-conversation-menu";
+import { type MailRespondIntent, mailActionLabel, mailConversationMenuItems } from "../mail-conversation-menu";
 import { createMailConversationState } from "../mail-conversation-state";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
@@ -20,7 +20,12 @@ import { editMailV2Summary } from "./mail-v2-summary";
  * controller actions, so both readers offer the same. Answers (reply, reply all, forward) belong to the reply and join
  * when it is rebuilt on v2; printing joins with a v2 print view.
  */
-export function createMailV2ReaderMenus(props: { controller: () => MailboxController; dateConfig: DateContext }) {
+export function createMailV2ReaderMenus(props: {
+  controller: () => MailboxController;
+  dateConfig: DateContext;
+  /** The open conversation's reply: Reply, Reply all and Forward of "…" answer in it. */
+  reply?: () => { respond: (intent: MailRespondIntent) => void; canReplyAll: () => boolean } | null;
+}) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const readerText = createMemo(() => mailReaderMessages.resolve([locale()]).t);
@@ -156,11 +161,20 @@ export function createMailV2ReaderMenus(props: { controller: () => MailboxContro
     return c().canWrite() && !c().assignedOnly() && (count > 1 || data().detailMessages.length > 1);
   };
 
+  /**
+   * "…" holds the rare deeds (design guide): what the head shows as a button (Done, Later, Assign, Archive, Delete)
+   * stays out of it, except on the phone, where the head keeps only its "…" and those buttons give way.
+   */
+  const headButtonsShown = () => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches;
+  const headActionLabels = () => new Set([mailActionLabel(t(), "archive"), mailActionLabel(t(), "trash")]);
+
   const moreItems = (): DropdownItem[] => {
-    const assignment = c().assignment();
-    const status = workStatus();
-    return mailConversationMenuItems({
+    const assignment = headButtonsShown() ? null : c().assignment();
+    const status = headButtonsShown() ? null : workStatus();
+    const reply = props.reply?.();
+    const items = mailConversationMenuItems({
       t: t(),
+      ...(reply ? { respond: { replyAll: reply.canReplyAll(), run: (intent) => reply.respond(intent) } } : {}),
       ...(c().canWrite()
         ? {
             ...(assignment
@@ -193,7 +207,7 @@ export function createMailV2ReaderMenus(props: { controller: () => MailboxContro
                     },
                   ]
                 : []),
-              ...(collaboration()
+              ...(collaboration() && !headButtonsShown()
                 ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: () => void showLater() }]
                 : []),
             ],
@@ -236,7 +250,7 @@ export function createMailV2ReaderMenus(props: { controller: () => MailboxContro
               ...(canSplit() && latest()
                 ? [
                     {
-                      label: t().splitLatest,
+                      label: v2Text().splitLatest,
                       icon: "ti ti-arrows-split-2",
                       disabled: c().structurePending(),
                       action: () => {
@@ -258,6 +272,11 @@ export function createMailV2ReaderMenus(props: { controller: () => MailboxContro
         ...cloudId.actions({ conversationId: data().selectedConversationId }),
       ],
     });
+    if (!headButtonsShown()) return items;
+    const shown = headActionLabels();
+    return items.map((item) =>
+      "items" in item && !("label" in item) ? { ...item, items: item.items.filter((entry) => !shown.has(entry.label)) } : item,
+    );
   };
 
   return {

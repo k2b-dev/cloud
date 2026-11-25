@@ -3,11 +3,13 @@ import type { DateContext } from "@k2b/stdlib";
 import { prompts, useLocale } from "@k2b/ui";
 import { Button, Icon, Text } from "@k2b/ui/v2";
 import { type Accessor, createEffect, createMemo, createResource, createSignal, on, Show } from "solid-js";
+import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
-import MailReplyBox from "../MailReplyBox";
+import MailReplyBox, { type MailReplyBoxApi } from "../MailReplyBox";
 import { deriveReplyIdentityId, deriveReplyRecipients } from "../mail-compose-derivation";
 import { createMailConversationNotes } from "../mail-conversation-notes";
 import { quoteOriginalOf } from "../mail-quote-original";
+import type { MailReplyMode } from "../mail-reply-box";
 import type { MailReplyFrame } from "../mail-reply-frame";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import { MailReplyFrameV2 } from "./MailReplyFrameV2";
@@ -46,6 +48,21 @@ export function createMailV2Reply(props: {
   const [writing, setWriting] = createSignal(data().conversationDrafts.some((draft) => draft.intent !== "new"));
   createEffect(on(props.request, () => setWriting(true), { defer: true }));
   const start = () => setWriting(true);
+  // Reply, Reply all and Forward of the menus reach Mail's reply box as v1's reader does (`MailReplyBoxApi.open`). The
+  // box mounts when writing starts and registers at once; a request made before waits for it.
+  let box: MailReplyBoxApi | null = null;
+  let pending: { mode: MailReplyMode; message?: MailWorkspaceMessage } | null = null;
+  const respond = (mode: MailReplyMode, message?: MailWorkspaceMessage) => {
+    if (box && writing()) return box.open(mode, message ? { message } : {});
+    pending = { mode, message };
+    setWriting(true);
+  };
+  const register = (api: MailReplyBoxApi) => {
+    box = api;
+    const queued = pending;
+    pending = null;
+    if (queued) queueMicrotask(() => api.open(queued.mode, queued.message ? { message: queued.message } : {}));
+  };
   const recipients = createMemo(() => {
     const message = latest();
     if (!message) return [];
@@ -143,6 +160,13 @@ export function createMailV2Reply(props: {
     /** The person may answer this conversation: it is open and has a message. */
     shown: () => Boolean(c().canWrite() && data().selectedConversationId && latest()),
     writing,
+    /** Answers in Mail's reply box: Reply, Reply all or Forward, to the latest message or to `message`. */
+    respond,
+    /** Reply all is offered where the latest message has more people than its sender. */
+    canReplyAll: () => {
+      const message = latest();
+      return Boolean(message && deriveReplyRecipients(message, "reply_all", identities()).cc.length > 0);
+    },
     label: () => props.text().replyTo({ name: toLabel() }),
     rest,
     box: () => (
@@ -174,7 +198,7 @@ export function createMailV2Reply(props: {
         createNote={notes.create}
         onReconcile={c().requireWorkspaceReconcile}
         onExplainSenderUnavailable={() => void explainSenderUnavailable()}
-        register={() => undefined}
+        register={register}
         frame={frame}
       />
     ),

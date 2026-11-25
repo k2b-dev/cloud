@@ -206,15 +206,31 @@ describe("Mail on the v2 pilot", () => {
       await head.getByRole("button", { name: "Weitere Aktionen" }).click();
       await page.getByRole("menuitem", { name: /^Als (un)?gelesen markieren$/ }).waitFor();
       await page.getByRole("menuitem", { name: "Aktivität anzeigen" }).waitFor();
+      // "…" holds the rare deeds: what the head shows as a button is not repeated there.
+      expect(await page.getByRole("menuitem", { name: "Archivieren" }).count()).toBe(0);
       await page.keyboard.press("Escape");
       const message = page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Band"]').first();
       await message.getByRole("button", { name: "Nachrichtenaktionen" }).click();
       await page.getByRole("menuitem", { name: "Technische Details" }).waitFor();
+      await page.getByRole("menuitem", { name: "Antworten" }).waitFor();
       await page.keyboard.press("Escape");
       // The head's filter menu at the search field, v1's (F9).
       await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
       await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();
       expect(await page.locator("[data-k2-workspace] button[disabled]").count()).toBe(0);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("Forward in the reader's More opens Mail's reply box as a forward", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
+      await head.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: "Weiterleiten" }).click();
+      await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
       expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
