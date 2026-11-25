@@ -38,6 +38,7 @@ export type PropsDoc = {
   file: string;
   kind: "component" | "type";
   rows: PropRow[];
+  /** Alternatives ("With `markdown`", "Or with `children`"): a prop required there is required only in its variant. */
   groups: { title: string; rows: PropRow[] }[];
 };
 
@@ -47,7 +48,12 @@ const firstSentence = (text: string) => {
       .trim()
       .split(/\n\s*\n/)[0]
       ?.replace(/\s+/g, " ") ?? "";
-  return paragraph.match(/^(.+?[.!?])(?=\s+[A-Z(`"„]|$)/)?.[1] ?? paragraph;
+  // The first end of a sentence that does not stand inside a quote ("… nicht geladen werden. Deine Ansicht …").
+  for (const end of paragraph.matchAll(/[.!?](?=\s+[A-Z(`"„]|$)/g)) {
+    const sentence = paragraph.slice(0, end.index + 1);
+    if ((sentence.match(/"/g)?.length ?? 0) % 2 === 0) return sentence;
+  }
+  return paragraph;
 };
 
 /** The type of a prop as its author wrote it; a long object literal becomes the list of its keys. */
@@ -100,9 +106,11 @@ const describeProps = (ts: TypeScript, type: ts.Type, checker: ts.TypeChecker, a
     .map((variant) => {
       const own = rows(variant.filter((prop) => !sharedNames.has(prop.getName())));
       const selectors = own.filter((row) => row.required).map((row) => `\`${row.name}\``);
-      return { title: selectors.length ? `With ${selectors.join(" and ")}` : "Otherwise", rows: own };
+      return { title: selectors.length ? `with ${selectors.join(" and ")}` : "with none of them", rows: own };
     })
-    .filter((group) => group.rows.length > 0);
+    .filter((group) => group.rows.length > 0)
+    // The variants are alternatives: one is given, never two. "With `markdown`", "Or with `children`".
+    .map((group, index) => ({ ...group, title: index === 0 ? `W${group.title.slice(1)}` : `Or ${group.title}` }));
   return { rows: rows(shared), groups };
 };
 
@@ -161,6 +169,8 @@ export async function v2PropsTables(): Promise<Record<string, PropsDoc>> {
     if (name.endsWith("Props") || !(symbol.flags & (ts.SymbolFlags.TypeAlias | ts.SymbolFlags.Interface))) continue;
     const type = checker.getDeclaredTypeOfSymbol(symbol);
     if (type.getCallSignatures().length || !(type.flags & (ts.TypeFlags.Object | ts.TypeFlags.Union | ts.TypeFlags.Intersection))) continue;
+    // A tuple such as `RowLines` has places, not props.
+    if ((type.isUnion() ? type.types : [type]).some((member) => checker.isTupleType(member) || checker.isArrayType(member))) continue;
     if (checker.getPropertiesOfType(checker.getApparentType(type)).length === 0) continue;
     const parameters = (symbol.declarations?.[0] as ts.TypeAliasDeclaration | ts.InterfaceDeclaration | undefined)?.typeParameters;
     tables[name] = {

@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
-import { type RecipeName, recipeNames } from "./recipes";
-import { recipeFile } from "./topic-markdown";
+import type { RecipeName } from "./recipes";
+import screensMarkdown from "./screens.md" with { type: "text" };
+import { parseTopic, recipeFile } from "./topic-markdown";
 import { topics } from "./topics";
 
 /** A recipe drawn small: the live screen at desktop width in a frame five times the tile's width, scaled to a fifth. */
@@ -28,6 +29,12 @@ const topicIcons: Record<string, string> = {
   content: "article",
 };
 
+/** The whole screens in the order and with the names of the page "Whole screens" (screens.md). */
+export const wholeScreens = () =>
+  parseTopic(screensMarkdown).sections.flatMap((section) =>
+    section.blocks.flatMap((block) => (block.kind === "example" ? [{ title: section.heading, recipe: block.example.recipe }] : [])),
+  );
+
 export const overviewIntro =
   "The parts of v2 own spacing, lines and type. An app only picks which part stands where and fills it with data. Each topic shows what you can build: a live screen, its parts with their props, and the code.";
 
@@ -46,10 +53,10 @@ export const overviewMarkdown = () =>
     "",
     "## Whole screens",
     "",
-    ...recipeNames.map((name) => {
-      const file = recipeFile(name);
-      return `- ${file.about} (\`${file.path}\`), on [Whole screens](/en/ui/v2/screens).`;
-    }),
+    ...wholeScreens().map(
+      (screen) =>
+        `- [${screen.title}](/en/ui/v2/screens#${screen.recipe}): ${recipeFile(screen.recipe).about} (\`${recipeFile(screen.recipe).path}\`)`,
+    ),
     "",
     "## v1",
     "",
@@ -111,12 +118,12 @@ export const OverviewPage = () => (
     <h2 class="ui-topic__h2">Whole screens</h2>
     <p class="ui-topic__p">Complete screens with invented data. Each one is a recipe: open it, switch the width, copy the code.</p>
     <div class="ui-map" data-kind="screens">
-      <For each={recipeNames}>
-        {(name) => (
-          <a class="ui-map__tile" href={`/en/ui/v2/screens#${name}`}>
-            <Thumbnail recipe={name} icon="layout" />
-            <span class="ui-map__title">{recipeFile(name).about.split(":")[0]}</span>
-            <span class="ui-map__parts">{recipeFile(name).path.split("/").at(-1)}</span>
+      <For each={wholeScreens()}>
+        {(screen) => (
+          <a class="ui-map__tile" href={`/en/ui/v2/screens#${screen.recipe}`}>
+            <Thumbnail recipe={screen.recipe} icon="layout" />
+            <span class="ui-map__title">{screen.title}</span>
+            <span class="ui-map__parts">{screen.recipe}.tsx</span>
           </a>
         )}
       </For>

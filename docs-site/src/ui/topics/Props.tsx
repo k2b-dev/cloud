@@ -5,14 +5,14 @@ const escapeHtml = (text: string) => text.replaceAll("&", "&amp;").replaceAll("<
 /** TSDoc text with its `code` spans, as HTML. */
 const inlineCode = (text: string) => escapeHtml(text).replace(/`([^`]+)`/g, "<code>$1</code>");
 
-const Rows = (props: { rows: readonly PropRow[] }) => (
+const Rows = (props: { rows: readonly PropRow[]; variant?: boolean }) => (
   <For each={props.rows}>
     {(row) => (
       <tr>
         <td>
           <code>{row.name}</code>
           <Show when={row.required}>
-            <span class="ui-props__required">required</span>
+            <span class="ui-props__required">{props.variant ? "required in this variant" : "required"}</span>
           </Show>
         </td>
         <td>
@@ -52,7 +52,7 @@ export const PropsTable = (props: { doc: PropsDoc }) => (
                 <tr class="ui-props__group">
                   <th scope="rowgroup" colSpan={3} innerHTML={inlineCode(group.title)} />
                 </tr>
-                <Rows rows={group.rows} />
+                <Rows rows={group.rows} variant />
               </>
             )}
           </For>

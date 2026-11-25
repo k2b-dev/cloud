@@ -94,7 +94,7 @@ export default function Example(props: ExampleProps) {
     <figure
       ref={figure}
       id={props.recipe}
-      class="ui-example"
+      class="k2b-ui ui-example"
       data-tab={tab()}
       data-width={width() ?? "auto"}
       data-phone={shown() < PHONE_BELOW ? "" : undefined}

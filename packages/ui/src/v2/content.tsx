@@ -178,7 +178,12 @@ export const Facts = (props: FactsProps) => {
 
 const ListContext = createContext(false);
 
-export type ListProps = { children: JSX.Element; label?: string };
+export type ListProps = {
+  /** The entries, each a `Row`. */
+  children: JSX.Element;
+  /** A name for the list, for assistive technology. */
+  label?: string;
+};
 
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
@@ -434,7 +439,9 @@ export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
+  /** The head of the column. */
   title: string;
+  /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
@@ -467,7 +474,9 @@ export type OpenTarget =
   | { href?: undefined; onNavigate?: undefined; onOpen: () => void };
 
 type TableBase<T> = {
+  /** The columns, in order; see `Column`. */
   columns: readonly Column<T>[];
+  /** The rows. */
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;

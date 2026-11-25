@@ -227,14 +227,17 @@ const exampleMarkdown = (example: ExampleAttributes) => {
   return [`\`${path}\`${states.length ? ` (states: ${states.join(", ")})` : ""}`, "", `${fence}tsx`, source.trimEnd(), fence].join("\n");
 };
 
-const propRows = (rows: readonly PropRow[]) =>
-  rows.map((row) => `| \`${row.name}\`${row.required ? " (required)" : ""} | \`${cell(row.type)}\` | ${cell(row.description) || "–"} |`);
+const propRows = (rows: readonly PropRow[], variant = false) =>
+  rows.map(
+    (row) =>
+      `| \`${row.name}\`${row.required ? (variant ? " (required in this variant)" : " (required)") : ""} | \`${cell(row.type)}\` | ${cell(row.description) || "–"} |`,
+  );
 
 /** One props table as Markdown: shared props, then a table per variant. */
 export const propsMarkdown = (doc: PropsDoc) => {
   const head = ["| Prop | Type | What it does |", "| --- | --- | --- |"];
   const lines = [`#### \`${doc.title}\` props`, "", `From the types in \`${doc.file}\`.`, "", ...head, ...propRows(doc.rows)];
-  for (const group of doc.groups) lines.push("", `${group.title}:`, "", ...head, ...propRows(group.rows));
+  for (const group of doc.groups) lines.push("", `${group.title}:`, "", ...head, ...propRows(group.rows, true));
   return lines.join("\n");
 };
 

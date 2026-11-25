@@ -83,10 +83,12 @@ const Section = (props: { section: TopicSection; render: Render }) => (
     <Match when={props.section.kind === "missing"}>
       <aside class="ui-topic__missing">
         <i class="ti ti-hourglass" aria-hidden="true" />
-        <div>
-          <Heading text={props.section.heading} depth={2} render={props.render} />
-          <Blocks blocks={props.section.blocks} render={props.render} />
-        </div>
+        <p>
+          <b>{props.section.heading}:</b>{" "}
+          <span
+            innerHTML={inline(props.render, props.section.blocks.map((block) => (block.kind === "markdown" ? block.text : "")).join(" "))}
+          />
+        </p>
       </aside>
     </Match>
     <Match when={props.section.kind === "next"}>

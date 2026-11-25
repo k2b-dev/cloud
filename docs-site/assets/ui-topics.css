@@ -46,9 +46,12 @@
 .ui-topic__section {
   margin-top: 2.5rem;
 }
+/* Fibel's prose draws a rule above each h2; a topic separates its sections by space alone, as the mockup does. */
 .ui-topic__heading h2,
 .ui-topic__h2 {
   margin: 0 0 0.5rem;
+  padding-top: 0;
+  border-top: 0;
   font-size: 1.25rem;
   color: var(--c-ink);
 }
