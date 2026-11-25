@@ -321,7 +321,8 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+  where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
@@ -330,7 +331,9 @@ lines instead of cutting a thing.
   `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`; leave on the phone),
+  `Button variant="ghost" menu`, each with an `icon`; below 480 px of row
+  they keep only their symbols, the words stay their names; leave on the
+  phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the

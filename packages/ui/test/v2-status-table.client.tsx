@@ -15,6 +15,8 @@ declare global {
     __k2MoreFacts?: () => void;
     /** Takes the filters away and shortens the lead: a status row with nothing at its end, as Mail's list column. */
     __k2NoFilters?: () => void;
+    /** Gives the status row a lead longer than fits beside its worded filters in a column below 760 px. */
+    __k2LongLead?: () => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -70,6 +72,8 @@ const [more, setMore] = createSignal(false);
 window.__k2MoreFacts = () => setMore(true);
 const [filters, setFilters] = createSignal(true);
 window.__k2NoFilters = () => setFilters(false);
+const [longLead, setLongLead] = createSignal(false);
+window.__k2LongLead = () => setLongLead(true);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("status-table: #root is missing");
@@ -110,7 +114,7 @@ render(
         label="Protokolle"
         status={
           <StatusRow
-            lead={filters() ? "11 von 11 Einträgen" : "4 neu"}
+            lead={longLead() ? "11 von 11 Einträgen aus Gateway, Mail und Zustellung" : filters() ? "11 von 11 Einträgen" : "4 neu"}
             loading={loading()}
             facts={[
               { value: 6, after: "Fehler" },

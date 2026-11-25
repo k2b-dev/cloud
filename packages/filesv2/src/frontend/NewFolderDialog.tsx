@@ -242,6 +242,7 @@ function NewFolderDialog(
             <SegmentedControl
               size="sm"
               ariaLabel={b().folderComma}
+              stretch
               value={commas}
               onValueChange={setCommas}
               disabled={saving()}

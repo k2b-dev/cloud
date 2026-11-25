@@ -2753,12 +2753,6 @@
   }
 }
 
-.k2b-ui.ui-charts-playground .ui-charts-code__head .k2b-segmented-control,
-.k2b-ui .ui-charts-control > .k2b-segmented-control {
-  width: auto;
-  max-width: 100%;
-}
-
 .ui-charts-code .k2b-content-doc-code__body {
   max-height: 30rem;
   overflow: auto;

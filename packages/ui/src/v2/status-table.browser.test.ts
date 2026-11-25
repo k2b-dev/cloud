@@ -9,8 +9,8 @@ import { measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
-// column, drops its key figures below 760 px so the order controls keep their words, and holds a place for its loading
-// mark; the large table with a sticky first column starts body, head and group rows on one text edge; a phone row ends
+// column, lets its key figures and then its lead give way so the order controls keep their words, folds those controls
+// to their symbols below 480 px, and holds a place for its loading mark; the large table with a sticky first column starts body, head and group rows on one text edge; a phone row ends
 // in the state of its entry.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
@@ -97,21 +97,35 @@ const statusRow = () => {
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),
+    /** The lead: whether its words are cut, and whether a cut ends in "…" instead of running on. */
+    lead: (() => {
+      const element = row.querySelector<HTMLElement>(".k2-status-lead")!;
+      const style = getComputedStyle(element);
+      return {
+        cut: element.scrollWidth > element.clientWidth + 0.5,
+        ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+        // a cut lead keeps about a word (4.5 em) or all of it, never a letter and "…"
+        word: element.clientWidth >= Math.min(4.5 * Number.parseFloat(style.fontSize), element.scrollWidth) - 0.5,
+      };
+    })(),
+    /** The words of each control in sight (a folded control keeps them only as its name). */
+    words: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => {
+      const label = button.querySelector(".k2-btn-label")?.getBoundingClientRect();
+      return label !== undefined && label.width > 1 && label.height > 1;
+    }),
   };
 };
 
 /**
- * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls keep their words.
- * Below 600 px this fixture's lead and worded controls do not fit beside each other at all; there only the figures
- * and the controls themselves are checked.
+ * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls stay whole within
+ * the row and clear of the lead; a lead that does not fit is cut with "…".
  */
 const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>) => {
   expect(found.wrong).toBe(0);
   expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
   for (const gap of found.gaps) expect(gap).toBe(16);
-  const beside = found.width >= 600;
-  for (const control of found.controls)
-    expect({ ...control, clear: beside ? control.clear : true }).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
 };
 
 // Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
@@ -143,6 +157,28 @@ for (const column of [1440, 1024, 900, 760, 400])
       { column },
     );
   });
+
+// A lead and worded controls that do not fit beside each other: the lead is cut with "…" first, the controls keep
+// their words; below 480 px the controls keep only their symbols and the words stay their names (#4166).
+for (const long of [false, true])
+  for (const column of [760, 600, 400, 320])
+    test(`a status row ${column} px wide with a ${long ? "long" : "short"} lead: lead and controls never overlap`, async () => {
+      await withPage(
+        async (page) => {
+          if (long) await page.evaluate(() => window.__k2LongLead?.());
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          expectHeld(found);
+          const folded = column < 480;
+          expect(found.words).toEqual([!folded, !folded]);
+          if (long && !folded) expect(found.lead.cut).toBe(true);
+          for (const name of ["Neueste zuerst", "Nach Minute"])
+            expect(await page.getByRole("button", { name, exact: true }).isVisible()).toBe(true);
+        },
+        { column },
+      );
+    });
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {

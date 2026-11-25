@@ -2551,10 +2551,22 @@
   }
 }
 
-/* StatusRow: one lead statement, key figures; filters on the right */
+/* StatusRow: one lead statement, key figures; filters on the right. The start takes the room up to the filters; in
+   it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
+   with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */
 .k2-ui .k2-status-lead {
   font: var(--k2-t-lead);
   white-space: nowrap;
+}
+.k2-ui .k2-bar[data-status-row] > .k2-bar-start {
+  flex: 1 1 0;
+}
+/* about a word stays, never a letter and "…" alone */
+.k2-ui .k2-bar-start > .k2-status-lead {
+  flex: 0 1 auto;
+  min-width: min(4.5em, max-content);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-fact {
   color: var(--k2-muted);
@@ -2570,11 +2582,11 @@
 /* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
    out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
    high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
-   lead. The filters keep their room. */
+   lead. The filters keep their room, and so does the lead: the figures start from no width and take what is left. */
 .k2-ui .k2-bar-start > .k2-status-facts {
   display: flex;
   flex-wrap: wrap;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   column-gap: 8px;
   min-width: 0;
   height: 1lh;
@@ -4121,15 +4133,24 @@
 .k2-ui .k2-order .k2-btn > .k2-icon {
   font-size: 14px;
 }
-/* a narrow status row: sort and group keep their symbols; the words stay their names */
+/* A narrow status row (below 480 px): every control at its end that has a symbol keeps only the symbol, as the head's
+   controls on the phone, sort and group included; the words stay its name. A menu keeps its chevron. A control with
+   words alone keeps them, and the lead gives way to it. */
 @container k2-status (max-width: 479px) {
-  .k2-ui .k2-order .k2-btn > .k2-btn-label {
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
+    width: var(--k2-h-control);
+    padding: 0;
+  }
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {
+    width: var(--k2-h-control-small);
   }
 }
 

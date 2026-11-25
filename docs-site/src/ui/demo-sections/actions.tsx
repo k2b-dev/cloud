@@ -1095,7 +1095,7 @@ const SegmentedDemo = () => {
     <DemoCard
       id="segmented"
       chip={{ kind: "component", name: "SegmentedControl", from: "@k2b/ui" }}
-      description="A full-width controlled radio group with dividers, wrapping arrow-key selection, Home/End navigation, and roving focus."
+      description="A controlled radio group as wide as its options (stretch fills the width with equal shares), with wrapping arrow-key selection, Home/End navigation, and roving focus."
       code={`const [view, setView] = createSignal("week");
 
 <SegmentedControl

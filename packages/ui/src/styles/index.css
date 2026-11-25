@@ -2669,9 +2669,12 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    selected one is the thumb: a 1 px edge and fill in the app's ink. Options
    have no edge until selected; focus turns the edge blue and adds the focus
    ring. Every option keeps its box in every state, and nothing casts a
-   shadow. With the track the control is as tall as a field. */
+   shadow. With the track the control is as tall as a field.
+   The control is as wide as its options, and each option as wide as its
+   label and padding, so a long label is never squeezed against its edge
+   (#4165). `stretch` fills the place and gives every option the same share. */
 .k2b-ui .k2b-segmented-control {
-  @apply inline-flex w-full items-stretch;
+  @apply inline-flex max-w-full items-stretch;
   gap: 2px;
   padding: 3px;
   border: 0;
@@ -2679,13 +2682,18 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   background: var(--k2b-tray);
 }
 
+.k2b-ui .k2b-segmented-control[data-stretch] {
+  width: 100%;
+}
+
 .k2b-ui .k2b-segmented-control__option {
-  @apply relative inline-flex min-w-0 flex-1 items-center justify-center;
+  @apply relative inline-flex min-w-0 items-center justify-center;
+  flex: 0 1 auto;
   --k2b-edge-color: transparent;
   --k2b-edge-ring: transparent;
   min-height: 1.875rem;
   gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.25rem 0.75rem;
   border: 0;
   border-radius: var(--k2b-radius-control);
   color: var(--k2b-text-secondary);
@@ -2704,9 +2712,13 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 
 .k2b-ui .k2b-segmented-control[data-size="sm"] .k2b-segmented-control__option {
   min-height: 1.75rem;
-  padding: 0.1875rem 0.5rem;
+  padding: 0.1875rem 0.625rem;
   font-size: 0.75rem;
   line-height: 1rem;
+}
+
+.k2b-ui .k2b-segmented-control[data-stretch] > .k2b-segmented-control__option {
+  flex: 1 1 0%;
 }
 
 .k2b-ui .k2b-segmented-control__option:not(:disabled, [aria-checked="true"], [data-selected="true"]):hover {

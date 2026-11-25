@@ -380,6 +380,7 @@ export default function MyTasks(props: Props) {
       <Show when={!props.searching}>
         <SegmentedControl<OverviewView>
           ariaLabel={o.workView}
+          stretch
           value={view}
           onValueChange={select}
           options={VIEWS.map((value) => ({

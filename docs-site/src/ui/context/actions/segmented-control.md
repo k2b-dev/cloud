@@ -4,7 +4,7 @@
 
 ## Use SegmentedControl
 
-Use it for a view or mode switch where every option can remain visible. The control fills its available width and gives every option equal space.
+Use it for a view or mode switch where every option can remain visible. The control is as wide as its options, and each option is as wide as its label and icon with the normal padding, so a long label is never squeezed against its edge. Set `stretch` where the control should fill its available width, such as a switch across a phone sheet; every option then gets the same share, so use it only where the labels fit that share.
 
 Use `Select` when the list is long, labels need more space, or the control represents an ordinary form field.
 
@@ -36,11 +36,11 @@ type SegmentOption<T extends string = string> = {
 
 type SegmentedControlProps<T extends string = string> = {
   options: readonly SegmentOption<T>[]; value: T | (() => T); onValueChange: (value: T) => void;
-  disabled?: boolean; ariaLabel?: string; label?: string; size?: "sm" | "md"; class?: string;
+  disabled?: boolean; ariaLabel?: string; label?: string; size?: "sm" | "md"; stretch?: boolean; class?: string;| "md"; class?: string;
 };
 ```
 
-`size` defaults to `"md"`; `disabled` defaults to false. `ariaLabel` defaults to the localized Options label.
+`size` defaults to `"md"`; `disabled` and `stretch` default to false. `ariaLabel` defaults to the localized Options label.
 
 ## Accessibility
 

@@ -805,6 +805,18 @@ describe("@k2b/ui complete action migrations", () => {
     expect(html).not.toContain("data-divider");
     // Layout belongs to the stylesheet, without inline geometry.
     expect(html).not.toContain("style=");
+    // as wide as its options unless it is asked to fill its place
+    expect(html).not.toContain("data-stretch");
+    const stretched = renderToString(() =>
+      createComponent(SegmentedControl, {
+        ariaLabel: "Layout",
+        value: "list",
+        onValueChange: () => {},
+        stretch: true,
+        options: [{ value: "list", label: "List" }],
+      }),
+    );
+    expect(stretched).toContain('data-stretch=""');
   });
 
   test("keeps CopyButton neutral and propagates clipboard failures after reporting them", async () => {
@@ -1024,19 +1036,22 @@ describe("@k2b/ui complete action migrations", () => {
 });
 
 describe("@k2b/ui action geometry parity", () => {
-  test("segments keep field-sized, flex-1 geometry on a grey track", () => {
+  test("segments keep field-sized geometry on a grey track, as wide as their labels unless stretched", () => {
     const control = rule(".k2b-ui .k2b-segmented-control");
     const option = rule(".k2b-ui .k2b-segmented-control__option");
 
-    expect(control).toContain("w-full");
+    // as wide as its options (#4165); `stretch` fills the place with equal shares
+    expect(control).toContain("@apply inline-flex max-w-full items-stretch;");
+    expect(rule(".k2b-ui .k2b-segmented-control[data-stretch]")).toContain("width: 100%");
+    expect(rule(".k2b-ui .k2b-segmented-control[data-stretch] > .k2b-segmented-control__option")).toContain("flex: 1 1 0%");
     expect(control).toContain("items-stretch");
     expect(control).toContain("background: var(--k2b-tray)");
     // A 3 px track around 30 px options: as tall as a field.
     expect(control).toContain("padding: 3px");
     expect(control).toContain("gap: 2px");
-    expect(option).toContain("flex-1");
+    expect(option).toContain("flex: 0 1 auto");
     expect(option).toContain("min-height: 1.875rem");
-    expect(option).toContain("padding: 0.25rem 0.5rem");
+    expect(option).toContain("padding: 0.25rem 0.75rem");
     expect(option).toMatch(
       /box-shadow:\s*inset 0 0 0 var\(--k2b-edge-width\) var\(--k2b-edge-color\),\s*0 0 0 var\(--k2b-edge-ring-width\) var\(--k2b-edge-ring\)/,
     );
