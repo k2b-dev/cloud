@@ -10,6 +10,7 @@ Use `cld accounts` for account and group administration. The commands available 
 
 ```bash
 cld accounts users list --search "ada" --json
+cld accounts users list --role admin --login older-90d --sort login.asc
 cld accounts users get ada.lovelace --json
 cld accounts users create --provider local --email ada@example.org --given-name Ada --sn Lovelace --profile user
 cld accounts users update ada.lovelace --display-name "Ada Lovelace"
