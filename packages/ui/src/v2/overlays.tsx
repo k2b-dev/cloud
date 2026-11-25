@@ -1,4 +1,4 @@
-import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
@@ -64,6 +64,12 @@ const usePhone = () => {
 export const Dialog = (props: DialogProps) => {
   const t = useUiMessages();
   const said = useOverlayMessages();
+  // The head keeps its parts while the dialog closes: a sheet whose head changes during its closing slide never ends it.
+  let held: (() => void) | undefined;
+  const back = createMemo(() => {
+    if (props.open) held = props.back;
+    return held;
+  });
   const phone = usePhone();
   const dialog = useDialog(() => ({
     open: props.open,
@@ -139,7 +145,7 @@ export const Dialog = (props: DialogProps) => {
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">
-            <Show when={props.back}>
+            <Show when={back()}>
               {(back) => (
                 <button
                   type="button"
