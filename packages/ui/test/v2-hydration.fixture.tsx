@@ -146,7 +146,7 @@ export function Fixture() {
               <Input placeholder="Wer nimmt ab?" />
             </Field>
             <Field name="note" label="Notiz">
-              <Input multiline value={"Zwei Zeilen\nzum Aufbau"} />
+              <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
           </Section>
           <Facts

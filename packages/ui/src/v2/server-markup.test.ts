@@ -31,9 +31,12 @@ test("a split draws no seam for a child that renders nothing, so `{open && <Pane
   for (const nothing of [false, true, null, ""]) expect(seams(split(nothing))).toBe(alone);
 });
 
-test("a multi-line field sends its value as the text of its textarea", () => {
-  const markup = renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", value: "Zwei <Zeilen>\nund mehr" }));
-  expect(markup).toContain(">Zwei &lt;Zeilen>\nund mehr</textarea>");
-  // an empty field sends an empty textarea
-  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toMatch(/<textarea[^>]*><\/textarea>/);
+// HTML drops one newline at the start of a textarea's text: the server sends one more, so leading blank lines stay.
+test("a multi-line field sends its value as the text of its textarea, leading blank lines too", () => {
+  for (const value of ["Zwei <Zeilen>\nund mehr", "\nErste\nZweite", "\n\nNach zwei Leerzeilen", ""]) {
+    const markup = renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", value }));
+    expect(markup).toContain(`>\n${value.replaceAll("<", "&lt;")}</textarea>`);
+  }
+  // no value: an empty textarea
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz" }))).toContain(">\n</textarea>");
 });

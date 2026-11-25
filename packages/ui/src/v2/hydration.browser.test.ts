@@ -215,8 +215,8 @@ test("a multi-line field shows its value in what the server sent, and keeps what
     // the text the browser parsed from the server's markup, before the client ran (#4148)
     expect(
       await page.evaluate(() => (window.__k2Sent instanceof Element ? window.__k2Sent.querySelector("textarea")?.value : undefined)),
-    ).toBe("Zwei Zeilen\nzum Aufbau");
-    expect(await note.inputValue()).toBe("Zwei Zeilen\nzum Aufbau");
+    ).toBe("\nZwei Zeilen\nzum Aufbau");
+    expect(await note.inputValue()).toBe("\nZwei Zeilen\nzum Aufbau");
     await note.fill("Neu");
     expect(await note.inputValue()).toBe("Neu");
   });

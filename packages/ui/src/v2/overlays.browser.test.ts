@@ -32,7 +32,7 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false } = {},
+  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
@@ -42,7 +42,7 @@ const withPage = async (
     await page.setContent(
       `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: bundle });
+    await page.addScriptTag({ content: slowSheet ? slowSheetBundle() : bundle });
     // another island with its own copy of the library and no Workspace of its own
     await page.addScriptTag({ content: island });
     await page.waitForFunction(() => window.__mounted === true);
@@ -52,6 +52,22 @@ const withPage = async (
   } finally {
     await page.close();
   }
+};
+
+// Core loads its sheet module on its own time (a dynamic import, a chunk of its own in an app). The bundle of a slow
+// load waits for the page's `__k2LoadSheet()`, so a test can let it come after everything else of the dialog.
+declare global {
+  interface Window {
+    __k2LoadSheet?: () => void;
+  }
+}
+const sheetImport = "loading ??= Promise.resolve().then(() => (init_sheet_presentation()";
+const slowSheetBundle = () => {
+  expect(bundle.split(sheetImport).length).toBe(2);
+  return bundle.replace(
+    sheetImport,
+    "loading ??= new Promise((done) => { window.__k2LoadSheet = done; }).then(() => (init_sheet_presentation()",
+  );
 };
 
 const box = async (locator: Locator) => {
@@ -181,11 +197,25 @@ for (const width of [767, 768])
 
 // The phone's sheet stands on the bottom of the window: when its content gets shorter it is lower in the very next
 // frame, never a frame at its old top (a tap there would hit the backdrop and close it, #4141).
-for (const touch of [false, true])
-  test(`sheet${touch ? " on a touch screen" : ""}: content that gets shorter moves its top down in the same frame`, async () => {
+// With a slow sheet module, core's own observer of the sheet is made after everything of v2: the sheet holds anyway.
+for (const [touch, slowSheet] of [
+  [false, false],
+  [true, false],
+  [false, true],
+] as const)
+  test(`sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets shorter moves its top down in the same frame`, async () => {
     await withPage(
       async (page) => {
-        await openDialog(page);
+        if (slowSheet) {
+          await page.getByRole("button", { name: "Abbrechen" }).click();
+          await page.locator(".k2-dialog").waitFor({ state: "attached" });
+          // two frames with the dialog in the page, then the module comes
+          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          expect(await page.evaluate(() => typeof window.__k2LoadSheet)).toBe("function");
+          await page.evaluate(() => window.__k2LoadSheet?.());
+          await page.locator(".k2-dialog").waitFor();
+          await settled(page);
+        } else await openDialog(page);
         const before = await box(page.locator(".k2-dialog"));
         expect(before.y + before.height).toBe(900);
         const frames = await page.evaluate(async () => {
@@ -206,7 +236,7 @@ for (const touch of [false, true])
         expect(after.height).toBeLessThan(before.height);
         expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
       },
-      { width: 390, long: true, touch },
+      { width: 390, long: true, touch, slowSheet },
     );
   });
 
