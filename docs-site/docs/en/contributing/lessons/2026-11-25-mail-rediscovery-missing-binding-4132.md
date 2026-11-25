@@ -1,0 +1,6 @@
+### A rediscovery for a deleted binding kept Mail unhealthy
+
+- **What happened:** A `mail:rediscover-binding` job was queued for a provider binding that was deleted before the job ran. The job failed five times with `BINDING_UNAVAILABLE` and went to the dead-letter queue. Mail then reported itself unhealthy for six days, although every remaining mailbox synced normally.
+- **Root cause:** `executeBindingRediscovery` throws `BINDING_UNAVAILABLE` when the binding is gone or no longer active or degraded. The job worker ended without retry only for `MAILBOX_TRANSPORT_CHANGED`, `PROVIDER_UNREACHABLE`, `MAIL_RATE_LIMITED` and `SYNC_BUSY`, and retried every other code. A job without a target failed the same way on every attempt.
+- **Error class:** A background job whose target disappeared retries into the dead-letter queue, and the dead letter reports a failure that nobody can fix.
+- **Guard:** Convention: a job whose target is gone ends without retry, in the job worker; a direct call by a person still reports the error. `binding-rediscovery.integration.test.ts` drives the worker on its last attempt for a revoked and for a missing binding: it must resolve without a resubmit or a provider call, while `executeBindingRediscovery` still rejects with `BINDING_UNAVAILABLE`.

@@ -639,9 +639,7 @@
   flex: 0 1 auto;
   min-width: 0;
 }
-/* the end holds the bar's actions: it keeps their room, and the start (a title, a path, tabs) gives way to it */
 .k2-ui .k2-bar-end {
-  flex: none;
   margin-left: auto;
   gap: 8px;
 }
