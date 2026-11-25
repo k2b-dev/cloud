@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { appAccentStyle } from "@k2b/cloud/ssr/app-appearance";
+import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
@@ -15,6 +16,25 @@ mkdirSync(cache, { recursive: true });
 const root = mkdtempSync(join(cache, "mail-v2-browser-"));
 registerSsrTestPlugin({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+
+/**
+ * The island chunks this server sends, built by itself into a directory of its own. In one test process the first
+ * SSR plugin that loads an island compiles it (a render test's or another harness's), so the plugin above may never
+ * build into `root`; island ids follow the file's path, so these chunks match the server's markup either way.
+ */
+let islands: Promise<string> | undefined;
+const buildIslands = () =>
+  (islands ??= (async () => {
+    const entry = join(root, "islands-entry.ts");
+    const build = await Bun.build({
+      entrypoints: [entry],
+      files: { [entry]: "export {};" },
+      outdir: join(root, "islands"),
+      plugins: [createConfig({ dev: false, verbose: false, rootDir: root, componentRoots: [import.meta.dir] }).plugin()],
+    });
+    if (!build.success) throw new AggregateError(build.logs, "Mail v2 islands failed");
+    return join(root, "islands", "_ssr");
+  })());
 
 const { default: Fixture, mailV2Data, MAIL_V2_SIGNATURE } = await import("./mail-v2.browser-fixture");
 const ui = resolve(import.meta.dir, "../../../ui/dist");
@@ -37,6 +57,7 @@ export type MailV2Server = {
 
 /** `now` freezes the demo's clock (the tests); without it the demo's mails are as old as the mockup says, from now. */
 export const startMailV2Server = async (options: { port?: number; hostname?: string; now?: () => number } = {}): Promise<MailV2Server> => {
+  const ssr = await buildIslands();
   const builds = await Promise.all(
     [resolve(import.meta.dir, "../../../../styles.css"), resolve(import.meta.dir, "../styles/app.css")].map((entry) =>
       Bun.build({ entrypoints: [entry], plugins: [tailwind] }),
@@ -98,7 +119,8 @@ document.documentElement.dataset.mailV2Ready='true';
       if (url.pathname === "/api/mail/live" && host.upgrade(request, { data: undefined })) return;
       if (url.pathname === "/mail-v2.css") return new Response(css, { headers: { "content-type": "text/css" } });
       if (url.pathname === "/mail-v2-shell.js") return new Response(shell, { headers: { "content-type": "text/javascript" } });
-      if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
+      if (url.pathname.startsWith("/_ssr/") && !url.pathname.includes(".."))
+        return new Response(Bun.file(join(ssr, url.pathname.slice("/_ssr/".length))));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
       // Cloud's shared typeface as Core serves it; the message frame (a sandboxed document) loads it across origins.
       if (url.pathname === "/public/fonts.css") return new Response(Bun.file(join(ui, "plex.css")));
