@@ -710,7 +710,8 @@ See [In-product Help](/en/docs/platform/help).
 `@k2b/cloud/ssr/WorkspaceNavigation.island` supplies SSR-first workspace links.
 `@k2b/cloud/ssr/islands` exports `WorkspaceNavigationProvider` and
 `provideWorkspaceNavigation` for reactive navigation owned by an application
-island. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
+island, and `V2WorkspaceNavigation`, which puts a v2 `Nav`'s groups into the
+phone menu. See [Application shells](/en/docs/frontend/application-shells#supply-mobile-navigation).
 
 The standalone UI exports `createNavigation`, `Navigation`, `NavigationItem`,
 `NavigationController`, `NavigationOptions`, `NavigationProps`,
