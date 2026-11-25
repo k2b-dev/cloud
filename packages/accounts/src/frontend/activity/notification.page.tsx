@@ -120,7 +120,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: batch.subject },
       ]}
     >
-      <AccountsNavigation items={accountsNavigationItems(t, { active: "notifications", pendingRequests, isAdmin: true })} />
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "activity", pendingRequests, isAdmin: true })} />
       <NotificationScreen
         batch={{
           id: batch.id,

@@ -107,7 +107,7 @@ export default function AuditScreen(props: AuditScreenProps) {
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="audit" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={<Text type="body">{activity().activity}</Text>}

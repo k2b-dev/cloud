@@ -77,7 +77,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="notifications" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       detail={props.creating ? 400 : undefined}
       head={
         <Bar

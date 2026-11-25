@@ -1,6 +1,8 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { ssr } from "../config";
+import notificationRecordPage from "./activity/notification.page";
+import activityPage from "./activity/page";
 import agentDetailPage from "./agents/detail.page";
 import agentsPage from "./agents/page";
 import auditPage from "./audit/page";
@@ -47,6 +49,8 @@ export default new Hono<AuthContext>()
   .use("/requests", middleware.noTransform())
   .use("/requests/*", middleware.noTransform())
   .use("/notifications/*", middleware.noTransform())
+  .use("/activity", middleware.noTransform())
+  .use("/activity/*", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...landingPage)
   .get("/duplicate-emails", auth.requireRole("admin", ssr.access), ...duplicateEmailsPage)
   .get("/users", auth.requireRole("admin", ssr.access), ...usersPage)
@@ -60,6 +64,9 @@ export default new Hono<AuthContext>()
   .get("/service-accounts/*", movedToApiKeys)
   .get("/agents", auth.requireRole("admin", ssr.access), ...agentsPage)
   .get("/agents/:id", auth.requireRole("admin", ssr.access), ...agentDetailPage)
+  // Aktivität: the audit log, notifications, reminders and deleted accounts as one list; their old pages redirect here.
+  .get("/activity", auth.requireRole("admin", ssr.access), ...activityPage)
+  .get("/activity/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationRecordPage)
   .get("/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
   .get("/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationDetailPage)
   .get("/deleted-accounts", auth.requireRole("admin", ssr.access), ...deletedAccountsPage)

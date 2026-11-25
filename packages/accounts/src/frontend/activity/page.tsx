@@ -6,7 +6,7 @@ import { Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../../config";
 import AccountsNavigation from "../AccountsNavigation.island";
-import { type AccountsNavActiveKey, accountsNavigationItems } from "../accounts-nav";
+import { accountsNavigationItems } from "../accounts-nav";
 import AuditScreen from "../audit/AuditScreen.island";
 import { loadAudit } from "../audit/load";
 import DeletedAccountsScreen from "../deleted-accounts/DeletedAccountsScreen.island";
@@ -16,17 +16,9 @@ import { loadNotifications } from "../notifications/load";
 import NotificationsScreen from "../notifications/NotificationsScreen.island";
 import { loadReminders } from "../reminders/load";
 import RemindersScreen from "../reminders/RemindersScreen.island";
-import { type ActivityKind, activityKindOf } from "./kind";
+import { activityKindOf } from "./kind";
 import { activityMessages } from "./messages";
 
-// k2b-ui gap: none. Shared: the sidebar has no "Activity" entry yet; until the parent adds one, the kind marks the
-// entry of the page it replaced.
-const navKey: Record<ActivityKind, AccountsNavActiveKey> = {
-  audit: "audit",
-  notifications: "notifications",
-  reminders: "reminders",
-  deleted: "deleted-accounts",
-};
 
 /**
  * The activity of Accounts on v2: the audit log, the notification batches, the reminders and the deleted accounts as one
@@ -71,7 +63,7 @@ export default ssr<AuthContext>(async (c) => {
       ui="v2"
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: words.activity }]}
     >
-      <AccountsNavigation items={accountsNavigationItems(t, { active: navKey[kind], pendingRequests, isAdmin: true })} />
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "activity", pendingRequests, isAdmin: true })} />
       {screen()}
     </Layout>
   );

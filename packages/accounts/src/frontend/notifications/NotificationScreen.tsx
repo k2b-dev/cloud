@@ -215,7 +215,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="notifications" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={<RecordHead name={props.batch.subject} kinds={[statusLabel()]} />}

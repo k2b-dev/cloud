@@ -111,7 +111,7 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="deleted-accounts" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={<Text type="body">{activity().activity}</Text>}

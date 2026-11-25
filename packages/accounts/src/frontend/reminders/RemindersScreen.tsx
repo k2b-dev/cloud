@@ -95,7 +95,7 @@ export default function RemindersScreen(props: RemindersScreenProps) {
 
   return (
     <Workspace
-      sidebar={<AccountsNav active="reminders" pendingRequests={props.pendingRequests} />}
+      sidebar={<AccountsNav active="activity" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
           start={<Text type="body">{activity().activity}</Text>}

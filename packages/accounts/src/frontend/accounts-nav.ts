@@ -6,12 +6,9 @@ export type AccountsNavActiveKey =
   | "duplicate-emails"
   | "groups"
   | "requests"
-  | "audit"
   | "api-keys"
   | "agents"
-  | "notifications"
-  | "deleted-accounts"
-  | "reminders"
+  | "activity"
   | null;
 
 type NavProps = { active: AccountsNavActiveKey; pendingRequests: number };
@@ -55,25 +52,8 @@ export const accountsNavItems = (
       label: messages().serviceAccounts,
       active: props.active === "api-keys",
     },
-    {
-      href: "/app/accounts/notifications",
-      icon: "ti ti-mail-share",
-      label: messages().notifications,
-      active: props.active === "notifications",
-    },
-    { href: "/app/accounts/audit", icon: "ti ti-clipboard-list", label: messages().auditLog, active: props.active === "audit" },
-    {
-      href: "/app/accounts/deleted-accounts",
-      icon: "ti ti-user-off",
-      label: messages().deletedAccounts,
-      active: props.active === "deleted-accounts",
-    },
-    {
-      href: "/app/accounts/reminders",
-      icon: "ti ti-mail-share",
-      label: messages().reminderHistory,
-      active: props.active === "reminders",
-    },
+    // the audit log, notifications, reminders and deleted accounts are kinds of one list
+    { href: "/app/accounts/activity", icon: "ti ti-activity", label: messages().activity, active: props.active === "activity" },
   ],
 });
 
