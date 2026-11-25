@@ -1,7 +1,7 @@
 import { Composer } from "@k2b/editor/composer";
-import { Button, Menu, Text } from "@k2b/ui/v2";
+import { Button, Menu, type MenuEntry, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import type { MailReplyFrameParts } from "../mail-reply-frame";
+import type { MailReplyFrameChoice, MailReplyFrameParts } from "../mail-reply-frame";
 import type { MailV2Text } from "./mail-v2-messages";
 
 /**
@@ -11,15 +11,14 @@ import type { MailV2Text } from "./mail-v2-messages";
  *
  * k2b-ui gaps, until v2 has them: no recipient field (Mail's chips stand in the head), no split button (Send later
  * waits under "More"), no pressed or pending state of a button (Formatting and a running Send show only through the
- * text they change and the status), no section heading in a menu (sections stand between lines), no choice of one in
- * a menu (a tick keeps the menu open, so the chosen entry carries a check and the menu closes as in v1).
- *
- * TODO(lane E, once #4109 at eb9de782de or later is in the pilot): menus get sections and real single choices; merge
- * feat/mail-v2-reply-frame (commit 6bd1a24287: mode, sender and signature as choices under their headings, Send later
- * as a section) instead of the check workaround. Once #4122 is on main: Formatting takes `Button pressed`.
+ * text they change and the status).
  */
 export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: MailV2Text }) {
   const parts = () => props.parts;
+  /** One choice under its heading: the chosen option carries the tick, a choice closes the menu. */
+  const choice = (title: string, of: MailReplyFrameChoice): MenuEntry[] => [
+    { title, choice: of.value(), onChoose: (value) => of.choose(value), items: of.options() },
+  ];
   return (
     <Composer
       label={parts().label()}
@@ -30,7 +29,7 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
             icon={parts().mode.icon()}
             label={parts().mode.label()}
             disabled={parts().mode.disabled?.()}
-            items={parts().mode.items()}
+            items={choice(props.text.replyAs, parts().mode)}
           />
           <Text type="meta">{props.text.to}</Text>
           {parts().to}
@@ -41,9 +40,14 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
           {parts().peers}
           <Show when={parts().sender()}>
             {(sender) => (
-              <Show when={sender().menu} fallback={<Text type="meta">{props.text.from({ name: sender().text })}</Text>}>
-                {(menu) => (
-                  <Menu variant="text" label={menu().label()} disabled={menu().disabled?.()} items={menu().items()}>
+              <Show when={sender().choice} fallback={<Text type="meta">{props.text.from({ name: sender().text })}</Text>}>
+                {(senders) => (
+                  <Menu
+                    variant="text"
+                    label={senders().label()}
+                    disabled={senders().disabled?.()}
+                    items={choice(props.text.sender, senders())}
+                  >
                     {props.text.from({ name: sender().text })}
                   </Menu>
                 )}
@@ -87,7 +91,7 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
                 icon="signature"
                 label={signature().label()}
                 disabled={signature().disabled?.()}
-                items={signature().items()}
+                items={choice(props.text.signature, signature())}
               />
             )}
           </Show>
