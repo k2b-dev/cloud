@@ -1,4 +1,4 @@
-import { AppOverview, LocaleProvider } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
 import { Show } from "solid-js";
 import { render } from "solid-js/web";
 import ToolCatalog from "./ToolCatalog.island";
@@ -68,33 +68,28 @@ if (view === "webhooks") {
 render(
   () => (
     <LocaleProvider locale={locale}>
-      <ToolsWorkspace activeToolId={view ?? undefined} layout={view === "webhooks" ? "regions" : "main"}>
-        <Show
-          when={view === "webhooks"}
-          fallback={
-            <Show
-              when={view === "hash"}
-              fallback={
-                <AppOverview title={labels.appName} icon="ti ti-tools">
-                  <AppOverview.Main title={locale === "de" ? "Passendes Werkzeug finden" : "Find a utility"}>
-                    <ToolCatalog search={params.get("q") ?? ""} />
-                  </AppOverview.Main>
-                </AppOverview>
-              }
-            >
+      <Show
+        when={view === "webhooks" || view === "hash"}
+        // The catalog is a v2 screen: it brings the Tools frame itself.
+        fallback={<ToolCatalog search={params.get("q") ?? ""} />}
+      >
+        <ToolsWorkspace activeToolId={view ?? undefined} layout={view === "webhooks" ? "regions" : "main"}>
+          <Show
+            when={view === "webhooks"}
+            fallback={
               <div class="mx-auto flex w-full max-w-5xl flex-col gap-4">
                 <h1 class="text-xl font-semibold">{labels.hashName}</h1>
                 <HashGenerator />
               </div>
-            </Show>
-          }
-        >
-          <WebhookTester
-            baseHref="/tools/webhooks"
-            initialState={params.get("request") ? { ...parseWebhookTesterState(new URL(location.href)) } : undefined}
-          />
-        </Show>
-      </ToolsWorkspace>
+            }
+          >
+            <WebhookTester
+              baseHref="/tools/webhooks"
+              initialState={params.get("request") ? { ...parseWebhookTesterState(new URL(location.href)) } : undefined}
+            />
+          </Show>
+        </ToolsWorkspace>
+      </Show>
     </LocaleProvider>
   ),
   document.getElementById("root")!,

@@ -50,7 +50,7 @@ describe("Tools i18n catalogs", () => {
     expect(mustTool(registry, "password").name).toBe("Password");
     expect(registry.categories.documents.label).toBe("Documents");
     expect(toolCatalogMessages.resolve(["en"]).t.matchingTools({ count: 1 })).toBe("1 matching tool");
-    expect(toolCatalogMessages.resolve(["de"]).t.matchingTools({ count: 2 })).toBe("2 passende Werkzeuge.");
+    expect(toolCatalogMessages.resolve(["de"]).t.matchingTools({ count: 2 })).toBe("2 passende Werkzeuge");
   });
 
   test("de-CH resolves to de", () => {
