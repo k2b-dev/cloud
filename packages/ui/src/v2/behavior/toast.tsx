@@ -5,8 +5,9 @@
  * One toaster per `useToaster` call, which v2 makes once per Workspace: never a toaster at module level, which a
  * server would share between requests (core's exported `toast` is such a module-level toaster, so it is not used).
  */
+import { createOverlays } from "@ui-sdk/core/overlays";
 import { createToaster, toastRegion } from "@ui-sdk/core/toast";
-import { createUniqueId, For, type JSX, mergeProps, splitProps } from "solid-js";
+import { createContext, createUniqueId, For, type JSX, mergeProps, splitProps, useContext } from "solid-js";
 import { type PartProps, type Props, part, usePrimitive } from "./adapter";
 import { useBehaviorMessages } from "./messages";
 
@@ -111,7 +112,8 @@ const viewsOf = (items: unknown): ToastView[] => {
 /** A toaster and its region for one owner (a Workspace), with German and English region texts. */
 export function useToaster(options: { duration?: number } = {}): ToasterParts {
   const t = useBehaviorMessages();
-  const core = createToaster<string>({ duration: options.duration });
+  // The toaster keeps its own overlay registry, so nothing it shows outlives its owner (or reaches another request).
+  const core = createToaster<string>({ duration: options.duration, overlays: createOverlays() });
   const toaster: Toaster = {
     show: (toast) => core(toast),
     success: (toast) => core.success(toast),
@@ -122,10 +124,11 @@ export function useToaster(options: { duration?: number } = {}): ToasterParts {
     update: (id, toast) => core.update(id, toast),
     dismiss: (id) => core.dismiss(id),
   };
-  let region: ReturnType<typeof useRegion> | undefined;
   const useRegion = (props: () => Props) =>
     usePrimitive(toastRegion, () => ({ ...props(), toaster: core, placed: true, label: t().toasts, pendingAnnouncement: t().loading }));
+  const RegionContext = createContext<ReturnType<typeof useRegion>>();
   const handle = () => {
+    const region = useContext(RegionContext);
     if (!region) throw new Error("Toast parts must be rendered inside the toaster's Region.");
     return region;
   };
@@ -133,8 +136,7 @@ export function useToaster(options: { duration?: number } = {}): ToasterParts {
     toaster,
     Region: (props) => {
       const [own, rest] = splitProps(props, ["side", "align", "maxVisible", "expanded", "toast"]);
-      region = useRegion(() => ({ side: own.side, align: own.align, maxVisible: own.maxVisible, expanded: own.expanded }));
-      const current = region;
+      const current = useRegion(() => ({ side: own.side, align: own.align, maxVisible: own.maxVisible, expanded: own.expanded }));
       const list = (state: Props) => {
         const views = () => viewsOf(state.toasts);
         // Rows keyed by id, so an update or a new toast in front keeps the others' elements (and focus).
@@ -152,7 +154,11 @@ export function useToaster(options: { duration?: number } = {}): ToasterParts {
           "ol",
         );
       };
-      return part(current, "region", undefined, mergeProps(rest, { children: list }), "section");
+      return (
+        <RegionContext.Provider value={current}>
+          {part(current, "region", undefined, mergeProps(rest, { children: list }), "section")}
+        </RegionContext.Provider>
+      );
     },
     Toast: (props) => {
       const [own, rest] = splitProps(props, ["id"]);
