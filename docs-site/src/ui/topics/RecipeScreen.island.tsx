@@ -1,5 +1,6 @@
+import { LocaleProvider } from "@k2b/ui";
 import { onMount, Show } from "solid-js";
-import { isRecipeName, resolveRecipeState } from "./recipes";
+import { isRecipeName, recipeLocale, resolveRecipeState } from "./recipes";
 
 /** How long a press waits for its button or menu item to appear, such as a menu that opens after a frame. */
 const PRESS_TIMEOUT_MS = 3000;
@@ -60,7 +61,7 @@ export default function RecipeScreen(props: { name: string; state?: string }) {
   return (
     <div class="k2-ui ui-v2-recipe" ref={root} data-recipe="hydrating">
       <Show when={resolved()} fallback={<p>No such recipe state.</p>}>
-        {(state) => state().render()}
+        {(state) => <LocaleProvider locale={isRecipeName(props.name) ? recipeLocale(props.name) : "en"}>{state().render()}</LocaleProvider>}
       </Show>
     </div>
   );

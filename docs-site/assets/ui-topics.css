@@ -220,6 +220,12 @@ div.ui-topic__part,
   padding: 0.5rem 0.6rem;
   border-bottom: 1px solid var(--c-line);
 }
+/* The switches keep their own width, as on the chart pages; v1 draws a segmented control full width. */
+.k2b-ui.ui-example .ui-example__bar .k2b-segmented-control {
+  width: auto;
+  max-width: 100%;
+  overflow-x: auto;
+}
 .ui-example__tools {
   display: flex;
   flex-wrap: wrap;

@@ -25,14 +25,18 @@ props may change in any release; check the types of the installed version.
 
 1. Find the screen in the task table below and open its recipe in
    `recipes/` (code) and `images/` (picture at 1440 and 390 px). Read
-   [recipes](references/recipes.md) for what each one shows.
+   [recipes](references/recipes.md) for what each one shows. The same
+   recipes stand live, with their states and generated props, on the topic
+   pages of the UI section in Fibel (`/en/ui/v2/<topic>`; `read_doc`
+   returns each as Markdown with the code).
 2. Copy the recipe, keep its structure, replace the data. Change the
    arrangement only where the task really differs.
 3. Check it, cheapest first (see "See what you built"). Fix every finding
    before you look at a picture.
 4. Something has no primitive? Do not write CSS or a wrapper. Use the
    nearest primitive, write `// k2b-ui gap: <what is missing>` at that
-   place, and name the gap in your report.
+   place, and name the gap in your report. The section "Not in v2 yet" of
+   each topic page lists the gaps known now; it stays current.
 
 Read [primitives](references/primitives.md) for every prop and place,
 [mistakes](references/mistakes.md) when a check reports something, and

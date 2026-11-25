@@ -49,6 +49,18 @@ describe("recipe route", () => {
         }
       }, 30_000);
 
+  test("a recipe speaks the language of its sample text, also in the library's own words", async () => {
+    const { page, errors } = await open("/en/ui/v2/recipe/table?state=failed");
+    try {
+      await page.waitForSelector(".ui-v2-recipe[data-recipe='ready']");
+      expect(await page.getAttribute("html", "lang")).toBe("de");
+      expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   test("an unknown recipe or state is not found", async () => {
     expect((await fetch(`${origin}/en/ui/v2/recipe/nothing`)).status).toBe(404);
     expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=nothing`)).status).toBe(404);

@@ -10,7 +10,7 @@ import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
 import RecipeScreen from "./ui/topics/RecipeScreen.island";
-import { isRecipeName, resolveRecipeState } from "./ui/topics/recipes";
+import { isRecipeName, recipeLocale, resolveRecipeState } from "./ui/topics/recipes";
 import { type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
@@ -148,6 +148,8 @@ app.get("/en/ui/v2/recipe/:name", (c) => {
     path: `/en/ui/v2/recipe/${name}`,
     theme: themeFromRequest(c.req.raw),
     styles: ["/assets/generated/cloud-ui.css"],
+    // the library's own words (and imperative UI such as toasts) follow the language of the recipe's sample text
+    lang: recipeLocale(name),
   });
 });
 app.mount("/", fibelApp.fetch, { replaceRequest: false });

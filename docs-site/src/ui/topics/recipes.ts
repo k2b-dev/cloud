@@ -25,7 +25,12 @@ export type RecipeState = (() => JSX.Element) | { render: () => JSX.Element; pre
 export type RecipeModule = {
   default: (props: Record<never, never>) => JSX.Element;
   states?: Readonly<Record<string, RecipeState>>;
+  /** The language of the recipe's sample text, so the library's own words ("Erneut versuchen") match it. */
+  locale?: string;
 };
+
+/** Recipes write their sample text in German (see the skill), so German is the default for the library's words. */
+const RECIPE_LOCALE = "de";
 
 /** Every recipe by its file name without `.tsx`. A new recipe file is one line here; a test fails on a missing one. */
 export const recipes = {
@@ -48,6 +53,12 @@ export const recipeNames: readonly RecipeName[] = Object.keys(recipes).filter(is
 export const recipeStates = (name: RecipeName): Readonly<Record<string, RecipeState>> => {
   const recipe: RecipeModule = recipes[name];
   return recipe.states ?? {};
+};
+
+/** The language a recipe renders in: its own `locale`, else German. */
+export const recipeLocale = (name: RecipeName) => {
+  const recipe: RecipeModule = recipes[name];
+  return recipe.locale ?? RECIPE_LOCALE;
 };
 
 /** What a state renders and, for a state that opens an overlay, what is pressed after hydration. */
