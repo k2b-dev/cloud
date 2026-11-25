@@ -6,28 +6,51 @@ import focusMarkdown from "./context/focus.md" with { type: "text" };
 import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
 import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
-import overviewMarkdown from "./context/overview.md" with { type: "text" };
+import v1OverviewMarkdown from "./context/overview.md" with { type: "text" };
 import primaryScopeMarkdown from "./context/primary-scope.md" with { type: "text" };
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
+import { OverviewPage, overviewMarkdown } from "./topics/OverviewPage";
+import screensMarkdown from "./topics/screens.md" with { type: "text" };
+import { MarkdownArticle, TopicPage } from "./topics/TopicPage";
+import { parseTopic, topicMarkdown } from "./topics/topic-markdown";
+import { topics } from "./topics/topics";
+import { v1Pointer } from "./topics/v1-pointers";
 import { UiCatalogOverview, UiComponentShowcase } from "./UiCatalogPage";
 import { V2RulesPage } from "./V2RulesPage";
-import { V2DemoPage } from "./v2/V2DemoPage";
+import { V2DemoScreens } from "./v2/V2DemoPage";
+
+/** The folded area of the v1 pages, until v1 is removed (concept F3). */
+export const v1Section = "v1 (existing)";
+const screens = parseTopic(screensMarkdown);
 
 export const uiPages = [
   solidPage({
     html: fibelHtml,
     collection: "ui",
     path: "/",
-    title: "UI components",
+    title: "UI",
     navTitle: "Overview",
-    description:
-      "A standalone SolidJS component library with accessible interactions, scoped styles, design tokens, and browser and server builds.",
+    description: "Screens from fixed parts: the topics of @k2b/ui/v2, each with a live screen, its parts and the code.",
     section: "Start",
     order: 1,
     layout: "full",
-    content: overviewMarkdown,
+    content: overviewMarkdown(),
+    component: () => <OverviewPage />,
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/v1",
+    title: "UI components (v1)",
+    navTitle: "v1 overview",
+    description:
+      "A standalone SolidJS component library with accessible interactions, scoped styles, design tokens, and browser and server builds.",
+    section: v1Section,
+    order: 200,
+    layout: "full",
+    content: v1OverviewMarkdown,
     component: ({ content, page }) => <UiCatalogOverview title={page.meta.title} documentation={content.html} locale={page.locale.code} />,
   }),
   solidPage({
@@ -63,8 +86,8 @@ export const uiPages = [
     title: "Focus rings",
     navTitle: "Focus rings",
     description: "How focus rings stay visible inside clipping containers without moving the layout, and how to style your own.",
-    section: "Start",
-    order: 3,
+    section: v1Section,
+    order: 201,
     layout: "full",
     content: focusMarkdown,
     component: ({ content, page }) => (
@@ -89,8 +112,8 @@ export const uiPages = [
     title: "Motion",
     navTitle: "Motion",
     description: "Shared motion tokens, interaction budgets, and instant reduced motion for CSS and JavaScript.",
-    section: "Start",
-    order: 4,
+    section: v1Section,
+    order: 202,
     layout: "full",
     content: motionMarkdown,
     component: ({ content, page }) => (
@@ -115,8 +138,8 @@ export const uiPages = [
     title: "Input mode",
     navTitle: "Input mode",
     description: "Pointer input modes and keyboard hints without layout changes.",
-    section: "Start",
-    order: 5,
+    section: v1Section,
+    order: 203,
     layout: "full",
     content: inputModeMarkdown,
     component: ({ content, page }) => (
@@ -141,8 +164,8 @@ export const uiPages = [
     title: "Primary scope",
     navTitle: "Primary scope",
     description: "Use the AI palette for primary actions, selection, and focus in a scoped area.",
-    section: "Start",
-    order: 6,
+    section: v1Section,
+    order: 204,
     layout: "full",
     content: primaryScopeMarkdown,
     component: ({ content, page }) => (
@@ -165,62 +188,46 @@ export const uiPages = [
     collection: "ui",
     path: "/v2/rules",
     title: "UI v2 · Rules",
-    navTitle: "v2 rules (provisional)",
+    navTitle: "Rules",
     description:
       "The layout rules of @k2b/ui v2, each with an excerpt of the approved mockup and the check that holds it. Provisional until the maintainer approves v2.",
     section: "Start",
-    order: 7,
+    order: 3,
     layout: "full",
     component: ({ page }) => <V2RulesPage title={page.meta.title} description={page.meta.description} />,
   }),
+  ...topics.map((topic) =>
+    solidPage({
+      html: fibelHtml,
+      collection: "ui",
+      path: topic.path,
+      title: topic.parsed.title,
+      navTitle: `${topic.number} · ${topic.parsed.title}`,
+      description: topic.summary,
+      section: "Topics",
+      order: 10 + topic.number,
+      layout: "full",
+      content: topic.markdown,
+      component: (context) => <TopicPage topic={topic} context={context} />,
+    }),
+  ),
   solidPage({
     html: fibelHtml,
     collection: "ui",
-    path: "/v2/mail",
-    title: "UI v2 · Mail",
-    navTitle: "v2 demo: Mail",
-    description: "Mail as a list with its reader, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
-    section: "Start",
-    order: 8,
-    layout: "full",
-    component: ({ page }) => <V2DemoPage names={["mail"]} title={page.meta.title} />,
-  }),
-  solidPage({
-    html: fibelHtml,
-    collection: "ui",
-    path: "/v2/record",
-    title: "UI v2 · Kundenakte",
-    navTitle: "v2 demo: Kundenakte",
-    description: "The customer record of Warenfluss, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
-    section: "Start",
-    order: 9,
-    layout: "full",
-    component: ({ page }) => <V2DemoPage names={["record", "deliveries"]} title={page.meta.title} />,
-  }),
-  solidPage({
-    html: fibelHtml,
-    collection: "ui",
-    path: "/v2/table",
-    title: "UI v2 · Große Tabelle",
-    navTitle: "v2 demo: large table",
-    description: "A large table like Grids, built only from @k2b/ui/v2 primitives. Provisional until the maintainer approves v2.",
-    section: "Start",
-    order: 10,
-    layout: "full",
-    component: ({ page }) => <V2DemoPage names={["table"]} title={page.meta.title} />,
-  }),
-  solidPage({
-    html: fibelHtml,
-    collection: "ui",
-    path: "/v2/controls",
-    title: "UI v2 · Bedienung",
-    navTitle: "v2 demo: controls",
+    path: "/v2/screens",
+    title: screens.title,
+    navTitle: "Whole screens",
     description:
-      "A form with the controls of @k2b/ui/v2 in realistic screens, their states (picture, sorting, busy, disabled), and its menus, popovers and toasts. Provisional until the maintainer approves v2.",
-    section: "Start",
-    order: 11,
+      "Complete screens with invented data, each a recipe of the skill k2b-ui, and the demo screens measured against their mockups.",
+    section: "Screens",
+    order: 30,
     layout: "full",
-    component: ({ page }) => <V2DemoPage names={["form", "keys", "menus"]} title={page.meta.title} />,
+    content: topicMarkdown(screensMarkdown),
+    component: (context) => (
+      <MarkdownArticle parsed={screens} context={context} eyebrow={<>@k2b/ui/v2 · provisional</>}>
+        <V2DemoScreens names={["mail", "record", "deliveries", "table", "form", "keys", "menus"]} />
+      </MarkdownArticle>
+    ),
   }),
   solidPage({
     html: fibelHtml,
@@ -275,10 +282,13 @@ export const uiPages = [
       path: `/${entry.section}/${entry.page.slug}`,
       title: entry.page.title,
       description: entry.page.summary,
-      section: entry.sectionTitle,
-      order: entry.order,
+      navTitle: `${entry.sectionTitle} · ${entry.page.title}`,
+      section: v1Section,
+      order: 1_000 + entry.order,
       layout: "full",
-      content: entry.context,
+      content: `${v1Pointer(entry)}
+
+${entry.context}`,
       component: ({ content, page, request }) => (
         <UiComponentShowcase
           title={page.meta.title}
