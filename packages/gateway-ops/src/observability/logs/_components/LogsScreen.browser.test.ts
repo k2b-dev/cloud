@@ -226,5 +226,21 @@ describe("the log list on v2", () => {
         await context.close();
       }
     }
+    // the editors of the time range and the level, open over the list
+    for (const [name, statement] of [
+      ["logs-zeitraum-editor-1440", 0],
+      ["logs-stufe-editor-1440", 1],
+    ] as const) {
+      const { context, tab, errors } = await open(desktop, "/admin/observability/logs?time=last-15m&level=error,warn", { locale: "de" });
+      try {
+        await tab.locator('[data-k2-part="Statement"] button.k2-stmt-b').nth(statement).click();
+        await tab.locator('[data-k2-part="FilterEditor"]').waitFor();
+        await settled(tab);
+        await shoot(tab, name);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
   }, 180_000);
 });

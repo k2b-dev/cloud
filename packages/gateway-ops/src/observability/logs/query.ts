@@ -108,7 +108,12 @@ export type LogsQuery = ReturnType<typeof logsQuery>;
 export type LogsState = ListQueryStateOf<LogsQuery>;
 
 /** The views in code beside "All": their key in the address and their state. */
-export const LOG_VIEWS = { errors: (query: LogsQuery): LogsState => ({ ...query.set(query.reset(), "level", ["error"]), view: "errors" }) };
+export const LOG_VIEWS = {
+  errors: (query: LogsQuery): LogsState => {
+    const start = query.reset();
+    return { ...start, filters: { ...start.filters, level: ["error"] }, view: "errors" };
+  },
+};
 export type LogView = keyof typeof LOG_VIEWS;
 export const isLogView = (key: string | undefined): key is LogView => key !== undefined && Object.hasOwn(LOG_VIEWS, key);
 
