@@ -99,7 +99,8 @@ export const agentMessages = i18n.define({
       noKeys: "Dieser Agent hat noch keinen API Key.",
       keysFailed: "Die API Keys konnten nicht geladen werden. Die Keys selbst bleiben unverändert.",
       retry: "Erneut versuchen",
-      sortAllOnly: "Nach einer Spalte sortieren lässt sich nur, wenn alle Schlüssel auf eine Seite passen; die Seiten zeigen die neuesten zuerst.",
+      sortAllOnly:
+        "Nach einer Spalte sortieren lässt sich nur, wenn alle Schlüssel auf eine Seite passen; die Seiten zeigen die neuesten zuerst.",
       createKey: "API Key anlegen",
       createKeyFor: ({ name }) => `Neuer API Key für ${name}`,
       keyName: "Name",

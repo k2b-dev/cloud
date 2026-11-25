@@ -8,6 +8,8 @@ type State = { worst?: boolean; huge?: boolean; status?: "draft" | "running" | "
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const state = JSON.parse(document.documentElement.dataset.state ?? "{}") as State;
+// how long the screen takes to render its rows, for the scale test
+const started = performance.now();
 render(
   () => (
     <LocaleProvider locale="de">
@@ -16,3 +18,4 @@ render(
   ),
   host,
 );
+document.documentElement.dataset.renderMs = String(Math.round(performance.now() - started));

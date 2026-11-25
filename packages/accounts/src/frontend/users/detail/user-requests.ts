@@ -1,7 +1,11 @@
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
-import { showAccountActionNotice } from "../../action-notice";
 import type { AccountsMessages } from "../../messages";
+
+type NoticeInput = Parameters<typeof import("../../action-notice").showAccountActionNotice>[0];
+/** The follow-up notice of a deed loads with the first deed: it brings v1 dialogs the record does not show otherwise. */
+const showAccountActionNotice = async (input: NoticeInput, t: AccountsMessages) =>
+  (await import("../../action-notice")).showAccountActionNotice(input, t);
 
 // The deeds of a user's page against the Accounts API. Each resolves when the server took it and otherwise throws an
 // Error with the server's message, or the deed's own fallback when the answer has none (a proxy page, a lost answer).

@@ -106,9 +106,10 @@ test("“New notification” opens the form beside the batches, in the address",
   const app = mount(adminApp());
   try {
     const html = await (await app.request("/app/accounts/activity?kind=notifications&new=1", de)).text();
-    expect(html).toContain('href="/app/accounts/activity?kind=notifications&amp;new=1"');
-    for (const word of ["Betreff", "Inhalt", "Ausgewählte Benutzer", "Ausgewählte Gruppen", "Entwurf erstellen"])
-      expect(html).toContain(word);
+    // the form closes back to the list, and the list stays beside it
+    expect(html).toContain('href="/app/accounts/activity?kind=notifications"');
+    expect(html).toContain(BATCHES[1]!.subject);
+    for (const word of ["Betreff", "Inhalt", "Empfängerauswahl", "Live-Vorschau", "Entwurf erstellen"]) expect(html).toContain(word);
   } finally {
     restore();
   }

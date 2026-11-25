@@ -395,7 +395,10 @@ describe("an agent's API keys on v2", () => {
       expect(await rows.count()).toBe(100);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
       // the true count with the locale's separator, and no column order across pages
-      await tab.getByText(t.keysCount({ count: 1284 })).first().waitFor();
+      await tab
+        .getByText(t.keysCount({ count: 1284 }))
+        .first()
+        .waitFor();
       expect(t.keysCount({ count: 1284 })).toBe("1.284 API Keys");
       await tab.getByText(t.sortAllOnly).waitFor();
       expect(await tab.locator("thead th a").count()).toBe(0);

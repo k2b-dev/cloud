@@ -78,7 +78,8 @@ export const userRecordMessages = i18n.define({
       neverExpires: "Läuft nie ab",
       directCount: ({ count }) => `${number(count, "de")} direkt`,
       withInherited: ({ count }) => `${number(count, "de")} mit geerbten`,
-      managesCount: ({ count }) => i18n.plural(count, "de", { one: "Verwaltet 1 Gruppe", other: `Verwaltet ${number(count, "de")} Gruppen` }),
+      managesCount: ({ count }) =>
+        i18n.plural(count, "de", { one: "Verwaltet 1 Gruppe", other: `Verwaltet ${number(count, "de")} Gruppen` }),
       keysMeta: "Persönliche Automatisierung",
       devicesMeta: "Cloud Login und Cloud-App",
       notLoaded: "Nicht geladen",

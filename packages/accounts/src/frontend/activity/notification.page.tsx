@@ -161,6 +161,9 @@ export default ssr<AuthContext>(async (c) => {
           recipientsPage?.items.map((entry) => ({
             userId: entry.userId,
             name: entry.displayName || entry.uid,
+            image: entry.avatarHash
+              ? `/api/accounts/users/${encodeURIComponent(entry.userId)}/avatar?rev=${encodeURIComponent(entry.avatarHash)}`
+              : undefined,
             uid: entry.uid,
             email: entry.recipient ?? "–",
             source: `${entry.provider === "ipa" ? "FreeIPA" : t.local} · ${entry.profile === "guest" ? t.guest : t.user}`,

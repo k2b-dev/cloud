@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
 import { query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, Loading, Menu, type MenuItem, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Empty, Failed, Loading, Menu, type MenuItem, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "@/api/client";
@@ -123,7 +123,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
       prefix: entry.prefix,
       access: accessLabel(t(), entry.access),
       used: !entry.active
-        ? t().revoked
+        ? words().createdOn({ when: entry.created })
         : entry.expired
           ? words().expiredOn({ when: entry.expires ?? "" })
           : entry.lastUsed
@@ -174,7 +174,14 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
                       icon={entry.expired || !entry.active ? "key-off" : "key"}
                       onOpen={() => setOpened(entry)}
                       end={
-                        entry.active ? <Menu label={words().keyActions({ name: shortName(entry.name) })} items={deeds(entry)} /> : undefined
+                        <>
+                          <Show when={!entry.active || entry.expired}>
+                            <Chip status={entry.active ? "warn" : "bad"}>{entry.active ? words().expired : t().revoked}</Chip>
+                          </Show>
+                          <Show when={entry.active}>
+                            <Menu label={words().keyActions({ name: shortName(entry.name) })} items={deeds(entry)} />
+                          </Show>
+                        </>
                       }
                     />
                   )}

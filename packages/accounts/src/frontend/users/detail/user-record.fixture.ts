@@ -249,7 +249,9 @@ const empty = (): UserRecordView => ({
 
 /** A person in 1,200 groups who manages 1,000: the record must stay light and quick. */
 const huge = (): UserRecordView => {
-  const memberships = Array.from({ length: 1200 }, (_, index) => group(1000 + index, `Projekt ${index + 1}`, index % 2 ? `Arbeitsgruppe ${index + 1}` : null));
+  const memberships = Array.from({ length: 1200 }, (_, index) =>
+    group(1000 + index, `Projekt ${index + 1}`, index % 2 ? `Arbeitsgruppe ${index + 1}` : null),
+  );
   return {
     ...sample(),
     memberships,
@@ -261,11 +263,12 @@ const huge = (): UserRecordView => {
 };
 
 export const fixtureRecord = (name: FixtureName): UserRecordView =>
-  name === "huge" ? huge() :
-  name === "worst"
-    ? worst()
-    : name === "empty"
-      ? empty()
-      : name === "optional-email"
-        ? { ...sample(), localEmailOptional: true }
-        : sample();
+  name === "huge"
+    ? huge()
+    : name === "worst"
+      ? worst()
+      : name === "empty"
+        ? empty()
+        : name === "optional-email"
+          ? { ...sample(), localEmailOptional: true }
+          : sample();

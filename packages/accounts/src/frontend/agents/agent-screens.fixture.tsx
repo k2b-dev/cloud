@@ -70,9 +70,9 @@ export const agents: AgentListEntry[] = [
 export const HUGE_TOTAL = 1284;
 export const hugeKeys = (page: number): AgentKeyView[] =>
   Array.from({ length: Math.min(100, HUGE_TOTAL - (page - 1) * 100) }, (_, row) => (page - 1) * 100 + row).map((index) => ({
-  ...keys[0]!,
-  id: `4d1e8a20-0000-4000-8000-${String(100000 + index).padStart(12, "0")}`,
-  name: `Kasse ${index + 1}`,
+    ...keys[0]!,
+    id: `4d1e8a20-0000-4000-8000-${String(100000 + index).padStart(12, "0")}`,
+    name: `Kasse ${index + 1}`,
   }));
 
 export const AgentScreenFixture = (props: {

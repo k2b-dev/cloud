@@ -1,6 +1,7 @@
 import { formatNumber } from "@k2b/cloud/shared";
 import { useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
   Check,
@@ -10,6 +11,7 @@ import {
   Facts,
   Failed,
   FilterBar,
+  Inline,
   Menu,
   Notice,
   Pane,
@@ -66,6 +68,8 @@ export type AudienceView = {
 export type RecipientRow = {
   userId: string;
   name: string;
+  /** The address of the person's picture, if they have one. */
+  image?: string;
   uid: string;
   email: string;
   source: string;
@@ -214,7 +218,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
       sidebar={<AccountsNav active="notifications" pendingRequests={props.pendingRequests} />}
       head={
         <Bar
-          start={<RecordHead name={props.batch.subject} kinds={[words().notification, statusLabel()]} />}
+          start={<RecordHead name={props.batch.subject} kinds={[statusLabel()]} />}
           end={
             <>
               <Show when={draft()}>
@@ -289,7 +293,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                   rows={rows()}
                   rowKey={(row) => row.userId}
                   sticky
-                  open={(row) => ({ href: `/app/accounts/users/${row.userId}` })}
+                  // k2b-ui gap: a Menu in a cell of a table with `open` also opens the row; the name links to the user instead
                   empty={
                     state().filters.status
                       ? {
@@ -305,14 +309,27 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                   }
                   phone={(row) => ({
                     lines: [row.name, row.mail ? `${row.email} · ${row.mail.label}` : row.email],
+                    avatar: { name: row.name, image: row.image },
                     time: row.sent,
                     marks: recipientChip(row.status, recipientStatusLabel(t(), row.status)),
                   })}
                   columns={[
-                    { title: t().user, width: { min: 160, default: 190 }, cell: (row) => ({ lines: [row.name, row.uid] }) },
+                    {
+                      title: t().user,
+                      width: { min: 160, default: 190 },
+                      cell: (row) => ({
+                        lines: [
+                          <Inline>
+                            <Avatar name={row.name} image={row.image} decorative />
+                            <Text href={`/app/accounts/users/${row.userId}`}>{row.name}</Text>
+                          </Inline>,
+                          row.uid,
+                        ],
+                      }),
+                    },
                     {
                       title: t().email,
-                      width: { min: 180, default: 240 },
+                      width: { min: 160, default: 190 },
                       cell: (row) => ({ lines: [row.email, row.source] }),
                       drop: true,
                     },
@@ -328,7 +345,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                     },
                     {
                       title: t().sent,
-                      width: { min: 150, default: 160 },
+                      width: { min: 160, default: 170 },
                       cell: (row) =>
                         row.attempts > 1 ? { lines: [row.sent, words().attempts({ count: number(row.attempts) })] } : row.sent,
                       drop: true,

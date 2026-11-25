@@ -1,5 +1,22 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Failed, FilterBar, Input, ListOrder, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Chip,
+  Failed,
+  FilterBar,
+  Icon,
+  Inline,
+  Input,
+  ListOrder,
+  Notice,
+  Pane,
+  StatusRow,
+  Table,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
@@ -182,6 +199,7 @@ export default function AuditScreen(props: AuditScreenProps) {
               phone={(row) => ({
                 // k2b-ui gap: a phone row's second line wraps and lets an unbroken word run past the edge; it stays one short name
                 lines: [row.action.label, row.actor.label],
+                avatar: row.actor.userId ? { name: row.actor.label } : undefined,
                 time: row.time,
                 marks: outcome(row),
               })}
@@ -191,7 +209,18 @@ export default function AuditScreen(props: AuditScreenProps) {
                   title: t().actor,
                   width: { min: 150, default: 190 },
                   cell: (row) => {
-                    const name = row.actor.userId ? <Text href={byActor(row.actor.userId)}>{row.actor.label}</Text> : row.actor.label;
+                    // a person shows their initials; the system (no person) its own sign
+                    const name = row.actor.userId ? (
+                      <Inline>
+                        <Avatar name={row.actor.label} decorative />
+                        <Text href={byActor(row.actor.userId)}>{row.actor.label}</Text>
+                      </Inline>
+                    ) : (
+                      <Inline>
+                        <Icon name="settings-automation" />
+                        <Text>{row.actor.label}</Text>
+                      </Inline>
+                    );
                     return row.actor.provider ? { lines: [name, row.actor.provider] } : name;
                   },
                 },

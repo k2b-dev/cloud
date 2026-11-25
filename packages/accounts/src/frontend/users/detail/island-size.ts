@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, join, normalize, resolve } from "node:path";
 
 /**
  * The browser JavaScript a page's islands cost: builds the given island entries together (minified, shared code split
@@ -40,10 +40,24 @@ const build = await Bun.build({
 });
 if (!build.success) throw new AggregateError(build.logs, "Island build failed");
 // Assets (such as viewer workers) load only when a feature asks for them; the page itself loads entries and chunks.
+// What loads with the page: the entries and every chunk they import statically, on and on; `import()` loads later.
+const texts = new Map<string, { size: number; text: string }>();
+for (const output of build.outputs)
+  if (output.kind !== "asset") texts.set(normalize(output.path), { size: output.size, text: await output.text() });
+const initial = new Set<string>();
+const visit = (path: string) => {
+  if (initial.has(path) || !texts.has(path)) return;
+  initial.add(path);
+  for (const match of texts.get(path)!.text.matchAll(/(?:^|[;}\s])import\s*(?:[^("';]*?from\s*)?["'](\.{1,2}\/[^"']+)["']/g))
+    visit(normalize(join(dirname(path), match[1]!)));
+};
+for (const output of build.outputs) if (output.kind === "entry-point") visit(normalize(output.path));
 let total = 0;
-for (const output of build.outputs) {
-  const size = output.size;
-  if (output.kind !== "asset") total += size;
-  console.log(`${String(size).padStart(9)}  ${output.kind}  ${output.path}`);
+let first = 0;
+for (const [path, output] of texts) {
+  total += output.size;
+  if (initial.has(path)) first += output.size;
+  console.log(`${String(output.size).padStart(9)}  ${initial.has(path) ? "initial" : "lazy   "}  ${path}`);
 }
-console.log(`${String(total).padStart(9)}  bytes of entries and chunks`);
+console.log(`${String(first).padStart(9)}  bytes loaded with the page (entries and their static chunks)`);
+console.log(`${String(total).padStart(9)}  bytes of entries and chunks, lazy ones included`);

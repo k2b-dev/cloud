@@ -56,7 +56,14 @@ export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, ac
   const pages = Math.max(1, Math.ceil((credentials?.total ?? 0) / AGENT_KEYS_PER_PAGE));
   // a page past the end (keys were revoked meanwhile) opens the last one, with the same order and open key
   if (credentials && page > pages)
-    return c.redirect(agentPageHref(account.id, { sort: requestedSort, page: pages, open: open.kind === "new" ? "new" : open.kind === "key" ? open.id : undefined }), 302);
+    return c.redirect(
+      agentPageHref(account.id, {
+        sort: requestedSort,
+        page: pages,
+        open: open.kind === "new" ? "new" : open.kind === "key" ? open.id : undefined,
+      }),
+      302,
+    );
   // the service pages the newest first; a column order holds only while every key stands on the one page
   const sortable = pages === 1;
   const sort = sortable ? requestedSort : "created";

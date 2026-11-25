@@ -115,73 +115,78 @@ export default function AgentScreen(props: Props) {
           <Show when={props.keys} fallback={<Failed text={t().keysFailed} onRetry={() => void showChanges()} />}>
             {(keys) => (
               <>
-              {/* one page of the service at a time, with the true count; k2b-ui gap: virtualized list (lane MW) */}
-              <Table
-                label={t().keys}
-                rows={keys()}
-                rowKey={(entry) => entry.id}
-                current={openKey()?.id}
-                open={(entry) => ({ href: href(entry.id) })}
-                // the newest first has no column of its own: pressing a sorted head again goes back to it
-                sort={
-                  props.sort === "name"
-                    ? { column: 0, direction: "ascending" }
-                    : props.sort === "used"
-                      ? { column: 2, direction: "descending" }
-                      : undefined
-                }
-                empty={{
-                  icon: "key",
-                  text: t().noKeys,
-                  action: props.agent.active ? { label: t().createKey, icon: "plus", href: href("new") } : undefined,
-                }}
-                phone={(entry) => ({
-                  lines: [
-                    entry.name,
-                    `${accessLabel(t(), entry.access)} · ${!props.agent.active || entry.expired ? keyStatus(entry).label : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
-                  ],
-                })}
-                columns={[
-                  {
-                    title: t().name,
-                    // k2b-ui gap: a cell cuts a long key name at its end; no cut in the middle with the whole name as hint
-                    sort: props.sortable ? sortBy("name") : undefined,
-                    width: { min: 160, default: 180 },
-                    cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
-                  },
-                  { title: t().keyAccess, width: { min: 150, default: 170 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
-                  {
-                    title: t().lastUsed,
-                    sort: props.sortable ? sortBy("used") : undefined,
-                    width: { min: 120, default: 130 },
-                    cell: (entry) => entry.lastUsed ?? t().neverUsed,
-                    drop: true,
-                  },
-                  {
-                    title: t().status,
-                    // a disabled agent's keys rest: a plain chip, as the notice above says
-                    cell: (entry) => {
-                      const state = keyStatus(entry);
-                      return state.status ? <Chip status={state.status}>{state.label}</Chip> : <Chip>{state.label}</Chip>;
-                    },
-                  },
-                ]}
-              />
-              <Show when={props.pages > 1}>
-                <Bar
-                  start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
-                  end={
-                    <>
-                      <Button icon="chevron-left" href={href(openParam(), props.page - 1)} disabled={props.page <= 1}>
-                        {t().previous}
-                      </Button>
-                      <Button href={href(openParam(), props.page + 1)} disabled={props.page >= props.pages} forward>
-                        {t().next}
-                      </Button>
-                    </>
+                {/* one page of the service at a time, with the true count; k2b-ui gap: virtualized list (lane MW) */}
+                <Table
+                  label={t().keys}
+                  rows={keys()}
+                  rowKey={(entry) => entry.id}
+                  current={openKey()?.id}
+                  open={(entry) => ({ href: href(entry.id) })}
+                  // the newest first has no column of its own: pressing a sorted head again goes back to it
+                  sort={
+                    props.sort === "name"
+                      ? { column: 0, direction: "ascending" }
+                      : props.sort === "used"
+                        ? { column: 2, direction: "descending" }
+                        : undefined
                   }
+                  empty={{
+                    icon: "key",
+                    text: t().noKeys,
+                    action: props.agent.active ? { label: t().createKey, icon: "plus", href: href("new") } : undefined,
+                  }}
+                  phone={(entry) => ({
+                    lines: [
+                      entry.name,
+                      `${accessLabel(t(), entry.access)} · ${!props.agent.active || entry.expired ? keyStatus(entry).label : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
+                    ],
+                  })}
+                  columns={[
+                    {
+                      title: t().name,
+                      // k2b-ui gap: a cell cuts a long key name at its end; no cut in the middle with the whole name as hint
+                      sort: props.sortable ? sortBy("name") : undefined,
+                      width: { min: 160, default: 180 },
+                      cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
+                    },
+                    {
+                      title: t().keyAccess,
+                      width: { min: 150, default: 170 },
+                      cell: (entry) => accessLabel(t(), entry.access),
+                      drop: true,
+                    },
+                    {
+                      title: t().lastUsed,
+                      sort: props.sortable ? sortBy("used") : undefined,
+                      width: { min: 120, default: 130 },
+                      cell: (entry) => entry.lastUsed ?? t().neverUsed,
+                      drop: true,
+                    },
+                    {
+                      title: t().status,
+                      // a disabled agent's keys rest: a plain chip, as the notice above says
+                      cell: (entry) => {
+                        const state = keyStatus(entry);
+                        return state.status ? <Chip status={state.status}>{state.label}</Chip> : <Chip>{state.label}</Chip>;
+                      },
+                    },
+                  ]}
                 />
-              </Show>
+                <Show when={props.pages > 1}>
+                  <Bar
+                    start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
+                    end={
+                      <>
+                        <Button icon="chevron-left" href={href(openParam(), props.page - 1)} disabled={props.page <= 1}>
+                          {t().previous}
+                        </Button>
+                        <Button href={href(openParam(), props.page + 1)} disabled={props.page >= props.pages} forward>
+                          {t().next}
+                        </Button>
+                      </>
+                    }
+                  />
+                </Show>
               </>
             )}
           </Show>

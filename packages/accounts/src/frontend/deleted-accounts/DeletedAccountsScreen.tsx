@@ -1,5 +1,22 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Facts, FilterBar, Input, ListOrder, Notice, Pane, Section, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  type Column,
+  Facts,
+  FilterBar,
+  Inline,
+  Input,
+  ListOrder,
+  Notice,
+  Pane,
+  Section,
+  StatusRow,
+  Table,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../AccountsNav";
@@ -164,14 +181,30 @@ export default function DeletedAccountsScreen(props: DeletedAccountsScreenProps)
                   }
                 : { icon: "user-off", text: t().noDeletedAccounts }
             }
-            phone={(row) => ({ lines: [row.name, reasonLabel(t(), row.reason)], time: row.deleted })}
-            columns={[
-              { title: t().account, width: { min: 160, default: 220 }, cell: (row) => ({ lines: [row.name, row.uid] }) },
-              { title: t().reason, width: { min: 180, default: 280 }, cell: (row) => reasonLabel(t(), row.reason) },
-              { title: t().deleted, width: { min: 130, default: 150 }, cell: (row) => row.deleted, drop: true },
-              { title: t().email, width: { min: 160, default: 220 }, cell: (row) => row.mail || "–", drop: true },
-              { title: t().accountType, cell: (row) => kind(row), drop: true },
-            ]}
+            phone={(row) => ({ lines: [row.name, reasonLabel(t(), row.reason)], avatar: { name: row.name }, time: row.deleted })}
+            columns={(
+              [
+                {
+                  title: t().account,
+                  width: { min: 160, default: 220 },
+                  cell: (row) => ({
+                    lines: [
+                      <Inline>
+                        <Avatar name={row.name} decorative />
+                        <Text>{row.name}</Text>
+                      </Inline>,
+                      row.uid,
+                    ],
+                  }),
+                },
+                { title: t().reason, width: { min: 180, default: 280 }, cell: (row) => reasonLabel(t(), row.reason) },
+                { title: t().deleted, width: { min: 160, default: 170 }, cell: (row) => row.deleted, drop: true },
+                { title: t().email, width: { min: 160, default: 220 }, cell: (row) => row.mail || "–", drop: true },
+                { title: t().accountType, cell: (row) => kind(row), drop: true },
+              ] satisfies Column<DeletedRow>[]
+            )
+              // beside the open entry the list keeps who and why; the rest stands in the entry
+              .filter((_, index) => !props.entry || index < 2)}
           />
           <Show when={props.pages > 1}>
             <Bar

@@ -502,7 +502,10 @@ describe("a user's record on v2", () => {
       expect(await rows.count()).toBe(100);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
       await visible(tab, "button", r.showMore({ count: 100 })).click();
-      await tab.waitForFunction((label) => document.querySelectorAll(`[aria-label="${label}"] [data-k2-part=Row]`).length === 200, r.memberOf);
+      await tab.waitForFunction(
+        (label) => document.querySelectorAll(`[aria-label="${label}"] [data-k2-part=Row]`).length === 200,
+        r.memberOf,
+      );
       await expectClean(tab);
       await shoot(tab, "huge-groups-light-1440");
       expect(errors).toEqual([]);

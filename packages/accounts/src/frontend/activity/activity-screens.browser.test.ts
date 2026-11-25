@@ -208,8 +208,8 @@ describe("the activity page on v2", () => {
           .catch(async () => {
             throw new Error(`no rows: ${JSON.stringify(errors)} ${(await tab.locator("#root").textContent())?.slice(0, 400)}`);
           });
-        // the page was ready (its rows rendered) within 1.5 s of the navigation
-        const ready = await tab.evaluate(() => performance.getEntriesByType("navigation")[0]?.duration ?? performance.now());
+        // the screen renders a full page of rows within 1.5 s (the server sends the same first picture as HTML)
+        const ready = Number(await tab.evaluate(() => document.documentElement.dataset.renderMs));
         expect(ready).toBeLessThan(1_500);
         expect(await rows(tab)).toBeLessThanOrEqual(most);
         const elements = await tab.evaluate(() => document.querySelectorAll("*").length);

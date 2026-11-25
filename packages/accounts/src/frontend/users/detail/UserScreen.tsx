@@ -1,4 +1,3 @@
-import { openAvatarUploadDialog } from "@k2b/cloud/account/ui";
 import { groupDisplayName } from "@k2b/cloud/shared";
 import { useLocale } from "@k2b/ui";
 import {
@@ -26,7 +25,6 @@ import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import { usePageSwap } from "@/frontend/lib/page-swap";
 import AccountsNav from "../../AccountsNav";
 import { useAccountsMessages } from "../../messages";
-import { deleteUserRequest } from "../delete-user";
 import LinuxIdentitySection from "./linux-identity";
 import { number, useUserRecordMessages } from "./messages";
 import { createCloudAppPairing } from "./pair-cloud-app";
@@ -91,7 +89,10 @@ export default function UserScreen(props: Props) {
   const moreOf = (list: "memberships" | "managed", total: number) => {
     const rest = total - shown()[list];
     return rest > 0
-      ? { label: r().showMore({ count: Math.min(REVEAL, rest) }), onClick: () => setShown((now) => ({ ...now, [list]: now[list] + REVEAL })) }
+      ? {
+          label: r().showMore({ count: Math.min(REVEAL, rest) }),
+          onClick: () => setShown((now) => ({ ...now, [list]: now[list] + REVEAL })),
+        }
       : undefined;
   };
   const closed = (changed: boolean) => {
@@ -127,25 +128,28 @@ export default function UserScreen(props: Props) {
   const uid = () => user().uid;
 
   const changeAvatar = () =>
-    // k2b-ui gap: the avatar dialog comes from @k2b/cloud/account/ui (v1 dialog); v2 has no image crop dialog yet.
-    void openAvatarUploadDialog({
-      username: user().displayName || uid(),
-      userId: user().id,
-      avatarHash: user().avatarHash,
-      subtitle: t().avatarSubtitle({ uid: uid() }),
-      visibilityText: t().avatarVisibility,
-      messages: { formats: t().avatarFormats },
-      onSave: async (dataUrl) => {
-        await saveAvatar(user().id, dataUrl, t());
-        await showChanges();
-      },
-      onRemove: user().avatarHash
-        ? async () => {
-            await removeAvatar(user().id, t());
-            await showChanges();
-          }
-        : undefined,
-    });
+    // k2b-ui gap: the avatar dialog comes from @k2b/cloud/account/ui (v1 dialog); v2 has no image crop dialog yet. It loads
+    // only when asked for, so the record does not carry it.
+    void import("@k2b/cloud/account/ui").then(({ openAvatarUploadDialog }) =>
+      openAvatarUploadDialog({
+        username: user().displayName || uid(),
+        userId: user().id,
+        avatarHash: user().avatarHash,
+        subtitle: t().avatarSubtitle({ uid: uid() }),
+        visibilityText: t().avatarVisibility,
+        messages: { formats: t().avatarFormats },
+        onSave: async (dataUrl) => {
+          await saveAvatar(user().id, dataUrl, t());
+          await showChanges();
+        },
+        onRemove: user().avatarHash
+          ? async () => {
+              await removeAvatar(user().id, t());
+              await showChanges();
+            }
+          : undefined,
+      }),
+    );
   const resetUserPassword = () =>
     deed(
       "password",
@@ -248,6 +252,7 @@ export default function UserScreen(props: Props) {
         cancel: t().cancel,
       },
       async () => {
+        const { deleteUserRequest } = await import("../delete-user");
         await deleteUserRequest(user(), t());
         toast(r().deleted, { status: "ok" });
         await openPage(props.listHref);

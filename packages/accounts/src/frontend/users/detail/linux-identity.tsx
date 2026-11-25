@@ -5,9 +5,15 @@ import { useLocale } from "@k2b/ui";
 import { Band, Bar, Button, Dialog, Facts, Field, Input, Notice, Section, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { accountLinuxError, linuxAccountMessages } from "@/shared/linux-messages";
-import { showAccountActionNotice } from "../../action-notice";
 import { useAccountsMessages } from "../../messages";
 import type { LinuxSnapshot } from "./user-view";
+
+type NoticeInput = Parameters<typeof import("../../action-notice").showAccountActionNotice>[0];
+/** The follow-up notice loads with the deed: it brings v1 dialogs the record does not show otherwise. */
+const showAccountActionNotice = async (
+  input: NoticeInput,
+  t: Parameters<typeof import("../../action-notice").showAccountActionNotice>[1],
+) => (await import("../../action-notice")).showAccountActionNotice(input, t);
 
 const api = coreClient.admin.core["linux-identities"].users[":id"];
 
