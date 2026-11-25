@@ -242,6 +242,28 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // At 1024 px the sidebar is a drawer (#4123): the workspace keeps room for the reader, so opening a mail moves nothing.
+  test("at 1024 px opening a mail moves neither the list nor the sidebar", async () => {
+    const page = await open(MAIL_V2_PATH, 1024);
+    try {
+      const place = () =>
+        page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="List"] > [data-k2-part="Row"]')!.getBoundingClientRect();
+          const nav = document.querySelector('[data-k2-workspace] [data-k2-part="Nav"]')?.getBoundingClientRect();
+          return { rowLeft: Math.round(row.left), sidebar: Boolean(nav && nav.width > 0) };
+        });
+      const before = await place();
+      await rowLink(page, "Holzwerk Brandt").click();
+      await page.waitForURL(/conversation=Demo01/);
+      await settled(page);
+      expect(await place()).toEqual(before);
+      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   // As v1's sidebar: the hidden mailboxes fold into one quiet entry, which opens them below itself.
   test("the sidebar's Hidden entry opens the hidden mailboxes below itself", async () => {
     const page = await open(MAIL_V2_PATH);
