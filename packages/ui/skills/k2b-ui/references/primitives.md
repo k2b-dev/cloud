@@ -35,6 +35,9 @@ The working surface of an app: one per screen.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+  A search in the head (`Input type="search"`) stays as its symbol; a tap
+  goes into the field, which opens over the head while it has the focus
+  and folds back, its words kept, on blur or Escape.
 
 ### Pane
 
@@ -195,8 +198,9 @@ column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?
-}` (on the phone each row becomes a two-line row instead).
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+}` (on the phone each row becomes a two-line row instead: `time` top right,
+`marks` at the end of the second line, such as the entry's state chip).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
@@ -313,8 +317,12 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
-  value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+  refresh in place: `true` turns a quiet mark after the lead; pass `false`
+  while idle so its 16 px stay reserved and nothing moves; leave it out where
+  the row never refreshes), `facts: { before?, value?, after? }[]` (give way
+  below 760 px of the row's own width and on the phone, so the filters keep
+  their words; put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`; leave on the phone),
@@ -322,8 +330,8 @@ lines instead of cutting a thing.
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
-  the phone a head with a path is hidden and the shell's phone bar names
-  the page.
+  the phone the path gives way and the shell's phone bar names the page; the
+  head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,

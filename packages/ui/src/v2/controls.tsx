@@ -11,6 +11,7 @@ import {
 } from "solid-js";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { Icon } from "./marks";
+import { textEdge } from "./tokens";
 
 type FieldIds = {
   /** The id of the one control the label names. */
@@ -148,6 +149,12 @@ const useField = () => useContext(FieldContext);
 export type InputProps = {
   value?: string;
   placeholder?: string;
+  /**
+   * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
+   * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
+   * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
+   * itself with `preventDefault`).
+   */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
@@ -179,6 +186,20 @@ export type InputProps = {
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
 const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLTextAreaElement) => {
   if (typeof ref === "function") ref(element);
+};
+
+/**
+ * Escape in the search of a head on the phone, where the field opens over the head only while it has the focus: it
+ * folds the field back and keeps its words (the browser would clear them and leave the field open). A caller that
+ * takes Escape itself (`onKeyDown` calls `preventDefault`) decides alone.
+ */
+const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement }) => {
+  if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
+  const place = event.currentTarget.parentElement?.parentElement;
+  if (!place?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+  if (!matchMedia(`not all and (min-width: ${textEdge.phoneBelow}px)`).matches) return;
+  event.preventDefault();
+  event.currentTarget.blur();
 };
 
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
@@ -217,7 +238,10 @@ export const Input = (props: InputProps) => {
             min={props.min}
             max={props.max}
             onInput={(event) => props.onInput?.(event.currentTarget.value)}
-            onKeyDown={(event) => props.onKeyDown?.(event)}
+            onKeyDown={(event) => {
+              props.onKeyDown?.(event);
+              if (props.type === "search") foldHeadSearch(event);
+            }}
           />
         }
       >
