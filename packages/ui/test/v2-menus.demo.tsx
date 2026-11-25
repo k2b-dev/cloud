@@ -9,6 +9,8 @@ import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Sec
 declare global {
   interface Window {
     __deeds?: string[];
+    /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
+    __escape?: "none" | "page" | "taken";
   }
 }
 
@@ -25,6 +27,9 @@ const orders = [
 export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
+  // the open reply of Mail: one choice for the kind of reply and one for the sender
+  const [kind, setKind] = createSignal("reply");
+  const [sender, setSender] = createSignal("anna@werkstatt.example");
   const toast = useToast();
   const head = (): MenuEntry[] => [
     { label: "Als Vorlage speichern", icon: "template", onClick: did("template") },
@@ -91,6 +96,36 @@ export function Demo() {
               >
                 Speichern
               </Button>
+              <Menu
+                icon="arrow-back-up"
+                items={[
+                  {
+                    title: "Antwortart",
+                    choice: kind(),
+                    onChoose: (value) => {
+                      setKind(value);
+                      did(`kind:${value}`)();
+                    },
+                    items: [
+                      { label: "Antworten", value: "reply", icon: "arrow-back-up" },
+                      { label: "Allen antworten", value: "all", icon: "arrow-back-up-double" },
+                      { label: "Weiterleiten", value: "forward", icon: "arrow-forward-up" },
+                    ],
+                  },
+                  {
+                    title: "Absender",
+                    choice: sender(),
+                    onChoose: (value) => {
+                      setSender(value);
+                      did(`sender:${value}`)();
+                    },
+                    items: [{ label: "anna@werkstatt.example" }, { label: "info@werkstatt.example" }],
+                  },
+                  { title: "Entwurf", items: [{ label: "Verwerfen", icon: "trash", danger: true, onClick: did("draft:discard") }] },
+                ]}
+              >
+                Antwort
+              </Menu>
               <Menu label="Weitere Aktionen" items={head()} />
             </>
           }

@@ -73,18 +73,16 @@ export function Demo() {
         <ul class="sortable" aria-label="Nachrichten">
           <For each={shown()}>
             {(mail) => (
-              <li class="mail" data-mail={mail.id} onPointerDown={(event) => drag.pointerdown(event, event.currentTarget, mail.id)}>
-                <button
-                  type="button"
-                  class="handle"
-                  aria-label={`Verschieben: ${mail.subject}`}
-                  onKeyDown={(event) => drag.keydown(event, mail.id)}
-                >
+              <li class="mail" data-mail={mail.id} {...drag.item(mail.id)}>
+                <button type="button" class="handle" data-k2-drag-handle aria-label={`Verschieben: ${mail.subject}`}>
                   ⠿
                 </button>
                 {/* One text node: the server joins interpolated text into one node, the client keeps three, and the
                     shaping across node boundaries differs by subpixels (the reload contract caught it). */}
                 {`${mail.from} – ${mail.subject}`}
+                <button type="button" class="handle" data-testid={`open-${mail.id}`} aria-label={`Öffnen: ${mail.subject}`}>
+                  ›
+                </button>
               </li>
             )}
           </For>

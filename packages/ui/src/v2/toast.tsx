@@ -22,6 +22,32 @@ const statusIcon = (type: ToastKind) =>
       ? ({ name: "alert-triangle", tone: "bad" } as const)
       : undefined;
 
+/**
+ * Core keeps the region in the top layer as an open popover all the time, so toasts stand above any dialog. An empty
+ * open popover would take Escape from the page, though: a page that lets an open popover answer Escape first (Mail
+ * closing its reader) would never get it. So the region is open only while it shows a toast: opening an empty region
+ * is cancelled, the first toast opens it, the last one leaving closes it. Core's own raising re-opens only regions that
+ * are open, so it never opens an empty one.
+ */
+const openWhileShowing = (region: HTMLElement) => {
+  if (typeof MutationObserver === "undefined") return;
+  const showing = () => region.querySelector('[data-slot="toast"]') !== null;
+  region.addEventListener("beforetoggle", (event) => {
+    if ("newState" in event && event.newState === "open" && !showing()) event.preventDefault();
+  });
+  const sync = () => {
+    if (!region.isConnected || !region.hasAttribute("popover")) return;
+    const open = region.matches(":popover-open");
+    try {
+      if (showing() && !open) region.showPopover();
+      else if (!showing() && open) region.hidePopover();
+    } catch {
+      // a region that left the page in between has nothing to show
+    }
+  };
+  new MutationObserver(sync).observe(region, { childList: true, subtree: true, attributes: true, attributeFilter: ["popover"] });
+};
+
 /** The toasts of one owner at the bottom in the middle, newest on top, at most three; nothing moves when one comes. */
 const ToastRegion = (props: { parts: ToasterParts; host?: (element: HTMLElement) => void }) => {
   const { Region, Toast, Title, Action } = props.parts;
@@ -30,7 +56,10 @@ const ToastRegion = (props: { parts: ToasterParts; host?: (element: HTMLElement)
       class="k2-toasts"
       data-k2-part="Toast"
       data-k2-toaster={props.host ? "" : undefined}
-      ref={(element: HTMLElement) => props.host?.(element)}
+      ref={(element: HTMLElement) => {
+        props.host?.(element);
+        openWhileShowing(element);
+      }}
       side="bottom"
       align="center"
       maxVisible={3}
