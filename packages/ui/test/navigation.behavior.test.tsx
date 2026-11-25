@@ -78,12 +78,12 @@ test("a row with disclosure false shows its children always and has no toggle, s
     expect(dom.root.querySelector("[aria-expanded]")).toBeNull();
     const sent = dom.root.querySelector<HTMLAnchorElement>('a[href="/box?folder=sent"]')!;
     expect(sent.closest("[hidden]")).toBeNull();
-    // a group without a link cannot fold either
-    const group = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("button")).find((row) => row.textContent?.includes("Gruppe"))!;
-    group.click();
-    await Promise.resolve();
-    expect(dom.root.querySelector<HTMLAnchorElement>('a[href="/one"]')!.closest("[hidden]")).toBeNull();
+    // a group without a link or a deed is a heading row: no dead button, its children always show
+    expect(Array.from(dom.root.querySelectorAll("button")).some((button) => button.textContent?.includes("Gruppe"))).toBe(false);
+    const group = Array.from(dom.root.querySelectorAll(".k2b-navigation__control")).find((row) => row.textContent?.includes("Gruppe"))!;
+    expect(group.tagName).toBe("SPAN");
     expect(group.querySelector(".ti-chevron-down, .ti-chevron-right")).toBeNull();
+    expect(dom.root.querySelector<HTMLAnchorElement>('a[href="/one"]')!.closest("[hidden]")).toBeNull();
   } finally {
     dispose();
     dom.cleanup();

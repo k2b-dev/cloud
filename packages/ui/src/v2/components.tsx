@@ -4,6 +4,7 @@ import {
   createSignal,
   createUniqueId,
   For,
+  Index,
   type JSX,
   children as resolveChildren,
   Show,
@@ -155,7 +156,8 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
         data-k2-part="Nav.Item"
         data-fold=""
         aria-expanded={open() ? "true" : "false"}
-        aria-controls={id}
+        aria-controls={open() ? id : undefined}
+        data-holds-current={holdsCurrent() ? "" : undefined}
         data-level={props.level > 1 ? String(props.level) : undefined}
         onClick={() => setOpen(!open())}
       >
@@ -164,7 +166,7 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
       </button>
       <Show when={open()}>
         <div class="k2-nav-fold" id={id} role="group" aria-labelledby={`${id}-fold`}>
-          <For each={props.items}>{(item) => <NavEntry item={item} level={props.level + 1} />}</For>
+          <Index each={props.items}>{(item) => <NavEntry item={item()} level={props.level + 1} />}</Index>
         </div>
       </Show>
     </>
@@ -181,23 +183,23 @@ export const Nav = (props: NavProps) => (
       <Icon name={props.icon} />
       {props.title}
     </div>
-    <For each={props.groups}>
+    <Index each={props.groups}>
       {(group) => (
         <>
-          <Show when={group.label}>
+          <Show when={group().label}>
             <div class="k2-nav-label">
-              {group.label}
-              <Show when={groupMenu(group.action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group.action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              {group().label}
+              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
-          <For each={group.items}>{(item) => <NavEntry item={item} />}</For>
+          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
         </>
       )}
-    </For>
+    </Index>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
-        <For each={props.foot}>{(item) => <NavEntry item={item} />}</For>
+        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
       </div>
     </Show>
   </nav>
@@ -233,40 +235,40 @@ export type TabsProps = { items: readonly Tab[]; label: string };
 export const Tabs = (props: TabsProps) => (
   <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
     <div class="k2-tabs">
-      <For each={props.items}>
+      <Index each={props.items}>
         {(tab) => (
           <Show
-            when={tab.menu}
+            when={tab().menu}
             fallback={
               <Dynamic
-                component={linkOr(tab.href, "button")}
-                type={tab.href !== undefined ? undefined : "button"}
+                component={linkOr(tab().href, "button")}
+                type={tab().href !== undefined ? undefined : "button"}
                 class="k2-tab"
-                href={tab.href}
-                onNavigate={tab.href !== undefined ? tab.onNavigate : undefined}
-                onClick={() => tab.onClick?.()}
-                aria-current={tab.current ? "page" : undefined}
+                href={tab().href}
+                onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
+                onClick={() => tab().onClick?.()}
+                aria-current={tab().current ? "page" : undefined}
               >
-                <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
-                {tab.label}
-                <Show when={tab.count !== undefined}>
-                  <span class="k2-tab-count">{tab.count}</span>
+                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab().label}
+                <Show when={tab().count !== undefined}>
+                  <span class="k2-tab-count">{tab().count}</span>
                 </Show>
               </Dynamic>
             }
           >
             {(items) => (
-              <MenuTab items={items()} current={tab.current}>
-                <Show when={tab.icon}>{(name) => <Icon name={name()} />}</Show>
-                {tab.label}
-                <Show when={tab.count !== undefined}>
-                  <span class="k2-tab-count">{tab.count}</span>
+              <MenuTab items={items()} current={tab().current}>
+                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
+                {tab().label}
+                <Show when={tab().count !== undefined}>
+                  <span class="k2-tab-count">{tab().count}</span>
                 </Show>
               </MenuTab>
             )}
           </Show>
         )}
-      </For>
+      </Index>
     </div>
   </nav>
 );

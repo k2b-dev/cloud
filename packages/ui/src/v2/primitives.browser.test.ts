@@ -9,7 +9,7 @@ import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
 import { measureV2Layout } from "./testing";
-import { gripTolerance, hairline, heights, textEdge } from "./tokens";
+import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
 // measureV2Layout (edges, double lines, type roles, grips at DPR 1 and 2), and the numbers of the mockup (heights by
@@ -271,7 +271,13 @@ describe("v2 primitives keep the numbers of the mockup", () => {
               return { height: Math.round(bar.height), gap: Math.round(bar.top - head.bottom), top: Math.round(bar.top) };
             });
           const before = await place();
-          expect(before).toMatchObject({ height: heights.bar, gap: 0 });
+          // one line is 40 px; on the phone this line of things takes a second line instead of being cut
+          expect(before.gap).toBe(0);
+          if (width >= textEdge.phoneBelow) expect(before.height).toBe(heights.bar);
+          else expect(before.height).toBeGreaterThan(heights.bar);
+          // its controls are the small ones of a 40 px bar, not those of a head
+          const link = await page.getByRole("button", { name: "Verknüpfen" }).boundingBox();
+          expect(Math.round(link?.height ?? 0)).toBe(heights.controlSmall);
           await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTo({ top: 200 }));
           await settled(page);
           expect(await page.locator(".k2-pane[data-detail] > .k2-scroll").evaluate((scroll) => scroll.scrollTop)).toBeGreaterThan(0);
@@ -304,12 +310,19 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             const box = title.getBoundingClientRect();
             return {
               cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
-              lines: Math.round(box.height / 24),
+              lines: Math.round(box.height / Number.parseFloat(getComputedStyle(title).lineHeight)),
               beside: box.right <= more.left + 0.5 && more.width > 0,
               height: Math.round(bar.getBoundingClientRect().height),
             };
           });
-          if (width < textEdge.phoneBelow) expect(head).toEqual({ cut: false, lines: 2, beside: true, height: 2 * 24 + 16 + 1 });
+          if (width < textEdge.phoneBelow)
+            expect(head).toEqual({
+              cut: false,
+              lines: 2,
+              beside: true,
+              // two lines of the lead role, 8 px of air above and below (the bar's padding), the line below
+              height: 2 * typeRoles.lead.lineHeight + 2 * 8 + hairline.width,
+            });
           else expect(head).toMatchObject({ lines: 1, beside: true, height: heights.status });
           expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
         } finally {

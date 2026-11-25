@@ -168,3 +168,72 @@ test("an entry's '…' shows under the pointer and with the focus, over its coun
     expect(await more.isVisible()).toBe(true);
   });
 });
+
+// The app builds its whole nav model again on every change (a new count of live mail). Entries keep their elements:
+// an open fold stays open, the focus stays where it was, an open menu of an entry stays open.
+test("a new model with a new count keeps an open fold open, the focus in place and an entry's menu open", async () => {
+  await withPage(async (page) => {
+    const more = fold(page, "Mehr");
+    await more.click();
+    await page.getByRole("button", { name: "Papierkorb" }).waitFor();
+    await more.focus();
+    await more.evaluate((element) => element.setAttribute("data-before", ""));
+    await page.evaluate(() => window.__newMail?.());
+    await page.waitForFunction(() => document.querySelector(".k2-ni-row .k2-ni-count")?.textContent === "8");
+    expect(await more.getAttribute("aria-expanded")).toBe("true");
+    expect(await page.evaluate(() => document.activeElement?.hasAttribute("data-before"))).toBe(true);
+    // an entry's menu stays open while the count behind it changes
+    await page.getByRole("button", { name: "Aktionen für Kontakt" }).click();
+    await page.locator(".k2-menu").waitFor();
+    await page.evaluate(() => window.__newMail?.());
+    await page.waitForFunction(() => document.querySelector(".k2-ni-row .k2-ni-count")?.textContent === "9");
+    expect(await page.locator(".k2-menu").count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Aktionen für Kontakt" }).getAttribute("aria-expanded")).toBe("true");
+  });
+});
+
+test("after a click on the entry the '…' gives way again when the pointer leaves; the keyboard's focus shows it", async () => {
+  await withPage(async (page) => {
+    const look = () =>
+      page.evaluate(() => {
+        const row = document.querySelector(".k2-ni-row")!;
+        return {
+          more: getComputedStyle(row.querySelector(":scope > .k2-btn")!).opacity,
+          count: getComputedStyle(row.querySelector(".k2-ni-count")!).display !== "none",
+        };
+      });
+    await page.getByRole("button", { name: /^Kontakt/ }).click();
+    await page.mouse.move(1000, 800);
+    await settled(page);
+    expect(await look()).toEqual({ more: "0", count: true });
+    await page.keyboard.press("Tab");
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Aktionen für Kontakt");
+    expect(await look()).toEqual({ more: "1", count: false });
+  });
+});
+
+test("a closed fold that holds the open entry carries the open entry's tint", async () => {
+  await withPage(async (page) => {
+    const bills = fold(page, "Rechnungen");
+    expect(await bills.getAttribute("aria-expanded")).toBe("true");
+    expect(await bills.getAttribute("aria-controls")).toBeTruthy();
+    const tint = () => bills.evaluate((element) => getComputedStyle(element).backgroundColor);
+    const open = await tint();
+    await bills.click();
+    await page.getByRole("button", { name: "Bezahlt" }).waitFor({ state: "detached" });
+    await settled(page);
+    expect(await bills.getAttribute("aria-controls")).toBeNull();
+    const current = await page.evaluate(() => {
+      const probe = document.createElement("a");
+      probe.className = "k2-ni";
+      probe.setAttribute("aria-current", "page");
+      document.querySelector(".k2-nav")!.append(probe);
+      const colour = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return colour;
+    });
+    expect(await tint()).toBe(current);
+    expect(await tint()).not.toBe(open);
+  });
+});

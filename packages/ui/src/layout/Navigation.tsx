@@ -84,18 +84,24 @@ export default function Navigation(props: NavigationProps) {
                     <Show
                       when={item().href}
                       fallback={
-                        <button
-                          type="button"
-                          class="k2b-navigation__control"
-                          disabled={disabled()}
-                          aria-expanded={!item().action && item().disclosure !== false ? open() : undefined}
-                          onClick={() => (item().action ? void activate(id, item().keepOpen) : toggle())}
+                        <Show
+                          when={item().action || item().disclosure !== false}
+                          // a group whose children always show and that does nothing itself is a heading row, no button
+                          fallback={<span class="k2b-navigation__control">{content()}</span>}
                         >
-                          {content()}
-                          <Show when={!item().action && item().children?.length && item().disclosure !== false}>
-                            <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
-                          </Show>
-                        </button>
+                          <button
+                            type="button"
+                            class="k2b-navigation__control"
+                            disabled={disabled()}
+                            aria-expanded={!item().action && item().disclosure !== false ? open() : undefined}
+                            onClick={() => (item().action ? void activate(id, item().keepOpen) : toggle())}
+                          >
+                            {content()}
+                            <Show when={!item().action && item().children?.length && item().disclosure !== false}>
+                              <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
+                            </Show>
+                          </button>
+                        </Show>
                       }
                     >
                       {(href) => (

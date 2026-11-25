@@ -295,6 +295,25 @@ test("tabs: 'Weitere +2' is the button of a menu of the views without a tab; key
   });
 });
 
+test("tabs: a new view under 'Weitere' while its menu is open keeps the menu and the focus; a choice returns the focus to the tab", async () => {
+  await withPage(async (page) => {
+    const more = page.getByRole("navigation", { name: "Ansichten" }).getByRole("button", { name: /Weitere/ });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(menu).waitFor();
+    expect(await focused(page)).toBe("Archiv");
+    await page.evaluate(() => window.__moreViews?.());
+    await page.getByRole("menuitem", { name: "Ansicht 3" }).waitFor();
+    expect(await focused(page)).toBe("Archiv");
+    expect(await more.getAttribute("aria-expanded")).toBe("true");
+    expect((await more.textContent())?.replace(/\s+/g, "")).toBe("Weitere+3");
+    await page.keyboard.press("Enter");
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["view:archiv"]);
+    expect(await page.evaluate(() => document.activeElement?.textContent?.replace(/\s+/g, ""))).toBe("Weitere+3");
+  });
+});
+
 test("popover: a panel of 280 px under the start of its button with a title; Escape closes and returns focus", async () => {
   await withPage(async (page) => {
     const trigger = page.getByRole("button", { name: "Filter" });

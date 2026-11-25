@@ -4,12 +4,14 @@ import { Nav, Pane, Text, Workspace } from "../src/v2";
 // A mailbox's sidebar as the mockup draws it (mail.html): the folders of the open mailbox, then "Mehr", which folds the
 // archive, the bin and spam away, then the mailbox's own folders. A second folding entry holds the open folder, so it
 // starts open. "Spam" opens in place, so the open entry can move into a closed fold. The group has a "…" with its deeds,
-// the mailbox "Kontakt" a "…" of its own; each deed lands in `window.__navDeeds`.
+// the mailbox "Kontakt" a "…" of its own; each deed lands in `window.__navDeeds`. `window.__newMail` raises the count of
+// "Kontakt", as live mail does: the app builds the whole model again, and nothing that is open may close.
 
 declare global {
   interface Window {
     __openSpam?: () => void;
     __navDeeds?: string[];
+    __newMail?: () => void;
   }
 }
 
@@ -19,7 +21,11 @@ const did = (deed: string) => () => {
 
 export function Demo() {
   const [current, setCurrent] = createSignal("Offen");
-  if (typeof window !== "undefined") window.__openSpam = () => setCurrent("Spam");
+  const [unread, setUnread] = createSignal(7);
+  if (typeof window !== "undefined") {
+    window.__openSpam = () => setCurrent("Spam");
+    window.__newMail = () => setUnread(unread() + 1);
+  }
   const place = (label: string, icon: string) => ({
     label,
     icon,
@@ -47,7 +53,7 @@ export function Demo() {
                 {
                   label: "Kontakt",
                   icon: "flag",
-                  count: 7,
+                  count: unread(),
                   onClick: did("open:kontakt"),
                   menu: [
                     { label: "Lösen", icon: "pinned-off", onClick: did("unpin:kontakt") },

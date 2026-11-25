@@ -1861,14 +1861,14 @@
 }
 /* the place picks the control height, so the air above and below is equal and at least 6 px:
    head 56 → 36, status row 52 → 36, bar 40 → 28, a row → 28. A control never turns square in a band. */
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn:not([data-variant="text"]) {
   height: var(--k2-h-control-small);
   padding: 0 8px;
   gap: 4px;
   font: var(--k2-t-meta);
   font-weight: 500;
 }
-.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot) > .k2-bar:not([data-status-row]), [data-slot="status"] > .k2-bar:not([data-status-row]), .k2-bar[data-selecting], .k2-row, .k2-pane[data-detail] > [data-slot="head"] > .k2-bar, .k2-gh, .k2-cells, .k2-facts, .k2-facts-line) .k2-btn[data-icon-only] {
   width: var(--k2-h-control-small);
   padding: 0;
 }
@@ -2046,7 +2046,7 @@
 .k2-ui :is(.k2-bar, .k2-bar-end) > .k2-input[data-search] {
   width: 184px;
 }
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input {
   height: var(--k2-h-control-small);
 }
 /* a form in a section: 12 px between its rows of fields and choices, as in a dialog */
@@ -2246,13 +2246,17 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
-.k2-ui .k2-ni[aria-current] {
+/* a closed fold that holds the open entry carries its tint, so the open place never hides */
+.k2-ui .k2-ni[aria-current],
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] {
   background: var(--k2-app-tint);
   color: var(--k2-app-text);
   font-weight: 500;
 }
 .k2-ui .k2-ni[aria-current] > .k2-icon,
-.k2-ui .k2-ni[aria-current] > .k2-ni-count {
+.k2-ui .k2-ni[aria-current] > .k2-ni-count,
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] > .k2-icon,
+.k2-ui .k2-ni[data-holds-current][aria-expanded="false"] > .k2-ni-count {
   color: var(--k2-app-text);
 }
 .k2-ui .k2-ni[data-level="2"] {
@@ -2262,8 +2266,9 @@
   padding-left: 56px;
 }
 /* An entry with its own deeds: its "…" stands over the end of the entry, where the count is. It shows under the pointer,
-   while the entry or the "…" has the focus and while its menu is open; the count gives way meanwhile and the name
-   ends before it. Tab always reaches it. Nothing moves. Without a pointer that hovers it always shows. */
+   while the entry or the "…" has the keyboard's focus (not after a click) and while its menu is open; the count gives
+   way meanwhile and the name ends before it. Tab always reaches it. Nothing moves. Without a pointer that hovers it
+   always shows, with a target of 28 px. */
 .k2-ui .k2-ni-row {
   position: relative;
   display: flex;
@@ -2277,19 +2282,22 @@
   height: 24px;
   opacity: 0;
 }
-.k2-ui .k2-ni-row:is(:hover, :focus-within) > .k2-btn,
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible)) > .k2-btn,
 .k2-ui .k2-ni-row > .k2-btn[aria-expanded="true"] {
   opacity: 1;
 }
-.k2-ui .k2-ni-row:is(:hover, :focus-within, :has(> .k2-btn[aria-expanded="true"])) > .k2-ni {
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni {
   padding-right: 32px;
 }
-.k2-ui .k2-ni-row:is(:hover, :focus-within, :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
   display: none;
 }
 @media (hover: none) {
   .k2-ui .k2-ni-row > .k2-btn {
     opacity: 1;
+    top: 2px;
+    width: 28px;
+    height: 28px;
   }
   .k2-ui .k2-ni-row > .k2-ni {
     padding-right: 32px;
@@ -3413,10 +3421,10 @@
 }
 /* a button at the end leaves 3 px above and below inside the field: 28 in a field of 36, 20 in the field of 28 of a
    bar of 40 */
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn {
   height: 20px;
 }
-.k2-ui :not(.k2-slot) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
+.k2-ui :is(:not(.k2-slot), [data-slot="status"]) > .k2-bar:not([data-status-row]) .k2-input-end > .k2-btn[data-icon-only] {
   width: 20px;
 }
 .k2-ui .k2-input-end > .k2-icon {

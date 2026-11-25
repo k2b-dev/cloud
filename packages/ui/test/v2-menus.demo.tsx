@@ -9,6 +9,8 @@ import { Bar, Button, Check, List, Menu, type MenuEntry, Pane, Popover, Row, Sec
 declare global {
   interface Window {
     __deeds?: string[];
+    /** A view more under "Weitere": the app builds its tabs again while their menu may be open. */
+    __moreViews?: () => void;
     /** Where the last Escape went: to the page, or taken by something on it (the toast test). */
     __escape?: "none" | "page" | "taken";
   }
@@ -27,6 +29,8 @@ const orders = [
 export function Demo() {
   const [openOnly, setOpenOnly] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
+  const [views, setViews] = createSignal(["Archiv", "Vorlagen"]);
+  if (typeof window !== "undefined") window.__moreViews = () => setViews([...views(), `Ansicht ${views().length + 1}`]);
   // the open reply of Mail: one choice for the kind of reply and one for the sender
   const [kind, setKind] = createSignal("reply");
   const [sender, setSender] = createSignal("anna@werkstatt.example");
@@ -142,11 +146,8 @@ export function Demo() {
               { label: "Erledigt", onClick: did("view:erledigt") },
               {
                 label: "Weitere",
-                count: "+2",
-                menu: [
-                  { label: "Archiv", onClick: did("view:archiv") },
-                  { label: "Vorlagen", onClick: did("view:vorlagen") },
-                ],
+                count: `+${views().length}`,
+                menu: views().map((name) => ({ label: name, onClick: did(`view:${name.toLowerCase()}`) })),
               },
             ]}
           />

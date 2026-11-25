@@ -141,7 +141,12 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
                   </Chip>
                 </Inline>
               }
-              end={<Avatar name="Ada Renz" />}
+              end={
+                <>
+                  <Avatar name="Ada Renz" />
+                  <Button variant="ghost" icon="link" label="Verknüpfen" />
+                </>
+              }
             />
           }
         >
