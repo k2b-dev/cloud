@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser } from "playwright";
-import { createComponent } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
@@ -19,13 +19,17 @@ const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
 const recipes = readdirSync(recipesDir)
   .filter((name) => name.endsWith(".tsx"))
   .sort();
+// Each recipe renders as it is and in every state it exports for Fibel's Example (`states`: empty, loading, failed or
+// what fits the screen), so a state an agent copies keeps the rules as well.
+type Recipe = { default: Parameters<typeof createComponent>[0]; states?: Record<string, () => JSX.Element> };
 const markup = new Map<string, string>();
 for (const name of recipes) {
-  const screen = (await import(resolve(recipesDir, name))) as { default: Parameters<typeof createComponent>[0] };
+  const recipe = (await import(resolve(recipesDir, name))) as Recipe;
   markup.set(
     name,
-    renderToString(() => createComponent(screen.default, {})),
+    renderToString(() => createComponent(recipe.default, {})),
   );
+  for (const [state, render] of Object.entries(recipe.states ?? {})) markup.set(`${name} (${state})`, renderToString(render));
 }
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -43,7 +47,7 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
   test("there are recipes", () => {
     expect(recipes.length).toBeGreaterThanOrEqual(6);
   });
-  for (const name of recipes)
+  for (const name of markup.keys())
     for (const width of [1440, 390])
       test(`${name} at ${width} px`, async () => {
         const page = await browser.newPage({ viewport: { width, height: 900 } });
