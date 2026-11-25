@@ -133,7 +133,7 @@
   place-items: center;
   border-radius: var(--k2-r-control);
   background: var(--k2-n950);
-  color: var(--k2-white);
+  color: var(--k2-surface);
   font-weight: 600;
 }
 .ui-v2-rail__app {
@@ -147,8 +147,8 @@
   font-size: 18px;
 }
 .ui-v2-rail__app[data-current] {
-  background: rgb(255 255 255 / 0.8);
-  color: var(--k2-app-ink, var(--k2-blue));
+  background: color-mix(in srgb, var(--k2-surface) 80%, transparent);
+  color: var(--k2-app-text);
 }
 .ui-v2-rail__fill {
   flex: 1;
