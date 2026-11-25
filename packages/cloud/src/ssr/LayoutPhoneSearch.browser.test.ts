@@ -41,7 +41,7 @@ const workspace = () =>
             label: "Ansichten",
             items: [
               { label: "Alle", count: 12, href: "/app/phone", current: true },
-              { label: "Handlungsbedarf", count: 5, href: "/app/phone?view=todo" },
+              { label: "Zu erledigen", count: 5, href: "/app/phone?view=todo" },
               { label: "Weitere", count: "+10", menu: [{ label: "Später", href: "/app/phone?view=later" }] },
             ],
           });
@@ -151,10 +151,12 @@ const head = (page: Page) =>
   page.evaluate(() => {
     const bar = document.querySelector('.layout-content-main [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
     const first = document.querySelector(".k2-tabs > .k2-tab")!.getBoundingClientRect().top;
+    const row = document.querySelector(".k2-tabs")!.getBoundingClientRect();
     const field = document.querySelector('[data-slot="head"] [data-k2-part="Input"][data-search]')!.getBoundingClientRect();
     return {
       tabs: [...document.querySelectorAll<HTMLElement>(".k2-tabs > .k2-tab")]
-        .filter((tab) => tab.getBoundingClientRect().top === first)
+        // on the line of the tabs and whole within their row (a tab without room wraps below it or is cut off there)
+        .filter((tab) => tab.getBoundingClientRect().top === first && tab.getBoundingClientRect().right <= row.right + 0.5)
         .map((tab) => tab.firstChild?.textContent ?? ""),
       field: [Math.round(field.width), Math.round(field.left - bar.left), Math.round(bar.right - field.right)],
       overHead: field.top >= bar.top && field.bottom <= bar.bottom,
@@ -166,7 +168,7 @@ test("a v2 page's search sits in the phone bar; the head keeps its tabs", async 
   try {
     expect(await barButtons(page)).toEqual(["Search", "Open help", "Open apps"]);
     const found = await head(page);
-    expect(found.tabs).toEqual(["Alle", "Handlungsbedarf"]);
+    expect(found.tabs).toEqual(["Alle", "Zu erledigen"]);
     expect(found.field[0]).toBeLessThanOrEqual(1);
   } finally {
     await page.close();
