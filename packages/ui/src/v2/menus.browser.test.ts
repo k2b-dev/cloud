@@ -322,7 +322,9 @@ for (const width of [1440, 900, 700, 390])
       async (page) => {
         const look = (name: string) =>
           page.evaluate((label) => {
-            const nav = document.querySelector(`nav[aria-label="${label}"]`)!;
+            // tabs with an address are a navigation; tabs that switch in place (the head's places here) a tab list
+            const nav = (document.querySelector(`nav[aria-label="${label}"]`) ??
+              document.querySelector(`[role="tablist"][aria-label="${label}"]`)?.closest(".k2-tabs-nav"))!;
             const edge = nav.getBoundingClientRect();
             const row = nav.querySelector(".k2-tabs")!.getBoundingClientRect();
             const tabs = [...nav.querySelectorAll<HTMLElement>(".k2-tab")];
@@ -370,7 +372,7 @@ for (const width of [1440, 900, 700, 390])
         if (areas.hidden.length > 0) {
           expect(areas.more.length).toBe(1);
           expect(areas.more[0]).toBe(`Mehr+${areas.hidden.length}`);
-          await page.getByRole("navigation", { name: "Bereiche" }).getByRole("button", { name: /Mehr/ }).click();
+          await page.locator('.k2-tabs-nav:has([role="tablist"][aria-label="Bereiche"])').getByRole("button", { name: /Mehr/ }).click();
           await page.locator(menu).waitFor();
           expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim())).toEqual(areas.hidden);
           await page.keyboard.press("Escape");

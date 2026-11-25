@@ -34,6 +34,7 @@ export {
   Steps,
   type StepsProps,
   type Tab,
+  type TabPanelProps,
   Tabs,
   type TabsProps,
 } from "./components";

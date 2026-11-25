@@ -229,7 +229,15 @@ export type Tab = {
   menu?: readonly MenuEntry[];
 };
 
-export type TabsProps = { items: readonly Tab[]; label: string };
+export type TabsProps = {
+  items: readonly Tab[];
+  label: string;
+  /**
+   * Tabs that switch a panel in place (none has an `href`): the id of the `Tabs.Panel` that shows the open tab's
+   * content, so each tab names the panel it controls and the panel is named by the open tab.
+   */
+  panel?: string;
+};
 
 /** The words of a tab: its symbol, its name and its count. */
 const TabFace = (props: { tab: Tab }) => (
@@ -273,8 +281,36 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
-export const Tabs = (props: TabsProps) => {
+const TabsRoot = (props: TabsProps) => {
   const t = useUiMessages();
+  // Tabs that change the address are links in a navigation (`aria-current`); tabs that switch a panel in place are the
+  // WAI-ARIA tabs: a tab list, `aria-selected`, one tab stop that the arrows, Home and End move, choosing as they go.
+  const inPlace = createMemo(
+    () => props.items.every((tab) => tab.href === undefined || tab.menu !== undefined) && props.items.some((tab) => !tab.menu),
+  );
+  const stop = () =>
+    Math.max(
+      0,
+      plain().findIndex((tab) => tab.current),
+    );
+  const tabId = (index: number) =>
+    props.panel ? (plain()[index]?.current ? `${props.panel}-tab` : `${props.panel}-tab-${index}`) : undefined;
+  const roam = (event: KeyboardEvent) => {
+    const keys: Record<string, (index: number, count: number) => number> = {
+      ArrowRight: (index, count) => (index + 1) % count,
+      ArrowLeft: (index, count) => (index - 1 + count) % count,
+      Home: () => 0,
+      End: (_, count) => count - 1,
+    };
+    const step = keys[event.key];
+    const tabs = [...(row?.querySelectorAll<HTMLElement>('[role="tab"]:not([data-overflow])') ?? [])];
+    const index = tabs.indexOf(event.target as HTMLElement);
+    if (!step || index < 0 || tabs.length === 0) return;
+    event.preventDefault();
+    const next = step(index, tabs.length);
+    tabs[next]?.focus();
+    plain()[next]?.onClick?.();
+  };
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -321,8 +357,15 @@ export const Tabs = (props: TabsProps) => {
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map(asEntry);
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
-      <div class="k2-tabs" ref={row}>
+    <Dynamic component={inPlace() ? "div" : "nav"} class="k2-tabs-nav" data-k2-part="Tabs" aria-label={inPlace() ? undefined : props.label}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useAriaPropsSupportedByRole: in place it is the WAI-ARIA tab list (its keys come up from its tabs); with addresses a plain row of links */}
+      <div
+        class="k2-tabs"
+        ref={row}
+        role={inPlace() ? "tablist" : undefined}
+        aria-label={inPlace() ? props.label : undefined}
+        onKeyDown={(event) => inPlace() && roam(event)}
+      >
         <Index each={plain()}>
           {(tab, index) => (
             <Dynamic
@@ -332,7 +375,12 @@ export const Tabs = (props: TabsProps) => {
               href={tab().href}
               onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
               onClick={() => tab().onClick?.()}
-              aria-current={tab().current ? "page" : undefined}
+              role={inPlace() ? "tab" : undefined}
+              id={inPlace() ? tabId(index) : undefined}
+              aria-selected={inPlace() ? (tab().current ? "true" : "false") : undefined}
+              aria-controls={inPlace() ? props.panel : undefined}
+              tabindex={inPlace() ? (index === stop() ? 0 : -1) : undefined}
+              aria-current={!inPlace() && tab().current ? "page" : undefined}
               data-overflow={index >= fit() ? "" : undefined}
             >
               <TabFace tab={tab()} />
@@ -357,9 +405,29 @@ export const Tabs = (props: TabsProps) => {
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>
-    </nav>
+    </Dynamic>
   );
 };
+
+export type TabPanelProps = {
+  /** The id `Tabs panel` names. */
+  id: string;
+  /** What the open tab shows. */
+  children: JSX.Element;
+};
+
+/** The panel of tabs that switch in place: named by the open tab, reached with Tab after the tab list. */
+const TabPanel = (props: TabPanelProps) => (
+  <div class="k2-tabpanel" data-k2-part="TabPanel" role="tabpanel" id={props.id} aria-labelledby={`${props.id}-tab`} tabindex="0">
+    {props.children}
+  </div>
+);
+
+/**
+ * Views as tabs; `Tabs.Panel` is the panel of tabs that switch in place. Tabs with an `href` change the address and
+ * are a navigation; tabs without one switch a panel in place and are the WAI-ARIA tabs pattern, with the same look.
+ */
+export const Tabs = Object.assign(TabsRoot, { Panel: TabPanel });
 
 // ── Path ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

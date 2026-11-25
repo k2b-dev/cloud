@@ -2452,16 +2452,26 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
-.k2-ui .k2-tab[aria-current] {
+.k2-ui .k2-tab:is([aria-current], [aria-selected="true"]) {
   color: var(--k2-text);
   border-bottom-color: var(--k2-app, var(--k2-blue));
 }
-.k2-ui .k2-tab[aria-current] > .k2-icon {
+.k2-ui .k2-tab:is([aria-current], [aria-selected="true"]) > .k2-icon {
   color: var(--k2-app-text);
 }
 .k2-ui .k2-tab:focus-visible {
   outline: none;
   box-shadow: inset 0 -2px 0 var(--k2-blue);
+}
+/* the panel of tabs that switch in place: no box of its own; its focus (Tab after the tab list) shows as a ring */
+.k2-ui .k2-tabpanel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  outline: none;
+}
+.k2-ui .k2-tabpanel:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
 }
 
 /* Path: where the page stands, in the start of its head */

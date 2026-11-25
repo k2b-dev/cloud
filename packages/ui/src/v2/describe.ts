@@ -128,9 +128,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     if (name === "Tabs") {
       const tabs = [...element.querySelectorAll(".k2-tab")].map((tab) => {
         const count = tab.querySelector(".k2-tab-count")?.textContent;
-        return `${mainText(tab)}${count ? ` (${count})` : ""}${tab.getAttribute("aria-current") ? " ✓" : ""}`;
+        return `${mainText(tab)}${count ? ` (${count})` : ""}${tab.getAttribute("aria-current") || tab.getAttribute("aria-selected") === "true" ? " ✓" : ""}`;
       });
-      return `Tabs ${quote(element.getAttribute("aria-label"))}: ${tabs.join(", ")}`;
+      // tabs with addresses name their navigation, tabs in place their tab list
+      const label = element.getAttribute("aria-label") ?? element.querySelector('[role="tablist"]')?.getAttribute("aria-label") ?? null;
+      return `Tabs ${quote(label)}: ${tabs.join(", ")}`;
     }
     if (name === "RecordHead") {
       // The identifiers stand beside the name, in the same place (its kinds are chips and name themselves).

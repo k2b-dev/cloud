@@ -342,7 +342,13 @@ lines instead of cutting a thing.
   cut: one without room hides whole and joins that menu (and its count),
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
-  before the menu tab.
+  before the menu tab. Tabs with `href` change the address and are a
+  navigation (`aria-current`); tabs without any `href` switch a panel in
+  place ("Vorschau | Code") and are the WAI-ARIA tabs (a tab list,
+  `aria-selected`, one tab stop that the arrows, Home and End move, opening
+  as they go), with the same look. Give them `panel` (an id) and put the
+  open tab's content in `<Tabs.Panel id>`, which the open tab names. A
+  choice of a value is never tabs; that is `Select` or `Choice`.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
