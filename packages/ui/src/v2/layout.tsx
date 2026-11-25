@@ -19,6 +19,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { Empty } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
@@ -61,11 +62,17 @@ export type WorkspaceProps = {
   /** The main action; on the phone it floats at the bottom right. */
   primary?: Action;
   /**
-   * A detail opens beside the columns at times (a reader beside a list): the sidebar makes room for it also while it
-   * is closed, so opening and closing it never moves the sidebar between column and drawer. Keep the `width` of the
-   * column beside it while the detail is closed; alone it fills the room.
+   * A detail opens beside the columns at times (a reader beside a list), and keeps at least this width (`true`:
+   * 400 px). The workspace keeps its room also while it is closed: the sidebar never moves between column and drawer
+   * when it opens, and `detailEmpty` stands in its place, so the column beside it keeps its width.
    */
-  detail?: boolean;
+  detail?: true | number;
+  /**
+   * What stands in the detail's place while none is open, such as `{ icon: "mail", text: "Keine Nachricht
+   * ausgewählt" }`; "Nothing selected" in the language of the page when not set. Not on the phone, where the list is
+   * the page.
+   */
+  detailEmpty?: { icon: string; text: string };
   /**
    * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
    * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
@@ -82,18 +89,24 @@ const flexibleMin = 400;
  * says so, since the workspace counts it once, open or closed.
  */
 type Column = { readonly need: number; readonly detail: boolean };
-/** The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. */
-const ColumnsContext = createContext<((column: Column) => void) | undefined>();
+/**
+ * The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. The split
+ * at the top also learns what stands in the place of a declared detail while none is open.
+ */
+type Columns = { register: (column: Column) => void; empty: () => { icon: string; text: string } | undefined };
+const ColumnsContext = createContext<Columns | undefined>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
  * a grip on every line that moves. On the phone the sidebar leaves and columns become pages.
  *
  * The sidebar stands beside the columns while the workspace holds it at its default width and every column at its
- * minimum, with the lines between them; a detail it declares (`detail`) counts also while it is closed. Where it does not (a tablet, a narrow window), the sidebar is a drawer from
- * the start of the window, opened by a button at the start of the head; picking an entry in it closes it. The
- * stylesheet decides this from the workspace's own width, on the server's page too, so nothing moves when the page
- * comes alive.
+ * minimum, with the lines between them; a detail it declares (`detail`) counts also while it is closed. Where it does
+ * not (a tablet, a narrow window), the sidebar is a drawer from the start of the window, opened by a button at the
+ * start of the head; picking an entry in it closes it. The stylesheet decides this from the workspace's own width, on
+ * the server's page too, so nothing moves when the page comes alive. The drawer holds a second instance of the
+ * sidebar, made while it is open: its scroll position and open folds start fresh. The rule is a `<style>` of the
+ * workspace; a page whose content security policy allows no inline style keeps the sidebar as a column.
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
@@ -107,14 +120,21 @@ export const Workspace = (props: WorkspaceProps) => {
     setColumns((list) => [...list, column]);
     onCleanup(() => setColumns((list) => list.filter((other) => other !== column)));
   };
-  // The room the sidebar needs beside the columns: its default, every column's minimum, the lines, the outer edge.
-  // A detail counts once, open or closed, when the workspace declares one, so the room stays the same when it opens.
+  // the detail the workspace declares, at its minimum; it counts open or closed
+  const declared = () => (props.detail === undefined ? undefined : props.detail === true ? flexibleMin : props.detail);
+  const empty = () =>
+    declared() === undefined || columns().some((column) => column.detail)
+      ? undefined
+      : (props.detailEmpty ?? { icon: "click", text: t().nothingSelected });
+  // The room the sidebar needs beside the columns: its default, every column's minimum and the lines between them, in
+  // the workspace's content box (inside its edge), which the container query measures. A declared detail counts at
+  // its declared minimum, open or closed, so the room stays the same when it opens.
   const room = () => {
     const list = columns().filter((column) => !column.detail);
-    const details = columns().filter((column) => column.detail);
-    const detail = props.detail || details.length > 0 ? Math.max(flexibleMin, ...details.map((column) => column.need)) : 0;
+    const open = columns().filter((column) => column.detail);
+    const detail = declared() ?? (open.length > 0 ? Math.max(...open.map((column) => column.need)) : 0);
     const panes = list.length + (detail ? 1 : 0);
-    return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1) + 2;
+    return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1);
   };
   const id = createUniqueId();
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
@@ -127,18 +147,27 @@ export const Workspace = (props: WorkspaceProps) => {
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
   let toggle: HTMLElement | undefined;
-  // When the window grows while the drawer is open, the sidebar is a column again and the drawer closes.
+  let aside: HTMLElement | undefined;
+  let panel: HTMLElement | undefined;
+  // When the window grows while the drawer is open, the sidebar is a column again and the drawer closes. Its button is
+  // gone then, so a focus inside the drawer goes to the column's current entry instead.
   createEffect(() => {
     if (!drawerOpen() || !element) return;
     const sizes = new ResizeObserver(() => {
-      if (toggle && toggle.getClientRects().length === 0) setDrawerOpen(false);
+      if (!toggle || toggle.getClientRects().length > 0) return;
+      const inside = panel?.contains(document.activeElement) ?? false;
+      setDrawerOpen(false);
+      if (inside)
+        requestAnimationFrame(() => aside?.querySelector<HTMLElement>('[aria-current="page"], a[href], button:not([disabled])')?.focus());
     });
     sizes.observe(element);
     onCleanup(() => sizes.disconnect());
   });
-  // Picking an entry (a link, a button that is no disclosure) closes the drawer; the page it opens is what matters.
+  // Picking an entry (a link, a button that opens no disclosure, menu or dialog) closes the drawer; the page it opens is
+  // what matters.
   const pick = (event: MouseEvent) => {
-    if (event.target instanceof Element && event.target.closest("a[href], button:not([aria-expanded])")) setDrawerOpen(false);
+    if (event.target instanceof Element && event.target.closest("a[href], button:not([aria-expanded]):not([aria-haspopup])"))
+      setDrawerOpen(false);
   };
   const toggleButton = () => (
     <drawer.Trigger
@@ -168,7 +197,7 @@ export const Workspace = (props: WorkspaceProps) => {
       })}
     >
       <Show when={sidebar()}>
-        <aside class="k2-ws-side" data-k2-column="">
+        <aside ref={aside} class="k2-ws-side" data-k2-column="">
           {sidebar()}
         </aside>
         <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
@@ -180,12 +209,15 @@ export const Workspace = (props: WorkspaceProps) => {
             {head()}
           </div>
         </Show>
-        <ColumnsContext.Provider value={register}>{props.children}</ColumnsContext.Provider>
+        <ColumnsContext.Provider value={{ register, empty }}>{props.children}</ColumnsContext.Provider>
       </div>
       <Show when={sidebar()}>
         <style>{drawerRule()}</style>
         {/* the sidebar once more, made only while the drawer is open (in the browser, after a press) */}
         <drawer.Popup
+          ref={(element: HTMLElement) => {
+            panel = element;
+          }}
           class="k2-drawer"
           data-k2-part="Drawer"
           aria-label={t().sidebar}
@@ -281,7 +313,7 @@ export const Pane = (props: PaneProps) => {
   };
   useContext(SplitContext)?.(entry);
   // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
-  useContext(ColumnsContext)?.({
+  useContext(ColumnsContext)?.register({
     get need() {
       return props.width?.min ?? flexibleMin;
     },
@@ -360,9 +392,13 @@ Pane.Split = (props: { children: JSX.Element }) => {
     setEntries((list) => [...list, entry]);
     onCleanup(() => setEntries((list) => list.filter((other) => other !== entry)));
   };
+  // at the top of a workspace that declares a detail: what stands in its place while none is open
+  const columns = useContext(ColumnsContext);
   return (
     <SplitContext.Provider value={register}>
-      <SplitBody entries={entries()}>{props.children}</SplitBody>
+      <SplitBody entries={entries()} empty={columns?.empty()}>
+        {props.children}
+      </SplitBody>
     </SplitContext.Provider>
   );
 };
@@ -373,7 +409,7 @@ Pane.Split = (props: { children: JSX.Element }) => {
  * of the list is the same two nodes, so nothing in it comes and goes on its own (that would not be removed cleanly
  * after hydration). In the browser a pane's entry is found by its element, on the server by its order.
  */
-const SplitBody = (props: { entries: readonly SplitEntry[]; children: JSX.Element }) => {
+const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
   const resolved = resolveChildren(() => props.children);
   // a pane hidden by `Show` stays in the list as nothing: it gets no seam
   const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && pane !== "");
@@ -382,10 +418,11 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; children: JSX.Elemen
     if (pane === undefined) return undefined;
     return props.entries.find((entry) => entry.element !== undefined && entry.element === pane) ?? props.entries[index];
   };
-  // The seam after pane `index`: the pane on its right moves it if it has a width, else the pane on its left.
+  // The seam after pane `index`: the pane on its right moves it if it has a width, else the pane on its left. The place
+  // of a detail that is not open counts as a pane without a width, so the grip stays where it is when it opens.
   const grip = (index: number) => {
     const left = entryOf(index);
-    const right = entryOf(index + 1);
+    const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
     return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
@@ -400,6 +437,16 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; children: JSX.Elemen
           </>
         )}
       </For>
+      {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
+      <Show when={props.empty}>
+        {(empty) => (
+          <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
+            <div class="k2-scroll">
+              <Empty icon={empty().icon} text={empty().text} />
+            </div>
+          </section>
+        )}
+      </Show>
     </div>
   );
 };
