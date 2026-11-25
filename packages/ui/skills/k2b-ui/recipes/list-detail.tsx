@@ -64,7 +64,7 @@ export default function SourcesScreen() {
                 icon="plug"
                 lines={[source.name, source.kind]}
                 time={source.seen}
-                selected={source.id === open.id}
+                current={source.id === open.id}
                 href={`#${source.id}`}
               />
             ))}
