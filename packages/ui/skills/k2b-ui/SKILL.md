@@ -66,6 +66,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
+| rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
@@ -81,6 +82,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | reading text, an email body | `Prose` | `mail.tsx` |
 | attachments, like things to press | `Tiles` | `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
+| a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
+| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | – |
+| a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
 | a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |
 | data still loading | `Loading` where the list will stand; a table takes `loading` | – |
@@ -118,7 +122,8 @@ One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
 without a head action has its "Save" as the one primary in its footer
 `Bar`; a form shown beside a page that has a head primary saves with a
-default (framed) button.
+default (framed) button. An open dialog or sheet is a surface of its own
+and has its own one primary (such as "Erstellen").
 
 What a list has open belongs in the address: render the `Pane detail` only
 while the address names an entry, give its `back` an `href` to the list

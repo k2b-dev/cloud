@@ -49,6 +49,12 @@ const normalized = (page: Page, html?: string) =>
       if (!(node instanceof Element)) return "";
       if (node instanceof HTMLElement && node.getAttribute("data-slot") === "resizable-panel")
         node.style.removeProperty("--resizable-panel-size");
+      // Core's `bindHold` sets two style properties on the item it binds: `--hold-delay` for CSS and, against iOS's
+      // long-press callout, `-webkit-touch-callout`. Neither is painted; both are left out here.
+      if (node instanceof HTMLElement) {
+        node.style.removeProperty("--hold-delay");
+        node.style.removeProperty("-webkit-touch-callout");
+      }
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]

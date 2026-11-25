@@ -92,6 +92,28 @@ describe("describeV2", () => {
     expect(text).toContain('- 2 primary buttons ("Eins", "Zwei")');
   });
 
+  test("counts the primary action per surface: an open dialog has its own beside the page's", () => {
+    const head = `<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button" data-variant="primary">Schlüssel erstellen</button></div></div>`;
+    const dialog = (label: string, buttons: string) =>
+      `<div class="k2-dialog" data-k2-part="Dialog" role="${label === "Schlüssel widerrufen?" ? "alertdialog" : "dialog"}" aria-labelledby="t-${label.length}">` +
+      `<div class="k2-slot" data-slot="head"><div class="k2-bar"><div class="k2-bar-start"><h2 class="k2-dialog-title" id="t-${label.length}">${label}</h2></div></div></div>` +
+      `<div class="k2-slot" data-slot="foot"><div class="k2-bar"><div class="k2-bar-end">${buttons}</div></div></div></div>`;
+    const primary = (label: string) => `<button class="k2-btn" data-k2-part="Button" data-variant="primary">${label}</button>`;
+    // the page's primary and one in each open dialog: no finding
+    const clean = outline(head + dialog("Neuer Schlüssel", primary("Erstellen")) + dialog("Schlüssel widerrufen?", primary("Widerrufen")));
+    expect(clean).not.toContain("primary buttons");
+    // two in one dialog are still two on one surface, named by the dialog's title
+    const twice = outline(head + dialog("Neuer Schlüssel", primary("Erstellen") + primary("Erstellen und kopieren")));
+    expect(twice).toContain(
+      '- 2 primary buttons in dialog "Neuer Schlüssel" ("Erstellen", "Erstellen und kopieren"): one primary action per dialog',
+    );
+    expect(twice).not.toContain("3 primary buttons");
+    // and two on the page stay two on the page, whatever a dialog holds
+    expect(outline(head + head + dialog("Neuer Schlüssel", primary("Erstellen")))).toContain(
+      '- 2 primary buttons ("Schlüssel erstellen", "Schlüssel erstellen"): one primary action per page',
+    );
+  });
+
   test("tells a select's placeholder from a chosen value", () => {
     const text = outline(
       `<div class="k2-field" data-k2-part="Field"><label class="k2-field-label">Land</label>` +
