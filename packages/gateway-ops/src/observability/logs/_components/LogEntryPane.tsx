@@ -49,6 +49,7 @@ export default function LogEntryPane(props: Props) {
                 <Button
                   variant="ghost"
                   icon="copy"
+                  keep
                   label={t().copy}
                   onClick={() =>
                     void navigator.clipboard.writeText(json()).then(

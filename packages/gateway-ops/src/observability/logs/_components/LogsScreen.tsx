@@ -22,7 +22,7 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "../api-client";
 import type { LogEntry, LogLevel } from "../contracts";
@@ -98,6 +98,7 @@ export default function LogsScreen(props: LogsScreenProps) {
   const [liveFailed, setLiveFailed] = createSignal(false);
   const [ignored, setIgnored] = createSignal(props.ignored);
   const [cleanupOpen, setCleanupOpen] = createSignal(false);
+  const [searchOpen, setSearchOpen] = createSignal(false);
   const [page, setPage] = createSignal(props.page);
   const format = createMemo(() => logRowFormatter(locale(), props.timeZone));
   const rows = createMemo(() => (data()?.entries ?? []).map((entry) => format().row(entry, props.today)));
@@ -108,6 +109,7 @@ export default function LogsScreen(props: LogsScreenProps) {
 
   let controller: AbortController | undefined;
   /** Loads the list for a state through the API; the old rows stay until the new ones come. */
+  // k2b-ui gap: 4 – StatusRow has no reserved loading sign, so nothing shows that new rows are on their way.
   const load = async (next: LogsState, quiet = false) => {
     controller?.abort();
     const current = new AbortController();
@@ -282,6 +284,8 @@ export default function LogsScreen(props: LogsScreenProps) {
               <Menu
                 label={t().moreActions}
                 items={[
+                  // k2b-ui gap: 8 – the head's search field gives way on the phone (Input has no `keep`); this entry keeps it.
+                  { label: t().searchMenu, icon: "search", onClick: () => setSearchOpen(true) },
                   { label: t().retention, icon: "archive", href: "/admin/observability/retention" },
                   { label: t().cleanup, icon: "trash", danger: true, onClick: () => setCleanupOpen(true) },
                 ]}
@@ -308,8 +312,9 @@ export default function LogsScreen(props: LogsScreenProps) {
               />
               <StatusRow
                 lead={data() ? t().entriesOf({ count: number(rows().length), total: number(total()) }) : t().unavailable}
-                // k2b-ui gap: StatusRow keeps its facts in a narrow column (concept 6d drops them below 760 px). Beside an
-                // open entry the list is that narrow, so the counts give way there.
+                // k2b-ui gap: 2 – StatusRow keeps its facts in a narrow column (concept 6d drops them below 760 px). Beside
+                // an open entry the list is that narrow, so the counts give way there, and the concept's sentence
+                // "Live: neue Einträge kommen oben dazu" is left out so the row fits at 1024 px.
                 facts={[
                   ...(props.entry || !data()
                     ? []
@@ -317,7 +322,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                         { value: number(data()?.levels.error ?? 0), after: t().errors },
                         { value: number(data()?.levels.warn ?? 0), after: t().warnings },
                       ]),
-                  // The switch says live is on; only a refresh that fails needs a sentence (it retries on its own).
+                  // Only a refresh that fails needs a sentence (it retries on its own).
                   ...(live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
                 ]}
                 filters={
@@ -355,6 +360,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                     }
                   : { icon: "list-search", text: t().noEntries }
               }
+              // k2b-ui gap: 3 – a phone row has no place for a trailing status chip; the level word leads the second line.
               phone={(row) => ({
                 lines: [
                   row.message,
@@ -394,6 +400,15 @@ export default function LogsScreen(props: LogsScreenProps) {
           <LogEntryPane selected={props.selected} timeZone={props.timeZone} closeHref={href({ entry: null })} listLabel={t().logs} />
         </Show>
       </Pane.Split>
+      <SearchDialog
+        open={searchOpen()}
+        onOpenChange={setSearchOpen}
+        value={state().search ?? ""}
+        onSearch={(text) => {
+          setSearchOpen(false);
+          search(text);
+        }}
+      />
       <CleanupDialog
         open={cleanupOpen()}
         onOpenChange={setCleanupOpen}
@@ -412,6 +427,47 @@ const windowHours = (state: LogsState): number => {
   if (time.kind === "preset") return LOG_TIME_PRESETS[time.preset] / 60;
   return time.from ? (Date.now() - Date.parse(time.from)) / 3_600_000 : 24 * 31;
 };
+
+/** The free search as a dialog, for the phone, where the head's search field gives way (k2b-ui gap: 8). */
+function SearchDialog(props: { open: boolean; onOpenChange: (open: boolean) => void; value: string; onSearch: (text: string) => void }) {
+  const locale = useLocale();
+  const t = () => logsMessages.resolve([locale()]).t;
+  const [text, setText] = createSignal(props.value);
+  // each opening starts from the search the list shows now
+  createEffect(
+    on(
+      () => props.open,
+      (open) => open && setText(props.value),
+    ),
+  );
+  return (
+    <Dialog
+      title={t().search}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
+      foot={
+        <>
+          <Button onClick={() => props.onOpenChange(false)}>{t().cancel}</Button>
+          <Button icon="search" onClick={() => props.onSearch(text())}>
+            {t().searchShort}
+          </Button>
+        </>
+      }
+    >
+      <Field label={t().search}>
+        <Input
+          type="search"
+          icon="search"
+          value={props.value}
+          onInput={setText}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.isComposing) props.onSearch(text());
+          }}
+        />
+      </Field>
+    </Dialog>
+  );
+}
 
 /** "Alte Einträge löschen …": the number of days to keep, then one deed that deletes what is older. */
 function CleanupDialog(props: { open: boolean; onOpenChange: (open: boolean) => void; onDone: (deleted: number) => void }) {

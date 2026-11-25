@@ -194,6 +194,29 @@ describe("the log list on v2", () => {
     }
   }, 60_000);
 
+  test("on the phone the search stays reachable through the menu, and an open entry keeps its copy button", async () => {
+    const { context, tab, errors, calls } = await open({ width: 390, height: 844, touch: true }, "/admin/observability/logs?time=last-15m");
+    try {
+      await tab.getByRole("button", { name: "More log actions" }).click();
+      await tab.getByRole("menuitem", { name: "Search messages …" }).click();
+      await tab.getByRole("dialog").getByRole("searchbox").fill("Greylisting");
+      await tab.keyboard.press("Enter");
+      await tab.waitForURL(/q=Greylisting/);
+      await tab.waitForFunction(() => window.document.body.innerText.includes("3 of 3 entries"));
+      expect(calls.at(-1)).toContain("q=Greylisting");
+      const entry = await open({ width: 390, height: 844, touch: true }, "/admin/observability/logs?time=last-15m&entry=9001");
+      try {
+        expect(await entry.tab.getByRole("button", { name: "Copy", exact: true }).isVisible()).toBe(true);
+        expect(entry.errors).toEqual([]);
+      } finally {
+        await entry.context.close();
+      }
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("the screen keeps the v2 rules at 1440, 1024 and 390 px", async () => {
     const cases: [string, string, View][] = [
       ["logs-live-1440", "time=last-15m&level=error,warn&source=mail,gateway&group=minute", desktop],
@@ -215,7 +238,7 @@ describe("the log list on v2", () => {
         const outline = await describeV2Page(tab, "#root");
         expect(outline).not.toContain("Problems (");
         const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
-        // k2b-ui gap (lane B, reported): the filter statement's 12/28 text is not one of the v2 type roles yet.
+        // k2b-ui gap: 1 – the filter statement's 12/28 text is not one of the v2 type roles yet; only these two findings.
         const problems = layout.problems.filter(
           (problem) => !/^text outside the type roles: 12px\/28px (400 in button\.k2-stmt-b|600 in b)( |$)/.test(problem),
         );

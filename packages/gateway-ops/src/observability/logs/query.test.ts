@@ -37,6 +37,7 @@ describe("the log list address", () => {
       request: "7f3a9c",
     });
     expect(address).toMatchObject({ page: 2, entry: "9001", liveOff: true });
+    // k2b-ui gap: 6 – serialize writes commas as %2C; the concept shows plain commas.
     expect(logsHref(query, address.state, { page: 2, entry: "9001", liveOff: true })).toBe(
       `/admin/observability/logs?${search.replaceAll(",", "%2C")}&page=2&entry=9001&live=off`,
     );
