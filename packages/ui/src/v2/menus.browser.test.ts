@@ -159,6 +159,53 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
   });
 });
 
+test("menu: sections with headings; a choice is one radio group, choosing closes the menu and moves the tick", async () => {
+  await withPage(async (page) => {
+    const trigger = page.getByRole("button", { name: "Antwort" });
+    await trigger.click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    // each section is a group named by its heading; a line stands between sections, none inside one
+    const groups = await page
+      .locator(`${menu} [role=group]`)
+      .evaluateAll((all) => all.map((el) => document.getElementById(el.getAttribute("aria-labelledby") ?? "")?.textContent));
+    expect(groups).toEqual(["Antwortart", "Absender", "Entwurf"]);
+    expect(await page.locator(`${menu} > .k2-msep`).count()).toBe(2);
+    expect(await page.locator(`${menu} .k2-mgroup .k2-msep`).count()).toBe(0);
+    const options = page.getByRole("menuitemradio");
+    expect(await options.count()).toBe(5);
+    const reply = page.getByRole("menuitemradio", { name: "Antworten", exact: true });
+    expect(await reply.getAttribute("aria-checked")).toBe("true");
+    expect(await reply.locator(".k2-mi-tick .k2-icon").count()).toBe(1);
+    // the heading: 28 px, its words on the words of the entries
+    const heading = await box(page.locator(`${menu} .k2-mh`).first());
+    expect(heading.height).toBe(28);
+    const words = await page
+      .locator(`${menu} .k2-mh`)
+      .first()
+      .evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().left;
+      });
+    expect(Math.abs(words - (await box(reply.locator(".k2-mi-label"))).x)).toBeLessThanOrEqual(1);
+    await page.getByRole("menuitemradio", { name: "Allen antworten" }).click();
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["kind:all"]);
+    // with the keys: the chosen one carries the tick now, and Enter on another sender chooses it
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(menu).waitFor();
+    expect(await page.getByRole("menuitemradio", { name: "Allen antworten" }).getAttribute("aria-checked")).toBe("true");
+    expect(await reply.getAttribute("aria-checked")).toBe("false");
+    for (let step = 0; step < 4; step++) await page.keyboard.press("ArrowDown");
+    expect(await focused(page)).toBe("info@werkstatt.example");
+    await page.keyboard.press("Enter");
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["kind:all", "sender:info@werkstatt.example"]);
+  });
+});
+
 test("menu: the '…' at the end of a row stays where it is while its menu is open", async () => {
   await withPage(async (page) => {
     const button = page.getByRole("button", { name: "Aktionen für Küchenfront" });

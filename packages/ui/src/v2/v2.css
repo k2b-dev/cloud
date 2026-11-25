@@ -2748,6 +2748,27 @@
 .k2-ui .k2-mi[data-pending] {
   cursor: progress;
 }
+/* A section of a menu: a quiet heading in the meta role over its entries, its words on the words of the entries;
+   lines around the section come from the menu (menuEntries), none inside it */
+.k2-ui .k2-mgroup {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-mh {
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  height: 28px;
+  padding: 0 8px 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-subtle);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.k2-ui .k2-menu:has(.k2-mi-lead) .k2-mh {
+  padding-left: 32px;
+}
 .k2-ui .k2-msep {
   flex: none;
   height: 1px;

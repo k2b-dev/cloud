@@ -292,8 +292,12 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups. A line
-  before the first `danger` entry comes by itself. The menu lines up with
+  `items` (a submenu to the side); or `"separator"` between groups; or a
+  section `{ title, items }` under a quiet heading. A section with
+  `choice` and `onChoose` is one choice (reply kind, sender, order): its
+  entries are options (`value`, else `label`), the chosen one carries the
+  tick, choosing closes the menu. Lines around sections and before the
+  first `danger` entry come by themselves. The menu lines up with
   its button; there is no `align`.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
