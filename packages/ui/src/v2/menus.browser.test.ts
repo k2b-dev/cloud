@@ -27,9 +27,28 @@ afterAll(async () => {
   await browser?.close();
 });
 
-type Options = { width?: number; touch?: boolean; theme?: "light" | "dark" };
+type Options = { width?: number; touch?: boolean; theme?: "light" | "dark"; slowSheet?: boolean };
 
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, touch = false, theme = "light" }: Options = {}) => {
+// Core loads its sheet module on its own time (a dynamic import, a chunk of its own in an app). The bundle of a slow
+// load waits for the page's `__k2LoadSheet()`, so a test can let it come after everything else of the popover.
+declare global {
+  interface Window {
+    __k2LoadSheet?: () => void;
+  }
+}
+const sheetImport = "loading ??= Promise.resolve().then(() => (init_sheet_presentation()";
+const slowSheetBundle = () => {
+  expect(bundle.split(sheetImport).length).toBe(2);
+  return bundle.replace(
+    sheetImport,
+    "loading ??= new Promise((done) => { window.__k2LoadSheet = done; }).then(() => (init_sheet_presentation()",
+  );
+};
+
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  { width = 1440, touch = false, theme = "light", slowSheet = false }: Options = {},
+) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch, isMobile: touch, colorScheme: theme });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -37,7 +56,7 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, touc
     await page.setContent(
       `<!doctype html><html lang="de"${theme === "dark" ? ' class="dark"' : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    await page.addScriptTag({ content: bundle });
+    await page.addScriptTag({ content: slowSheet ? slowSheetBundle() : bundle });
     await page.waitForFunction(() => window.__mounted === true);
     await settled(page);
     await run(page);
@@ -418,8 +437,8 @@ for (const width of [1440, 390])
         if (width < 768) {
           expect(await panel.getAttribute("data-presentation")).toBe("sheet");
           expect([p.x, p.width, Math.round(p.y + p.height)]).toEqual([0, 390, 900]);
-          // as high as its content (title and box), never squeezed to a sliver
-          expect(p.height).toBeGreaterThan(80);
+          // as high as its content (title, box and three lines), never squeezed to a sliver
+          expect(p.height).toBeGreaterThan(120);
         } else {
           expect(await panel.getAttribute("data-presentation")).not.toBe("sheet");
           expect(p.width).toBe(280);
@@ -429,6 +448,56 @@ for (const width of [1440, 390])
         await closed(page, ".k2-pop");
       },
       width < 768 ? { width, touch: true } : { width },
+    );
+  });
+
+// The popover's sheet stands on the bottom like a dialog's: when its content gets shorter it is lower in the very next
+// frame, never a frame higher up (a tap there would hit the backdrop and close it, #4141), also when core's sheet
+// module loads after the panel is open.
+for (const [touch, slowSheet] of [
+  [false, false],
+  [true, false],
+  [false, true],
+] as const)
+  test(`popover sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets shorter keeps its bottom`, async () => {
+    await withPage(
+      async (page) => {
+        const trigger = page.getByRole("button", { name: "Vorschau" });
+        await (touch ? trigger.tap() : trigger.click());
+        const panel = page.locator(".k2-pop");
+        if (slowSheet) {
+          await panel.waitFor({ state: "attached" });
+          // two frames with the panel in the page, then the module comes
+          await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+          expect(await page.evaluate(() => typeof window.__k2LoadSheet)).toBe("function");
+          await page.evaluate(() => window.__k2LoadSheet?.());
+        }
+        await panel.waitFor();
+        await settled(page);
+        expect(await panel.getAttribute("data-presentation")).toBe("sheet");
+        const before = await box(panel);
+        expect(Math.round(before.y + before.height)).toBe(900);
+        // as high as its content: title, box and three lines, never squeezed to a sliver
+        expect(before.height).toBeGreaterThan(120);
+        const frames = await page.evaluate(async () => {
+          const sheet = document.querySelector(".k2-pop") as HTMLElement;
+          // the place each frame is drawn at: read after the frame (a task after its animation frame)
+          const drawn = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+          document.querySelector<HTMLInputElement>('.k2-pop input[name="images"]')?.click();
+          const places: number[] = [];
+          for (let index = 0; index < 4; index++) {
+            await drawn();
+            const { top, bottom } = sheet.getBoundingClientRect();
+            places.push(Math.round(top), Math.round(bottom));
+          }
+          return places;
+        });
+        await settled(page);
+        const after = await box(panel);
+        expect(after.height).toBeLessThan(before.height);
+        expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
+      },
+      { width: 390, touch, slowSheet },
     );
   });
 

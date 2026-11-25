@@ -65,9 +65,10 @@ export type DialogOptions = OverlayOptions & {
 };
 
 /**
- * A sheet stands on the bottom of the screen. Core answers a change of its content's height with a spring that starts
- * at the old height and moves the whole sheet: for a moment it stands off the bottom, and a tap there hits the backdrop
- * and closes it (#4141). Core offers no way to leave that spring out, so it ends here, before the frame is drawn.
+ * A sheet (a dialog's, or a popover's on the phone) stands on the bottom of the screen. Core answers a change of its
+ * content's height with a spring that starts at the old height and moves the whole sheet: for a moment it stands off
+ * the bottom, and a tap there hits the backdrop and closes it (#4141). Core offers no way to leave that spring out, so
+ * it ends here, before the frame is drawn.
  *
  * Core starts the spring in its own ResizeObserver of the sheet, which may be made before or after this one (its sheet
  * module loads on its own time). So this one only notes the change and observes a part inside the sheet: an
@@ -206,9 +207,19 @@ export type PopoverParts = {
  */
 export function usePopover(options: () => OverlayOptions & { presentation?: "popover" | "sheet" } = () => ({})): PopoverParts {
   const handle = usePrimitive(popoverPrimitive, options);
+  const Content = popupComponent(handle, "content");
   return {
     Trigger: slotComponent(handle, "trigger", "button"),
-    Popup: popupComponent(handle, "content"),
+    // as a sheet on the phone it holds its bottom when its content changes height, as a dialog's sheet does
+    Popup: (props) => (
+      <Content
+        {...props}
+        ref={(element: HTMLElement) => {
+          holdSheetBottom(element);
+          props.ref?.(element);
+        }}
+      />
+    ),
     Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
   };
