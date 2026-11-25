@@ -6,11 +6,14 @@ import {
   For,
   Index,
   type JSX,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
@@ -227,51 +230,108 @@ export type Tab = {
 
 export type TabsProps = { items: readonly Tab[]; label: string };
 
+/** The words of a tab: its symbol, its name and its count. */
+const TabFace = (props: { tab: Tab }) => (
+  <>
+    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+    {props.tab.label}
+    <Show when={props.tab.count !== undefined}>
+      <span class="k2-tab-count">{props.tab.count}</span>
+    </Show>
+  </>
+);
+
+/** A tab that hides for lack of room, as an entry of the menu of further views. */
+const asEntry = (tab: Tab): MenuEntry => ({
+  label: tab.label,
+  icon: tab.icon,
+  meta: tab.count === undefined ? undefined : String(tab.count),
+  href: tab.href,
+  onClick: tab.onClick,
+  checked: tab.current ? true : undefined,
+});
+
 /**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
  * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
- * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views.
+ * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
+ * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
+ * menu tab a tab "More" opens them), the menu tab itself always stays whole.
  */
-export const Tabs = (props: TabsProps) => (
-  <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
-    <div class="k2-tabs">
-      <Index each={props.items}>
-        {(tab) => (
-          <Show
-            when={tab().menu}
-            fallback={
-              <Dynamic
-                component={linkOr(tab().href, "button")}
-                type={tab().href !== undefined ? undefined : "button"}
-                class="k2-tab"
-                href={tab().href}
-                onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
-                onClick={() => tab().onClick?.()}
-                aria-current={tab().current ? "page" : undefined}
-              >
-                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
-                {tab().label}
-                <Show when={tab().count !== undefined}>
-                  <span class="k2-tab-count">{tab().count}</span>
-                </Show>
-              </Dynamic>
+export const Tabs = (props: TabsProps) => {
+  const t = useUiMessages();
+  const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
+  const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
+  // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
+  // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
+  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
+  let row: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!row) return;
+    const measure = () => {
+      const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
+      const first = tabs[0]?.offsetTop ?? 0;
+      const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
+      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+    };
+    const sizes = new ResizeObserver(measure);
+    sizes.observe(row);
+    const watchAll = () => {
+      for (const child of row?.children ?? []) sizes.observe(child);
+    };
+    const parts = new MutationObserver(() => {
+      watchAll();
+      measure();
+    });
+    watchAll();
+    parts.observe(row, { childList: true });
+    onCleanup(() => {
+      sizes.disconnect();
+      parts.disconnect();
+    });
+  });
+  const hidden = () => plain().slice(fit());
+  const more = () => hidden().map(asEntry);
+  return (
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+      <div class="k2-tabs" ref={row}>
+        <Index each={plain()}>
+          {(tab, index) => (
+            <Dynamic
+              component={linkOr(tab().href, "button")}
+              type={tab().href !== undefined ? undefined : "button"}
+              class="k2-tab"
+              href={tab().href}
+              onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
+              onClick={() => tab().onClick?.()}
+              aria-current={tab().current ? "page" : undefined}
+              data-overflow={index >= fit() ? "" : undefined}
+            >
+              <TabFace tab={tab()} />
+            </Dynamic>
+          )}
+        </Index>
+      </div>
+      <Index each={withMenu()}>
+        {(tab, index) => (
+          <MenuTab
+            items={
+              index === withMenu().length - 1 && more().length > 0 ? [...more(), "separator", ...(tab().menu ?? [])] : (tab().menu ?? [])
             }
+            current={tab().current}
           >
-            {(items) => (
-              <MenuTab items={items()} current={tab().current}>
-                <Show when={tab().icon}>{(name) => <Icon name={name()} />}</Show>
-                {tab().label}
-                <Show when={tab().count !== undefined}>
-                  <span class="k2-tab-count">{tab().count}</span>
-                </Show>
-              </MenuTab>
-            )}
-          </Show>
+            <TabFace tab={tab()} />
+          </MenuTab>
         )}
       </Index>
-    </div>
-  </nav>
-);
+      <Show when={withMenu().length === 0 && more().length > 0}>
+        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+          <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
+        </MenuTab>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Path ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

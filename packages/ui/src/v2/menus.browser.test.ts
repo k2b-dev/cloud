@@ -314,6 +314,68 @@ test("tabs: a new view under 'Weitere' while its menu is open keeps the menu and
   });
 });
 
+// A tab is never cut: a tab without room hides whole and is an entry of the menu of further views; the menu tab
+// stays whole. The pane's views have a menu tab ("Weitere"); the head's places have none, so "Mehr" holds them.
+for (const width of [1440, 900, 700, 390])
+  test(`tabs at ${width} px: every tab that shows is whole, the menu tab too, and the hidden ones are in its menu`, async () => {
+    await withPage(
+      async (page) => {
+        const look = (name: string) =>
+          page.evaluate((label) => {
+            const nav = document.querySelector(`nav[aria-label="${label}"]`)!;
+            const edge = nav.getBoundingClientRect();
+            const row = nav.querySelector(".k2-tabs")!.getBoundingClientRect();
+            const tabs = [...nav.querySelectorAll<HTMLElement>(".k2-tab")];
+            const shown = tabs.filter(
+              (tab) => getComputedStyle(tab).visibility !== "hidden" && tab.getBoundingClientRect().top < row.bottom,
+            );
+            return {
+              whole: shown.every((tab) => {
+                const box = tab.getBoundingClientRect();
+                const inRow = !tab.closest(".k2-tabs") || box.right <= row.right + 0.5;
+                return inRow && box.left >= edge.left - 0.5 && box.right <= edge.right + 0.5 && tab.scrollWidth <= tab.clientWidth + 1;
+              }),
+              hidden: tabs.filter((tab) => tab.hasAttribute("data-overflow")).map((tab) => tab.textContent?.trim()),
+              more: shown.filter((tab) => tab.hasAttribute("data-menu")).map((tab) => tab.textContent?.replace(/\s+/g, "")),
+            };
+          }, name);
+        const views = await look("Ansichten");
+        expect(views.whole).toBe(true);
+        expect(views.more).toEqual(["Weitere+2"]);
+        const areas = await look("Bereiche");
+        expect(areas.whole).toBe(true);
+        if (width === 1440) expect([views.hidden, areas.hidden, areas.more]).toEqual([[], [], []]);
+        if (width === 390) {
+          expect(views.hidden.length).toBeGreaterThan(0);
+          expect(areas.hidden.length).toBeGreaterThan(0);
+        }
+        // the hidden views lead the menu of "Weitere", before its own entries; a hidden tab is no stop of the Tab key
+        if (views.hidden.length > 0) {
+          await page
+            .getByRole("navigation", { name: "Ansichten" })
+            .getByRole("button", { name: /Weitere/ })
+            .click();
+          await page.locator(menu).waitFor();
+          const entries = (await page.getByRole("menuitem").allTextContents()).map((text) => text.replace(/\d+$/, "").trim());
+          expect(entries).toEqual([...views.hidden.map((text) => text?.replace(/\d+$/, "").trim()), "Archiv", "Vorlagen"]);
+          await page.getByRole("menuitem").first().click();
+          await closed(page, menu);
+          expect((await deeds(page)).at(-1)).toMatch(/^view:/);
+        }
+        if (areas.hidden.length > 0) {
+          expect(areas.more.length).toBe(1);
+          expect(areas.more[0]).toBe(`Mehr+${areas.hidden.length}`);
+          await page.getByRole("navigation", { name: "Bereiche" }).getByRole("button", { name: /Mehr/ }).click();
+          await page.locator(menu).waitFor();
+          expect((await page.getByRole("menuitem").allTextContents()).map((text) => text.trim())).toEqual(areas.hidden);
+          await page.keyboard.press("Escape");
+          await closed(page, menu);
+        }
+      },
+      { width },
+    );
+  });
+
 test("popover: a panel of 280 px under the start of its button with a title; Escape closes and returns focus", async () => {
   await withPage(async (page) => {
     const trigger = page.getByRole("button", { name: "Filter" });
