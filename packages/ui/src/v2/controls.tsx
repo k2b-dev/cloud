@@ -540,7 +540,11 @@ export const TagsInput = (props: TagsInputProps) => {
           aria-describedby={field?.described}
         />
       </combo.Chips>
+      {/* core's form input validates and resets the field; the values are sent one entry each under the name */}
       <combo.FormInput />
+      <Show when={props.name ?? field?.name}>
+        {(name) => <For each={values()}>{(value) => <input type="hidden" name={name()} value={value} />}</For>}
+      </Show>
       <Show when={props.suggestions?.length}>
         <combo.Popup
           class="k2-menu"

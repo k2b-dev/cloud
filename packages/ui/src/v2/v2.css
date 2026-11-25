@@ -886,7 +886,8 @@
   gap: 12px;
   min-width: 0;
 }
-.k2-ui :is(.k2-group, .k2-group-body) > * {
+.k2-ui .k2-group > *,
+.k2-ui .k2-group-body > * {
   flex: none;
 }
 /* the content of a folded group that is open: its parts stand in the group as if the body were not there */
