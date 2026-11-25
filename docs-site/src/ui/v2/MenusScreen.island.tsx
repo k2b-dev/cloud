@@ -1,8 +1,8 @@
-import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Text, useToast, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createSignal, For } from "solid-js";
 
 // Menu, Popover and Toast of @k2b/ui/v2 on a list of orders in Grids: "Neu" opens a menu with a submenu of templates,
-// the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a panel, the refresh button has a hint. Every row has its deeds
+// the view menu holds a choice of order and settings that toggle, each under its heading, the tab "Weitere" opens the views that have no tab of their own, the filter is a panel, the refresh button has a hint. Every row has its deeds
 // on a right-click or a long press and behind its own "…"; deleting one answers with a toast and "Rückgängig".
 
 type Order = { id: string; title: string; customer: string };
@@ -22,6 +22,8 @@ export default function MenusScreen() {
   const [sort, setSort] = createSignal("due");
   const [urgent, setUrgent] = createSignal(false);
   const [mine, setMine] = createSignal(true);
+  const [view, setView] = createSignal("Offen");
+  const further = ["Archiv", "Vorlagen", "Papierkorb"];
   const remove = (order: Order) => {
     const before = orders();
     setOrders(before.filter((each) => each.id !== order.id));
@@ -33,7 +35,7 @@ export default function MenusScreen() {
     { label: "Verschieben nach", icon: "folder", items: [{ label: "Werkstatt" }, { label: "Lager" }, { label: "Archiv", disabled: true }] },
     { label: "Löschen", icon: "trash", danger: true, onClick: () => remove(order) },
   ];
-  const view = (): MenuEntry[] => [
+  const settings = (): MenuEntry[] => [
     {
       title: "Sortieren nach",
       choice: sort(),
@@ -69,6 +71,13 @@ export default function MenusScreen() {
                 { label: "Aufträge", icon: "table", count: orders().length, current: true },
                 { label: "Material", icon: "table", count: 128 },
                 { label: "Kunden", icon: "table", count: 412 },
+                {
+                  label: "Weitere Tabellen",
+                  items: [
+                    { label: "Lieferanten", icon: "table", count: 37 },
+                    { label: "Vorlagen", icon: "table", count: 12 },
+                  ],
+                },
               ],
             },
           ]}
@@ -77,9 +86,18 @@ export default function MenusScreen() {
       head={
         <Bar
           start={
-            <Text type="row" weight="strong">
-              Aufträge
-            </Text>
+            <Tabs
+              label="Ansichten"
+              items={[
+                ...["Offen", "Erledigt"].map((name) => ({ label: name, current: view() === name, onClick: () => setView(name) })),
+                {
+                  label: further.includes(view()) ? view() : "Weitere",
+                  count: further.includes(view()) ? undefined : `+${further.length}`,
+                  current: further.includes(view()),
+                  menu: further.map((name) => ({ label: name, checked: view() === name, onClick: () => setView(name) })),
+                },
+              ]}
+            />
           }
           end={
             <>
@@ -98,7 +116,7 @@ export default function MenusScreen() {
               >
                 Filter
               </Popover>
-              <Menu label="Ansicht" icon="adjustments-horizontal" items={view()} />
+              <Menu label="Ansicht" icon="adjustments-horizontal" items={settings()} />
               <Menu
                 variant="primary"
                 icon="plus"

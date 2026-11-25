@@ -70,6 +70,9 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       section: [".k2-sec", "250,283 765x181"],
       todo: [".k2-sec .k2-row", "250,335 765x60"],
       facts: [".k2-facts", "1016,499 359x200"],
+      // the rail of the shell beside the app: its logo and the open app (Kunden)
+      railLogo: [".ui-v2-rail__logo", "-44,4 32x32"],
+      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
       head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x57"],
@@ -91,6 +94,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       // the inline facts with their end: the part is the line around the list
       facts: ['[data-k2-part="Facts"]', "271,836 1083x32"],
       folded: [".k2-group[data-folded]", "270,897 1085x58"],
+      railApp: [".ui-v2-rail__app[data-current]", "-48,92 40x36"],
     },
     390: {
       // mockup v17: the steps stand 12 px apart on the phone, so all below them moves 16 px down
@@ -297,7 +301,7 @@ describe("v2 demo screens keep the mockup", () => {
       const found = await page.evaluate(() => {
         const detail = document.querySelector(".k2-pane[data-detail]")!;
         // the line under the head: the facts of the conversation and who reads along; what has no room wraps
-        const bar = detail.querySelector(":scope > .k2-scroll > .k2-bar")!;
+        const bar = detail.querySelector(':scope > [data-slot="status"] > .k2-bar')!;
         const box = bar.getBoundingClientRect();
         const style = getComputedStyle(bar);
         const inner = {

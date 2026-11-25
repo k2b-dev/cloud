@@ -31,6 +31,11 @@ type NavigationEntry = {
   defaultExpanded?: boolean;
   /** Owner-held disclosure state. The renderer shows it and reports toggles through `onExpandedChange`. */
   expanded?: boolean;
+  /**
+   * `false`: the children always show, one level in, and the row has no toggle, so its link keeps the whole row (a
+   * mailbox and its folders, which its sidebar never folds).
+   */
+  disclosure?: false;
   actions?: readonly NavigationItem[];
   /**
    * Square icon buttons in the row, before the `actions` menu. They run an `action`; a destination belongs in a row,

@@ -179,14 +179,35 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
           groups={[
             {
               label: "Postfächer",
-              action: { label: "Postfächer verwalten", icon: "dots" },
+              action: {
+                label: "Postfächer verwalten",
+                items: [
+                  { label: "Neues Postfach", icon: "mail-plus" },
+                  { label: "Gelöschte Postfächer", icon: "trash" },
+                ],
+              },
               items: [
-                { label: "Kontakt", icon: "flag" },
+                {
+                  label: "Kontakt",
+                  icon: "flag",
+                  menu: [
+                    { label: "Lösen", icon: "pinned-off" },
+                    { label: "Ausblenden", icon: "eye-off" },
+                  ],
+                },
                 { label: "Posteingang", icon: "inbox", nested: true, current: true, count: 7 },
                 { label: "Entwürfe", icon: "file-pencil", nested: true, count: 2 },
                 { label: "Postausgang", icon: "calendar-time", nested: true, count: 1 },
                 { label: "Gesendet", icon: "send", nested: true },
-                { label: "Mehr", icon: "chevron-right", nested: true },
+                {
+                  label: "Mehr",
+                  nested: true,
+                  items: [
+                    { label: "Archiv", icon: "archive" },
+                    { label: "Papierkorb", icon: "trash" },
+                    { label: "Spam", icon: "alert-octagon" },
+                  ],
+                },
                 { label: "Lieferanten", icon: "folder", nested: true },
                 { label: "Reklamationen", icon: "folder", nested: true },
                 { label: "Rechnungen", icon: "mail", dot: "ok", count: 3 },
@@ -208,7 +229,17 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
                 { label: "Handlungsbedarf", count: 5 },
                 { label: "Mir zugewiesen", count: 3 },
                 { label: "Wartet auf Antwort", count: 4 },
-                { label: "Weitere", count: "+5", menu: true },
+                {
+                  label: "Weitere",
+                  count: "+5",
+                  menu: [
+                    { label: "Erledigt", href: `${screen}/mail` },
+                    { label: "Später", href: `${screen}/mail` },
+                    { label: "Entwürfe", href: `${screen}/mail` },
+                    { label: "Gesendet", href: `${screen}/mail` },
+                    { label: "Spam", href: `${screen}/mail` },
+                  ],
+                },
               ]}
             />
           }
@@ -291,30 +322,32 @@ export const MailScreen = (props: { open?: boolean; selecting?: boolean }) => {
                 }
               />
             }
+            status={
+              <Bar
+                start={
+                  <Inline>
+                    <Text type="meta">3 Nachrichten</Text>
+                    <Chip status="warn">Wartet auf Antwort</Chip>
+                    <Chip tag color={teal}>
+                      Angebot
+                    </Chip>
+                    <Chip icon="link" href="#verknuepft">
+                      1 verknüpft
+                    </Chip>
+                    <Chip icon="plus" onClick={() => undefined}>
+                      Tag
+                    </Chip>
+                  </Inline>
+                }
+                end={
+                  <>
+                    <Avatar name="Ada Renz" color="#be123c" />
+                    <Text type="meta">Ada Renz liest mit</Text>
+                  </>
+                }
+              />
+            }
           >
-            <Bar
-              start={
-                <Inline>
-                  <Text type="meta">3 Nachrichten</Text>
-                  <Chip status="warn">Wartet auf Antwort</Chip>
-                  <Chip tag color={teal}>
-                    Angebot
-                  </Chip>
-                  <Chip icon="link" href="#verknuepft">
-                    1 verknüpft
-                  </Chip>
-                  <Chip icon="plus" onClick={() => undefined}>
-                    Tag
-                  </Chip>
-                </Inline>
-              }
-              end={
-                <>
-                  <Avatar name="Ada Renz" color="#be123c" />
-                  <Text type="meta">Ada Renz liest mit</Text>
-                </>
-              }
-            />
             <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
               Brandt liefert 14 Eichenplatten in KW 49, wenn bis Freitag bestellt wird. Offen ist nur, ob die Kanten geölt kommen.
             </Notice>

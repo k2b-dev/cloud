@@ -338,6 +338,38 @@ const MenuRoot = (props: MenuProps) => {
   );
 };
 
+/**
+ * A tab that opens a menu of further views (internal to `Tabs`): it looks like a tab, with the chevron after its
+ * words, and is the menu's button, so Enter, Space and the arrow down open it and Escape brings the focus back.
+ */
+export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean; children: JSX.Element }) => {
+  let trigger: HTMLElement | undefined;
+  const [align, setAlign] = createSignal<"start" | "end">("start");
+  const level = useMenuLevels(() => ({
+    onOpenChange: (open: boolean) => {
+      if (open) setAlign(alignTo(trigger));
+    },
+  }));
+  return (
+    <>
+      <level.Trigger
+        ref={(element: HTMLElement) => {
+          trigger = element;
+        }}
+        class="k2-tab"
+        data-menu=""
+        aria-current={props.current ? "page" : undefined}
+      >
+        {props.children}
+        <Icon name="chevron-down" />
+      </level.Trigger>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+        <Entries level={level} entries={props.items} />
+      </level.Popup>
+    </>
+  );
+};
+
 export type MenuContextProps = {
   items: readonly MenuEntry[];
   /** The one element the menu belongs to, such as a `Row`; it gets no wrapper. */
