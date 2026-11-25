@@ -313,6 +313,25 @@ test("“+ Filter” adds a dashed statement that applies once it has a value; a
   });
 });
 
+test("a value the address cannot hold is refused at its field; nothing is written and nothing throws", async () => {
+  await withPage(articles, async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    // 1e21 is a number, but the list query writes numbers without an exponent, so its URL cannot hold it
+    await from.fill("1e21");
+    await from.press("Enter");
+    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    expect(await from.getAttribute("aria-invalid")).toBe("true");
+    expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
+    expect(await statements(page)).toContain("Preis ab 500 €");
+    // a value it can hold clears the error and applies
+    await from.fill("800");
+    await from.press("Enter");
+    expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
+    expect(await page.locator(".k2-fpop .k2-fed-error").count()).toBe(0);
+  });
+});
+
 test("phone: one line that scrolls sideways; a tap opens the sheet at that filter", async () => {
   await withPage(
     articles,

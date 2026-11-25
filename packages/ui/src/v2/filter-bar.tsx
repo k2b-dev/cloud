@@ -268,20 +268,25 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   );
   /** Applies new address text for one field, sort or group; inside an editor the first change makes the entry. */
   // The view the state started from stays in the address: its tab stays current and counts as changed.
-  const apply = (edit: (params: URLSearchParams) => void) => {
+  // What the address cannot hold (a value parse would drop, a number it cannot write, more than 2000 characters) is
+  // never written: the editor that asked says so at its field, and the list stays as it is.
+  const apply = (edit: (params: URLSearchParams) => void): boolean => {
     const params = props.query.serialize(props.state);
     edit(params);
-    const next = props.query.parse(params).state;
+    const { state: next, issues } = props.query.parse(params);
+    if (issues.length > 0) return false;
     const inEditor = open() !== undefined || sheet() !== undefined;
     write(next, inEditor ? !pushed : true);
     if (inEditor) pushed = true;
+    return true;
   };
-  const setField = (key: string, value: unknown) => {
+  const setField = (key: string, value: unknown): boolean => {
     const definition = props.query.fields[key];
-    if (!definition) return;
+    if (!definition) return false;
     const text = encode(definition, value);
-    apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
-    if (text !== undefined && draft() === key) setDraft(undefined);
+    const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
+    if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    return applied;
   };
   const removeField = (key: string) => apply((params) => params.delete(key));
   const reset = () => write(base(), true);
@@ -604,7 +609,8 @@ type EditorProps = {
   counts?: Readonly<Record<string, number>>;
   names: ReadonlyMap<string, LookupItem>;
   onNames: (items: readonly LookupItem[]) => void;
-  onChange: (value: unknown) => void;
+  /** Applies a value; `false` when the address cannot hold it (the editor then shows why, and nothing changes). */
+  onChange: (value: unknown) => boolean;
   /** Takes the filter out; a required field has none. */
   onRemove?: () => void;
   /** In the phone sheet: no head of its own (the sheet names the field). */
@@ -798,12 +804,13 @@ const EditField = (props: {
 const RangeEditor = (props: {
   definition: Extract<ListQueryField, { kind: "numberRange" }>;
   value?: NumberRange;
-  onChange: (value: unknown) => void;
+  onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
   const format = useFormats();
   const [min, setMin] = createSignal(props.value?.min?.toString() ?? "");
   const [max, setMax] = createSignal(props.value?.max?.toString() ?? "");
+  const [rejected, setRejected] = createSignal(false);
   const number = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
   const invalid = () => {
     const low = number(min());
@@ -811,11 +818,16 @@ const RangeEditor = (props: {
     return low !== undefined && high !== undefined && low > high;
   };
   const commit = () => {
+    setRejected(false);
     if (invalid()) return;
     const low = number(min());
     const high = number(max());
-    if ((low !== undefined && Number.isNaN(low)) || (high !== undefined && Number.isNaN(high))) return;
-    props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high });
+    const unreadable = (value: number | undefined) => value !== undefined && !Number.isFinite(value);
+    if (unreadable(low) || unreadable(high)) {
+      setRejected(true);
+      return;
+    }
+    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high }));
   };
   const unit = () => (props.definition.unit ? ` ${props.definition.unit}` : "");
   const presetLabel = (range: NumberRange) => {
@@ -835,7 +847,7 @@ const RangeEditor = (props: {
                 onClick={() => {
                   setMin(range.min?.toString() ?? "");
                   setMax(range.max?.toString() ?? "");
-                  props.onChange(range);
+                  setRejected(!props.onChange(range));
                 }}
               >
                 {presetLabel(range)}
@@ -850,7 +862,7 @@ const RangeEditor = (props: {
           type="number"
           value={min()}
           unit={props.definition.unit}
-          invalid={invalid()}
+          invalid={invalid() || rejected()}
           onCommit={(text) => {
             setMin(text);
             commit();
@@ -864,16 +876,16 @@ const RangeEditor = (props: {
           type="number"
           value={max()}
           unit={props.definition.unit}
-          invalid={invalid()}
+          invalid={invalid() || rejected()}
           onCommit={(text) => {
             setMax(text);
             commit();
           }}
         />
       </div>
-      <Show when={invalid()}>
+      <Show when={invalid() || rejected()}>
         <p class="k2-fed-error" role="alert">
-          {t().rangeInvalid}
+          {invalid() ? t().rangeInvalid : t().valueRejected}
         </p>
       </Show>
     </div>
@@ -883,7 +895,7 @@ const RangeEditor = (props: {
 const PeriodEditor = (props: {
   definition: Extract<ListQueryField, { kind: "dateRange" | "timeRange" }>;
   value?: PeriodValue;
-  onChange: (value: unknown) => void;
+  onChange: (value: unknown) => boolean;
 }) => {
   const t = useFilterMessages();
   const day = props.definition.kind === "dateRange";
@@ -906,16 +918,18 @@ const PeriodEditor = (props: {
   const range = () => (props.value?.kind === "range" ? props.value : undefined);
   const [from, setFrom] = createSignal(toField(range()?.from));
   const [to, setTo] = createSignal(toField(range()?.to));
+  const [rejected, setRejected] = createSignal(false);
   const invalid = () => {
     const low = fromField(from());
     const high = fromField(to());
     return low !== undefined && high !== undefined && low > high;
   };
   const commit = () => {
+    setRejected(false);
     if (invalid()) return;
     const low = fromField(from());
     const high = fromField(to());
-    props.onChange(low === undefined && high === undefined ? undefined : { kind: "range", from: low, to: high });
+    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { kind: "range", from: low, to: high }));
   };
   return (
     <div class="k2-fed-body" data-flush="">
@@ -936,7 +950,7 @@ const PeriodEditor = (props: {
             label={t().from_}
             type={day ? "date" : "datetime-local"}
             value={from()}
-            invalid={invalid()}
+            invalid={invalid() || rejected()}
             onCommit={(text) => {
               setFrom(text);
               commit();
@@ -949,16 +963,16 @@ const PeriodEditor = (props: {
             label={t().to}
             type={day ? "date" : "datetime-local"}
             value={to()}
-            invalid={invalid()}
+            invalid={invalid() || rejected()}
             onCommit={(text) => {
               setTo(text);
               commit();
             }}
           />
         </div>
-        <Show when={invalid()}>
+        <Show when={invalid() || rejected()}>
           <p class="k2-fed-error" role="alert">
-            {t().rangeInvalid}
+            {invalid() ? t().rangeInvalid : t().valueRejected}
           </p>
         </Show>
       </Show>
@@ -966,11 +980,26 @@ const PeriodEditor = (props: {
   );
 };
 
-const TextEditor = (props: { label: string; value: string; onChange: (value: unknown) => void }) => (
-  <div class="k2-fed-body">
-    <EditField label={props.label} type="text" value={props.value} onCommit={(text) => props.onChange(text.trim() || undefined)} />
-  </div>
-);
+const TextEditor = (props: { label: string; value: string; onChange: (value: unknown) => boolean }) => {
+  const t = useFilterMessages();
+  const [rejected, setRejected] = createSignal(false);
+  return (
+    <div class="k2-fed-body">
+      <EditField
+        label={props.label}
+        type="text"
+        value={props.value}
+        invalid={rejected()}
+        onCommit={(text) => setRejected(!props.onChange(text.trim() || undefined))}
+      />
+      <Show when={rejected()}>
+        <p class="k2-fed-error" role="alert">
+          {t().valueRejected}
+        </p>
+      </Show>
+    </div>
+  );
+};
 
 // ── Sort and group ─────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1343,7 +1372,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   canSave: boolean;
   onSave: () => void;
   sentence: (key: string, definition: ListQueryField) => string;
-  onField: (key: string, value: unknown) => void;
+  onField: (key: string, value: unknown) => boolean;
   onSort: (value: string) => void;
   onGroup: (value: string) => void;
   onReset: () => void;
