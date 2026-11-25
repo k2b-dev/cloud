@@ -3,6 +3,7 @@ import { AccountIdentityError } from "@k2b/cloud/services";
 import { hintOpen, Layout, markHintSeen } from "@k2b/cloud/ssr";
 import { FilegateError } from "@k2b/filegate";
 import type { Context } from "hono";
+import { Show } from "solid-js";
 import { filegateErrorCode } from "../api/filegate-error";
 import { ssr } from "../config";
 import { type BaseSummary, BrowseQuerySchema, EntryQuerySchema, type SearchQuery, SearchQuerySchema } from "../contracts";
@@ -11,14 +12,16 @@ import { FilesError, filesService } from "../service";
 import { readConfiguration } from "../service/configuration";
 import { SEARCH_REQUEST_SECONDS } from "../service/search";
 import { browserMessages } from "./browser-messages";
-import { browseOptions, parsePreferences, viewFor } from "./browser-preferences";
+import { parsePreferences, viewFor } from "./browser-preferences";
 import { directoryPageCount, directoryPages } from "./directory-pages";
+import FilesScreen from "./FilesScreen.island";
+import { browseOf, folderQueries, legacyFolderHref, readFolderAddress, searchOf } from "./folder-query";
 import { RECENT_MOVED_HINT, SELECTION_PILL_HINT } from "./hints";
 import { activityRequest, itemHistoryRequest, itemHistorySource, movedEntry } from "./history-requests";
 import { filesMessages } from "./messages";
 import { filesPageScope } from "./page-scope";
 import { FAVORITES_PREVIEW } from "./StorageOverview";
-import { searchRequest, searchState } from "./search-state";
+import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
 import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
 import Workspace from "./Workspace.island";
@@ -43,10 +46,19 @@ async function searchPage(c: Context, call: ReturnType<typeof requestCall>, base
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = filesMessages.resolve([getLocale(c)]);
-  // Activity reads its own `q`; only the folder views search files.
-  const search = c.req.query("view") === "activity" ? null : searchState(new URL(c.req.url).searchParams);
-  // A search orders and filters itself; only a folder reads the browse options.
-  const query = (search ? BrowseQuerySchema.pick({ path: true, after: true }) : BrowseQuerySchema).safeParse(c.req.query());
+  const url = new URL(c.req.url);
+  const view = c.req.query("view");
+  // A folder or a search is the v2 screen; its address is the list query's. Addresses from before keep working.
+  const folderView = !view;
+  const legacy = folderView ? legacyFolderHref(url.searchParams) : null;
+  if (legacy) return c.redirect(legacy);
+  const preferences = parsePreferences(c.req.header("cookie"));
+  const queries = folderQueries(browserMessages.resolve([getLocale(c)]).t);
+  const addressFor = (baseId: string) => readFolderAddress(queries, url.searchParams, viewFor(preferences, baseId));
+  const requestedBase = c.req.query("base");
+  // Only a folder searches; the other views read their own parameters.
+  const search = folderView ? searchOf(addressFor(requestedBase ?? ""), url.searchParams) : null;
+  const query = BrowseQuerySchema.pick({ path: true, after: true }).safeParse(c.req.query());
   if (!query.success) return ssr.error(c, 400);
   let pages: number;
   try {
@@ -58,10 +70,6 @@ export default ssr<AuthContext>(async (c) => {
   const searchQuery = search ? SearchQuerySchema.safeParse({ ...searchRequest(search), ...query.data }) : null;
   if (searchQuery && !searchQuery.success) return ssr.error(c, 400);
   if (requestedFile && !EntryQuerySchema.safeParse({ path: requestedFile }).success) return ssr.error(c, 400);
-  const requestedBase = c.req.query("base");
-  const preferences = parsePreferences(c.req.header("cookie"));
-  let browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, requestedBase ?? ""));
-  const view = c.req.query("view");
   // Recent became Activity's "Me" (08.11.2026); old links and bookmarks keep working.
   if (view === "recent") return c.redirect(activityUrl({ actor: "me" }));
   const activityFilters = view === "activity" ? parseActivityFilters(new URL(c.req.url).searchParams) : undefined;
@@ -71,7 +79,9 @@ export default ssr<AuthContext>(async (c) => {
   const source = new URL(
     activityFilters
       ? activityUrl(activityFilters)
-      : filesUrl(requestedBase, query.data.path, query.data.after, requestedFile, search, browse),
+      : folderView
+        ? `${url.pathname}${url.search}`
+        : filesUrl(requestedBase, query.data.path, query.data.after, requestedFile),
     "https://files.invalid",
   );
   if (pages > 1) source.searchParams.set("pages", String(pages));
@@ -104,8 +114,8 @@ export default ssr<AuthContext>(async (c) => {
           : (initial.bases.items.find((base) => base.status === "existing") ?? initial.bases.items[0]);
     if (requestedBase && !selected && view !== "shares") throw new FilesError("not_found", 404);
     initial.selectedId = selected?.id ?? null;
-    browse = browseOptions(new URL(c.req.url).searchParams, viewFor(preferences, selected?.id ?? ""));
-    if (!activityFilters && !search) for (const [key, value] of Object.entries(browse)) source.searchParams.set(key, String(value));
+    const address = addressFor(selected?.id ?? "");
+    const browse = address.mode === "folder" ? browseOf(address.state) : undefined;
     initial.source = `${source.pathname}${source.search}`;
     if (activityFilters) {
       // The same request as the client's loader; a failed first page leaves the view to load and report it itself.
@@ -190,9 +200,18 @@ export default ssr<AuthContext>(async (c) => {
   const title = snapshotTitle(initial, t.files, browserMessages.resolve([locale]).t, locale);
   const scope = filesPageScope(initial) ?? undefined;
   return () => (
-    <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
-      <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
-    </Layout>
+    <Show
+      when={folderView && !showsOverview(source.searchParams, initial.bases.items.length) && !initial.moved}
+      fallback={
+        <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
+          <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />
+        </Layout>
+      }
+    >
+      <Layout context={{ scope }} c={c} title={title} fullWidth fullPage ui="v2">
+        <FilesScreen initial={initial} preferences={preferences} timeZone={timeZone} />
+      </Layout>
+    </Show>
   );
 });
 
