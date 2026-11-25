@@ -52,7 +52,7 @@ A column that scrolls, with no padding: a head, a status that stays, a `width` i
 
 ### Bar
 
-A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place.
+A bar of fixed height with one line below and two places, `start` and `end`; its height comes from its place. In the head of the workspace it shows the page's name from `Workspace title` as the page's one heading, before what its start holds.
 
 <Props of="Bar" />
 
@@ -76,16 +76,14 @@ Under the head while the column scrolls: the one statement, key figures and filt
 
 ## Not in v2 yet
 
-- A `false` child of `Pane.Split` still gets a line of its own. Render a pane that is not there as `undefined` (`open && <Pane … />` with `open` undefined), never `false` ([#4147](https://github.com/k2b-dev/cloud/issues/4147)).
-- In a `StatusRow` of a 400 px column, a second fact runs into the filter button. Keep one fact there; the lead says the main thing ([#4149](https://github.com/k2b-dev/cloud/issues/4149)).
-
-Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at that place.
+Nothing known at the moment. Something has no part? Use the nearest part and write `// k2b-ui gap: …` at that place.
 
 ## Do and don't
 
 ### Do
 
 - Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
+- Name every page in `Workspace title`, or let the current entry of the sidebar's `Nav` name it. The head shows the name as the page's one heading; a head with only deeds looks as if something were missing.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
 - Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
 - Give a long list a `scrollKey`, so back and forward return to where it was.

@@ -11,6 +11,7 @@ import {
   children as resolveChildren,
   Show,
   untrack,
+  useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
@@ -21,6 +22,7 @@ import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { NavCurrentContext } from "./page-title";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -188,34 +190,51 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
-export const Nav = (props: NavProps) => (
-  <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
-    <div class="k2-nav-title">
-      <Icon name={props.icon} />
-      {props.title}
-    </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
-        </>
-      )}
-    </Index>
-    <Show when={props.foot?.length}>
-      <div class="k2-nav-foot">
-        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+/** The current entry among these, also inside a folding entry. */
+const currentOf = (items: readonly NavItem[]): NavItem | undefined => {
+  for (const item of items) {
+    if (item.current) return item;
+    const inside = item.items && currentOf(item.items);
+    if (inside) return inside;
+  }
+  return undefined;
+};
+
+/**
+ * The sidebar of an app: its name, groups of round entries with counts, entries at the foot. In a Workspace's sidebar
+ * its current entry names the page when the Workspace has no `title`.
+ */
+export const Nav = (props: NavProps) => {
+  const report = useContext(NavCurrentContext);
+  if (report) createComputed(() => report(currentOf([...props.groups.flatMap((group) => group.items), ...(props.foot ?? [])])?.label));
+  return (
+    <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
+      <div class="k2-nav-title">
+        <Icon name={props.icon} />
+        {props.title}
       </div>
-    </Show>
-  </nav>
-);
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
+          </>
+        )}
+      </Index>
+      <Show when={props.foot?.length}>
+        <div class="k2-nav-foot">
+          <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+        </div>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

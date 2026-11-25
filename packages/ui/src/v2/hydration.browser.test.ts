@@ -222,6 +222,24 @@ test("a multi-line field shows its value in what the server sent, and keeps what
   });
 });
 
+// The head shows the page's name as the page's one heading, on the server and live; a new name changes the document's
+// title in the browser as well (lane U found no h1 on v2 pages).
+test("the head names the page in its one h1, and the document's title follows a new name", async () => {
+  await withPage(async (page) => {
+    const heading = page.locator("h1");
+    expect(await heading.allTextContents()).toEqual(["Probe"]);
+    expect(await heading.evaluate((element) => element.matches('[data-slot="head"] > .k2-bar > .k2-bar-start > .k2-head-title'))).toBe(
+      true,
+    );
+    await page.evaluate(() => {
+      document.title = "Probe – Werkstatt";
+      globalThis.__k2Title?.("Neue Probe");
+    });
+    await page.waitForFunction(() => document.title === "Neue Probe – Werkstatt");
+    expect(await heading.allTextContents()).toEqual(["Neue Probe"]);
+  });
+});
+
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');
@@ -265,11 +283,30 @@ for (const width of [1440, 390]) {
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       const row = page.locator('.k2-row:has-text("Zwei Zeilen")');
       const rowBox = (await row.boundingBox())!;
-      // 52 and its line, as the mockup draws a row of two lines: the marks open no third line. (On the phone the panes
-      // stand one under the other and the last row of a pane gives its line to the seam below it.)
-      const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
-      expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
-      expect(rowBox.height).toBe(heights.row2 + line);
+      // 52, as the mockup draws a row of two lines: the marks open no third line. It is the last part of its column,
+      // so it draws no line under it; the row before it keeps the line between the two.
+      const line = (name: string) =>
+        page.locator(`.k2-row:has-text("${name}")`).evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
+      expect(await line("Zwei Zeilen")).toBe(0);
+      expect(await line("Spedition Falk")).toBe(hairline.width);
+      expect(rowBox.height).toBe(heights.row2);
+      // every column ends without a line under its last part (a section, a list's last row); a section that another
+      // part follows keeps the line between them
+      const ends = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-pane > .k2-scroll")].map((column) => {
+          const last = column.lastElementChild;
+          const part = last?.matches(".k2-list") ? last.lastElementChild : last;
+          return part ? getComputedStyle(part).borderBottomWidth : "none";
+        }),
+      );
+      expect(ends.filter((width) => width !== "0px" && width !== "none")).toEqual([]);
+      const between = await page.evaluate(() =>
+        [...document.querySelectorAll(".k2-pane > .k2-scroll > .k2-sec:not(:last-child)")].map(
+          (section) => getComputedStyle(section).borderBottomWidth,
+        ),
+      );
+      expect(between.length).toBeGreaterThan(0);
+      expect(between.every((width) => width === `${hairline.width}px`)).toBe(true);
       // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
       const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {
         const l3 = element.querySelector<HTMLElement>(".k2-row-l3")!;

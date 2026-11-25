@@ -22,9 +22,15 @@ handler moves history with `push` or `replaceWith`, or loads the page with
 
 The working surface of an app: one per screen.
 
+- `title`: the page's name. The head shows it as the page's one heading
+  (`h1`) where its `Bar start` holds nothing else, and for assistive
+  technology beside tabs or a path; a title alone gives the Workspace its
+  head. Without it the current entry of the sidebar's `Nav` names the page.
+  A head with only deeds and no name is a `describeV2` finding.
 - `sidebar` (usually `Nav`), `sidebarWidth` (default 200–248), `sidebarLabel`
   (name of its grip).
-- `head`: a `Bar` across the main column (56 px).
+- `head`: a `Bar` across the main column (56 px); leave its `start` empty
+  for a plain page name, `title` fills it.
 - `primary`: the main `Action`. It floats bottom right on the phone only;
   also put the same action as `Button variant="primary"` in the head end.
 - children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace

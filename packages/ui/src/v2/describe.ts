@@ -217,7 +217,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           element.querySelector(":scope > .k2-ws-main > [data-slot=head]") ? "head" : "",
         ].filter(Boolean);
         const fab = element.querySelector(":scope > .k2-fab");
-        return `Workspace${slots.length ? ` (${slots.join(", ")})` : ""}${fab ? ` primary ${quote(fab.textContent)}` : ""}`;
+        const title = element.querySelector(":scope > .k2-ws-main > [data-slot=head] h1");
+        return `Workspace${title ? ` ${quote(title.textContent)}` : ""}${slots.length ? ` (${slots.join(", ")})` : ""}${fab ? ` primary ${quote(fab.textContent)}` : ""}`;
       }
       case "Pane": {
         const width = (element as HTMLElement).style?.getPropertyValue?.("--k2-pane-w");
@@ -495,6 +496,18 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
+  // A head with deeds but no name looks as if something were missing, and the page has no heading.
+  for (const workspace of root.querySelectorAll("[data-k2-part='Workspace']"))
+    if (
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar") &&
+      !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] h1")
+    )
+      problems.push("the head names no page: give Workspace a `title` (or its sidebar a Nav with a current entry)");
+    else if (
+      workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > h1") &&
+      !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar > .k2-bar-start")
+    )
+      problems.push("the head's Bar was made before the Workspace, so it cannot show the page's name: write it in `head`");
   for (const [surface, primaries] of bySurface)
     if (primaries.length > 1)
       problems.push(

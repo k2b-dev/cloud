@@ -24,7 +24,7 @@ The deliveries of the same customer. A `Band` in a tone carries the one statemen
 
 - A titled part of the page: "Anstehend", "Vorgänge", "Kontakt".
 - Rows, `Facts`, a `Digest` or groups stand directly in it.
-- One line at its end, none under its head or between its entries.
+- One line at its end where another part follows; none after the last part of a column, under its head or between its entries.
 
 ### Group
 

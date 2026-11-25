@@ -169,3 +169,28 @@ test("every custom property v2.css reads is one it defines", () => {
   });
   expect(missing).toEqual([]);
 });
+
+// A line separates two parts of a column. After the last part nothing follows, so that part draws no line under it
+// (maintainer, 25.11.: a section's rule under its last row looked like a border). Every part that draws a line under
+// itself is named in the rule that takes it away at a column's end, or stands where a column never ends.
+test("every part with a line under it draws none as the last part of a column", () => {
+  const withLine: string[] = [];
+  root.walkRules((rule) => {
+    if (rule.parent?.type !== "root") return;
+    const match = /^\.k2-ui \.(k2-[a-z-]+)$/.exec(rule.selector);
+    if (!match) return;
+    rule.walkDecls("border-bottom", (declaration) => {
+      if (declaration.value === "var(--k2-hairline)") withLine.push(match[1]!);
+    });
+  });
+  let atEnd = "";
+  root.walkRules((rule) => {
+    if (rule.selector.includes(".k2-scroll > :is(") && rule.selector.includes(":last-child")) atEnd = rule.selector;
+  });
+  expect(atEnd).not.toBe("");
+  // the head's back link and the filter bar stand above a column's parts; a table ends through `--k2-table-end`
+  const neverLast = new Set(["k2-pane-back", "k2-fbar"]);
+  const missing = withLine.filter((name) => !neverLast.has(name) && !atEnd.includes(`.${name}`));
+  expect(missing).toEqual([]);
+  expect(withLine).toContain("k2-sec");
+});

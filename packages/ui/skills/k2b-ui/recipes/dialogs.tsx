@@ -72,9 +72,9 @@ export default function SpaceMembers() {
   return (
     <Workspace
       primary={{ label: "Einladen", icon: "user-plus", onClick: () => setInviting(true) }}
+      title="Mitglieder · Werkstatt Nord"
       head={
         <Bar
-          start={<Text type="body">Mitglieder · Werkstatt Nord</Text>}
           end={
             <Button variant="primary" icon="user-plus" onClick={() => setInviting(true)}>
               Einladen

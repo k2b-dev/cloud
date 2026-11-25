@@ -32,7 +32,8 @@ const fixture = (name: keyof typeof fixtures) => outline(renderToString(() => cr
 describe("describeV2", () => {
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
-    expect(text).toContain('Workspace (sidebar, head) primary "Neu"');
+    // the Nav's current entry names the page
+    expect(text).toContain('Workspace "Posteingang" (sidebar, head) primary "Neu"');
     expect(text).toContain('Nav "Mail": 4 entries, current "Posteingang"');
     expect(text).toContain('head: Bar: Tabs "Ansichten": Alle (42) ✓, Handlungsbedarf (5) | ["Neue Nachricht" primary]');
     expect(text).toContain('status: StatusRow "7 ungelesen" · Heute 12 erledigt select-all');
@@ -72,6 +73,20 @@ describe("describeV2", () => {
     expect(text).toContain('Check "Alle Postfächer" mixed');
     expect(text).toContain('Switch "Aktiv" on');
     expect(text).toContain('Field "Wie oft": Choice: Täglich ✓, Wöchentlich');
+  });
+
+  test("reports a head that names no page, and one made before its Workspace", () => {
+    const head = (inside: string) =>
+      `<div class="k2-ws" data-k2-part="Workspace"><div class="k2-ws-main"><div class="k2-slot" data-slot="head">${inside}</div></div></div>`;
+    const deeds =
+      '<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button">Neu</button></div></div>';
+    expect(outline(head(deeds))).toContain("the head names no page");
+    expect(outline(head(`<h1 class="k2-hidden-text">Notizbücher</h1>${deeds}`))).toContain("made before the Workspace");
+    const named = outline(
+      head('<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-start"><h1 class="k2-head-title">Notizbücher</h1></div></div>'),
+    );
+    expect(named).toContain('Workspace "Notizbücher" (head)');
+    expect(named).not.toContain("Problems");
   });
 
   test("reports what no primitive owns, nested groups and a second primary action", () => {

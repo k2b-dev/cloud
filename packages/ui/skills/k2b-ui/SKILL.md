@@ -62,7 +62,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 
 | You want to show | Use | Recipe |
 | --- | --- | --- |
-| an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
+| an app's frame: sidebar, head, columns | `Workspace` with `title` (the page's one heading), `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |

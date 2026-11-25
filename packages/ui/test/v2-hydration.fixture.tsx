@@ -29,6 +29,8 @@ import {
 declare global {
   /** How often a cell of the table and the probe in the field row were made, on this side of the page. */
   var __k2Made: { cells: number; probe: number } | undefined;
+  /** Names the page anew, as a screen whose title follows what is open. */
+  var __k2Title: ((title: string) => void) | undefined;
 }
 
 const made = () => {
@@ -52,13 +54,15 @@ const orders: Order[] = [
 ];
 
 export function Fixture() {
+  const [title, setTitle] = createSignal("Probe");
+  globalThis.__k2Title = setTitle;
   const [side, setSide] = createSignal(true);
   const [opened, setOpened] = createSignal("nichts");
   return (
     <Workspace
+      title={title()}
       head={
         <Bar
-          start={<Text weight="strong">Probe</Text>}
           end={
             <Button keep onClick={() => setSide(!side())}>
               Info

@@ -41,7 +41,8 @@ import { AccessScreen } from "./v2-access.fixture";
 // Fixtures for the v2 browser tests: every primitive in the place where the mockup puts it, inside a workspace so its
 // lines have column edges to reach. Only primitives, no CSS of their own, like an app.
 
-const nav = (
+// made inside the Workspace (`sidebar={nav()}`), so its current entry names the page
+const nav = () => (
   <Nav
     title="Mail"
     icon="mail"
@@ -61,7 +62,7 @@ const nav = (
 );
 
 const shell = (children: JSX.Element, head?: JSX.Element) => (
-  <Workspace sidebar={nav} sidebarLabel="Breite der Seitenleiste" head={head} primary={{ label: "Neu", icon: "plus" }}>
+  <Workspace sidebar={nav()} sidebarLabel="Breite der Seitenleiste" head={head} primary={{ label: "Neu", icon: "plus" }}>
     {children}
   </Workspace>
 );
