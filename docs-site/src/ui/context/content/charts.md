@@ -110,11 +110,12 @@ The core owns `ChartKind`, `ChartDatum`, `ChartDatumRole`, `ChartDrawingOptions`
 `sameChartDatum`, and `chartDatumRoles` expose the inert inspection protocol.
 The renderer registry and namespace map stay internal.
 
-For code migrating directly from stdlib, the core also exports `charts` and the
-14 named SVG functions, plus their numeric/layout helpers such as `computeDomain`,
-`niceStep`, `autoBin`, and `computeBoxStats`. Those raw functions retain their
-previous signatures and markup; use `renderChartSvg` or scenes for the UI bar
-and timeline layouts. `renderBarChartSvg` and `barChartLayout` remain available
+`@k2b/stdlib` has no charts. Code that used its chart module imports the same
+names from the core: `charts`, the 14 named SVG functions, and their
+numeric/layout helpers such as `computeDomain`, `niceStep`, `autoBin`, and
+`computeBoxStats`. Those raw functions keep the stdlib signatures and markup;
+use `renderChartSvg` or scenes for the UI bar and timeline layouts.
+`renderBarChartSvg` and `barChartLayout` remain available
 from `@k2b/ui/charts` too. Raw SVG in a browser needs `inspectChart` from
 `@k2b/ui/chart-inspection`; prefer `Chart` inside an island for an interactive UI.
 

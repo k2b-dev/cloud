@@ -2,7 +2,7 @@ import type { ChartDatum } from "../charts/core";
 import { isChartDatum } from "../charts/core/inspection";
 import { linePathD, smoothPathD, stepPathD } from "../charts/core/svg-renderers";
 
-/** Adapt trusted stdlib line geometry without changing series, indices or inspection. */
+/** Adapt trusted chart core line geometry without changing series, indices or inspection. */
 export function lineGapsSvg(svg: string, maxGap: number, options: { smooth?: boolean; step?: "before" | "after" | "middle" }): string {
   if (!Number.isFinite(maxGap) || maxGap <= 0) throw new RangeError("Chart maxGap must be finite and positive");
   const decode = (value: string) =>

@@ -25,47 +25,47 @@ const findings = async (files: Record<string, string>, packages = ["demo", "ui",
 };
 
 test.each([
-  ["named renderer", "import { bar } from '@k2b/stdlib';", 1],
-  ["aliased renderer", "import { line as drawLine } from '@k2b/stdlib';", 1],
-  ["multi-line import", "import {\n  dates,\n  bar,\n} from '@k2b/stdlib';", 3],
-  ["charts namespace", "import { charts } from '@k2b/stdlib';", 1],
-  ["namespace property", "import * as s from '@k2b/stdlib';\ns.charts.line({});", 2],
-  ["namespace renderer", "import * as s from '@k2b/stdlib';\ns.bar({});", 2],
-  ["namespace element", "import * as s from '@k2b/stdlib';\ns['charts'].line({});", 2],
-  ["namespace destructuring", "import * as s from '@k2b/stdlib';\nconst { charts: draw } = s;", 2],
-  ["named re-export", "export { bar as drawBar } from '@k2b/stdlib';", 1],
-  ["star re-export", "export * from '@k2b/stdlib';", 1],
-  ["namespace re-export", "export * as x from '@k2b/stdlib';", 1],
-  ["dynamic destructuring", "const { line } = await import('@k2b/stdlib');", 1],
-  ["dynamic then destructuring", "import('@k2b/stdlib').then(({ bar }) => bar({}));", 1],
-  ["dynamic then function", "import('@k2b/stdlib').then(function ({ charts: draw }) {});", 1],
-  ["dynamic property", "(await import('@k2b/stdlib')).charts.bar({});", 1],
-  ["dynamic element", "(await import('@k2b/stdlib'))['bar']({});", 1],
-  ["bound dynamic namespace", "const s = await import('@k2b/stdlib');\ns.bar({});", 2],
-  ["bound dynamic destructuring", "const s = await import('@k2b/stdlib');\nconst { line } = s;", 2],
-  ["runtime renderer inventory", `import { ${Object.keys(charts).at(-1)} } from '@k2b/stdlib';`, 1],
-] as const)("reports raw stdlib charts: %s", async (_name, source, line) => {
+  ["named renderer", "import { bar } from '@k2b/ui/charts/core';", 1],
+  ["aliased renderer", "import { line as drawLine } from '@k2b/ui/charts/core';", 1],
+  ["multi-line import", "import {\n  computeDomain,\n  bar,\n} from '@k2b/ui/charts/core';", 3],
+  ["charts namespace", "import { charts } from '@k2b/ui/charts/core';", 1],
+  ["namespace property", "import * as s from '@k2b/ui/charts/core';\ns.charts.line({});", 2],
+  ["namespace renderer", "import * as s from '@k2b/ui/charts/core';\ns.bar({});", 2],
+  ["namespace element", "import * as s from '@k2b/ui/charts/core';\ns['charts'].line({});", 2],
+  ["namespace destructuring", "import * as s from '@k2b/ui/charts/core';\nconst { charts: draw } = s;", 2],
+  ["named re-export", "export { bar as drawBar } from '@k2b/ui/charts/core';", 1],
+  ["star re-export", "export * from '@k2b/ui/charts/core';", 1],
+  ["namespace re-export", "export * as x from '@k2b/ui/charts/core';", 1],
+  ["dynamic destructuring", "const { line } = await import('@k2b/ui/charts/core');", 1],
+  ["dynamic then destructuring", "import('@k2b/ui/charts/core').then(({ bar }) => bar({}));", 1],
+  ["dynamic then function", "import('@k2b/ui/charts/core').then(function ({ charts: draw }) {});", 1],
+  ["dynamic property", "(await import('@k2b/ui/charts/core')).charts.bar({});", 1],
+  ["dynamic element", "(await import('@k2b/ui/charts/core'))['bar']({});", 1],
+  ["bound dynamic namespace", "const s = await import('@k2b/ui/charts/core');\ns.bar({});", 2],
+  ["bound dynamic destructuring", "const s = await import('@k2b/ui/charts/core');\nconst { line } = s;", 2],
+  ["runtime renderer inventory", `import { ${Object.keys(charts).at(-1)} } from '@k2b/ui/charts/core';`, 1],
+] as const)("reports raw renderers from the pure chart core: %s", async (_name, source, line) => {
   expect(await findings({ "packages/demo/src/plot.ts": source })).toEqual([`packages/demo/src/plot.ts:${line}`]);
 });
 
 test("reports each offending named import or access once", async () => {
   expect(
     await findings({
-      "packages/demo/src/plot.ts": "import { bar, line } from '@k2b/stdlib';\nimport * as s from '@k2b/stdlib';\ns.charts.line({});",
+      "packages/demo/src/plot.ts":
+        "import { bar, line } from '@k2b/ui/charts/core';\nimport * as s from '@k2b/ui/charts/core';\ns.charts.line({});",
     }),
   ).toEqual(["packages/demo/src/plot.ts:1", "packages/demo/src/plot.ts:1", "packages/demo/src/plot.ts:3"]);
 });
 
 test.each([
-  "import { dates, type DateContext } from '@k2b/stdlib';",
-  "type Context = import('@k2b/stdlib').DateContext;",
-  "import type * as s from '@k2b/stdlib'; type Context = s.DateContext;",
-  "import * as s from '@k2b/stdlib'; s.dates;",
-  "const { dates } = await import('@k2b/stdlib');",
-  "import { charts, bar } from '@k2b/stdlib/browser';",
-  "import * as s from '@k2b/stdlib/browser'; s.charts;",
-  "(await import('@k2b/stdlib/browser')).charts;",
-])("accepts non-chart or type-only stdlib use: %s", async (source) => {
+  "import { computeDomain, type ChartKind } from '@k2b/ui/charts/core';",
+  "import type { charts } from '@k2b/ui/charts/core';",
+  "import { type bar } from '@k2b/ui/charts/core';",
+  "export type { charts } from '@k2b/ui/charts/core';",
+  "import * as s from '@k2b/ui/charts/core'; s.niceStep;",
+  "const { computeDomain } = await import('@k2b/ui/charts/core');",
+  "import { charts, bar } from '@k2b/ui/charts/other';",
+])("accepts helpers and type-only chart core use: %s", async (source) => {
   expect(await findings({ "packages/demo/src/plot.ts": source })).toEqual([]);
 });
 
@@ -100,36 +100,10 @@ test.each([
   expect(await findings({ [path]: "import { bar } from '@k2b/ui/charts/core';" })).toEqual([`${path}:1`]);
 });
 
-test.each([
-  "packages/ui/src/content/Chart.tsx",
-  "packages/editor/src/charts.ts",
-  "packages/demo/src/plot.test.ts",
-  "packages/demo/fixture/plot.tsx",
-  "packages/demo/scripts/plot.ts",
-  "pwas/notes/server/preview.ts",
-  "scripts/checks/example.ts",
-  "docs-site/src/ui/chart-data.ts",
-  "docs-site/scripts/example.ts",
-  "packages/assistant/src/chat-code/runtime/lib.ts",
-])("forbids upstream drawing even in previously allowed paths: %s", async (path) => {
-  expect(await findings({ [path]: "import { charts } from '@k2b/stdlib';" })).toEqual([`${path}:1`]);
-});
-
-test.each([
-  "import type { ChartDatum } from '@k2b/stdlib';",
-  "import { type Point, niceStep, computeDomain } from '@k2b/stdlib';",
-  "export type { ReferenceLine } from '@k2b/stdlib';",
-  "export type * from '@k2b/stdlib';",
-  "import { escapeXml } from '@k2b/stdlib';",
-  "type Datum = import('@k2b/stdlib').ChartDatum;",
-  "import type * as s from '@k2b/stdlib'; type Datum = s.ChartDatum;",
-])("forbids upstream chart contracts and helpers: %s", async (source) => {
-  expect((await findings({ "packages/demo/src/plot.ts": source })).length).toBeGreaterThan(0);
-});
-
 test("the Assistant workspace has no Studio exemption", async () => {
   expect(
-    (await findings({ "packages/assistant/src/frontend/AssistantWorkspace.island.tsx": "import { charts } from '@k2b/stdlib';" })).length,
+    (await findings({ "packages/assistant/src/frontend/AssistantWorkspace.island.tsx": "import { charts } from '@k2b/ui/charts/core';" }))
+      .length,
   ).toBeGreaterThan(0);
 });
 

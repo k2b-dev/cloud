@@ -181,14 +181,14 @@ pre:not(.font-sans) {
   font-family: var(--font-mono);
 }
 
-/* stdlib charts: make the SVG fill its wrapping element.
-   stdlib emits `<svg viewBox="0 0 W H">` without `width`/`height`
+/* @k2b/ui charts: make the SVG fill its wrapping element.
+   The chart core emits `<svg viewBox="0 0 W H">` without `width`/`height`
    attributes, which would otherwise fall back to the browser's
    replaced-element default (300×150) and either overflow tiny
    containers or sit dwarfed inside wider ones. `display: block`
    stops the inline-baseline gap; `width/height: 100%` lets the
    container's CSS box drive the SVG size, and the `<Chart>`
-   wrapper passes the measured pixel dimensions back to stdlib so
+   wrapper passes the measured pixel dimensions back to the core so
    the viewBox matches — no aspect distortion, no letterboxing. */
 .stdlib-chart {
   display: block;
@@ -209,9 +209,9 @@ pre:not(.font-sans) {
   --stdlib-chart-c8: #ef4444;
 }
 
-/* stdlib charts — dark-mode overrides.
+/* @k2b/ui charts — dark-mode overrides.
 
-   stdlib's embedded <style> hardcodes a light-mode `color: #1f2937`
+   The chart core's embedded <style> hardcodes a light-mode `color: #1f2937`
    on .stdlib-chart and `stroke: white` on slice/point/outlier
    separators. The hardcoded color leaves axis labels / tick text
    unreadable on a dark background, and white slice strokes look
@@ -219,13 +219,13 @@ pre:not(.font-sans) {
    with higher specificity (parent `.dark` selector beats the
    embedded one-class rule).
 
-   Why specificity matters: stdlib's <style> lives INSIDE the SVG,
+   Why specificity matters: the core's <style> lives INSIDE the SVG,
    so its rules are part of the document. Both rule sets have one
    class selector each (`.stdlib-chart`), and the embedded one is
    parsed AFTER global.css — without raising specificity here, the
    embedded rule would win and dark mode would stay broken. The
    `.dark` parent on `<html>` (set by the platform's theme toggle)
-   bumps these rules to two classes, beating stdlib's one-class
+   bumps these rules to two classes, beating the core's one-class
    embedded defaults cleanly. */
 .dark .stdlib-chart {
   color: rgb(228 228 231); /* zinc-200 — readable on zinc-950 */
@@ -239,15 +239,15 @@ pre:not(.font-sans) {
   stroke: rgb(9 9 11);
 }
 
-/* stdlib charts — scientific data-viz refinement.
+/* @k2b/ui charts — scientific data-viz refinement.
 
-   stdlib already renders the structure (gridlines, axes, ticks, flat
+   The chart core already renders the structure (gridlines, axes, ticks, flat
    fills); the only thing missing for a precise "measurement" look is
    the typography. Numeric axis ticks + bar values read as monospaced,
    tabular figures so columns of numbers line up the way they do in a
    plotting tool. Two-class selectors (`.stdlib-chart .stdlib-chart-…`)
-   beat stdlib's one-class embedded <style> the same way the dark-mode
-   overrides above do. font-family is otherwise unset by stdlib, so the
+   beat the core's one-class embedded <style> the same way the dark-mode
+   overrides above do. font-family is otherwise unset by the core, so the
    chart would inherit the app sans — we pin the numeric labels to the
    platform mono stack (IBM Plex Mono via `/public/fonts.css`). */
 .stdlib-chart .stdlib-chart-tick-label,
