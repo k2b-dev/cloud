@@ -20,7 +20,7 @@ Sources of Pulse: two-line rows, the open one tinted, its detail beside the list
 
 ## Folders as a tree
 
-Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. A folder loads its children the first time it opens, a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
+Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. Load only what opens: a folder loads its children the first time it opens (`load`), a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
 
 <Example recipe="tree" height="560" />
 
@@ -103,7 +103,6 @@ Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui g
 - Open entries with `onClick` when they have an address.
 - Put "Erneut versuchen" anywhere but `Failed`.
 - Shrink columns on the phone; `drop` them.
-- Load a whole tree up front; give `load` and `loadMore` and load what opens.
 
 ## Next
 
