@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { natsQuery } from "../../_components/sync-nats-query";
 import NatsScreen, { type NatsScreenProps, type NatsStreamRow } from "./NatsScreen";
 
@@ -17,7 +17,7 @@ const stream = (name: string, extra: Partial<NatsStreamRow> = {}): NatsStreamRow
   replicaState: { label: "Synchronisiert", status: "ok" },
   consumers: "2",
   problem: false,
-  href: `/admin/observability/nats?stream=${name}`,
+  href: `/admin/observability/infrastructure/nats?stream=${name}`,
   ...extra,
 });
 
@@ -43,12 +43,12 @@ export const NatsScreenFixture = (props: { search?: string; worst?: boolean; loc
         stream("KV_spaces_presence", { kind: "kv", owner: null, replicaState: { label: "Leader fehlt", status: "bad" } }),
       ];
   const props_: NatsScreenProps = {
-    area: fixtureArea,
+    nav: fixtureNav,
     facets,
     state,
     ignored: null,
     sampledAt: "25.11.2026, 10:42",
-    refreshHref: "/admin/observability/nats",
+    refreshHref: "/admin/observability/infrastructure/nats",
     clusterNotice: props.worst
       ? { tone: "warn", title: "Unvollständiger Stand", text: "Einige Cluster-Nodes konnten nicht geprüft werden." }
       : null,
@@ -79,7 +79,7 @@ export const NatsScreenFixture = (props: { search?: string; worst?: boolean; loc
     streamsTotal: props.worst ? "1.000+" : "3",
     facts: { problems: props.worst ? "999" : "2", deadLetters: "1", replication: "1", partial: Boolean(props.worst) },
     previousHref: null,
-    nextHref: props.worst ? "/admin/observability/nats?offset=50" : null,
+    nextHref: props.worst ? "/admin/observability/infrastructure/nats?offset=50" : null,
     stream: open
       ? {
           name: open,
@@ -100,7 +100,7 @@ export const NatsScreenFixture = (props: { search?: string; worst?: boolean; loc
           ],
           firstHref: null,
           nextHref: null,
-          closeHref: "/admin/observability/nats",
+          closeHref: "/admin/observability/infrastructure/nats",
         }
       : null,
   };

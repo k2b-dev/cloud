@@ -1,6 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
+import { InfrastructureScreenFixture } from "../infrastructure/_components/infrastructure-screen.fixture";
 import { MetricsScreenFixture } from "../metrics/_components/metrics-screen.fixture";
 import NatsAccessScreen from "../nats/_components/NatsAccessScreen";
 import { NatsScreenFixture } from "../nats/_components/nats-screen.fixture";
@@ -9,7 +10,7 @@ import { ValkeyScreenFixture } from "../redis/_components/valkey-screen.fixture"
 import { SyncScreenFixture } from "../sync/_components/sync-screen.fixture";
 import { BrowserScreenFixture, TelemetryScreenFixture } from "../telemetry/_components/telemetry-screen.fixture";
 import { WorkflowsScreenFixture } from "../workflows/_components/workflows-screen.fixture";
-import { fixtureArea } from "./services-fixture-area";
+import { fixtureNav } from "./services-fixture-area";
 
 /** The service screens for a browser test: `data-screen` picks one, `data-worst` its worst case, the address the rest. */
 const host = document.getElementById("root");
@@ -19,11 +20,14 @@ const search = location.search;
 const options = { search, worst: worst === "true", locale };
 const params = new URLSearchParams(search);
 const screens: Record<string, () => JSX.Element> = {
+  infrastructure: () => (
+    <InfrastructureScreenFixture {...options} state={params.has("slow") ? "slow" : params.has("failed") ? "failed" : "normal"} />
+  ),
   nats: () => <NatsScreenFixture {...options} />,
   access: () => (
     <LocaleProvider locale={locale}>
       <NatsAccessScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         values={{ servers: ["tls://nats.example:4222"], kind: "creds", ca: "" }}
         unreadable={{ servers: false, kind: false, access: params.get("unreadable") === "1", ca: false }}
       />

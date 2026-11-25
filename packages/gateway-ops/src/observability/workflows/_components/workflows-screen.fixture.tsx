@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { findingsQuery, runsQuery } from "../query";
 import WorkflowsScreen, { type RunDetailView, type WorkflowsScreenProps } from "./WorkflowsScreen";
 
@@ -57,7 +57,7 @@ export const WorkflowsScreenFixture = (props: { search?: string; worst?: boolean
   const params = new URLSearchParams(props.search ?? "");
   const view = params.get("view") === "effects" ? "effects" : params.get("view") === "events" ? "events" : "runs";
   const screen: WorkflowsScreenProps = {
-    area: fixtureArea,
+    nav: fixtureNav,
     apps,
     view,
     runsState: runsQuery(locale, apps).parse(params).state,

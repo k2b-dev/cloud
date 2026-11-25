@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { valkeyQuery } from "../query";
 import ValkeyScreen from "./ValkeyScreen";
 
@@ -30,7 +30,7 @@ export const ValkeyScreenFixture = (props: { search?: string; worst?: boolean; l
   return (
     <LocaleProvider locale={locale}>
       <ValkeyScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         state={state}
         ignored={null}
         error={null}

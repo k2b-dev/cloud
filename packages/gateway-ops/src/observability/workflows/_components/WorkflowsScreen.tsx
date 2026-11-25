@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { Chart, useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -10,6 +11,7 @@ import {
   FilterBar,
   Inline,
   List,
+  type NavProps,
   Notice,
   Pane,
   Prose,
@@ -19,12 +21,10 @@ import {
   Table,
   Tabs,
   Text,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, For, type JSX, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import type { WorkflowView } from "../filters";
 import { type FindingsState, findingsQuery, type RunsState, runsQuery, workflowsHref } from "../query";
 import RunActions, { type RunActionsProps } from "./RunActions";
@@ -114,7 +114,7 @@ export type RunDetailView = {
 };
 
 export type WorkflowsScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   apps: string[];
   view: WorkflowView;
   runsState: RunsState;
@@ -170,8 +170,8 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
     location.replace(workflowsHref(findings().serialize({ ...props.findingsState, filters: next.filters })));
   const list = () => props.list;
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="workflows" />}
+    <AdminWorkspace
+      nav={props.nav}
       detail={props.detail ? 480 : undefined}
       head={
         <Bar
@@ -306,7 +306,7 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
         </Pane>
         <Show when={props.detail}>{(detail) => <RunPane detail={detail()} />}</Show>
       </Pane.Split>
-    </Workspace>
+    </AdminWorkspace>
   );
 }
 

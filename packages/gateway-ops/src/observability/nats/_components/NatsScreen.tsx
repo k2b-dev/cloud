@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -7,6 +8,7 @@ import {
   FilterBar,
   Input,
   List,
+  type NavProps,
   Notice,
   Pane,
   Row,
@@ -14,14 +16,13 @@ import {
   StatusRow,
   Table,
   Text,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
-import { NatsSyncViewTabs, type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
+import { InfrastructureTabs } from "../../_components/InfrastructureTabs";
 import { listHref, type NatsListState, natsQuery, type SyncNatsFacets } from "../../_components/sync-nats-query";
 import { natsMessages } from "../messages";
 
-const PATH = "/admin/observability/nats";
+const PATH = "/admin/observability/infrastructure/nats";
 
 /** A worded state with its tone; no tone is a plain chip. */
 export type Worded = { label: string; status: "ok" | "warn" | "bad" | null };
@@ -55,7 +56,7 @@ export type NatsStreamRow = {
 export type NatsConsumerRow = { name: string; numbers: string; leader: string; replicas: Worded | null };
 
 export type NatsScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   facets: SyncNatsFacets;
   state: NatsListState;
   /** Parameters of the address that did not apply, already worded. */
@@ -97,12 +98,12 @@ export default function NatsScreen(props: NatsScreenProps) {
   const changed = () => query().serialize(props.state).size > 0;
 
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="nats" />}
+    <AdminWorkspace
+      nav={props.nav}
       detail={props.stream ? 420 : undefined}
       head={
         <Bar
-          start={<NatsSyncViewTabs current="nats" />}
+          start={<InfrastructureTabs current="nats" />}
           end={
             <>
               <Input
@@ -265,7 +266,7 @@ export default function NatsScreen(props: NatsScreenProps) {
         </Pane>
         <Show when={props.stream}>{(stream) => <StreamPane stream={stream()} />}</Show>
       </Pane.Split>
-    </Workspace>
+    </AdminWorkspace>
   );
 }
 

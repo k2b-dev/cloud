@@ -1,11 +1,11 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
+import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { readAttention } from "../_components/ObservabilityArea";
 import { opsCharts } from "../_components/ops-chart";
 import { getPostgresDiagnostics, listPostgresIndexes, listPostgresSessions, type PostgresTableDiagnostic } from "../data/service";
 import { postgresCells } from "../infrastructure/sections";
@@ -158,19 +158,11 @@ export default ssr<AuthContext>(async (c) => {
     },
   ];
   const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
-  const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.postgres }]}
-    >
-      <ObservabilityNavigation label={area.area} current="postgres" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={"Postgres"}>
       <PostgresScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "infrastructure")}
         schemas={schemas}
         state={state}
         ignored={ignored}
@@ -248,6 +240,6 @@ export default ssr<AuthContext>(async (c) => {
           })),
         }}
       />
-    </Layout>
+    </AdminLayout>
   );
 });

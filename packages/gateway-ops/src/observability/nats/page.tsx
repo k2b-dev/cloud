@@ -1,16 +1,16 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import { readAttention } from "../_components/ObservabilityArea";
 import { legacySyncNatsHref, natsQuery, selectedFacets } from "../_components/sync-nats-query";
 import NatsScreen, { type NatsNotice, type NatsStreamRow, type Worded } from "./_components/NatsScreen.island";
 import { NatsQuerySchema, readNatsDiagnostics } from "./diagnostics";
 import { natsMessages } from "./messages";
 import { nodeReplicaStatus, replicaStatus, replicaTone } from "./replica-status";
 
-const PATH = "/admin/observability/nats";
+const PATH = "/admin/observability/infrastructure/nats";
 const toneStatus = { ok: "ok", warning: "warn", error: "bad", neutral: null } as const;
 
 /** NATS diagnostics on v2. The address holds the filters, the stream page and the open stream. */
@@ -105,19 +105,11 @@ export default ssr<AuthContext>(async (c) => {
   const ignored =
     issues.length > 0 ? issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.value)).join(", ") : null;
   const stream = nats.stream ?? null;
-  const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.nats }]}
-    >
-      <ObservabilityNavigation label={area.area} current="nats" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={"NATS"}>
       <NatsScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "infrastructure")}
         facets={inventory.facets}
         state={address.state}
         ignored={ignored}
@@ -170,6 +162,6 @@ export default ssr<AuthContext>(async (c) => {
             : null
         }
       />
-    </Layout>
+    </AdminLayout>
   );
 });

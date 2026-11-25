@@ -1,27 +1,29 @@
-import type { ObservabilityAreaNav } from "./ObservabilityNav";
+import type { NavProps } from "@k2b/ui/v2";
 
-/** The area's sidebar as the pages build it, with invented attention marks. */
-export const fixtureArea: ObservabilityAreaNav = {
-  title: "Observability",
-  markLabel: "Braucht Aufmerksamkeit",
+/** The admin bar as `observabilityAdminNav` builds it: the area's sections one level in under "Observability". */
+export const fixtureNav: NavProps = {
+  title: "Administration",
+  icon: "settings",
   groups: [
-    { items: [{ id: "home", label: "Übersicht", href: "/admin/observability", icon: "ti ti-dashboard", mark: "warning" }] },
     {
-      title: "Ansehen",
       items: [
-        { id: "logs", label: "Protokolle", href: "/admin/observability/logs", icon: "ti ti-file-text" },
-        { id: "jobs", label: "Jobs", href: "/admin/observability/jobs", icon: "ti ti-hourglass" },
-        { id: "workflows", label: "Workflows", href: "/admin/observability/workflows", icon: "ti ti-binary-tree" },
-        { id: "telemetry", label: "Telemetrie", href: "/admin/observability/telemetry", icon: "ti ti-activity" },
-        { id: "metrics", label: "Metriken", href: "/admin/observability/metrics", icon: "ti ti-chart-bar" },
+        { label: "Übersicht", icon: "layout-dashboard", href: "/admin" },
+        { label: "Basiseinstellungen", icon: "adjustments", href: "/admin/settings" },
       ],
     },
     {
-      title: "Dienste",
+      label: "Betrieb",
       items: [
-        { id: "postgres", label: "Postgres", href: "/admin/observability/postgres", icon: "ti ti-database" },
-        { id: "valkey", label: "Valkey", href: "/admin/observability/valkey", icon: "ti ti-database" },
-        { id: "nats", label: "NATS & Sync", href: "/admin/observability/nats", icon: "ti ti-topology-star-3", mark: "error" },
+        { label: "Apps", icon: "apps", href: "/admin/apps" },
+        { label: "Observability", icon: "activity", href: "/admin/observability" },
+        { label: "Übersicht", icon: "dashboard", href: "/admin/observability", nested: true, dot: "warn" },
+        { label: "Protokolle", icon: "file-text", href: "/admin/observability/logs", nested: true },
+        { label: "Workflows", icon: "binary-tree", href: "/admin/observability/workflows", nested: true },
+        { label: "Telemetrie", icon: "activity", href: "/admin/observability/telemetry", nested: true },
+        { label: "Metriken", icon: "chart-bar", href: "/admin/observability/metrics", nested: true },
+        { label: "Infrastruktur", icon: "server-2", href: "/admin/observability/infrastructure", nested: true, current: true, dot: "bad" },
+        { label: "Einstellungen", icon: "settings", href: "/admin/observability/settings", nested: true },
+        { label: "Personen", icon: "users", href: "/app/accounts" },
       ],
     },
   ],

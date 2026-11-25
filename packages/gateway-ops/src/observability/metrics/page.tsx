@@ -1,10 +1,10 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import { areaText, readAttention } from "../_components/ObservabilityArea";
 import MetricsScreen, { type MetricRow } from "./_components/MetricsScreen.island";
 import { metricsQuery } from "./query";
 import { getMetricsSnapshot, listMetricsTokens, METRICS_ENDPOINT, type MetricsSnapshot } from "./service";
@@ -85,18 +85,11 @@ export default ssr<AuthContext>(async (c) => {
   const date = (value: string | null) => formatDateTime(value, dateConfig);
   const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
   const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.metrics }]}
-    >
-      <ObservabilityNavigation label={area.area} current="metrics" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={area.metrics}>
       <MetricsScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "metrics")}
         sources={sources}
         state={address.state}
         ignored={ignored}
@@ -132,6 +125,6 @@ export default ssr<AuthContext>(async (c) => {
         metrics={metrics.map((row) => ({ ...row, series: number(row.series) }))}
         metricsTotal={number(rows.length)}
       />
-    </Layout>
+    </AdminLayout>
   );
 });

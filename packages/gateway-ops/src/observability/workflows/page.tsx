@@ -8,7 +8,7 @@
 
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatDurationMs, formatNumber, formatPercent, formatRelative } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import {
   getWorkflow,
@@ -25,9 +25,9 @@ import {
 import { z } from "zod";
 import { ssr } from "../../config";
 import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
+import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { areaText, readAttention } from "../_components/ObservabilityArea";
 import WorkflowsScreen, { type RunDetailView, type Worded } from "./_components/WorkflowsScreen.island";
 import { FINDINGS_PER_PAGE, RUNS_PER_PAGE, type WindowFilter, type WorkflowView, windowStart } from "./filters";
 import { eventState, LAG_WARN_MS, runErrorSummary, stepDetail } from "./presentation";
@@ -501,18 +501,11 @@ export default ssr<AuthContext>(async (c) => {
   const issues = [...(view === "runs" ? runsAddress.issues : findingsAddress.issues)];
   const ignored = issues.length > 0 ? issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
   const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.workflows }]}
-    >
-      <ObservabilityNavigation label={area.area} current="workflows" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={area.workflows}>
       <WorkflowsScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "workflows")}
         apps={apps}
         view={view}
         runsState={runsAddress.state}
@@ -535,6 +528,6 @@ export default ssr<AuthContext>(async (c) => {
         nextHref={hasNextPage ? href({ page: String(page + 1), run: "" }) : null}
         detail={detail ? runDetail(detail) : null}
       />
-    </Layout>
+    </AdminLayout>
   );
 });

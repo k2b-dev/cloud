@@ -11,6 +11,8 @@ import alertsPage from "./observability/alerts/page";
 import capabilitiesApiRoutes from "./observability/capabilities/api";
 import capabilitiesPage from "./observability/capabilities/page";
 import healthCheckPage from "./observability/health-check/page";
+import infrastructureApiRoutes from "./observability/infrastructure/api";
+import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
 import jobsPage from "./observability/jobs/page";
@@ -53,6 +55,9 @@ const localizeApiError = async (c: Context, next: () => Promise<void>) => {
   });
 };
 
+/** A page that moved: the old address leads to the new one with its whole query. */
+const moved = (path: string) => (c: Context) => c.redirect(`${path}${new URL(c.req.url).search}`, 302);
+
 export const router = new Hono<AuthContext>()
   .use("*", (c, next) => (c.req.method === "GET" || c.req.method === "HEAD" ? withObservabilityRead(c.req.raw.signal, next) : next()))
   .use("/admin/observability/jobs", middleware.noTransform())
@@ -91,10 +96,16 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
   .get("/admin/observability/capabilities", auth.requireRole("admin", ssr.access), ...capabilitiesPage)
   .get("/admin/observability/metrics", auth.requireRole("admin", ssr.access), ...metricsPage)
-  .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
-  .get("/admin/observability/valkey", auth.requireRole("admin", ssr.access), ...redisPage)
-  .get("/admin/observability/nats", auth.requireRole("admin", ssr.access), ...natsPage)
-  .get("/admin/observability/nats/access", auth.requireRole("admin", ssr.access), ...natsAccessPage)
+  .get("/admin/observability/infrastructure", auth.requireRole("admin", ssr.access), ...infrastructurePage)
+  .get("/admin/observability/infrastructure/postgres", auth.requireRole("admin", ssr.access), ...postgresPage)
+  .get("/admin/observability/infrastructure/valkey", auth.requireRole("admin", ssr.access), ...redisPage)
+  .get("/admin/observability/infrastructure/nats", auth.requireRole("admin", ssr.access), ...natsPage)
+  .get("/admin/observability/infrastructure/nats-access", auth.requireRole("admin", ssr.access), ...natsAccessPage)
+  // Postgres, Valkey, NATS and its access became areas of the infrastructure record; old addresses keep their query.
+  .get("/admin/observability/postgres", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/postgres"))
+  .get("/admin/observability/valkey", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/valkey"))
+  .get("/admin/observability/nats", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats"))
+  .get("/admin/observability/nats/access", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats-access"))
   .get("/admin/observability/nats/sync", auth.requireRole("admin", ssr.access), ...syncPage)
   .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
   .get("/admin/observability/deliveries", auth.requireRole("admin", ssr.access), ...notificationsPage)
@@ -112,6 +123,7 @@ export const router = new Hono<AuthContext>()
   .route("/api/gateway/jobs", jobsApiRoutes)
   .route("/api/gateway/sync", syncApiRoutes)
   .route("/api/gateway/nats", natsApiRoutes)
+  .route("/api/gateway/infrastructure", infrastructureApiRoutes)
   .route("/api/gateway/workflows", workflowsApiRoutes)
   .route("/api/gateway/capabilities", capabilitiesApiRoutes)
   .route("/api/gateway", apiRoutes);

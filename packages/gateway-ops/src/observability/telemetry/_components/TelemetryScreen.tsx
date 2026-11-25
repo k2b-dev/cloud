@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -8,6 +9,7 @@ import {
   FilterBar,
   List,
   ListOrder,
+  type NavProps,
   Notice,
   Pane,
   Row,
@@ -16,12 +18,10 @@ import {
   Table,
   Tabs,
   Text,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
 import type { OpsChart } from "../../_components/ops-chart";
 import { browserMessages } from "../browser/messages";
@@ -53,7 +53,7 @@ export type TelemetryEventView = {
 };
 
 export type TelemetryScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   apps: { id: string; label: string }[];
   state: TelemetryState;
   ignored: string | null;
@@ -85,8 +85,8 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
     return column === undefined ? undefined : { column, direction: "descending" as const };
   };
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="telemetry" />}
+    <AdminWorkspace
+      nav={props.nav}
       detail={props.route ? 420 : undefined}
       head={
         <Bar
@@ -222,6 +222,6 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
           )}
         </Show>
       </Pane.Split>
-    </Workspace>
+    </AdminWorkspace>
   );
 }

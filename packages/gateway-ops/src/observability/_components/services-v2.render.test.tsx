@@ -27,6 +27,7 @@ const [
   import("../telemetry/_components/telemetry-screen.fixture"),
   import("../workflows/_components/workflows-screen.fixture"),
 ]);
+const { InfrastructureScreenFixture } = await import("../infrastructure/_components/infrastructure-screen.fixture");
 
 /**
  * The server HTML and the text a person reads. The text is taken from the markup itself: happy-dom stops parsing after
@@ -49,6 +50,7 @@ const render = (screen: () => JSX.Element) => {
 };
 
 const screens = {
+  infrastructure: () => createComponent(InfrastructureScreenFixture, {}),
   nats: () => createComponent(NatsScreenFixture, { search: "state=problems&stream=MAIL_DLQ" }),
   sync: () => createComponent(SyncScreenFixture, { entry: true }),
   valkey: () => createComponent(ValkeyScreenFixture, { search: "depth=2" }),
@@ -100,6 +102,15 @@ describe("the service pages of Observability on the server", () => {
     for (const name of ["valkey", "postgres", "telemetry", "browser"] as const) {
       expect({ name, drawn: render(screens[name]).html.includes("data-chart-kind") }).toEqual({ name, drawn: true });
     }
+  });
+
+  test("a slow backend loads in its own section; a failed one offers a retry there", () => {
+    const slow = render(() => createComponent(InfrastructureScreenFixture, { state: "slow" }));
+    expect(slow.loaders).toBe(1);
+    expect(slow.text).toContain("Speicher 2,1 GB");
+    const failed = render(() => createComponent(InfrastructureScreenFixture, { state: "failed" })).text;
+    expect(failed).toContain("ECONNREFUSED");
+    expect(failed).toContain("Erneut versuchen");
   });
 
   test("a browser read that failed keeps the switch and offers a retry in place of the data", () => {

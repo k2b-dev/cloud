@@ -1,12 +1,13 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, FilterBar, Input, ListOrder, Notice, Pane, Section, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Chip, FilterBar, Input, ListOrder, type NavProps, Notice, Pane, Section, StatusRow, Table, Text } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
+import { InfrastructureTabs } from "../../_components/InfrastructureTabs";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
 import type { OpsChart } from "../../_components/ops-chart";
-import { type PostgresState, postgresHref, postgresQuery } from "../query";
+import { POSTGRES_PATH, type PostgresState, postgresHref, postgresQuery } from "../query";
 
 export type Worded = { label: string; status: "ok" | "warn" | "bad" | null };
 export type PostgresSessionRow = {
@@ -37,7 +38,7 @@ export type PostgresTableRow = {
 export type PostgresExtensionRow = { name: string; installed: boolean; installedVersion: string; defaultVersion: string; comment: string };
 
 export type PostgresScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   schemas: string[];
   state: PostgresState;
   ignored: string | null;
@@ -69,11 +70,11 @@ export default function PostgresScreen(props: PostgresScreenProps) {
   const search = (text: string) => go({ ...props.state, search: text.trim() || undefined });
   const filtered = () => Boolean(props.state.filters.schema || props.state.search);
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="postgres" />}
+    <AdminWorkspace
+      nav={props.nav}
       head={
         <Bar
-          start={<Text type="body">Postgres</Text>}
+          start={<InfrastructureTabs current="postgres" />}
           end={
             <>
               <Input
@@ -135,7 +136,7 @@ export default function PostgresScreen(props: PostgresScreenProps) {
                 ? {
                     icon: "filter-off",
                     text: t().noMatchingTables,
-                    action: { label: t().clear, icon: "filter-off", href: "/admin/observability/postgres" },
+                    action: { label: t().clear, icon: "filter-off", href: POSTGRES_PATH },
                   }
                 : { icon: "table-off", text: t().noMatchingTables }
             }
@@ -247,6 +248,6 @@ export default function PostgresScreen(props: PostgresScreenProps) {
           />
         </Section>
       </Pane>
-    </Workspace>
+    </AdminWorkspace>
   );
 }

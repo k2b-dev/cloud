@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -12,6 +13,7 @@ import {
   FilterBar,
   Input,
   List,
+  type NavProps,
   Notice,
   Pane,
   Row,
@@ -20,12 +22,10 @@ import {
   Table,
   Text,
   useToast,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { type MetricsState, metricsHref, metricsQuery } from "../query";
 
 export type MetricRow = {
@@ -40,7 +40,7 @@ export type MetricRow = {
 export type MetricsTokenRow = { id: string; name: string; line: string };
 
 export type MetricsScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   sources: { id: string; label: string }[];
   state: MetricsState;
   ignored: string | null;
@@ -90,8 +90,8 @@ export default function MetricsScreen(props: MetricsScreenProps) {
   };
 
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="metrics" />}
+    <AdminWorkspace
+      nav={props.nav}
       primary={create}
       head={
         <Bar
@@ -211,7 +211,7 @@ export default function MetricsScreen(props: MetricsScreenProps) {
         />
       </Pane>
       <CreateTokenDialog open={creating()} onOpenChange={setCreating} />
-    </Workspace>
+    </AdminWorkspace>
   );
 }
 

@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { metricsQuery } from "../query";
 import MetricsScreen, { type MetricRow } from "./MetricsScreen";
 
@@ -48,7 +48,7 @@ export const MetricsScreenFixture = (props: { search?: string; worst?: boolean; 
   return (
     <LocaleProvider locale={locale}>
       <MetricsScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         sources={sources}
         state={state}
         ignored={null}

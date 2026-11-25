@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { postgresQuery } from "../query";
 import PostgresScreen, { type PostgresTableRow } from "./PostgresScreen";
 
@@ -50,7 +50,7 @@ export const PostgresScreenFixture = (props: { search?: string; worst?: boolean;
   return (
     <LocaleProvider locale={locale}>
       <PostgresScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         schemas={schemas}
         state={state}
         ignored={null}

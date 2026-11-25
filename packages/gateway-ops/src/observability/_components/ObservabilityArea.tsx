@@ -7,10 +7,8 @@ import {
   AdminAreaSaveStatusHead,
   getDisplayRuntimeContext,
 } from "@k2b/cloud/ssr";
-import { ViewTabs } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { buildGatewayHealth, type GatewayHealth } from "../../health";
-import { natsMessages } from "../nats/messages";
 import { type AreaMessages, areaMessages } from "./area-messages";
 
 /** Every section of the Observability area, in the order of its first column. */
@@ -24,9 +22,7 @@ export const OBSERVABILITY_SECTIONS = [
   "metrics",
   "deliveries",
   "gateway",
-  "postgres",
-  "valkey",
-  "nats",
+  "infrastructure",
   "alerts",
   "healthCheck",
   "retention",
@@ -43,9 +39,7 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
   metrics: "/admin/observability/metrics",
   deliveries: "/admin/observability/deliveries",
   gateway: "/admin/observability/gateway/routes",
-  postgres: "/admin/observability/postgres",
-  valkey: "/admin/observability/valkey",
-  nats: "/admin/observability/nats",
+  infrastructure: "/admin/observability/infrastructure",
   alerts: "/admin/observability/alerts",
   healthCheck: "/admin/observability/health-check",
   retention: "/admin/observability/retention",
@@ -61,9 +55,7 @@ const SECTION_ICON: Record<ObservabilitySection, string> = {
   metrics: "ti ti-chart-bar",
   deliveries: "ti ti-bell-ringing",
   gateway: "ti ti-route",
-  postgres: "ti ti-database",
-  valkey: "ti ti-database",
-  nats: "ti ti-topology-star-3",
+  infrastructure: "ti ti-server-2",
   alerts: "ti ti-webhook",
   healthCheck: "ti ti-heart-rate-monitor",
   retention: "ti ti-archive",
@@ -72,7 +64,7 @@ const SECTION_ICON: Record<ObservabilitySection, string> = {
 const GROUPS: { title?: keyof AreaMessages; sections: ObservabilitySection[] }[] = [
   { sections: ["home"] },
   { title: "groupView", sections: ["logs", "jobs", "workflows", "capabilities", "telemetry", "metrics", "deliveries"] },
-  { title: "groupServices", sections: ["gateway", "postgres", "valkey", "nats"] },
+  { title: "groupServices", sections: ["gateway", "infrastructure"] },
   { title: "groupSetup", sections: ["alerts", "healthCheck", "retention"] },
 ];
 
@@ -104,7 +96,7 @@ const loadAttention = async (): Promise<Attention> => {
   const overall = tone(health.status);
   if (overall) attention.home = overall;
   const sync = health.sync ? tone(health.sync.status) : undefined;
-  if (sync) attention.nats = sync;
+  if (sync) attention.infrastructure = sync;
   return attention;
 };
 
@@ -187,21 +179,5 @@ export function ObservabilityArea(props: AreaProps) {
     >
       {props.children}
     </AdminArea>
-  );
-}
-
-/** NATS diagnostics, Sync work, and diagnostics access share one section. */
-export function NatsSyncTabs(props: { current: "nats" | "sync" | "access"; locale: string }) {
-  const t = areaText(props.locale);
-  return (
-    <ViewTabs
-      label={t.nats}
-      current={props.current}
-      items={[
-        { id: "nats", label: "NATS", href: OBSERVABILITY_SECTION_HREF.nats },
-        { id: "sync", label: "Sync", href: "/admin/observability/nats/sync" },
-        { id: "access", label: natsMessages.resolve([props.locale]).t.access, href: "/admin/observability/nats/access" },
-      ]}
-    />
   );
 }

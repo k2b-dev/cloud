@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { syncQuery } from "../../_components/sync-nats-query";
 import SyncScreen, { type SyncDeadLetterView, type SyncScreenProps } from "./SyncScreen";
 
@@ -34,7 +34,7 @@ export const SyncScreenFixture = (props: { search?: string; worst?: boolean; ent
       ]
     : [letter("m-1"), letter("m-2", { kind: "topic", consumer: "mail-audit", replayAvailable: true, store: "events" })];
   const screen: SyncScreenProps = {
-    area: fixtureArea,
+    nav: fixtureNav,
     facets,
     state,
     ignored: null,
@@ -82,7 +82,7 @@ export const SyncScreenFixture = (props: { search?: string; worst?: boolean; ent
         appName: "Mail",
         kind: "queue",
         id: "outbox",
-        natsHref: "/admin/observability/nats?stream=MAIL_OUTBOX",
+        natsHref: "/admin/observability/infrastructure/nats?stream=MAIL_OUTBOX",
         state: { label: "Bereit", status: "ok" },
         messages: "12",
         deadLetters: "2",

@@ -1,18 +1,19 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, FilterBar, Input, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, FilterBar, Input, type NavProps, Notice, Pane, StatusRow, Table } from "@k2b/ui/v2";
 import { createMemo, For } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
+import { InfrastructureTabs } from "../../_components/InfrastructureTabs";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
 import type { OpsChart } from "../../_components/ops-chart";
-import { type ValkeyState, valkeyHref, valkeyQuery } from "../query";
+import { VALKEY_PATH, type ValkeyState, valkeyHref, valkeyQuery } from "../query";
 
 /** `href` opens the next depth under this prefix; the deepest level has none. */
 export type ValkeyPrefixRow = { key: string; prefix: string; depth: string; count: string; share: string; href: string | null };
 
 export type ValkeyScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   state: ValkeyState;
   ignored: string | null;
   cells: KeyCell[];
@@ -33,11 +34,11 @@ export default function ValkeyScreen(props: ValkeyScreenProps) {
   const search = (text: string) => go({ ...props.state, search: text.trim() || undefined });
   const changed = () => query().serialize(props.state).size > 0;
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="valkey" />}
+    <AdminWorkspace
+      nav={props.nav}
       head={
         <Bar
-          start={<Text type="body">Valkey</Text>}
+          start={<InfrastructureTabs current="valkey" />}
           end={
             <>
               <Input
@@ -103,7 +104,7 @@ export default function ValkeyScreen(props: ValkeyScreenProps) {
               ? {
                   icon: "filter-off",
                   text: t().noMatchingRedisPrefixes,
-                  action: { label: t().clear, icon: "filter-off", href: "/admin/observability/valkey" },
+                  action: { label: t().clear, icon: "filter-off", href: VALKEY_PATH },
                 }
               : { icon: "database-off", text: t().noMatchingRedisPrefixes }
           }
@@ -116,6 +117,6 @@ export default function ValkeyScreen(props: ValkeyScreenProps) {
           ]}
         />
       </Pane>
-    </Workspace>
+    </AdminWorkspace>
   );
 }

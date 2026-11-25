@@ -1,12 +1,12 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDurationMs as fmtMs, formatDateTime, formatNumber, formatPercent, formatRatio } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { listAppSloWindows } from "../../grids-operational-health";
 import { gatewayOpsMessages } from "../../messages";
+import { observabilityAdminNav } from "../_components/admin-nav";
 import type { KeyCell } from "../_components/KeyCells";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { areaText, readAttention } from "../_components/ObservabilityArea";
 import { opsCharts } from "../_components/ops-chart";
 import TelemetryScreen from "./_components/TelemetryScreen.island";
 import { browserTelemetryPage } from "./browser/page";
@@ -149,19 +149,12 @@ export default ssr<AuthContext>(async (c) => {
   const statusTone = (status: number) => (status >= 500 ? "bad" : status >= 400 ? "warn" : null);
   const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
   const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
   const browser = browserQuery(locale, apps, selectedApp);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.telemetry }]}
-    >
-      <ObservabilityNavigation label={area.area} current="telemetry" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={area.telemetry}>
       <TelemetryScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "telemetry")}
         apps={apps}
         state={state}
         ignored={ignored}
@@ -206,6 +199,6 @@ export default ssr<AuthContext>(async (c) => {
             : null
         }
       />
-    </Layout>
+    </AdminLayout>
   );
 });

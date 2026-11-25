@@ -1,13 +1,12 @@
 import { listAppsDetailed } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings, logging, type WebVitalName, type WebVitalsOverview } from "@k2b/cloud/services";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import type { Context, Env } from "hono";
-import { gatewayOpsMessages } from "../../../messages";
+import { observabilityAdminNav } from "../../_components/admin-nav";
 import type { KeyCell } from "../../_components/KeyCells";
-import { areaText, observabilityGroups, readAttention } from "../../_components/ObservabilityArea";
-import ObservabilityNavigation from "../../_components/ObservabilityNavigation.island";
-import { browserHref, browserQuery, TELEMETRY_PATH, telemetryHref, telemetryQuery } from "../query";
+import { areaText, readAttention } from "../../_components/ObservabilityArea";
+import { browserHref, browserQuery, telemetryHref, telemetryQuery } from "../query";
 import BrowserScreen from "./BrowserScreen.island";
 import { buildVitalCharts, vitalOpsCharts, vitalValue } from "./charts";
 import { browserMessages } from "./messages";
@@ -20,7 +19,6 @@ const PAGE_MAX = 100_000;
 export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   const locale = getLocale(c);
   const { t } = browserMessages.resolve([locale]);
-  const g = gatewayOpsMessages.resolve([locale]).t;
   const url = new URL(c.req.url);
   const selectedApp = url.searchParams.get("app") ?? undefined;
   const pageValue = Number(url.searchParams.get("page") ?? "1");
@@ -48,7 +46,6 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   const query = browserQuery(locale, apps, selectedApp);
   const state = { ...parsed, view: "browser" };
   const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
   const server = telemetryQuery(locale, apps, selectedApp);
   const serverHref = telemetryHref(server, {
     ...server.reset(),
@@ -64,20 +61,9 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   };
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[
-        { title: g.start, href: "/" },
-        { title: area.area, href: "/admin/observability" },
-        { title: area.telemetry, href: TELEMETRY_PATH },
-        { title: t.browser },
-      ]}
-    >
-      <ObservabilityNavigation label={area.area} current="telemetry" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={area.telemetry}>
       <BrowserScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "telemetry")}
         apps={apps}
         state={state}
         serverHref={serverHref}
@@ -111,6 +97,6 @@ export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
             : null
         }
       />
-    </Layout>
+    </AdminLayout>
   );
 }

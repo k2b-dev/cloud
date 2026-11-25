@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -7,6 +8,7 @@ import {
   FilterBar,
   Input,
   Menu,
+  type NavProps,
   Notice,
   Pane,
   Prose,
@@ -15,11 +17,9 @@ import {
   Table,
   Text,
   useToast,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
-import { NatsSyncViewTabs, type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { listHref, type SyncListState, type SyncNatsFacets, syncQuery } from "../../_components/sync-nats-query";
 import { syncOpsMessages } from "../ops-messages";
 import { canRetry, type DeadLetterTarget, deleteDeadLetter, retryDeadLetter } from "./dead-letter-actions";
@@ -90,7 +90,7 @@ export type SyncEntryView = {
 };
 
 export type SyncScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   facets: SyncNatsFacets;
   state: SyncListState;
   ignored: string | null;
@@ -149,12 +149,12 @@ export default function SyncScreen(props: SyncScreenProps) {
   ];
 
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="nats" />}
+    <AdminWorkspace
+      nav={props.nav}
       detail={props.entry ? 440 : undefined}
       head={
         <Bar
-          start={<NatsSyncViewTabs current="sync" />}
+          start={<Text type="body">Sync</Text>}
           end={
             <>
               <Input
@@ -420,6 +420,6 @@ export default function SyncScreen(props: SyncScreenProps) {
           )}
         </Show>
       </Pane.Split>
-    </Workspace>
+    </AdminWorkspace>
   );
 }

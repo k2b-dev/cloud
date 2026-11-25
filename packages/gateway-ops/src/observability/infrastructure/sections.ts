@@ -154,7 +154,12 @@ const natsSection = async (locale: string): Promise<InfraSection> => {
   return {
     status: problems > 0 && statusOf(notices) === "ok" ? "warn" : statusOf(notices),
     cells: [
-      { icon: "server", label: t.cluster, value: count(cluster.nodes.length), meta: cluster.status === "available" ? t.available : t.unknown },
+      {
+        icon: "server",
+        label: t.cluster,
+        value: count(cluster.nodes.length),
+        meta: cluster.status === "available" ? t.available : t.unknown,
+      },
       { icon: "database", label: t.streams, value: count(known(inventory.total)) },
       {
         icon: "alert-triangle",

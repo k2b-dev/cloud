@@ -1,8 +1,8 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Facts, Failed, FilterBar, Pane, Section, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Facts, Failed, FilterBar, type NavProps, Pane, Section, StatusRow, Table, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
-import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
 import type { OpsChart } from "../../_components/ops-chart";
 import { type BrowserState, browserHref, browserQuery } from "../query";
@@ -12,7 +12,7 @@ import { browserMessages } from "./messages";
 export type BrowserRouteView = { key: string; app: string; route: string; lcp: string; inp: string; cls: string; href: string };
 
 export type BrowserScreenProps = {
-  area: ObservabilityAreaNav;
+  nav: NavProps;
   apps: { id: string; label: string }[];
   state: BrowserState;
   /** The server view with the same range and app. */
@@ -36,8 +36,8 @@ export default function BrowserScreen(props: BrowserScreenProps) {
   const query = createMemo(() => browserQuery(locale(), props.apps, props.state.filters.app));
   const change = (next: Pick<BrowserState, "filters">) => location.replace(browserHref(query(), { ...props.state, filters: next.filters }));
   return (
-    <Workspace
-      sidebar={<ObservabilityNav area={props.area} current="telemetry" />}
+    <AdminWorkspace
+      nav={props.nav}
       head={
         <Bar
           start={
@@ -121,6 +121,6 @@ export default function BrowserScreen(props: BrowserScreenProps) {
           )}
         </Show>
       </Pane>
-    </Workspace>
+    </AdminWorkspace>
   );
 }

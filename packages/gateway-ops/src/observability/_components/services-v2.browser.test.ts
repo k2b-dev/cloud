@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
-import type { Browser, BrowserContext, Page, Route } from "playwright";
+import type { Browser, BrowserContext, Route } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 
 // The service pages of Observability on v2, from invented fixtures: each keeps the v2 layout rules at desktop, tablet
@@ -110,6 +110,8 @@ const open = async (view: View, screen: string, address: string, options: { wors
 };
 
 const SCREENS = [
+  ["infrastructure", "/admin/observability/infrastructure"],
+  ["infrastructure", "/admin/observability/infrastructure?failed"],
   ["nats", "/admin/observability/nats?state=problems&stream=MAIL_DLQ"],
   ["access", "/admin/observability/nats/access"],
   ["sync", "/admin/observability/nats/sync?storeApp=mail&store=outbox&kind=queue&message=m-1"],

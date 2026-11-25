@@ -1,11 +1,11 @@
 import { listApps } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import { readAttention } from "../_components/ObservabilityArea";
 import { legacySyncNatsHref, selectedFacets, syncQuery } from "../_components/sync-nats-query";
 import SyncScreen, { type SyncDeadLetterView, type Worded } from "./_components/SyncScreen.island";
 import { syncOpsMessages } from "./ops-messages";
@@ -116,25 +116,12 @@ export default ssr<AuthContext>(async (c) => {
   const failingSchedules = overview.schedules.filter((schedule) => schedule.failureCount > 0 || schedule.lastError);
   const listedResources = overview.resources.filter((resource) => filters.resource || isListedResource(resource));
   const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
-  const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
   const entry = detail && selector && messageId ? detail : null;
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[
-        { title: t.start, href: "/" },
-        { title: area.area, href: "/admin/observability" },
-        { title: area.nats, href: "/admin/observability/nats" },
-        { title: "Sync" },
-      ]}
-    >
-      <ObservabilityNavigation label={area.area} current="nats" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={"Sync"}>
       <SyncScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "infrastructure")}
         facets={{ apps: registeredApps.map((app) => app.id) }}
         state={address.state}
         ignored={ignored}
@@ -181,7 +168,7 @@ export default ssr<AuthContext>(async (c) => {
           appName: row.appName,
           kind: row.kind,
           id: row.id,
-          natsHref: row.natsNames[0] ? `/admin/observability/nats?stream=${encodeURIComponent(row.natsNames[0])}` : null,
+          natsHref: row.natsNames[0] ? `/admin/observability/infrastructure/nats?stream=${encodeURIComponent(row.natsNames[0])}` : null,
           state: {
             label: row.state === "pending" ? o.provisioning : row.state === "failed" ? o.failed : o[row.state],
             status: resourceStatus(row.state),
@@ -243,6 +230,6 @@ export default ssr<AuthContext>(async (c) => {
             : null
         }
       />
-    </Layout>
+    </AdminLayout>
   );
 });

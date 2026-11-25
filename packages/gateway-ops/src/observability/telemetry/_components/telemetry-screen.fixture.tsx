@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
-import { fixtureArea, LONG } from "../../_components/services-fixture-area";
+import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import BrowserScreen from "../browser/BrowserScreen";
 import { browserQuery, telemetryQuery } from "../query";
 import TelemetryScreen, { type TelemetryRouteView } from "./TelemetryScreen";
@@ -52,7 +52,7 @@ export const TelemetryScreenFixture = (props: { search?: string; worst?: boolean
   return (
     <LocaleProvider locale={locale}>
       <TelemetryScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         apps={apps}
         state={state}
         ignored={null}
@@ -125,7 +125,7 @@ export const BrowserScreenFixture = (props: { search?: string; failed?: boolean;
   return (
     <LocaleProvider locale={locale}>
       <BrowserScreen
-        area={fixtureArea}
+        nav={fixtureNav}
         apps={apps}
         state={state}
         serverHref="/admin/observability/telemetry"

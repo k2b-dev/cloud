@@ -7,7 +7,7 @@ import { gatewayOpsMessages } from "../../messages";
 import { natsMessages } from "../nats/messages";
 import { syncOpsMessages } from "../sync/ops-messages";
 
-export type SyncNatsPath = "/admin/observability/nats" | "/admin/observability/nats/sync";
+export type SyncNatsPath = "/admin/observability/infrastructure/nats" | "/admin/observability/nats/sync";
 
 export type SyncNatsFacets = { apps: readonly string[]; namespaces?: readonly string[] };
 

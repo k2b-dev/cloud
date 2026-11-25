@@ -5,7 +5,7 @@
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { gatewayOpsMessages } from "../../messages";
 
-export const POSTGRES_PATH = "/admin/observability/postgres";
+export const POSTGRES_PATH = "/admin/observability/infrastructure/postgres";
 
 /** Schemas the address can hold: every name without a comma. */
 const schemaOptions = (schemas: readonly string[], selected: string | undefined) =>

@@ -1,10 +1,10 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatNumber, formatPercent } from "@k2b/cloud/shared";
-import { Layout } from "@k2b/cloud/ssr";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { gatewayOpsMessages } from "../../messages";
-import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
-import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { observabilityAdminNav } from "../_components/admin-nav";
+import { readAttention } from "../_components/ObservabilityArea";
 import { opsCharts } from "../_components/ops-chart";
 import { getRedisDiagnostics } from "../data/service";
 import { valkeyCells } from "../infrastructure/sections";
@@ -39,19 +39,11 @@ export default ssr<AuthContext>(async (c) => {
     ? t.keysScanned({ count: number(diagnostics.sampledKeys) })
     : t.keysSampled({ count: number(diagnostics.sampledKeys), total: number(diagnostics.dbSize) });
   const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
-  const area = areaText(locale);
-  const groups = observabilityGroups(c, locale, attention);
 
   return () => (
-    <Layout
-      c={c}
-      fullWidth
-      ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.valkey }]}
-    >
-      <ObservabilityNavigation label={area.area} current="valkey" groups={groups} />
+    <AdminLayout c={c} ui="v2" title={"Valkey"}>
       <ValkeyScreen
-        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        nav={observabilityAdminNav(c, locale, attention, "infrastructure")}
         state={state}
         ignored={ignored}
         cells={cells}
@@ -74,6 +66,6 @@ export default ssr<AuthContext>(async (c) => {
             depth < 3 ? valkeyHref(query, { ...state, filters: { depth: String(depth + 1) as "2" | "3" }, search: prefix.prefix }) : null,
         }))}
       />
-    </Layout>
+    </AdminLayout>
   );
 });

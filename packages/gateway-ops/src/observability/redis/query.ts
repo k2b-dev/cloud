@@ -5,7 +5,7 @@
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { gatewayOpsMessages } from "../../messages";
 
-export const VALKEY_PATH = "/admin/observability/valkey";
+export const VALKEY_PATH = "/admin/observability/infrastructure/valkey";
 
 export const valkeyQuery = (locale: string) => {
   const { t } = gatewayOpsMessages.resolve([locale]);
