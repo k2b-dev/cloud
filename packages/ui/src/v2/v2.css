@@ -2512,7 +2512,7 @@
 }
 
 /* Nav tree: places in levels (folders, pages). The tree scrolls on its own inside the sidebar, so a long level never
-   pushes the foot away; each level stands 16 px further in, at most eight levels deep, so a deep tree keeps its names.
+   pushes the foot away; each level stands 12 px further in, at most six steps, so a deep tree keeps its names.
    The arrow before the symbol folds a place open and shut; the row itself is the place's link. */
 .k2-ui .k2-nt {
   display: flex;
@@ -2538,7 +2538,11 @@
 .k2-ui .k2-nt-row {
   position: relative;
   gap: 4px;
-  padding-left: calc(4px + min(var(--tree-level, 1) - 1, 8) * 16px);
+  padding-left: calc(4px + min(var(--tree-level, 1) - 1, 6) * 12px);
+}
+/* the name keeps room before its count, also deep in the tree */
+.k2-ui .k2-nt-row > .k2-ni-name {
+  min-width: 64px;
 }
 .k2-ui .k2-nt-row > .k2-icon {
   margin-right: 4px;

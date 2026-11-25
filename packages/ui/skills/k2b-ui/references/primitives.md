@@ -331,7 +331,7 @@ lines instead of cutting a thing.
   place opens its page; the arrow, Right and Left fold it without leaving
   the page. The way to `current` stands open (also when `current` changes);
   give the loaded nodes down to it. The tree is one Tab stop and scrolls on
-  its own in the sidebar; levels step 16 px in, at most eight steps.
+  its own in the sidebar; levels step 12 px in, at most six steps.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:

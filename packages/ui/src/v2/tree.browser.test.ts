@@ -155,7 +155,7 @@ test("nav tree: a place that becomes the open one later opens the way to it", as
   });
 });
 
-test("nav tree, worst case: twelve levels and long names stay in the sidebar, cut with '…', at most eight steps in", async () => {
+test("nav tree, worst case: twelve levels and long names stay in the sidebar, cut with '…', at most six steps in", async () => {
   await withPage(async (page) => {
     await place(page, "Tief").focus();
     for (let level = 0; level < 11; level += 1) {

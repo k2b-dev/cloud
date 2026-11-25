@@ -95,7 +95,7 @@ const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   );
 };
 
-/** The tree of a `Nav` group: places of 32 px, one level 16 px further in, the arrow before the symbol. */
+/** The tree of a `Nav` group: places of 32 px, one level 12 px further in, the arrow before the symbol. */
 export const NavTreeView = (props: NavTree) => {
   const t = useUiMessages();
   const overlay = useOverlayMessages();
