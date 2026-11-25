@@ -277,6 +277,7 @@ describe("Mail on the v2 pilot", () => {
   test("the sidebar's Mehr, the group's and each mailbox's deeds, and the head's further views", async () => {
     const page = await open(MAIL_V2_PATH);
     try {
+      await page.evaluate(() => Object.assign(window, { stayed: true }));
       const nav = page.locator('[data-k2-workspace] [data-k2-part="Nav"]');
       const more = nav.getByRole("button", { name: "Mehr", exact: true });
       expect(await more.getAttribute("aria-expanded")).toBe("false");
@@ -301,6 +302,8 @@ describe("Mail on the v2 pilot", () => {
         .click();
       await page.getByRole("menuitem", { name: /^Erledigt/ }).click();
       await page.waitForURL(/view=done/);
+      // a view from the menu opens in place, like a tab
+      expect(await page.evaluate(() => "stayed" in window)).toBe(true);
       expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
