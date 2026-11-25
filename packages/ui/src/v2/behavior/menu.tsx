@@ -50,8 +50,6 @@ export type MenuLevelParts = {
   useSubmenu: () => MenuLevelParts;
   /** Closes the whole menu, as choosing an entry does; for a panel that picks something. */
   close: () => void;
-  /** Closes this submenu and puts the focus back on its entry, as Escape in a submenu does. */
-  back: () => void;
 };
 
 type MenuHandle = Handle<typeof menuPrimitive>;
@@ -102,10 +100,6 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
     },
     useSubmenu: () => levelParts(usePrimitive(menuPrimitive, () => ({ parent: handle.api }))),
     close: () => handle.api.action(undefined),
-    back: () => {
-      handle.api.hide({ reason: "escape-key", focus: false });
-      handle.api.focusTriggerItem();
-    },
   };
 };
 

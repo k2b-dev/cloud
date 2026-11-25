@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { usePopover } from "./behavior/overlays";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { usePhone } from "./overlays";
@@ -116,37 +117,6 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
   return box.left + box.width / 2 > document.documentElement.clientWidth / 2 ? "end" : "start";
 };
 
-const focusable =
-  'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex="0"]';
-
-/**
- * The keys of a panel (a calendar beside a menu entry) are its own: they stop at the panel before the menu's walk,
- * typeahead and Enter see them. Escape goes back to the entry; Tab goes round inside the panel, as in a dialog.
- */
-const panelKeys = (event: KeyboardEvent, back: () => void) => {
-  const panel = event.currentTarget;
-  if (!(panel instanceof HTMLElement)) return;
-  event.stopPropagation();
-  if (event.key === "Escape") {
-    event.preventDefault();
-    back();
-    return;
-  }
-  if (event.key !== "Tab") return;
-  const stops = [...panel.querySelectorAll<HTMLElement>(focusable)].filter((element) => element.getClientRects().length > 0);
-  const first = stops[0];
-  const last = stops.at(-1);
-  if (!first || !last) return event.preventDefault();
-  const at = document.activeElement;
-  if (event.shiftKey && (at === first || !panel.contains(at))) {
-    event.preventDefault();
-    last.focus();
-  } else if (!event.shiftKey && (at === last || !panel.contains(at))) {
-    event.preventDefault();
-    first.focus();
-  }
-};
-
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
   entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
@@ -251,16 +221,18 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
   );
 };
 
-type EntryKind = "submenu" | "tick" | "link" | "deed";
+type EntryKind = "submenu" | "panel" | "tick" | "link" | "deed";
 
 const kindOf = (entry: MenuItem): EntryKind =>
-  entry.items || entry.panel
-    ? "submenu"
-    : entry.checked !== undefined
-      ? "tick"
-      : entry.href !== undefined && !entry.disabled
-        ? "link"
-        : "deed";
+  entry.panel
+    ? "panel"
+    : entry.items
+      ? "submenu"
+      : entry.checked !== undefined
+        ? "tick"
+        : entry.href !== undefined && !entry.disabled
+          ? "link"
+          : "deed";
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
@@ -276,6 +248,61 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
     {props.end}
   </>
 );
+
+/**
+ * An entry that opens a panel (a calendar) beside it: a menu item, so the menu's keys reach it, that is also the
+ * trigger of its own popover. The popover is a dialog of its own at the end of the page, a layer over the menu: the
+ * menu never sees its keys, a press inside it is no press outside the menu, Escape closes it first and puts the focus
+ * back on the entry. Enter, Space and the arrow to the side open it, as they open a submenu; it stays open while the
+ * menu's data changes (a clock that moved on keeps what was typed in it). On the phone it is a sheet of its own.
+ */
+const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Record<string, unknown>; lead: boolean }) => {
+  const phone = usePhone();
+  const [open, setOpen] = createSignal(false);
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
+  const [entry, setEntry] = createSignal<HTMLElement>();
+  createEffect(() => {
+    const element = entry();
+    if (!element) return;
+    onCleanup(popover.bindTrigger(element));
+    // the menu's Enter would choose the entry and its arrow to the side does nothing here: both open the panel
+    const keys = (event: KeyboardEvent) => {
+      if (event.key !== "Enter" && event.key !== " " && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(true);
+    };
+    element.addEventListener("keydown", keys);
+    onCleanup(() => element.removeEventListener("keydown", keys));
+  });
+  // beside the entry on the side its menu opened to, so it never covers the way it came
+  const side = () => (entry()?.closest(".k2-menu")?.getAttribute("data-side") === "left" ? "left" : "right");
+  const close = () => {
+    setOpen(false);
+    props.level.close();
+  };
+  return (
+    <>
+      <props.level.Item {...props.keyed} ref={setEntry} closeOnSelect={false}>
+        <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
+      </props.level.Item>
+      <PageLayer from={entry}>
+        <popover.Popup
+          class="k2-pop k2-dpop"
+          data-k2-part="Popover"
+          aria-label={props.item.label}
+          side={side()}
+          align="start"
+          sideOffset={4}
+          collisionPadding={8}
+        >
+          {/* made once while open: new data for the menu keeps what was typed in the panel */}
+          {untrack(() => props.item.panel?.(close))}
+        </popover.Popup>
+      </PageLayer>
+    </>
+  );
+};
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; value: string; lead: boolean }) => {
@@ -305,42 +332,19 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       <>
         <sub.Trigger
           {...shared}
-          // a panel is a dialog beside its entry, not a menu
-          overrides={props.item.panel ? { "aria-haspopup": "dialog" } : undefined}
           ref={(element: HTMLElement) => {
             trigger = element;
           }}
         >
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup
-          class="k2-menu"
-          data-k2-part="Menu"
-          data-panel={props.item.panel ? "" : undefined}
-          overrides={props.item.panel ? { role: "dialog" } : undefined}
-          aria-label={props.item.panel ? props.item.label : undefined}
-          onKeyDown={(event: KeyboardEvent) =>
-            props.item.panel &&
-            panelKeys(event, () => {
-              sub.back();
-              // core gives the focus to the menu once the panel has left; it belongs on the panel's entry
-              requestAnimationFrame(() => trigger?.focus());
-            })
-          }
-          side={side()}
-          sideOffset={4}
-          collisionPadding={8}
-        >
-          <Show when={props.item.panel} fallback={<Entries level={sub} entries={props.item.items ?? []} />}>
-            {(panel) => (
-              // made once while open: new data for the menu (a clock that moved on) keeps what was typed in it
-              <div class="k2-mpanel">{untrack(() => panel()(props.level.close))}</div>
-            )}
-          </Show>
+        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={8}>
+          <Entries level={sub} entries={props.item.items ?? []} />
         </sub.Popup>
       </>
     );
   }
+  if (kind === "panel") return <PanelEntry level={props.level} item={props.item} keyed={keyed} lead={props.lead} />;
   if (kind === "tick") {
     return (
       <props.level.CheckboxItem {...keyed} checked={props.item.checked ?? false} onCheckedChange={() => props.item.onClick?.()}>

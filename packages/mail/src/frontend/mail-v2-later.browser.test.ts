@@ -165,7 +165,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     try {
       await head(page).getByRole("button", { name: "Später" }).click();
       await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
-      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       const calendar = page.locator('[data-k2-part="DatePicker"]');
       await calendar.waitFor();
       // beside the times, as a submenu: the head's button stands on the right, so the times open to the left and the
@@ -250,7 +250,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     try {
       await head(page).getByRole("button", { name: "Später" }).click();
       await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
-      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       await panel(page).locator('[data-value="2026-12-03"]').click();
       await panel(page).getByRole("button", { name: "Übernehmen" }).focus();
       await page.keyboard.press(" ");
@@ -267,7 +267,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     try {
       await head(page).getByRole("button", { name: "Später" }).click();
       await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
-      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       await panel(page).locator('[data-value="2026-12-02"]').click();
       const time = panel(page).getByRole("textbox", { name: "Uhrzeit" });
       await time.fill("14:30");
@@ -333,14 +333,19 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
         "Montag, 8:00 · 30. Nov.",
         "Datum und Uhrzeit …",
       ]);
-      // the calendar is the step after the times, on screen, with days a finger can hit
+      // the calendar is a sheet of its own over the times, on screen, with days a finger can hit
       await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).tap();
       const day = page.locator('[data-k2-part="DatePicker"] [data-value="2026-12-02"]');
       await day.waitFor();
-      await sheetAtRest(page);
+      expect(await panel(page).getAttribute("data-presentation")).toBe("sheet");
+      await page.waitForFunction(() => {
+        const sheet = document.querySelector<HTMLElement>('.k2-pop[data-presentation="sheet"]');
+        return sheet?.style.getPropertyValue("--drawer-progress") === "1";
+      });
       const cell = await day.boundingBox();
       expect(cell && cell.x >= 0 && cell.x + cell.width <= 390 && cell.height >= 44).toBe(true);
-      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).tap();
+      // Escape (Android's back) closes the calendar and leaves the times
+      await page.keyboard.press("Escape");
       await day.waitFor({ state: "detached" });
       await sheetAtRest(page);
       await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).tap();

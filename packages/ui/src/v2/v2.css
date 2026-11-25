@@ -3117,10 +3117,15 @@
   order: -1;
   transform: rotate(180deg);
 }
-/* a panel in a menu (a calendar) brings its own layout; the menu gives it the edge of a popover */
-.k2-ui .k2-menu[data-panel]:not([data-presentation="sheet"]) {
-  min-width: 0;
-  padding: 8px;
+/* On the phone a popover (a menu entry's calendar) is a sheet from the bottom, as a menu is: the whole width, its top
+   corners round; core places it. */
+.k2-ui .k2-pop[data-presentation="sheet"] {
+  width: auto;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  margin: 0;
+  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
@@ -4420,23 +4425,23 @@
   padding: 0 var(--k2-edge);
   border-radius: 0;
 }
-/* a calendar in a sheet, the filter sheet's or a menu's: centred, days of 44 px for a finger */
-.k2-ui :is(.k2-fsheet-pick, .k2-menu[data-presentation="sheet"] .k2-mpanel) {
+/* a calendar in a sheet, the filter sheet's or a menu entry's: centred, days of 44 px for a finger */
+.k2-ui :is(.k2-fsheet-pick, .k2-pop[data-presentation="sheet"]) {
   display: flex;
   justify-content: center;
   padding: 0 var(--k2-edge) 8px;
 }
-.k2-ui :is(.k2-fsheet-pick, .k2-menu[data-presentation="sheet"] .k2-mpanel) .k2-dpick {
+.k2-ui :is(.k2-fsheet-pick, .k2-pop[data-presentation="sheet"]) .k2-dpick {
   width: 308px;
 }
-.k2-ui :is(.k2-fsheet-pick, .k2-menu[data-presentation="sheet"] .k2-mpanel) .k2-cal-row {
+.k2-ui :is(.k2-fsheet-pick, .k2-pop[data-presentation="sheet"]) .k2-cal-row {
   grid-template-columns: repeat(7, 44px);
 }
-.k2-ui :is(.k2-fsheet-pick, .k2-menu[data-presentation="sheet"] .k2-mpanel) :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
+.k2-ui :is(.k2-fsheet-pick, .k2-pop[data-presentation="sheet"]) :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
   width: 44px;
   height: 44px;
 }
-.k2-ui :is(.k2-fsheet-pick, .k2-menu[data-presentation="sheet"] .k2-mpanel) .k2-cal-h {
+.k2-ui :is(.k2-fsheet-pick, .k2-pop[data-presentation="sheet"]) .k2-cal-h {
   height: 44px;
 }
 

@@ -182,11 +182,6 @@ const host = { by: "framework", attaches: "all" } as const;
 export type PartProps = Props & {
   children?: JSX.Element | ((state: Props) => JSX.Element);
   ref?: (el: HTMLElement) => void;
-  /**
-   * Attributes that win over core's, for a part that is something else than core makes it: a menu's panel is a
-   * dialog (`role`, `aria-haspopup`), not a menu. Other author attributes yield to core's, except its names.
-   */
-  overrides?: Record<string, string | undefined>;
 };
 
 /**
@@ -209,7 +204,7 @@ export function part<P extends Primitive>(
   // Handlers go on the element as native listeners (`on:type`), so core sees the same event order as on a plain
   // element. The author's handler for the same type runs first; `preventDefault` there skips core's.
   const handlers: Props = {};
-  const taken = new Set<string>(["children", "ref", "overrides"]);
+  const taken = new Set<string>(["children", "ref"]);
   for (const type of Object.keys(partHandlers(record))) {
     const authorKey = Object.keys(user).find((key) => key.toLowerCase() === `on${type}`);
     if (authorKey) taken.add(authorKey);
@@ -266,7 +261,7 @@ export function part<P extends Primitive>(
       );
       onCleanup(() => element && bound(null));
     }
-    const merged = mergeProps(rest, attrs, () => user.overrides ?? {}, handlers, {
+    const merged = mergeProps(rest, attrs, handlers, {
       ref: (el: HTMLElement) => {
         element = el;
         user.ref?.(el);
