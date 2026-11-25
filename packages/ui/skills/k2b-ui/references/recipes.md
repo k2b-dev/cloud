@@ -117,4 +117,3 @@ shows what the server found for the address.
 - On the phone the bar is one line that scrolls; a tap opens the filter sheet.
 - Pass `views` only when the app stores views (see
   [list queries](list-queries.md)).
-

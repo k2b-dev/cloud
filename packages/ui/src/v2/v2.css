@@ -4111,8 +4111,11 @@
 .k2-ui .k2-fsheet :is(.k2-fed-hint, .k2-lookup-hint) {
   padding-inline: var(--k2-edge);
 }
-.k2-ui .k2-fsheet :is(.k2-fed-body, .k2-lookup-search) {
+.k2-ui .k2-fsheet .k2-fed-body {
   margin-inline: calc(var(--k2-edge) - 12px);
+}
+.k2-ui .k2-fsheet .k2-lookup-search {
+  margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-fsheet :is(.k2-opts, .k2-lookup-list) {
   padding: 0;
