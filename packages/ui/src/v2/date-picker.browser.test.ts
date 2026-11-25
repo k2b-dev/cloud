@@ -124,6 +124,7 @@ test("a picker speaks German: month names, the week from Monday, a grid of six w
       for (let step = 0; step < 9; step += 1) await day.getByRole("button", { name: "Vorheriger Monat" }).click();
       expect(await day.locator(".k2-cal-t").textContent()).toBe("Februar 2026");
       expect(await day.locator(".k2-cal-row:not([data-head])").count()).toBe(6);
+      await settled(page);
       expect(await box(page, '[data-testid="day"] .k2-dpick')).toEqual(before);
     },
   );
