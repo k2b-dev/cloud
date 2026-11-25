@@ -5,6 +5,7 @@ import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
 import { Field, Input } from "./controls";
+import { DatePicker } from "./date-picker";
 import { type FilterMessages, useFilterMessages } from "./filter-messages";
 import type {
   ListQuery,
@@ -36,6 +37,9 @@ const isRange = (value: unknown): value is NumberRange =>
   typeof value === "object" && value !== null && !Array.isArray(value) && !("kind" in value);
 const isPeriod = (value: unknown): value is PeriodValue =>
   typeof value === "object" && value !== null && "kind" in value && (value.kind === "preset" || value.kind === "range");
+const periodValue = (value: unknown): PeriodValue | undefined => (isPeriod(value) ? value : undefined);
+const periodOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "dateRange" | "timeRange" }> | undefined =>
+  definition.kind === "dateRange" || definition.kind === "timeRange" ? definition : undefined;
 const codes = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : typeof value === "string" ? [value] : [];
 
@@ -330,10 +334,10 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   const active = createMemo(() => fields().filter(([key]) => filters()[key] !== undefined));
   const [draft, setDraft] = createSignal<string>();
   const [open, setOpen] = createSignal<string>();
-  const [sheet, setSheet] = createSignal<{ field?: string; display?: "sort" | "group" }>();
+  const [sheet, setSheet] = createSignal<SheetPlace>();
   // The sheet opens in the task after the press that asks for it: WebKit can deliver the end of a tap after its click,
   // and the sheet, open by then, would take it for a press outside and close again.
-  const openSheet = (place: { field?: string; display?: "sort" | "group" }) => setTimeout(() => setSheet(place));
+  const openSheet = (place: SheetPlace) => setTimeout(() => setSheet(place));
   const [saving, setSaving] = createSignal<{
     mode: "new" | "rename";
     view?: { key: string; label: string; query: string; store: ViewStore };
@@ -735,6 +739,8 @@ type EditorProps = {
   onRemove?: () => void;
   /** In the phone sheet: no head of its own (the sheet names the field). */
   bare?: boolean;
+  /** In the phone sheet: "Von …" and "Bis …" of a period open their calendar as the sheet's next step. */
+  onBound?: (bound: Bound) => void;
 };
 
 /** The editor of one field, inside the statement's popover or the phone sheet: head, then the values. */
@@ -842,6 +848,7 @@ const EditorBody = (props: EditorProps) => {
           timeZone={props.timeZone}
           possible={props.possible}
           onChange={props.onChange}
+          onBound={props.onBound}
         />
       );
     case "bool":
@@ -943,7 +950,7 @@ const Options = (props: {
 const EditField = (props: {
   label: string;
   value: string;
-  type: "text" | "number" | "date" | "datetime-local";
+  type: "text" | "number";
   unit?: string;
   invalid?: boolean;
   /** `unreadable`: the browser could not read what was typed (such as "1e" in a number field), which it shows as "". */
@@ -951,7 +958,7 @@ const EditField = (props: {
 }) => (
   <label class="k2-fed-field">
     <span class="k2-fed-label">{props.label}</span>
-    <span class="k2-input" data-invalid={props.invalid ? "" : undefined}>
+    <span class="k2-input">
       <input
         type={props.type}
         value={props.value}
@@ -1075,66 +1082,159 @@ const RangeEditor = (props: {
   );
 };
 
+type Bound = "from" | "to";
+type PeriodField = Extract<ListQueryField, { kind: "dateRange" | "timeRange" }>;
+/** Why a bound did not apply: a wall time the clocks jump over, "Von" after "Bis", or a value the address refuses. */
+type BoundError = "missing" | "invalid" | "rejected";
+
+/**
+ * The bounds of a period as the picker shows them, and the period one picked bound makes. A day stays a day; a minute
+ * of the address (UTC) shows as the wall time of the app's zone and goes back from it. A bound that was not changed
+ * keeps its instant, also when its wall time exists twice; a wall time that does not exist is refused.
+ */
+const periodBounds = (definition: PeriodField, value: PeriodValue | undefined, timeZone: string) => {
+  const day = definition.kind === "dateRange";
+  const range = value?.kind === "range" ? value : undefined;
+  const toWall = (text: string | undefined) => {
+    if (!text) return undefined;
+    if (day) return text;
+    const moment = Date.parse(text.replace(/Z$/, ":00Z"));
+    return Number.isNaN(moment) ? undefined : wallTime(moment, timeZone);
+  };
+  const fromWall = (text: string, original: string | undefined): { value?: string; missing?: true } => {
+    if (day) return { value: text };
+    if (original !== undefined && text === toWall(original)) return { value: original };
+    const moment = fromWallTime(text, timeZone);
+    return moment === undefined ? { missing: true } : { value: `${new Date(moment).toISOString().slice(0, 16)}Z` };
+  };
+  return {
+    day,
+    wall: (bound: Bound) => toWall(range?.[bound]),
+    /** The period after one bound was picked (`undefined` takes it out), or why it cannot be. */
+    with: (bound: Bound, text: string | undefined): { value: PeriodValue | undefined } | { error: BoundError } => {
+      const other: Bound = bound === "from" ? "to" : "from";
+      const picked = text === undefined ? {} : fromWall(text, range?.[bound]);
+      if (picked.missing) return { error: "missing" };
+      const ends = { [bound]: picked.value, [other]: range?.[other] } as { from?: string; to?: string };
+      if (ends.from !== undefined && ends.to !== undefined && ends.from > ends.to) return { error: "invalid" };
+      return { value: ends.from === undefined && ends.to === undefined ? undefined : { kind: "range", from: ends.from, to: ends.to } };
+    },
+  };
+};
+
+const boundError = (error: BoundError, t: FilterMessages) =>
+  error === "missing" ? t.timeMissing : error === "invalid" ? t.rangeInvalid : t.valueRejected;
+
+/**
+ * The calendar of one bound: a day (with a time for points in time) applies through the address like every other
+ * change. What does not apply says why under the calendar, which stays open; what applies calls `onDone`.
+ */
+const BoundPicker = (props: {
+  definition: PeriodField;
+  value?: PeriodValue;
+  bound: Bound;
+  timeZone: string;
+  onChange: (value: unknown) => boolean;
+  onDone: () => void;
+  /** The phone sheet: the focus waits for a tap, as everywhere in the sheet. */
+  sheet?: boolean;
+}) => {
+  const t = useFilterMessages();
+  const [error, setError] = createSignal<BoundError>();
+  const bounds = () => periodBounds(props.definition, props.value, props.timeZone);
+  const apply = (text: string | undefined) => {
+    const next = bounds().with(props.bound, text);
+    if ("error" in next) return setError(next.error);
+    if (!props.onChange(next.value)) return setError("rejected");
+    setError(undefined);
+    props.onDone();
+  };
+  return (
+    <DatePicker
+      value={bounds().wall(props.bound)}
+      time={!bounds().day}
+      defaultTime={props.bound === "to" ? "23:59" : "00:00"}
+      timeZone={bounds().day ? undefined : props.timeZone}
+      label={`${props.definition.label} ${props.bound === "from" ? t().from_ : t().to}`}
+      error={error() && boundError(error()!, t())}
+      autoFocus={!props.sheet}
+      onPick={apply}
+      onClear={() => apply(undefined)}
+    />
+  );
+};
+
+/** "Von …" or "Bis …" with its value: a menu entry that opens its calendar beside the editor, like a submenu. */
+const BoundEntry = (props: {
+  label: string;
+  shown?: string;
+  /** On the phone the calendar is the sheet's next step instead. */
+  onStep?: () => void;
+  children: (close: () => void) => JSX.Element;
+}) => {
+  const [open, setOpen] = createSignal(false);
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
+  const face = (
+    <>
+      <span class="k2-mi-label">{props.label}</span>
+      <span class="k2-mi-meta" data-set={props.shown ? "" : undefined}>
+        {props.shown ?? "…"}
+      </span>
+      <Icon name="chevron-right" />
+    </>
+  );
+  return (
+    <Show
+      when={!props.onStep}
+      fallback={
+        <button type="button" class="k2-mi" onClick={() => props.onStep?.()}>
+          {face}
+        </button>
+      }
+    >
+      <popover.Trigger
+        class="k2-mi"
+        data-open={open() ? "" : undefined}
+        onKeyDown={(event: KeyboardEvent) => {
+          // the key of a submenu: to the side opens it
+          if (event.key !== "ArrowRight") return;
+          event.preventDefault();
+          setOpen(true);
+        }}
+      >
+        {face}
+      </popover.Trigger>
+      <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="right" align="start" sideOffset={4} collisionPadding={8}>
+        {props.children(() => setOpen(false))}
+      </popover.Popup>
+    </Show>
+  );
+};
+
 const PeriodEditor = (props: {
-  definition: Extract<ListQueryField, { kind: "dateRange" | "timeRange" }>;
+  definition: PeriodField;
   value?: PeriodValue;
   timeZone: string;
   possible: (value: unknown) => boolean;
   onChange: (value: unknown) => boolean;
+  onBound?: (bound: Bound) => void;
 }) => {
   const t = useFilterMessages();
-  const day = props.definition.kind === "dateRange";
+  const format = useFormats(() => props.timeZone);
   const custom = () => props.definition.kind === "dateRange" || props.definition.custom;
-  // a minute of the address (UTC) shows as the wall time of the app's zone a datetime field takes, and back
-  const toField = (text: string | undefined) => {
-    if (!text) return "";
-    if (day) return text;
-    const moment = Date.parse(text.replace(/Z$/, ":00Z"));
-    return Number.isNaN(moment) ? "" : wallTime(moment, props.timeZone);
-  };
-  /**
-   * A field's text as a bound of the address. A bound whose field was not changed keeps its instant, also when its wall
-   * time exists twice; a wall time that does not exist is `missing` and refused at the field.
-   */
-  const bound = (text: string, original: string | undefined): { value?: string; missing?: true } => {
-    if (!text) return {};
-    if (day) return { value: text };
-    if (original !== undefined && text === toField(original)) return { value: original };
-    const moment = fromWallTime(text, props.timeZone);
-    return moment === undefined ? { missing: true } : { value: `${new Date(moment).toISOString().slice(0, 16)}Z` };
-  };
   const range = () => (props.value?.kind === "range" ? props.value : undefined);
-  const [from, setFrom] = createSignal(toField(range()?.from));
-  const [to, setTo] = createSignal(toField(range()?.to));
   const [rejected, setRejected] = createSignal(false);
-  const [missing, setMissing] = createSignal(false);
-  // the fields follow the filter when it changes elsewhere; what is typed and not yet applied stays until then
   createEffect(
     on(
-      () => `${range()?.from ?? ""}..${range()?.to ?? ""}`,
-      () => {
-        setFrom(toField(range()?.from));
-        setTo(toField(range()?.to));
-        setRejected(false);
-        setMissing(false);
-      },
+      () => `${props.value?.kind}:${encode(props.definition, props.value) ?? ""}`,
+      () => setRejected(false),
       { defer: true },
     ),
   );
-  const invalid = () => {
-    const low = bound(from(), range()?.from).value;
-    const high = bound(to(), range()?.to).value;
-    return low !== undefined && high !== undefined && low > high;
-  };
-  const commit = () => {
-    setRejected(false);
-    const low = bound(from(), range()?.from);
-    const high = bound(to(), range()?.to);
-    setMissing(Boolean(low.missing || high.missing));
-    if (missing() || invalid()) return;
-    setRejected(
-      !props.onChange(low.value === undefined && high.value === undefined ? undefined : { kind: "range", from: low.value, to: high.value }),
-    );
+  const shown = (bound: Bound) => {
+    const text = range()?.[bound];
+    if (!text) return undefined;
+    return props.definition.kind === "dateRange" ? format().day(text) : format().minute(text);
   };
   return (
     <div class="k2-fed-body" data-flush="">
@@ -1151,38 +1251,33 @@ const PeriodEditor = (props: {
       />
       <Show when={custom()}>
         <div class="k2-fed-sub">{t().customRange}</div>
-        <div class="k2-fed-range">
-          <EditField
-            label={t().from_}
-            type={day ? "date" : "datetime-local"}
-            value={from()}
-            invalid={invalid() || rejected() || missing()}
-            onCommit={(text, unreadable) => {
-              if (unreadable) return setRejected(true);
-              setFrom(text);
-              commit();
-            }}
-          />
-          <span class="k2-fed-dash" aria-hidden="true">
-            –
-          </span>
-          <EditField
-            label={t().to}
-            type={day ? "date" : "datetime-local"}
-            value={to()}
-            invalid={invalid() || rejected() || missing()}
-            onCommit={(text, unreadable) => {
-              if (unreadable) return setRejected(true);
-              setTo(text);
-              commit();
-            }}
-          />
+        <div class="k2-fed-bounds" role="group" aria-label={t().customRange}>
+          <For each={["from", "to"] as const}>
+            {(bound) => (
+              <BoundEntry
+                label={bound === "from" ? t().from_ : t().to}
+                shown={shown(bound)}
+                onStep={props.onBound && (() => props.onBound?.(bound))}
+              >
+                {(close) => (
+                  <BoundPicker
+                    definition={props.definition}
+                    value={props.value}
+                    bound={bound}
+                    timeZone={props.timeZone}
+                    onChange={props.onChange}
+                    onDone={close}
+                  />
+                )}
+              </BoundEntry>
+            )}
+          </For>
         </div>
       </Show>
-      {/* also without a custom range: a preset the address cannot hold says so here */}
-      <Show when={invalid() || rejected() || missing()}>
+      {/* a preset the address cannot hold says so here; a bound says it at its calendar */}
+      <Show when={rejected()}>
         <p class="k2-fed-error" role="alert">
-          {missing() ? t().timeMissing : invalid() ? t().rangeInvalid : t().valueRejected}
+          {t().valueRejected}
         </p>
       </Show>
     </div>
@@ -1638,7 +1733,8 @@ const SaveDialog = (props: {
 
 // ── Phone sheet ────────────────────────────────────────────────────────────────────────────────────────────────
 
-type SheetPlace = { field?: string; display?: "sort" | "group" };
+/** Where the sheet stands: the list of fields, one field, the calendar of one bound of a period, the sort or the group. */
+type SheetPlace = { field?: string; bound?: Bound; display?: "sort" | "group" };
 
 const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   open: boolean;
@@ -1673,8 +1769,13 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   };
   const words = () => orderWords(props.query, props.state, t());
   const choices = () => sortChoices(props.query, props.state, t());
-  const title = () =>
-    field()?.definition.label ?? (props.place?.display === "sort" ? t().sort : props.place?.display === "group" ? t().group : t().filters);
+  const title = () => {
+    const current = field();
+    if (current && props.place?.bound) return `${current.definition.label} · ${props.place.bound === "from" ? t().from_ : t().to}`;
+    return (
+      current?.definition.label ?? (props.place?.display === "sort" ? t().sort : props.place?.display === "group" ? t().group : t().filters)
+    );
+  };
   const Row = (row: { icon?: string; label: string; value?: string; onClick: () => void }) => (
     <button type="button" class="k2-fsheet-row" onClick={row.onClick}>
       <Show when={row.icon}>{(name) => <Icon name={name()} />}</Show>
@@ -1716,7 +1817,12 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
       title={title()}
       open={props.open}
       onOpenChange={(open) => !open && props.onClose()}
-      back={props.place?.field !== undefined || props.place?.display !== undefined ? () => props.onPlace({}) : undefined}
+      // from a bound's calendar back to its period, from a field back to the list
+      back={
+        props.place?.field !== undefined || props.place?.display !== undefined
+          ? () => props.onPlace(props.place?.bound ? { field: props.place.field } : {})
+          : undefined
+      }
       foot={
         <>
           <Button disabled={!props.changed} onClick={props.onReset}>
@@ -1770,18 +1876,42 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
         >
           <Show when={field()}>
             {(current) => (
-              <Editor
-                bare
-                fieldKey={current().key}
-                definition={current().definition}
-                value={filters()[current().key]}
-                counts={props.counts?.[current().key]}
-                names={props.namesOf(current().key)}
-                onNames={(items) => props.onNames(current().key, items)}
-                timeZone={props.timeZone}
-                possible={(value) => props.canSet(current().key, value)}
-                onChange={(value) => props.onField(current().key, value)}
-              />
+              <Show
+                when={(() => {
+                  const period = periodOf(current().definition);
+                  const bound = props.place?.bound;
+                  return period && bound ? { period, bound } : undefined;
+                })()}
+                fallback={
+                  <Editor
+                    bare
+                    fieldKey={current().key}
+                    definition={current().definition}
+                    value={filters()[current().key]}
+                    counts={props.counts?.[current().key]}
+                    names={props.namesOf(current().key)}
+                    onNames={(items) => props.onNames(current().key, items)}
+                    timeZone={props.timeZone}
+                    possible={(value) => props.canSet(current().key, value)}
+                    onChange={(value) => props.onField(current().key, value)}
+                    onBound={(bound) => props.onPlace({ field: current().key, bound })}
+                  />
+                }
+              >
+                {(step) => (
+                  <div class="k2-fsheet-pick">
+                    <BoundPicker
+                      sheet
+                      definition={step().period}
+                      value={periodValue(filters()[current().key])}
+                      bound={step().bound}
+                      timeZone={props.timeZone}
+                      onChange={(value) => props.onField(current().key, value)}
+                      onDone={() => props.onPlace({ field: current().key })}
+                    />
+                  </div>
+                )}
+              </Show>
             )}
           </Show>
           <Show when={props.place?.display === "sort"}>

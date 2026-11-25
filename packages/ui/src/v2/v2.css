@@ -3120,6 +3120,145 @@
   gap: 8px;
   min-width: 0;
 }
+/* DatePicker: one month of days on a grid of 7 × 32 px, always six weeks, so turning the month never changes the
+   size; the month and year between the two arrows in the row role. A day is a round control: the chosen one filled
+   in blue, today in the blue ink and bold, the days of the months around quiet. With `time` a field of hour and
+   minute follows, and the deeds stand at the end. Inside a popover it is the popover's whole content (no box in a box). */
+.k2-ui .k2-pop.k2-dpop {
+  width: auto;
+  padding: 8px;
+  gap: 0;
+}
+.k2-ui .k2-dpick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  max-width: 100%;
+  min-width: 0;
+}
+.k2-ui .k2-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.k2-ui .k2-cal-h {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--k2-h-dense);
+}
+.k2-ui .k2-cal-h > .k2-btn {
+  height: var(--k2-h-dense);
+  width: var(--k2-h-dense);
+  padding: 0;
+  color: var(--k2-muted);
+}
+.k2-ui .k2-cal-t {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-cal-grid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  outline: none;
+}
+.k2-ui .k2-cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, var(--k2-h-dense));
+}
+.k2-ui .k2-cal-wd {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.k2-ui .k2-cal-day {
+  appearance: none;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  height: var(--k2-h-dense);
+  width: var(--k2-h-dense);
+  border-radius: var(--k2-r-control);
+  background: none;
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  color: var(--k2-text-2);
+  cursor: default;
+  outline: none;
+}
+.k2-ui .k2-cal-day:hover:not([data-disabled], [data-selected]) {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-cal-day:focus-visible {
+  box-shadow: 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-cal-day[data-outside] {
+  color: var(--k2-n400);
+}
+.k2-ui .k2-cal-day[data-today] {
+  color: var(--k2-blue-ink);
+  font-weight: 600;
+}
+.k2-ui .k2-cal-day[data-selected] {
+  background: var(--k2-blue);
+  color: #ffffff;
+  font-weight: 600;
+}
+.k2-ui .k2-cal-day[data-selected]:focus-visible {
+  box-shadow: 0 0 0 2px var(--k2-surface), 0 0 0 4px var(--k2-blue);
+}
+.k2-ui .k2-cal-day[data-disabled] {
+  color: var(--k2-n300);
+}
+.k2-ui .k2-dpick-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.k2-ui .k2-dpick-label {
+  flex: 1;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-muted);
+}
+.k2-ui .k2-dpick-time > .k2-input {
+  width: 104px;
+  height: var(--k2-h-dense);
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-dpick-error {
+  margin: 0;
+  font: var(--k2-t-meta);
+  color: var(--k2-bad);
+}
+.k2-ui .k2-dpick-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-control-small);
+}
+.k2-ui .k2-dpick-foot .k2-btn {
+  height: var(--k2-h-control-small);
+}
+.k2-ui .k2-dpick-end {
+  margin-left: auto;
+  display: flex;
+}
+
 /* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
    nothing that is already shown moves when another comes */
 /* The region is a popover in the top layer (core's popover="manual"), so its inset, margin and box are set here in
@@ -3876,6 +4015,28 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* "Von …" and "Bis …" of a custom period: menu entries with their value at the end, each opening its calendar to the
+   side like a submenu (flipped to the other side where there is no room) */
+.k2-ui .k2-fed-bounds {
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px 4px;
+}
+.k2-ui .k2-fed-bounds > .k2-mi:hover,
+.k2-ui .k2-fed-bounds > .k2-mi:focus-visible {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-fed-bounds > .k2-mi:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-fed-bounds .k2-mi-meta {
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-fed-bounds .k2-mi-meta[data-set] {
+  color: var(--k2-app-text);
+  font-weight: 600;
+}
 .k2-ui .k2-fed-presets {
   display: flex;
   flex-wrap: wrap;
@@ -4213,6 +4374,33 @@
   min-height: 44px;
   padding: 0 var(--k2-edge);
   border-radius: 0;
+}
+/* in the sheet "Von …" and "Bis …" are rows of the sheet, and a bound's calendar is the next step: days of 44 px */
+.k2-ui .k2-fsheet .k2-fed-bounds {
+  padding: 0;
+}
+.k2-ui .k2-fsheet .k2-fed-bounds > .k2-mi {
+  height: 44px;
+  padding: 0 var(--k2-edge);
+  border-radius: 0;
+}
+.k2-ui .k2-fsheet-pick {
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--k2-edge) 8px;
+}
+.k2-ui .k2-fsheet-pick .k2-dpick {
+  width: 308px;
+}
+.k2-ui .k2-fsheet-pick .k2-cal-row {
+  grid-template-columns: repeat(7, 44px);
+}
+.k2-ui .k2-fsheet-pick :is(.k2-cal-day, .k2-cal-h > .k2-btn) {
+  width: 44px;
+  height: 44px;
+}
+.k2-ui .k2-fsheet-pick .k2-cal-h {
+  height: 44px;
 }
 
 @media not all and (min-width: 768px) {

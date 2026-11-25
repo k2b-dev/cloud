@@ -615,17 +615,30 @@ test("daylight saving: an unchanged bound keeps its instant, a time that does no
   const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
   await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
     await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
-    const fields = page.locator(".k2-fpop .k2-fed-field input");
-    await fields.nth(1).press("Enter");
-    await page.waitForTimeout(100);
-    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    const bounds = page.locator(".k2-fpop .k2-fed-bounds .k2-mi");
+    expect(await bounds.allTextContents()).toEqual(["Von25.10., 02:30", "Bis25.10., 04:00"]);
+    const cascade = page.locator(".k2-dpop");
+    const time = cascade.getByRole("textbox", { name: "Uhrzeit" });
+    // both bounds applied unchanged keep their instants, also the 02:30 that comes twice that night
+    for (const index of [1, 0]) {
+      await bounds.nth(index).click();
+      await cascade.waitFor();
+      expect(await time.inputValue()).toBe(index === 0 ? "02:30" : "04:00");
+      await cascade.getByRole("button", { name: "Übernehmen" }).click();
+      await cascade.waitFor({ state: "detached" });
+      expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    }
     // 02:30 on 29 March does not exist in Berlin: the clocks jump from 02:00 to 03:00
-    await fields.first().fill("2026-03-29T02:30");
-    await fields.first().press("Enter");
-    await page.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
+    await bounds.first().click();
+    await cascade.waitFor();
+    for (let step = 0; step < 7; step += 1) await cascade.getByRole("button", { name: "Vorheriger Monat" }).click();
+    await cascade.locator('[data-value="2026-03-29"]').click();
+    await time.fill("02:30");
+    await time.press("Enter");
+    await cascade.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
     expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
   });
-});
+}, 15_000);
 
 test("retrying a failed view update writes exactly what failed, not what the list shows by then", async () => {
   await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {

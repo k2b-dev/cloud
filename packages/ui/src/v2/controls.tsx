@@ -9,7 +9,13 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { formatDateInput, parseDateInput } from "../inputs/date-input";
+import { dateKey, isDateKey } from "../inputs/date-picker";
+import { useLocale } from "../intl/locale";
+import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
+import { useDateMessages } from "./date-messages";
+import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
 import { textEdge } from "./tokens";
 
@@ -351,32 +357,122 @@ export const Select = (props: SelectProps) => {
 };
 
 export type DateInputProps = {
+  /** The date as a date key ("2026-12-15") or as the locale writes it ("15.12.2026"); the field shows the second. */
   value?: string;
+  /**
+   * A picked or typed date as a date key ("2026-12-15"), or "" when the field was emptied. Typed text applies on Enter
+   * or when the field is left; text that is no date marks the field and applies nothing.
+   */
   onInput?: (value: string) => void;
   placeholder?: string;
+  /** The name a form sends the date key under. */
   name?: string;
   label?: string;
 };
 
-/** The shape of a date field: the date and a calendar symbol. (The picker opens with the behaviour layer.) */
+/**
+ * A date field: the date typed in the order of the locale ("24.11.2026", also "heute", "+3", "Mi"), and the calendar
+ * symbol at its end opens `DatePicker` below it. Picking a day fills the field and gives the focus back to it.
+ */
 export const DateInput = (props: DateInputProps) => {
   const field = useField();
+  const locale = useLocale();
+  const t = useDateMessages();
+  const today = () => dateKey(new Date());
+  /** A date key for a value, or `undefined` when it is no readable date. */
+  const keyOf = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+    if (isDateKey(value)) return value;
+    const read = parseDateInput(value, { today: today(), locale: locale() });
+    return read.kind === "date" ? read.date : undefined;
+  };
+  const shown = (value: string | undefined) => {
+    const key = isDateKey(value ?? "") ? value : undefined;
+    return key ? formatDateInput(key, locale()) : (value ?? "");
+  };
+  // Without `onInput` the field keeps what was picked or typed itself, so it always shows the date it holds.
+  const [own, setOwn] = createSignal(props.value);
+  createRenderEffect(() => setOwn(props.value));
+  const [text, setText] = createSignal(shown(props.value));
+  createRenderEffect(() => setText(shown(own())));
+  const [unreadable, setUnreadable] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
+  let input: HTMLInputElement | undefined;
+  const take = (key: string) => {
+    setUnreadable(false);
+    setOwn(key);
+    setText(shown(key));
+    props.onInput?.(key);
+  };
+  const commit = (typed: string) => {
+    if (!typed.trim()) {
+      if (keyOf(own()) !== undefined || own()) take("");
+      setUnreadable(false);
+      return;
+    }
+    const key = keyOf(typed);
+    if (key === undefined) {
+      setUnreadable(true);
+      return;
+    }
+    if (key !== keyOf(own())) take(key);
+    else {
+      setUnreadable(false);
+      setText(shown(key));
+    }
+  };
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
+  const invalid = () => field?.invalid || unreadable();
   return (
-    <span class="k2-input" data-k2-part="DateInput" data-invalid={field?.invalid ? "" : undefined}>
+    <span class="k2-input" data-k2-part="DateInput" data-invalid={invalid() ? "" : undefined}>
       <input
+        ref={input}
         id={field?.control}
-        name={props.name ?? field?.name}
         type="text"
         inputmode="numeric"
-        value={props.value ?? ""}
+        autocomplete="off"
+        value={text()}
         placeholder={props.placeholder}
         aria-label={field ? undefined : props.label}
-        aria-invalid={field?.invalid ? "true" : undefined}
+        aria-invalid={invalid() ? "true" : undefined}
         aria-describedby={field?.described}
+        title={unreadable() ? t().unreadable : undefined}
         required={field?.required || undefined}
-        onInput={(event) => props.onInput?.(event.currentTarget.value)}
+        onInput={(event) => setText(event.currentTarget.value)}
+        onChange={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.isComposing) commit(event.currentTarget.value);
+          if (event.key === "ArrowDown" && event.altKey) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       />
-      <Icon name="calendar" />
+      <Show when={props.name ?? field?.name}>{(name) => <input type="hidden" name={name()} value={keyOf(own()) ?? own() ?? ""} />}</Show>
+      <span class="k2-input-end">
+        <popover.Trigger
+          class="k2-btn"
+          data-k2-part="Button"
+          data-variant="ghost"
+          data-icon-only=""
+          aria-label={t().openCalendar}
+          title={t().openCalendar}
+        >
+          <Icon name="calendar" />
+        </popover.Trigger>
+      </span>
+      <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="bottom" align="end" sideOffset={4} collisionPadding={8}>
+        <DatePicker
+          value={keyOf(own())}
+          label={props.label}
+          autoFocus
+          onPick={(key) => {
+            take(key);
+            setOpen(false);
+            input?.focus({ preventScroll: true });
+          }}
+        />
+      </popover.Popup>
     </span>
   );
 };

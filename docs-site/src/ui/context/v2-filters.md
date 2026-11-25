@@ -21,6 +21,15 @@ and the browser.
 - **"+ Filter"** lists the fields, the common ones first, each with its
   current value. A field without a value becomes a dashed statement
   ("Einlieferer ist …") that applies once it has one.
+- **A period** (`dateRange`, `timeRange`) offers its presets, then "Eigener
+  Zeitraum" as two entries under each other: "Von …" and "Bis …", each with
+  its current value. Each opens a `DatePicker` beside the editor, like a
+  submenu (ArrowRight opens it, Escape closes only it); where the right has
+  no room it opens to the left. A picked day applies at once; a point in time
+  adds hour and minute and applies with "Übernehmen". A day that does not fit
+  ("Von" after "Bis", a skipped hour) says why under the calendar, which
+  stays open. On the phone the calendar is the sheet's next step, and "Zurück"
+  leads to the period.
 - **"Zurücksetzen"** appears after the last statement while the state differs
   from the current view, and returns to it in one step.
 - **"Ansicht ▾"** stands at the end of the bar only when the app passes view
@@ -83,9 +92,9 @@ const [state, setState] = createSignal(props.state); // what the server parsed
   default. Pass the person's zone from the same setting on the server and in
   the island, so the first picture and the island show the same minutes.
   Around a change of the clocks, a bound that was not changed keeps its
-  instant; a typed time that occurs twice means its first occurrence, and a
-  typed time that does not exist (the hour skipped in spring) is refused at
-  its field.
+  instant; a picked time that occurs twice means its first occurrence, and a
+  picked time that does not exist (the hour skipped in spring) is refused at
+  its calendar.
 - Values that would make the address longer than 2,000 characters are
   offered locked, with one hint under the list (linked to them through
   `aria-describedby`): remove a filter or shorten the search.
