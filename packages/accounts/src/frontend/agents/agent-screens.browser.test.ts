@@ -191,6 +191,7 @@ const expectClean = async (tab: Page) => {
 
 describe("an agent's API keys on v2", () => {
   test("the list, an agent's keys, the order and the states keep the v2 rules at 1280 and 390 px", async () => {
+    const tableWidths: number[] = [];
     for (const view of [desktop, phone]) {
       for (const [name, address, options] of [
         ["list", "/app/accounts/agents", {}],
@@ -218,6 +219,36 @@ describe("an agent's API keys on v2", () => {
           if (name === "detail-sorted" && view === desktop) {
             expect(await tab.locator("thead th[aria-sort='ascending']").textContent()).toContain(t.name);
             expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/agents/${AGENT_ID}`);
+            // the rows stand in the order the head names, as the server sorts them
+            const names = await tab.locator("tbody tr td:first-child .k2-cell-line:not([data-second])").allTextContents();
+            expect(names).toEqual(["Alter Export-Job", "Laptop Jana", "MCP-Server Team Ops"]);
+          }
+          if (view === desktop && name === "detail-key") {
+            // the open key's row carries the app's tint; the others stay on the surface
+            await settled(tab);
+            const [open, other] = await tab.evaluate(() => {
+              const background = (selector: string) => {
+                const cell = document.querySelector(selector);
+                return cell ? getComputedStyle(cell).backgroundColor : "missing";
+              };
+              return [background("tbody tr[aria-current] > td"), background("tbody tr:not([aria-current]) > td")];
+            });
+            expect(open).not.toBe("missing");
+            expect(open).not.toBe(other);
+            expect(open).not.toMatch(/^rgba?\(255, 255, 255|^rgba\(0, 0, 0, 0\)$/);
+          }
+          // a disabled agent's keys rest: no green chip contradicts the notice
+          if (name === "detail-disabled" && view === desktop) {
+            expect(await tab.locator("tbody [data-k2-part='Chip']", { hasText: t.keyInactive }).count()).toBe(3);
+            expect(await tab.locator("tbody [data-k2-part='Chip']", { hasText: t.keyActive }).count()).toBe(0);
+          }
+          if (name === "detail-disabled" && view === phone) expect(outline).toContain(`${t.fullAccess} · ${t.keyInactive}`);
+          // the side column says what a key reaches and that it lives only while its agent is active
+          if (name === "detail") expect(outline).toContain(t.reachTitle);
+          // the table keeps its edge when a key opens: the side column and the open key share one width
+          if (view === desktop && (name === "detail" || name === "detail-key")) {
+            await settled(tab);
+            tableWidths.push((await tab.locator("[data-k2-part='Pane'][aria-label='API Keys']").first().boundingBox())?.width ?? 0);
           }
           await shoot(tab, `${name}-${view.name}`);
           expect(errors).toEqual([]);
@@ -226,6 +257,9 @@ describe("an agent's API keys on v2", () => {
         }
       }
     }
+    expect(tableWidths).toHaveLength(2);
+    expect(tableWidths[0]).toBeGreaterThan(0);
+    expect(tableWidths[1]).toBe(tableWidths[0]!);
   }, 240_000);
 
   test("creating a key shows its token once, with a copy button, and closing drops it from the page", async () => {

@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { AgentKeyView } from "./AgentKeyDialogs";
 import AgentScreen, { type AgentView } from "./AgentScreen";
 import AgentsScreen, { type AgentListEntry } from "./AgentsScreen";
-import type { AgentKeyOpen, AgentKeySort } from "./agent-keys";
+import { type AgentKey, type AgentKeyOpen, type AgentKeySort, sortAgentKeys } from "./agent-keys";
 import { AGENT_ID, KEY_IDS } from "./agent-screens.fixture-ids";
 
 // Frozen sample data for the agent screens: dates are formatted text as the server sends them, ids are fixed.
@@ -52,6 +52,14 @@ export const keys: AgentKeyView[] = [
   },
 ];
 
+// The same keys as the server holds them; the page gets them in the order the server sorts them (`sortAgentKeys`).
+const stored: AgentKey[] = [
+  { ...keys[0]!, createdAt: "2026-09-22T07:20:00.000Z", expiresAt: null, lastUsedAt: "2026-11-24T17:02:00.000Z" },
+  { ...keys[1]!, createdAt: "2026-11-03T13:41:00.000Z", expiresAt: "2026-12-31T22:59:00.000Z", lastUsedAt: null },
+  { ...keys[2]!, createdAt: "2026-03-02T07:00:00.000Z", expiresAt: "2026-06-30T22:00:00.000Z", lastUsedAt: "2026-06-30T05:15:00.000Z" },
+];
+const sortedKeys = (sort: AgentKeySort) => sortAgentKeys(stored, sort, "de").map((key) => keys.find((view) => view.id === key.id)!);
+
 export const agents: AgentListEntry[] = [
   { id: AGENT_ID, name: "Wochenbericht", active: true, created: "22.09.2026, 09:14" },
   { id: "0b2f5c7e-0000-4000-8000-0000000000bc", name: "Festplaner", active: true, created: "14.10.2026, 11:02" },
@@ -62,7 +70,7 @@ export const AgentScreenFixture = (props: { keys?: AgentKeyView[] | null; open?:
   <LocaleProvider locale="de">
     <AgentScreen
       agent={{ ...agent, active: props.active ?? true }}
-      keys={props.keys === undefined ? keys : props.keys}
+      keys={props.keys === undefined ? sortedKeys(props.sort ?? "created") : props.keys}
       keysTotal={props.keys === undefined ? keys.length : (props.keys?.length ?? 0)}
       sort={props.sort ?? "created"}
       open={props.open ?? { kind: "none" }}

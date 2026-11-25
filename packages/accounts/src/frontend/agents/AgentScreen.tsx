@@ -10,6 +10,9 @@ import { useAgentMessages } from "./messages";
 
 export type { AgentKeyView } from "./AgentKeyDialogs";
 
+/** The side column and an open key share one width, so the table's edge stays where it is when a key opens. */
+const sideWidth = { min: 300, default: 380 };
+
 export type AgentView = {
   id: string;
   name: string;
@@ -47,6 +50,13 @@ export default function AgentScreen(props: Props) {
   // What is open stays open when the order changes.
   const openParam = () => (props.open.kind === "new" ? "new" : props.open.kind === "key" ? props.open.id : undefined);
   // A column head sorts by its column; pressed again, the list goes back to the newest first.
+  // A key works only while its agent is active: then expired keys warn and the others are ok; otherwise every key rests.
+  const keyStatus = (entry: AgentKeyView): { status?: "ok" | "warn"; label: string } =>
+    !props.agent.active
+      ? { label: t().keyInactive }
+      : entry.expired
+        ? { status: "warn", label: t().expired }
+        : { status: "ok", label: t().keyActive };
   const sortBy = (sort: AgentKeySort) => ({
     href: agentPageHref(props.agent.id, { sort: props.sort === sort ? "created" : sort, open: openParam() }),
   });
@@ -117,27 +127,31 @@ export default function AgentScreen(props: Props) {
                 phone={(entry) => ({
                   lines: [
                     entry.name,
-                    `${accessLabel(t(), entry.access)} · ${entry.expired ? t().expired : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
+                    `${accessLabel(t(), entry.access)} · ${!props.agent.active || entry.expired ? keyStatus(entry).label : entry.lastUsed ? t().usedAgo({ when: entry.lastUsed }) : t().neverUsed}`,
                   ],
                 })}
                 columns={[
                   {
                     title: t().name,
                     sort: sortBy("name"),
-                    width: { min: 160, default: 200 },
+                    width: { min: 160, default: 180 },
                     cell: (entry) => ({ lines: [entry.name, `${entry.tokenPrefix}…`] }),
                   },
                   { title: t().keyAccess, width: { min: 150, default: 170 }, cell: (entry) => accessLabel(t(), entry.access), drop: true },
                   {
                     title: t().lastUsed,
                     sort: sortBy("used"),
-                    width: { min: 120, default: 140 },
+                    width: { min: 120, default: 130 },
                     cell: (entry) => entry.lastUsed ?? t().neverUsed,
                     drop: true,
                   },
                   {
                     title: t().status,
-                    cell: (entry) => (entry.expired ? <Chip status="warn">{t().expired}</Chip> : <Chip status="ok">{t().keyActive}</Chip>),
+                    // a disabled agent's keys rest: a plain chip, as the notice above says
+                    cell: (entry) => {
+                      const state = keyStatus(entry);
+                      return state.status ? <Chip status={state.status}>{state.label}</Chip> : <Chip>{state.label}</Chip>;
+                    },
                   },
                 ]}
               />
@@ -147,7 +161,7 @@ export default function AgentScreen(props: Props) {
         <Show
           when={props.open.kind === "key"}
           fallback={
-            <Pane side label={t().details} width={{ min: 260, default: 320 }}>
+            <Pane side label={t().details} width={sideWidth}>
               <Section
                 title={t().agent}
                 actions={[{ label: accounts().agentChangePicture, icon: "photo", onClick: () => void changePicture() }]}
@@ -162,13 +176,25 @@ export default function AgentScreen(props: Props) {
                   ]}
                 />
               </Section>
+              {/* what a key can do, in the words of its access; a key lives only as long as its agent is active */}
+              <Section title={t().reachTitle} summary={t().reachWhileActive}>
+                <Facts
+                  items={[
+                    { label: t().fullAccess, value: t().reachFull },
+                    ...(props.modelsAvailable ? [{ label: t().modelsOnly, value: t().reachModels }] : []),
+                    ...(props.keys?.some((entry) => entry.access === "legacy")
+                      ? [{ label: t().legacyLimited, value: t().reachLegacy }]
+                      : []),
+                  ]}
+                />
+              </Section>
             </Pane>
           }
         >
           <Pane
             detail
             label={openKey()?.name ?? t().keys}
-            width={{ min: 320, default: 380 }}
+            width={sideWidth}
             back={{ label: t().keys, href: href() }}
             head={
               <Bar

@@ -1332,7 +1332,8 @@
 .k2-ui .k2-table[data-grid] tbody tr:not([data-group]):hover > td {
   background: var(--k2-n50);
 }
-.k2-ui .k2-table[data-grid] tbody tr[aria-current] > td {
+/* The open row (`current`) is tinted in every table that knows its rows, not only in a large one. */
+.k2-ui .k2-table tbody tr[aria-current] > td {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
