@@ -1,164 +1,113 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
-import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, StatCell, StatGrid } from "@k2b/ui";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import OperationalCharts from "../../frontend/OperationalCharts.island";
 import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../messages";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import { getRedisDiagnostics, type RedisPrefixDiagnostic } from "../data/service";
-import { buildRedisFilterUrl, parseRedisFilterFromUrl } from "./_components/filter-state";
-import RedisDataFilters from "./_components/RedisDataFilters.island";
+import type { KeyCell } from "../_components/KeyCells";
+import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
+import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { getRedisDiagnostics } from "../data/service";
+import ValkeyScreen from "./_components/ValkeyScreen.island";
+import { legacyValkeyHref, valkeyHref, valkeyQuery } from "./query";
 
-const normalize = (value: string): string => value.toLowerCase();
-
+/** Valkey on v2. The address holds the prefix depth and the search; the page filters the sampled prefixes. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
   const url = new URL(c.req.url);
-  const filter = parseRedisFilterFromUrl(url);
-  const { search, depth: selectedDepth } = filter;
-  const diagnostics = await getRedisDiagnostics(locale);
-  const searchNeedle = normalize(search);
+  const legacy = legacyValkeyHref(url.searchParams);
+  if (legacy) return c.redirect(legacy);
+  const query = valkeyQuery(locale);
+  const address = query.parse(url.searchParams);
+  const state = address.state;
+  const depth = Number(state.filters.depth);
+  const [diagnostics, attention] = await Promise.all([getRedisDiagnostics(locale), readAttention()]);
+  const needle = state.search?.trim().toLowerCase() ?? "";
+  const number = (value: number) => formatNumber(value, { locale });
 
-  const filteredPrefixes = diagnostics.prefixes.filter((prefix) => {
-    if (prefix.depth !== selectedDepth) return false;
-    if (!searchNeedle) return true;
-    return normalize(prefix.prefix).includes(searchNeedle);
-  });
-
-  const prefixChartData = filteredPrefixes
+  const prefixes = diagnostics.prefixes.filter(
+    (prefix) => prefix.depth === depth && (!needle || prefix.prefix.toLowerCase().includes(needle)),
+  );
+  const chartData = prefixes
     .slice()
     .sort((left, right) => right.count - left.count || left.prefix.localeCompare(right.prefix))
     .slice(0, 10)
     .map((prefix) => ({ label: prefix.prefix, value: prefix.count }));
-  const redisPrefixHref = (prefix: string): string => buildRedisFilterUrl(filter, { search: prefix });
-
-  const expiringKeys = diagnostics.keyspace.reduce((sum, row) => sum + row.expires, 0);
   const runtime = diagnostics.runtime;
   const memoryPressure =
     runtime.usedMemoryBytes !== null && runtime.maxMemoryBytes !== null && runtime.maxMemoryBytes > 0
       ? runtime.usedMemoryBytes / runtime.maxMemoryBytes > 0.85
       : false;
-  const memorySub =
-    runtime.maxMemoryBytes && runtime.maxMemoryBytes > 0
-      ? t.ofValue({ value: formatBytes(runtime.maxMemoryBytes, { locale }) })
-      : runtime.usedMemoryBytes === null
-        ? t.unavailable
-        : t.noMaxMemory;
-  const prefixColumns: DataTableColumn<RedisPrefixDiagnostic>[] = [
-    { id: "prefix", header: t.prefix, value: (prefix) => prefix.prefix, cellClass: "font-mono text-[11px] min-w-[220px]" },
-    { id: "depth", header: t.depth, value: (prefix) => prefix.depth, headerClass: "text-right", cellClass: "text-right" },
-    { id: "count", header: t.sampleCount, value: (prefix) => prefix.count, headerClass: "text-right", cellClass: "text-right" },
-    { id: "share", header: t.sampleShare, value: (prefix) => prefix.share, headerClass: "text-right", cellClass: "text-right" },
+  const expiringKeys = diagnostics.keyspace.reduce((sum, row) => sum + row.expires, 0);
+  const cells: KeyCell[] = [
+    { icon: "key", label: t.keys, value: number(diagnostics.dbSize), meta: t.expiringKeys({ count: number(expiringKeys) }) },
+    {
+      icon: "cpu",
+      label: t.memory,
+      value: runtime.usedMemoryBytes === null ? "—" : formatBytes(runtime.usedMemoryBytes, { locale }),
+      meta:
+        runtime.maxMemoryBytes && runtime.maxMemoryBytes > 0
+          ? t.ofValue({ value: formatBytes(runtime.maxMemoryBytes, { locale }) })
+          : runtime.usedMemoryBytes === null
+            ? t.unavailable
+            : t.noMaxMemory,
+      tone: memoryPressure ? "warn" : undefined,
+    },
+    {
+      icon: "trash-x",
+      label: t.evicted,
+      value: runtime.evictedKeys === null ? "—" : number(runtime.evictedKeys),
+      meta: runtime.maxMemoryPolicy ?? t.policyUnknown,
+      tone: (runtime.evictedKeys ?? 0) > 0 ? "bad" : undefined,
+    },
+    {
+      icon: "target-arrow",
+      label: t.hitRate,
+      value: runtime.hitRate === null ? "—" : formatPercent(runtime.hitRate, { locale }),
+      meta: runtime.connectedClients === null ? t.clientsUnknown : t.clientCount({ count: number(runtime.connectedClients) }),
+      tone: runtime.hitRate !== null && runtime.hitRate < 0.8 ? "warn" : undefined,
+    },
   ];
+  const sampled = diagnostics.scanComplete
+    ? t.keysScanned({ count: number(diagnostics.sampledKeys) })
+    : t.keysSampled({ count: number(diagnostics.sampledKeys), total: number(diagnostics.dbSize) });
+  const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
+  const area = areaText(locale);
+  const groups = observabilityGroups(c, locale, attention);
 
-  const attention = await readAttention();
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="valkey" attention={attention}>
-      <ObservabilityPane label={areaText(locale).valkey} description={t.redisDescription}>
-        <StatGrid columns={5}>
-          <StatCell
-            label={t.keys}
-            value={formatNumber(diagnostics.dbSize, { locale })}
-            sub={t.expiringKeys({ count: formatNumber(expiringKeys, { locale }) })}
-          />
-          <StatCell
-            label={t.memory}
-            value={runtime.usedMemoryBytes === null ? "—" : formatBytes(runtime.usedMemoryBytes, { locale })}
-            sub={memorySub}
-            valueClass={memoryPressure ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            accent={memoryPressure ? { tone: "amber", icon: "ti ti-alert-triangle" } : undefined}
-          />
-          <StatCell
-            label={t.evicted}
-            value={runtime.evictedKeys === null ? "—" : formatNumber(runtime.evictedKeys, { locale })}
-            sub={runtime.maxMemoryPolicy ?? t.policyUnknown}
-            valueClass={(runtime.evictedKeys ?? 0) > 0 ? "text-red-500" : "text-primary"}
-            accent={(runtime.evictedKeys ?? 0) > 0 ? { tone: "red", icon: "ti ti-trash-x" } : undefined}
-          />
-          <StatCell
-            label={t.hitRate}
-            value={runtime.hitRate === null ? "—" : formatPercent(runtime.hitRate, { locale })}
-            sub={
-              runtime.connectedClients === null
-                ? t.clientsUnknown
-                : t.clientCount({ count: formatNumber(runtime.connectedClients, { locale }) })
-            }
-            valueClass={runtime.hitRate !== null && runtime.hitRate < 0.8 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-          />
-          <StatCell
-            label={t.warnings}
-            value={formatNumber(diagnostics.warnings.length, { locale })}
-            sub={diagnostics.warnings.length === 0 ? t.none : t.seeBelow}
-            valueClass={diagnostics.warnings.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-primary"}
-            accent={diagnostics.warnings.length > 0 ? { tone: "amber", icon: "ti ti-alert-triangle" } : undefined}
-          />
-        </StatGrid>
-
-        <NoticeCard.Grid items={diagnostics.warnings}>
-          {(warning) => <NoticeCard tone={warning.tone === "red" ? "danger" : "warning"} title={warning.title} detail={warning.detail} />}
-        </NoticeCard.Grid>
-
-        <section>
-          <OperationalCharts
-            charts={prepareOperationalCharts(
-              [
-                {
-                  kind: "bar",
-                  title: t.prefixDistribution,
-                  description: diagnostics.scanComplete
-                    ? t.keysScanned({ count: formatNumber(diagnostics.sampledKeys, { locale }) })
-                    : t.keysSampled({
-                        count: formatNumber(diagnostics.sampledKeys, { locale }),
-                        total: formatNumber(diagnostics.dbSize, { locale }),
-                      }),
-                  data: prefixChartData,
-                },
-              ],
-              locale,
-            )}
-          />
-          <nav class="mt-2 flex flex-wrap gap-1" aria-label={t.filterSampledKeys}>
-            {prefixChartData.slice(0, 6).map((prefix) => (
-              <ButtonLink
-                href={redisPrefixHref(prefix.label)}
-                variant="secondary"
-                size="sm"
-                class="max-w-full truncate"
-                title={prefix.label}
-              >
-                {prefix.label}
-              </ButtonLink>
-            ))}
-          </nav>
-        </section>
-
-        <DataTable.Panel>
-          <DataTable.Header
-            title={t.prefixes}
-            subtitle={t.prefixesAtDepth({ count: formatNumber(filteredPrefixes.length, { locale }), depth: selectedDepth })}
-          />
-          <DataTable.Controls>
-            <RedisDataFilters search={search} depth={selectedDepth} />
-          </DataTable.Controls>
-          <DataTable
-            rows={filteredPrefixes}
-            columns={prefixColumns}
-            getRowId={(prefix) => `${prefix.depth}:${prefix.prefix}`}
-            density="compact"
-            hoverRows
-            surface="plain"
-            class="max-h-[34rem]"
-            empty={t.noMatchingRedisPrefixes}
-            renderCell={({ col, value, render }) => {
-              if (col.id === "count") return <span class="tabular-nums">{formatNumber(Number(value ?? 0), { locale })}</span>;
-              if (col.id === "share") return <span class="tabular-nums">{formatPercent(Number(value ?? 0) || 0, { locale })}</span>;
-              return render(value);
-            }}
-          />
-        </DataTable.Panel>
-      </ObservabilityPane>
-    </ObservabilityArea>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.valkey }]}
+    >
+      <ObservabilityNavigation label={area.area} current="valkey" groups={groups} />
+      <ValkeyScreen
+        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        state={state}
+        ignored={ignored}
+        cells={cells}
+        warnings={diagnostics.warnings.map((warning) => ({
+          tone: warning.tone === "red" ? "bad" : "warn",
+          title: warning.title,
+          text: warning.detail,
+        }))}
+        error={diagnostics.available ? null : diagnostics.error}
+        chart={prepareOperationalCharts([{ kind: "bar", title: t.prefixDistribution, description: sampled, data: chartData }], locale)[0]!}
+        sampled={sampled}
+        prefixes={prefixes.map((prefix) => ({
+          key: `${prefix.depth}:${prefix.prefix}`,
+          prefix: prefix.prefix,
+          depth: String(prefix.depth),
+          count: number(prefix.count),
+          share: formatPercent(prefix.share || 0, { locale }),
+          // A prefix opens the next depth under it.
+          href:
+            depth < 3 ? valkeyHref(query, { ...state, filters: { depth: String(depth + 1) as "2" | "3" }, search: prefix.prefix }) : null,
+        }))}
+      />
+    </Layout>
   );
 });
