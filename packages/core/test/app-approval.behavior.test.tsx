@@ -67,6 +67,14 @@ if (!isServer)
 // v2 asks whether the window is a phone; the test DOM has no media queries.
 if (!isServer && !("matchMedia" in globalThis))
   Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
+// The overlays of v2 read a few DOM classes as globals; they come from the test window that is open at the time.
+if (!isServer)
+  for (const name of ["HTMLInputElement", "NodeFilter"])
+    if (!(name in globalThis))
+      Object.defineProperty(globalThis, name, {
+        configurable: true,
+        get: () => Reflect.get(Reflect.get(globalThis, "window") ?? {}, name),
+      });
 const flush = async () => {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
@@ -79,8 +87,22 @@ const eventually = async (check: () => boolean, timeoutMs = 8_000) => {
     await flush();
   }
 };
+/** Whether a v2 dialog stood in the page during this test. */
+let dialogShown = false;
 /** The open v2 dialog, or null. */
-const openDialog = (dom: { document: Document }) => dom.document.querySelector<HTMLElement>('[data-k2-part="Dialog"]');
+const openDialog = (dom: { document: Document }) => {
+  const dialog = dom.document.querySelector<HTMLElement>('[data-k2-part="Dialog"]');
+  if (dialog) dialogShown = true;
+  return dialog;
+};
+/**
+ * A closed v2 dialog gives the focus back once its exit settles; without transitions in the test DOM that is its one
+ * second fallback. The page stays until then, so nothing runs against a DOM that is gone.
+ */
+const dialogsSettled = async () => {
+  await Bun.sleep(dialogShown ? 1_100 : 20);
+  dialogShown = false;
+};
 /** What the open dialog says now. */
 const shown = (dialog: Element | null) => dialog?.querySelector(".k2-dialog-body")?.textContent ?? "";
 /** A button by its words, or a deed behind the row's "…" menu (opened first), by its words. */
@@ -146,8 +168,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Enabled — setup required");
@@ -168,8 +189,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Your administrator still needs");
@@ -193,8 +213,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(InstallApp, {}), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     button(dom.root, "Install app").click();
@@ -225,8 +244,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     const before = dom.window.location.href;
@@ -272,8 +290,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -322,8 +339,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("administrator assistance");
@@ -352,8 +368,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await openDeeds(dom.root);
@@ -408,8 +423,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Devices, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(30);
@@ -478,8 +492,7 @@ describe("Cloud app approval UI", () => {
       );
       cleanup = async () => {
         dispose();
-        // a closing v2 dialog gives the focus back a moment later, while the page is still there
-        await Bun.sleep(20);
+        await dialogsSettled();
         dom.cleanup();
       };
       await flush();
@@ -513,8 +526,7 @@ describe("Cloud app approval UI", () => {
       );
       cleanup = async () => {
         dispose();
-        // a closing v2 dialog gives the focus back a moment later, while the page is still there
-        await Bun.sleep(20);
+        await dialogsSettled();
         dom.cleanup();
       };
       await Bun.sleep(30);
@@ -558,8 +570,7 @@ describe("Cloud app approval UI", () => {
       );
       cleanup = async () => {
         dispose();
-        // a closing v2 dialog gives the focus back a moment later, while the page is still there
-        await Bun.sleep(20);
+        await dialogsSettled();
         dom.cleanup();
       };
       await Bun.sleep(30);
@@ -590,8 +601,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(Devices, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(30);
@@ -618,8 +628,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
@@ -647,8 +656,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -687,8 +695,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -723,8 +730,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -750,8 +756,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Pairing, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     try {
@@ -781,8 +786,7 @@ describe("Cloud app approval UI", () => {
     let dispose = () => {};
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     try {
@@ -829,8 +833,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(20); // the dialog's initial focus runs on the next frame
@@ -876,8 +879,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Pairing, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -927,8 +929,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(170);
@@ -958,8 +959,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     expect(openDialog(dom)).not.toBeNull();
@@ -1023,8 +1023,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -1044,8 +1043,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(Login, { category: "guest" }), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -1071,8 +1069,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await openDeeds(dom.root);
@@ -1101,8 +1098,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -1137,8 +1133,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(5100);
@@ -1172,8 +1167,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(Devices, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     const sent = Promise.withResolvers<Response>();
@@ -1223,8 +1217,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(Devices, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     const late = "00000000-0000-4000-8000-000000000013",
@@ -1278,8 +1271,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     update.mockImplementationOnce(async () => {
@@ -1330,8 +1322,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await eventually(() => JSON.parse(dom.window.sessionStorage.getItem(`cloud.app-pairing:${id}:${id}`)!).expiresAt === until);
@@ -1353,8 +1344,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Devices, props), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await flush();
@@ -1406,8 +1396,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(30);
@@ -1435,8 +1424,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     update.mockImplementationOnce(async () => Response.json({ state: "revoked" }));
@@ -1468,8 +1456,7 @@ describe("Cloud app approval UI", () => {
     );
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     const footer = dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!;
@@ -1630,8 +1617,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(Login, { category }), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(20); // the first status read starts on a zero-delay timer
@@ -1661,8 +1647,7 @@ describe("Cloud app approval UI", () => {
     let dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     await Bun.sleep(20);
@@ -1688,8 +1673,7 @@ describe("Cloud app approval UI", () => {
     const dispose = render(() => createComponent(PasswordLogin, { defaultUsername: "mira" }), dom.root);
     cleanup = async () => {
       dispose();
-      // a closing v2 dialog gives the focus back a moment later, while the page is still there
-      await Bun.sleep(20);
+      await dialogsSettled();
       dom.cleanup();
     };
     const submit = async () => {
