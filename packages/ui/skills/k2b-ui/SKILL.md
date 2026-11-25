@@ -50,7 +50,12 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
+- A screen is a component that returns one `Workspace`. It renders on the
+  server; only the parts that need the browser are islands (`.island.tsx`):
+  a button with its action, a field, a row's actions, a filter bar. An island
+  stands wherever its primitive stands. v2.css and `describeV2` look through
+  the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
+  same. Never make the whole screen one island to keep its layout.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
 
