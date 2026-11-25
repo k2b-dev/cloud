@@ -1,6 +1,6 @@
 import { type Accessor, createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js";
 import { isServer } from "solid-js/web";
-import { carrySizes, indexAtOffset, prefixOffsets } from "../content/virtual-sizes";
+import { indexAtOffset, prefixOffsets } from "../content/virtual-sizes";
 
 /**
  * The window of a v2 list that can grow without end (Mail's conversations, a large table): only the rows in view and
@@ -53,11 +53,19 @@ export const createVirtualWindow = <T>(options: {
   let keys: string[] = [];
   let sizes = new Float64Array(0);
   let offsets = new Float64Array(1);
-  let measured = 0;
-  let measuredSum = 0;
-  const seen = new Set<string>();
-  const estimate = () => (measured > 0 ? measuredSum / measured : FIRST_ESTIMATE);
+  // Heights belong to keys; a row not yet shown takes the mean of those measured, so the padding that holds its place
+  // is close to its real height and nothing has to move when it comes into the page.
+  const known = new Map<string, number>();
+  let knownSum = 0;
+  const estimate = () => (known.size > 0 ? knownSum / known.size : FIRST_ESTIMATE);
   const position = new Map<string, number>();
+  /** Writes every item's height, measured or estimated, and the offsets from them. */
+  const fill = () => {
+    if (sizes.length !== keys.length) sizes = new Float64Array(keys.length);
+    const guess = estimate();
+    for (let index = 0; index < keys.length; index++) sizes[index] = known.get(keys[index]!) ?? guess;
+    offsets = prefixOffsets(sizes, 0, sizes.length, offsets, 0);
+  };
 
   const [range, setRange] = createSignal(
     { start: 0, end: Math.min(untrack(options.items).length, SERVER_ROWS) },
@@ -69,13 +77,16 @@ export const createVirtualWindow = <T>(options: {
   // The sizes follow the items: a known key keeps its height, a new one is estimated.
   const sync = createMemo(() => {
     const items = options.items();
-    const nextKeys = items.map(options.key);
-    const carried = keys.length > 0 ? carrySizes(keys, sizes, nextKeys, estimate) : null;
-    sizes = carried ?? Float64Array.from(nextKeys, estimate);
-    keys = nextKeys;
+    keys = items.map(options.key);
     position.clear();
-    nextKeys.forEach((key, index) => position.set(key, index));
-    offsets = prefixOffsets(sizes, 0, sizes.length, offsets, 0);
+    keys.forEach((key, index) => position.set(key, index));
+    // heights of items that left the list are forgotten
+    for (const [key, size] of known)
+      if (!position.has(key)) {
+        known.delete(key);
+        knownSum -= size;
+      }
+    fill();
     setLayout((value) => value + 1);
     return items;
   });
@@ -132,27 +143,21 @@ export const createVirtualWindow = <T>(options: {
     const later = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
-    // Heights of shown rows: the first measure of a key counts toward the estimate of rows not yet shown.
+    // Heights of shown rows; a new height also moves the estimate of the rows not yet shown.
     const sizesSeen = new ResizeObserver((entries) => {
       let changed = false;
       for (const entry of entries) {
         const key = nodes.get(entry.target);
-        const index = key === undefined ? undefined : position.get(key);
-        if (key === undefined || index === undefined || !entry.target.isConnected) continue;
+        if (key === undefined || !position.has(key) || !entry.target.isConnected) continue;
         const size = entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height;
-        if (size <= 0) continue;
-        if (!seen.has(key)) {
-          seen.add(key);
-          measured += 1;
-          measuredSum += size;
-        }
-        if (Math.abs((sizes[index] ?? 0) - size) > 0.5) {
-          sizes[index] = size;
-          changed = true;
-        }
+        const before = known.get(key);
+        if (size <= 0 || (before !== undefined && Math.abs(before - size) <= 0.5)) continue;
+        known.set(key, size);
+        knownSum += size - (before ?? 0);
+        changed = true;
       }
       if (!changed) return;
-      offsets = prefixOffsets(sizes, 0, sizes.length, offsets, 0);
+      fill();
       setLayout((value) => value + 1);
       later();
     });
