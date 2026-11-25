@@ -607,35 +607,48 @@ test("lookup: Arrow up from the second entry goes to the first, and from the fir
 
 // ── Delta review of #4136 (a400358): each test failed before its fix ───────────────────────────────────────────
 
-test("daylight saving: an unchanged bound keeps its instant, a time that does not exist is refused", async () => {
+/**
+ * Opens the calendar of "Von" (0) or "Bis" (1) of the open editor with the keys of a submenu. Keys, not clicks: in
+ * WebKit each pointer action right after a popover opened or closed waits up to 1.7 s for Playwright's stable check.
+ */
+const openBound = async (page: Page, index: number) => {
+  await page.locator(".k2-fpop .k2-fed-bounds .k2-mi").nth(index).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.locator(".k2-dpop").waitFor();
+};
+
+test("daylight saving: both bounds applied unchanged keep their instants, also a wall time that comes twice", async () => {
   // 00:30Z is 02:30 summer time in Berlin; 02:30 comes twice that night. 03:00Z is 04:00 winter time.
   const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
   await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
     await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
-    const bounds = page.locator(".k2-fpop .k2-fed-bounds .k2-mi");
-    expect(await bounds.allTextContents()).toEqual(["Von25.10., 02:30", "Bis25.10., 04:00"]);
+    expect(await page.locator(".k2-fpop .k2-fed-bounds .k2-mi").allTextContents()).toEqual(["Von25.10., 02:30", "Bis25.10., 04:00"]);
     const cascade = page.locator(".k2-dpop");
     const time = cascade.getByRole("textbox", { name: "Uhrzeit" });
-    // both bounds applied unchanged keep their instants, also the 02:30 that comes twice that night
     for (const index of [1, 0]) {
-      await bounds.nth(index).click();
-      await cascade.waitFor();
+      await openBound(page, index);
       expect(await time.inputValue()).toBe(index === 0 ? "02:30" : "04:00");
-      await cascade.getByRole("button", { name: "Übernehmen" }).click();
+      await time.press("Enter");
       await cascade.waitFor({ state: "detached" });
       expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
     }
-    // 02:30 on 29 March does not exist in Berlin: the clocks jump from 02:00 to 03:00
-    await bounds.first().click();
-    await cascade.waitFor();
-    for (let step = 0; step < 7; step += 1) await cascade.getByRole("button", { name: "Vorheriger Monat" }).click();
-    await cascade.locator('[data-value="2026-03-29"]').click();
+  });
+});
+
+test("daylight saving: a wall time the clocks jump over is refused at its calendar", async () => {
+  // 00:30Z is 01:30 winter time in Berlin on 29 March 2026; at 02:00 the clocks jump to 03:00, so 02:30 does not exist
+  const seen = "seen=2026-03-29T00:30Z..2026-03-29T03:00Z";
+  await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
+    await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
+    await openBound(page, 0);
+    const time = page.locator(".k2-dpop").getByRole("textbox", { name: "Uhrzeit" });
+    expect(await time.inputValue()).toBe("01:30");
     await time.fill("02:30");
     await time.press("Enter");
-    await cascade.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
-    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    await page.locator(".k2-dpop").getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
+    expect(new URL(page.url()).searchParams.get("seen")).toBe(seen.slice(5));
   });
-}, 15_000);
+});
 
 test("retrying a failed view update writes exactly what failed, not what the list shows by then", async () => {
   await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {

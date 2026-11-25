@@ -171,15 +171,30 @@ test("with a time a pressed day is only chosen until “Übernehmen”; days bef
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T09:00");
       expect(await moment.locator('[data-value="2026-11-26"]').getAttribute("aria-selected")).toBe("true");
       const time = moment.getByRole("textbox", { name: "Uhrzeit" });
+      // a text field in the locale's clock, not the browser's time field
+      expect(await time.getAttribute("type")).toBe("text");
       expect(await time.inputValue()).toBe("09:00");
-      await time.fill("");
-      await time.pressSequentially("1430");
+      // typed digits are read when the field is left, written as the locale writes a time
+      await time.fill("1430");
+      await time.blur();
       expect(await time.inputValue()).toBe("14:30");
+      // the arrows turn the part the caret stands in, round the clock
+      await time.press("Home");
+      await time.press("ArrowUp");
+      expect(await time.inputValue()).toBe("15:30");
+      await time.press("End");
+      await time.press("ArrowDown");
+      expect(await time.inputValue()).toBe("15:29");
       await moment.getByRole("button", { name: "Übernehmen" }).click();
-      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T14:30");
-      // Enter in the time applies too
-      await time.fill("9:05");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:29");
+      // Enter in the time applies too; a time that is none marks the field and applies nothing
+      await time.fill("9.05");
       await time.press("Enter");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
+      expect(await time.inputValue()).toBe("09:05");
+      await time.fill("2:30 pm");
+      await time.press("Enter");
+      expect(await time.getAttribute("aria-invalid")).toBe("true");
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
       await moment.getByRole("button", { name: "Leeren" }).click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("");
