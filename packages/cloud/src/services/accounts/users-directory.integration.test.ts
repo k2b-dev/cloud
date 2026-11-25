@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { meterSql } from "../../../../../scripts/fixtures/sql-meter";
 import { databaseSuite } from "../../../../../scripts/fixtures/test-infra";
+import type { UserDirectoryEntry } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { getFreeIpaConfig } from "../freeipa-config";
 import { accountsAppService } from "./app";
@@ -56,7 +57,7 @@ suite("the administration's user list (integration)", () => {
       // what a row shows: role, state, groups without the personal one, the passkey
       const all = await accountsAppService.user.directory({ search: tag });
       expect(all.total).toBe(4);
-      const byName = Object.fromEntries(all.items.map((entry) => [entry.displayName.split(" ")[0], entry]));
+      const byName: Record<string, UserDirectoryEntry> = Object.fromEntries(all.items.map((entry) => [entry.displayName.split(" ")[0], entry]));
       expect(byName.Ada).toMatchObject({ role: "admin", status: "active", passkey: false, groupCount: 2 });
       expect(byName.Ada!.groups.map((entry) => entry.name)).toEqual([`board ${tag}`, `sales ${tag}`]);
       expect(byName.Ben).toMatchObject({ role: "member", status: "active", passkey: true, groupCount: 1 });
