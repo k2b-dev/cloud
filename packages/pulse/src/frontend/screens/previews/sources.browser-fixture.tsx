@@ -1,6 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
-import SourcesScreen from "../SourcesScreen";
 import { sourcesProps } from "../fixtures";
+import SourcesScreen from "../SourcesScreen";
 
 /** The sources of a base with one source open, for `v2-preview`. */
 export default () => (

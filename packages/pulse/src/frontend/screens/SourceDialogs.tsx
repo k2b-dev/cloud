@@ -4,8 +4,8 @@ import type { PulseSource } from "../../contracts";
 import { MetricFiltersSchema, parseMetricFilterInput } from "../../metric-filters";
 import { usePulseMessages } from "../use-messages";
 import { SourceCreateError, SourceEditError } from "../workspace/source-actions";
-import { normalizeEndpointInput } from "../workspace/source-helpers";
 import { createSourceExpectationForm } from "../workspace/source-expectation-fields";
+import { normalizeEndpointInput } from "../workspace/source-helpers";
 import type { CreateSourceInput, SourceCreateKind } from "../workspace/types";
 import { useScreenMessages } from "./messages";
 
@@ -28,7 +28,11 @@ function ExpectationFields(props: { form: ExpectationForm; timezone: string }) {
         />
       </Field>
       <Show when={props.form.mode() === "every"}>
-        <Field name="expectEvery" label={t().sourceExpectationSeconds} error={props.form.valid() ? undefined : t().sourceExpectationInvalid}>
+        <Field
+          name="expectEvery"
+          label={t().sourceExpectationSeconds}
+          error={props.form.valid() ? undefined : t().sourceExpectationInvalid}
+        >
           <Input
             type="number"
             min={1}
@@ -131,8 +135,7 @@ export function NewSourceDialog(props: {
   let expectation = createSourceExpectationForm({});
   const [form, setForm] = createSignal(expectation);
   const filtersValid = () => MetricFiltersSchema.safeParse(parseMetricFilterInput(filters())).success;
-  const valid = () =>
-    kind() === "metrics" ? Boolean(endpoint().trim()) && intervalOk(interval()) && filtersValid() : form().valid();
+  const valid = () => (kind() === "metrics" ? Boolean(endpoint().trim()) && intervalOk(interval()) && filtersValid() : form().valid());
   const reset = () => {
     setKind("http_ingest");
     setName("");
@@ -223,7 +226,11 @@ export function NewSourceDialog(props: {
         />
       </Field>
       <Field name="name" label={t().name} optional={words().optional} hint={t().sourceNameDescription}>
-        <Input value={name()} placeholder={kind() === "http_ingest" ? t().salesPipelineExample : t().serviceMetricsExample} onInput={setName} />
+        <Input
+          value={name()}
+          placeholder={kind() === "http_ingest" ? t().salesPipelineExample : t().serviceMetricsExample}
+          onInput={setName}
+        />
       </Field>
       <Show when={kind() === "metrics"} fallback={<ExpectationFields form={form()} timezone={props.timezone} />}>
         <MetricsFields

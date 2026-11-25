@@ -48,13 +48,20 @@ export const createBaseController = (deps: BaseControllerDeps) => {
   };
   const updateMutation = mutation.create<PulseBase, SettingsIntent>({
     mutation: ({ baseId, ...body }, { abortSignal }) =>
-      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}`, { method: "PATCH", body: JSON.stringify(body), signal: abortSignal }, "Request failed", baseUpdateError),
+      jsonFetch<PulseBase>(
+        `/api/pulse/bases/${baseId}`,
+        { method: "PATCH", body: JSON.stringify(body), signal: abortSignal },
+        "Request failed",
+        baseUpdateError,
+      ),
   });
   const retryMutation = mutation.create<PulseBase, string>({
-    mutation: (baseId, { abortSignal }) => jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}/retry`, { method: "POST", signal: abortSignal }),
+    mutation: (baseId, { abortSignal }) =>
+      jsonFetch<PulseBase>(`/api/pulse/bases/${baseId}/retry`, { method: "POST", signal: abortSignal }),
   });
   const clearMutation = mutation.create<void, string>({
-    mutation: (baseId, { abortSignal }) => jsonFetch<void>(`/api/pulse/bases/${baseId}/clear-data`, { method: "POST", signal: abortSignal }),
+    mutation: (baseId, { abortSignal }) =>
+      jsonFetch<void>(`/api/pulse/bases/${baseId}/clear-data`, { method: "POST", signal: abortSignal }),
   });
   const deleteMutation = mutation.create<void, string>({
     mutation: (baseId, { abortSignal }) => jsonFetch<void>(`/api/pulse/bases/${baseId}`, { method: "DELETE", signal: abortSignal }),
@@ -132,7 +139,11 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
   const clearData = async (base: PulseBase) => {
     if (!requireWritable()) return;
-    const agreed = await deps.confirm({ title: t().clearPulseData, description: t().clearDataConfirm({ name: base.name }), confirm: t().clearData });
+    const agreed = await deps.confirm({
+      title: t().clearPulseData,
+      description: t().clearDataConfirm({ name: base.name }),
+      confirm: t().clearData,
+    });
     if (disposed || !agreed || !requireWritable()) return;
     deps.setLoading(true);
     try {
@@ -151,7 +162,11 @@ export const createBaseController = (deps: BaseControllerDeps) => {
 
   const deleteBase = async (base: PulseBase) => {
     if (!requireWritable()) return false;
-    const agreed = await deps.confirm({ title: t().deletePulseBase, description: t().deleteBaseConfirm({ name: base.name }), confirm: t().delete });
+    const agreed = await deps.confirm({
+      title: t().deletePulseBase,
+      description: t().deleteBaseConfirm({ name: base.name }),
+      confirm: t().delete,
+    });
     if (disposed || !agreed || !requireWritable()) return false;
     deps.setLoading(true);
     try {

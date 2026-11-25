@@ -1,7 +1,8 @@
 import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
-import type { SourcesScreenProps } from "./SourcesScreen";
+import type { SavedQuery } from "../../service/saved-queries";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
+import type { SourcesScreenProps } from "./SourcesScreen";
 
 /** Invented data for the v2 screens' tests and previews: no real names, hosts or values. */
 export const FIXTURE_NOW = "2026-11-25T09:42:00.000Z";
@@ -13,7 +14,15 @@ const store = (patch: Partial<BaseStoreStatus> = {}): BaseStoreStatus => ({
   errorAt: null,
   writeBlockReason: null,
   profile: "normal",
-  limits: { valuesPerMinute: 60_000, bytesPerMinute: 8 * 1024 ** 2, maxSeries: 50_000, maxEventKinds: 500, maxStateKeys: 2_000, queriesPerHour: 600, storageBytes: 20 * 1024 ** 3 },
+  limits: {
+    valuesPerMinute: 60_000,
+    bytesPerMinute: 8 * 1024 ** 2,
+    maxSeries: 50_000,
+    maxEventKinds: 500,
+    maxStateKeys: 2_000,
+    queriesPerHour: 600,
+    storageBytes: 20 * 1024 ** 3,
+  },
   usage: { bytes: 3.2 * 1024 ** 3, rows: 48_000_000, measuredAt: FIXTURE_NOW },
   ...patch,
 });
@@ -23,7 +32,7 @@ export const fixtureBase = (patch: Partial<PulseBase> & Pick<PulseBase, "id" | "
   store: store(),
   description: null,
   shortId: patch.id,
-  icon: "ti ti-activity-heartbeat",
+  icon: "ti ti-activity",
   color: "blue",
   timezone: "Europe/Berlin",
   rawRetentionDays: 30,
@@ -56,7 +65,12 @@ export const fixtureBases: PulseBase[] = [
 ];
 
 export const fixtureDeletingBases: PulseBase[] = [
-  fixtureBase({ id: "f2Qr7uK4", name: "Testbasis Herbst", store: store({ state: "deleting" }), deletionStartedAt: "2026-11-25T09:30:00.000Z" }),
+  fixtureBase({
+    id: "f2Qr7uK4",
+    name: "Testbasis Herbst",
+    store: store({ state: "deleting" }),
+    deletionStartedAt: "2026-11-25T09:30:00.000Z",
+  }),
   fixtureBase({
     id: "g6Ts3vL8",
     name: "Altes Lager",
@@ -76,7 +90,11 @@ export const worstBases: PulseBase[] = [
     rawRetentionDays: 3650,
   }),
   fixtureBase({ id: "i4Vx9yN5", name: "A", description: null, memberCount: 0 }),
-  fixtureBase({ id: "j7Wy2zP8", name: "https://telemetrie.sehr-lange-domain-ohne-umbruch.example/werkstatt/nord", description: "⚡️🔥📈 Messwerte" }),
+  fixtureBase({
+    id: "j7Wy2zP8",
+    name: "https://telemetrie.sehr-lange-domain-ohne-umbruch.example/werkstatt/nord",
+    description: "⚡️🔥📈 Messwerte",
+  }),
   fixtureBase({ id: "k0Xz6aQ1", name: "東京オフィスの監視", description: "サーバーとネットワーク", store: store({ state: "failed" }) }),
 ];
 
@@ -140,12 +158,36 @@ export const fixtureSources: PulseSource[] = [
 ];
 
 export const fixtureScrapes: PulseSourceScrape[] = [
-  { id: "r1", sourceId: "s1Aa2Bb3", startedAt: "2026-11-25T09:41:00.000Z", finishedAt: "2026-11-25T09:41:01.000Z", durationMs: 412, success: true, metrics: 1_284, events: 0, states: 0, errorMessage: null },
-  { id: "r2", sourceId: "s1Aa2Bb3", startedAt: "2026-11-25T09:40:00.000Z", finishedAt: "2026-11-25T09:40:01.000Z", durationMs: 398, success: true, metrics: 1_280, events: 0, states: 0, errorMessage: null },
+  {
+    id: "r1",
+    sourceId: "s1Aa2Bb3",
+    startedAt: "2026-11-25T09:41:00.000Z",
+    finishedAt: "2026-11-25T09:41:01.000Z",
+    durationMs: 412,
+    success: true,
+    metrics: 1_284,
+    events: 0,
+    states: 0,
+    errorMessage: null,
+  },
+  {
+    id: "r2",
+    sourceId: "s1Aa2Bb3",
+    startedAt: "2026-11-25T09:40:00.000Z",
+    finishedAt: "2026-11-25T09:40:01.000Z",
+    durationMs: 398,
+    success: true,
+    metrics: 1_280,
+    events: 0,
+    states: 0,
+    errorMessage: null,
+  },
 ];
 
 /** The page props of a base on Sources, as the server builds them, from the invented data above. */
-export const sourcesProps = (options: { open?: string; sources?: PulseSource[]; alerts?: BaseAttention["alerts"]; storeDown?: boolean } = {}): SourcesScreenProps => {
+export const sourcesProps = (
+  options: { open?: string; sources?: PulseSource[]; alerts?: BaseAttention["alerts"]; storeDown?: boolean } = {},
+): SourcesScreenProps => {
   const sources = options.sources ?? fixtureSources;
   const open = options.open ?? "";
   return {
@@ -170,6 +212,57 @@ export const sourcesProps = (options: { open?: string; sources?: PulseSource[]; 
 };
 
 export const fixtureAlerts: BaseAttention["alerts"] = [
-  { reference: "al1Xy9Zq", name: "CPU Werkstatt", state: "firing", severity: "critical", since: "2026-11-25T09:12:00.000Z", lastCheckedAt: FIXTURE_NOW, errorCode: null, key: "host=srv-1", value: 97, comparison: "above", threshold: 90 },
-  { reference: "al2Wv8Yp", name: "Bestellungen pro Stunde", state: "no_data", severity: null, since: "2026-11-25T07:00:00.000Z", lastCheckedAt: FIXTURE_NOW, errorCode: null, key: null, value: null, comparison: "below", threshold: 5 },
+  {
+    reference: "al1Xy9Zq",
+    name: "CPU Werkstatt",
+    state: "firing",
+    severity: "critical",
+    since: "2026-11-25T09:12:00.000Z",
+    lastCheckedAt: FIXTURE_NOW,
+    errorCode: null,
+    key: "host=srv-1",
+    value: 97,
+    comparison: "above",
+    threshold: 90,
+  },
+  {
+    reference: "al2Wv8Yp",
+    name: "Bestellungen pro Stunde",
+    state: "no_data",
+    severity: null,
+    since: "2026-11-25T07:00:00.000Z",
+    lastCheckedAt: FIXTURE_NOW,
+    errorCode: null,
+    key: null,
+    value: null,
+    comparison: "below",
+    threshold: 5,
+  },
+];
+
+export const fixtureQueries: SavedQuery[] = [
+  {
+    id: "q1Ab2Cd3",
+    baseId: "b7Kq2mX9",
+    name: "CPU pro Host, letzte Stunde",
+    sql: "-- Last of every host\nSELECT toStartOfMinute(ts) AS time, host, avg(value) AS cpu\nFROM samples\nWHERE name = :metric\nGROUP BY time, host",
+    params: { metric: "node_cpu" },
+    revision: 3,
+    createdBy: null,
+    updatedBy: null,
+    createdAt: "2026-11-01T08:00:00.000Z",
+    updatedAt: "2026-11-24T16:20:00.000Z",
+  },
+  {
+    id: "q4Ef5Gh6",
+    baseId: "b7Kq2mX9",
+    name: "Bestellungen pro Tag",
+    sql: "SELECT toDate(ts) AS day, count() FROM events WHERE kind = 'order.created' GROUP BY day",
+    params: {},
+    revision: 1,
+    createdBy: null,
+    updatedBy: null,
+    createdAt: "2026-10-12T08:00:00.000Z",
+    updatedAt: "2026-11-20T09:00:00.000Z",
+  },
 ];

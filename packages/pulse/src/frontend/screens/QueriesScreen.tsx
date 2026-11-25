@@ -21,7 +21,13 @@ export type QueriesScreenProps = {
 };
 
 /** The line of SQL that says most about a query: its SELECT, else its first line. */
-const excerpt = (sql: string) => sql.split("\n").find((line) => /^\s*SELECT\b/i.test(line))?.trim() ?? sql.trim().split("\n")[0] ?? "";
+const excerpt = (sql: string) =>
+  sql
+    .split("\n")
+    .find((line) => /^\s*SELECT\b/i.test(line))
+    ?.trim() ??
+  sql.trim().split("\n")[0] ??
+  "";
 
 /** The saved queries of a base, newest change first; a row opens the query in the console. */
 export default function QueriesScreen(props: QueriesScreenProps) {
@@ -30,9 +36,13 @@ export default function QueriesScreen(props: QueriesScreenProps) {
   const locale = useLocale();
   const base = () => props.bases.find((entry) => entry.id === props.baseId)?.name ?? t().appName;
   const time = (value: string) =>
-    new Intl.DateTimeFormat(locale(), { timeZone: props.dateConfig.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+    new Intl.DateTimeFormat(locale(), { timeZone: props.dateConfig.timeZone, dateStyle: "medium", timeStyle: "short" }).format(
+      new Date(value),
+    );
   const pageHref = (offset: number) => `${baseHref(props.baseId, "queries")}${offset > 0 ? `?offset=${offset}` : ""}`;
-  const open = (query: SavedQuery) => ({ href: buildPulseWorkspaceHref({ baseId: props.baseId, state: { view: "sql", queryId: query.id } }) });
+  const open = (query: SavedQuery) => ({
+    href: buildPulseWorkspaceHref({ baseId: props.baseId, state: { view: "sql", queryId: query.id } }),
+  });
   const newQuery = { label: t().sqlNewQuery, icon: "plus", href: baseHref(props.baseId, "sql") };
   return (
     <BaseFrame
@@ -55,7 +65,10 @@ export default function QueriesScreen(props: QueriesScreenProps) {
         <Show when={props.page} fallback={<Failed text={t().sqlSavedLoadFailed} onRetry={() => location.reload()} />}>
           {(page) => (
             <>
-              <Show when={page().total > 0} fallback={<Empty icon="bookmark" text={t().sqlSavedEmpty({ base: base() })} action={newQuery} />}>
+              <Show
+                when={page().total > 0}
+                fallback={<Empty icon="bookmark" text={t().sqlSavedEmpty({ base: base() })} action={newQuery} />}
+              >
                 <Table
                   label={words().queries}
                   rows={page().items}
@@ -77,10 +90,18 @@ export default function QueriesScreen(props: QueriesScreenProps) {
                   }
                   end={
                     <>
-                      <Button icon="chevron-left" disabled={props.offset === 0} href={props.offset > 0 ? pageHref(Math.max(0, props.offset - QUERIES_PER_PAGE)) : undefined}>
+                      <Button
+                        icon="chevron-left"
+                        disabled={props.offset === 0}
+                        href={props.offset > 0 ? pageHref(Math.max(0, props.offset - QUERIES_PER_PAGE)) : undefined}
+                      >
                         {words().queriesBack}
                       </Button>
-                      <Button icon="chevron-right" disabled={page().nextOffset === null} href={page().nextOffset !== null ? pageHref(page().nextOffset ?? 0) : undefined}>
+                      <Button
+                        icon="chevron-right"
+                        disabled={page().nextOffset === null}
+                        href={page().nextOffset !== null ? pageHref(page().nextOffset ?? 0) : undefined}
+                      >
                         {words().queriesMore}
                       </Button>
                     </>

@@ -60,7 +60,12 @@ export default function ResourceApiKeySection(props: ResourceApiKeysProps) {
     ].join(" · ");
 
   const revoke = async (key: ResourceApiKey) => {
-    const agreed = await Dialog.confirm({ title: t().revokeApiKey, description: t().revokeConfirm({ name: key.name }), confirm: t().revoke, cancel: t().cancel });
+    const agreed = await Dialog.confirm({
+      title: t().revokeApiKey,
+      description: t().revokeConfirm({ name: key.name }),
+      confirm: t().revoke,
+      cancel: t().cancel,
+    });
     if (!agreed || !alive) return;
     setRevoking(key.id);
     try {
@@ -153,8 +158,14 @@ function CreateKeyDialog(props: {
   const [tried, setTried] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
-  const chosen = (): GrantablePermission => props.options.find((option) => option.value === permission())?.value ?? props.options[0]?.value ?? "read";
-  const expiresAt = () => (expiry() === "never" ? null : expiry() === "date" ? expiryFromDay(day()) : new Date(Date.now() + Number(expiry()) * DAY_MS).toISOString());
+  const chosen = (): GrantablePermission =>
+    props.options.find((option) => option.value === permission())?.value ?? props.options[0]?.value ?? "read";
+  const expiresAt = () =>
+    expiry() === "never"
+      ? null
+      : expiry() === "date"
+        ? expiryFromDay(day())
+        : new Date(Date.now() + Number(expiry()) * DAY_MS).toISOString();
   const dayInvalid = () => expiry() === "date" && expiresAt() === null;
   const close = (open: boolean) => {
     if (busy()) return;
@@ -205,12 +216,22 @@ function CreateKeyDialog(props: {
           </Notice>
         )}
       </Show>
-      <Field name="name" label={t().name} hint={t().keyNameDescription} required error={tried() && !name().trim() ? t().nameRequired : undefined}>
+      <Field
+        name="name"
+        label={t().name}
+        hint={t().keyNameDescription}
+        required
+        error={tried() && !name().trim() ? t().nameRequired : undefined}
+      >
         <Input value={name()} placeholder={t().namePlaceholder} onInput={setName} />
       </Field>
       <Show when={props.options.length > 1}>
         <Field name="permission" label={t().access} hint={props.options.find((option) => option.value === chosen())?.description}>
-          <Select options={props.options.map((option) => ({ value: option.value, label: option.label }))} value={chosen()} onChange={setPermission} />
+          <Select
+            options={props.options.map((option) => ({ value: option.value, label: option.label }))}
+            value={chosen()}
+            onChange={setPermission}
+          />
         </Field>
       </Show>
       <Field name="expires" label={t().expires} hint={t().expiryDescription}>

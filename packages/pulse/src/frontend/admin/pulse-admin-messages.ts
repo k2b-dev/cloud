@@ -43,6 +43,7 @@ export const pulseAdminMessages = i18n.define({
       colStorage: "Storage",
       colValues: "Values/min",
       colRetention: "Raw data",
+      colState: "State",
       colActions: "Actions",
       adminsMore: (p: { count: number }) => `+${p.count}`,
       noAdmins: "No admin",
@@ -119,6 +120,7 @@ export const pulseAdminMessages = i18n.define({
       targetsIntro:
         "Public addresses need no release. Release internal servers per base, so no base can query servers it should not reach.",
       targetsTitle: "Released internal targets",
+      targetsCount: ({ count }: { count: number }) => `${count} released ${count === 1 ? "target" : "targets"}`,
       colTarget: "Target",
       colScope: "Scope",
       scopeHost: "all ports",
@@ -186,6 +188,7 @@ export const pulseAdminMessages = i18n.define({
       colStorage: "Speicher",
       colValues: "Werte/min",
       colRetention: "Rohdaten",
+      colState: "Zustand",
       colActions: "Aktionen",
       adminsMore: (p: { count: number }) => `+${p.count}`,
       noAdmins: "Kein Admin",
@@ -260,6 +263,7 @@ export const pulseAdminMessages = i18n.define({
       targetsIntro:
         "Öffentliche Adressen braucht niemand freizugeben. Interne Server gibst du pro Base frei, damit keine Base fremde Server abfragt.",
       targetsTitle: "Freigegebene interne Ziele",
+      targetsCount: ({ count }) => `${count} ${count === 1 ? "freigegebenes Ziel" : "freigegebene Ziele"}`,
       colTarget: "Ziel",
       colScope: "Umfang",
       scopeHost: "alle Ports",

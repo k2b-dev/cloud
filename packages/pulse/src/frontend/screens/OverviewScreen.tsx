@@ -97,11 +97,24 @@ export default function OverviewScreen(props: OverviewScreenProps) {
         scrollKey="pulse-bases"
         status={
           <StatusRow
-            lead={query().trim() ? words().matchesCount({ count: shown().length, total: props.bases.length }) : words().basesCount({ count: props.bases.length })}
+            lead={
+              query().trim()
+                ? words().matchesCount({ count: shown().length, total: props.bases.length })
+                : words().basesCount({ count: props.bases.length })
+            }
           />
         }
       >
-        <Show when={props.bases.length > 0} fallback={<Empty icon="activity-heartbeat" text={t().firstBaseDescription} action={{ label: t().newBase, icon: "plus", onClick: () => setCreating(true) }} />}>
+        <Show
+          when={props.bases.length > 0}
+          fallback={
+            <Empty
+              icon="activity-heartbeat"
+              text={t().firstBaseDescription}
+              action={{ label: t().newBase, icon: "plus", onClick: () => setCreating(true) }}
+            />
+          }
+        >
           {/* k2b-ui gap: v2 Table does not virtualize yet (lane MW); bases per person stay in the low hundreds. */}
           <Table
             label={t().yourBases}
@@ -116,7 +129,13 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 width: { min: 220, default: 360 },
                 cell: (base) => ({ lines: [base.name, base.description || "—"] }),
               },
-              { title: words().membersColumn, align: "end", width: { min: 96, default: 110 }, drop: true, cell: (base) => String(base.memberCount) },
+              {
+                title: words().membersColumn,
+                align: "end",
+                width: { min: 96, default: 110 },
+                drop: true,
+                cell: (base) => String(base.memberCount),
+              },
               {
                 title: words().retentionColumn,
                 align: "end",
@@ -178,7 +197,9 @@ function DeletingBase(props: { base: PulseBase }) {
     if (!failed()) return followed.retry();
     setRetrying(true);
     try {
-      setBase(await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: controller.signal }, t().retryFailed));
+      setBase(
+        await jsonFetch<PulseBase>(`/api/pulse/bases/${base().id}/retry`, { method: "POST", signal: controller.signal }, t().retryFailed),
+      );
       toast(t().retryStarted, { status: "ok" });
     } catch {
       if (!controller.signal.aborted) toast(t().retryFailed, { status: "bad" });
@@ -229,7 +250,11 @@ function NewBaseDialog(props: { open: boolean; onOpenChange: (open: boolean) => 
     try {
       const base = await jsonFetch<PulseBase>(
         "/api/pulse/bases",
-        { method: "POST", body: JSON.stringify({ name: name().trim(), description: description().trim() || null }), signal: controller.signal },
+        {
+          method: "POST",
+          body: JSON.stringify({ name: name().trim(), description: description().trim() || null }),
+          signal: controller.signal,
+        },
         t().createBaseFailed,
       );
       setBusy(false);

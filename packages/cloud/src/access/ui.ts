@@ -19,12 +19,12 @@ export type { AllowedLevel, GrantableLevel } from "./PermissionEditor";
 export { default as PermissionEditor } from "./PermissionEditor";
 export { default as PrincipalPicker, type PrincipalPickerServiceAccount, principalKey } from "./PrincipalPicker";
 export { principalLabel } from "./principal-label";
+export { default as ResourceApiKeySection, expiryFromDay } from "./ResourceApiKeySection";
 export type {
   ResourceApiKey,
   ResourceApiKeyPermissionOption,
   ResourceApiKeysProps,
 } from "./ResourceApiKeys";
-export { default as ResourceApiKeySection, expiryFromDay } from "./ResourceApiKeySection";
 export { default as ResourceApiKeys } from "./ResourceApiKeys";
 export { ServiceAccountLookup } from "./ServiceAccountLookup";
 export { ServiceAccountSection, serviceAccountLine } from "./ServiceAccountSection";

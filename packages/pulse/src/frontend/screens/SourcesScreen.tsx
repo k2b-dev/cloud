@@ -61,11 +61,17 @@ const statusChip = (source: PulseSource, t: Words) => {
 
 const sourceLine = (source: PulseSource, t: Words) =>
   source.kind === "metrics"
-    ? [t.metricsEndpoint, t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 }), source.endpointUrl ?? t.noEndpointShort].join(" · ")
+    ? [t.metricsEndpoint, t.scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 }), source.endpointUrl ?? t.noEndpointShort].join(
+        " · ",
+      )
     : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
 
 const dataCount = (source: PulseSource, t: Words) =>
-  source.kind === "metrics" ? t.sqlSeriesCount({ count: source.seriesCount ?? 0 }) : source.todayCount == null ? "—" : t.sqlTodayCount({ count: source.todayCount });
+  source.kind === "metrics"
+    ? t.sqlSeriesCount({ count: source.seriesCount ?? 0 })
+    : source.todayCount == null
+      ? "—"
+      : t.sqlTodayCount({ count: source.todayCount });
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
@@ -118,9 +124,13 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     const needle = search().trim().toLowerCase();
     return needle ? sources().filter((source) => source.name.toLowerCase().includes(needle)) : sources();
   });
-  const readQueries = () => (selectedSourceId() ? [queries.bases, queries.baseData, queries.sourceDetail] : [queries.bases, queries.baseData]);
+  const readQueries = () =>
+    selectedSourceId() ? [queries.bases, queries.baseData, queries.sourceDetail] : [queries.bases, queries.baseData];
   const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
-  const readError = () => readQueries().find((query) => query.error())?.error() ?? null;
+  const readError = () =>
+    readQueries()
+      .find((query) => query.error())
+      ?.error() ?? null;
   const refreshing = () => readQueries().some((query) => query.loading() || query.refreshing());
   const dateContext = (): PulseDateContext => ({ ...props.initialDateConfig, now: props.initialNow });
   const when = (value: string) => compactDateWithDelta(value, dateContext());
@@ -172,7 +182,13 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const adjustAlert = (alertId: string) =>
     launch(async () => {
       const rule = await jsonFetch<AlertRule>(`/api/pulse/bases/${baseId}/alerts/${encodeURIComponent(alertId)}`);
-      return launchPulseSqlAssistant({ base: { id: baseId, name: baseName() }, sql: rule.sql, params: rule.params, queryName: rule.name, locale: locale() });
+      return launchPulseSqlAssistant({
+        base: { id: baseId, name: baseName() },
+        sql: rule.sql,
+        params: rule.params,
+        queryName: rule.name,
+        locale: locale(),
+      });
     });
 
   const listHref = () => `${baseHref(baseId)}${search().trim() ? `?q=${encodeURIComponent(search().trim())}` : ""}`;
@@ -185,7 +201,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     loading,
     setLoading,
     selectedSourceId,
-    navigate: (state) => navigateTo(state.sourceId ? buildPulseWorkspaceHref({ baseId, state: { view: "sources", sourceId: state.sourceId } }) : listHref()),
+    navigate: (state) =>
+      navigateTo(state.sourceId ? buildPulseWorkspaceHref({ baseId, state: { view: "sources", sourceId: state.sourceId } }) : listHref()),
     writeBlocked,
     refreshBaseData: async () => {
       await queries.baseData.invalidate();
@@ -254,11 +271,15 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       <Pane.Split>
         <Pane
           label={words().sources}
-          width={{ min: 360, default: 640 }}
+          width={{ min: 360, default: 720 }}
           scrollKey="pulse-sources"
           status={
             <StatusRow
-              lead={search().trim() ? words().matchesCount({ count: shown().length, total: sources().length }) : words().sourcesCount({ count: sources().length })}
+              lead={
+                search().trim()
+                  ? words().matchesCount({ count: shown().length, total: sources().length })
+                  : words().sourcesCount({ count: sources().length })
+              }
               loading={refreshing()}
               facts={[
                 ...(failing() ? [{ value: failing(), after: words().failingAfter }] : []),
@@ -268,7 +289,12 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           }
         >
           <Show when={removedNotice()}>
-            <Notice tone="note" icon="info-circle" title={t().dashboardsRemovedTitle} actions={[{ label: t().dashboardsRemovedDismiss, onClick: dismissRemovedNotice }]}>
+            <Notice
+              tone="note"
+              icon="info-circle"
+              title={t().dashboardsRemovedTitle}
+              actions={[{ label: t().dashboardsRemovedDismiss, onClick: dismissRemovedNotice }]}
+            >
               {t().dashboardsRemovedDetail}
             </Notice>
           </Show>
@@ -277,7 +303,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               tone="warn"
               icon="database-off"
               title={t().storeDownTitle}
-              meta={storeDownSince() ? `${t().storeDownSince({ time: when(storeDownSince()!) })} · ${t().storeDownChecks}` : t().storeDownChecks}
+              meta={
+                storeDownSince() ? `${t().storeDownSince({ time: when(storeDownSince()!) })} · ${t().storeDownChecks}` : t().storeDownChecks
+              }
             >
               {t().storeDownConsequence({ time: when(props.initialAttention?.readAt ?? props.initialNow) })}
             </Notice>
@@ -288,7 +316,13 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 tone="bad"
                 icon="alert-circle"
                 title={t().pulseDataRefreshFailed}
-                actions={[{ label: words().reload, icon: "refresh", onClick: () => void Promise.all(readQueries().map((query) => query.refresh())) }]}
+                actions={[
+                  {
+                    label: words().reload,
+                    icon: "refresh",
+                    onClick: () => void Promise.all(readQueries().map((query) => query.refresh())),
+                  },
+                ]}
               >
                 {error().message}
               </Notice>
@@ -317,14 +351,21 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 : { icon: "search", text: words().noMatches, action: { label: words().clearSearch, onClick: () => changeSearch("") } }
             }
             phone={(source) => ({
-              lines: [source.name, `${sourceStatus(source, t()).label} · ${source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet}`],
+              lines: [
+                source.name,
+                `${sourceStatus(source, t()).label} · ${source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet}`,
+              ],
             })}
             columns={[
-              { title: t().source, width: { min: 200, default: 300 }, cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }) },
-              { title: words().sourceStatusColumn, width: { min: 110, default: 130 }, cell: (source) => statusChip(source, t()) },
+              {
+                title: t().source,
+                width: { min: 180, default: 250 },
+                cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }),
+              },
+              { title: words().sourceStatusColumn, width: { min: 110, default: 120 }, cell: (source) => statusChip(source, t()) },
               {
                 title: words().newestColumn,
-                width: { min: 140, default: 170 },
+                width: { min: 140, default: 160 },
                 drop: true,
                 cell: (source) => (source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet),
               },
@@ -368,7 +409,12 @@ export default function SourcesScreen(props: SourcesScreenProps) {
         create={controller.createSource}
         inspect={() => navigateTo(listHref())}
       />
-      <EditSourceDialog source={editing()} onClose={() => setEditing(null)} timezone={base()?.timezone ?? "UTC"} save={controller.saveSource} />
+      <EditSourceDialog
+        source={editing()}
+        onClose={() => setEditing(null)}
+        timezone={base()?.timezone ?? "UTC"}
+        save={controller.saveSource}
+      />
     </BaseFrame>
   );
 }
@@ -388,7 +434,11 @@ function FiredAlerts(props: {
   const t = usePulseMessages();
   const words = useScreenMessages();
   const title = (alert: AlertAttention) =>
-    alert.state === "firing" ? t().alertFired({ name: alert.name }) : alert.state === "error" ? t().alertCannotCheck({ name: alert.name }) : t().alertNoData({ name: alert.name });
+    alert.state === "firing"
+      ? t().alertFired({ name: alert.name })
+      : alert.state === "error"
+        ? t().alertCannotCheck({ name: alert.name })
+        : t().alertNoData({ name: alert.name });
   const condition = (alert: AlertAttention) =>
     alert.threshold === null
       ? alert.errorCode
@@ -411,12 +461,19 @@ function FiredAlerts(props: {
               href={props.sqlHref(alert.reference)}
               end={
                 alert.state === "firing" ? (
-                  <Chip status={alert.severity === "critical" ? "bad" : "warn"}>{alert.severity === "critical" ? t().severityCritical : t().severityWarning}</Chip>
+                  <Chip status={alert.severity === "critical" ? "bad" : "warn"}>
+                    {alert.severity === "critical" ? t().severityCritical : t().severityWarning}
+                  </Chip>
                 ) : (
                   <Chip>{alert.state === "error" ? t().error : t().noDataYet}</Chip>
                 )
               }
-              action={{ label: t().adjustWithGustav, icon: "sparkles", disabled: props.pending, onClick: () => props.adjust(alert.reference) }}
+              action={{
+                label: t().adjustWithGustav,
+                icon: "sparkles",
+                disabled: props.pending,
+                onClick: () => props.adjust(alert.reference),
+              }}
             />
           )}
         </For>
@@ -460,7 +517,13 @@ function SourceDetail(props: {
       ? [{ label: t().scrape, icon: "refresh", disabled: props.loading || !source().enabled, onClick: props.scrape }]
       : []),
     ...(cloudId.available()
-      ? [{ label: cloudIdMessages.resolve([locale()]).t.copy, icon: "link", onClick: () => cloudId.copy({ type: "pulse.source", id: source().id }) }]
+      ? [
+          {
+            label: cloudIdMessages.resolve([locale()]).t.copy,
+            icon: "link",
+            onClick: () => cloudId.copy({ type: "pulse.source", id: source().id }),
+          },
+        ]
       : []),
     { label: t().removeSource, icon: "trash", danger: true, disabled: props.loading, onClick: props.remove },
   ];
@@ -477,7 +540,11 @@ function SourceDetail(props: {
     ...(source().kind === "metrics"
       ? [
           { label: t().interval, value: t().scrapeEvery({ seconds: source().scrapeIntervalSeconds ?? 60 }) },
-          { label: t().metricsKept, value: source().metricFilters.length ? source().metricFilters.join(", ") : t().allMetrics, mono: source().metricFilters.length > 0 },
+          {
+            label: t().metricsKept,
+            value: source().metricFilters.length ? source().metricFilters.join(", ") : t().allMetrics,
+            mono: source().metricFilters.length > 0,
+          },
         ]
       : []),
     ...(source().expectEverySeconds != null || source().expectDailyBy
@@ -513,7 +580,7 @@ function SourceDetail(props: {
           start={<Text type="lead">{source().name}</Text>}
           end={
             <>
-              <Button icon="pencil" disabled={props.loading} onClick={props.edit}>
+              <Button icon="pencil" keep disabled={props.loading} onClick={props.edit}>
                 {t().edit}
               </Button>
               <Menu label={t().moreSourceActions} items={deeds()} />
@@ -525,7 +592,12 @@ function SourceDetail(props: {
     >
       <Show when={status().lastError}>
         {(error) => (
-          <Notice tone="bad" icon="alert-circle" title={t().error} meta={status().lastErrorAt ? props.when(status().lastErrorAt!) : undefined}>
+          <Notice
+            tone="bad"
+            icon="alert-circle"
+            title={t().error}
+            meta={status().lastErrorAt ? props.when(status().lastErrorAt!) : undefined}
+          >
             {localizedSourceError(error(), t())}
           </Notice>
         )}
@@ -567,7 +639,9 @@ function SourceDetail(props: {
                     icon={scrape.success ? "circle-check" : "alert-circle"}
                     lines={[
                       scrape.success ? `${t().success} · ${t().ingestCounts(scrape)}` : t().error,
-                      scrape.errorMessage ? (localizedSourceError(scrape.errorMessage, t()) ?? scrape.errorMessage) : `${scrape.durationMs} ms`,
+                      scrape.errorMessage
+                        ? (localizedSourceError(scrape.errorMessage, t()) ?? scrape.errorMessage)
+                        : `${scrape.durationMs} ms`,
                     ]}
                     time={props.when(scrape.finishedAt)}
                   />

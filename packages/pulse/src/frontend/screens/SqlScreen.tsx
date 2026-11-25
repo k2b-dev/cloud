@@ -1,22 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { AutocompleteEditor, Chart, highlightSql, useLocale } from "@k2b/ui";
-import {
-  Band,
-  Bar,
-  Button,
-  Canvas,
-  Chip,
-  Dialog,
-  Empty,
-  Field,
-  Inline,
-  Input,
-  Notice,
-  Pane,
-  Section,
-  Table,
-  Text,
-} from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Chip, Dialog, Empty, Field, Inline, Input, Notice, Pane, Section, Table, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
@@ -41,7 +25,6 @@ export type SqlScreenProps = {
   snapshot: PulseWorkspaceProps["initialSql"];
   canWrite: boolean;
 };
-
 
 /**
  * The SQL console of a base on v2: the editor (a rich component of its own) in a canvas, its parameters as fields,
@@ -160,7 +143,12 @@ export default function SqlScreen(props: SqlScreenProps) {
     })),
   );
   const remove = async () => {
-    const agreed = await Dialog.confirm({ title: t().sqlDeleteQuery, description: c.chosenQuery()?.name, confirm: t().sqlDeleteQuery, cancel: words().cancel });
+    const agreed = await Dialog.confirm({
+      title: t().sqlDeleteQuery,
+      description: c.chosenQuery()?.name,
+      confirm: t().sqlDeleteQuery,
+      cancel: words().cancel,
+    });
     if (agreed && !lifetime.signal.aborted) await c.delete();
   };
   const example = async () => {
@@ -171,7 +159,12 @@ export default function SqlScreen(props: SqlScreenProps) {
     c.setSql(EXAMPLE_SQL);
     c.setParameter("bucket", "1h");
   };
-  const askAssistant = { label: t().sqlAskAssistant, icon: "sparkles", disabled: c.assistantState() === "launching", onClick: () => void c.launchAssistant() };
+  const askAssistant = {
+    label: t().sqlAskAssistant,
+    icon: "sparkles",
+    disabled: c.assistantState() === "launching",
+    onClick: () => void c.launchAssistant(),
+  };
 
   return (
     <BaseFrame
@@ -211,7 +204,12 @@ export default function SqlScreen(props: SqlScreenProps) {
                     {t().save}
                   </Button>
                 </Show>
-                <Button variant="ghost" icon={c.chosenQuery() ? "bookmark-plus" : "bookmark"} disabled={!c.canSave()} onClick={() => setSavingAs(true)}>
+                <Button
+                  variant="ghost"
+                  icon={c.chosenQuery() ? "bookmark-plus" : "bookmark"}
+                  disabled={!c.canSave()}
+                  onClick={() => setSavingAs(true)}
+                >
                   {t().sqlSaveAs}
                 </Button>
                 <Show when={c.chosenQuery()}>
@@ -242,7 +240,10 @@ export default function SqlScreen(props: SqlScreenProps) {
           />
         </Canvas>
         <Band>
-          <Show when={c.parameterNames().length > 0} fallback={<Text type="meta" muted>{`${t().sqlNoParameters} · ${t().sqlHelperHint}`}</Text>}>
+          <Show
+            when={c.parameterNames().length > 0}
+            fallback={<Text type="meta" muted>{`${t().sqlNoParameters} · ${t().sqlHelperHint}`}</Text>}
+          >
             <Field.Row>
               <For each={c.parameterNames()}>
                 {(name) => {
@@ -298,7 +299,12 @@ export default function SqlScreen(props: SqlScreenProps) {
         />
         <Show when={missing()}>
           {(entry) => (
-            <Notice tone="bad" icon="forms" title={t().sqlNotStarted} actions={[{ label: t().sqlParameterFocus, icon: "forms", onClick: () => focusParameter(entry().name) }]}>
+            <Notice
+              tone="bad"
+              icon="forms"
+              title={t().sqlNotStarted}
+              actions={[{ label: t().sqlParameterFocus, icon: "forms", onClick: () => focusParameter(entry().name) }]}
+            >
               {entry().message}
             </Notice>
           )}
@@ -311,7 +317,14 @@ export default function SqlScreen(props: SqlScreenProps) {
               title={diagnosis.diagnosis?.title ?? diagnosis.title ?? diagnosis.message}
               actions={
                 diagnosis.action && !["cancel", "focus-parameter"].includes(diagnosis.action.kind)
-                  ? [{ label: diagnosis.action.label, icon: "refresh", disabled: recoveryDisabled(diagnosis.action), onClick: () => void diagnosis.action?.run() }]
+                  ? [
+                      {
+                        label: diagnosis.action.label,
+                        icon: "refresh",
+                        disabled: recoveryDisabled(diagnosis.action),
+                        onClick: () => void diagnosis.action?.run(),
+                      },
+                    ]
                   : undefined
               }
             >
@@ -329,7 +342,11 @@ export default function SqlScreen(props: SqlScreenProps) {
             when={result() || running()}
             fallback={
               <Show when={diagnoses().length === 0 && !missing()}>
-                <Empty icon="code" text={t().sqlEmptyHint} action={{ label: t().sqlInsertExample, icon: "file-code", onClick: () => void example() }} />
+                <Empty
+                  icon="code"
+                  text={t().sqlEmptyHint}
+                  action={{ label: t().sqlInsertExample, icon: "file-code", onClick: () => void example() }}
+                />
               </Show>
             }
           >
@@ -347,7 +364,15 @@ export default function SqlScreen(props: SqlScreenProps) {
               sticky
               loading={running() ? { rows: Math.min(8, Math.max(3, result()?.rows.length ?? 5)) } : undefined}
               empty={{ icon: "table", text: t().sqlNoRows }}
-              phone={(row) => ({ lines: [String(row[0] ?? "NULL"), columns().slice(1, 3).map((column) => column.cell(row)).join(" · ")] })}
+              phone={(row) => ({
+                lines: [
+                  String(row[0] ?? "NULL"),
+                  columns()
+                    .slice(1, 3)
+                    .map((column) => column.cell(row))
+                    .join(" · "),
+                ],
+              })}
               columns={columns()}
             />
           </Show>
@@ -358,7 +383,10 @@ export default function SqlScreen(props: SqlScreenProps) {
               <Text type="meta" muted>
                 {result()?.truncated
                   ? t().sqlTableCut({ rows: count(result()?.rowCount ?? 0) })
-                  : words().rowsShown({ shown: count(Math.min(visibleRows(), result()?.rows.length ?? 0)), total: count(result()?.rows.length ?? 0) })}
+                  : words().rowsShown({
+                      shown: count(Math.min(visibleRows(), result()?.rows.length ?? 0)),
+                      total: count(result()?.rows.length ?? 0),
+                    })}
               </Text>
             }
             end={
@@ -427,7 +455,12 @@ export default function SqlScreen(props: SqlScreenProps) {
   function limitTone(kind: string): "bad" | "warn" | undefined {
     const state = c.state();
     const code = state.kind === "error" ? state.code : "";
-    if ((kind === "memory" && code === "MEMORY_LIMIT") || (kind === "time" && code === "TIME_LIMIT") || (kind === "result" && code === "RESULT_TOO_LARGE")) return "bad";
+    if (
+      (kind === "memory" && code === "MEMORY_LIMIT") ||
+      (kind === "time" && code === "TIME_LIMIT") ||
+      (kind === "result" && code === "RESULT_TOO_LARGE")
+    )
+      return "bad";
     if (
       (kind === "result" && state.kind === "ok" && c.lastResult()?.truncated) ||
       (kind === "queue" && ["BUSY", "QUEUE_FULL"].includes(code)) ||
@@ -492,4 +525,3 @@ function SaveAsDialog(props: { open: boolean; onOpenChange: (open: boolean) => v
     </Dialog>
   );
 }
-

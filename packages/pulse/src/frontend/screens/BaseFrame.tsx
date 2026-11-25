@@ -65,7 +65,13 @@ export default function BaseFrame(props: Props) {
               <Tabs
                 label={words().views}
                 items={[
-                  { label: words().sources, icon: "database", count: props.sourceCount, href: baseHref(props.baseId), current: props.view === "sources" },
+                  {
+                    label: words().sources,
+                    icon: "database",
+                    count: props.sourceCount,
+                    href: baseHref(props.baseId),
+                    current: props.view === "sources",
+                  },
                   { label: words().sql, icon: "code", href: baseHref(props.baseId, "sql"), current: props.view === "sql" },
                   { label: words().queries, icon: "bookmark", href: baseHref(props.baseId, "queries"), current: props.view === "queries" },
                 ]}

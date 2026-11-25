@@ -100,7 +100,12 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     { items: [{ label: words().allBases, icon: "layout-grid", href: "/app/pulse" }] },
     {
       label: words().bases,
-      items: props.bases.map((entry) => ({ label: entry.name, icon: iconName(entry.icon), href: baseHref(entry.id), current: entry.id === props.base.id })),
+      items: props.bases.map((entry) => ({
+        label: entry.name,
+        icon: iconName(entry.icon),
+        href: baseHref(entry.id),
+        current: entry.id === props.base.id,
+      })),
     },
   ];
   const tabs = () =>
@@ -131,14 +136,23 @@ export default function SettingsScreen(props: SettingsScreenProps) {
           />
         }
       >
-        <Pane label={words().settingsTitle({ base: base().name })} head={<Tabs label={words().settingsTabs} items={tabs()} />} scrollKey="pulse-settings">
+        <Pane
+          label={words().settingsTitle({ base: base().name })}
+          head={<Tabs label={words().settingsTabs} items={tabs()} />}
+          scrollKey="pulse-settings"
+        >
           <Show when={!props.canAdmin}>
             <Notice tone="note" icon="lock" title={t().settingsNotAdmin}>
               {props.admins.join(", ")}
             </Notice>
           </Show>
           <Show when={refreshFailed()}>
-            <Notice tone="bad" icon="alert-circle" title={t().pulseDataRefreshFailed} actions={[{ label: words().reload, icon: "refresh", onClick: () => void refreshBase().catch(() => undefined) }]}>
+            <Notice
+              tone="bad"
+              icon="alert-circle"
+              title={t().pulseDataRefreshFailed}
+              actions={[{ label: words().reload, icon: "refresh", onClick: () => void refreshBase().catch(() => undefined) }]}
+            >
               {t().refreshBeforeChanges}
             </Notice>
           </Show>
@@ -156,7 +170,13 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             <Members base={base()} canAdmin={props.canAdmin} initial={props.access} refreshBase={refreshBase} />
           </Show>
           <Show when={props.tab === "usage"}>
-            <Usage base={base()} limits={props.limits} canAdmin={props.canAdmin} busy={loading()} retry={() => void controller.retryStore(base()).then((next) => next && setBase(next))} />
+            <Usage
+              base={base()}
+              limits={props.limits}
+              canAdmin={props.canAdmin}
+              busy={loading()}
+              retry={() => void controller.retryStore(base()).then((next) => next && setBase(next))}
+            />
           </Show>
           <Show when={props.tab === "danger"}>
             <Section icon="alert-triangle" title={t().settingsDanger} summary={t().destructiveBaseActions}>
@@ -174,7 +194,12 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                 <Row
                   icon="trash"
                   lines={[t().deletePulseBase, t().deletePulseBaseDescription]}
-                  action={{ label: t().deletePulseBase, icon: "trash", disabled: !props.canAdmin || loading(), onClick: () => void controller.deleteBase(base()) }}
+                  action={{
+                    label: t().deletePulseBase,
+                    icon: "trash",
+                    disabled: !props.canAdmin || loading(),
+                    onClick: () => void controller.deleteBase(base()),
+                  }}
                 />
               </List>
             </Section>
@@ -217,26 +242,53 @@ function BaseForm(props: {
   const changed = createMemo(() => (Object.keys(draft()) as (keyof BaseSettingsInput)[]).some((key) => draft()[key] !== saved()[key]));
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const colorLabel = (value: (typeof BASE_COLORS)[number]) =>
-    ({ zinc: t().settingsColorGray, blue: t().settingsColorBlue, emerald: t().settingsColorGreen, amber: t().settingsColorAmber, red: t().settingsColorRed })[value];
+    ({
+      zinc: t().settingsColorGray,
+      blue: t().settingsColorBlue,
+      emerald: t().settingsColorGreen,
+      amber: t().settingsColorAmber,
+      red: t().settingsColorRed,
+    })[value];
   const save = async () => {
     const next = draft();
     if ((await props.save(next)) === "persisted") setSaved(next);
   };
-  const retention = (options: { name: keyof BaseSettingsInput; label: string; hint: string; presets: number[]; max: number; unit: string }) => {
+  const retention = (options: {
+    name: keyof BaseSettingsInput;
+    label: string;
+    hint: string;
+    presets: number[];
+    max: number;
+    unit: string;
+  }) => {
     const value = () => Number(draft()[options.name]);
     return (
       <Band>
         <Field name={options.name} label={options.label} hint={options.hint} optional={options.unit}>
           <Choice
             name={`${options.name}-preset`}
-            options={options.presets.filter((preset) => preset <= options.max).map((preset) => ({ value: String(preset), label: `${number(preset)} ${options.unit}` }))}
+            options={options.presets
+              .filter((preset) => preset <= options.max)
+              .map((preset) => ({ value: String(preset), label: `${number(preset)} ${options.unit}` }))}
             value={String(value())}
             disabled={!props.canAdmin}
             onChange={(next) => set(options.name, Number(next))}
           />
         </Field>
-        <Field name={`${options.name}-exact`} label={options.label} optional={options.unit} error={value() >= 1 && value() <= options.max ? undefined : `1 – ${number(options.max)}`}>
-          <Input type="number" min={1} max={options.max} value={String(value())} disabled={!props.canAdmin} onInput={(next) => set(options.name, Number(next))} />
+        <Field
+          name={`${options.name}-exact`}
+          label={words().exactValue}
+          optional={options.unit}
+          error={value() >= 1 && value() <= options.max ? undefined : `1 – ${number(options.max)}`}
+        >
+          <Input
+            type="number"
+            min={1}
+            max={options.max}
+            value={String(value())}
+            disabled={!props.canAdmin}
+            onInput={(next) => set(options.name, Number(next))}
+          />
         </Field>
       </Band>
     );
@@ -247,9 +299,30 @@ function BaseForm(props: {
         when={props.tab === "general"}
         fallback={
           <>
-            {retention({ name: "rawRetentionDays", label: t().rawDataRetention, hint: t().rawDataRetentionDescription, presets: RAW_PRESETS, max: props.maxRawRetentionDays, unit: t().days })}
-            {retention({ name: "rollupRetentionDays", label: t().hourlyRollupRetention, hint: t().hourlyRollupRetentionDescription, presets: ROLLUP_PRESETS, max: 3650, unit: t().days })}
-            {retention({ name: "sensitiveRetentionHours", label: t().sensitiveEventRetention, hint: t().sensitiveEventRetentionDescription, presets: SENSITIVE_PRESETS, max: 8760, unit: t().hours })}
+            {retention({
+              name: "rawRetentionDays",
+              label: t().rawDataRetention,
+              hint: t().rawDataRetentionDescription,
+              presets: RAW_PRESETS,
+              max: props.maxRawRetentionDays,
+              unit: t().days,
+            })}
+            {retention({
+              name: "rollupRetentionDays",
+              label: t().hourlyRollupRetention,
+              hint: t().hourlyRollupRetentionDescription,
+              presets: ROLLUP_PRESETS,
+              max: 3650,
+              unit: t().days,
+            })}
+            {retention({
+              name: "sensitiveRetentionHours",
+              label: t().sensitiveEventRetention,
+              hint: t().sensitiveEventRetentionDescription,
+              presets: SENSITIVE_PRESETS,
+              max: 8760,
+              unit: t().hours,
+            })}
           </>
         }
       >
@@ -334,7 +407,11 @@ function Members(props: { base: PulseBase; canAdmin: boolean; initial: AccessEnt
         subtitle: t().accessDialogSubtitle,
         initialEntries: current,
         grantAccess: async (principal: Principal, permission) => {
-          const entry = await jsonFetch<AccessEntry>(path, { method: "POST", body: JSON.stringify({ principal, permission }), signal: owner.signal });
+          const entry = await jsonFetch<AccessEntry>(path, {
+            method: "POST",
+            body: JSON.stringify({ principal, permission }),
+            signal: owner.signal,
+          });
           wrote = true;
           return entry;
         },
@@ -371,7 +448,12 @@ function Members(props: { base: PulseBase; canAdmin: boolean; initial: AccessEnt
           {(list) => (
             <List label={t().peopleAndGroups}>
               <For each={list()}>
-                {(entry) => <Row avatar={{ name: principalLabel(entry, locale()) }} lines={[principalLabel(entry, locale()), levelWord(entry.permission)]} />}
+                {(entry) => (
+                  <Row
+                    avatar={{ name: principalLabel(entry, locale()) }}
+                    lines={[principalLabel(entry, locale()), levelWord(entry.permission)]}
+                  />
+                )}
               </For>
             </List>
           )}
@@ -389,13 +471,25 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
   const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const share = (used: number, limit: number) =>
-    t().settingsShareUsed({ share: new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(limit > 0 ? used / limit : 0) });
-  const profile = (value: SqlLimits["profile"]) => ({ small: store().profileSmall, normal: store().profileNormal, large: store().profileLarge })[value];
+    t().settingsShareUsed({
+      share: new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(limit > 0 ? used / limit : 0),
+    });
+  const profile = (value: SqlLimits["profile"]) =>
+    ({ small: store().profileSmall, normal: store().profileNormal, large: store().profileLarge })[value];
   const state = () => storeState(props.base.store, store());
   const notice = () => {
     const current = props.base.store;
     if (current.state === "failed")
-      return { tone: "bad" as const, text: current.operation === "clear" ? store().failedClear : current.operation === "delete" ? store().failedDelete : store().failedProvision, retry: true };
+      return {
+        tone: "bad" as const,
+        text:
+          current.operation === "clear"
+            ? store().failedClear
+            : current.operation === "delete"
+              ? store().failedDelete
+              : store().failedProvision,
+        retry: true,
+      };
     if (current.state === "active" && current.writeBlockReason) return { tone: "warn" as const, text: store().blockedText, retry: false };
     if (current.state !== "active") return { tone: "note" as const, text: store().busyText, retry: false };
     return null;
@@ -406,10 +500,19 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
         <Cells.Cell
           icon="database"
           label={store().usage}
-          value={props.base.store.usage ? `${bytes(props.base.store.usage.bytes)} / ${bytes(props.base.store.limits.storageBytes)}` : store().notMeasured}
+          value={
+            props.base.store.usage
+              ? `${bytes(props.base.store.usage.bytes)} / ${bytes(props.base.store.limits.storageBytes)}`
+              : store().notMeasured
+          }
           meta={props.base.store.usage ? share(props.base.store.usage.bytes, props.base.store.limits.storageBytes) : undefined}
         />
-        <Cells.Cell icon="activity" label={t().settingsValuesPerMinute} value={number(props.base.store.limits.valuesPerMinute)} meta={t().settingsRateLimitOnly} />
+        <Cells.Cell
+          icon="activity"
+          label={t().settingsValuesPerMinute}
+          value={number(props.base.store.limits.valuesPerMinute)}
+          meta={t().settingsRateLimitOnly}
+        />
         <Cells.Cell
           icon="code"
           label={t().settingsQueriesPerHour}
@@ -423,7 +526,11 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
             tone={value().tone}
             icon="database"
             title={state().label}
-            actions={value().retry ? [{ label: store().retry, icon: "refresh", disabled: !props.canAdmin || props.busy, onClick: props.retry }] : undefined}
+            actions={
+              value().retry
+                ? [{ label: store().retry, icon: "refresh", disabled: !props.canAdmin || props.busy, onClick: props.retry }]
+                : undefined
+            }
           >
             {value().text}
           </Notice>
@@ -454,7 +561,10 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
                   label: t().settingsSqlLimits,
                   value: `${profile(limits().profile)} · ${bytes(limits().memoryBytes)} · ${limits().timeSeconds} s · ${number(limits().maxRows)} · ${bytes(limits().maxResultBytes)}`,
                 },
-                { label: t().settingsSqlConcurrency, value: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s` },
+                {
+                  label: t().settingsSqlConcurrency,
+                  value: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s`,
+                },
                 { label: t().settingsQueriesPerHour, value: `${limits().queriesUsed} / ${limits().queriesPerHour}` },
               ]}
             />
