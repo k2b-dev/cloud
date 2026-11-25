@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, serverMarkup } from "../../../test/v2-behavior/harness";
 
-const demos = ["overlays", "select", "board", "transfer", "resize", "controls"] as const;
+const demos = ["overlays", "select", "board", "transfer", "resize", "controls", "lists", "toast"] as const;
 let browser: Browser;
 let css: string;
 const bundles = new Map<string, string>();
@@ -34,10 +34,14 @@ const normalized = (page: Page, html?: string) =>
     else root.innerHTML = source;
     const references = new Set(["id", "for", "aria-describedby", "aria-activedescendant"]);
     // Core writes a few attributes only once elements bind, because they depend on the page: `aria-labelledby` on a
-    // combobox's chips once its label binds, `aria-controls` on a tab once its panel binds, and a tab stop on a panel
-    // without focusable content. None is painted, so none can flash; they are the only attributes left out here.
-    const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls"]);
+    // combobox's chips once its label binds, `aria-controls` on a tab once its panel binds, a tree item's place among
+    // its siblings once the rows bind (`aria-posinset`, `aria-setsize`), and a tab stop on a panel without focusable
+    // content. None is painted, so none can flash; they are the only attributes left out here.
+    const unpainted = new Set(["data-hk", "aria-labelledby", "aria-controls", "aria-posinset", "aria-setsize"]);
     const boundTabStop = (node: Element, name: string) => name === "tabindex" && node.getAttribute("role") === "tabpanel";
+    // Core puts the toast region in the top layer (`popover`) and measures the viewport into custom properties once
+    // it binds; an empty region shows nothing either way, which the pixel check below proves.
+    const toastRegion = (node: Element) => node.getAttribute("data-slot") === "toast-region";
     // Core's Resizable lays panels out in the page only: each panel's size as `--resizable-panel-size` (the server
     // renders the same width from the panel's default), and the grip's tab stop and values once there is a layout
     // ("never in the server's HTML", core's resizable.js). The pixel check below proves the widths are the same.
@@ -47,8 +51,14 @@ const normalized = (page: Page, html?: string) =>
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
+      if (toastRegion(node) && node instanceof HTMLElement) {
+        node.removeAttribute("popover");
+        for (const name of [...node.style].filter((property) => property.startsWith("--"))) node.style.removeProperty(name);
+      }
       if (node instanceof HTMLElement && node.getAttribute("data-slot") === "resizable-panel")
         node.style.removeProperty("--resizable-panel-size");
+      // Core measures an open tree group for its expand animation once it binds (`--tree-group-height`).
+      if (node instanceof HTMLElement && node.getAttribute("data-slot") === "tree-group") node.style.removeProperty("--tree-group-height");
       // Core's `bindHold` sets two style properties on the item it binds: `--hold-delay` for CSS and, against iOS's
       // long-press callout, `-webkit-touch-callout`. Neither is painted; both are left out here.
       if (node instanceof HTMLElement) {

@@ -309,7 +309,9 @@ lines instead of cutting a thing.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
-  copy? }[]`. Put it in the head `Bar start`.
+  copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
+  ids give way first (always on the phone), then the name is cut with "…";
+  the head's actions keep their place.
 
 ## States
 

@@ -10,6 +10,71 @@ import type { Action, Width } from "./types";
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Keeps every grip in the vertical middle of the part of its line that is in sight (mockup resize.js): a line taller
+ * than its scroller, such as the one beside a record's info column, would otherwise hold its grip below the window.
+ * Until the page is live the grip stands in the middle of the line, at most half a window down (CSS). One frame
+ * measures every grip first and then moves them, so several grips cost one layout.
+ */
+const grips = new Map<HTMLElement, HTMLElement[]>();
+let frame = 0;
+let sizes: ResizeObserver | undefined;
+
+/** The middle of the part of the grip's line in sight, from the line's top; nothing when the line is out of sight. */
+const middleOf = (grip: HTMLElement, clips: readonly HTMLElement[]) => {
+  const seam = grip.parentElement;
+  if (!seam) return undefined;
+  const line = seam.getBoundingClientRect();
+  let top = Math.max(line.top, 0);
+  let bottom = Math.min(line.bottom, window.innerHeight);
+  for (const clip of clips) {
+    const box = clip.getBoundingClientRect();
+    top = Math.max(top, box.top);
+    bottom = Math.min(bottom, box.bottom);
+  }
+  const half = grip.offsetHeight / 2;
+  // a line out of sight keeps its grip where it was
+  return bottom - top < grip.offsetHeight ? undefined : Math.round((top + bottom) / 2 - line.top - half);
+};
+const placeAll = () => {
+  frame = 0;
+  const places = [...grips].map(([grip, clips]) => [grip, middleOf(grip, clips)] as const);
+  for (const [grip, top] of places) if (top !== undefined) grip.style.setProperty("--k2-grip-top", `${top}px`);
+};
+const schedule = () => {
+  frame ||= requestAnimationFrame(placeAll);
+};
+
+const centerGrip = (grip: HTMLElement) => {
+  onMount(() => {
+    const seam = grip.parentElement;
+    // the boxes that clip the line: every scroller above it (they stay while the grip lives)
+    const clips: HTMLElement[] = [];
+    for (let up = seam?.parentElement; up; up = up.parentElement)
+      if (/^(auto|scroll|hidden|clip)$/.test(getComputedStyle(up).overflowY)) clips.push(up);
+    if (!grips.size) {
+      sizes = new ResizeObserver(schedule);
+      // a scroll anywhere above moves the part in sight; capture hears the scrollers, which do not bubble it
+      document.addEventListener("scroll", schedule, { capture: true, passive: true });
+      window.addEventListener("resize", schedule, { passive: true });
+    }
+    grips.set(grip, clips);
+    if (seam) sizes?.observe(seam);
+    schedule();
+    onCleanup(() => {
+      grips.delete(grip);
+      if (seam) sizes?.unobserve(seam);
+      if (grips.size) return;
+      cancelAnimationFrame(frame);
+      frame = 0;
+      sizes?.disconnect();
+      sizes = undefined;
+      document.removeEventListener("scroll", schedule, { capture: true });
+      window.removeEventListener("resize", schedule);
+    });
+  });
+};
+
+/**
  * The seam between two columns: the one 1 px line, and on a line that moves its grip. The grip is the shape only;
  * dragging and the keyboard come with the behaviour layer.
  */
@@ -18,6 +83,7 @@ const Seam = (props: { grip?: { label: string; width: Width } }) => (
     <Show when={props.grip}>
       {(grip) => (
         <span
+          ref={centerGrip}
           class="k2-grip"
           data-k2-grip=""
           role="separator"
