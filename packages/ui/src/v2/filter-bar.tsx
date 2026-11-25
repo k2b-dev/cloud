@@ -260,6 +260,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   const [draft, setDraft] = createSignal<string>();
   const [open, setOpen] = createSignal<string>();
   const [sheet, setSheet] = createSignal<{ field?: string; display?: "sort" | "group" }>();
+  // The sheet opens in the task after the press that asks for it: WebKit can deliver the end of a tap after its click,
+  // and the sheet, open by then, would take it for a press outside and close again.
+  const openSheet = (place: { field?: string; display?: "sort" | "group" }) => setTimeout(() => setSheet(place));
   const [saving, setSaving] = createSignal<{ mode: "new" | "rename"; view?: { key: string; label: string; store: ViewStore } }>();
 
   // The address: one history entry per open editor, one per other change; back and forward lead the state.
@@ -342,7 +345,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
 
   const openField = (key: string) => {
     if (isPhone()) {
-      setSheet({ field: key });
+      openSheet({ field: key });
       return;
     }
     if (filters()[key] === undefined) setDraft(key);
@@ -376,7 +379,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
 
   return (
     <div class="k2-fbar" data-k2-part="FilterBar" role="group" aria-label={t().filters}>
-      <Button variant="secondary" icon="adjustments-horizontal" onClick={() => setSheet({})}>
+      <Button variant="secondary" icon="adjustments-horizontal" onClick={() => openSheet({})}>
         {t().filterCount}
         <Show when={fieldCount() > 0}>
           <span class="k2-fbar-n">{fieldCount()}</span>
@@ -400,7 +403,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
                       draft={filters()[key] === undefined}
                       fixed={isDefault(key, field())}
                       open={open() === key}
-                      onPhone={() => setSheet({ field: key })}
+                      onPhone={() => openSheet({ field: key })}
                       onOpenChange={(next) => {
                         if (next && isPhone()) return;
                         setOpen(next ? key : undefined);
@@ -449,7 +452,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
           </span>
         </Show>
       </div>
-      <OrderButtons query={props.query} state={props.state} onOpen={(display) => setSheet({ display })} />
+      <OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />
       <Show when={props.views && props.views.stores.length > 0 ? props.views : undefined}>
         {(views) => (
           <div class="k2-fbar-end">

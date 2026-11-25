@@ -63,13 +63,15 @@ const steady = (page: Page, selector: string) =>
     (s) => {
       const element = document.querySelector(s);
       if (!element) return false;
-      const top = element.getBoundingClientRect().top;
+      // in a loaded WebKit the sheet can wait below the window for a moment before it slides: standing still is not
+      // enough, it must stand inside the window
+      const box = element.getBoundingClientRect();
       const last = Number(element.getAttribute("data-test-top") ?? "NaN");
-      element.setAttribute("data-test-top", String(top));
-      return top === last;
+      element.setAttribute("data-test-top", String(box.top));
+      return box.top === last && box.bottom <= innerHeight + 1;
     },
     selector,
-    { polling: 100 },
+    { polling: 100, timeout: 5000 },
   );
 const calls = (page: Page) =>
   page.evaluate(() => (window.__lookup?.calls ?? []).map((call) => ({ query: call.query, aborted: call.aborted() })));
