@@ -1780,7 +1780,6 @@
   font-weight: 500;
   white-space: nowrap;
   flex: none;
-  max-width: 100%;
   background: var(--k2-n100);
   color: var(--k2-text-2);
 }
@@ -1813,7 +1812,9 @@
   background: var(--k2-blue-tint);
   color: var(--k2-blue-ink);
 }
+/* a tag holds words someone typed, of any length: it never grows wider than its place */
 .k2-ui .k2-chip[data-kind="tag"] {
+  max-width: 100%;
   font-weight: 400;
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 12%, var(--k2-surface));
   color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 78%, var(--k2-ink-mix));
@@ -2412,10 +2413,11 @@
   order: 1;
 }
 .k2-ui .k2-tabs > .k2-tab[data-kept] {
+  --k2-tab-room: none;
   max-width: var(--k2-tab-room);
   min-width: 0;
 }
-.k2-ui .k2-tab-label {
+.k2-ui .k2-tab[data-kept] > .k2-tab-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
