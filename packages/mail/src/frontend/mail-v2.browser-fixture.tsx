@@ -9,6 +9,7 @@ import MailWorkspacePilot from "./MailWorkspaceV2.island";
 import { mailboxData, sidebar } from "./mail-shell.browser-fixture";
 
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
+import { applyMailV2Fixture, readMailV2Fixture, worstMailboxNames } from "./mail-v2.browser-worst-fixture";
 
 /*
  * Mail's mailbox on the v2 pilot with the invented conversations of the approved v2 mockup (mail.html): the real
@@ -159,8 +160,13 @@ const message = (
 
 const savedViewNames: Record<string, string> = { "Priority view": "Wichtig", "Team view": "Team" };
 
-/** The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open. */
-export const mailV2Data = (url: URL, now: number): MailboxPageData => {
+/**
+ * The fixture's mailbox as the v2 mockup shows it: "Kontakt" with its folders, ten conversations, the first one open.
+ * `?fixture=worst|empty|one|huge` swaps in the worst-case data (mail-v2.browser-worst-fixture.ts).
+ */
+export const mailV2Data = (url: URL, now: number): MailboxPageData => applyMailV2Fixture(demoData(url, now), url, now);
+
+const demoData = (url: URL, now: number): MailboxPageData => {
   // The mailbox sends as "Kontakt", so the reply names its sender.
   const source = new URL(url);
   source.searchParams.set("identity", "1");
@@ -278,14 +284,21 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
   };
 };
 
-const v2Sidebar = {
+const v2Sidebar = (url: URL) => ({
   ...sidebar,
   mailboxes: sidebar.mailboxes.map((box, index) => ({
     ...box,
-    name: ["Kontakt", "Rechnungen", "Personal", "Mira Solberg", "Archiv 2024"][index] ?? box.name,
+    name:
+      (worstMailboxNames(readMailV2Fixture(url.searchParams.get("fixture"))) ?? [
+        "Kontakt",
+        "Rechnungen",
+        "Personal",
+        "Mira Solberg",
+        "Archiv 2024",
+      ])[index] ?? box.name,
   })),
   pinnedMailboxIds: ["Box001"],
-};
+});
 
 export default function MailV2Fixture(props: {
   source: string;
@@ -313,7 +326,7 @@ export default function MailV2Fixture(props: {
         initialUserPreferences={readMailUserPreferencesFromCookieHeader("", data.mailbox.id)}
         initialTheme="light"
         calendarIntegrationAvailable={false}
-        sidebar={v2Sidebar}
+        sidebar={v2Sidebar(url)}
       />
     </LocaleProvider>
   );

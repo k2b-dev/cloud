@@ -5,11 +5,12 @@
  *   bun packages/mail/scripts/mail-v2-preview.ts [--port 4321] [--host 127.0.0.1] [--now <ISO time>]
  *
  * Open /app/mail/Box001 (the list) or /app/mail/Box001?conversation=Demo01 (list and reader). `?locale=en` for English.
- * Provisional with the pilot.
+ * A switch at the bottom (dev only) swaps the data: Demo, Worst case (`?fixture=worst`, open `conversation=Worst01`),
+ * Empty, One and 1,000 rows (break-ui). Provisional with the pilot.
  */
 if (process.argv.includes("--help")) {
   console.info(
-    "Usage: bun packages/mail/scripts/mail-v2-preview.ts [--port 4321] [--host 127.0.0.1] [--now <ISO time>]\nServes Mail's v2 pilot with the mockup's invented data.",
+    "Usage: bun packages/mail/scripts/mail-v2-preview.ts [--port 4321] [--host 127.0.0.1] [--now <ISO time>]\nServes Mail's v2 pilot with the mockup's invented data; ?fixture=worst|empty|one|huge (or the switch at the bottom) swaps in the worst case.",
   );
   process.exit(0);
 }
@@ -23,6 +24,7 @@ const now = option("--now");
 const server = await startMailV2Server({
   port: Number(option("--port") ?? 4321),
   hostname: option("--host") ?? "127.0.0.1",
+  fixtureSwitch: true,
   ...(now ? { now: () => Date.parse(now) } : {}),
 });
 console.info(`Mail v2 preview: ${server.url}${MAIL_V2_PATH}?conversation=Demo01`);
