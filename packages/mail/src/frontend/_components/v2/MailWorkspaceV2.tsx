@@ -248,7 +248,20 @@ export default function MailWorkspaceV2(props: {
       ...(openFurther
         ? [{ label: openFurther.label, count: openFurther.count, href: openFurther.href, onNavigate: openView, current: true }]
         : []),
-      ...(further.length > 0 ? [{ label: text().moreViews, count: `+${further.length}`, menu: true }] : []),
+      // the views without a tab of their own, in the tab's menu; each opens in place like a tab
+      ...(further.length > 0
+        ? [
+            {
+              label: text().moreViews,
+              count: `+${further.length}`,
+              menu: further.map((tab) => ({
+                label: tab.label,
+                meta: tab.count === undefined ? undefined : String(tab.count),
+                onClick: () => void c().openWorkspaceHref(tab.href),
+              })),
+            },
+          ]
+        : []),
     ];
   });
   const composeHref = () => `/app/mail/compose?mailbox=${c().data.mailbox.id}&autostart=1`;
