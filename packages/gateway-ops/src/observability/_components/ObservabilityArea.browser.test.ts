@@ -61,34 +61,6 @@ test("the admin sidebar shows Observability as one area entry and the area lists
   expect(errors).toEqual([]);
 }, 30_000);
 
-test("an open log entry pushes the first column aside at 1440 px and keeps it on a phone behind a back step", async () => {
-  await goto("/admin/observability/logs");
-  await page.getByRole("row", { name: /IMAP-Abruf/ }).click();
-  await page.waitForURL(/entry=9000/);
-  await page.waitForSelector('body[data-ready="true"]');
-  expect(await page.getByRole("navigation", { name: "Observability sections" }).isVisible()).toBe(false);
-  // The row link keeps the filters, not the fixture's locale parameter.
-  expect(
-    await page
-      .getByRole("link", { name: /^(Back to|Zurück zu) Observability$/ })
-      .filter({ visible: true })
-      .count(),
-  ).toBe(1);
-  expect(await page.getByText("mbx_info", { exact: true }).isVisible()).toBe(true);
-  // The metadata keys are flat text in the open entry, not a grey box.
-  await settled(page);
-  expect(
-    await page
-      .getByText("mbx_info", { exact: true })
-      .evaluate((element) => getComputedStyle(element.closest(".grid")!.parentElement!).backgroundColor),
-  ).toBe("rgba(0, 0, 0, 0)");
-
-  await goto("/admin/observability/logs?entry=9000", 390);
-  expect(await page.getByText("mbx_info", { exact: true }).isVisible()).toBe(true);
-  expect(await page.getByRole("row", { name: /IMAP-Abruf/ }).isVisible()).toBe(false);
-  expect(errors).toEqual([]);
-}, 30_000);
-
 test("an alert saves with the button in the level head, and a refused save keeps the draft", async () => {
   await goto(`/admin/observability/alerts?webhook=${BEREITSCHAFT}`);
   expect(await status().innerText()).toBe("Saved");

@@ -107,6 +107,11 @@ export const logsQuery = (locale: string, sources?: SourceLookup) => {
 export type LogsQuery = ReturnType<typeof logsQuery>;
 export type LogsState = ListQueryStateOf<LogsQuery>;
 
+/** The views in code beside "All": their key in the address and their state. */
+export const LOG_VIEWS = { errors: (query: LogsQuery): LogsState => ({ ...query.set(query.reset(), "level", ["error"]), view: "errors" }) };
+export type LogView = keyof typeof LOG_VIEWS;
+export const isLogView = (key: string | undefined): key is LogView => key !== undefined && Object.hasOwn(LOG_VIEWS, key);
+
 /** What the page and the API read from an address: the list state, the page parameters and what was dropped. */
 export type LogsAddress = {
   state: LogsState;

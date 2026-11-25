@@ -30,6 +30,7 @@ import { logSearchOf, loggingService } from "./service";
 const LogListResponseSchema = z.object({
   entries: z.array(LogEntrySchema),
   pagination: PaginationResponseSchema,
+  levels: z.object({ debug: z.number(), info: z.number(), warn: z.number(), error: z.number() }).describe("Matching entries per level"),
 });
 const LogSummaryResponseSchema = z.object({
   total: z.number(),
@@ -104,8 +105,8 @@ const app = new Hono<AuthContext>()
         const parts = issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ");
         return respond(c, fail(err.badInput(`Invalid log filter: ${parts}`)));
       }
-      const { entries, total } = await loggingService.entry.search(logSearchOf(state), pagination.page, pagination.perPage);
-      return respond(c, ok({ entries, pagination: createPagination(pagination, total) }));
+      const { entries, total, levels } = await loggingService.entry.search(logSearchOf(state), pagination.page, pagination.perPage);
+      return respond(c, ok({ entries, levels, pagination: createPagination(pagination, total) }));
     },
   )
 

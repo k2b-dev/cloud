@@ -147,14 +147,11 @@ type AreaProps = {
 
 export { AdminAreaPane as ObservabilityPane, AdminAreaSaveStatusFoot as SaveStatusFoot, AdminAreaSaveStatusHead as SaveStatusHead };
 
-/**
- * The Observability area on the shared admin area frame: its sections as the first column with attention marks, other
- * apps' links under "From apps", and the open section beside it.
- */
-export function ObservabilityArea(props: AreaProps) {
-  const t = areaText(props.locale);
-  const contributed = contributedLinks(props.c);
-  const groups: AdminAreaGroup[] = [
+/** The sections of the area in their groups, with attention marks and other apps' links; v1 and v2 pages share them. */
+export const observabilityGroups = (c: AreaProps["c"], locale: string, attention: Attention): AdminAreaGroup[] => {
+  const t = areaText(locale);
+  const contributed = contributedLinks(c);
+  return [
     ...GROUPS.map((group) => ({
       title: group.title ? (t[group.title] as string) : undefined,
       items: group.sections.map((section) => ({
@@ -162,11 +159,20 @@ export function ObservabilityArea(props: AreaProps) {
         label: t[section],
         href: OBSERVABILITY_SECTION_HREF[section],
         icon: SECTION_ICON[section],
-        mark: props.attention[section],
+        mark: attention[section],
       })),
     })),
     ...(contributed.length > 0 ? [{ title: t.fromApps, items: contributed }] : []),
   ];
+};
+
+/**
+ * The Observability area on the shared admin area frame: its sections as the first column with attention marks, other
+ * apps' links under "From apps", and the open section beside it.
+ */
+export function ObservabilityArea(props: AreaProps) {
+  const t = areaText(props.locale);
+  const groups = observabilityGroups(props.c, props.locale, props.attention);
   return (
     <AdminArea
       c={props.c}
