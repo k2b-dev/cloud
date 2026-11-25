@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import * as navigation from "@k2b/ssr/nav";
-import { createComponent } from "solid-js";
-import { isServer, render } from "solid-js/web";
+import { createRenderEffect, createRoot } from "solid-js";
+import { isServer } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 
 const requests: Array<{ id: string; resolve: (response: Response) => void }> = [];
@@ -33,7 +32,8 @@ const flush = async () => {
   for (let n = 0; n < 20; n++) await Promise.resolve();
 };
 
-describe("duplicate account deletion", () => {
+// The delete deed of a user's page (and before it of the duplicate address page): the action behind the button.
+describe("account deletion", () => {
   if (isServer) {
     test.skip("requires the package DOM runner", () => {});
     return;
@@ -44,7 +44,6 @@ describe("duplicate account deletion", () => {
   let toast: typeof import("@k2b/ui").toast;
   beforeEach(async () => {
     dom = createDomTestHarness();
-    spyOn(navigation, "swapPage").mockImplementation(async () => refreshed());
     ({ prompts, toast } = await import("@k2b/ui"));
     cleanup = () => dom.cleanup();
   });
@@ -55,34 +54,39 @@ describe("duplicate account deletion", () => {
     refreshed.mockClear();
     notice.mockClear();
   });
-  const mount = async (disabled = false, provider: "local" | "ipa" = "local", mail: string | null = user.mail) => {
-    const { default: DeleteDuplicateUser } = await import("../src/frontend/duplicate-emails/DeleteDuplicateUser.island");
-    const dispose = render(() => createComponent(DeleteDuplicateUser, { user: { ...user, provider, mail }, disabled }), dom.root);
+  /** A button wired like the page's delete entry: it runs the action, and is busy while the action runs. */
+  const mount = async (provider: "local" | "ipa" = "local", mail: string | null = user.mail) => {
+    const { createDeleteUserAction } = await import("../src/frontend/users/delete-user");
+    const button = document.createElement("button");
+    dom.root.append(button);
+    const dispose = createRoot((dispose) => {
+      const action = createDeleteUserAction({ user: { ...user, provider, mail }, onDeleted: () => refreshed() });
+      button.addEventListener("click", () => void action.run());
+      createRenderEffect(() => {
+        button.disabled = action.loading();
+      });
+      return dispose;
+    });
     const previousCleanup = cleanup;
     cleanup = () => {
       dispose();
       previousCleanup();
     };
-    return [...dom.root.querySelectorAll("button")].at(-1)!;
+    return button;
   };
 
-  test("cancel and disabled targets never delete", async () => {
+  test("cancel never deletes", async () => {
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
     const button = await mount();
     button.click();
     await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(requests).toHaveLength(0);
-    const disabled = await mount(true);
-    expect(disabled.disabled).toBe(true);
-    disabled.click();
-    await flush();
-    expect(confirm).toHaveBeenCalledTimes(1);
   });
 
   test("an account without email is named without a dangling separator", async () => {
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
-    const button = await mount(false, "local", null);
+    const button = await mount("local", null);
     button.click();
     await flush();
     const content = confirm.mock.calls[0]![0];
@@ -91,7 +95,7 @@ describe("duplicate account deletion", () => {
 
   test("FreeIPA confirmation states that both FreeIPA and Cloud are deleted", async () => {
     const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
-    const button = await mount(false, "ipa");
+    const button = await mount("ipa");
     button.click();
     await flush();
     const content = confirm.mock.calls[0]![0];
@@ -110,7 +114,6 @@ describe("duplicate account deletion", () => {
     const error = spyOn(prompts, "error").mockResolvedValue(undefined);
     spyOn(toast, "success").mockImplementation(() => "test-toast");
     const button = await mount();
-    expect(button.getAttribute("aria-label")).toBe("Delete account guest-ada");
     button.click();
     button.click();
     await flush();

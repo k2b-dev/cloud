@@ -204,7 +204,9 @@ const app = new Hono<AuthContext>()
         "role=admin,member,guest; member-of=<group ids> (direct members, personal Linux groups left out); " +
         "status=active,invited,expired (invited: never signed in); login=last-7d|last-30d|older-90d|never or YYYY-MM-DD..YYYY-MM-DD " +
         "in the caller's time zone; passkey=yes|no; provider=local|ipa; sort=name.asc|name.desc|login.desc|login.asc. " +
-        "profile=user|guest is the old name of role=admin,member and role=guest. A value the list cannot hold is refused with 400.",
+        "duplicate=yes|no (whose email address another account shares); sort also takes mail.asc|mail.desc. " +
+        "profile=user|guest is the old name of role=admin,member and role=guest. A value the list cannot hold is refused with 400. " +
+        "This list holds people only; GET /api/accounts/accounts lists people, agents and API key accounts.",
       ...requiresAdmin,
       responses: {
         200: jsonResponse(UsersListResponseSchema, "Paginated list of users"),
@@ -225,6 +227,7 @@ const app = new Hono<AuthContext>()
         login: z.string().optional(),
         passkey: z.enum(["yes", "no"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
+        duplicate: z.enum(["yes", "no"]).optional(),
         profile: z.enum(["user", "guest"]).optional(),
         sort: z.string().optional(),
       }),
@@ -240,12 +243,16 @@ const app = new Hono<AuthContext>()
       params.delete("group");
       const address = parseUsersAddress(usersQuery(getLocale(c)), params);
       const refused = address.issues.filter((issue) => issue.code !== "unknown");
+      // people only: a kind the list holds besides people belongs to GET /api/accounts/accounts
+      const kinds = address.state.filters.kind;
+      if (kinds && kinds.some((kind) => kind !== "person")) refused.push({ code: "invalid", param: "kind", value: kinds.join(",") });
       if (refused.length > 0)
         return c.json({ message: `Invalid list parameters: ${refused.map((issue) => issue.param || issue.code).join(", ")}` }, 400);
 
+      const { kinds: _kinds, ...query } = directoryQueryOf(address.state, getTimeZone(c));
       const result = await accountsService.user.directory({
         actor: toAccountsActor(expectUserBackedActor(c)),
-        ...directoryQueryOf(address.state, getTimeZone(c)),
+        ...query,
         pagination: { page: pagination.page, perPage: pagination.perPage },
       });
       if (!result.ok) return respond(c, result);

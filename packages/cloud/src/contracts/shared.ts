@@ -66,6 +66,40 @@ export const UserDirectoryEntrySchema = BaseUserSchema.extend({
 });
 export type UserDirectoryEntry = z.infer<typeof UserDirectoryEntrySchema>;
 
+/**
+ * The kinds of the administration's account list: people, agents, and API key accounts (service accounts of the kind
+ * `standalone`). Service accounts that belong to a person or an app resource, and code accounts, are not listed.
+ */
+export const AccountDirectoryKindSchema = z.enum(["person", "agent", "api-key"]);
+export type AccountDirectoryKind = z.infer<typeof AccountDirectoryKindSchema>;
+
+/** Where an account stands: a person is active, invited or expired; a service account is active or disabled. */
+export const AccountDirectoryStatusSchema = z.enum(["active", "invited", "expired", "disabled"]);
+export type AccountDirectoryStatus = z.infer<typeof AccountDirectoryStatusSchema>;
+
+/** A person on the account list: the user list's entry, and whether another account shares its email address. */
+export const AccountDirectoryPersonSchema = UserDirectoryEntrySchema.extend({
+  kind: z.literal("person"),
+  duplicateMail: z.boolean(),
+});
+export type AccountDirectoryPerson = z.infer<typeof AccountDirectoryPersonSchema>;
+
+/** An agent or an API key account on the account list. */
+export const AccountDirectoryServiceAccountSchema = z.object({
+  kind: z.enum(["agent", "api-key"]),
+  id: z.string(),
+  name: z.string(),
+  status: z.enum(["active", "disabled"]),
+  avatarHash: z.string().nullable(),
+  /** When one of its API keys was used last, or null when none was used. */
+  lastUsed: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+/** One account of the administration's account list. */
+export const AccountDirectoryEntrySchema = z.discriminatedUnion("kind", [AccountDirectoryPersonSchema, AccountDirectoryServiceAccountSchema]);
+export type AccountDirectoryEntry = z.infer<typeof AccountDirectoryEntrySchema>;
+
 export const IpaUserDataSchema = z.object({
   uidNumber: z.number().nullable(),
   phone: z.string().nullable(),

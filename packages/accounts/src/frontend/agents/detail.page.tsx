@@ -10,6 +10,7 @@ import { ssr } from "../../config";
 import AccountsNavigation from "../AccountsNavigation.island";
 import { accountsNavigationItems } from "../accounts-nav";
 import { accountsMessages } from "../messages";
+import { usersViewHref } from "../users/query";
 import type { AgentKeyView } from "./AgentKeyDialogs";
 import AgentScreen from "./AgentScreen.island";
 import { agentIdFromPath } from "./agent-id";
@@ -83,11 +84,12 @@ export default ssr<AuthContext>(async (c) => {
       title={[
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
-        { title: t.agents, href: "/app/accounts/agents" },
+        // the agent page belongs to the account list, opened from its agents view
+        { title: t.accountList, href: usersViewHref("agents") },
         { title: account.name },
       ]}
     >
-      <AccountsNavigation items={accountsNavigationItems(t, { active: "agents", pendingRequests, isAdmin: true })} />
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "users", pendingRequests, isAdmin: true })} />
       <AgentScreen
         agent={{
           id: account.id,

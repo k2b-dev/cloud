@@ -81,6 +81,7 @@ export const accountsMessages = i18n.define({
       requests: "Requests",
       user: "User",
       users: "Users",
+      accountList: "Accounts",
       serviceAccounts: "API keys",
       agents: "Agents",
       agentsSummary: ({ count }: { count: number }) =>
@@ -1007,6 +1008,7 @@ export const accountsMessages = i18n.define({
       requests: "Anfragen",
       user: "Benutzer",
       users: "Benutzer",
+      accountList: "Konten",
       serviceAccounts: "API Keys",
       agents: "Agenten",
       agentsSummary: ({ count }) =>

@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import type { UserDirectoryEntry } from "@k2b/cloud/contracts";
+import type { AccountDirectoryEntry, AccountDirectoryPerson } from "@k2b/cloud/contracts";
 import { listMessages } from "../list-messages";
-import { inSeveralGroups, lastLoginText, userRows } from "./rows";
+import { inSeveralGroups, lastLoginText, sharedAddresses, userRows } from "./rows";
 
-const entry = (id: string, groups: { id: string; name: string }[]): UserDirectoryEntry => ({
+const entry = (id: string, groups: { id: string; name: string }[], mail: string | null = null): AccountDirectoryPerson => ({
+  kind: "person",
   id,
   uid: id,
   roles: ["user"],
@@ -12,7 +13,7 @@ const entry = (id: string, groups: { id: string; name: string }[]): UserDirector
   givenname: "",
   sn: "",
   displayName: id,
-  mail: null,
+  mail,
   avatarHash: null,
   role: "member",
   status: "active",
@@ -21,15 +22,43 @@ const entry = (id: string, groups: { id: string; name: string }[]): UserDirector
   passkey: false,
   groups,
   groupCount: groups.length,
+  duplicateMail: false,
 });
+const agent: AccountDirectoryEntry = {
+  kind: "agent",
+  id: "bot",
+  name: "Wochenbericht",
+  status: "active",
+  avatarHash: null,
+  lastUsed: null,
+  createdAt: "2026-09-22T09:14:00.000Z",
+};
 const sales = { id: "g-sales", name: "Verkauf" };
 const office = { id: "g-office", name: "Büro" };
 
-test("grouped, an account stands in each of its groups, groups by name, accounts without a group last", () => {
-  const page = [entry("ada", [sales]), entry("milan", [office, sales]), entry("vera", [])];
-  expect(userRows(page, true, "de").map((row) => row.key)).toEqual(["g-office:milan", "g-sales:ada", "g-sales:milan", "none:vera"]);
+test("grouped by group, a person stands in each of their groups, groups by name, accounts without a group last", () => {
+  const page = [entry("ada", [sales]), entry("milan", [office, sales]), entry("vera", []), agent];
+  expect(userRows(page, "member-of", "de").map((row) => row.key)).toEqual([
+    "g-office:milan",
+    "g-sales:ada",
+    "g-sales:milan",
+    "none:vera",
+    "none:bot",
+  ]);
   expect(inSeveralGroups(page)).toBe(1);
-  expect(userRows(page, false, "de").map((row) => row.key)).toEqual(["ada", "milan", "vera"]);
+  expect(userRows(page, undefined, "de").map((row) => row.key)).toEqual(["ada", "milan", "vera", "bot"]);
+});
+
+test("grouped by address, accounts that share one stand together, compared trimmed and in any case", () => {
+  const page = [entry("jonas", [], "j.hartwig@example.test"), entry("jhartwig", [], " J.Hartwig@example.test"), entry("lina", [], "lina@example.test"), agent];
+  const rows = userRows(page, "mail", "de");
+  expect(rows.map((row) => row.key)).toEqual([
+    "j.hartwig@example.test:jonas",
+    "j.hartwig@example.test:jhartwig",
+    "lina@example.test:lina",
+    "none:bot",
+  ]);
+  expect(sharedAddresses(page)).toBe(1);
 });
 
 test("the last sign-in reads as days within a month, then as the day", () => {

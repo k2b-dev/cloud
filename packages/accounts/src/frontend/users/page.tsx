@@ -20,7 +20,10 @@ import {
 } from "./query";
 import UsersScreen from "./UsersScreen.island";
 
-/** The users of this Cloud on v2. The address is the whole list state: the declaration in `query.ts` reads it. */
+/**
+ * The accounts of this Cloud on v2: people, agents and API key accounts. The address is the whole list state: the
+ * declaration in `query.ts` reads it.
+ */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const timeZone = getTimeZone(c);
@@ -41,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
   const groupIds = address.state.filters["member-of"];
   const [pendingRequests, list, groups] = await Promise.all([
     accountsService.accountRequest.countPending(),
-    accountsService.user
+    accountsService.account
       .directory({ actor, ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
       .then((result) => (result.ok ? result.data : null))
       .catch(() => null),
@@ -66,7 +69,7 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       ui="v2"
-      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.users }]}
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: words.accounts }]}
     >
       <AccountsNavigation items={accountsNavigationItems(t, { active: "users", pendingRequests, isAdmin: true })} />
       <UsersScreen

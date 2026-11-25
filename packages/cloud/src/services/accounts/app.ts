@@ -1,6 +1,8 @@
 import { accountCategory } from "../../contracts/account-categories";
 import type { PersonAvatar } from "../../contracts/avatar";
 import type {
+  AccountDirectoryEntry,
+  AccountDirectoryPerson,
   BaseGroup,
   BaseUser,
   EntityKind,
@@ -40,6 +42,7 @@ import { providers } from "../providers";
 import { session } from "../session";
 import { get as getSetting } from "../settings";
 import { type AccountsActor, canMutateManagedGroup, hasOnlySelfUpdateFields, isAdminActor, isSelfTarget } from "./authz";
+import { type AccountDirectoryQuery, accountDirectory } from "./account-directory";
 import type { AvatarChange, AvatarState } from "./avatar";
 import { listDuplicateEmails } from "./duplicate-emails";
 import * as entities from "./entities";
@@ -315,7 +318,24 @@ const buildAccountRequestWhereClause = (config: {
   return sql`r.status = 'pending'`;
 };
 
+const toUserDirectoryEntry = ({ kind: _kind, duplicateMail: _duplicate, ...entry }: AccountDirectoryPerson): UserDirectoryEntry => entry;
+
 export const accountsAppService = {
+  account: {
+    /**
+     * The administration's account list: people, agents and API key accounts with filters and sort, the one query the
+     * list page and its API share. It checks the administrator role itself; other service accounts are never listed.
+     */
+    directory: async (
+      config: Omit<AccountDirectoryQuery, "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
+    ): Promise<Result<Paginated<AccountDirectoryEntry>>> => {
+      if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));
+      const { actor: _actor, pagination, ...query } = config;
+      const { page, perPage } = paginate(pagination);
+      const result = await accountDirectory({ ...query, page, perPage });
+      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
+    },
+  },
   user: {
     listDuplicateEmails,
     list: async (config: {
@@ -347,14 +367,16 @@ export const accountsAppService = {
      * It checks the administrator role itself, so a page, an API or a CLI reaching it gets the same answer.
      */
     directory: async (
-      config: Omit<users.UserDirectoryQuery, "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
+      config: Omit<AccountDirectoryQuery, "kinds" | "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
     ): Promise<Result<Paginated<UserDirectoryEntry>>> => {
       // The list names every account with its sign-ins and groups: administrators only, whichever way it is reached.
       if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));
       const { actor: _actor, pagination, ...query } = config;
       const { page, perPage } = paginate(pagination);
-      const result = await users.directory({ ...query, page, perPage });
-      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
+      // The people of the account list, with the people's fields only.
+      const result = await accountDirectory({ ...query, kinds: ["person"], page, perPage });
+      const items = result.items.flatMap((entry) => (entry.kind === "person" ? [toUserDirectoryEntry(entry)] : []));
+      return ok({ items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
     },
     get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
       users.get(config, options),

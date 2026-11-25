@@ -2,29 +2,32 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import GroupsScreen from "../groups/GroupsScreen";
 import { groupsQuery, parseGroupsAddress } from "../groups/query";
-import { parseUsersAddress, usersQuery } from "./query";
+import { parseUsersAddress, USERS_PER_PAGE, usersQuery } from "./query";
 import UsersScreen from "./UsersScreen";
-import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory } from "./users-screen.fixture";
+import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory, fixtureSample } from "./users-screen.fixture";
 
 /**
- * The user and group lists for a browser test, rendered as the server would render them for the page's address: the
+ * The account and group lists for a browser test, rendered as the server would render them for the page's address: the
  * address is parsed with the same declaration and the sample is filtered like the service does. The test answers the
  * users and groups API from the same sample.
  */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const failed = document.documentElement.dataset.failed === "true";
+const sample = fixtureSample(document.documentElement.dataset.sample);
 const params = new URLSearchParams(location.search);
 
 const users = () => {
   const address = parseUsersAddress(usersQuery("de"), params);
-  const entries = fixtureDirectory(address.state);
+  // the server pages the list: one page of the matching accounts, and how many match in all
+  const matching = fixtureDirectory(address.state, sample);
+  const entries = matching.slice((address.page - 1) * USERS_PER_PAGE, address.page * USERS_PER_PAGE);
   return (
     <UsersScreen
       state={address.state}
       page={address.page}
       entries={failed ? null : entries}
-      total={failed ? 0 : entries.length}
+      total={failed ? 0 : matching.length}
       groupNames={Object.values(FIXTURE_GROUPS)
         .filter((group) => address.state.filters["member-of"]?.includes(group.id))
         .map((group) => ({ value: group.id, label: group.name }))}
