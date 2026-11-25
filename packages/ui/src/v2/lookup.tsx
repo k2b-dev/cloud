@@ -23,8 +23,13 @@ export type LookupProps = {
   label: string;
   /** The chosen codes. */
   value: readonly string[];
-  /** Every tick applies at once. */
+  /** Every tick applies at once; with one choice it holds the chosen code, or none when the ticked one was pressed. */
   onChange: (value: string[]) => void;
+  /**
+   * `false`: one value, its tick at the end of the row (pressing it again takes it back); several by default, each
+   * with its box first.
+   */
+  multiple?: boolean;
   load: LookupLoad;
   resolve?: LookupResolve;
   /** Names the page already knows (the server resolved the codes of the address), so the first picture shows names. */
@@ -41,8 +46,8 @@ export const lookupTiming = { debounce: 200, placeholder: 150 } as const;
 type Phase = "idle" | "waiting" | "loading" | "done" | "error";
 
 /**
- * Values that are loaded while the person types, for a filter or a form: a search field over a list that can choose
- * several. Typing waits 200 ms, then loads; a newer search and closing abort the one that runs (`AbortSignal`). A load
+ * Values that are loaded while the person types, the panel of a filter and of `LookupSelect`: a search field over a
+ * list that chooses several (a box first) or one (`multiple={false}`, a tick at the end). Typing waits 200 ms, then loads; a newer search and closing abort the one that runs (`AbortSignal`). A load
  * that takes longer than 150 ms shows three placeholder rows; empty and failed take the same height, so nothing jumps.
  * What is chosen stands on top under "Gewählt" in every state. The list is the ui-sdk listbox (arrows, Home, End,
  * Space, typeahead); Arrow down in the field moves into it, Arrow up from its first entry back.
@@ -154,9 +159,10 @@ export const Lookup = (props: LookupProps) => {
   // the last matches stay while the next search waits and loads, until its placeholders show (150 ms into the load)
   const showList = () => phase() === "done" || ((phase() === "loading" || phase() === "waiting") && !slow() && answered());
 
+  const several = () => props.multiple !== false;
   const list = useListbox(() => ({
-    multiple: true,
-    value: [...props.value],
+    multiple: several(),
+    value: several() ? [...props.value] : (props.value[0] ?? null),
     loop: false,
     onValueChange: (value) => props.onChange(Array.isArray(value) ? value : value ? [value] : []),
   }));
@@ -179,11 +185,13 @@ export const Lookup = (props: LookupProps) => {
 
   const Option = (item: LookupItem) => (
     <list.Item class="k2-opt" value={item.value} label={item.label}>
-      <span class="k2-check" data-checked={props.value.includes(item.value) ? "" : undefined} aria-hidden="true">
-        <Show when={props.value.includes(item.value)}>
-          <Icon name="check" />
-        </Show>
-      </span>
+      <Show when={several()}>
+        <span class="k2-check" data-checked={props.value.includes(item.value) ? "" : undefined} aria-hidden="true">
+          <Show when={props.value.includes(item.value)}>
+            <Icon name="check" />
+          </Show>
+        </span>
+      </Show>
       <span class="k2-opt-label">
         {item.label}
         <Show when={item.meta}>{(meta) => <span class="k2-opt-meta">{meta()}</span>}</Show>
@@ -195,6 +203,13 @@ export const Lookup = (props: LookupProps) => {
       </Show>
       <Show when={counts()[item.value] !== undefined}>
         <span class="k2-opt-count">{counts()[item.value]}</span>
+      </Show>
+      <Show when={!several()}>
+        <span class="k2-opt-tick" aria-hidden="true">
+          <Show when={props.value.includes(item.value)}>
+            <Icon name="check" />
+          </Show>
+        </span>
       </Show>
     </list.Item>
   );

@@ -96,6 +96,7 @@ export {
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
+export { LookupSelect, type LookupSelectProps } from "./lookup-select";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";

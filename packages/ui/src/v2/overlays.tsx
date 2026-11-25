@@ -3,6 +3,7 @@ import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
+import { useOverlayMessages } from "./overlay-messages";
 
 // The overlays of v2: the behaviour (focus, Escape, placement, keys, the sheet on the phone) comes from the behaviour
 // layer on the ui-sdk core (`./behavior/overlays`); these components give it the one shape of v2 (`v2.css`, section
@@ -24,6 +25,11 @@ export type DialogProps = {
    * `true` by default.
    */
   dismissible?: boolean;
+  /**
+   * One step back inside the dialog, when its content went a level deeper (the filter sheet's field): a "‹" before
+   * the title, named "Zurück", so the title reads "‹ Preis" and the step needs no line of its own.
+   */
+  back?: () => void;
 };
 
 /** What takes the focus first in a dialog: a field, a link or a button in its content, else an action of its foot. */
@@ -57,6 +63,7 @@ const usePhone = () => {
  */
 export const Dialog = (props: DialogProps) => {
   const t = useUiMessages();
+  const said = useOverlayMessages();
   const phone = usePhone();
   const dialog = useDialog(() => ({
     open: props.open,
@@ -132,6 +139,23 @@ export const Dialog = (props: DialogProps) => {
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">
+            <Show when={props.back}>
+              {(back) => (
+                <button
+                  type="button"
+                  class="k2-btn"
+                  data-k2-part="Button"
+                  data-variant="ghost"
+                  data-icon-only=""
+                  data-back=""
+                  aria-label={said().back}
+                  title={said().back}
+                  onClick={() => back()()}
+                >
+                  <Icon name="chevron-left" />
+                </button>
+              )}
+            </Show>
             <dialog.Title class="k2-dialog-title">{props.title}</dialog.Title>
           </div>
           <div class="k2-bar-end">

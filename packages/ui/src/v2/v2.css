@@ -2917,6 +2917,10 @@
   height: var(--k2-h-control-small);
   margin-right: -10px;
 }
+/* "‹" one step back stands before the title, its arrow on the text edge, close to the title: "‹ Preis" is one head */
+.k2-ui .k2-dialog > [data-slot="head"] .k2-btn[data-back] {
+  margin: 0 -10px 0 -6px;
+}
 /* On a small touch screen the dialog is a sheet (core's presentation "auto"): the whole width at the bottom, its top
    corners round, as high as its content up to most of the screen; a swipe down closes it. */
 .k2-ui .k2-dialog[data-presentation="sheet"] {
@@ -3812,6 +3816,15 @@
   padding: 0;
   gap: 0;
 }
+/* The panel of a LookupSelect: the lookup under its field, at least as wide as the field and never narrower than a
+   filter's editor; its search starts on the panel's top edge like the editor's values. */
+.k2-ui .k2-pop.k2-lpop {
+  width: auto;
+  min-width: max(300px, var(--anchor-width, 300px));
+  max-width: min(480px, calc(100vw - 16px));
+  padding: 8px 0 0;
+  gap: 0;
+}
 .k2-ui .k2-fed {
   display: flex;
   flex-direction: column;
@@ -3921,7 +3934,7 @@
   padding: 4px 12px 0;
 }
 
-/* Options of an editor and a lookup: rows of 32 px, the check (or tick) first, a count at the end */
+/* Options of an editor and a lookup: rows of 32 px; several have their box first, one choice its tick at the end */
 .k2-ui .k2-opts,
 .k2-ui .k2-lookup-list {
   display: flex;
@@ -4180,9 +4193,6 @@
 .k2-ui .k2-fsheet-value[data-set] {
   color: var(--k2-app-text);
   font-weight: 600;
-}
-.k2-ui .k2-fsheet-back {
-  padding: 0 calc(var(--k2-edge) - 8px) 4px;
 }
 .k2-ui .k2-fsheet .k2-fed {
   padding-bottom: 8px;

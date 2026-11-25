@@ -15,6 +15,8 @@ import type {
   NumberRange,
   PeriodValue,
   SavedListView,
+  SortDirection,
+  SortOption,
   ViewStore,
 } from "./list-query";
 import { Lookup } from "./lookup";
@@ -825,6 +827,7 @@ const EditorBody = (props: EditorProps) => {
           }}
           limit={definition.limit}
           minChars={definition.minChars}
+          multiple={definition.multiple}
           onChange={(next) => props.onChange(definition.multiple ? next : next.at(-1))}
         />
       );
@@ -860,7 +863,10 @@ const EditorBody = (props: EditorProps) => {
   }
 };
 
-/** Fixed values: the ui-sdk listbox, several (checks) or one (a tick), with counts at the end when the app gives them. */
+/**
+ * Fixed values: the ui-sdk listbox, several (a box first) or one (a tick at the row's end), with counts before the end
+ * when the app gives them.
+ */
 const Options = (props: {
   label: string;
   options: readonly ListQueryOption[];
@@ -896,16 +902,8 @@ const Options = (props: {
                 aria-describedby={locked(option.value) ? hint : undefined}
                 data-zero={props.counts?.[option.value] === 0 ? "" : undefined}
               >
-                <Show
-                  when={props.multiple}
-                  fallback={
-                    <span class="k2-opt-tick" aria-hidden="true">
-                      <Show when={on()}>
-                        <Icon name="check" />
-                      </Show>
-                    </span>
-                  }
-                >
+                {/* several: the box first; one: the tick at the end of the row, where Menu and Select put it */}
+                <Show when={props.multiple}>
                   <span class="k2-check" data-checked={on() ? "" : undefined} aria-hidden="true">
                     <Show when={on()}>
                       <Icon name="check" />
@@ -915,6 +913,13 @@ const Options = (props: {
                 <span class="k2-opt-label">{option.label}</span>
                 <Show when={props.counts?.[option.value] !== undefined}>
                   <span class="k2-opt-count">{props.counts?.[option.value]}</span>
+                </Show>
+                <Show when={!props.multiple}>
+                  <span class="k2-opt-tick" aria-hidden="true">
+                    <Show when={on()}>
+                      <Icon name="check" />
+                    </Show>
+                  </span>
                 </Show>
               </list.Item>
             );
@@ -1209,9 +1214,29 @@ const TextEditor = (props: { label: string; value: string; onChange: (value: unk
 
 type OrderWords = { sort?: string; group?: string };
 
-const directionWord = (direction: "asc" | "desc") => (direction === "desc" ? "↓" : "↑");
+const bothDirections: readonly SortDirection[] = ["asc", "desc"];
 
-/** The sort and the grouping in words: "Preis ↓", "Lagerort"; a fixed sort says its own words. */
+/** A direction in words, by what the sort orders: "Neueste zuerst", "Höchster zuerst", "A–Z"; the app's words first. */
+const directionWords = (option: SortOption | undefined, direction: SortDirection, t: FilterMessages): string => {
+  const own = option?.labels?.[direction];
+  if (own) return own;
+  const descending = direction === "desc";
+  switch (option?.kind) {
+    case "date":
+      return descending ? t.newestFirst : t.oldestFirst;
+    case "number":
+      return descending ? t.highestFirst : t.lowestFirst;
+    case "text":
+      return descending ? t.zToA : t.aToZ;
+    default:
+      return descending ? t.descending : t.ascending;
+  }
+};
+
+const sortOptions = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>): Readonly<Record<string, SortOption>> =>
+  query.sort.fixed ? {} : query.sort.options;
+
+/** The sort and the grouping in words: "Preis · Höchster zuerst", "Lagerort"; a fixed sort says its own words. */
 const orderWords = <F extends Fields, S extends string, G extends string>(
   query: ListQuery<F, S, G>,
   state: ListQueryState<F, S, G>,
@@ -1219,23 +1244,40 @@ const orderWords = <F extends Fields, S extends string, G extends string>(
 ): OrderWords => {
   const sort = query.sort;
   const groups: Readonly<Record<string, { label: string }>> = query.group ?? {};
-  const options: Readonly<Record<string, { label: string }>> = sort.fixed ? {} : sort.options;
+  const option = sortOptions(query)[state.sort.field];
   const sortLabel = sort.fixed
     ? sort.fixed.label
-    : `${options[state.sort.field]?.label ?? state.sort.field} ${directionWord(state.sort.direction)}`;
+    : t.orderWords({ field: option?.label ?? state.sort.field, order: directionWords(option, state.sort.direction, t) });
   return { sort: sortLabel, group: state.group !== undefined ? (groups[state.group]?.label ?? state.group) : undefined };
 };
 
-/** The entries of the sort menu: each field in each of its directions. */
-const sortEntries = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, t: FilterMessages) => {
-  if (query.sort.fixed) return [];
-  const options: Readonly<Record<string, { label: string; directions?: readonly ("asc" | "desc")[] }>> = query.sort.options;
-  return Object.entries(options).flatMap(([key, option]) =>
-    (option.directions ?? (["asc", "desc"] as const)).map((direction) => ({
-      value: `${key}.${direction}`,
-      label: `${option.label} ${directionWord(direction)}`,
-    })),
-  );
+/** The address text of the sort a choice gives. */
+const sortOf = (entries: readonly { value: string; sort: string }[], value: string) =>
+  entries.find((entry) => entry.value === value)?.sort ?? "";
+
+/**
+ * The two choices of a sort: what it sorts by (the fields) and its order in words (the directions of the field shown).
+ * Picking another field keeps the order shown when that field offers it, else takes the field's first direction.
+ */
+const sortChoices = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  t: FilterMessages,
+) => {
+  const options = sortOptions(query);
+  const directionsOf = (key: string) => options[key]?.directions ?? bothDirections;
+  const fields = Object.entries(options).map(([key, option]) => {
+    const offered = directionsOf(key);
+    const direction = offered.includes(state.sort.direction) ? state.sort.direction : (offered[0] ?? state.sort.direction);
+    return { value: key, label: option.label, sort: `${key}.${direction}` };
+  });
+  const current = options[state.sort.field];
+  const orders = directionsOf(state.sort.field).map((direction) => ({
+    value: direction,
+    label: directionWords(current, direction, t),
+    sort: `${state.sort.field}.${direction}`,
+  }));
+  return { fields, orders, field: state.sort.field, direction: state.sort.direction };
 };
 
 const groupEntries = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>, t: FilterMessages) => {
@@ -1251,9 +1293,10 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
 };
 
 /**
- * The sort and the grouping of a list in words, for the `filters` place of its `StatusRow`: "⇅ Preis ↓ ▾" and "Nach
- * Lagerort ▾", each a menu with one choice. A fixed sort is text. On the phone they leave with the status row's
- * filters and stand in the filter bar instead.
+ * The sort and the grouping of a list in words, for the `filters` place of its `StatusRow`: "⇅ Preis · Höchster
+ * zuerst ▾" and "Nach Lagerort ▾". The sort's menu has two choices, "Sortieren nach" (the fields) and "Reihenfolge"
+ * (the order in words, by the field's `kind` or its own `labels`); the grouping's menu has one. A fixed sort is text.
+ * On the phone they leave with the status row's filters and stand in the filter bar instead.
  */
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
@@ -1269,6 +1312,8 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
   };
   const words = () => orderWords(props.query, props.state, t());
   const groups = () => groupEntries(props.query, t());
+  const choices = () => sortChoices(props.query, props.state, t());
+  const fits = (sort: string) => follow(props.query, props.state, (params) => params.set("sort", sort)) !== undefined;
   return (
     <span class="k2-order" data-k2-part="ListOrder">
       <Show
@@ -1285,14 +1330,19 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
           label={t().sort}
           items={[
             {
-              title: t().sort,
-              choice: `${props.state.sort.field}.${props.state.sort.direction}`,
-              onChoose: (value) => change((params) => params.set("sort", value)),
-              items: sortEntries(props.query, t()).map((entry) => ({
-                label: entry.label,
-                value: entry.value,
-                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
-              })),
+              title: t().sortBy,
+              choice: choices().field,
+              onChoose: (value) => {
+                const sort = choices().fields.find((entry) => entry.value === value)?.sort;
+                if (sort) change((params) => params.set("sort", sort));
+              },
+              items: choices().fields.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
+            },
+            {
+              title: t().order,
+              choice: choices().direction,
+              onChoose: (value) => change((params) => params.set("sort", `${choices().field}.${value}`)),
+              items: choices().orders.map((entry) => ({ label: entry.label, value: entry.value, disabled: !fits(entry.sort) })),
             },
           ]}
         >
@@ -1622,6 +1672,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
     return key !== undefined && definition ? { key, definition } : undefined;
   };
   const words = () => orderWords(props.query, props.state, t());
+  const choices = () => sortChoices(props.query, props.state, t());
   const title = () =>
     field()?.definition.label ?? (props.place?.display === "sort" ? t().sort : props.place?.display === "group" ? t().group : t().filters);
   const Row = (row: { icon?: string; label: string; value?: string; onClick: () => void }) => (
@@ -1665,6 +1716,7 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
       title={title()}
       open={props.open}
       onOpenChange={(open) => !open && props.onClose()}
+      back={props.place?.field !== undefined || props.place?.display !== undefined ? () => props.onPlace({}) : undefined}
       foot={
         <>
           <Button disabled={!props.changed} onClick={props.onReset}>
@@ -1716,9 +1768,6 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
             </>
           }
         >
-          <div class="k2-fsheet-back">
-            <Button variant="ghost" icon="chevron-left" label={t().back} onClick={() => props.onPlace({})} />
-          </div>
           <Show when={field()}>
             {(current) => (
               <Editor
@@ -1736,12 +1785,21 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
             )}
           </Show>
           <Show when={props.place?.display === "sort"}>
+            <div class="k2-fsheet-sec">{t().sortBy}</div>
             <Single
-              label={t().sort}
-              options={sortEntries(props.query, t())}
-              value={`${props.state.sort.field}.${props.state.sort.direction}`}
-              possible={(value) => props.canEdit((params) => params.set("sort", value))}
-              onChange={props.onSort}
+              label={t().sortBy}
+              options={choices().fields}
+              value={choices().field}
+              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().fields, value)))}
+              onChange={(value) => props.onSort(sortOf(choices().fields, value))}
+            />
+            <div class="k2-fsheet-sec">{t().order}</div>
+            <Single
+              label={t().order}
+              options={choices().orders}
+              value={choices().direction}
+              possible={(value) => props.canEdit((params) => params.set("sort", sortOf(choices().orders, value)))}
+              onChange={(value) => props.onSort(sortOf(choices().orders, value))}
             />
           </Show>
           <Show when={props.place?.display === "group"}>

@@ -18,6 +18,8 @@ type FieldIds = {
   control: string;
   /** The id of the label line. */
   label: string;
+  /** The words of the label line, for a control that names a part of its own after it (a search "Kunde suchen"). */
+  text: string;
   invalid: boolean;
   required: boolean;
   name?: string;
@@ -68,6 +70,9 @@ export const Field = (props: FieldProps) => {
       value={{
         control,
         label,
+        get text() {
+          return props.label;
+        },
         get invalid() {
           return !!props.error;
         },
@@ -144,7 +149,8 @@ Field.Row = (props: { children: JSX.Element }) => (
   </div>
 );
 
-const useField = () => useContext(FieldContext);
+/** The field a control stands in, if any (internal: the controls of v2 and `LookupSelect`). */
+export const useField = () => useContext(FieldContext);
 
 export type InputProps = {
   value?: string;
@@ -275,7 +281,8 @@ export type SelectProps = {
 
 /**
  * One value from a list: the round field shows it with a chevron, and the list opens below it with the keyboard,
- * typeahead and a check at the chosen option (the behaviour layer on the ui-sdk core). The list is at least as wide as
+ * typeahead and a tick at the end of the chosen option's row, where a menu and a filter put it (the behaviour layer on
+ * the ui-sdk core). The list is at least as wide as
  * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
  * field is required, put back by the form's reset, with a `change` event.
  */
@@ -329,10 +336,13 @@ export const Select = (props: SelectProps) => {
         collisionPadding={8}
         option={(item: ChoiceItem) => (
           <select.Item class="k2-mi" value={item.value} label={item.label} disabled={item.disabled}>
-            {item.label}
-            <select.ItemIndicator item={item.value} class="k2-mi-meta">
-              <Icon name="check" />
-            </select.ItemIndicator>
+            <span class="k2-mi-label">{item.label}</span>
+            {/* one choice: the tick at the end of the row, as in a menu and a filter's options */}
+            <span class="k2-mi-tick">
+              <select.ItemIndicator item={item.value}>
+                <Icon name="check" />
+              </select.ItemIndicator>
+            </span>
           </select.Item>
         )}
       />

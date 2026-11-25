@@ -289,12 +289,28 @@ const common = (spec: { readonly label: string; readonly op?: string; readonly c
 // Declaration and state
 // ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * What a sort orders, which names its two directions in words: `date` "Neueste zuerst" / "Älteste zuerst", `number`
+ * "Höchster zuerst" / "Niedrigster zuerst", `text` "A–Z" / "Z–A". Without it the words are "Aufsteigend" / "Absteigend".
+ */
+export type SortKind = "text" | "number" | "date";
+
 /** One sort the person may choose. */
 export type SortOption = {
   /** Final display text, such as "Price". */
   readonly label: string;
-  /** Directions offered, the first one is used when the sort is picked. Default `["asc", "desc"]`. */
+  /**
+   * Directions offered. Picking this sort keeps the direction shown when it is offered, else takes the first one.
+   * Default `["asc", "desc"]`.
+   */
   readonly directions?: readonly SortDirection[];
+  /** What the sort orders; it gives the words of its directions (see {@link SortKind}). */
+  readonly kind?: SortKind;
+  /**
+   * The app's own words for a direction, from its catalog, where the words of `kind` do not fit ("Größte zuerst" for
+   * a file size). They also stand in the sort's button: "Preis · Höchster zuerst".
+   */
+  readonly labels?: { readonly [D in SortDirection]?: string };
 };
 
 /** The sort of the state. */
