@@ -650,8 +650,14 @@ export const Table = <T,>(props: TableProps<T>) => {
   const [ownExpanded, setOwnExpanded] = createSignal<readonly string[]>(untrack(() => props.tree?.expanded ?? wayTo(props.current)));
   const expanded = () => props.tree?.expanded ?? ownExpanded();
   const setExpanded = (next: string[]) => {
+    // a row whose state changes is drawn anew; the focus it had stays on it
+    const kept = body?.contains(document.activeElement) ? focused() : undefined;
     if (props.tree?.expanded === undefined) setOwnExpanded(next);
     props.tree?.onExpandedChange?.(next);
+    if (kept !== undefined)
+      requestAnimationFrame(() => {
+        if (!body?.contains(document.activeElement)) focusRow(kept);
+      });
   };
   const [busy, setBusy] = createSignal<readonly string[]>([]);
   const [failed, setFailed] = createSignal<readonly string[]>([]);
