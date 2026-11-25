@@ -53,18 +53,31 @@ heartbeat lease expires within three minutes. Until expiry, an old route can
 point to the stopped service and return a gateway error. Other applications
 remain available.
 
-**Upgrading permanently deletes the removed application's platform records.**
-Core runs the cleanup even when the application is absent: its remembered
-registration, package assignment, app keys, grants, settings, rail entries,
-notifications, approvals, audit references and indexed Help are removed.
-Explicit grants to this app are removed from other workloads' mandates, and
-those workloads are paused for review. Other applications' data stays.
-Back up the database before upgrading if you need to preserve this history.
+**Upgrading permanently deletes the removed application's own records.**
+Core removes its remembered registration and package assignment, app keys and
+service accounts with their grants, settings and domains, rail entries and
+chooser/consent preferences, notification definitions and deliveries,
+approvals and remembered approval grants, Help/search documents and app Skill
+catalogs, app-owned Code, workflow runs/scopes and their AI admission/budget
+state, event subscriptions/outbox data, and its own capability execution and
+idempotency records. Explicit grants to this app are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through the removed app. Core writes
+one `app.removed` audit event with direct row-mutation counts per table;
+foreign-key cascades delete additional dependent rows. Other applications'
+data stays. Back up the database before upgrading if you need removed data.
+
+On large installations this transaction can extend Core startup and hold
+database locks while it deletes the old data. Wait for Core's readiness check
+to pass before starting the remaining applications.
 
 The application had no owned database schema or authored content, so there is
 no application content to export and no separate export command. The database
-schema named `capabilities` belongs to the platform and is kept; only records
-identifying the removed application are deleted from it.
+schema named `capabilities` belongs to the platform and is kept. Its execution
+history is deleted only where this application was the provider.
 
 The platform capability API, mandates, `cld capabilities`, Assistant and provider
 applications continue to work. Use `cld capabilities catalog` for discovery and

@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { migrateWorkflowAi } from "@k2b/cloud/ai/tasks";
+import { mandatePolicyAllows, parseMandatePolicy } from "@k2b/cloud/services/mandates";
 import { SQL } from "bun";
 import { suiteFor, useFreshDatabase } from "../../../../../scripts/fixtures/test-infra";
 import { migrate } from "./remove-capabilities-app";
@@ -31,6 +33,11 @@ suiteFor(
     // Core's fresh-install pass above already succeeded without any old application tables.
     await migrate(db);
 
+    await migrateWorkflowAi(db);
+    await db`DELETE FROM audit.events WHERE action = 'app.removed' AND target_id = ${retired}`;
+    // Legacy runs could outlive a missing definition before the scope foreign keys existed.
+    await db`ALTER TABLE workflows.run DROP CONSTRAINT run_workflow_scope_fk,
+      DROP CONSTRAINT run_workflow_version_id_workflow_id_fkey`.simple();
     await db`DELETE FROM settings.migrations WHERE name = ${`remove-${retired}-app-v1`}`;
     await db`CREATE SCHEMA IF NOT EXISTS platform`.simple();
     await db`CREATE TABLE IF NOT EXISTS platform.application_packages(app_id TEXT PRIMARY KEY, package_name TEXT NOT NULL)`.simple();
@@ -100,11 +107,37 @@ suiteFor(
         VALUES (${appId}, 'http', ${appId}, 'old.query', 'query', 'succeeded')`;
       await db`INSERT INTO capabilities.idempotency_claims(app_id, capability, principal, key_hash, request_hash, state)
         VALUES (${appId}, 'old.action', ${appId}, 'old', 'digest', 'succeeded')`;
+      await db`INSERT INTO ai.inference_calls(id, model_profile_id, kind, task, provider_model, app_id, lease_expires_at, cost)
+        VALUES (${crypto.randomUUID()}::uuid, 'test-profile', 'background', 'old-task', 'test-model', ${appId}, ${instant}::timestamptz, 0.25)`;
+      await db`INSERT INTO outgoing_mail.messages(id, app_id, profile_key, lane, to_addresses, recipient_count, subject,
+        message_id_header, status, deadline_at)
+        VALUES (${crypto.randomUUID()}::uuid, ${appId}, 'old', 'immediate', ARRAY['example@example.test'], 1,
+          'Old mail', ${appId}, 'sent', ${instant}::timestamptz)`;
+      await db`INSERT INTO logging.entries(source, message, metadata)
+        VALUES ('old-app', 'Historical log', ${JSON.stringify({ appId })}::text::jsonb)`;
+      await db`INSERT INTO logging.trace_spans(trace_id, span_id, name, source, app_id)
+        VALUES (${appId}, 'old-span', 'Old operation', 'old-app', ${appId})`;
+      await db`INSERT INTO ai.workflow_scope_budget(app_id, scope_id, tokens) VALUES (${appId}, 'old', 1)`;
+      await db`INSERT INTO ai.workflow_scope_admission(app_id, scope_id, source_id, task_id)
+        VALUES (${appId}, 'old', 'old', ${crypto.randomUUID()}::uuid)`;
+      await db`INSERT INTO workflows.run(app_id, scope_id, workflow_id, workflow_version_id, mode, authorization_snapshot,
+        idempotency_key, occurred_at)
+        VALUES (${appId}, 'old', ${crypto.randomUUID()}::uuid, ${crypto.randomUUID()}::uuid, 'execute',
+          '{}'::jsonb, ${appId}, ${instant}::timestamptz)`;
       await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy)
         VALUES ('user', ${userId}::uuid, ${appId}, 'old.workload', 'old',
           '{"version":1,"apps":["surviving-app"],"operations":["search.query"],"actions":"deny"}'::jsonb)`;
     }
 
+    // The provider's execution history remains even when the removed app was its caller.
+    await db`INSERT INTO capabilities.executions(request_id, origin, app_id, capability, kind, status, via_app_id, actor_app_id)
+      VALUES ('foreign-provider', 'app', ${survivor}, 'old.query', 'query', 'succeeded', ${retired}, ${retired})`;
+    await db`INSERT INTO audit.events(action, outcome, target_type, target_id, target_provider)
+      VALUES ('identity.history', 'allowed', 'user', 'unrelated-user', ${retired})`;
+    const noGrantsPolicy = { version: 1, apps: [retired, survivor], operations: ["search.query"], actions: "deny" };
+    await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy)
+      VALUES ('user', ${users[1]!}::uuid, 'no-grants-workload', 'old.workload', 'no-grants',
+        ${JSON.stringify(noGrantsPolicy)}::text::jsonb)`;
     // A lookalike namespace must survive; no substring/prefix-without-boundary deletion.
     await db`INSERT INTO settings.entries(key, value) VALUES (${`${retired}-other.setting`}, 'keep')`;
     // Preserve another workload while narrowing only its explicit reference to the removed provider.
@@ -142,6 +175,17 @@ suiteFor(
       return rows;
     };
     const before = await snapshot(survivor);
+    const retainedTables = new Set([
+      "ai.inference_calls",
+      "ai.structured_runs",
+      "outgoing_mail.messages",
+      "logging.trace_spans",
+      "logging.run_minutes",
+    ]);
+    const retiredBefore = await snapshot(retired);
+    const historicalAudit = await db`SELECT * FROM audit.events ORDER BY id`;
+    const historicalLogs = await db`SELECT * FROM logging.entries WHERE source = 'old-app' ORDER BY id`;
+
     const [railBefore] = await db`SELECT * FROM auth.rail_preferences WHERE user_id = ${users[1]!}::uuid`;
     // A late failure must roll back earlier deletes (and the schema drop), including the receipt.
     await db`CREATE FUNCTION core.fail_retirement() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -153,49 +197,94 @@ suiteFor(
     await db`DROP FUNCTION core.fail_retirement()`.simple();
     expect((await db`SELECT id FROM core.known_apps WHERE id = ${retired}`).length).toBe(1);
     expect((await db`SELECT id FROM auth.service_account_credentials WHERE id = ${credentials[0]!}::uuid`).length).toBe(1);
-    expect(await db`SELECT name FROM settings.migrations WHERE name = ${`remove-${retired}-app-v1`}`).toEqual([]);
+    expect<unknown>(await db`SELECT name FROM settings.migrations WHERE name = ${`remove-${retired}-app-v1`}`).toEqual([]);
 
     await migrate(db);
     await migrate(db);
     expect(await snapshot(survivor)).toEqual(before);
-    for (const rows of Object.values(await snapshot(retired))) expect(rows).toEqual([]);
-    expect(await db`SELECT id FROM core.known_apps WHERE id = ${retired}`).toEqual([]);
-    expect(await db`SELECT key FROM settings.entries WHERE key = ${`${retired}.example`}`).toEqual([]);
-    expect(await db`SELECT value FROM settings.entries WHERE key = ${`${retired}-other.setting`}`).toEqual([{ value: "keep" }]);
-    expect(await db`SELECT id FROM auth.access WHERE id IN (${grants[0]!}::uuid, ${grants[1]!}::uuid)`).toEqual([]);
+    for (const [table, rows] of Object.entries(await snapshot(retired))) {
+      expect(rows).toEqual(retainedTables.has(table) ? retiredBefore[table] : []);
+    }
+    expect<unknown>(await db`SELECT * FROM audit.events WHERE action NOT IN ('app.removed', 'mandate.pause') ORDER BY id`).toEqual(
+      historicalAudit,
+    );
+    expect<unknown>(await db`SELECT * FROM logging.entries WHERE source = 'old-app' ORDER BY id`).toEqual(historicalLogs);
+    expect<unknown>(await db`SELECT id FROM core.known_apps WHERE id = ${retired}`).toEqual([]);
+    expect<unknown>(await db`SELECT key FROM settings.entries WHERE key = ${`${retired}.example`}`).toEqual([]);
+    expect<unknown>(await db`SELECT value FROM settings.entries WHERE key = ${`${retired}-other.setting`}`).toEqual([{ value: "keep" }]);
+    expect<unknown>(await db`SELECT id FROM auth.access WHERE id IN (${grants[0]!}::uuid, ${grants[1]!}::uuid)`).toEqual([]);
     expect((await db`SELECT id FROM auth.access WHERE id IN (${grants[2]!}::uuid, ${grants[3]!}::uuid)`).length).toBe(2);
-    expect(await db`SELECT id FROM auth.service_account_credentials WHERE id = ${credentials[0]!}::uuid`).toEqual([]);
+    expect<unknown>(await db`SELECT id FROM auth.service_account_credentials WHERE id = ${credentials[0]!}::uuid`).toEqual([]);
     expect((await db`SELECT id FROM auth.service_account_credentials WHERE id = ${credentials[1]!}::uuid`).length).toBe(1);
-    expect(await db`SELECT key_id FROM auth.app_proof_replays WHERE key_id = ${credentials[0]!}::uuid`).toEqual([]);
-    expect(await db`SELECT id FROM approvals.requests WHERE app_id = ${retired} OR requester_app_id = ${retired}`).toEqual([]);
-    expect(await db`SELECT id FROM audit.events WHERE target_type = 'app' AND target_id = ${retired}`).toEqual([]);
-    expect(await db`SELECT provider FROM auth.panel_context_consent WHERE provider = ${retired}`).toEqual([]);
-    expect(await db`SELECT id FROM auth.rail_shortcuts WHERE shortcut->>'appId' = ${retired}`).toEqual([]);
-    expect(await db`SELECT visibility, shortcuts, revision FROM auth.rail_preferences WHERE user_id = ${users[0]!}::uuid`).toEqual([
-      {
-        visibility: {},
-        revision: 2,
-        shortcuts: [{ id: "link", kind: "link", href: "/notes", title: "Notes", icon: "ti ti-link" }],
-      },
-    ]);
+    expect<unknown>(await db`SELECT key_id FROM auth.app_proof_replays WHERE key_id = ${credentials[0]!}::uuid`).toEqual([]);
+    expect<unknown>(await db`SELECT id FROM approvals.requests WHERE app_id = ${retired} OR requester_app_id = ${retired}`).toEqual([]);
+    expect((await db`SELECT id FROM audit.events WHERE action = 'app.access.changed' AND target_id = ${retired}`).length).toBe(1);
+    expect<unknown>(await db`SELECT provider FROM auth.panel_context_consent WHERE provider = ${retired}`).toEqual([]);
+    expect<unknown>(await db`SELECT id FROM auth.rail_shortcuts WHERE shortcut->>'appId' = ${retired}`).toEqual([]);
+    expect<unknown>(await db`SELECT visibility, shortcuts, revision FROM auth.rail_preferences WHERE user_id = ${users[0]!}::uuid`).toEqual(
+      [
+        {
+          visibility: {},
+          revision: 2,
+          shortcuts: [{ id: "link", kind: "link", href: "/notes", title: "Notes", icon: "ti ti-link" }],
+        },
+      ],
+    );
     expect((await db`SELECT * FROM auth.rail_preferences WHERE user_id = ${users[1]!}::uuid`)[0]).toEqual(railBefore);
-    expect(await db`SELECT policy, state, revision::int AS revision FROM auth.mandates WHERE owner_app_id = 'mixed-workload'`).toEqual([
+    expect<unknown>(
+      await db`SELECT policy, state, revision::int AS revision FROM auth.mandates WHERE owner_app_id = 'mixed-workload'`,
+    ).toEqual([
       {
         policy: { ...mixedPolicy, apps: [survivor], grants: mixedPolicy.grants.filter((grant) => grant.appId === survivor) },
         state: "paused",
         revision: 2,
       },
     ]);
-    expect(await db`SELECT id FROM auth.mandates WHERE owner_app_id = ${retired}`).toEqual([]);
-    expect(await db`SELECT policy, state FROM auth.mandates WHERE owner_app_id = 'exclusive-workload'`).toEqual([
+    expect<unknown>(await db`SELECT id FROM auth.mandates WHERE owner_app_id = ${retired}`).toEqual([]);
+    const [noGrants] = await db<{ policy: unknown; state: string }[]>`SELECT policy, state FROM auth.mandates
+      WHERE owner_app_id = 'no-grants-workload'`;
+    expect(noGrants).toEqual({ policy: { ...noGrantsPolicy, apps: [survivor] }, state: "paused" });
+    expect(
+      mandatePolicyAllows(parseMandatePolicy(noGrants?.policy), {
+        appId: survivor,
+        operation: "search.query",
+        actionApproval: "none",
+      }),
+    ).toBe(true);
+    const removal = await db<{ metadata: { counts: Record<string, number> } }[]>`SELECT metadata FROM audit.events
+      WHERE action = 'app.removed' AND target_id = ${retired}`;
+    expect(removal).toHaveLength(1);
+    expect(removal[0]?.metadata.counts).toMatchObject({
+      "auth.service_accounts": 1,
+      "auth.access": 2,
+      "auth.mandates": 4,
+      "workflows.run": 1,
+      "ai.workflow_scope_budget": 1,
+      "ai.workflow_scope_admission": 1,
+      "settings.entries": 1,
+      "notifications.events": 1,
+      "help.corpora": 1,
+      "platform.application_packages": 1,
+    });
+    const pauses = await db<
+      { target_id: string; metadata: { expectedRevision: number; removedAppId: string } }[]
+    >`SELECT target_id, metadata
+      FROM audit.events WHERE action = 'mandate.pause' ORDER BY target_id`;
+    expect(pauses).toHaveLength(3);
+    for (const pause of pauses) {
+      expect(pause.metadata).toMatchObject({ expectedRevision: 1, removedAppId: retired });
+      expect((await db`SELECT state FROM auth.mandates WHERE id = ${pause.target_id}::uuid`)[0]?.state).toBe("paused");
+    }
+
+    expect<unknown>(await db`SELECT policy, state FROM auth.mandates WHERE owner_app_id = 'exclusive-workload'`).toEqual([
       {
         policy: { ...exclusivePolicy, apps: [], actions: "deny", grants: [] },
         state: "paused",
       },
     ]);
-    expect(await db`SELECT id FROM notifications.events WHERE definition_id = ${`${retired}.changed`}`).toEqual([]);
-    expect(await db`SELECT id FROM notifications.deliveries WHERE destination_key = ${retired}`).toEqual([]);
-    expect(await db`SELECT user_id FROM notifications.preferences WHERE definition_id = ${`${retired}.changed`}`).toEqual([]);
+    expect<unknown>(await db`SELECT id FROM notifications.events WHERE definition_id = ${`${retired}.changed`}`).toEqual([]);
+    expect<unknown>(await db`SELECT id FROM notifications.deliveries WHERE destination_key = ${retired}`).toEqual([]);
+    expect<unknown>(await db`SELECT user_id FROM notifications.preferences WHERE definition_id = ${`${retired}.changed`}`).toEqual([]);
 
     expect((await db`SELECT to_regclass('capabilities.executions') IS NOT NULL AS present`)[0]?.present).toBe(true);
   }, 120_000);
