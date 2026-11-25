@@ -1330,7 +1330,7 @@ const SaveDialog = (props: {
         </>
       }
     >
-      <Field label={t().name} error={error()}>
+      <Field label={t().name} hint={t().nameHint} error={error()}>
         <Input
           value={name()}
           onInput={setName}
