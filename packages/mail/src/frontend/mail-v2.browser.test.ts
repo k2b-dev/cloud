@@ -224,6 +224,24 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // The frame is a sandboxed document: it loads Cloud's shared faces across origins (Core sends them with CORS).
+  test("a message's text reads in IBM Plex Sans, not in the system's font", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      const frame = page.frameLocator('[data-k2-part="Pane"][data-detail] iframe').first();
+      await frame.locator("p").first().waitFor();
+      const plex = await frame.locator("body").evaluate(async () => {
+        await document.fonts.ready;
+        const faces = [...document.fonts].filter((face) => face.family.replaceAll('"', "") === "IBM Plex Sans");
+        return { declared: faces.length > 0, loaded: faces.some((face) => face.status === "loaded") };
+      });
+      expect(plex).toEqual({ declared: true, loaded: true });
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Forward in the reader's More opens Mail's reply box as a forward", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {

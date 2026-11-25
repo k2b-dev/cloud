@@ -98,6 +98,12 @@ document.documentElement.dataset.mailV2Ready='true';
       if (url.pathname === "/mail-v2-shell.js") return new Response(shell, { headers: { "content-type": "text/javascript" } });
       if (url.pathname.startsWith("/_ssr/")) return new Response(Bun.file(join(root, url.pathname)));
       if (url.pathname.startsWith("/ui/")) return new Response(Bun.file(join(ui, url.pathname.slice(4))));
+      // Cloud's shared typeface as Core serves it; the message frame (a sandboxed document) loads it across origins.
+      if (url.pathname === "/public/fonts.css") return new Response(Bun.file(join(ui, "plex.css")));
+      if (url.pathname.startsWith("/public/fonts/") && !url.pathname.includes(".."))
+        return new Response(Bun.file(join(ui, "fonts", url.pathname.slice("/public/fonts/".length))), {
+          headers: { "Access-Control-Allow-Origin": "*" },
+        });
       if (url.pathname.endsWith("/workspace-route") || url.pathname.endsWith("/workspace-list")) {
         const target = new URL(url.searchParams.get("href") ?? MAIL_V2_PATH, server.url);
         return Response.json(data(target));

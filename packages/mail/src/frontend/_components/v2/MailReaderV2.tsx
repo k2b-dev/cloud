@@ -24,11 +24,15 @@ import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
 
 /**
- * The message frame's defaults on v2 (mockup mail.html): reading text 14/22 in the second text colour (n800), 8 px
- * between paragraphs and none above the first. The frame cannot read the page's tokens, so the values stand here; each
- * selector weighs no more than a message's own, which follow and win, so an HTML mail keeps its fonts and spacing.
+ * The message frame's defaults on v2 (mockup mail.html): reading text in IBM Plex Sans 14/22 (the frame loads Cloud's
+ * shared faces, `sharedFonts`; system-ui stands in until they arrive) in the second text colour (n800), 8 px between
+ * paragraphs and none above the first or after the last, so the attachments follow at the band's own gap. The frame
+ * cannot read the page's tokens, so the values stand here; each selector weighs no more than a message's own, which
+ * follow and win, so an HTML mail keeps its fonts and spacing.
  */
-const MAIL_V2_FRAME_STYLE = "body { font-size: 14px; line-height: 22px; color: #27272a; } p { margin: 0 0 8px; }";
+const MAIL_V2_FRAME_STYLE =
+  'body { font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 14px; line-height: 22px; color: #27272a; } ' +
+  "p { margin: 0 0 8px; } p:last-child { margin-bottom: 0; }";
 
 const attachmentIcon = (contentType: string, name: string): string => {
   if (contentType === "application/pdf" || name.toLowerCase().endsWith(".pdf")) return "file-type-pdf";
@@ -183,6 +187,7 @@ function MessageV2(props: {
                 remoteContent={props.message.remoteContent}
                 linksDisabled={props.message.security?.linksDisabled ?? false}
                 frameStyle={MAIL_V2_FRAME_STYLE}
+                sharedFonts
                 onSelectionChange={() => undefined}
               />
             </div>
