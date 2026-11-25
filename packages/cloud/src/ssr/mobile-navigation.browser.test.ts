@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, settled } from "../../../ui/test/browser";
 
 const ui = resolve(import.meta.dir, "../../../ui");
 let browser: Browser;
@@ -89,4 +89,35 @@ test("the phone menu uses each app's accent for its active row, switcher icon an
     }
   }
   expect(colors[0]).not.toBe(colors[1]);
+}, 20_000);
+
+// A fold without a symbol ("Mehr") among folders with one keeps the symbol's place, so its words start on the folders'
+// edge (Mail on the phone, image 08: "Mehr" stood 27 px further out).
+test("in the phone menu a row without a symbol starts its words on the edge of the rows beside it", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const html =
+      `<!doctype html><html lang="de" data-folds><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>` +
+      // icons take one em without their font, as the icon font draws them
+      "<style>.ti { display: inline-block; width: 1em; height: 1em; }</style></head>" +
+      '<body class="k2b-ui"><div id="workspace"></div></body></html>';
+    await page.route("http://localhost/mobile-navigation", (route) => route.fulfill({ contentType: "text/html", body: html }));
+    await page.goto("http://localhost/mobile-navigation");
+    await page.addScriptTag({ content: harness });
+    await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+    await page.locator("dialog .k2b-navigation").waitFor({ state: "visible" });
+    await settled(page);
+    const edges = await page.evaluate(() =>
+      Object.fromEntries(
+        [...document.querySelectorAll("dialog .k2b-navigation__copy")].map((copy) => [
+          copy.textContent?.trim(),
+          Math.round(copy.getBoundingClientRect().left),
+        ]),
+      ),
+    );
+    expect(edges.Mehr).toBe(edges.Posteingang);
+    expect(edges.Lieferanten).toBe(edges.Posteingang);
+  } finally {
+    await page.close();
+  }
 }, 20_000);

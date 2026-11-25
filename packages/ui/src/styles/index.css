@@ -21802,6 +21802,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
 .k2b-ui .k2b-navigation__copy { display: flex; flex: 1; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
 .k2b-ui .k2b-navigation__copy small { color: var(--k2b-text-muted); font-weight: 400; }
 .k2b-ui .k2b-navigation__control > i, .k2b-ui .k2b-navigation__badge { flex-shrink: 0; }
+/* the place of a symbol in a row without one, beside rows with one: as wide as a symbol */
+.k2b-ui .k2b-navigation__icon-space { flex: 0 0 1em; width: 1em; }
 .k2b-ui .k2b-navigation__badge { color: var(--k2b-text-muted); font-size: .8rem; font-variant-numeric: tabular-nums; }
 .k2b-ui .k2b-navigation__color { flex: 0 0 .5rem; height: .5rem; border-radius: 50%; }
 .k2b-ui .k2b-navigation__disclosure { flex: 0 0 44px; height: 44px; border: 0; background: transparent; color: var(--k2b-text-muted); }
