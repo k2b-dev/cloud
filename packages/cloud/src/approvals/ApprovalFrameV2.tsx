@@ -73,10 +73,10 @@ export function ApprovalFrameV2(props: { frame: ApprovalFrameProps; place: Appro
   createEffect(
     on(
       () => p.state,
+      // Not deferred: a deferred `on` has no previous state on its first change.
       (state, previous) => {
         if (previous === "open" && state !== "open") setDetailsOpen(false);
       },
-      { defer: true },
     ),
   );
 
