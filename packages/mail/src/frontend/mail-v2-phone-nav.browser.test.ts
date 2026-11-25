@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { resolve } from "node:path";
 import type {} from "@k2b/cloud/ssr/workspace-navigation";
-import type { Browser, Page } from "playwright";
+import type { Browser } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../ui/test/browser";
 import { MAIL_V2_NOW } from "./mail-v2.browser-clock";
 
@@ -68,11 +68,6 @@ const shape = (items: readonly Entry[]): unknown[] =>
 
 const flat = (items: readonly Entry[]): Entry[] => items.flatMap((item) => [item, ...flat(item.children ?? [])]);
 
-let page: Page | undefined;
-afterAll(async () => {
-  await page?.close();
-});
-
 test("390 px: the shell's menu lists the mailboxes and folders, and a folder chosen there opens in place", async () => {
   // The first render, as the server sends it: the menu's entries come with the page.
   const html = await (await fetch(`${server.url}${MAIL_V2_PATH}`)).text();
@@ -84,43 +79,49 @@ test("390 px: the shell's menu lists the mailboxes and folders, and a folder cho
   expect(filed?.label).toBe("Lieferanten");
   expect(entries.find((entry) => entry.active)?.label).toBe("Kontakt");
 
-  page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
-  const errors = pageErrors(page);
-  const lists: string[] = [];
-  page.on("request", (request) => {
-    if (/\/workspace-(route|list)/.test(request.url())) lists.push(new URL(request.url()).searchParams.get("href") ?? "");
-  });
-  await page.goto(`${server.url}${MAIL_V2_PATH}`);
-  await page.waitForFunction(() => document.documentElement.dataset.mailV2Ready === "true", undefined, { timeout: 30_000 });
-  // The island registers the same entries the server sent.
-  const live = await page.evaluate(() => JSON.stringify(window.__cloudWorkspaceNavigation?.navigation.items() ?? null));
-  expect(shape(JSON.parse(live))).toEqual(shape(first));
-  expect(await page.evaluate(() => window.__cloudWorkspaceNavigation?.label)).toBe("Kontakt");
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  try {
+    const errors = pageErrors(page);
+    const lists: string[] = [];
+    page.on("request", (request) => {
+      if (/\/workspace-(route|list)/.test(request.url())) lists.push(new URL(request.url()).searchParams.get("href") ?? "");
+    });
+    await page.goto(`${server.url}${MAIL_V2_PATH}`);
+    await page.waitForFunction(() => document.documentElement.dataset.mailV2Ready === "true", undefined, { timeout: 30_000 });
+    // The island registers the same entries the server sent.
+    const live = await page.evaluate(() => JSON.stringify(window.__cloudWorkspaceNavigation?.navigation.items() ?? null));
+    expect(shape(JSON.parse(live))).toEqual(shape(first));
+    expect(await page.evaluate(() => window.__cloudWorkspaceNavigation?.label)).toBe("Kontakt");
 
-  // The phone bar's title opens the real menu.
-  await page.addScriptTag({ content: menu });
-  await page.getByRole("button", { name: "Menü öffnen" }).dispatchEvent("click");
-  const sheet = page.locator("dialog .k2b-navigation");
-  await sheet.waitFor({ state: "visible" });
-  await settled(page);
-  expect(await sheet.locator('[aria-current="page"]').textContent()).toContain("Kontakt");
-  // a page that loads anew forgets this mark; one that opens in place keeps it
-  await page.evaluate(() => document.documentElement.setAttribute("data-same-page", ""));
-  await sheet.getByRole("link", { name: "Lieferanten" }).tap();
+    // The phone bar's title opens the real menu.
+    await page.addScriptTag({ content: menu });
+    await page.getByRole("button", { name: "Menü öffnen" }).dispatchEvent("click");
+    const sheet = page.locator("dialog .k2b-navigation");
+    await sheet.waitFor({ state: "visible" });
+    await settled(page);
+    expect(await sheet.locator('[aria-current="page"]').textContent()).toContain("Kontakt");
+    // a page that loads anew forgets this mark; one that opens in place keeps it
+    await page.evaluate(() => document.documentElement.setAttribute("data-same-page", ""));
+    await sheet.getByRole("link", { name: "Lieferanten" }).tap();
+    // the menu closes as a chosen entry opens
+    await page.locator("dialog[open]").waitFor({ state: "detached" });
 
-  // The address and the list follow, in place, and the folder is the open one.
-  await page.waitForURL((url) => url.searchParams.get("folder") === "Filed1");
-  await page.waitForFunction(() =>
-    window.__cloudWorkspaceNavigation?.navigation
-      .items()
-      .flatMap(function all(item): { label: string; active?: boolean }[] {
-        return [item, ...(item.children ?? []).flatMap(all)];
-      })
-      .some((item) => item.label === "Lieferanten" && item.active),
-  );
-  expect(lists.some((href) => href.includes("folder=Filed1"))).toBe(true);
-  expect(await page.locator('[data-k2-part="Nav.Item"][aria-current="page"]').textContent()).toContain("Lieferanten");
-  await page.locator('[data-k2-part="List"] > [data-k2-part="Row"]').first().waitFor();
-  expect(await page.evaluate(() => document.documentElement.hasAttribute("data-same-page"))).toBe(true);
-  expect(errors).toEqual([]);
+    // The address and the list follow, in place, and the folder is the open one.
+    await page.waitForURL((url) => url.searchParams.get("folder") === "Filed1");
+    await page.waitForFunction(() =>
+      window.__cloudWorkspaceNavigation?.navigation
+        .items()
+        .flatMap(function all(item): { label: string; active?: boolean }[] {
+          return [item, ...(item.children ?? []).flatMap(all)];
+        })
+        .some((item) => item.label === "Lieferanten" && item.active),
+    );
+    expect(lists.some((href) => href.includes("folder=Filed1"))).toBe(true);
+    expect(await page.locator('[data-k2-part="Nav.Item"][aria-current="page"]').textContent()).toContain("Lieferanten");
+    await page.locator('[data-k2-part="List"] > [data-k2-part="Row"]').first().waitFor();
+    expect(await page.evaluate(() => document.documentElement.hasAttribute("data-same-page"))).toBe(true);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
 }, 90_000);
