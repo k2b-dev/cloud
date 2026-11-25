@@ -2889,10 +2889,6 @@
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
     display: none;
   }
-  .k2-ui .k2-row[data-digest] {
-    grid-template-columns: 16px minmax(0, 1fr) auto;
-    grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
-  }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2918,6 +2914,12 @@
   container: k2-pane / inline-size;
 }
 @container k2-pane (max-width: 479px) {
+  /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
+     break after every word (akte.html at 1024 px, where the record's main column is 400 px) */
+  .k2-ui .k2-row[data-digest] {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
+  }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;

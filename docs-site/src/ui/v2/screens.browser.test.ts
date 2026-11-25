@@ -378,11 +378,15 @@ describe("v2 demo screens keep the mockup", () => {
               return r.top >= start.top - 0.5 && r.bottom <= start.bottom + 0.5;
             })
             .map((part) => part.textContent?.trim() || part.getAttribute("aria-label"));
-          return { apart: start.right <= end.left, startHeight: start.height, shown };
+          // the newest entries of the record's main column (400 px here) stand one under the other, so their text keeps
+          // whole lines instead of breaking after every word
+          const digest = document.querySelector(".k2-digest-text")?.getBoundingClientRect().width ?? null;
+          return { apart: start.right <= end.left, startHeight: start.height, shown, digest };
         });
         expect(found.apart).toBe(true);
         expect(found.startHeight).toBe(32);
         expect(found.shown.slice(0, 2)).toEqual(["OB", "Ottilie Brandner"]);
+        if (name === "record") expect(found.digest).toBeGreaterThan(300);
       } finally {
         await page.close();
       }
