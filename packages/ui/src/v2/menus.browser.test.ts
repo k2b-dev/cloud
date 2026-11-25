@@ -268,6 +268,10 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
     expect(Math.round(900 - (t.y + t.height))).toBe(16);
     expect(t.height).toBe(44);
     expect(await toast.locator(".k2-toast-text").textContent()).toBe("Auftrag gespeichert");
+    // the page's one region is the Workspace's, also for a toast asked for above the Workspace (no region of its own)
+    expect(
+      await page.evaluate(() => [...document.querySelectorAll('[data-slot="toast-region"]')].map((el) => el.closest(".k2-ws") !== null)),
+    ).toEqual([true]);
     // a landmark while it holds toasts, named in the page's language
     expect(await page.getByRole("region", { name: "Benachrichtigungen" }).count()).toBe(1);
     // an open on-screen keyboard: core writes its height on the region, and the toast stays above it
