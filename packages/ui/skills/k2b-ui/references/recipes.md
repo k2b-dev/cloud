@@ -99,3 +99,33 @@ too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 
 - The lead says the one thing; the rest are facts, which leave on the phone.
 - A deed per row is a `Button variant="text"` in its own last column.
+
+## content.tsx: a page to read
+
+![content at 1440 px](../images/content-1440.png)
+![content at 390 px](../images/content-390.png)
+
+A head `Bar` with the title as `Text type="lead"`, a ghost "Teilen" and
+the one primary "Bearbeiten" (mirrored as `Workspace primary`); a `Band`
+with the text as `Prose markdown` (rendered safely: no raw HTML, no images,
+only web and mail links); a `Section` with a key in `Facts` (`mono`,
+`copy`); the files as `Tiles` in a `Section` with a count; a plan of its own
+in a `Canvas` with `height`, directly in its `Section`. `states` exports
+empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
+(`Failed`), each in place of the text below the head.
+
+- Writing the text happens behind "Bearbeiten": the Markdown editor of
+  `@k2b/editor` has no v2 form yet (gap).
+- Code to read and copy is a `Facts` item with `mono` and `copy`; a code
+  block with highlighting is a gap. Media open from their `Tiles`; an image
+  or video viewer is a gap.
+- A chart is a `Chart` of `@k2b/ui` in a `Canvas` in its `Section`, sized
+  `style={{ height: "100%" }}`. Inside `.k2-ui` it takes the v2 font, the
+  meta role (12 px), the v2 inks and lines, the surface as separator in
+  both themes, the text edge in a `Canvas`, and a tooltip like a v2
+  overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
+  every Cloud page has; with `v2.css` alone a chart has no size (gap), so
+  this recipe draws its plan itself.
+- With no data, put `Empty` in place of the `Canvas`. `Loading` and
+  `Failed` hold rows, not the height of a drawing, so the page moves while a
+  chart loads (gap).

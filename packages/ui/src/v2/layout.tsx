@@ -612,10 +612,26 @@ Cells.Cell = (props: CellProps) => {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Tile = { icon: string; title: string; meta?: string; href?: string };
+export type Tile = {
+  /** A Tabler icon for the kind of thing, such as `file-type-pdf`. */
+  icon: string;
+  /** The name, such as a file name. */
+  title: string;
+  /** A quiet line under the name, such as the size. */
+  meta?: string;
+  /** The tile opens this page or file. */
+  href?: string;
+};
 
 /** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
-export type TilesProps = { items: readonly Tile[]; more?: Action; label?: string };
+export type TilesProps = {
+  /** The tiles, in order. */
+  items: readonly Tile[];
+  /** One deed after the tiles, such as "Alle herunterladen". */
+  more?: Action;
+  /** A name for the tiles, for assistive technology. */
+  label?: string;
+};
 
 export const Tiles = (props: TilesProps) => (
   <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
@@ -645,6 +661,7 @@ export type CanvasProps = {
   label: string;
   /** The height of the drawing in px; the width comes from its place. */
   height?: number;
+  /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
 
