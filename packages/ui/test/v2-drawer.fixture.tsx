@@ -31,7 +31,8 @@ export function Fixture() {
     <LocaleProvider locale="de">
       <Workspace
         sidebarLabel="Breite der Seitenleiste"
-        detail={declared()}
+        detail={declared() ? true : undefined}
+        detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt" }}
         sidebar={<Nav title="Mail" icon="mail" groups={[{ items: items.map((item, index) => ({ ...item, current: index === 0 })) }]} />}
         head={
           <Bar

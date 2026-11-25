@@ -12,7 +12,7 @@ import { textEdge } from "./tokens";
 // The sidebar as a drawer (concept: "Schublade am Tablet"), on the page the server sent and after it came alive.
 // The fixture is Mail's workspace in small: sidebar 248, list 320 to 432, a reader that keeps 400 and that the workspace
 // declares. The sidebar stays a column while the workspace holds it at its default beside every column at its minimum,
-// the declared reader counted also while it is closed: 248 + 1 + 320 + 1 + 400 and the outer edge of 2 make 972 px.
+// the declared reader counted also while it is closed: 248 + 1 + 320 + 1 + 400 = 970 px inside the workspace's edge.
 // Mail's workspace at a window of 1024 px is 958 px wide, so there the sidebar is a drawer, with or without a message
 // open: a click never moves the sidebar between column and drawer.
 
@@ -37,7 +37,10 @@ afterAll(async () => {
   rmSync(temp, { recursive: true, force: true });
 });
 
-/** The page as the server sent it; with `live` (the default) hydrated, as an island would be. */
+/**
+ * The page as the server sent it; with `live` (the default) hydrated, which is stricter than an island of
+ * `@k2b/ssr` (it renders again over the server's markup): a node the client would make differently fails here.
+ */
 const withPage = async (run: (page: Page) => Promise<void>, { width = 1024, live = true } = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
@@ -137,9 +140,13 @@ test("a wide window: the sidebar is a column, no button; the drawer that is open
   await withPage(async (page) => {
     await toggle(page).click();
     await page.locator('[data-k2-part="Drawer"]').waitFor();
+    // the focus is in the drawer when it closes: it goes to the column's current entry, not to the hidden button
+    expect(await page.evaluate(() => document.querySelector('[data-k2-part="Drawer"]')?.contains(document.activeElement))).toBe(true);
     await page.setViewportSize({ width: 1440, height: 800 });
     await page.locator('[data-k2-part="Drawer"]').waitFor({ state: "detached" });
     await settled(page);
+    await page.waitForFunction(() => document.activeElement?.closest(".k2-ws-side") !== null);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-current"))).toBe("page");
     expect((await box(page.locator(".k2-ws-side"))).width).toBe(248);
     expect(await shown(toggleElement(page))).toBe(false);
     const workspace = await box(page.locator(".k2-ws"));
@@ -148,19 +155,75 @@ test("a wide window: the sidebar is a column, no button; the drawer that is open
   });
 });
 
-test("opening and closing the reader never moves the sidebar; alone the list fills the room", async () => {
+// The declared detail keeps its place while it is closed: an empty state stands there, so opening or closing a message
+// moves nothing, neither the sidebar nor the list, at a tablet's width and at a wide one.
+for (const width of [1024, 1440])
+  test(`at ${width} px opening and closing the reader moves nothing; while it is closed its place says so`, async () => {
+    await withPage(
+      async (page) => {
+        const where = () =>
+          page.evaluate(() =>
+            [".k2-ws-side", ".k2-ws-toggle", 'section[aria-label="Liste"]', ".k2-split > .k2-seam .k2-grip"].map((selector) => {
+              const found = document.querySelector(selector)?.getBoundingClientRect();
+              return found && found.width > 0 ? [Math.round(found.x), Math.round(found.width)] : null;
+            }),
+          );
+        const open = await where();
+        await page.evaluate(() => window.__k2Reader?.(false));
+        await settled(page);
+        expect(await where()).toEqual(open);
+        const empty = page.locator(".k2-split > [data-detail-empty]");
+        expect(await empty.getAttribute("aria-label")).toBe("Keine Nachricht ausgewählt");
+        expect(await empty.locator('[data-k2-part="Empty"]').textContent()).toContain("Keine Nachricht ausgewählt");
+        expect((await box(empty)).width).toBeGreaterThanOrEqual(400);
+        expect((await measureV2Layout(page, { root: ".k2-ws" })).problems).toEqual([]);
+        await page.evaluate(() => window.__k2Reader?.(true));
+        await settled(page);
+        expect(await where()).toEqual(open);
+        expect(await page.locator("[data-detail-empty]").count()).toBe(0);
+      },
+      { width },
+    );
+  });
+
+// The sidebar stays a column while the workspace's content box holds 248 + 1 + 320 + 1 + 400 = 970 px: a window of
+// 1038 px (the workspace 972 with its edge of 1 on both sides) keeps it, one of 1037 px makes it a drawer.
+for (const [width, column] of [
+  [1038, true],
+  [1037, false],
+] as const)
+  test(`a window of ${width} px: the sidebar is ${column ? "a column" : "a drawer"}`, async () => {
+    await withPage(
+      async (page) => {
+        expect(await shown(page.locator(".k2-ws-side"))).toBe(column);
+        expect(await shown(toggleElement(page))).toBe(!column);
+      },
+      { width },
+    );
+  });
+
+test("a button in the drawer that opens a dialog, a menu or a fold keeps the drawer open", async () => {
   await withPage(async (page) => {
-    const workspace = await box(page.locator(".k2-ws"));
-    await page.evaluate(() => window.__k2Reader?.(false));
-    await settled(page);
-    expect(await shown(page.locator(".k2-ws-side"))).toBe(false);
-    expect(await shown(toggleElement(page))).toBe(true);
-    expect((await box(page.locator('section[aria-label="Liste"]'))).width).toBe(workspace.width - 2);
-    expect((await measureV2Layout(page, { root: ".k2-ws" })).problems).toEqual([]);
-    await page.evaluate(() => window.__k2Reader?.(true));
-    await settled(page);
-    expect(await shown(page.locator(".k2-ws-side"))).toBe(false);
-    expect((await box(page.locator('section[aria-label="Liste"]'))).width).toBeGreaterThanOrEqual(320);
+    await toggle(page).click();
+    const drawer = page.locator('[data-k2-part="Drawer"]');
+    await drawer.waitFor();
+    await drawer.locator('[data-k2-part="Nav"]').evaluate((nav) => {
+      for (const [name, value] of [
+        ["aria-haspopup", "dialog"],
+        ["aria-expanded", "false"],
+      ] as const) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = name;
+        button.setAttribute(name, value);
+        nav.append(button);
+      }
+    });
+    for (const name of ["aria-haspopup", "aria-expanded"]) {
+      await drawer.getByRole("button", { name }).click();
+      await settled(page);
+      expect(await drawer.count()).toBe(1);
+    }
   });
 });
 
@@ -176,11 +239,18 @@ test("a workspace without a detail keeps the sidebar as a column where it fits b
   });
 });
 
-test("the phone keeps its pages: no sidebar and no drawer button", async () => {
+test("the phone keeps its pages: no sidebar, no drawer button, and no place of a closed reader", async () => {
   await withPage(
     async (page) => {
       expect(await shown(page.locator(".k2-ws-side"))).toBe(false);
       expect(await shown(toggleElement(page))).toBe(false);
+      await page.evaluate(() => window.__k2Reader?.(false));
+      await settled(page);
+      // the list is the page: the place of the reader and the line before it are not shown
+      expect(await shown(page.locator("[data-detail-empty]"))).toBe(false);
+      expect(
+        await page.locator(".k2-split > .k2-seam").evaluateAll((seams) => seams.filter((seam) => seam.getClientRects().length > 0).length),
+      ).toBe(0);
     },
     { width: 390 },
   );

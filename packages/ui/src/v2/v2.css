@@ -396,9 +396,7 @@
 .k2-ui .k2-ws {
   container-type: inline-size;
 }
-.k2-ui .k2-ws-main > [data-slot="head"] {
-  position: relative;
-}
+/* the button stands in the workspace (its reference box), where the head starts while the sidebar is a drawer */
 .k2-ui .k2-btn.k2-ws-toggle {
   display: var(--k2-ws-toggle, none);
   position: absolute;
@@ -523,12 +521,6 @@
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
 .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
   width: calc(var(--k2-pane-w) - 1px);
-}
-/* A column's width holds beside another column; alone (its detail closed) it fills the split, so an app keeps the
-   width it declares while the detail comes and goes. The phone lays out its own pages (below). */
-.k2-ui .k2-split > .k2-pane[data-width]:first-child:nth-last-child(2) {
-  flex: 1;
-  width: auto;
 }
 /* every pane brings the seam after it; the last pane has none */
 .k2-ui .k2-split > .k2-seam:last-child {
@@ -3178,8 +3170,10 @@
   .k2-ui .k2-split > .k2-pane > .k2-scroll {
     overflow: visible;
   }
-  .k2-ui .k2-split > .k2-pane[data-width]:first-child:nth-last-child(2) {
-    flex: none;
+  /* the place of a detail that is not open: the list is the page (with no line after it) */
+  .k2-ui .k2-split > [data-detail-empty],
+  .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
+    display: none;
   }
   .k2-ui .k2-split:not(:has(> .k2-pane[data-detail])) > .k2-pane > .k2-scroll {
     -webkit-mask-image: none;
