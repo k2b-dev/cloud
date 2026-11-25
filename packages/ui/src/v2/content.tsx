@@ -480,6 +480,7 @@ export const Row = (props: RowProps) => {
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the place in the list is set only on a row of a List of items, which is a listitem
     <div
       class="k2-row"
       data-k2-part="Row"
@@ -724,8 +725,10 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  // two lines when a cell of the first page says two (the rows further down follow the table's height)
-  const lines = () => (loading()?.lines === 2 || props.rows.slice(0, SERVER_ROWS).some((row) => cellsOf(row).some(isPair)) ? "2" : "1");
+  // The cells of the first page are made before the table, on the server and in the browser alike, so hydration finds
+  // them in the same order (as all cells were made before); they also say whether rows have two lines.
+  const firstCells = createMemo(() => props.rows.slice(0, SERVER_ROWS).map(cellsOf));
+  const lines = () => (loading()?.lines === 2 || firstCells().some((cells) => cells.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];

@@ -1015,8 +1015,10 @@
 }
 /* a list of items keeps only the rows in view in the page; its padding holds the place of the others */
 .k2-ui .k2-list[data-virtual] {
-  padding-top: var(--k2-before, 0px);
-  padding-bottom: var(--k2-after, 0px);
+  --k2-before: 0px;
+  --k2-after: 0px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
 }
 .k2-ui .k2-row {
   /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
@@ -1331,6 +1333,7 @@
 /* a table of any length keeps only the rows in view in the page; an empty row holds the place of the others */
 .k2-ui .k2-table tr[data-spacer] > td,
 .k2-ui .k2-table[data-grid] tr[data-spacer] > td {
+  --k2-space: 0px;
   height: var(--k2-space);
   padding: 0;
   border: 0;
@@ -1794,7 +1797,6 @@
   font-weight: 500;
   white-space: nowrap;
   flex: none;
-  max-width: 100%;
   background: var(--k2-n100);
   color: var(--k2-text-2);
 }
@@ -1827,7 +1829,9 @@
   background: var(--k2-blue-tint);
   color: var(--k2-blue-ink);
 }
+/* a tag holds words someone typed, of any length: it never grows wider than its place */
 .k2-ui .k2-chip[data-kind="tag"] {
+  max-width: 100%;
   font-weight: 400;
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 12%, var(--k2-surface));
   color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 78%, var(--k2-ink-mix));
@@ -2426,10 +2430,11 @@
   order: 1;
 }
 .k2-ui .k2-tabs > .k2-tab[data-kept] {
+  --k2-tab-room: none;
   max-width: var(--k2-tab-room);
   min-width: 0;
 }
-.k2-ui .k2-tab-label {
+.k2-ui .k2-tab[data-kept] > .k2-tab-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

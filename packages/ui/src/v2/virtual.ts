@@ -184,8 +184,6 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     measureNode = (node, item) => {
       const key = options.key(item);
       nodes.set(node, key);
-      // names the row, so the focus inside it is known (see `focusIn`)
-      node.setAttribute("data-k2-virtual-key", key);
       sizesSeen.observe(node);
     };
     for (const [node, item] of pending.splice(0)) measureNode(node, item);
@@ -195,8 +193,11 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     target.addEventListener("scroll", later, { passive: true });
     // The focused row stays in the page while it scrolls away (see `placed`).
     const focusIn = (event: FocusEvent) => {
-      const row = event.target instanceof Element ? event.target.closest("[data-k2-virtual-key]") : null;
-      if (row && list.contains(row)) setFocused(row.getAttribute("data-k2-virtual-key") ?? undefined);
+      // the row is the child of the list that holds the focus
+      let row = event.target instanceof Element ? event.target : null;
+      while (row && row.parentElement !== list) row = row.parentElement;
+      const key = row ? nodes.get(row) : undefined;
+      if (key !== undefined) setFocused(key);
     };
     const focusOut = (event: FocusEvent) => {
       if (!(event.relatedTarget instanceof Node) || !list.contains(event.relatedTarget)) setFocused(undefined);

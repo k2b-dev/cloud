@@ -663,6 +663,38 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // break-ui 25.11.: a sender pressed to 0 px by many marks, and "An" one letter per line beside a long sender.
+  test(
+    "red: text pressed to nothing and text standing one letter per line; green: a visually hidden name",
+    async () => {
+      const squeezed = columns(
+        '<div class="row" style="display:flex">' +
+          '<span data-probe="sender" style="min-width:0;flex:0 1 0;overflow:hidden">Aleksandra</span>' +
+          '<span style="flex:none;white-space:nowrap">Wartet · Reklamation Gewährleistung · bis Mo · Vorschlag</span></div>' +
+          '<div class="row" style="display:flex;width:240px">' +
+          '<span data-probe="to" style="flex:0 1 auto;min-width:0;overflow-wrap:anywhere">An</span>' +
+          '<span data-probe="name" style="flex:0 0 auto;width:8px;min-width:0;overflow-wrap:anywhere">Empfänger</span>' +
+          '<span style="flex:none;white-space:nowrap">von Kundenservice Gewährleistung und Reklamation</span></div>',
+      );
+      const hidden = columns(
+        '<div class="row">Eintrag<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Name</span></div>',
+      );
+      const page = await open(squeezed, { width: 900 });
+      const fine = await open(hidden);
+      try {
+        const found = (await measureV2Layout(page)).squeezed;
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="sender"\] "Aleksandra" is 0 px wide/));
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="name"\] "Empfänger" stands one letter per line/));
+        expect((await measureV2Layout(page)).problems).toEqual(expect.arrayContaining(found));
+        expect((await measureV2Layout(fine)).squeezed).toEqual([]);
+      } finally {
+        await page.close();
+        await fine.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {

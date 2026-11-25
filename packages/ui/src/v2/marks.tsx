@@ -1,4 +1,4 @@
-import { children as resolveChildren, createSignal, type JSX, Show } from "solid-js";
+import { createSignal, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
