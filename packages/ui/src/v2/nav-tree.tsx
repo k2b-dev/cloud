@@ -87,9 +87,19 @@ const openMenuOf = (item: Element) => item.querySelector<HTMLElement>(":scope > 
 /** The "…" of a place: out of the tab order (the tree is one stop; Shift+F10 opens it); its keys and presses stay its own. */
 const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   let span: HTMLSpanElement | undefined;
-  onMount(() => span?.querySelector("button")?.setAttribute("tabindex", "-1"));
+  // A shortcut for the pointer only: out of the tab order and hidden from assistive technology, which opens the same
+  // menu with Shift+F10 on the tree item. The focus a closing menu gives back to it goes to the tree item instead.
+  onMount(() => {
+    const button = span?.querySelector("button");
+    button?.setAttribute("tabindex", "-1");
+    button?.setAttribute("aria-hidden", "true");
+  });
+  const back = (event: FocusEvent) => {
+    if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
+      event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
+  };
   return (
-    <span ref={span} class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop}>
+    <span ref={span} class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
       <Menu label={props.label} items={props.items} />
     </span>
   );
@@ -210,7 +220,8 @@ export const NavTreeView = (props: NavTree) => {
         <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
         <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
           {(href) => (
-            <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name">
+            // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
+            <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
               {entry.node.label}
             </parts.Link>
           )}

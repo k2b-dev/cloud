@@ -69,7 +69,6 @@ test("server markup: the open folder is marked, the way to it stands open, close
 
 test("nav tree: one Tab stop on the open folder; arrows, Right and Left fold, Enter follows the link", async () => {
   await withPage(async (page) => {
-    expect(await page.evaluate(() => window.__checkPattern(document.querySelector('[role="tree"]')!, "tree").then(() => "ok"))).toBe("ok");
     await page.getByRole("link", { name: "Zuletzt" }).focus();
     await page.keyboard.press("Tab");
     expect(await focusedName(page)).toBe("Entwürfe");
@@ -87,6 +86,17 @@ test("nav tree: one Tab stop on the open folder; arrows, Right and Left fold, En
     await place(page, "Entwürfe").focus();
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.closest('[role="tree"]'))).toBeNull();
+  });
+});
+
+test("nav tree: core's tree pattern check passes", async () => {
+  await withPage(async (page) => {
+    // The check presses Right on the first branch, then Left on its first child and expects the focus on the parent:
+    // right for a closed child. "Website" stands open on the way to the open folder, and Left on an open branch
+    // closes it first (APG), so it is closed before the check.
+    await place(page, "Website").focus();
+    await page.keyboard.press("ArrowLeft");
+    expect(await page.evaluate(() => window.__checkPattern(document.querySelector('[role="tree"]')!, "tree").then(() => "ok"))).toBe("ok");
   });
 });
 

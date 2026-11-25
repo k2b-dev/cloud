@@ -104,7 +104,8 @@ export function Demo() {
     icon: folder.children !== undefined || folder.branch ? "folder" : "file",
     href: `#${folder.key}`,
     branch: folder.branch,
-    children: folder.children?.filter((child) => child.children !== undefined || child.branch).map(node),
+    // the sidebar shows folders; "Fotos" shows its pictures too, so its level of 10 000 pages
+    children: folder.children?.filter((child) => folder.key === "fotos" || child.children !== undefined || child.branch).map(node),
     more: folder.key === "fotos" && photosLeft() > 0 ? photosLeft() : undefined,
     menu: [
       { label: "Umbenennen", icon: "pencil", onClick: did(`rename:${folder.key}`) },
