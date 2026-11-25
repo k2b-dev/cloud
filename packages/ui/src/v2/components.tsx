@@ -317,7 +317,8 @@ export const Tabs = (props: TabsProps) => {
       const gap = Number.parseFloat(getComputedStyle(row).columnGap) || 0;
       const room = row.clientWidth;
       const until = (count: number) => widths.slice(0, count).reduce((sum, width, index) => sum + width + (index > 0 ? gap : 0), 0);
-      let fits = 0;
+      // the first tab always stands in the line (a wrapping line holds at least one), as the server sent it
+      let fits = 1;
       while (fits < tabs.length && until(fits + 1) <= room + 0.5) fits += 1;
       const open = plain().findIndex((tab) => tab.current);
       if (open < 0 || open < fits) {
@@ -329,8 +330,15 @@ export const Tabs = (props: TabsProps) => {
       const least = Math.min(widths[open]!, 96);
       let before = Math.min(fits, open);
       while (before > 0 && until(before) + gap + least > room + 0.5) before -= 1;
+      const left = Math.floor(room - until(before) - (before > 0 ? gap : 0));
+      // without room even for a short name the open tab hides like the others (a cut to nothing says nothing)
+      if (left < least) {
+        setKept(undefined);
+        setFit(fits);
+        return;
+      }
       setFit(before);
-      setKept({ index: open, room: Math.max(0, Math.floor(room - until(before) - (before > 0 ? gap : 0))) });
+      setKept({ index: open, room: left });
     };
     // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
     // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
