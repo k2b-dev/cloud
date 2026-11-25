@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Chip, Empty, Facts, List, Notice, Pane, Progress, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Chip, Empty, Facts, List, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { ShiftAssignment, UpcomingSlot, Venue } from "../../contracts";
 import { formatVenueSpan } from "../../time-format";
@@ -70,7 +70,6 @@ export default function ShiftDetailPane(props: {
               <Show when={permissions().take ? slot() : null}>
                 {(current) => (
                   <Button
-                    variant="primary"
                     icon="user-plus"
                     keep
                     busy={props.pending(slotActionKey(current()))}
@@ -110,11 +109,6 @@ export default function ShiftDetailPane(props: {
                 { label: t().staffing, value: t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) }) },
                 { label: words().kind, value: slotChip(current(), t()) },
               ]}
-            />
-            <Progress
-              value={current().assignedCount}
-              of={current().maxPeople ?? Math.max(current().minPeople, current().assignedCount, 1)}
-              label={t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) })}
             />
             <Show when={permissions().take && current().template.date === null}>
               <Check label={t().alsoFollowingWeeks({ count: FOLLOWING_WEEKS })} checked={followingWeeks()} onChange={setFollowingWeeks} />

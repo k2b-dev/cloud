@@ -32,6 +32,8 @@ export type VenueOverviewProps = { venues: Venue[]; templates: VenueTemplateSumm
 export const iconName = (classes: string | null | undefined, fallback = "building-carousel") =>
   (classes ?? "").replace(/^ti\s+/, "").replace(/^ti-/, "") || fallback;
 
+const PAGE = 100;
+
 const matches = (venue: Venue, query: string) => {
   const needle = query.trim().toLowerCase();
   return !needle || `${venue.name} ${venue.description ?? ""} ${venue.slug}`.toLowerCase().includes(needle);
@@ -44,8 +46,11 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
   const [query, setQuery] = createSignal(props.initialQuery);
   const [creating, setCreating] = createSignal<{ template?: VenueTemplateSummary } | null>(null);
   const shown = createMemo(() => props.venues.filter((venue) => matches(venue, query())));
+  // k2b-ui gap: lists do not virtualize yet (lane MW); 100 rows show at a time, so the page stays bounded.
+  const [visible, setVisible] = createSignal(PAGE);
   const search = (value: string) => {
     setQuery(value);
+    setVisible(PAGE);
     if (isServer) return;
     const url = new URL(location.href);
     if (value.trim()) url.searchParams.set("q", value.trim());
@@ -146,7 +151,7 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
           >
             {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); a person sees the venues they belong to. */}
             <List label={t().yourVenues}>
-              <For each={shown()}>
+              <For each={shown().slice(0, visible())}>
                 {(venue) => (
                   <Row
                     icon={iconName(venue.icon)}
@@ -159,6 +164,20 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
                 )}
               </For>
             </List>
+            <Show when={shown().length > visible()}>
+              <Bar
+                start={
+                  <Text type="meta" muted>
+                    {words().shownOf({ shown: visible(), total: shown().length })}
+                  </Text>
+                }
+                end={
+                  <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
+                    {words().showMore}
+                  </Button>
+                }
+              />
+            </Show>
           </Show>
         </Show>
       </Pane>

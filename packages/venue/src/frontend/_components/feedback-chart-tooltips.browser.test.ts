@@ -49,6 +49,8 @@ beforeAll(async () => {
     "/harness.js": ["text/javascript; charset=utf-8", await build.outputs[0]!.text()],
     "/app.css": ["text/css", css.join("\n")],
     "/styles.css": ["text/css", readFileSync(`${ui}dist/styles.css`, "utf8")],
+    // The feedback view is a v2 screen: its frame and canvases take their size from v2.css.
+    "/v2.css": ["text/css", readFileSync(`${ui}dist/v2.css`, "utf8")],
   };
   browser = await launchBrowser();
 }, 60_000);
@@ -63,7 +65,7 @@ const open = async (page: Page, lang: "de" | "en", search = "") => {
     if (path === "/")
       return route.fulfill({
         contentType: "text/html",
-        body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
+        body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/v2.css"><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head><body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
       });
     const asset = assets[path];
     return asset ? route.fulfill({ contentType: asset[0], body: asset[1] }) : route.fulfill({ status: 404 });

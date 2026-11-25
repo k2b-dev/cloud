@@ -323,6 +323,7 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
           <Pane.Split>
             <Pane
               label={t().schedule}
+              width={{ min: 520, default: 1000 }}
               scrollKey={`venue-schedule-${venue().id}`}
               status={
                 <StatusRow
@@ -390,7 +391,12 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
               {/* k2b-ui gap: no calendar in v2; the v1 Calendar keeps its behaviour and draws inside a canvas. */}
               <Canvas label={t().schedule} height={calendarView() === "mobile-month" ? undefined : 680}>
                 <Calendar
-                  class={calendarView() === "mobile-month" ? undefined : "h-full"}
+                  // Inside the canvas the calendar's own frame gives way to the pane's lines (no second line at the grip).
+                  class={
+                    calendarView() === "mobile-month"
+                      ? "!rounded-none !border-0 !shadow-none"
+                      : "h-full !rounded-none !border-0 !shadow-none"
+                  }
                   date={calendarDate()}
                   view={calendarView()}
                   views={["day", "week", "month"]}
