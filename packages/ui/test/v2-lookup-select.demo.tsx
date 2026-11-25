@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Band, Bar, Field, LookupSelect, Pane, Text, Workspace } from "../src/v2";
+import { Band, Bar, Field, Input, LookupSelect, Pane, Text, Workspace } from "../src/v2";
 import type { LookupItem } from "../src/v2/list-query";
 
 // A form that picks a customer (one, named on the server), contact people (several) and a required consignor from values that
@@ -47,6 +47,7 @@ export function Demo() {
   const [customer, setCustomer] = createSignal<string | undefined>("k-17");
   const [people, setPeople] = createSignal<string[]>([]);
   const [consignor, setConsignor] = createSignal<string | undefined>();
+  const [quantity, setQuantity] = createSignal("1500");
   return (
     <Workspace head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}>
       <Pane label="Neuer Auftrag">
@@ -77,6 +78,18 @@ export function Demo() {
               />
             </Field>
           </Field.Row>
+          {/* a number in the locale of the page, without a spinner */}
+          <Field name="quantity" label="Menge" optional="Stück">
+            <Input
+              type="number"
+              min={1}
+              value={quantity()}
+              onInput={(value) => {
+                hooks()?.changes.push(`quantity=${value}`);
+                setQuantity(value);
+              }}
+            />
+          </Field>
           <Field name="consignor" label="Einlieferer" required>
             <LookupSelect
               value={consignor()}

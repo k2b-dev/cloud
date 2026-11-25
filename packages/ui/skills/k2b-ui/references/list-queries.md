@@ -32,12 +32,23 @@ The one way to let people filter, sort or group a list or table. Recipe:
 
 | Kind | Statement | Editor |
 | --- | --- | --- |
-| `choice` | "Status ist Eingeliefert oder Fotografiert" | listbox with checks (one tick with `multiple: false`), counts with `counts: true` |
+| `choice` | "Status ist Eingeliefert oder Fotografiert" | listbox with a box first per value (one choice: `multiple: false`, its tick at the row's end), counts with `counts: true` |
 | `lookup` | "Einlieferer ist Haus Bergmann" | `Lookup`: search, 200 ms wait, abort, placeholders, empty, failed with retry |
-| `numberRange` | "Preis ab 500 €", "500 € bis 2.000 €" | presets and two fields, applied on Enter or leaving the field |
+| `numberRange` | "Preis ab 500 €", "500 € bis 2.000 €" | presets as a list with one tick, then "Ab …" and "Bis …" with their values; each opens a number entry beside the editor like a submenu (a sheet step on the phone). The entry reads and shows numbers in the locale ("1.500" in German), the unit at its end, no spinner; Enter or "Anwenden" applies, an empty entry takes the bound out |
 | `dateRange`, `timeRange` | "Eingang letzte 30 Tage" | presets, then "Von …" and "Bis …" with their values; each opens a `DatePicker` beside the editor like a submenu (to the left where the right has no room; a sheet step on the phone). `timeRange` adds hour and minute, applied with "Übernehmen" |
 | `bool` | "2FA ist aus" | yes or no |
 | `text` | "Request-ID ist 7f3a9c" | one field |
+
+## Sorts
+
+Each sort option names what it orders with `kind`: `date` ("Neueste zuerst" /
+"Älteste zuerst"), `number` ("Höchster zuerst" / "Niedrigster zuerst") or
+`text` ("A–Z" / "Z–A"). Where those words do not fit, give the field's own
+`labels: { asc, desc }` from the app's catalog ("Früheste zuerst" for a due
+date). `ListOrder` and the phone sheet show two choices, "Sortieren nach"
+(the fields) and "Reihenfolge" (the order in words); its button reads
+"Preis · Höchster zuerst". Never arrows. Picking another field keeps the order
+shown when that field offers it. The address stays `sort=price.desc`.
 
 A field with `required` (a log's time range) is framed like a field and has
 no × at its default; changed, it is tinted and × returns it to the default.

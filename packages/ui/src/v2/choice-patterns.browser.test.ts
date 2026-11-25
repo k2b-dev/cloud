@@ -359,3 +359,87 @@ test("LookupSelect required: the form is not sent while it is empty, and is once
     expect(await page.evaluate(() => document.body.dataset.sent)).toBe("");
   });
 });
+
+// ── Numbers ────────────────────────────────────────────────────────────────────────────────────────────────────
+
+test("a number range is built like a period: presets as a list with the tick at the end, then “Ab …” and “Bis …”", async () => {
+  await withPage(filterBundle, "price=500..", async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    const editor = page.locator(".k2-fpop");
+    await editor.getByRole("option").first().waitFor();
+    expect(await editor.getByRole("option").allTextContents()).toEqual(["bis 500 €", "500 € bis 2.000 €", "ab 2.000 €"]);
+    // no pills, no fields side by side, no spinner in the editor
+    expect(await editor.locator(".k2-btn[aria-pressed], input").count()).toBe(0);
+    expect(await editor.locator(".k2-fed-bounds .k2-mi").allTextContents()).toEqual(["Ab500 €", "Bis…"]);
+    await editor.getByRole("option", { name: "500 € bis 2.000 €" }).click();
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "500..2000");
+    expect(await tickPlaces(page, ".k2-fpop .k2-opt")).toEqual(["none", "end", "none"]);
+    expect(await editor.locator(".k2-fed-bounds .k2-mi").allTextContents()).toEqual(["Ab500 €", "Bis2.000 €"]);
+    // "Bis …" opens its entry beside the editor, like a submenu; the field shows the bound in the locale
+    await editor.locator(".k2-fed-bounds .k2-mi", { hasText: /^Bis/ }).click();
+    const entry = page.locator(".k2-dpop .k2-nentry");
+    await entry.waitFor();
+    const [side, main] = [await entry.boundingBox(), await editor.boundingBox()];
+    expect(side!.x).toBeGreaterThanOrEqual(main!.x + main!.width - 1);
+    const field = entry.locator("input");
+    expect(await field.inputValue()).toBe("2.000");
+    expect(await entry.locator(".k2-fed-unit").textContent()).toBe("€");
+    await field.fill("1.250,5");
+    await field.press("Enter");
+    await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "500..1250.5");
+    expect(await page.locator(".k2-fbar-flow .k2-stmt-b").allTextContents()).toContain("Preis 500 € bis 1.250,5 €");
+  });
+});
+
+test("phone: “Ab …” of a number range is the sheet's next step, “‹ Preis · Ab” in its head", async () => {
+  await withPage(
+    filterBundle,
+    "price=500..",
+    async (page) => {
+      await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).tap();
+      await page.getByRole("dialog", { name: "Preis" }).waitFor();
+      await steady(page, '[role="dialog"]');
+      await page.locator(".k2-fsheet .k2-fed-bounds .k2-mi", { hasText: /^Ab/ }).tap();
+      const step = page.getByRole("dialog", { name: "Preis · Ab" });
+      await step.waitFor();
+      expect(await step.locator('[data-slot="head"]').getByRole("button", { name: "Zurück", exact: true }).count()).toBe(1);
+      const field = step.locator(".k2-nentry input");
+      expect(await field.inputValue()).toBe("500");
+      await field.fill("800");
+      await step.getByRole("button", { name: "Anwenden" }).tap();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "800..");
+      // applied, the sheet is back at the field
+      await page.getByRole("dialog", { name: "Preis" }).waitFor();
+    },
+    { width: 390, touch: true },
+  );
+});
+
+test("a number field reads and shows the locale's numbers, without a spinner, the same on the server", async () => {
+  expect(pickMarkup).toMatch(/inputmode="decimal"[^>]*value="1\.500"|value="1\.500"[^>]*inputmode="decimal"/);
+  await withPage(
+    pickBundle,
+    "",
+    async (page) => {
+      const field = page.getByRole("textbox", { name: "Menge" });
+      expect(await field.inputValue()).toBe("1.500");
+      expect(await field.getAttribute("type")).toBe("text");
+      expect(await field.getAttribute("inputmode")).toBe("decimal");
+      const sent = page.locator('input[type="hidden"][name="quantity"]');
+      expect(await sent.inputValue()).toBe("1500");
+      await field.fill("2.500,5");
+      expect(await page.evaluate(() => window.__picks?.changes.at(-1))).toBe("quantity=2500.5");
+      expect(await sent.inputValue()).toBe("2500.5");
+      // what is typed stays while typing; leaving the field shows it in the locale's form
+      await field.fill("2500,5");
+      await field.blur();
+      expect(await field.inputValue()).toBe("2.500,5");
+      // below `min` and text that is no number stop a form, with a short message
+      await field.fill("0");
+      expect(await field.evaluate((input) => (input as HTMLInputElement).validationMessage)).toBe("Mindestens 1.");
+      await field.fill("zwei");
+      expect(await field.evaluate((input) => (input as HTMLInputElement).validationMessage)).toBe("Gib eine Zahl ein.");
+    },
+    { markup: pickMarkup },
+  );
+});

@@ -285,8 +285,23 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  `type="number"` is a text field with the decimal keyboard and no spinner
+  that reads and shows the locale's numbers ("1.500,5" in German); `value`
+  and `onInput` carry the plain number ("1500.5"), the form sends it, and
+  `min`/`max` stop a send outside them. A fixed set of sizes (an interval,
+  "7 / 30 / 90 Tage") is a `Select`, not a number.
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
-  `placeholder`.
+  `placeholder`. The chosen option has its tick at the end of its row, as
+  everywhere one choice is marked (a menu, a filter's options); several
+  choices have their box first.
+- `LookupSelect`: one value (or `multiple`) from many that load while the
+  person types, such as a customer or a person: `value`, `onChange`,
+  `load` (with `signal` and `limit`), `known` (names the server resolved,
+  so the first picture shows names), `resolve?`, `placeholder`, `limit?`,
+  `minChars?`. Closed it reads like a `Select`; open it is the `Lookup`
+  panel under the field (a sheet on the phone). In a `Field` it takes the
+  label, name (one entry per code), hint, error and `required`. Never a
+  `Select` with a few of many entries, never free text for a person.
 - `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
   writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
   text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
@@ -363,8 +378,9 @@ lines instead of cutting a thing.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
   words, for `StatusRow filters`.
 - `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
-  `limit?`, `minChars?`; values that load while the person types, in a
-  filter (the bar opens it) or in a form.
+  `limit?`, `minChars?`, `multiple?`; the panel of values that load while
+  the person types, which `FilterBar` and `LookupSelect` open. In a form use
+  `LookupSelect`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
