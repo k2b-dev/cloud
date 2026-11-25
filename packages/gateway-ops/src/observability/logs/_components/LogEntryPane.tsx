@@ -4,7 +4,7 @@ import { createSignal, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import type { LogEntry } from "../contracts";
 import { logsMessages } from "../messages";
-import { logRowFormatter } from "../rows";
+import { logRowFormatter, requestIdOf } from "../rows";
 
 type Props = {
   selected: { entry: LogEntry | null; error: string | null } | null;
@@ -12,6 +12,8 @@ type Props = {
   /** The list's address without the open entry. */
   closeHref: string;
   listLabel: string;
+  /** Shows only the entries of this entry's request in the list beside it. */
+  onRequest: (id: string) => void;
 };
 
 const valueText = (value: unknown): string =>
@@ -87,7 +89,14 @@ export default function LogEntryPane(props: Props) {
             <Band>
               <Text type="body">{open().message}</Text>
             </Band>
-            <Section icon="info-circle" title={t().detail}>
+            <Section
+              icon="info-circle"
+              title={t().detail}
+              actions={(() => {
+                const id = requestIdOf(open().metadata);
+                return id ? [{ label: words().onlyThisRequest, icon: "filter", onClick: () => props.onRequest(id) }] : undefined;
+              })()}
+            >
               <Facts
                 items={[
                   {

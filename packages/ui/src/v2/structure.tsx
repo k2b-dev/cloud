@@ -11,6 +11,8 @@ const HeadActions = (props: { actions?: TwoActions }) => (
       <Button
         variant="text"
         icon={action.icon}
+        // on the phone the head keeps only the symbol: the words stay the button's name and hint
+        title={action.icon ? action.label : undefined}
         forward={action.forward}
         href={action.href}
         onNavigate={action.onNavigate}

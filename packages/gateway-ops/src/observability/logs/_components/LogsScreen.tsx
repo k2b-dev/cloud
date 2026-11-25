@@ -186,11 +186,19 @@ export default function LogsScreen(props: LogsScreenProps) {
     void load(next);
   };
 
-  const search = (text: string) => {
-    const next = { ...state(), search: text.trim() || undefined };
+  /** A new state the list itself chose (search, a request): one history entry, then the list loads it. */
+  const apply = (next: LogsState) => {
     const params = query().serialize(next, location.search);
     history.pushState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}`);
     change(next);
+  };
+
+  const search = (text: string) => apply({ ...state(), search: text.trim() || undefined });
+
+  /** Only the entries of one request: the request filter through the declaration, as the filter bar would set it. */
+  const showRequest = (id: string) => {
+    const next = query().set(state(), "request", id);
+    if (next) apply(next);
   };
 
   let poll: { stop: () => void; wake: () => void } | undefined;
@@ -421,7 +429,21 @@ export default function LogsScreen(props: LogsScreenProps) {
                 { title: t().level, width: { min: 96, default: 110 }, cell: (row) => levelChip(row.level) },
                 { title: t().source, width: { min: 90, default: 120 }, cell: (row) => row.source, drop: true },
                 { title: t().message, width: { min: 240, default: 480 }, cell: (row) => row.message },
-                { title: t().request, width: { min: 90, default: 120 }, cell: (row) => row.requestId ?? "—", drop: true },
+                {
+                  title: t().request,
+                  width: { min: 90, default: 120 },
+                  cell: (row) => {
+                    const id = row.requestId;
+                    return id ? (
+                      <Button variant="text" title={t().onlyThisRequest} onClick={() => showRequest(id)}>
+                        {id}
+                      </Button>
+                    ) : (
+                      "—"
+                    );
+                  },
+                  drop: true,
+                },
                 { title: t().duration, width: { min: 80, default: 100 }, align: "end", cell: (row) => row.duration ?? "—", drop: true },
               ]}
             />
@@ -443,7 +465,13 @@ export default function LogsScreen(props: LogsScreenProps) {
           </Show>
         </Pane>
         <Show when={props.entry}>
-          <LogEntryPane selected={props.selected} timeZone={props.timeZone} closeHref={href({ entry: null })} listLabel={t().logs} />
+          <LogEntryPane
+            selected={props.selected}
+            timeZone={props.timeZone}
+            closeHref={href({ entry: null })}
+            listLabel={t().logs}
+            onRequest={showRequest}
+          />
         </Show>
       </Pane.Split>
       <CleanupDialog

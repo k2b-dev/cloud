@@ -3464,7 +3464,8 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
+  /* a head action with a symbol keeps only the symbol (its words stay its title and name); one without keeps its words */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon) > .k2-btn-label {
     display: none;
   }
   .k2-ui .k2-facts {

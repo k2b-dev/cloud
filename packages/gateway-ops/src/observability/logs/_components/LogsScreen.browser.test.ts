@@ -152,6 +152,69 @@ const shoot = async (tab: Page, name: string) => {
 };
 
 describe("the log list on v2", () => {
+  test("a row's request ID shows only that request, in the address and after a reload", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/admin/observability/logs?time=last-15m");
+    try {
+      await tab
+        .getByRole("row", { name: /Upstream mail: Zeitüberschreitung nach 30 s/ })
+        .getByRole("button", { name: "7f3a9c" })
+        .click();
+      await tab.waitForURL(/request=7f3a9c/);
+      await tab.waitForFunction(() => window.document.body.innerText.includes("2 of 2 entries"));
+      expect(new URLSearchParams(calls.at(-1)).get("request")).toBe("7f3a9c");
+      const rows = await rowTexts(tab);
+      expect(rows.filter((text) => text.includes("ms"))).toHaveLength(2);
+      for (const text of rows.filter((row) => row.includes("ms"))) expect(text).toContain("7f3a9c");
+      await tab.reload();
+      await tab.waitForSelector('body[data-ready="true"]');
+      expect(await tab.getByRole("group", { name: "Filters" }).innerText()).toContain("Request ID is 7f3a9c");
+      expect(await tab.getByText("2 of 2 entries").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("an open entry shows only its request on the desktop and on the phone, and stays open", async () => {
+    for (const view of [desktop, { width: 390, height: 844, touch: true }]) {
+      const { context, tab, errors } = await open(view, "/admin/observability/logs?time=last-15m&entry=9002");
+      try {
+        await tab.getByRole("button", { name: "Show only this request" }).click();
+        await tab.waitForURL(/request=704879/);
+        expect(new URL(tab.url()).searchParams.get("entry")).toBe("9002");
+        expect(await tab.getByText("smtp.example.org").or(tab.getByText("info@stadtwerke.example")).first().isVisible()).toBe(true);
+        if (view === desktop) await tab.waitForFunction(() => window.document.body.innerText.includes("1 of 1 entries"));
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 60_000);
+
+  test("the request ID editor names its field once", async () => {
+    const { context, tab, errors } = await open(desktop, "/admin/observability/logs?time=last-15m&request=7f3a9c");
+    try {
+      await tab.getByRole("button", { name: "Edit filter Request ID is 7f3a9c" }).click();
+      const editor = tab.locator('[data-k2-part="FilterEditor"]');
+      await editor.waitFor();
+      await settled(tab);
+      // seen once: the editor's head names the field; the field's own label is there for assistive technology only
+      const seen = await editor.evaluate((root) =>
+        [...root.querySelectorAll("*")].filter((node) => {
+          const own = [...node.childNodes].some((child) => child.nodeType === 3 && child.textContent?.trim() === "Request ID");
+          const box = node.getBoundingClientRect();
+          return own && box.width > 2 && box.height > 2;
+        }).length,
+      );
+      expect(seen).toBe(1);
+      // the field keeps its name for assistive technology
+      expect(await editor.getByRole("textbox", { name: "Request ID" }).inputValue()).toBe("7f3a9c");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("a pure group change on page 2 keeps the page and its rows", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/admin/observability/logs?page=2&live=off");
     try {

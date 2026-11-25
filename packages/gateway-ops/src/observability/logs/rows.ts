@@ -29,6 +29,9 @@ const firstText = (metadata: Record<string, unknown> | null, keys: readonly stri
   return null;
 };
 
+/** The request an entry belongs to, from its metadata (`requestId`, `request_id` or `reqId`). */
+export const requestIdOf = (metadata: Record<string, unknown> | null): string | null => firstText(metadata, REQUEST_KEYS);
+
 const part = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) =>
   parts.find((entry) => entry.type === type)?.value ?? "";
 
@@ -78,7 +81,7 @@ export const logRowFormatter = (locale: string, timeZone: string) => {
         time: `${dayPrefix}${clock.format(at)}`,
         minute: `${date} ${hourMinute}`,
         minuteLabel: `${dayPrefix}${hourMinute}`,
-        requestId: firstText(entry.metadata, REQUEST_KEYS),
+        requestId: requestIdOf(entry.metadata),
         duration: Number.isFinite(durationNumber) ? `${number.format(durationNumber)} ms` : null,
       };
     },
