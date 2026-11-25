@@ -48,6 +48,7 @@ export default function SpaceMembers() {
       title: `${member.name} entfernen?`,
       description: `${member.name} sieht die Aufgaben und Dateien dieses Bereichs danach nicht mehr.`,
       confirm: "Entfernen",
+      cancel: "Abbrechen",
     });
     if (!agreed) return;
     const before = list();
