@@ -197,7 +197,11 @@ export const Workspace = (props: WorkspaceProps) => {
   let taken = false;
   const page = {
     title,
-    take: () => !taken && (taken = true),
+    take: () => {
+      if (taken) return false;
+      taken = true;
+      return true;
+    },
     giveBack: () => {
       taken = false;
     },
@@ -205,17 +209,14 @@ export const Workspace = (props: WorkspaceProps) => {
   const head = resolveChildren(() => (
     <PageTitleContext.Provider value={page}>{props.head ?? (props.title !== undefined ? <Bar /> : undefined)}</PageTitleContext.Provider>
   ));
-  // the document's title follows a title that changes in the browser (the server's first title stays as it was sent)
+  // The document's title follows a title that changes in the browser; the first run has no title before it, so the
+  // server's first title stays as it was sent. (Not `defer`: a deferred `on` forgets the first title.)
   if (!isServer)
     createEffect(
-      on(
-        title,
-        (now, before) => {
-          if (now === undefined || before === undefined || now === before) return;
-          document.title = document.title.includes(before) ? document.title.replace(before, now) : now;
-        },
-        { defer: true },
-      ),
+      on(title, (now, before) => {
+        if (now === undefined || before === undefined || now === before) return;
+        document.title = document.title.includes(before) ? document.title.replace(before, now) : now;
+      }),
     );
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {

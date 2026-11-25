@@ -82,8 +82,7 @@ Nothing known at the moment. Something has no part? Use the nearest part and wri
 
 ### Do
 
-- Put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`.
-- Name every page in `Workspace title`, or let the current entry of the sidebar's `Nav` name it. The head shows the name as the page's one heading; a head with only deeds looks as if something were missing.
+- Name every page in `Workspace title` (or let the current entry of the sidebar's `Nav` name it), put the app's places in `Nav`, its views in `Tabs`, and its main action in the head and in `Workspace primary`. A head with only deeds looks as if something were missing.
 - Render the detail only while the address names an entry, and give its `back` the list's address.
 - Declare `detail` and `detailEmpty` on the workspace when a detail opens beside the list.
 - Give a long list a `scrollKey`, so back and forward return to where it was.

@@ -3628,6 +3628,8 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+  /* a heading heard only (the page's name beside tabs) keeps the type of its place, not the browser's */
+  font: inherit;
 }
 /* the placeholder of a box stands where the box will stand */
 .k2-ui .k2-table .k2-skel[data-box] {
