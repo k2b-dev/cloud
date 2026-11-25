@@ -383,8 +383,9 @@ export default function MailWorkspaceV2(props: {
       <Workspace
         sidebarLabel={text().sidebarWidth}
         // The reader opens beside the list: the workspace keeps room for it, open or not, so opening a mail never
-        // moves the sidebar between column and drawer (#4123).
+        // moves the sidebar between column and drawer, and its place says so while none is open (#4123).
         detail
+        detailEmpty={{ icon: "mail", text: text().noneOpen }}
         primary={c().canWrite() && !c().assignedOnly() ? { label: text().newShort, icon: "pencil", href: composeHref() } : undefined}
         sidebar={<Nav title="Mail" icon="mail" groups={navGroups()} foot={navFoot()} />}
         head={
@@ -416,7 +417,7 @@ export default function MailWorkspaceV2(props: {
         <Pane.Split>
           <Pane
             label={text().listWidth}
-            // The list keeps its width; alone in its split (no mail open) it fills it from 768 px.
+            // The list keeps its width, open mail or not: the reader's empty place holds the rest.
             width={{ min: 320, default: 432 }}
             scrollKey={`mail-list-${c().data.mailbox.id}`}
             status={
