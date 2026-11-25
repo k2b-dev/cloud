@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { isServer } from "solid-js/web";
-import { useCheckbox, useSwitch, useTabs, useTooltip } from "../../src/v2/behavior/controls";
+import { useTabs } from "../../src/v2/behavior/controls";
 
 /** Counts its mounts and cleanups: content of an inactive panel must neither exist nor outlive its panel. */
 function MountCounter() {
@@ -15,15 +15,10 @@ function MountCounter() {
   return null;
 }
 
-/** Tabs (controlled), a tooltip, a checkbox and a switch. */
+/** Tabs (controlled). */
 export function Demo() {
   const [tab, setTab] = createSignal("mail");
-  const [unread, setUnread] = createSignal(false);
-  const [notify, setNotify] = createSignal(true);
   const tabs = useTabs(() => ({ value: tab(), onValueChange: setTab }));
-  const tooltip = useTooltip(() => ({ delay: 300 }));
-  const check = useCheckbox(() => ({ checked: unread(), onCheckedChange: setUnread, name: "unread" }));
-  const toggle = useSwitch(() => ({ checked: notify(), onCheckedChange: setNotify, name: "notify" }));
   return (
     <div class="form">
       <div>
@@ -49,30 +44,6 @@ export function Demo() {
         <tabs.Panel value="chat">Unterhaltungen</tabs.Panel>
         <tabs.Panel value="tasks">Liste</tabs.Panel>
         <output data-testid="tab">{tab()}</output>
-      </div>
-      <div>
-        <button type="button" class="btn" data-testid="before-tooltip">
-          Davor
-        </button>
-        <tooltip.Trigger class="btn" data-testid="tooltip-trigger" aria-label="Archivieren">
-          ⌫
-        </tooltip.Trigger>
-        <tooltip.Popup class="popover" side="top" sideOffset={4}>
-          Archivieren
-        </tooltip.Popup>
-      </div>
-      <div class="check">
-        <check.Root class="btn" data-testid="checkbox" aria-labelledby="unread-label">
-          <check.Mark>✓</check.Mark>
-        </check.Root>
-        <span id="unread-label">Nur ungelesene</span>
-      </div>
-      <output data-testid="checked">{String(unread())}</output>
-      <div class="check">
-        <toggle.Root class="btn" data-testid="switch" aria-label="Benachrichtigen">
-          <toggle.Mark>●</toggle.Mark>
-        </toggle.Root>
-        <output data-testid="switched">{String(notify())}</output>
       </div>
     </div>
   );
