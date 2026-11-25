@@ -23,7 +23,7 @@ import { chartMessages } from "./chart-message-catalog";
 export { chartTextWidth, headerHeight, renderHeader, wrapLabel } from "../charts/core/bar-common";
 
 /**
- * Bar chart options: stdlib's `charts.bar` options plus a title for the category axis and a separate value format.
+ * Bar chart options: the chart core's `charts.bar` options plus a title for the category axis and a separate value format.
  * The wrapper owns size and inspection.
  */
 export type BarChartOptions = {
@@ -114,7 +114,7 @@ const rankedRows = (opts: BarChartOptions) =>
   opts.yAxis?.ticks === undefined;
 type Scale = { domain: [number, number]; ticks: number[]; log: boolean };
 
-/** The value scale of stdlib's bar chart: nice linear ticks including zero, or decades on a log axis. */
+/** The value scale of the chart core's bar chart: nice linear ticks including zero, or decades on a log axis. */
 const valueScale = (values: number[], axis: AxisOptions | undefined, nice: boolean): Scale => {
   const log = axis?.scale === "log";
   if (axis?.domain) {
@@ -457,7 +457,7 @@ const renderRows = (opts: BarChartOptions, plan: Plan, width: number, inspect: b
 export const renderBarDataSvg = (opts: BarChartOptions & { width: number; height: number; inspect?: boolean }): string => {
   if (rankedRows(opts)) return renderRankedBars(opts);
   const plan = barChartPlan(opts, opts.width);
-  // The empty drawing of stdlib's bar chart, written here so bundles leave out stdlib's whole bar renderer.
+  // The empty drawing of the core's bar chart, written here so bundles leave out the core's whole bar renderer.
   if (!plan.finite.length)
     return svgRoot(
       { width: opts.width, height: opts.height, className: opts.className },

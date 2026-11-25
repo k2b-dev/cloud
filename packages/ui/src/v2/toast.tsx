@@ -9,6 +9,8 @@ export type ToastOptions = {
   undo?: () => unknown;
   /** `ok` for a deed that worked, `bad` for one that failed (announced at once). Without it the toast only reports. */
   status?: "ok" | "bad";
+  /** Runs a failed deed again: the toast offers "Erneut versuchen" instead of "Undo". Give it with `status: "bad"`. */
+  retry?: () => unknown;
 };
 
 /** Shows a toast; returns its id. */
@@ -86,10 +88,11 @@ const showOf =
   (parts: ToasterParts, t: () => OverlayMessages): ShowToast =>
   (message, options = {}) => {
     const undo = options.undo;
+    const retry = options.retry;
     return parts.toaster.show({
       title: message,
       type: options.status === "bad" ? "error" : options.status === "ok" ? "success" : "default",
-      action: undo && { label: t().undo, onAction: undo },
+      action: retry ? { label: t().retry, onAction: retry } : undo && { label: t().undo, onAction: undo },
     });
   };
 

@@ -35,6 +35,9 @@ The working surface of an app: one per screen.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+  A search in the head (`Input type="search"`) stays as its symbol; a tap
+  goes into the field, which opens over the head while it has the focus
+  and folds back, its words kept, on blur or Escape.
 
 ### Pane
 
@@ -199,8 +202,9 @@ column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?
-}` (on the phone each row becomes a two-line row instead).
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+}` (on the phone each row becomes a two-line row instead: `time` top right,
+`marks` at the end of the second line, such as the entry's state chip).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
@@ -317,16 +321,21 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
-  value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+  refresh in place: `true` turns a quiet mark after the lead; pass `false`
+  while idle so its 16 px stay reserved and nothing moves; leave it out where
+  the row never refreshes), `facts: { before?, value?, after? }[]` (give way
+  below 760 px of the row's own width and on the phone, so the filters keep
+  their words; put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
-  a `Button variant="ghost" menu`, pressed chips; leave on the phone),
+  `ListOrder` with the sort and the grouping of a list query, or a quiet
+  `Button variant="ghost" menu`; leave on the phone),
   `selection: { count, actions, clear }` (while rows are selected the row
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
-  the phone a head with a path is hidden and the shell's phone bar names
-  the page.
+  the phone the path gives way and the shell's phone bar names the page; the
+  head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -336,6 +345,19 @@ lines instead of cutting a thing.
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
+- `FilterBar`: the filters of a list as statements, in `Pane status` above
+  its `StatusRow`: `query` (from `defineListQuery`), `state`, `onChange`;
+  optional `base` (the view's state, where "Zurücksetzen" returns),
+  `icons`, `counts`, `names` (per field: lookup names the server resolved),
+  `timeZone` (of points in time, "UTC" by default), `views` (`{ stores,
+  current?: { key, label, query, scope? }, onSaved?, onRemoved? }`), `results` ("9 Artikel"
+  for the phone sheet). It writes the address itself. See
+  [list queries](list-queries.md).
+- `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
+  words, for `StatusRow filters`.
+- `Lookup`: `label`, `value`, `onChange`, `load`, `resolve?`, `known?`,
+  `limit?`, `minChars?`; values that load while the person types, in a
+  filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
@@ -369,7 +391,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 
@@ -401,7 +424,8 @@ lines instead of cutting a thing.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
+  (`bad` is announced at once).
   A toast reports a deed; it never replaces `Failed` or a `Notice` at the
   place of a problem.
 

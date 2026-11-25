@@ -102,7 +102,8 @@ to that value when cleared. A list with one fixed order declares
 - `serialize` writes `view`, the fields in declaration order, `q`, `sort`,
   and `group`, and omits defaults, so equal states give equal URLs. Pass the
   current parameters as `base` to keep the page's own ones. Whatever it
-  writes, `parse` reads back to the same state.
+  writes, `parse` reads back to the same state. Commas, colons, slashes, and
+  `@` stay readable (`level=warn,error`); everything else is encoded.
 - `set` is the one way to a follow-up state: it changes one filter, the
   search (`"q"`), the `"sort"`, or the `"group"`. It never throws and
   returns `undefined` when the value is not valid or the URL cannot hold the

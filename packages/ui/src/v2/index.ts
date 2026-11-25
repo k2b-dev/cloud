@@ -75,6 +75,8 @@ export {
   type SelectProps,
 } from "./controls";
 export { type DescribeV2Options, describeV2 } from "./describe";
+// Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
+export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";
 // Layer 1: the primitives.
 export {
   Band,
@@ -93,6 +95,7 @@ export {
   Workspace,
   type WorkspaceProps,
 } from "./layout";
+export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
 export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";

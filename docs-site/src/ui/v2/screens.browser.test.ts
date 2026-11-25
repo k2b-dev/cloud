@@ -118,10 +118,13 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
       row: ["tbody tr:nth-child(2)", "250,181 1724x40"],
       personCell: ["tbody tr:nth-child(2) td:nth-child(5)", "806,181 176x40"],
     },
+    // The mockup has no head here (its path gives way to the phone bar). The head keeps its bar for the table's own
+    // search as a symbol (#4139), so everything under it starts 56 px lower than in the mockup.
     390: {
-      status: ['[data-k2-part="StatusRow"]', "0,0 390x52"],
-      phoneGroup: [".k2-table-phone .k2-bar", "0,52 390x36"],
-      phoneRow: [".k2-table-phone .k2-row", "0,88 390x53"],
+      head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "0,0 390x56"],
+      status: ['[data-k2-part="StatusRow"]', "0,56 390x52"],
+      phoneGroup: [".k2-table-phone .k2-bar", "0,108 390x36"],
+      phoneRow: [".k2-table-phone .k2-row", "0,144 390x53"],
     },
   },
 };
@@ -452,4 +455,26 @@ describe("v2 demo screens keep the mockup", () => {
             await page.close();
           }
         }, 30_000);
+
+  // A head with a path and a search (Grids): on the phone the path gives way to the shell's phone bar, the search stays
+  // as its symbol at the end of the head.
+  test("table at 390 px: the head lets its path go and keeps its search as a symbol", async () => {
+    const page = await show("table", 390);
+    try {
+      const found = await page.evaluate(() => {
+        const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!;
+        const box = bar.getBoundingClientRect();
+        const search = bar.querySelector(".k2-input[data-search]")!.getBoundingClientRect();
+        const path = bar.querySelector(".k2-path")!;
+        return {
+          path: path.getClientRects().length,
+          search: [Math.round(search.width), Math.round(search.height)],
+          atEnd: Math.round(box.right - Number.parseFloat(getComputedStyle(bar).paddingRight) - search.right),
+        };
+      });
+      expect(found).toEqual({ path: 0, search: [36, 36], atEnd: 0 });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

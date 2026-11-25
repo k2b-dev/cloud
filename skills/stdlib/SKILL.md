@@ -10,7 +10,7 @@ description: >
   catalogs, locale resolution, Accept-Language parsing, timing, streaming,
   DATEV CSV, DATEV XML Belegtransfer packages, SEPA XML, camt.052 imports, E-Invoices, money, taxes, allocation, Result errors, caching,
   search params, text formatting, fuzzy matching, syntax highlighting,
-  charts, QR codes, file icons, gradients, SVG avatars, browser file
+  QR codes, file icons, gradients, SVG avatars, browser file
   downloads, ZIP archives, file pickers, OPFS, image processing, cookies,
   clipboard, notifications, browser kvStore, theme toggling, SolidJS
   mutations, owner-local and infinite queries, hotkeys, drag-and-drop, localStorage sync, click-outside,
@@ -59,7 +59,7 @@ file as the router and load detailed references only when the task needs them.
 2. Read the matching reference file before changing code or giving API-specific
    advice.
 3. Prefer the existing namespace-object API style (`crypto.common.ulid()`,
-   `charts.sparkline()`, `files.downloadFileFromContent()`,
+   `files.downloadFileFromContent()`,
    `mutation.create()`, `query.create()`).
 4. For repo changes, verify with the narrowest relevant tests first, then run
    broader checks only when the change touches shared behavior.
@@ -68,7 +68,7 @@ file as the router and load detailed references only when the task needs them.
 
 | Import path | Runtime | Read when |
 |---|---|---|
-| `@k2b/stdlib` | Universal browser/server | Core utilities, money, charts, highlighting, QR payload helpers, crypto, dates, i18n, text, result, cache |
+| `@k2b/stdlib` | Universal browser/server | Core utilities, money, highlighting, QR payload helpers, crypto, dates, i18n, text, result, cache |
 | `@k2b/stdlib/finance` | Universal, optional peers, pure JS | DATEV CSV/XML and SEPA generation, camt.052 reading, and E-Invoices |
 | `@k2b/stdlib/finance/validate` | Universal with optional WASM peer | Optional SEPA/CAMT/E-Invoice/DATEV XML XSD validation; `createDatevXmlPackage` |
 | `@k2b/stdlib/qr` | Universal with optional `lean-qr` peer | QR payload generation or SVG rendering |
@@ -82,7 +82,7 @@ Load exactly the files needed for the task:
 
 | Need | Reference |
 |---|---|
-| Complete root API: encoding, crypto, password, dates, i18n, money, timing, streaming, text, fuzzy, highlight, charts, cache, result, QR, SVG, searchParams, fileIcons, gradients | `references/core.md` |
+| Complete root API: encoding, crypto, password, dates, i18n, money, timing, streaming, text, fuzzy, highlight, cache, result, QR, SVG, searchParams, fileIcons, gradients | `references/core.md` |
 | E-Invoice XML generation and XML/PDF reading | `references/einvoice.md` |
 | camt.052 account report reading | `references/camt.md` |
 | DATEV/SEPA header validation, serialization, exact amounts, independent conformance, Grids extraction | `references/finance.md` |
@@ -119,7 +119,7 @@ usage, read the matching detailed reference first.
 | Slugs, casing, humanize, truncate, number/percent/currency/millisecond-duration/byte formatting | `text` |
 | Fuzzy match/filter/segments/closest typo correction | `fuzzy` |
 | Headless markdown/editor/custom syntax highlighting | `highlight` |
-| Scatter, line, bar, pie, donut, histogram, boxplot, sparkline, gauge, bar gauge, stat, heatmap, world map with deterministic viewports, state timeline SVGs | `charts` |
+| Charts of any kind | Not in stdlib: `Chart` from `@k2b/ui/charts`; pure SVG drawing from `@k2b/ui/charts/core` |
 | In-memory TTL cache with optional lazy `onMiss` | `cache` |
 | Exact money, tax, CSV amounts, credits and allocation | `money` |
 | Typed success/error service results | `result`, `ok`, `fail`, `err`, `unwrap`, `tryCatch` |
@@ -173,7 +173,7 @@ usage, read the matching detailed reference first.
   free of dayjs and big.js.
 - Avoid introducing external dependencies unless the module already depends on
   them or the user explicitly accepts the tradeoff.
-- Preserve headless utilities: core SVG/highlight/chart helpers should not
+- Preserve headless utilities: core SVG/highlight helpers should not
   inject CSS or themes unless the API explicitly accepts style options.
 
 ## Validation

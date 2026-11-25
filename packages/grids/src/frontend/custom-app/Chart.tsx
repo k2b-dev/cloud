@@ -11,7 +11,7 @@ import { formatCustomAppValue } from "./value-format";
 
 // @k2b/ui draws every chart in a 480-unit wide space and stretches it to the box.
 const CHART_WIDTH = 480;
-// stdlib ends each y tick label 6 units left of the plot, so with this padding the
+// The chart core ends each y tick label 6 units left of the plot, so with this padding the
 // labels end at the SVG's left edge and extend into a gutter as wide as the widest label.
 const PADDING_LEFT = 6;
 const Y_TICKS = 5;
@@ -31,7 +31,7 @@ const axisFont = "var(--k2b-font-sans)";
 const plotStyle = { "min-width": "6rem" };
 
 /**
- * The y tick labels stdlib draws for these values, from the helpers and tick
+ * The y tick labels the chart core draws for these values, from the helpers and tick
  * count it uses itself.
  */
 const yTickLabels = (values: number[], format: (value: number) => string) => {
@@ -40,7 +40,7 @@ const yTickLabels = (values: number[], format: (value: number) => string) => {
 };
 
 /**
- * stdlib draws line chart axis text at pixel size while the plot stretches, so
+ * The chart core draws line chart axis text at pixel size while the plot stretches, so
  * long or many category names overlap on narrower blocks and a long y-axis
  * label runs past the chart's fixed height or over the value labels. Grids
  * draws this text around the plot instead: each

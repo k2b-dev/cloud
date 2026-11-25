@@ -78,7 +78,7 @@ test("line charts show the y-axis label beside the plot and the x-axis label bel
   for (const chartType of ["line"] as const) {
     const yAxisLabel = "Average handling time in working days per ticket status";
     const html = chart(statuses, { chartType, xAxisLabel: "Ticket status", yAxisLabel });
-    // stdlib would draw both labels at full length inside the SVG: a long y-axis label runs past
+    // The chart core would draw both labels at full length inside the SVG: a long y-axis label runs past
     // the chart's fixed height and over wide value labels, and its bar chart has no x-axis label.
     expect(html).not.toContain(`<text class="stdlib-chart-axis-label"`);
     const side = html.match(
@@ -111,7 +111,7 @@ test("category names sit under their point and are shortened to their slot, keep
   for (const chartType of ["line"] as const) {
     for (const yAxisLabel of [undefined, "Tickets"]) {
       const html = chart(statuses, { chartType, yAxisLabel });
-      // stdlib would draw each name at full length (line: repeated between points), overlapping on narrow blocks.
+      // The chart core would draw each name at full length (line: repeated between points), overlapping on narrow blocks.
       expect(svgCategoryTicks(html).filter(Boolean)).toEqual([]);
       const { width, start, end } = plotArea(html);
       const slot = (end - start) / statuses.length;
@@ -285,7 +285,7 @@ test("an extreme but valid value format keeps its tick labels whole and a plot t
 
 test("the tick gutter measures its labels in the font the chart draws them in", async () => {
   const html = amounts([3200.5, 14250], { chartType: "line", valueFormat: { style: "number", decimalPlaces: 2, unit: "EUR" } });
-  // stdlib's stylesheet inside the SVG sizes the tick labels, and @k2b/ui sets their font.
+  // The chart core's stylesheet inside the SVG sizes the tick labels, and @k2b/ui sets their font.
   const fontSize = html.match(/\.stdlib-chart-tick-label \{[^}]*font-size:\s*([^;}]+)/)?.[1]?.trim();
   const ui = await Bun.file(Bun.resolveSync("@k2b/ui/styles.css", import.meta.dir)).text();
   const fontFamily = ui.match(/\.k2b-chart \.stdlib-chart-tick-label[^{]*\{[^}]*font-family:\s*([^;}]+)/)?.[1]?.trim();

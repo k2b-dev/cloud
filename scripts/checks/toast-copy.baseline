@@ -183,7 +183,6 @@ packages/filesv2/src/frontend/Workspace.island.tsx | untitled | error instanceof
 packages/filesv2/src/frontend/Workspace.island.tsx | untitled | h().actionFailed
 packages/filesv2/src/frontend/file-lightbox.ts | untitled | t.failed
 packages/gateway-ops/src/observability/jobs/_components/JobsActionToast.island.tsx | untitled | url.searchParams.get(MESSAGE_PARAM) || t.scheduleRunAccepted
-packages/gateway-ops/src/observability/logs/_components/LogFilterBar.tsx | untitled | t.deletedLogEntries({ count: data.deleted })
 packages/gateway-ops/src/observability/sync/_components/DeadLetterActions.island.tsx | untitled | isTopic() ? t.syncReplayed : t.syncRequeued
 packages/gateway-ops/src/observability/workflows/_components/WorkflowRunActions.island.tsx | untitled | t.effectConfirmed
 packages/gateway-ops/src/observability/workflows/_components/WorkflowRunActions.island.tsx | untitled | t.effectConfirmedFailed

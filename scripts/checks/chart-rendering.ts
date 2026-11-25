@@ -15,44 +15,6 @@ const RENDERERS = new Set([
   "layout",
   "toSvg",
 ]);
-const UPSTREAM_CHART_EXPORTS = new Set([
-  ...RENDERERS,
-  "ChartKind",
-  "ChartDatum",
-  "Point",
-  "Series",
-  "MarkerShape",
-  "LineStyle",
-  "MapPoint",
-  "MapSeries",
-  "MapViewport",
-  "MapOptions",
-  "BarItem",
-  "SliceItem",
-  "AxisOptions",
-  "Padding",
-  "ChartOptions",
-  "ReferenceLine",
-  "chartDatumSvg",
-  "svgRoot",
-  "escapeXml",
-  "normalizePadding",
-  "computeDomain",
-  "niceStep",
-  "extendDomainToNice",
-  "mapRange",
-  "mapLog",
-  "niceLogTicks",
-  "linearRegression",
-  "computeBoxStats",
-  "autoBin",
-  "linePathD",
-  "smoothPathD",
-  "arcPathD",
-  "markerPath",
-  "stepPathD",
-]);
-const upstreamChartModule = (name: string | undefined): boolean => name === "@k2b/stdlib" || name === "@k2b/stdlib/charts";
 const rawChartModule = (name: string | undefined): boolean => name === "@k2b/ui/charts/core" || name === "@k2b/ui/charts";
 const CHART_COMPONENTS = new Set(["Chart", "ChartExplorer", "ChartSnapshotView", "StatCell"]);
 const LIBRARIES = new Set(["ui", "cloud", "ssr", "editor"]);
@@ -109,35 +71,29 @@ const dynamicModule = (node: ts.Node): string | undefined =>
 
 const propertyName = (node: ts.Node): string | undefined => (ts.isIdentifier(node) || ts.isStringLiteral(node) ? node.text : undefined);
 
-const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: string) => void, upstreamOnly = false): void => {
-  const moduleMatches = upstreamOnly ? upstreamChartModule : rawChartModule;
-  const names = upstreamOnly ? UPSTREAM_CHART_EXPORTS : RENDERERS;
+const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: string) => void): void => {
   const namespaces = new Set<string>();
   const collect = (node: ts.Node): void => {
-    if (
-      ts.isImportDeclaration(node) &&
-      moduleMatches(moduleName(node.moduleSpecifier)) &&
-      (upstreamOnly || !node.importClause?.isTypeOnly)
-    ) {
+    if (ts.isImportDeclaration(node) && rawChartModule(moduleName(node.moduleSpecifier)) && !node.importClause?.isTypeOnly) {
       const bindings = node.importClause?.namedBindings;
       if (bindings && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
       if (bindings && ts.isNamedImports(bindings)) {
         for (const element of bindings.elements) {
           const name = (element.propertyName ?? element.name).text;
-          if ((upstreamOnly || !element.isTypeOnly) && names.has(name)) report(element, name);
+          if (!element.isTypeOnly && RENDERERS.has(name)) report(element, name);
         }
       }
     }
-    if (ts.isExportDeclaration(node) && moduleMatches(moduleName(node.moduleSpecifier)) && (upstreamOnly || !node.isTypeOnly)) {
+    if (ts.isExportDeclaration(node) && rawChartModule(moduleName(node.moduleSpecifier)) && !node.isTypeOnly) {
       if (node.exportClause && ts.isNamedExports(node.exportClause)) {
         for (const element of node.exportClause.elements) {
           const name = (element.propertyName ?? element.name).text;
-          if ((upstreamOnly || !element.isTypeOnly) && names.has(name)) report(element, name);
+          if (!element.isTypeOnly && RENDERERS.has(name)) report(element, name);
         }
       } else report(node, "charts");
     }
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      if (moduleMatches(dynamicModule(unwrap(node.initializer)))) namespaces.add(node.name.text);
+      if (rawChartModule(dynamicModule(unwrap(node.initializer)))) namespaces.add(node.name.text);
     }
     ts.forEachChild(node, collect);
   };
@@ -145,48 +101,29 @@ const rawRenderers = (source: ts.SourceFile, report: (node: ts.Node, name: strin
 
   const isNamespace = (expression: ts.Expression): boolean => {
     const node = unwrap(expression);
-    return (ts.isIdentifier(node) && namespaces.has(node.text)) || moduleMatches(dynamicModule(node));
+    return (ts.isIdentifier(node) && namespaces.has(node.text)) || rawChartModule(dynamicModule(node));
   };
   const destructured = (pattern: ts.BindingName): void => {
     if (!ts.isObjectBindingPattern(pattern)) return;
     for (const element of pattern.elements) {
       const name = propertyName(element.propertyName ?? element.name);
-      if (!element.dotDotDotToken && name && names.has(name)) report(element, name);
+      if (!element.dotDotDotToken && name && RENDERERS.has(name)) report(element, name);
     }
   };
   const visit = (node: ts.Node): void => {
-    if (
-      upstreamOnly &&
-      ts.isImportTypeNode(node) &&
-      ts.isLiteralTypeNode(node.argument) &&
-      ts.isStringLiteral(node.argument.literal) &&
-      moduleMatches(node.argument.literal.text) &&
-      node.qualifier
-    ) {
-      const name = ts.isIdentifier(node.qualifier) ? node.qualifier.text : node.qualifier.left.getText(source);
-      if (names.has(name)) report(node, name);
-    }
-    if (
-      upstreamOnly &&
-      ts.isQualifiedName(node) &&
-      ts.isIdentifier(node.left) &&
-      namespaces.has(node.left.text) &&
-      names.has(node.right.text)
-    )
-      report(node, node.right.text);
-    if (ts.isPropertyAccessExpression(node) && isNamespace(node.expression) && names.has(node.name.text)) {
+    if (ts.isPropertyAccessExpression(node) && isNamespace(node.expression) && RENDERERS.has(node.name.text)) {
       report(node, node.name.text);
     }
     if (ts.isElementAccessExpression(node) && isNamespace(node.expression) && ts.isStringLiteral(node.argumentExpression)) {
       const name = node.argumentExpression.text;
-      if (names.has(name)) report(node, name);
+      if (RENDERERS.has(name)) report(node, name);
     }
     if (ts.isVariableDeclaration(node) && node.initializer && isNamespace(node.initializer)) destructured(node.name);
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
       node.expression.name.text === "then" &&
-      moduleMatches(dynamicModule(unwrap(node.expression.expression)))
+      rawChartModule(dynamicModule(unwrap(node.expression.expression)))
     ) {
       const callback = node.arguments[0];
       if (callback && (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback)) && callback.parameters[0]) {
@@ -352,30 +289,13 @@ export const rule: Rule = {
     );
     const files = [
       ...listFiles(join(workspaceRoot, "packages"), sourceFilePattern),
-      ...listFiles(join(workspaceRoot, "docs-site"), sourceFilePattern),
-      ...listFiles(join(workspaceRoot, "pwas"), sourceFilePattern),
-      ...listFiles(join(workspaceRoot, "scripts"), sourceFilePattern),
+      ...listFiles(join(workspaceRoot, "docs-site", "src"), sourceFilePattern),
     ].sort();
     for (const file of files) {
       const path = relative(workspaceRoot, file).split(sep).join("/");
       const pkg = /^packages\/([^/]+)\/src\//.exec(path)?.[1];
-      const text = readFileSync(file, "utf8");
-      // Upstream chart drawing is forbidden even in tests, scripts and otherwise allowed core adapters.
-      // String fixtures in this rule's tests are data; the AST reports only real imports and accesses.
-      if (text.includes("@k2b/stdlib")) {
-        const source = parse(file, text);
-        rawRenderers(
-          source,
-          (node, name) =>
-            findings.push({
-              file,
-              line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-              message: `Raw chart renderer \`${name}\` from stdlib is retired: import chart contracts and drawing from @k2b/ui/charts/core.`,
-            }),
-          true,
-        );
-      }
       if (skipped(path) || (!pkg && !path.startsWith("docs-site/src/"))) continue;
+      const text = readFileSync(file, "utf8");
       if (pkg) apps.get(pkg)?.set(file, text);
       if (ALLOWED_RENDERERS.has(path) || APP_CHART_KIND.test(path) || !text.includes("@k2b/ui/charts")) continue;
       const source = parse(file, text);

@@ -2,7 +2,7 @@
 
 | Module | Environment | Docs |
 |---|---|---|
-| **Core** -- encoding, crypto (hashing, UUID/ULID, encryption, TOTP), password, dates, text, fuzzy, highlight, charts, cache, result, svg, timing, streaming, search-params, file-icons, gradients | Universal | [core.md](./core.md) |
+| **Core** -- encoding, crypto (hashing, UUID/ULID, encryption, TOTP), password, dates, text, fuzzy, highlight, cache, result, svg, timing, streaming, search-params, file-icons, gradients | Universal | [core.md](./core.md) |
 | **Money** -- exact amounts, taxes, reconciliation and allocation | Universal | [money.md](./money.md) |
 | **CAMT** -- read bank-independent camt.052.001.08 XML account reports | Universal, optional peers | [camt.md](./camt.md) |
 | **E-Invoice** -- generate CII XML and read XML/PDF invoice data | Universal, optional peers | [einvoice.md](./einvoice.md) |

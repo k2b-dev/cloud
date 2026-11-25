@@ -24,9 +24,10 @@ old default drawing using `legacySpec`; the named test verifies the new options.
 Existing explorer reference-series styling has a separate row.
 
 Run the focused parity test and browser file, then owning package typechecks.
-Regenerate this table with `bun scripts/render-chart-parity.ts`. Remove the
-stdlib chart wrapper only after the catalog has no open row and the port is
-merged. The fixture catalog is excluded from the published UI build.
+Regenerate this table with `bun scripts/render-chart-parity.ts`. The stdlib
+chart module was removed after the catalog had no open row; `@k2b/ui/charts`
+is the only chart renderer. The fixture catalog is excluded from the
+published UI build.
 
 <!-- chart-parity:start -->
 | Feature | Proof | Status |
