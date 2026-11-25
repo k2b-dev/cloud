@@ -69,10 +69,10 @@ export const fixtureEntries: LogEntry[] = [
 ];
 
 /** The service's filter over the invented entries: the same window, levels, sources and text matches. */
-export const fixtureSearch = (filter: LogSearch, page = 1): LogsData => {
+export const fixtureSearch = (filter: LogSearch, page = 1, entries: readonly LogEntry[] = fixtureEntries): LogsData => {
   const text = filter.search?.toLowerCase();
   const request = filter.request?.toLowerCase();
-  const matching = fixtureEntries.filter((entry) => {
+  const matching = entries.filter((entry) => {
     const at = Date.parse(entry.createdAt);
     const metadata = JSON.stringify(entry.metadata ?? {}).toLowerCase();
     return (
@@ -117,3 +117,52 @@ export const fixtureArea: { title: string; groups: AdminAreaGroup[]; markLabel: 
     },
   ],
 };
+
+/**
+ * The realistic worst case of the log list (break-ui): a message, a source and metadata have no length limit in
+ * `logging.entries`, so these carry a stack trace with line breaks, an unbreakable address, long source names, a UUID
+ * request ID, durations from 0 ms to over an hour, an empty message, markup, emoji and Arabic, an entry of yesterday,
+ * and 1,284 entries in the window (13 pages).
+ */
+const WORST: [string, LogLevel, string, string, Record<string, unknown> | null][] = [
+  [
+    "09:44:09.999",
+    "error",
+    "mail-outbound-delivery-worker-eu-central-1",
+    "TypeError: Cannot read properties of undefined (reading 'mailbox')\n    at syncMailbox (/app/packages/mail/src/sync/imap.ts:412:18)\n    at async Promise.all (index 3)\n    at async runRound (/app/packages/mail/src/sync/round.ts:88:5)",
+    { requestId: "9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f", durationMs: 4_611_686 },
+  ],
+  [
+    "09:44:01.000",
+    "warn",
+    "gateway",
+    "GET https://cloud.example.test/app/files/api/v1/shares/9f8e7d6c-5b4a-4c3d-8e2f-1a0b9c8d7e6f/download?filename=Q3_Board_Deck_FINAL_revised_v12_approved_by_legal.pdf&token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0 antwortete 499",
+    { request_id: "req_01HZX9Q8W3V6Y7T2K4M5N8P0RS", duration_ms: 0 },
+  ],
+  ["09:43:59.500", "info", "core", "", { requestId: "a", durationMs: -1 }],
+  ["09:43:58.000", "debug", "notebooks.export.pdf-renderer.chromium-headless", "<script>alert(1)</script> &amp; **fett**", null],
+  ["09:43:57.000", "info", "assistant", "🦊 👩🏽‍💻 Wochenrückblick für Aleksandra Wiśniewska-Kowalczyk fertig", { durationMs: 0.1 + 0.2 }],
+  ["09:43:56.000", "warn", "spaces", "تمت مزامنة التقويم مع خادم المستخدم نور الهدى عبد الرحمن", { requestId: 42 }],
+  ["09:43:55.000", "error", "j", "Benachrichtigungseinstellungen", { durationMs: "schnell" }],
+];
+
+export const worstEntries: LogEntry[] = [
+  ...WORST.map(([time, level, source, message, metadata], index) => ({
+    id: String(90_000 + index),
+    level,
+    source,
+    message,
+    metadata,
+    createdAt: `2026-11-24T${time}Z`,
+  })),
+  // yesterday in Berlin, still inside the 24 hours: the time column carries the day
+  { id: "89999", level: "info", source: "core", message: "Anmeldung · J", metadata: null, createdAt: "2026-11-23T22:59:59.999Z" },
+  ...Array.from({ length: 1284 - WORST.length - 1 }, (_, index) => ({
+    id: String(10_000 + index),
+    level: LOG_LEVELS[index % 4]!,
+    source: index % 2 ? "sync" : "mail-outbound-delivery-worker-eu-central-1",
+    message: `Abgleich Runde ${index + 1} fertig`,
+    metadata: { round: index + 1, durationMs: index * 37 },
+    createdAt: new Date(Date.parse("2026-11-24T09:43:00.000Z") - index * 45_000).toISOString(),
+  })),
+];
