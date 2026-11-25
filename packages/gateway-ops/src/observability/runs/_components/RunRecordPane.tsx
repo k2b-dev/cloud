@@ -25,7 +25,8 @@ export default function RunRecordPane(props: Props) {
       ? String(value)
       : new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, dateStyle: "medium", timeStyle: "medium" }).format(date);
   };
-  const ms = (value: number | null | undefined) => (value === null || value === undefined ? "—" : `${new Intl.NumberFormat(locale()).format(Math.round(value))} ms`);
+  const ms = (value: number | null | undefined) =>
+    value === null || value === undefined ? "—" : `${new Intl.NumberFormat(locale()).format(Math.round(value))} ms`;
   const title = () => {
     const record = props.record?.record;
     if (!record) return props.kindLabel;
@@ -36,12 +37,20 @@ export default function RunRecordPane(props: Props) {
       detail
       label={title()}
       back={{ label: t().runs, href: props.closeHref }}
-      head={<Bar start={<Text type="lead">{title()}</Text>} end={<Button variant="ghost" icon="x" label={t().closeRecord} href={props.closeHref} />} />}
+      head={
+        <Bar
+          start={<Text type="lead">{title()}</Text>}
+          end={<Button variant="ghost" icon="x" label={t().closeRecord} href={props.closeHref} />}
+        />
+      }
     >
       <Show
         when={props.record?.record}
         fallback={
-          <Show when={props.record?.error} fallback={<Empty icon="file-off" text={t().gone} action={{ label: t().runs, href: props.closeHref }} />}>
+          <Show
+            when={props.record?.error}
+            fallback={<Empty icon="file-off" text={t().gone} action={{ label: t().runs, href: props.closeHref }} />}
+          >
             <Failed text={t().recordUnavailable} onRetry={() => location.reload()} />
           </Show>
         }
@@ -62,7 +71,13 @@ export default function RunRecordPane(props: Props) {
                       { label: t().kind, value: props.kindLabel },
                       {
                         label: t().status,
-                        value: !span.endedAt ? <Chip>{t().running}</Chip> : failed ? <Chip status="bad">{t().failed}</Chip> : <Chip status="ok">{t().succeeded}</Chip>,
+                        value: !span.endedAt ? (
+                          <Chip>{t().running}</Chip>
+                        ) : failed ? (
+                          <Chip status="bad">{t().failed}</Chip>
+                        ) : (
+                          <Chip status="ok">{t().succeeded}</Chip>
+                        ),
                       },
                       { label: t().source, value: span.source },
                       { label: t().app, value: span.appId ?? "—" },
@@ -97,7 +112,11 @@ export default function RunRecordPane(props: Props) {
                   {item.errorMessage ?? item.errorCode}
                 </Notice>
               </Show>
-              <Section icon="info-circle" title={t().record} actions={item.targetHref ? [{ label: t().openTarget, icon: "external-link", href: item.targetHref }] : undefined}>
+              <Section
+                icon="info-circle"
+                title={t().record}
+                actions={item.targetHref ? [{ label: t().openTarget, icon: "external-link", href: item.targetHref }] : undefined}
+              >
                 <Facts
                   items={[
                     { label: t().kind, value: props.kindLabel },

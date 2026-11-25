@@ -16,7 +16,14 @@ export const RUN_STATUSES = ["failed", "running", "waiting", "succeeded", "cance
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 /** The windows the job runs store answers (`TraceWindow`); workflows and deliveries take their start. */
-export const RUN_WINDOWS = { "last-10m": "10m", "last-1h": "1h", "last-12h": "12h", "last-24h": "24h", "last-7d": "7d", "last-30d": "30d" } as const;
+export const RUN_WINDOWS = {
+  "last-10m": "10m",
+  "last-1h": "1h",
+  "last-12h": "12h",
+  "last-24h": "24h",
+  "last-7d": "7d",
+  "last-30d": "30d",
+} as const;
 export type RunWindowPreset = keyof typeof RUN_WINDOWS;
 export const RUN_WINDOW_HOURS: Record<RunWindowPreset, number> = {
   "last-10m": 1 / 6,

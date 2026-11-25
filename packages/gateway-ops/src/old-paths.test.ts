@@ -3,7 +3,7 @@ import { expect, spyOn, test } from "bun:test";
 // The apps table moved to Administration › Apps; its old address keeps working and says where it is now.
 // Admission is replaced only inside a child process, so the package's other suites keep the real middleware.
 if (process.env.GATEWAY_OLD_PATHS_CHILD !== "1") {
-  test("the old Gateway › Apps address opens Administration › Apps with its hint", async () => {
+  test("old addresses (Gateway › Apps, Jobs, Deliveries) lead to their new places with their query", async () => {
     const child = Bun.spawn([process.execPath, "test", import.meta.path], {
       env: { ...process.env, GATEWAY_OLD_PATHS_CHILD: "1" },
       stdout: "pipe",
@@ -23,4 +23,21 @@ if (process.env.GATEWAY_OLD_PATHS_CHILD !== "1") {
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/admin/apps?moved=gateway");
   });
+  // Jobs and the deliveries view became the runs list: their addresses lead there with the same filters.
+  const moved: [string, string][] = [
+    ["/admin/observability/jobs", "/admin/observability/runs?kind=job"],
+    ["/admin/observability/jobs?search=grids", "/admin/observability/runs?kind=job&q=grids"],
+    [
+      "/admin/observability/jobs?window=7d&health=failed&run=aa:bb",
+      "/admin/observability/runs?kind=job&time=last-7d&status=failed&run=job:aa:bb",
+    ],
+    ["/admin/observability/deliveries", "/admin/observability/runs?kind=delivery"],
+    ["/admin/observability/deliveries?status=failed&apps=mail", "/admin/observability/runs?kind=delivery&status=failed&app=mail"],
+  ];
+  for (const [from, to] of moved)
+    test(`${from} → ${to}`, async () => {
+      const response = await router.request(from);
+      expect(response.status).toBe(302);
+      expect(response.headers.get("Location")).toBe(to);
+    });
 }

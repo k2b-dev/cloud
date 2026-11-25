@@ -62,7 +62,10 @@ export const legacyDeliveriesHref = (params: URLSearchParams): string | null => 
       else if (value !== "all") next.append("status", value);
     } else if (name === "apps" || name === "channels") {
       // The runs list filters one app and one channel; further ones are carried over and named as not applied.
-      const [first, ...rest] = value.split(",").map((part) => part.trim()).filter(Boolean);
+      const [first, ...rest] = value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
       if (first) next.set(name === "apps" ? "app" : "channel", first);
       if (rest.length > 0) next.append(name, rest.join(","));
     } else if (name === "search") {

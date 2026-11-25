@@ -20,7 +20,12 @@ export default ssr<AuthContext>(async (c) => {
   const url = new URL(c.req.url);
   const credentials = syncOpsCredentials(c.req.raw);
   const registered = await listApps().catch(() => []);
-  const apps = registered.map((app) => ({ id: app.id, label: app.name || app.id }));
+  // v2 names Tabler icons without the "ti ti-" classes the registry carries
+  const apps = registered.map((app) => ({
+    id: app.id,
+    label: app.name || app.id,
+    icon: app.icon?.replace(/^ti\s+(ti-)?/, "") || undefined,
+  }));
   const query = runsQuery(locale, apps, url.searchParams.get("app") ?? undefined);
   const address = parseRunsAddress(query, url.searchParams);
   const kinds = kindsOf(address.state);
@@ -46,7 +51,9 @@ export default ssr<AuthContext>(async (c) => {
 
   const ignored =
     address.issues.length > 0
-      ? t.ignoredPartsDetail({ params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", ") })
+      ? t.ignoredPartsDetail({
+          params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
+        })
       : null;
   return () => (
     <AdminLayout c={c} ui="v2" title={t.runs}>

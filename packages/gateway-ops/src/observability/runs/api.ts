@@ -20,7 +20,10 @@ const app = new Hono<AuthContext>()
     const address = parseRunsAddress(runsQuery("en", [], params.get("app") ?? undefined), params);
     const issues = address.issues.filter((issue) => !(issue.code === "unknown" && issue.param === "run"));
     if (issues.length > 0) {
-      return respond(c, fail(err.badInput(`Invalid runs filter: ${issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ")}`)));
+      return respond(
+        c,
+        fail(err.badInput(`Invalid runs filter: ${issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ")}`)),
+      );
     }
     const parts = await listRuns(address.state, kindsOf(address.state), {
       page: address.page,

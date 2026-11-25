@@ -7,7 +7,7 @@ import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import { listWorkflowRuns, type WorkflowRunSummary } from "@k2b/cloud/workflows/store";
 import { syncOpsService } from "../sync/runtime";
 import type { SyncDeadLetterRow, SyncOpsCredentials } from "../sync/service";
-import { type RunKind, type RunRef, type RunStatus, RUN_WINDOW_HOURS, RUN_WINDOWS, type RunsState } from "./query";
+import { RUN_WINDOW_HOURS, RUN_WINDOWS, type RunKind, type RunRef, type RunStatus, type RunsState } from "./query";
 
 /** One run of any kind, in the list's shape. `ref` opens its record. */
 export type RunRow = {
@@ -98,6 +98,14 @@ const WORKFLOW_STATE: Record<RunStatus, WorkflowRunState> = {
   canceled: "canceled",
 };
 
+/** A workflow run's error is JSON: its message when it has one, else its text. */
+const words = (value: unknown): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && "message" in value && typeof value.message === "string") return value.message;
+  return JSON.stringify(value);
+};
+
 const workflowStatus = (state: WorkflowRunState): RunStatus =>
   state === "failed" || state === "needs_attention"
     ? "failed"
@@ -115,7 +123,8 @@ const sinceOf = (state: RunsState, now: Date) => {
 };
 
 /** Workflow runs have no search and no per-kind filters: with those set, no workflow run can match. */
-const workflowsMatch = (state: RunsState) => !state.search && !state.filters.category && !state.filters.duration && !state.filters.source && !state.filters.channel;
+const workflowsMatch = (state: RunsState) =>
+  !state.search && !state.filters.category && !state.filters.duration && !state.filters.source && !state.filters.channel;
 
 const workflows = async (state: RunsState, paging: Paging, now: Date): Promise<RunsPart> => {
   if (!workflowsMatch(state)) return { kind: "workflow", rows: [], total: 0, more: false, error: null };
@@ -135,7 +144,7 @@ const workflows = async (state: RunsState, paging: Paging, now: Date): Promise<R
       ref: { kind: "workflow", id: run.id },
       appId: run.appId,
       name: run.workflowName,
-      detail: run.error ?? run.resultMessage ?? run.eventType ?? "",
+      detail: words(run.error) ?? run.resultMessage ?? run.eventType ?? "",
       status: workflowStatus(run.state),
       state: run.state,
       at: (run.startedAt ?? run.createdAt).toString(),
@@ -212,13 +221,22 @@ export const deadLetterHref = (row: Pick<SyncDeadLetterRow, "appId" | "kind" | "
  */
 const deadLetters = async (state: RunsState, paging: Paging, credentials: SyncOpsCredentials): Promise<RunsPart> => {
   const status = state.filters.status;
-  if ((status && status !== "failed") || state.filters.category || state.filters.duration || state.filters.source || state.filters.channel) {
+  if (
+    (status && status !== "failed") ||
+    state.filters.category ||
+    state.filters.duration ||
+    state.filters.source ||
+    state.filters.channel
+  ) {
     return { kind: "deadLetter", rows: [], total: 0, more: false, error: null };
   }
   const overview = await syncOpsService.overview(credentials, { app: state.filters.app });
   const needle = state.search?.toLowerCase();
   const all = overview.deadLetters
-    .filter((row) => !needle || [row.store, row.reason, row.error ?? "", row.messageId, row.appId].some((text) => text.toLowerCase().includes(needle)))
+    .filter(
+      (row) =>
+        !needle || [row.store, row.reason, row.error ?? "", row.messageId, row.appId].some((text) => text.toLowerCase().includes(needle)),
+    )
     .sort((left, right) => right.failedAt.localeCompare(left.failedAt));
   const shown = all.slice(paging.offset, paging.offset + paging.limit);
   return {

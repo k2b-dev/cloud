@@ -21,6 +21,7 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
+import RunNow from "../../sync/_components/RunNow";
 import type { SyncScheduleRow } from "../../sync/service";
 import type { RunsApi } from "../api";
 import { runsMessages } from "../messages";
@@ -38,11 +39,10 @@ import {
 } from "../query";
 import type { RunRecord, RunRow, RunsPart } from "../service";
 import RunRecordPane from "./RunRecordPane";
-import RunNow from "../../sync/_components/RunNow";
 
 export type RunsScreenProps = {
   nav: NavProps;
-  apps: { id: string; label: string }[];
+  apps: { id: string; label: string; icon?: string }[];
   timeZone: string;
   /** The server's clock when it read the list, for "running for …" and the schedules' next run. */
   now: string;
@@ -59,6 +59,14 @@ export type RunsScreenProps = {
 const client = api.create<RunsApi>({ baseUrl: "/api/gateway/runs" });
 
 const STATUS_CHIP: Partial<Record<RunStatus, "ok" | "warn" | "bad">> = { failed: "bad", succeeded: "ok" };
+/** Each state has its colour (where it means something), its symbol and its word. */
+const STATUS_ICON: Record<RunStatus, string> = {
+  failed: "alert-circle",
+  running: "player-play",
+  waiting: "clock",
+  succeeded: "check",
+  canceled: "ban",
+};
 
 /** Runs on v2: one list of every kind of run, each kind paging on its own, and the schedules that start jobs. */
 export default function RunsScreen(props: RunsScreenProps) {
@@ -78,7 +86,15 @@ export default function RunsScreen(props: RunsScreenProps) {
   const statusLabel = (status: RunStatus) =>
     ({ failed: t().failed, running: t().running, waiting: t().waiting, succeeded: t().succeeded, canceled: t().canceled })[status];
   const clock = createMemo(
-    () => new Intl.DateTimeFormat(locale(), { timeZone: props.timeZone, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    () =>
+      new Intl.DateTimeFormat(locale(), {
+        timeZone: props.timeZone,
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
   );
   const at = (iso: string) => {
     const date = new Date(iso);
@@ -105,7 +121,10 @@ export default function RunsScreen(props: RunsScreenProps) {
     setLoading(true);
     try {
       const params = query().serialize(next);
-      const response = await client.index.$get({ query: Object.fromEntries(params) as Record<string, string> }, { init: { signal: current.signal } });
+      const response = await client.index.$get(
+        { query: Object.fromEntries(params) as Record<string, string> },
+        { init: { signal: current.signal } },
+      );
       if (!response.ok) throw new Error(response.statusText);
       const body = await response.json();
       if (current.signal.aborted) return;
@@ -151,7 +170,13 @@ export default function RunsScreen(props: RunsScreenProps) {
     const result: string[] = [];
     const shown = kinds();
     if (state().search && shown.includes("workflow")) result.push(t().searchNotFor({ kinds: t().workflows }));
-    if (shown.includes("deadLetter") && state().filters.time.kind === "preset" && state().filters.time.preset !== "last-24h")
+    if (
+      shown.includes("deadLetter") &&
+      (() => {
+        const time = state().filters.time;
+        return time.kind === "preset" && time.preset !== "last-24h";
+      })()
+    )
       result.push(t().timeNotFor({ kinds: t().deadLetters }));
     return result;
   });
@@ -174,9 +199,22 @@ export default function RunsScreen(props: RunsScreenProps) {
     return part.more ? props.page + 1 : props.page;
   };
 
+  const appLabel = (appId: string | null) => (appId ? (props.apps.find((app) => app.id === appId)?.label ?? appId) : "");
+  /** The app a run belongs to, with the app's own symbol. */
+  const appChip = (appId: string | null) => {
+    if (!appId) return "—";
+    const app = props.apps.find((candidate) => candidate.id === appId);
+    return <Chip icon={app?.icon ?? "apps"}>{app?.label ?? appId}</Chip>;
+  };
   const statusChip = (status: RunStatus) => {
     const tone = STATUS_CHIP[status];
-    return tone ? <Chip status={tone}>{statusLabel(status)}</Chip> : <Chip>{statusLabel(status)}</Chip>;
+    return tone ? (
+      <Chip status={tone} icon={STATUS_ICON[status]}>
+        {statusLabel(status)}
+      </Chip>
+    ) : (
+      <Chip icon={STATUS_ICON[status]}>{statusLabel(status)}</Chip>
+    );
   };
 
   const runsPane = () => (
@@ -190,7 +228,16 @@ export default function RunsScreen(props: RunsScreenProps) {
             state={state()}
             onChange={change}
             base={base()}
-            icons={{ kind: "list", status: "circle-dashed", app: "apps", time: "clock", category: "tag", duration: "hourglass", source: "code", channel: "send" }}
+            icons={{
+              kind: "list",
+              status: "circle-dashed",
+              app: "apps",
+              time: "clock",
+              category: "tag",
+              duration: "hourglass",
+              source: "code",
+              channel: "send",
+            }}
             results={lead()}
           />
           <StatusRow lead={lead()} loading={loading()} filters={<ListOrder query={query()} state={state()} onChange={change} />} />
@@ -230,18 +277,25 @@ export default function RunsScreen(props: RunsScreenProps) {
           open={openOf}
           empty={
             changed()
-              ? { icon: "filter-off", text: t().noMatches, action: { label: t().resetFilters, icon: "filter-off", href: runsHref(query(), base()) } }
+              ? {
+                  icon: "filter-off",
+                  text: t().noMatches,
+                  action: { label: t().resetFilters, icon: "filter-off", href: runsHref(query(), base()) },
+                }
               : { icon: "player-play", text: t().noRuns }
           }
           phone={(row) => ({
-            lines: [row.name, [single() ? "" : kindLabel(row.ref.kind, false), row.appId, row.detail].filter(Boolean).join(" · ")],
+            lines: [
+              row.name,
+              [single() ? "" : kindLabel(row.ref.kind, false), appLabel(row.appId), row.detail].filter(Boolean).join(" · "),
+            ],
             time: at(row.at),
             marks: statusChip(row.status),
           })}
           columns={[
             { title: t().name, width: { min: 220, default: 360 }, cell: (row) => ({ lines: [row.name, row.detail || "—"] }) },
             { title: t().status, width: { min: 110, default: 130 }, cell: (row) => statusChip(row.status) },
-            { title: t().app, width: { min: 90, default: 120 }, cell: (row) => row.appId ?? "—", drop: true },
+            { title: t().app, width: { min: 100, default: 130 }, cell: (row) => appChip(row.appId), drop: true },
             { title: t().started, width: { min: 120, default: 140 }, cell: (row) => at(row.at) },
             { title: t().duration, width: { min: 80, default: 100 }, align: "end", cell: (row) => duration(row.durationMs), drop: true },
           ]}
@@ -253,7 +307,9 @@ export default function RunsScreen(props: RunsScreenProps) {
               <For each={parts().filter((part) => part.more)}>
                 {(part) => (
                   <Button variant="text" href={runsHref(query(), onlyKind(part.kind))} forward>
-                    {part.total === null ? t().showMore({ kind: kindLabel(part.kind) }) : t().showAll({ count: number(part.total), kind: kindLabel(part.kind) })}
+                    {part.total === null
+                      ? t().showMore({ kind: kindLabel(part.kind) })
+                      : t().showAll({ count: number(part.total), kind: kindLabel(part.kind) })}
                   </Button>
                 )}
               </For>
@@ -283,7 +339,11 @@ export default function RunsScreen(props: RunsScreenProps) {
     const data = props.schedules;
     const list = data?.schedules ?? [];
     return (
-      <Pane label={t().schedules} scrollKey="gateway-ops-schedules" status={<StatusRow lead={t().schedulesCount({ count: number(list.length) })} />}>
+      <Pane
+        label={t().schedules}
+        scrollKey="gateway-ops-schedules"
+        status={<StatusRow lead={t().schedulesCount({ count: number(list.length) })} />}
+      >
         <For each={data?.warnings ?? []}>{(warning) => <Notice tone="warn">{warning}</Notice>}</For>
         <Show when={!data?.error} fallback={<Failed text={t().schedulesUnavailable} onRetry={() => location.reload()} />}>
           <Table
@@ -303,7 +363,14 @@ export default function RunsScreen(props: RunsScreenProps) {
               {
                 title: t().lastResult,
                 width: { min: 120, default: 160 },
-                cell: (row) => (row.lastError ? <Chip status="bad">{t().lastFailed}</Chip> : row.lastCompletedAt ? <Chip status="ok">{t().succeeded}</Chip> : "—"),
+                cell: (row) =>
+                  row.lastError ? (
+                    <Chip status="bad">{t().lastFailed}</Chip>
+                  ) : row.lastCompletedAt ? (
+                    <Chip status="ok">{t().succeeded}</Chip>
+                  ) : (
+                    "—"
+                  ),
                 drop: true,
               },
               {
@@ -335,7 +402,12 @@ export default function RunsScreen(props: RunsScreenProps) {
               label={t().views}
               items={[
                 { label: t().runs, href: runsHref(query(), state()), current: props.tab === "runs" && state().filters.status !== "failed" },
-                { label: t().viewFailed, icon: "alert-circle", href: runsHref(query(), failedView()), current: props.tab === "runs" && state().filters.status === "failed" },
+                {
+                  label: t().viewFailed,
+                  icon: "alert-circle",
+                  href: runsHref(query(), failedView()),
+                  current: props.tab === "runs" && state().filters.status === "failed",
+                },
                 { label: t().schedules, icon: "calendar-time", href: `${RUNS_PATH}?tab=schedules`, current: props.tab === "schedules" },
               ]}
             />

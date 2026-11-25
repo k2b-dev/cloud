@@ -15,9 +15,6 @@ import infrastructureApiRoutes from "./observability/infrastructure/api";
 import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
 import jobsApiRoutes from "./observability/jobs/api";
-import runsApiRoutes from "./observability/runs/api";
-import { legacyDeliveriesHref, legacyJobsHref } from "./observability/runs/legacy";
-import runsPage from "./observability/runs/page";
 import loggingApiRoutes from "./observability/logs/api";
 import logsPage from "./observability/logs/page";
 import loggingWidgetRoutes from "./observability/logs/widgets";
@@ -32,6 +29,9 @@ import observabilityOverviewPage from "./observability/page";
 import postgresPage from "./observability/postgres/page";
 import redisPage from "./observability/redis/page";
 import retentionPage from "./observability/retention/page";
+import runsApiRoutes from "./observability/runs/api";
+import { legacyDeliveriesHref, legacyJobsHref } from "./observability/runs/legacy";
+import runsPage from "./observability/runs/page";
 import syncApiRoutes from "./observability/sync/api";
 import syncPage from "./observability/sync/page";
 import telemetryApiRoutes from "./observability/telemetry/api";
@@ -96,7 +96,9 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/logs", auth.requireRole("admin", ssr.access), ...logsPage)
   .get("/admin/observability/runs", auth.requireRole("admin", ssr.access), ...runsPage)
   // Jobs became the runs list; its address keeps its filters there.
-  .get("/admin/observability/jobs", auth.requireRole("admin", ssr.access), (c) => c.redirect(legacyJobsHref(new URL(c.req.url).searchParams), 302))
+  .get("/admin/observability/jobs", auth.requireRole("admin", ssr.access), (c) =>
+    c.redirect(legacyJobsHref(new URL(c.req.url).searchParams), 302),
+  )
   .post("/admin/observability/jobs/run-now", auth.requireRole("admin", ssr.access), runScheduleNowAction)
   .get("/admin/observability/telemetry", auth.requireRole("admin", ssr.access), ...telemetryPage)
   .get("/admin/observability/workflows", auth.requireRole("admin", ssr.access), ...workflowsPage)
