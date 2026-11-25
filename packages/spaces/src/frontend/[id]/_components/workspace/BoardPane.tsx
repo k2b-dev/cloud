@@ -12,6 +12,8 @@ import { writeSpaceSettings } from "../settings/SpaceSettingsStore";
 import { useSpacesRouteQuery } from "./route-query";
 
 type Props = {
+  /** Hands the head its search: it writes `q` into the address of this view and loads it. */
+  onSearchReady?: (run: (text: string) => void) => void;
   space: SpaceDetail;
   filter: FilterState;
   baseUrl: string;
@@ -50,6 +52,7 @@ export default function BoardPane(props: Props) {
     const params = query().serialize(next, current.search);
     view.open(`${current.pathname}${params.size ? `?${params}` : ""}`);
   };
+  props.onSearchReady?.((text) => change({ ...state(), search: text || undefined }));
   // The server drops tags the Space no longer has, so the board's own column requests must not send them either.
   const appliedFilter = (filter: FilterState) => {
     const board = boardFilter(filter);

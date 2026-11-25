@@ -1,5 +1,5 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Checkbox, IconButton, toast } from "@k2b/ui";
+import { Bar, Button, Check, Field, Input, Popover, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceTaskChecklistEntry } from "@/contracts";
@@ -16,6 +16,7 @@ type Props = {
 
 export default function TaskChecklistSection(props: Props) {
   const t = useSpaceMessages();
+  const toast = useToast();
   const [entries, setEntries] = createSignal([...props.entries]);
   const [newLabel, setNewLabel] = createSignal("");
   let currentItemId = props.itemId;
@@ -43,7 +44,7 @@ export default function TaskChecklistSection(props: Props) {
       setNewLabel("");
       props.onChanged();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const updateEntry = mutations.create<SpaceTaskChecklistEntry, { id: string; label?: string; completed?: boolean }>({
@@ -59,7 +60,7 @@ export default function TaskChecklistSection(props: Props) {
       setEntries((current) => current.map((candidate) => (candidate.id === entry.id ? entry : candidate)));
       props.onChanged();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const deleteEntry = mutations.create<string, string>({
@@ -74,94 +75,92 @@ export default function TaskChecklistSection(props: Props) {
       setEntries((current) => current.filter((entry) => entry.id !== id));
       props.onChanged();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
-
-  const submit = (event: SubmitEvent) => {
-    event.preventDefault();
-    const label = newLabel().trim();
-    if (label && !createEntry.loading()) createEntry.mutate(label);
-  };
 
   const commitLabel = (entry: SpaceTaskChecklistEntry, value: string) => {
     const label = value.trim();
     if (!label || label === entry.label) return;
     updateEntry.mutate({ id: entry.id, label });
   };
+  const add = (value: string) => {
+    const label = value.trim();
+    if (label && !createEntry.loading()) createEntry.mutate(label);
+  };
+  const busy = () => updateEntry.loading() || deleteEntry.loading();
+  const [draft, setDraft] = createSignal<Record<string, string>>({});
+  const done = () => entries().filter((entry) => entry.completed).length;
 
   return (
-    <div class="flex flex-col gap-1.5">
-      <Show when={entries().length > 0} fallback={!props.canWrite ? <p class="text-xs text-dimmed">{t.noChecklistEntries}</p> : undefined}>
-        <ul class="flex flex-col gap-1">
-          <For each={entries()}>
-            {(entry) => (
-              <li class="group/checklist -mx-1 flex min-w-0 items-center gap-2 rounded-[var(--ui-radius-control)] px-1 py-0.5 hover:bg-[var(--ui-hover)]">
-                <Checkbox
-                  aria-label={
-                    entry.completed ? t.markChecklistIncomplete({ label: entry.label }) : t.markChecklistComplete({ label: entry.label })
-                  }
-                  value={entry.completed}
-                  disabled={!props.canWrite || updateEntry.loading() || deleteEntry.loading()}
-                  onValueChange={(completed) => updateEntry.mutate({ id: entry.id, completed })}
-                />
-                <input
-                  type="text"
-                  value={entry.label}
-                  readOnly={!props.canWrite}
-                  disabled={updateEntry.loading() || deleteEntry.loading()}
-                  aria-label={t.checklistEntryLabel}
-                  class={`focus-ui min-w-0 flex-1 rounded bg-transparent px-1 py-1 text-sm ${entry.completed ? "text-dimmed line-through" : "text-secondary"}`}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    } else if (event.key === "Escape") {
-                      event.currentTarget.value = entry.label;
-                      event.currentTarget.blur();
+    <Section icon="checklist" title={t.checklist} count={entries().length ? `${done()}/${entries().length}` : undefined}>
+      <Show when={entries().length > 0 || props.canWrite} fallback={<Text type="meta">{t.noChecklistEntries}</Text>}>
+        <For each={entries()}>
+          {(entry) => (
+            <Row
+              lines={[entry.label]}
+              end={
+                <>
+                  <Check
+                    label={
+                      entry.completed ? t.markChecklistIncomplete({ label: entry.label }) : t.markChecklistComplete({ label: entry.label })
                     }
-                  }}
-                  onBlur={(event) => {
-                    if (!event.currentTarget.value.trim()) event.currentTarget.value = entry.label;
-                    else commitLabel(entry, event.currentTarget.value);
-                  }}
-                />
-                <Show when={props.canWrite}>
-                  <IconButton
-                    label={t.deleteChecklistEntry({ label: entry.label })}
-                    size="xs"
-                    disabled={updateEntry.loading() || deleteEntry.loading()}
-                    class="h-6 w-6 shrink-0 text-dimmed opacity-0 transition-opacity hover:text-red-600 group-hover/checklist:opacity-100 group-focus-within/checklist:opacity-100"
-                    onClick={() => deleteEntry.mutate(entry.id)}
-                  >
-                    <i class="ti ti-trash text-xs" aria-hidden="true" />
-                  </IconButton>
-                </Show>
-              </li>
-            )}
-          </For>
-        </ul>
+                    checked={entry.completed}
+                    disabled={!props.canWrite || busy()}
+                    onChange={(completed) => updateEntry.mutate({ id: entry.id, completed })}
+                  />
+                  <Show when={props.canWrite}>
+                    <Popover
+                      variant="ghost"
+                      icon="pencil"
+                      label={t.checklistEntryLabel}
+                      title={t.checklistEntryLabel}
+                      content={
+                        <>
+                          <Field label={t.checklistEntryLabel} name={`checklist-${entry.id}`}>
+                            <Input
+                              value={draft()[entry.id] ?? entry.label}
+                              disabled={busy()}
+                              onInput={(value) => setDraft((current) => ({ ...current, [entry.id]: value }))}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" && !event.isComposing) commitLabel(entry, draft()[entry.id] ?? entry.label);
+                              }}
+                            />
+                          </Field>
+                          <Bar
+                            end={
+                              <>
+                                <Button icon="trash" disabled={busy()} onClick={() => deleteEntry.mutate(entry.id)}>
+                                  {t.deleteChecklistEntry({ label: entry.label })}
+                                </Button>
+                                <Button busy={updateEntry.loading()} onClick={() => commitLabel(entry, draft()[entry.id] ?? entry.label)}>
+                                  {t.save}
+                                </Button>
+                              </>
+                            }
+                          />
+                        </>
+                      }
+                    />
+                  </Show>
+                </>
+              }
+            />
+          )}
+        </For>
+        <Show when={props.canWrite}>
+          <Field label={t.addChecklistEntry} name="checklist-new">
+            <Input
+              value={newLabel()}
+              placeholder={t.addChecklistEntry}
+              disabled={createEntry.loading()}
+              onInput={setNewLabel}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.isComposing) add(newLabel());
+              }}
+            />
+          </Field>
+        </Show>
       </Show>
-
-      <Show when={props.canWrite}>
-        <form class="-mx-1 flex items-center gap-2 px-1" onSubmit={submit}>
-          <span class="flex h-5 w-5 shrink-0 items-center justify-center text-dimmed" aria-hidden="true">
-            <i class="ti ti-plus text-sm" />
-          </span>
-          <input
-            type="text"
-            value={newLabel()}
-            onInput={(event) => setNewLabel(event.currentTarget.value)}
-            placeholder={t.addChecklistEntry}
-            aria-label={t.addChecklistEntry}
-            maxlength={500}
-            disabled={createEntry.loading()}
-            class="focus-ui min-w-0 flex-1 rounded bg-transparent px-1 py-1.5 text-sm text-secondary placeholder:text-dimmed"
-          />
-          <button type="submit" class="sr-only" disabled={!newLabel().trim() || createEntry.loading()}>
-            {t.addChecklistEntry}
-          </button>
-        </form>
-      </Show>
-    </div>
+    </Section>
   );
 }

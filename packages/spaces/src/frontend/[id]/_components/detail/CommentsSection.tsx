@@ -1,8 +1,9 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
+import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { announce, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { announce } from "@k2b/ui";
+import { Bar, Button, confirm, Dialog, Failed, Field, Input, Loading, Menu, Prose, Row, Section, useToast } from "@k2b/ui/v2";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
@@ -29,6 +30,7 @@ type Props = {
 
 export default function CommentsSection(props: Props) {
   const t = useSpaceMessages();
+  const toast = useToast();
   const retryToast = createRetryToasts();
   const createCommentMutation = mutations.create({
     mutation: async (content: string) => {
@@ -65,7 +67,7 @@ export default function CommentsSection(props: Props) {
       announce(t.commentDeleted);
       props.onUpdate();
     },
-    onError: (err) => toast.error(err.message),
+    onError: (err) => toast(err.message, { status: "bad" }),
   });
   type CommentEdit = { itemId: string; id: string; content: string };
   const updateCommentMutation = mutations.create<void, CommentEdit, { edit: CommentEdit }>({
@@ -86,132 +88,114 @@ export default function CommentsSection(props: Props) {
     onError: (err, context) =>
       retryToast(err.message, t.retry, () => context && updateCommentMutation.mutate(context.edit), { untilClosed: true }),
   });
-  const editComment = async (comment: SpaceComment) => {
-    const values = await prompts.form({
-      title: t.editComment,
-      icon: "ti ti-pencil",
-      fields: {
-        content: {
-          type: "text",
-          label: t.comment,
-          default: comment.content,
-          required: true,
-          multiline: true,
-          lines: 5,
-        },
-      },
-      confirmText: t.saveComment,
-    });
-    if (!values) return;
-    const content = String(values.content ?? "").trim();
-    if (!content) return;
+  const [draft, setDraft] = createSignal("");
+  const [editing, setEditing] = createSignal<SpaceComment | null>(null);
+  const [edited, setEdited] = createSignal("");
+  const post = async () => {
+    const content = draft().trim();
+    if (!content || createCommentMutation.loading()) return;
+    // A failure keeps the draft and says so below the field.
+    const outcome = await createCommentMutation.mutate(content);
+    if (outcome === "success") setDraft("");
+  };
+  const saveEdit = async () => {
+    const comment = editing();
+    const content = edited().trim();
+    if (!comment || !content) return;
+    setEditing(null);
     await updateCommentMutation.mutate({ itemId: props.itemId, id: comment.id, content });
   };
-  let deletePromptPending = false;
   const deleteComment = async (id: string) => {
-    if (deletePromptPending || deleteCommentMutation.loading()) return;
-    deletePromptPending = true;
-    try {
-      const confirmed = await prompts.confirm(t.deleteCommentQuestion, {
-        title: t.deleteComment,
-        icon: "ti ti-trash",
-        variant: "danger",
-        confirmText: t.delete,
-      });
-      if (confirmed) void deleteCommentMutation.mutate(id);
-    } finally {
-      deletePromptPending = false;
-    }
+    if (deleteCommentMutation.loading()) return;
+    if (await confirm({ title: t.deleteComment, description: t.deleteCommentQuestion, confirm: t.delete }))
+      void deleteCommentMutation.mutate(id);
   };
-
   const sortedComments = () => [...props.comments].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return (
-    <Discussion
-      icon="ti ti-message-circle"
-      label={props.recurrenceId ? t.occurrenceComments : t.comments}
-      count={props.total}
-      style="view-transition-name: space-item-detail-comments"
-    >
-      <Discussion.List
-        loading={props.loading && sortedComments().length === 0}
-        loadingLabel={t.loadingComments}
-        error={props.loadError}
-        onRetry={props.onRetry}
-        hasMore={props.hasMore}
-        loadingMore={props.loadingMore}
-        loadMoreLabel={t.loadEarlierComments}
-        onLoadMore={props.onLoadMore}
-        fold={3}
-      >
-        <For each={sortedComments()}>
-          {(comment) => (
-            <Discussion.Item
-              avatar={
-                <CloudAvatar
-                  username={comment.userName ?? t.unknownUser}
-                  userId={comment.userId}
-                  avatarHash={comment.userAvatarHash}
-                  size="xs"
-                />
-              }
-              author={comment.userName ?? t.unknownUser}
-              timestamp={
-                <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
-                  {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
-                </time>
-              }
-              actions={
-                props.canWrite && (comment.canEdit || comment.canDelete) ? (
-                  <>
-                    <Show when={comment.canEdit}>
-                      <Tooltip.Anchor content={t.editComment}>
-                        <IconButton
-                          label={t.editComment}
-                          size="xs"
-                          onClick={() => void editComment(comment)}
-                          disabled={updateCommentMutation.loading()}
-                        >
-                          <i class="ti ti-pencil" aria-hidden="true" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                    </Show>
-                    <Show when={comment.canDelete}>
-                      <Tooltip.Anchor content={t.deleteComment}>
-                        <IconButton
-                          label={t.deleteComment}
-                          size="xs"
-                          onClick={() => void deleteComment(comment.id)}
-                          disabled={deleteCommentMutation.loading()}
-                          class="hover:text-red-600 dark:hover:text-red-400"
-                        >
-                          <i class="ti ti-trash" aria-hidden="true" />
-                        </IconButton>
-                      </Tooltip.Anchor>
-                    </Show>
-                  </>
-                ) : undefined
-              }
-            >
-              <MarkdownView markdown={comment.content} headingScale="compact" class="text-sm" />
-            </Discussion.Item>
-          )}
-        </For>
-      </Discussion.List>
-
-      <Show when={props.canWrite}>
-        <Discussion.Composer
-          label={t.addComment}
-          placeholder={t.commentPlaceholder}
-          submitLabel={t.postComment}
-          onSubmit={async (content) => {
-            const outcome = await createCommentMutation.mutate(content);
-            if (outcome === "error") throw createCommentMutation.error();
-            // A call that did not run keeps the draft.
-            return outcome === "success";
-          }}
+    <Section icon="message-circle" title={props.recurrenceId ? t.occurrenceComments : t.comments} count={props.total}>
+      <Show when={props.hasMore}>
+        <Bar
+          end={
+            <Button variant="ghost" busy={props.loadingMore} onClick={() => void props.onLoadMore()}>
+              {t.loadEarlierComments}
+            </Button>
+          }
         />
       </Show>
-    </Discussion>
+      <Show when={props.loadError}>{(error) => <Failed text={error()} onRetry={() => void props.onRetry()} />}</Show>
+      <Show when={!(props.loading && sortedComments().length === 0)} fallback={<Loading rows={2} lines={2} />}>
+        <For each={sortedComments()}>
+          {(comment) => (
+            <>
+              <Row
+                avatar={{
+                  name: comment.userName ?? t.unknownUser,
+                  image: comment.userId && comment.userAvatarHash ? cloudAvatarSource(comment.userId, comment.userAvatarHash) : undefined,
+                }}
+                lines={[comment.userName ?? t.unknownUser, dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)]}
+                end={
+                  props.canWrite && (comment.canEdit || comment.canDelete) ? (
+                    <Menu
+                      label={t.moreActionsFor({ label: comment.userName ?? t.unknownUser })}
+                      items={[
+                        ...(comment.canEdit
+                          ? [
+                              {
+                                label: t.editComment,
+                                icon: "pencil",
+                                onClick: () => {
+                                  setEdited(comment.content);
+                                  setEditing(comment);
+                                },
+                              },
+                            ]
+                          : []),
+                        ...(comment.canDelete
+                          ? [{ label: t.deleteComment, icon: "trash", danger: true, onClick: () => void deleteComment(comment.id) }]
+                          : []),
+                      ]}
+                    />
+                  ) : undefined
+                }
+              />
+              <Prose markdown={comment.content} />
+            </>
+          )}
+        </For>
+      </Show>
+      <Show when={props.canWrite}>
+        {/* k2b-ui gap: the chat composer of @k2b/editor is not in v2 yet; a comment is written in a plain multiline field. */}
+        <Field label={t.addComment} name="comment" error={createCommentMutation.error()?.message}>
+          <Input multiline value={draft()} placeholder={t.commentPlaceholder} onInput={setDraft} />
+        </Field>
+        <Bar
+          end={
+            <Button busy={createCommentMutation.loading()} disabled={!draft().trim()} onClick={() => void post()}>
+              {t.postComment}
+            </Button>
+          }
+        />
+      </Show>
+      <Show when={editing()}>
+        <Dialog
+          title={t.editComment}
+          open
+          onOpenChange={(open) => !open && setEditing(null)}
+          foot={
+            <>
+              <Button onClick={() => setEditing(null)}>{t.cancel}</Button>
+              <Button variant="primary" disabled={!edited().trim()} onClick={() => void saveEdit()}>
+                {t.saveComment}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t.comment} name="comment-edit" required>
+            <Input multiline value={edited()} onInput={setEdited} />
+          </Field>
+        </Dialog>
+      </Show>
+    </Section>
   );
 }

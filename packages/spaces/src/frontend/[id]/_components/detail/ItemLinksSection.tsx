@@ -1,7 +1,7 @@
 import { openCloudResourcePicker } from "@k2b/cloud/browser/resource-picker";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { type DetailLinkItem, DetailLinks, DetailPanel, prompts, StatusBadge, type StatusTone, toast } from "@k2b/ui";
-import { createMemo, createSignal, onMount, Show } from "solid-js";
+import { Button, Chip, Dialog, Field, Input, Menu, Row, Section, useToast } from "@k2b/ui/v2";
+import { createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemLink, SpaceItemLinkPreview, SpaceItemResourceReferenceInput } from "@/contracts";
 import { linkHostname, parseGitHubLink } from "@/lib/link-targets";
@@ -22,8 +22,6 @@ type Props = {
   onChanged: () => void;
 };
 
-const previewTone: Record<SpaceItemLinkPreview["state"], StatusTone> = { open: "ok", closed: "neutral", merged: "info" };
-
 const isHttpUrl = (value: string): boolean => {
   try {
     const url = new URL(value);
@@ -34,23 +32,6 @@ const isHttpUrl = (value: string): boolean => {
 };
 
 /** A site's favicon; falls back to a generic icon when the host serves none. */
-function LinkFavicon(props: { url: string }) {
-  const [failed, setFailed] = createSignal(false);
-  return (
-    <Show when={!failed()} fallback={<i class="ti ti-world" aria-hidden="true" />}>
-      <img
-        src={`https://${linkHostname(props.url)}/favicon.ico`}
-        alt=""
-        width={16}
-        height={16}
-        loading="lazy"
-        referrerpolicy="no-referrer"
-        class="h-4 w-4 rounded-[2px]"
-        onError={() => setFailed(true)}
-      />
-    </Show>
-  );
-}
 
 /**
  * One "Linked" list per item: related tasks and other Cloud resource references, then external URLs.
@@ -60,6 +41,7 @@ function LinkFavicon(props: { url: string }) {
  */
 export default function ItemLinksSection(props: Props) {
   const t = useSpaceMessages();
+  const toast = useToast();
   const retryToast = createRetryToasts();
   const [filled, setFilled] = createSignal<SpaceItemLink[] | null>(null);
   const links = () => filled() ?? props.links;
@@ -86,7 +68,7 @@ export default function ItemLinksSection(props: Props) {
       if (!response.ok) throw new Error(await readResponseError(response, t.unlinkResourceFailed));
     },
     onSuccess: () => props.onChanged(),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   type LinkReferenceIntent = { itemId: string; reference: SpaceItemResourceReferenceInput };
@@ -135,7 +117,7 @@ export default function ItemLinksSection(props: Props) {
       setFilled(null);
       props.onChanged();
     },
-    onError: (error) => toast.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const busy = () => unlinkReference.loading() || linkReference.loading() || addLink.loading() || removeLink.loading();
@@ -150,151 +132,126 @@ export default function ItemLinksSection(props: Props) {
     await linkReference.mutate({ itemId: props.itemId, reference: { ref: selected.ref, label: selected.title } });
   };
 
-  const promptLink = async () => {
-    const values = await prompts.form({
-      title: t.addLink,
-      icon: "ti ti-link-plus",
-      fields: {
-        url: {
-          type: "text",
-          label: t.linkUrl,
-          placeholder: "https://",
-          required: true,
-          validate: (value) => (value && !isHttpUrl(value.trim()) ? t.invalidLinkUrl : null),
-        },
-        label: { type: "text", label: t.linkLabel, description: t.linkLabelDescription },
-      },
-      confirmText: t.addLink,
-    });
-    if (!values) return;
-    await addLink.mutate({ itemId: props.itemId, link: { url: values.url.trim(), label: values.label?.trim() || null } });
+  const [adding, setAdding] = createSignal(false);
+  const [url, setUrl] = createSignal("");
+  const [label, setLabel] = createSignal("");
+  const [urlError, setUrlError] = createSignal<string>();
+  const submitLink = async () => {
+    const value = url().trim();
+    if (!value || !isHttpUrl(value)) return setUrlError(t.invalidLinkUrl);
+    await addLink.mutate({ itemId: props.itemId, link: { url: value, label: label().trim() || null } });
+    if (!addLink.error()) {
+      setAdding(false);
+      setUrl("");
+      setLabel("");
+    }
   };
-
-  const menu = (label: string, action: () => void, actionLabel: string) =>
-    props.canEdit
-      ? {
-          menuLabel: t.moreActionsFor({ label }),
-          // A getter keeps the rows stable while a write is pending; only the menu entry follows `busy`.
-          menuItems: [
-            {
-              label: actionLabel,
-              icon: "ti ti-unlink",
-              get disabled() {
-                return busy();
-              },
-              action,
-            },
-          ],
-        }
-      : {};
-
   const stateLabel = (state: SpaceItemLinkPreview["state"]) =>
     state === "open" ? t.linkStateOpen : state === "merged" ? t.linkStateMerged : t.linkStateClosed;
-
   const referenceIcon = (reference: SpaceItemDetail["references"][number]) =>
-    reference.resource?.icon ??
-    (reference.ref.type === "spaces.item" ? "ti ti-checkbox" : reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
-
-  const referenceItems = createMemo((): DetailLinkItem[] =>
-    props.references.map((reference) => {
-      const href = reference.resource?.links?.find((link) => link.rel === "open")?.href;
-      const shared = {
-        id: `ref:${reference.ref.type}:${reference.ref.id}`,
-        title: reference.label,
-        icon: referenceIcon(reference),
-        ...menu(reference.label, () => unlinkReference.mutate(reference.ref), t.unlink),
-      };
-      // A reference the person can no longer open stays visible, disabled, and says why.
-      if (!href)
-        return {
-          ...shared,
-          disabled: true,
-          description: reference.ref.type === "spaces.item" ? t.taskUnavailable : t.resourceUnavailable,
-        };
-      return {
-        ...shared,
-        href,
-        description: reference.resource?.title !== reference.label ? reference.resource?.title : undefined,
-        trailing: !props.canEdit ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined,
-      };
-    }),
-  );
-
-  const linkItems = createMemo((): DetailLinkItem[] =>
-    links().map((link) => {
-      const preview = link.preview;
-      const github = parseGitHubLink(link.url);
-      const external = {
-        id: `url:${link.url}`,
-        href: link.url,
-        target: "_blank",
-        rel: "noreferrer",
-        trailing: !props.canEdit ? <i class="ti ti-external-link" aria-hidden="true" /> : undefined,
-      };
-      if (preview) {
-        const label = `${preview.repo}#${preview.number}`;
-        return {
-          ...external,
-          title: preview.title,
-          leading: <i class={preview.type === "pull" ? "ti ti-git-pull-request" : "ti ti-brand-github"} aria-hidden="true" />,
-          description: (
-            <span class="inline-flex items-center gap-1.5">
-              <span>{label}</span>
-              <StatusBadge variant="dot" tone={previewTone[preview.state]} label={stateLabel(preview.state)} />
-            </span>
-          ),
-          ...menu(label, () => removeLink.mutate(link.url), t.removeLink),
-        };
-      }
-      const title = link.label ?? (github ? `${github.owner}/${github.repo}#${github.number}` : linkHostname(link.url));
-      return {
-        ...external,
-        title,
-        leading: github ? <i class="ti ti-brand-github" aria-hidden="true" /> : <LinkFavicon url={link.url} />,
-        description: link.label ? linkHostname(link.url) : link.url.replace(/^https?:\/\//, ""),
-        ...menu(title, () => removeLink.mutate(link.url), t.removeLink),
-      };
-    }),
-  );
+    (
+      reference.resource?.icon ??
+      (reference.ref.type === "spaces.item" ? "checkbox" : reference.ref.type === "mail.conversation" ? "mail" : "link")
+    ).replace(/^ti\s+ti-/, "");
+  const unlinkMenu = (name: string, run: () => void, words: string) =>
+    props.canEdit ? (
+      <Menu label={t.moreActionsFor({ label: name })} items={[{ label: words, icon: "unlink", disabled: busy(), onClick: run }]} />
+    ) : undefined;
 
   return (
-    <DetailLinks
-      incoming={[]}
-      outgoing={[...referenceItems(), ...linkItems()]}
-      footer={
-        <Show when={props.canEdit}>
-          <DetailPanel.Action
-            type="button"
-            onClick={() => void promptLink()}
-            disabled={busy()}
-            leading={
-              <i
-                class={
-                  addLink.loading() ? "ti ti-loader-2 animate-spin text-[var(--k2b-action)]" : "ti ti-link-plus text-[var(--k2b-action)]"
-                }
-                aria-hidden="true"
-              />
-            }
-            title={t.addLink}
-          />
-          <DetailPanel.Action
-            type="button"
-            onClick={() => void linkCloudResource()}
-            disabled={busy()}
-            leading={
-              <i
-                class={
-                  linkReference.loading()
-                    ? "ti ti-loader-2 animate-spin text-[var(--k2b-action)]"
-                    : "ti ti-cloud-plus text-[var(--k2b-action)]"
-                }
-                aria-hidden="true"
-              />
-            }
-            title={t.linkCloudResource}
-          />
-        </Show>
+    <Section
+      icon="link"
+      title={t.links}
+      count={props.references.length + links().length}
+      actions={
+        props.canEdit
+          ? [
+              { label: t.addLink, icon: "link-plus", disabled: busy(), onClick: () => setAdding(true) },
+              { label: t.linkCloudResource, icon: "cloud-plus", disabled: busy(), onClick: () => void linkCloudResource() },
+            ]
+          : undefined
       }
-    />
+    >
+      <For each={props.references}>
+        {(reference) => {
+          const href = reference.resource?.links?.find((link) => link.rel === "open")?.href;
+          // A reference the person can no longer open stays visible and says why.
+          const second = !href
+            ? reference.ref.type === "spaces.item"
+              ? t.taskUnavailable
+              : t.resourceUnavailable
+            : reference.resource?.title !== reference.label
+              ? reference.resource?.title
+              : undefined;
+          return (
+            <Row
+              icon={referenceIcon(reference)}
+              lines={second ? [reference.label, second] : [reference.label]}
+              href={href}
+              end={unlinkMenu(reference.label, () => unlinkReference.mutate(reference.ref), t.unlink)}
+            />
+          );
+        }}
+      </For>
+      <For each={links()}>
+        {(link) => {
+          const preview = link.preview;
+          const github = parseGitHubLink(link.url);
+          const title =
+            preview?.title ?? link.label ?? (github ? `${github.owner}/${github.repo}#${github.number}` : linkHostname(link.url));
+          const second = preview
+            ? `${preview.repo}#${preview.number}`
+            : link.label
+              ? linkHostname(link.url)
+              : link.url.replace(/^https?:\/\//, "");
+          return (
+            // k2b-ui gap: a Row link cannot open in a new tab; an outside link opens in this one (a modifier key keeps a tab).
+            <Row
+              icon={preview?.type === "pull" ? "git-pull-request" : github ? "brand-github" : "world"}
+              lines={[title, second]}
+              href={link.url}
+              end={
+                <>
+                  <Show when={preview}>
+                    {(state) => <Chip status={state().state === "open" ? "ok" : "warn"}>{stateLabel(state().state)}</Chip>}
+                  </Show>
+                  {unlinkMenu(title, () => removeLink.mutate(link.url), t.removeLink)}
+                </>
+              }
+            />
+          );
+        }}
+      </For>
+      <Show when={adding()}>
+        <Dialog
+          title={t.addLink}
+          open
+          onOpenChange={(open) => !open && setAdding(false)}
+          foot={
+            <>
+              <Button onClick={() => setAdding(false)}>{t.cancel}</Button>
+              <Button variant="primary" icon="link-plus" busy={addLink.loading()} onClick={() => void submitLink()}>
+                {t.addLink}
+              </Button>
+            </>
+          }
+        >
+          <Field label={t.linkUrl} name="link-url" error={urlError()} required>
+            <Input
+              type="url"
+              value={url()}
+              placeholder="https://"
+              onInput={(value) => {
+                setUrl(value);
+                setUrlError(undefined);
+              }}
+            />
+          </Field>
+          <Field label={t.linkLabel} name="link-label" hint={t.linkLabelDescription} optional={t.optional}>
+            <Input value={label()} onInput={setLabel} />
+          </Field>
+        </Dialog>
+      </Show>
+    </Section>
   );
 }

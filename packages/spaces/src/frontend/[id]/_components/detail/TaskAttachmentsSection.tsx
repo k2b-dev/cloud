@@ -1,6 +1,5 @@
 import { chooseFiles, SAVE_FILES_ICON, type SaveFileSource, SaveFilesButton, saveFiles, saveFilesLabel } from "@k2b/cloud/browser/files";
 import {
-  DetailPanel,
   FileDropTarget,
   FileGrid,
   fileKindLabel,
@@ -9,12 +8,10 @@ import {
   IconButtonLink,
   Lightbox,
   type LightboxItem,
-  prompts,
-  Section,
   Tooltip,
-  toast,
   useLocale,
 } from "@k2b/ui";
+import { Canvas, confirm, Section, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "@/api/client";
@@ -40,6 +37,7 @@ export default function TaskAttachmentsSection(props: {
   onChanged: () => void;
 }) {
   const t = useSpaceMessages();
+  const toast = useToast();
   const locale = useLocale();
   const retryToast = createRetryToasts();
   const [attachments, setAttachments] = createSignal([...props.attachments]);
@@ -138,8 +136,8 @@ export default function TaskAttachmentsSection(props: {
 
       const firstFailure = failures[0];
       if (failures.length === 1 && firstFailure)
-        toast.error(t.addMediaFileFailed({ filename: firstFailure.filename, message: firstFailure.message }));
-      else if (failures.length > 1) toast.error(t.addMediaFilesFailed({ count: failures.length }));
+        toast(t.addMediaFileFailed({ filename: firstFailure.filename, message: firstFailure.message }), { status: "bad" });
+      else if (failures.length > 1) toast(t.addMediaFilesFailed({ count: failures.length }), { status: "bad" });
     } finally {
       if (changed) props.onChanged();
       setUploading(false);
@@ -162,14 +160,15 @@ export default function TaskAttachmentsSection(props: {
       });
       if (chosen.length > 0) await uploadMedia(chosen);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : t.uploadMediaFilesFailed);
+      toast(error instanceof Error ? error.message : t.uploadMediaFilesFailed, { status: "bad" });
     }
   };
 
   const removeAttachment = async (attachment: SpaceItemAttachment) => {
-    const confirmed = await prompts.confirm(t.deleteAttachmentQuestion({ filename: attachment.filename }), {
+    const confirmed = await confirm({
+      description: t.deleteAttachmentQuestion({ filename: attachment.filename }),
+      confirm: t.delete,
       title: t.deleteAttachment,
-      variant: "danger",
     });
     if (confirmed) await deleteAttachment(props.itemId, attachment);
   };
@@ -198,8 +197,25 @@ export default function TaskAttachmentsSection(props: {
     );
 
   return (
-    <>
-      <Section title={t.attachments} icon="ti ti-paperclip" count={media().length || undefined}>
+    <Section
+      icon="paperclip"
+      title={t.attachments}
+      count={media().length || undefined}
+      actions={
+        props.canWrite && attachments().length < MAX_TASK_ATTACHMENTS
+          ? [
+              {
+                label: uploading() ? t.addingMedia : t.addMedia,
+                icon: "photo-plus",
+                disabled: uploading() || deletingId() !== null,
+                onClick: () => void chooseAndUploadMedia(),
+              },
+            ]
+          : undefined
+      }
+    >
+      {/* The file grid, its drop target and the lightbox draw and play media themselves. */}
+      <Canvas label={t.attachments}>
         <div class="flex flex-col gap-2">
           <Show when={media().length > 0}>
             {/* Videos as rows first, then images as tiles: the short list keeps the order of the full one. */}
@@ -282,25 +298,16 @@ export default function TaskAttachmentsSection(props: {
               onDrop={(files) => void uploadMedia(files)}
             />
           </Show>
-          <Show when={props.canWrite && attachments().length < MAX_TASK_ATTACHMENTS}>
-            <DetailPanel.Action
-              type="button"
-              onClick={() => void chooseAndUploadMedia()}
-              disabled={uploading() || deletingId() !== null}
-              leading={<i class={`ti ${uploading() ? "ti-loader-2 animate-spin" : "ti-photo-plus"}`} aria-hidden="true" />}
-              title={uploading() ? t.addingMedia : t.addMedia}
+          <Show when={lightboxIndex() !== null && lightboxItems().length > 0}>
+            <Lightbox
+              items={lightboxItems()}
+              index={lightboxIndex() ?? 0}
+              onIndexChange={setLightboxIndex}
+              onClose={() => setLightboxIndex(null)}
             />
           </Show>
         </div>
-      </Section>
-      <Show when={lightboxIndex() !== null && lightboxItems().length > 0}>
-        <Lightbox
-          items={lightboxItems()}
-          index={lightboxIndex() ?? 0}
-          onIndexChange={setLightboxIndex}
-          onClose={() => setLightboxIndex(null)}
-        />
-      </Show>
-    </>
+      </Canvas>
+    </Section>
   );
 }

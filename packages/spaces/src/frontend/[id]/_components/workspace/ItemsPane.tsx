@@ -14,6 +14,8 @@ import { useSpacesRouteQuery } from "./route-query";
 import { subscribeToSpacesDetailStep } from "./workspace-events";
 
 type Props = {
+  /** Hands the head its search: it writes `q` into the address of this view and loads it. */
+  onSearchReady?: (run: (text: string) => void) => void;
   space: SpaceDetail;
   currentView: "list" | "table";
   filter: FilterState;
@@ -69,6 +71,7 @@ export default function ItemsPane(props: Props) {
     return `${current.pathname}${params.size ? `?${params}` : ""}`;
   };
   const change = (next: SpaceListState) => view.open(hrefWith({ state: next }));
+  props.onSearchReady?.((text) => change({ ...state(), search: text || undefined }));
   const groupLabel = (group: ItemGroupBy) =>
     ({ deadline: t.schedule, column: t.status, priority: t.priority, tag: t.tag, none: t.none })[group];
 

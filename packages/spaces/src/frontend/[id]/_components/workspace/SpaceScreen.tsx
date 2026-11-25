@@ -2,11 +2,12 @@ import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Bar, Canvas, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
-import { createEffect, createMemo, onCleanup, Show } from "solid-js";
+import { Avatar, Bar, Canvas, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
 import { spaceCommandMessages } from "../../../../commands";
 import SpacesNav, { useSpacesNav } from "../../../_components/spaces-nav";
+import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import ItemDetailPane from "../detail/ItemDetailPane";
 import { useItemDetailRoute } from "../detail/item-detail-route";
@@ -99,6 +100,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
     (message) => toast(message, { status: "bad" }),
   );
 
+  createSpaceCommands({ current: () => (state.canWrite ? state.space : undefined), dateConfig: props.dateConfig });
   const create = createItemController({
     spaceId: state.space.id,
     columns: state.space.columns,
@@ -118,6 +120,8 @@ export default function SpaceScreen(props: SpaceScreenProps) {
     }),
   );
   const primaryLabel = view === "calendar" ? t.newEvent : t.newTask;
+  /** The search of the head runs through the view below, which owns its address and its loading. */
+  const [search, setSearch] = createSignal<(text: string) => void>();
   createEffect(() => {
     if (!state.canWrite) return;
     const commands = spaceCommandMessages.resolve([locale()]).t;
@@ -133,16 +137,18 @@ export default function SpaceScreen(props: SpaceScreenProps) {
           action: () => create.createItem({ type: "task" }),
         }),
       );
-    onCleanup(
-      registerContextAwareCommand({
-        id: view === "calendar" ? "spaces.event.compose" : "spaces.task.compose",
-        title: primaryLabel,
-        description: commands.createDescription({ name: state.space.name }),
-        icon: "ti ti-plus",
-        shortcut: "mod+alt+n",
-        action: () => create.createItem({ type: view === "calendar" ? "event" : "task" }),
-      }),
-    );
+    // The compose commands open the same form as the head, also from the command palette and `?command=` links.
+    for (const type of ["task", "event"] as const)
+      onCleanup(
+        registerContextAwareCommand({
+          id: `spaces.${type}.compose`,
+          title: type === "task" ? t.newTask : t.newEvent,
+          description: commands.createDescription({ name: state.space.name }),
+          icon: type === "task" ? "ti ti-checkbox" : "ti ti-calendar-event",
+          ...(type === (view === "calendar" ? "event" : "task") ? { shortcut: "mod+alt+n" } : {}),
+          action: { command: `spaces.${type}.compose`, input: { spaceId: state.space.id } },
+        }),
+      );
   });
 
   const searchSpace = createSpaceSearch({ spaceId: state.space.id, spaceName: state.space.name });
@@ -228,6 +234,24 @@ export default function SpaceScreen(props: SpaceScreenProps) {
           }
           end={
             <>
+              <Show when={view !== "calendar"}>
+                <Input
+                  type="search"
+                  icon="search"
+                  label={t.searchItems}
+                  placeholder={t.searchItems}
+                  value={route.filter.search}
+                  onKeyDown={(event) => {
+                    if (event.isComposing) return;
+                    const input = event.currentTarget as HTMLInputElement;
+                    if (event.key === "Enter") search()?.(input.value.trim());
+                    if (event.key === "Escape" && input.value) {
+                      input.value = "";
+                      search()?.("");
+                    }
+                  }}
+                />
+              </Show>
               <Show when={props.people.length > 0}>
                 {/* k2b-ui gap: no avatar stack; the first four people stand side by side, all of them in the menu. */}
                 {props.people.slice(0, 4).map((person) => (
@@ -261,6 +285,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         <Show when={view === "list" || view === "table"}>
           <ItemsPane
             space={state.space}
+            onSearchReady={(run) => setSearch(() => run)}
             currentView={view === "table" ? "table" : "list"}
             filter={route.filter}
             initialItemsResult={state.itemsResult}
@@ -275,6 +300,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         <Show when={view === "kanban"}>
           <BoardPane
             space={state.space}
+            onSearchReady={(run) => setSearch(() => run)}
             filter={route.filter}
             baseUrl={route.itemLinkBaseUrl}
             wormholes={state.wormholes}
