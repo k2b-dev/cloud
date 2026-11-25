@@ -16,8 +16,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { categoryOrder, registryMessages, resolveRegistry } = await import("./registry");
 const { default: ToolCatalog, toolCatalogMessages } = await import("../ToolCatalog.island.tsx");
 const { toolSearchMessages } = await import("../ToolSearchButton.island.tsx");
-const { toolsWorkspaceMessages } = await import("../ToolsWorkspace.tsx");
-const { toolsPageMessages } = await import("../page.tsx");
+const { toolsWorkspaceMessages } = await import("../tools-messages");
 const { LocaleProvider } = await import("@k2b/ui");
 
 const mustTool = (registry: LocalizedRegistry, id: ToolId): LocalizedTool => {
@@ -28,7 +27,7 @@ const mustTool = (registry: LocalizedRegistry, id: ToolId): LocalizedTool => {
 
 describe("Tools i18n catalogs", () => {
   test("German is complete for every catalog", () => {
-    for (const catalog of [registryMessages, toolCatalogMessages, toolSearchMessages, toolsWorkspaceMessages, toolsPageMessages]) {
+    for (const catalog of [registryMessages, toolCatalogMessages, toolSearchMessages, toolsWorkspaceMessages]) {
       expect(catalog.locales).toContain("de");
       expect(catalog.check()).toEqual([]);
     }
@@ -41,14 +40,16 @@ describe("Tools i18n catalogs", () => {
     expect(mustTool(registry, "qr").description).toBe("Links, WLAN-Zugänge, Kontakte und Text als QR-Codes ausgeben.");
     expect(registry.categories.security.label).toBe("Sicherheit");
     expect(registry.categories.text.label).toBe("Text und Codes");
-    expect(toolCatalogMessages.resolve(["de"]).t.emptyTitle).toBe("Kein Werkzeug passt zu dieser Aufgabe");
+    expect(toolCatalogMessages.resolve(["de"]).t.emptyTitle).toBe(
+      "Kein Werkzeug passt zu dieser Aufgabe. Suche nach einem Werkzeug, Format oder Arbeitsschritt.",
+    );
   });
 
   test("keeps the English base text", () => {
     const registry = resolveRegistry("en");
     expect(mustTool(registry, "password").name).toBe("Password");
     expect(registry.categories.documents.label).toBe("Documents");
-    expect(toolCatalogMessages.resolve(["en"]).t.matchingTools({ count: 1 })).toBe("1 matching tool.");
+    expect(toolCatalogMessages.resolve(["en"]).t.matchingTools({ count: 1 })).toBe("1 matching tool");
     expect(toolCatalogMessages.resolve(["de"]).t.matchingTools({ count: 2 })).toBe("2 passende Werkzeuge.");
   });
 
@@ -100,19 +101,26 @@ describe("Tools i18n catalogs", () => {
         .sort(),
     ).toEqual(["image", "image-converter"]);
     const html = renderToString(() => createComponent(ToolCatalog, {}));
-    expect([...html.matchAll(/id="tool-group-([^"]+)"/g)].map((match) => match[1])).toEqual(categoryOrder);
-    expect([...html.matchAll(/class="[^"]*\bk2b-link-card\b[^"]*"/g)]).toHaveLength(4);
+    const sections = [...html.matchAll(/data-k2-part="Section" aria-label="([^"]+)"/g)].map((match) => match[1]);
+    const english = resolveRegistry("en");
+    expect(sections).toEqual([
+      toolCatalogMessages.resolve(["en"]).t.quickTools,
+      ...categoryOrder.map((category) => english.categories[category].label),
+    ]);
+    // the tools used often are tiles: four of them
+    expect(html.match(/data-k2-part="Tiles"[\s\S]*?<\/[a-z]+>/)).not.toBeNull();
+    expect([...html.matchAll(/href="\/tools\/(image|qr|password|speedtest)"/g)].length).toBeGreaterThanOrEqual(8);
   });
 
   test("SSR search starts with the requested query and offers recovery for no results", () => {
-    const hits = renderToString(() => createComponent(ToolCatalog, { initialQuery: "sha256" }));
+    const hits = renderToString(() => createComponent(ToolCatalog, { search: "sha256" }));
     expect(hits).toContain('value="sha256"');
     expect(hits).toContain("Checksum");
-    expect(hits).not.toContain('id="quick-tools-title"');
-    const empty = renderToString(() => createComponent(ToolCatalog, { initialQuery: "zzzzzzzzzzzzzzzzzzzzzzzzzzzz" }));
-    expect(empty).toContain("No tools match this task");
+    expect(hits).not.toContain('aria-label="Used often"');
+    const empty = renderToString(() => createComponent(ToolCatalog, { search: "zzzzzzzzzzzzzzzzzzzzzzzzzzzz" }));
+    expect(empty).toContain("No tool matches this task");
     expect(empty).toContain("Clear search");
-    expect(empty).not.toContain('id="tool-group-');
+    expect(empty).not.toContain('data-k2-part="List"');
   });
 
   test("SSR render under LocaleProvider matches the direct German resolve", () => {
@@ -126,7 +134,7 @@ describe("Tools i18n catalogs", () => {
         }),
     );
     expect(html).toContain(toolCatalogMessages.resolve(["de"]).t.quickTools);
-    expect(html).toContain(toolCatalogMessages.resolve(["de"]).t.groupedByTask);
+    expect(html).toContain(toolCatalogMessages.resolve(["de"]).t.allTools({ count: 15 }));
     expect(html).toContain(mustTool(resolveRegistry("de"), "password").name);
     expect(html).not.toContain("Used often");
   });

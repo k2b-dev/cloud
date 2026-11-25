@@ -77,7 +77,7 @@ render(
               fallback={
                 <AppOverview title={labels.appName} icon="ti ti-tools">
                   <AppOverview.Main title={locale === "de" ? "Passendes Werkzeug finden" : "Find a utility"}>
-                    <ToolCatalog initialQuery={params.get("q") ?? ""} />
+                    <ToolCatalog search={params.get("q") ?? ""} />
                   </AppOverview.Main>
                 </AppOverview>
               }

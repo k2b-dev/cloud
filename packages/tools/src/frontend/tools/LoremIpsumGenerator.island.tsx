@@ -1,8 +1,10 @@
 import { i18n } from "@k2b/stdlib";
-import { timed } from "@k2b/stdlib/solid";
-import { Button, SegmentedControl, Slider, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal } from "solid-js";
-import { ToolCodeBlock } from "./ToolOutput";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Choice, Field, Input, Pane, Section, Text } from "@k2b/ui/v2";
+import { createMemo, createSignal, For, onMount } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { useToolCopy } from "../tool-copy";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 type Mode = "paragraphs" | "sentences" | "words";
 
@@ -17,9 +19,9 @@ export const loremMessages = i18n.define({
       countDescriptionParagraphs: "Number of paragraphs to generate",
       countDescriptionSentences: "Number of sentences to generate",
       countDescriptionWords: "Number of words to generate",
-      regenerate: "Regenerate",
+      regenerate: "Generate again",
       copied: "Copied",
-      copyText: "Copy Text",
+      copyText: "Copy text",
     },
     de: {
       paragraphs: "Absätze",
@@ -29,7 +31,7 @@ export const loremMessages = i18n.define({
       countDescriptionParagraphs: "Absätze pro Durchlauf",
       countDescriptionSentences: "Sätze pro Durchlauf",
       countDescriptionWords: "Wörter pro Durchlauf",
-      regenerate: "Neu generieren",
+      regenerate: "Neu erzeugen",
       copied: "Kopiert",
       copyText: "Text kopieren",
     },
@@ -158,109 +160,86 @@ const generateParagraph = (): string => {
   return sentences.join(" ");
 };
 
+/**
+ * Placeholder text on v2: the unit as a choice and the amount in a field; the text follows at once and reads as
+ * paragraphs below. "Text kopieren" is the main deed, "Neu erzeugen" draws other words.
+ */
 export default function LoremIpsumGenerator() {
   const locale = useLocale();
   const t = () => loremMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const copy = useToolCopy();
   const [mode, setMode] = createSignal<Mode>("paragraphs");
   const [count, setCount] = createSignal(3);
-  const [output, setOutput] = createSignal("");
-  const [copied, setCopied] = createSignal(false);
-
-  const maxCount = createMemo(() => {
-    switch (mode()) {
-      case "paragraphs":
-        return 20;
-      case "sentences":
-        return 50;
-      case "words":
-        return 500;
-    }
+  const [nonce, setNonce] = createSignal(0);
+  // The words are random, so they come with the browser; the server's picture shows the empty result.
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
+  const maxCount = () => (mode() === "paragraphs" ? 20 : mode() === "sentences" ? 50 : 500);
+  const paragraphs = createMemo(() => {
+    nonce();
+    if (!mounted()) return [];
+    const amount = Math.min(count(), maxCount());
+    if (mode() === "paragraphs") return Array.from({ length: amount }, generateParagraph);
+    if (mode() === "sentences") return [Array.from({ length: amount }, generateSentence).join(" ")];
+    const words = Array.from({ length: amount }, randomWord);
+    words[0] = capitalize(words[0]!);
+    return [`${words.join(" ")}.`];
   });
-
-  const generate = () => {
-    switch (mode()) {
-      case "paragraphs": {
-        const paras: string[] = [];
-        for (let i = 0; i < count(); i++) paras.push(generateParagraph());
-        setOutput(paras.join("\n\n"));
-        break;
-      }
-      case "sentences": {
-        const sents: string[] = [];
-        for (let i = 0; i < count(); i++) sents.push(generateSentence());
-        setOutput(sents.join(" "));
-        break;
-      }
-      case "words": {
-        const words: string[] = [];
-        for (let i = 0; i < count(); i++) words.push(randomWord());
-        words[0] = capitalize(words[0]!);
-        setOutput(words.join(" ") + ".");
-        break;
-      }
-    }
-  };
-
-  const { debouncedFn: debouncedGenerate, trigger: generateNow } = timed.debounce(generate, 200);
-
-  // Live regenerate when mode or count changes (initial mount included).
-  createEffect(() => {
-    mode();
-    count();
-    debouncedGenerate();
-  });
-
-  const copy = async () => {
-    await navigator.clipboard.writeText(output());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const countDescription = () => {
-    switch (mode()) {
-      case "paragraphs":
-        return t().countDescriptionParagraphs;
-      case "sentences":
-        return t().countDescriptionSentences;
-      case "words":
-        return t().countDescriptionWords;
-    }
-  };
-
+  const text = () => paragraphs().join("\n\n");
+  const countDescription = () =>
+    mode() === "paragraphs"
+      ? t().countDescriptionParagraphs
+      : mode() === "sentences"
+        ? t().countDescriptionSentences
+        : t().countDescriptionWords;
+  const copyAction = { label: t().copyText, icon: "copy", onClick: () => void copy(text()) };
   return (
-    <div class="flex flex-col gap-4">
-      <SegmentedControl
-        options={[
-          { value: "paragraphs" as Mode, label: t().paragraphs },
-          { value: "sentences" as Mode, label: t().sentences },
-          { value: "words" as Mode, label: t().words },
-        ]}
-        value={mode}
-        onValueChange={setMode}
-      />
-      <div class="paper p-4 flex flex-col gap-3">
-        <Slider
-          label={t().count}
-          description={countDescription()}
-          value={count}
-          onValueChange={setCount}
-          min={1}
-          max={maxCount()}
-          step={1}
-          showValue
-        />
-        <Button size="sm" class="self-start" onClick={() => generateNow()}>
-          <i class="ti ti-refresh" /> {t().regenerate}
-        </Button>
-      </div>
-      {output() && (
-        <div class="paper p-4 flex flex-col gap-3">
-          <ToolCodeBlock class="max-h-96 overflow-y-auto text-sm leading-relaxed">{output()}</ToolCodeBlock>
-          <Button size="sm" class="self-start" onClick={copy}>
-            <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} /> {copied() ? t().copied : t().copyText}
+    <ToolsScreen
+      tool="lorem"
+      primary={copyAction}
+      end={
+        <>
+          <Button icon="refresh" onClick={() => setNonce((value) => value + 1)}>
+            {t().regenerate}
           </Button>
-        </div>
-      )}
-    </div>
+          <Button variant="primary" icon="copy" onClick={copyAction.onClick}>
+            {t().copyText}
+          </Button>
+        </>
+      }
+    >
+      <Pane label={w().result} scrollKey="tools-lorem">
+        <Band label={w().settings}>
+          <Field label={w().kind}>
+            <Choice
+              name="lorem-mode"
+              value={mode()}
+              onChange={(value) => setMode(value as Mode)}
+              options={[
+                { value: "paragraphs", label: t().paragraphs },
+                { value: "sentences", label: t().sentences },
+                { value: "words", label: t().words },
+              ]}
+            />
+          </Field>
+          <Field label={t().count} hint={countDescription()} optional={`1–${maxCount()}`}>
+            <Input
+              type="number"
+              min={1}
+              max={maxCount()}
+              value={String(count())}
+              onInput={(value) => {
+                const next = Number.parseInt(value, 10);
+                if (Number.isFinite(next)) setCount(Math.min(maxCount(), Math.max(1, next)));
+              }}
+            />
+          </Field>
+        </Band>
+        <Section icon="align-left" title={w().result}>
+          <For each={paragraphs()}>{(paragraph) => <Text type="body">{paragraph}</Text>}</For>
+        </Section>
+      </Pane>
+    </ToolsScreen>
   );
 }

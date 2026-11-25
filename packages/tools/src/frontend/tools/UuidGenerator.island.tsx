@@ -1,7 +1,10 @@
 import { i18n } from "@k2b/stdlib";
-import { Button, CopyButton, ScrollArea, Slider, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, For } from "solid-js";
-import { ToolCodeBlock } from "./ToolOutput";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Field, Input, List, Pane, Row, StatusRow } from "@k2b/ui/v2";
+import { createMemo, createSignal, For, onMount } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { useToolCopy } from "../tool-copy";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const uuidMessages = i18n.define({
   baseLocale: "en",
@@ -11,7 +14,8 @@ export const uuidMessages = i18n.define({
       countDescription: "Number of UUIDs to generate at once",
       uuidCount: ({ count }: { count: number }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
       copied: "Copied",
-      copyAll: "Copy All",
+      copyAll: "Copy all",
+      regenerate: "Generate again",
     },
     de: {
       count: "Anzahl",
@@ -19,64 +23,67 @@ export const uuidMessages = i18n.define({
       uuidCount: ({ count }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
       copied: "Kopiert",
       copyAll: "Alle kopieren",
+      regenerate: "Neu erzeugen",
     },
   },
 });
 
+/**
+ * UUIDs on v2: how many in one field, the list of fresh ones below, each with its own copy; "Alle kopieren" is the
+ * page's main deed, "Neu erzeugen" draws a new list.
+ */
 export default function UuidGenerator() {
   const locale = useLocale();
   const t = () => uuidMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const copy = useToolCopy();
   const [count, setCount] = createSignal(1);
-  const [uuids, setUuids] = createSignal<string[]>([]);
-  const [copiedAll, setCopiedAll] = createSignal(false);
-  const generate = () => {
-    const result: string[] = [];
-    for (let i = 0; i < count(); i++) {
-      result.push(crypto.randomUUID());
-    }
-    setUuids(result);
-    setCopiedAll(false);
-  };
-  createEffect(generate);
-  const copyAll = async () => {
-    await navigator.clipboard.writeText(uuids().join("\n"));
-    setCopiedAll(true);
-    setTimeout(() => setCopiedAll(false), 2000);
-  };
+  const [nonce, setNonce] = createSignal(0);
+  // Server and first browser picture show the same empty list; the UUIDs come with the browser (they are random).
+  const [mounted, setMounted] = createSignal(false);
+  onMount(() => setMounted(true));
+  const uuids = createMemo(() => {
+    nonce();
+    if (!mounted()) return [];
+    return Array.from({ length: count() }, () => crypto.randomUUID());
+  });
+  const copyAll = { label: t().copyAll, icon: "copy", onClick: () => void copy(uuids().join("\n")) };
   return (
-    <div class="flex min-h-0 flex-1 flex-col gap-4">
-      <div class="paper p-4 flex flex-col gap-3">
-        <Slider
-          label={t().count}
-          description={t().countDescription}
-          value={count}
-          onValueChange={setCount}
-          min={1}
-          max={100}
-          step={1}
-          showValue
-        />
-      </div>
-      {uuids().length > 0 && (
-        <div class="paper flex min-h-0 flex-1 flex-col gap-2 p-4">
-          <div class="flex items-center justify-between mb-1">
-            <p class="text-xs font-medium text-dimmed">{t().uuidCount({ count: uuids().length })}</p>
-            <Button variant="secondary" size="sm" onClick={copyAll}>
-              <i class={`ti ${copiedAll() ? "ti-check" : "ti-copy"}`} /> {copiedAll() ? t().copied : t().copyAll}
-            </Button>
-          </div>
-          <ScrollArea class="flex min-h-0 flex-1 flex-col gap-1">
-            <For each={uuids()}>
-              {(uuid) => (
-                <div class="k2b-progressive-row flex items-center gap-2">
-                  <ToolCodeBlock class="flex-1 px-2 py-1">{uuid}</ToolCodeBlock>
-                  <CopyButton text={uuid} class="k2b-progressive-action shrink-0" />
-                </div>
-              )}
-            </For>
-          </ScrollArea>
-        </div>
-      )}
-    </div>
+    <ToolsScreen
+      tool="uuid"
+      primary={copyAll}
+      end={
+        <>
+          <Button icon="refresh" onClick={() => setNonce((value) => value + 1)}>
+            {t().regenerate}
+          </Button>
+          <Button variant="primary" icon="copy" onClick={copyAll.onClick}>
+            {t().copyAll}
+          </Button>
+        </>
+      }
+    >
+      <Pane label={w().result} scrollKey="tools-uuid" status={<StatusRow lead={t().uuidCount({ count: uuids().length })} />}>
+        <Band label={w().settings}>
+          <Field label={t().count} hint={t().countDescription} optional="1–100">
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              value={String(count())}
+              onInput={(value) => {
+                const next = Number.parseInt(value, 10);
+                if (Number.isFinite(next)) setCount(Math.min(100, Math.max(1, next)));
+              }}
+            />
+          </Field>
+        </Band>
+        <List label={w().result}>
+          <For each={uuids()}>
+            {(uuid) => <Row lines={[uuid]} end={<Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(uuid)} />} />}
+          </For>
+        </List>
+      </Pane>
+    </ToolsScreen>
   );
 }

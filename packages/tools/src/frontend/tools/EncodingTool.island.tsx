@@ -1,7 +1,9 @@
 import { encoding, i18n } from "@k2b/stdlib";
-import { Button, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
-import { createMemo, createSignal } from "solid-js";
-import { ToolCodeBlock } from "./ToolOutput";
+import { useLocale } from "@k2b/ui";
+import { Band, Choice, Empty, Facts, Field, Input, Pane, Section } from "@k2b/ui/v2";
+import { createMemo, createSignal, Show } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 type Direction = "encode" | "decode";
 type Format = "base64" | "hex" | "base32";
@@ -52,118 +54,83 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
   return fallback;
 };
 
+/**
+ * Encoding on v2: the direction and the format as choices, the text in one field (an error stands at it), the result
+ * below as a value to copy.
+ */
 export default function EncodingTool() {
   const locale = useLocale();
   const t = () => encodingMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
   const [direction, setDirection] = createSignal<Direction>("encode");
   const [format, setFormat] = createSignal<Format>("base64");
   const [input, setInput] = createSignal("");
-  const [error, setError] = createSignal<string | undefined>();
-
-  const output = createMemo(() => {
+  const result = createMemo((): { output: string; error?: string } => {
     const text = input();
-    if (!text) {
-      setError(undefined);
-      return "";
-    }
-
+    if (!text) return { output: "" };
     try {
-      setError(undefined);
       if (direction() === "encode") {
         const bytes = encoder.encode(text);
-        switch (format()) {
-          case "base64":
-            return encoding.toBase64(bytes);
-          case "hex":
-            return encoding.toHex(bytes);
-          case "base32":
-            return encoding.toBase32(bytes);
-        }
-      } else {
-        let bytes: Uint8Array;
-        switch (format()) {
-          case "base64":
-            bytes = encoding.fromBase64(text);
-            break;
-          case "hex":
-            bytes = encoding.fromHex(text);
-            break;
-          case "base32":
-            bytes = encoding.fromBase32(text);
-            break;
-        }
-        return decoder.decode(bytes);
+        return {
+          output: format() === "base64" ? encoding.toBase64(bytes) : format() === "hex" ? encoding.toHex(bytes) : encoding.toBase32(bytes),
+        };
       }
+      const bytes =
+        format() === "base64" ? encoding.fromBase64(text) : format() === "hex" ? encoding.fromHex(text) : encoding.fromBase32(text);
+      return { output: decoder.decode(bytes) };
     } catch (error) {
-      setError(getErrorMessage(error, t().invalidInput));
-      return "";
+      return { output: "", error: getErrorMessage(error, t().invalidInput) };
     }
   });
-
-  const [copied, setCopied] = createSignal(false);
-  const copy = async () => {
-    const val = output();
-    if (!val) return;
-    await navigator.clipboard.writeText(val);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+  const outputLabel = () => (direction() === "encode" ? t().formatOutputLabel({ format: FORMAT_NAMES[format()] }) : t().decodedText);
   return (
-    <div class="flex flex-col gap-4">
-      <div class="paper p-4 flex flex-col gap-3">
-        {/* Direction */}
-        <SegmentedControl
-          options={[
-            {
-              value: "encode" as Direction,
-              label: t().encode,
-              icon: "ti ti-arrow-right",
-            },
-            {
-              value: "decode" as Direction,
-              label: t().decode,
-              icon: "ti ti-arrow-left",
-            },
-          ]}
-          value={direction}
-          onValueChange={setDirection}
-        />
-
-        {/* Format */}
-        <SegmentedControl
-          options={[
-            { value: "base64" as Format, label: "Base64" },
-            { value: "hex" as Format, label: "Hex" },
-            { value: "base32" as Format, label: "Base32" },
-          ]}
-          value={format}
-          onValueChange={setFormat}
-        />
-
-        <TextInput
-          label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
-          description={direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })}
-          placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
-          multiline
-          value={input}
-          onValueChange={setInput}
-          error={error}
-        />
-      </div>
-
-      {output() && (
-        <div class="paper p-4 flex flex-col gap-3">
-          <p class="text-xs font-medium text-dimmed">
-            {direction() === "encode" ? t().formatOutputLabel({ format: FORMAT_NAMES[format()] }) : t().decodedText}
-          </p>
-          <ToolCodeBlock>{output()}</ToolCodeBlock>
-          <Button size="sm" class="self-start" onClick={copy}>
-            <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} />
-            {copied() ? t().copied : t().copy}
-          </Button>
-        </div>
-      )}
-    </div>
+    <ToolsScreen tool="encoding">
+      <Pane label={w().result} scrollKey="tools-encoding">
+        <Band label={w().settings}>
+          <Field.Row>
+            <Field label={w().direction}>
+              <Choice
+                name="encoding-direction"
+                value={direction()}
+                onChange={(value) => setDirection(value as Direction)}
+                options={[
+                  { value: "encode", label: t().encode },
+                  { value: "decode", label: t().decode },
+                ]}
+              />
+            </Field>
+            <Field label={w().format}>
+              <Choice
+                name="encoding-format"
+                value={format()}
+                onChange={(value) => setFormat(value as Format)}
+                options={[
+                  { value: "base64", label: "Base64" },
+                  { value: "hex", label: "Hex" },
+                  { value: "base32", label: "Base32" },
+                ]}
+              />
+            </Field>
+          </Field.Row>
+          <Field
+            label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
+            hint={direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })}
+            error={result().error}
+          >
+            <Input
+              multiline
+              placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
+              value={input()}
+              onInput={setInput}
+            />
+          </Field>
+        </Band>
+        <Section icon="transform" title={w().result}>
+          <Show when={result().output} fallback={<Empty icon="transform" text={w().nothingYet} />}>
+            <Facts items={[{ label: outputLabel(), value: result().output, mono: true, copy: result().output }]} />
+          </Show>
+        </Section>
+      </Pane>
+    </ToolsScreen>
   );
 }

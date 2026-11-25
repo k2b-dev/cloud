@@ -1,7 +1,9 @@
 import { crypto, i18n } from "@k2b/stdlib";
-import { CopyButton, TextInput, useLocale } from "@k2b/ui";
-import { createEffect, createSignal } from "solid-js";
-import { ToolCodeBlock } from "./ToolOutput";
+import { useLocale } from "@k2b/ui";
+import { Band, Empty, Facts, Field, Input, Pane, Section } from "@k2b/ui/v2";
+import { createEffect, createSignal, Show } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const hashMessages = i18n.define({
   baseLocale: "en",
@@ -21,54 +23,41 @@ export const hashMessages = i18n.define({
   },
 });
 
+/** Checksums on v2: the text in one field, both sums below as values to copy; FNV-1a says it is not cryptographic. */
 export default function HashGenerator() {
   const locale = useLocale();
   const t = () => hashMessages.resolve([locale()]).t;
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
   const [input, setInput] = createSignal("");
   const [sha256, setSha256] = createSignal("");
-  const [fnv1a, setFnv1a] = createSignal("");
-  createEffect(async () => {
+  const fnv1a = () => (input() ? crypto.common.fnv1aHash(input()) : "");
+  createEffect(() => {
     const text = input();
-    if (!text) {
-      setSha256("");
-      setFnv1a("");
-      return;
-    }
-    setSha256(await crypto.common.hash(text));
-    setFnv1a(crypto.common.fnv1aHash(text));
+    if (!text) return setSha256("");
+    void crypto.common.hash(text).then((sum) => {
+      // only the sum of the text that is still there
+      if (input() === text) setSha256(sum);
+    });
   });
-
-  const HashOutput = (props: { label: string; value: string; warning?: string }) => (
-    <div class="flex flex-col gap-1">
-      <div class="flex items-center justify-between">
-        <p class="text-xs font-medium text-dimmed">{props.label}</p>
-        {props.warning && <span class="text-xs text-orange-500">{props.warning}</span>}
-      </div>
-      <div class="flex items-start gap-2">
-        <ToolCodeBlock class="min-h-8 flex-1">{props.value || <span class="text-dimmed italic">—</span>}</ToolCodeBlock>
-        {props.value && <CopyButton text={props.value} class="shrink-0" />}
-      </div>
-    </div>
-  );
-
   return (
-    <div class="flex flex-col gap-4">
-      <div class="paper p-4">
-        <TextInput
-          label={t().inputLabel}
-          description={t().inputDescription}
-          placeholder={t().inputPlaceholder}
-          multiline
-          icon="ti ti-text-caption"
-          value={input}
-          onValueChange={setInput}
-        />
-      </div>
-
-      <div class="paper p-4 flex flex-col gap-3">
-        <HashOutput label="SHA-256" value={sha256()} />
-        <HashOutput label="FNV-1a" value={fnv1a()} warning={t().notCryptographic} />
-      </div>
-    </div>
+    <ToolsScreen tool="hash">
+      <Pane label={w().result} scrollKey="tools-hash">
+        <Band label={w().input}>
+          <Field label={t().inputLabel} hint={t().inputDescription}>
+            <Input multiline placeholder={t().inputPlaceholder} value={input()} onInput={setInput} />
+          </Field>
+        </Band>
+        <Section icon="hash" title={w().result}>
+          <Show when={input()} fallback={<Empty icon="hash" text={w().nothingYet} />}>
+            <Facts
+              items={[
+                { label: "SHA-256", value: sha256() || "…", mono: true, copy: sha256() || undefined },
+                { label: "FNV-1a", value: fnv1a(), hint: t().notCryptographic, mono: true, copy: fnv1a() },
+              ]}
+            />
+          </Show>
+        </Section>
+      </Pane>
+    </ToolsScreen>
   );
 }

@@ -1,187 +1,140 @@
 import { listenPopState } from "@k2b/ssr/nav";
 import { fuzzy, i18n } from "@k2b/stdlib";
-import { Button, LinkCard, Paper, Placeholder, TextInput, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Empty, Input, List, Pane, Row, Section, StatusRow, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
-import { categoryOrder, type LocalizedTool, resolveRegistry, type ToolCategory } from "./tools/registry";
+import ToolsScreen, { toolIcon } from "./ToolsScreen";
+import { categoryOrder, resolveRegistry } from "./tools/registry";
+import { toolsQuery } from "./tools-query";
 
 export const toolCatalogMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
       searchLabel: "Search tools",
-      searchPlaceholder: 'What do you want to do? Try "resize image" or "random ID"',
+      searchPlaceholder: "Search by task or tool",
       quickTools: "Used often",
-      quickToolsHint: "Common tasks, one click away.",
-      searchResults: "Search results",
-      browseAll: "Browse all",
+      allTools: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} tool`, other: `${count} tools` }),
       matchingTools: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", { one: `${count} matching tool.`, other: `${count} matching tools.` }),
-      groupedByTask: "Images, documents, text, security, and network.",
-      emptyTitle: "No tools match this task",
-      emptyDescription: "Try a tool name, format, or action.",
+        i18n.plural(count, "en", { one: `${count} matching tool`, other: `${count} matching tools` }),
+      emptyTitle: "No tool matches this task. Try a tool name, format, or action.",
       clearSearch: "Clear search",
     },
     de: {
       searchLabel: "Werkzeuge suchen",
-      searchPlaceholder: "Was möchtest du tun? Probiere „Bild skalieren“ oder „zufällige ID“",
+      searchPlaceholder: "Aufgabe oder Werkzeug suchen",
       quickTools: "Oft gebraucht",
-      quickToolsHint: "Werkzeuge für häufige Aufgaben.",
-      searchResults: "Suchergebnisse",
-      browseAll: "Alle Werkzeuge",
-      matchingTools: ({ count }) =>
-        i18n.plural(count, "de", { one: `${count} passendes Werkzeug.`, other: `${count} passende Werkzeuge.` }),
-      groupedByTask: "Bilder, Dokumente, Text, Sicherheit und Netzwerk.",
-      emptyTitle: "Kein Werkzeug passt zu dieser Aufgabe",
-      emptyDescription: "Suche nach einem Werkzeug, Format oder Arbeitsschritt.",
+      allTools: ({ count }) => i18n.plural(count, "de", { one: `${count} Werkzeug`, other: `${count} Werkzeuge` }),
+      matchingTools: ({ count }) => i18n.plural(count, "de", { one: `${count} passendes Werkzeug`, other: `${count} passende Werkzeuge` }),
+      emptyTitle: "Kein Werkzeug passt zu dieser Aufgabe. Suche nach einem Werkzeug, Format oder Arbeitsschritt.",
       clearSearch: "Suche zurücksetzen",
     },
   },
 });
 
-const toolHref = (tool: LocalizedTool): string => `/tools/${tool.id}`;
-
-const ToolIcon = (props: { tool: LocalizedTool }) => (
-  <span class="tools-tool-icon k2b-icon-tile app-accent-text">
-    <i class={`${props.tool.icon} text-base`} />
-  </span>
-);
-
-const ToolRow = (props: { tool: LocalizedTool }) => (
-  <a
-    href={toolHref(props.tool)}
-    class="focus-ui group/tool flex min-h-14 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 transition-colors hover:bg-[var(--ui-hover)]"
-  >
-    <ToolIcon tool={props.tool} />
-    <span class="min-w-0 flex-1">
-      <span class="block truncate text-sm font-medium text-secondary transition-colors group-hover/tool:app-accent-text">
-        {props.tool.name}
-      </span>
-      <span class="block truncate text-xs text-dimmed">{props.tool.description}</span>
-    </span>
-  </a>
-);
-
-export default function ToolCatalog(props: { initialQuery?: string }) {
+/**
+ * The catalog on v2: the search in the head finds a tool by task (its words stay in the address as `q`), the tools
+ * used often stand first, then every tool by category. The server reads the same address, so the first picture shows
+ * the search's result.
+ */
+export default function ToolCatalog(props: { search?: string }) {
   const locale = useLocale();
   const t = () => toolCatalogMessages.resolve([locale()]).t;
   const registry = createMemo(() => resolveRegistry(locale()));
-  let searchInput: HTMLInputElement | undefined;
-  const [query, setQuery] = createSignal(props.initialQuery ?? "");
-  const normalizedQuery = createMemo(() => query().trim().toLowerCase());
-  const matches = createMemo(() => {
-    const needle = normalizedQuery();
-    const { tools, searchText } = registry();
-    return needle ? fuzzy.filter(needle, tools, { key: searchText }).map((hit) => hit.item) : tools;
-  });
-  const featured = createMemo(() => registry().tools.filter((tool) => tool.featured));
-  const toolsForGroup = (group: ToolCategory) => matches().filter((tool) => tool.category === group);
-  const updateQuery = (value: string) => {
-    setQuery(value);
-    const url = new URL(window.location.href);
-    if (value) url.searchParams.set("q", value);
-    else url.searchParams.delete("q");
-    window.history.replaceState(window.history.state, "", url);
+  const query = createMemo(() => toolsQuery(t().searchLabel));
+  const [search, setSearch] = createSignal(props.search ?? "");
+  let field: HTMLInputElement | HTMLTextAreaElement | undefined;
+  const needle = () => search().trim().toLowerCase();
+  const matches = createMemo(() =>
+    needle() ? fuzzy.filter(needle(), registry().tools, { key: registry().searchText }).map((hit) => hit.item) : registry().tools,
+  );
+  const update = (value: string) => {
+    setSearch(value);
+    const state = query().set(query().parse(location.search).state, "q", value);
+    if (!state) return;
+    const url = new URL(location.href);
+    url.search = query().serialize(state, url.search).toString();
+    history.replaceState(history.state, "", url);
   };
-  // Back and Forward within the catalog restore the search; nav owns traversals to other pages.
-  onMount(() => onCleanup(listenPopState(({ url }) => setQuery(url.searchParams.get("q") ?? ""))));
-
+  // Back and Forward within the catalog bring its search back; other pages belong to the navigation.
+  onMount(() => onCleanup(listenPopState(({ url }) => setSearch(query().parse(url.searchParams).state.search ?? ""))));
   return (
-    <div class="flex flex-col gap-5">
-      <TextInput
-        ref={(element) => {
-          searchInput = element;
-        }}
-        type="search"
-        aria-label={t().searchLabel}
-        icon="ti ti-search"
-        value={query}
-        onValueChange={updateQuery}
-        onClear={() => updateQuery("")}
-        placeholder={t().searchPlaceholder}
-        clearable
-        autocomplete="off"
-        spellcheck={false}
-      />
-
-      <Show when={!normalizedQuery()}>
-        <section class="flex flex-col gap-2" aria-labelledby="quick-tools-title">
-          <header>
-            <h3 id="quick-tools-title" class="text-sm font-semibold text-primary">
-              {t().quickTools}
-            </h3>
-            <p class="text-xs text-dimmed">{t().quickToolsHint}</p>
-          </header>
-          <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            <For each={featured()}>
-              {(tool) => (
-                <LinkCard
-                  href={toolHref(tool)}
-                  title={tool.name}
-                  description={registry().categories[tool.category].label}
-                  icon={tool.icon}
-                />
-              )}
-            </For>
-          </div>
-        </section>
-      </Show>
-
-      <section class="flex flex-col gap-2" aria-labelledby="all-tools-title">
-        <header>
-          <h3 id="all-tools-title" class="text-sm font-semibold text-primary">
-            {normalizedQuery() ? t().searchResults : t().browseAll}
-          </h3>
-          <p class="text-xs text-dimmed">{normalizedQuery() ? t().matchingTools({ count: matches().length }) : t().groupedByTask}</p>
-        </header>
-
+    <ToolsScreen
+      end={
+        <Input
+          type="search"
+          icon="search"
+          label={t().searchLabel}
+          placeholder={t().searchPlaceholder}
+          value={search()}
+          ref={(element) => {
+            field = element;
+          }}
+          onInput={update}
+          onKeyDown={(event) => {
+            if (event.key === "Escape" && !event.isComposing) update("");
+          }}
+        />
+      }
+    >
+      <Pane
+        label={t().searchLabel}
+        scrollKey="tools-catalog"
+        status={<StatusRow lead={needle() ? t().matchingTools({ count: matches().length }) : t().allTools({ count: matches().length })} />}
+      >
+        <Show when={!needle()}>
+          <Section icon="star" title={t().quickTools}>
+            <Tiles
+              label={t().quickTools}
+              items={registry()
+                .tools.filter((tool) => tool.featured)
+                .map((tool) => ({
+                  icon: toolIcon(tool.icon),
+                  title: tool.name,
+                  meta: registry().categories[tool.category].label,
+                  href: `/tools/${tool.id}`,
+                }))}
+            />
+          </Section>
+        </Show>
         <Show
           when={matches().length > 0}
           fallback={
-            <Placeholder
-              state="no-results"
-              title={t().emptyTitle}
-              description={t().emptyDescription}
-              action={
-                <Button
-                  variant="secondary"
-                  onClick={() => {
-                    updateQuery("");
-                    searchInput?.focus();
-                  }}
-                >
-                  {t().clearSearch}
-                </Button>
-              }
+            <Empty
+              icon="search-off"
+              text={t().emptyTitle}
+              action={{
+                label: t().clearSearch,
+                onClick: () => {
+                  update("");
+                  field?.focus();
+                },
+              }}
             />
           }
         >
-          <div class="grid gap-x-5 gap-y-4 lg:grid-cols-2">
-            <For each={categoryOrder}>
-              {(group) => {
-                const groupTools = () => toolsForGroup(group);
-                return (
-                  <Show when={groupTools().length > 0}>
-                    <Paper as="section" class="min-w-0 p-3" aria-labelledby={`tool-group-${group}`}>
-                      <header class="flex min-h-9 items-start gap-2 px-2 py-1.5">
-                        <i class={`${registry().categories[group].icon} app-accent-text mt-0.5 text-sm`} />
-                        <span class="min-w-0 flex-1">
-                          <h4 id={`tool-group-${group}`} class="text-sm font-medium text-primary">
-                            {registry().categories[group].label}
-                          </h4>
-                        </span>
-                        <span class="text-sm font-semibold tabular-nums text-secondary">{groupTools().length}</span>
-                      </header>
-                      <div class="flex flex-col">
-                        <For each={groupTools()}>{(tool) => <ToolRow tool={tool} />}</For>
-                      </div>
-                    </Paper>
-                  </Show>
-                );
-              }}
-            </For>
-          </div>
+          <For each={categoryOrder}>
+            {(category) => {
+              const inCategory = () => matches().filter((tool) => tool.category === category);
+              return (
+                <Show when={inCategory().length > 0}>
+                  <Section
+                    icon={toolIcon(registry().categories[category].icon)}
+                    title={registry().categories[category].label}
+                    count={inCategory().length}
+                  >
+                    <List label={registry().categories[category].label}>
+                      <For each={inCategory()}>
+                        {(tool) => <Row icon={toolIcon(tool.icon)} lines={[tool.name, tool.description]} href={`/tools/${tool.id}`} />}
+                      </For>
+                    </List>
+                  </Section>
+                </Show>
+              );
+            }}
+          </For>
         </Show>
-      </section>
-    </div>
+      </Pane>
+    </ToolsScreen>
   );
 }

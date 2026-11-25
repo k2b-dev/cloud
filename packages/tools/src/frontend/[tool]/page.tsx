@@ -31,19 +31,23 @@ const toolComponents: Record<
 > = {
   mailto: () => <MailtoGenerator />,
   qr: () => <QrCodeGenerator />,
-  encoding: () => <EncodingTool />,
-  uuid: () => <UuidGenerator />,
-  hash: () => <HashGenerator />,
-  lorem: () => <LoremIpsumGenerator />,
   color: () => <ColorConverter />,
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   encryption: () => <EncryptionTool />,
-  password: () => <PasswordGenerator />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
+};
+
+/** The tools on v2; each island renders the whole Tools screen with its own panes. */
+const v2Tools: Partial<Record<string, () => JSX.Element>> = {
+  password: () => <PasswordGenerator />,
+  uuid: () => <UuidGenerator />,
+  lorem: () => <LoremIpsumGenerator />,
+  hash: () => <HashGenerator />,
+  encoding: () => <EncodingTool />,
 };
 
 export default ssr<AuthContext>(async (c) => {
@@ -60,6 +64,15 @@ export default ssr<AuthContext>(async (c) => {
   const webhookState = tool.id === "webhooks" ? parseWebhookTesterState(new URL(c.req.url)) : undefined;
   const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
   const regionLayout = tool.id === "image" || tool.id === "image-converter" || tool.id === "webhooks";
+  // A tool rebuilt on v2 is its own whole screen (the Tools frame comes with it); the others keep the v1 frame until
+  // they move too.
+  const v2 = v2Tools[tool.id];
+  if (v2)
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={breadcrumbs}>
+        {v2()}
+      </Layout>
+    );
 
   return () => (
     <Layout c={c} fullPage workspaceSidebarCollapsible title={breadcrumbs}>
