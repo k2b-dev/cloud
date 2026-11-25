@@ -2938,6 +2938,21 @@
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
     display: none;
   }
+  /* The title of an open entry is the page's title here: it is never cut beside the actions the head keeps (a "…"),
+     it takes a second line instead, and the head grows with it; one line keeps the head's 52 px. */
+  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
+  .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+    height: auto;
+    min-height: var(--k2-h-status);
+    padding-block: 8px;
+  }
+  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child {

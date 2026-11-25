@@ -41,7 +41,8 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   line.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
-  the detail is the page.
+  the detail is the page, and the title in its head is never cut: beside the
+  actions the head keeps it takes a second line.
 - `back` (an `Action` with `href`: the list's address without the open
   entry, such as "Posteingang"): the way back on the phone, one bar above
   the detail (the part `Back`). A long name (a search) is cut with "…" on

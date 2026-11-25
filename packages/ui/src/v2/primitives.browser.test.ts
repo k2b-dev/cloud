@@ -287,6 +287,36 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
+  // On the phone the title of an open entry is the page's title: beside the actions the head keeps ("…") it is never
+  // cut, it takes a second line and the head grows; on a wide screen it stays one line in a head of 52 px.
+  for (const width of [390, 1440])
+    test(
+      `${width} px: the title of an open entry ${width < 768 ? "wraps beside the kept actions instead of being cut" : "stays one line"}`,
+      async () => {
+        const page = await open("layout", { width });
+        try {
+          const head = await page.evaluate(() => {
+            const bar = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar')!;
+            const title = bar.querySelector<HTMLElement>(".k2-bar-start > .k2-text")!;
+            const more = bar.querySelector('[aria-label="Weitere Aktionen"]')!.getBoundingClientRect();
+            const box = title.getBoundingClientRect();
+            return {
+              cut: title.scrollHeight > title.clientHeight + 1 || title.scrollWidth > title.clientWidth + 1,
+              lines: Math.round(box.height / 24),
+              beside: box.right <= more.left + 0.5 && more.width > 0,
+              height: Math.round(bar.getBoundingClientRect().height),
+            };
+          });
+          if (width < textEdge.phoneBelow) expect(head).toEqual({ cut: false, lines: 2, beside: true, height: 2 * 24 + 16 + 1 });
+          else expect(head).toMatchObject({ lines: 1, beside: true, height: heights.status });
+          expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
   // name stays its accessible name and its hint under the pointer.
   test(

@@ -122,6 +122,7 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               end={
                 <>
                   <Button icon="check">Erledigt</Button>
+                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" keep />
                   <Button variant="ghost" icon="x" label="Schließen" />
                 </>
               }
