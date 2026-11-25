@@ -1,36 +1,14 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { openGlobalSearch } from "@k2b/cloud/browser/search";
-import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { navigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
-import {
-  AppWorkspace,
-  BottomSheet,
-  Button,
-  bottomSheetOptions,
-  Calendar,
-  type CalendarCommand,
-  type CalendarEvent,
-  createNavigation,
-  dialogCore,
-  FilterChip,
-  type FilterChipSection,
-  IconButton,
-  LocaleProvider,
-  Placeholder,
-  useLocale,
-  ViewTabs,
-} from "@k2b/ui";
+import { Calendar, type CalendarCommand, type CalendarEvent, useLocale } from "@k2b/ui";
+import { Bar, Button, Canvas, Empty, Failed, Menu, type MenuEntry, Notice, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import SpacesNav, { useSpacesNav } from "../_components/spaces-nav";
 import { CalendarItemContent } from "../[id]/_components/calendar/ItemContent";
 import { CALENDAR_DAY_HOURS } from "../[id]/_components/calendar/range";
-import SpacesSidebarList from "../[id]/_components/sidebar/SpacesSidebarList";
-import {
-  createNewSpace,
-  createPinnedSpaces,
-  createSpacesNavigationItems,
-  type SpacesSidebarData,
-} from "../[id]/_components/sidebar/spaces-navigation";
+import type { SpacesSidebarData } from "../[id]/_components/sidebar/spaces-navigation";
 import { overviewMessages } from "../overview-messages";
 import AgendaList from "./AgendaList";
 import { fetchCalendarEvents, fetchCalendarSources } from "./calendar-client";
@@ -78,8 +56,6 @@ export type CloudCalendarProps = {
   dateConfig?: DateContext;
 };
 
-const PHONE_QUERY = "(max-width: 47.999rem)";
-
 /** Every calendar a person can see in Cloud, in one view: all their Spaces and the calendars other apps offer. */
 export default function CloudCalendar(props: CloudCalendarProps) {
   const t = useCalendarViewMessages();
@@ -88,7 +64,6 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const context = () => ({ weekStartsOn: 1 as const, ...props.dateConfig });
   const [sources, setSources] = createSignal(props.sources ?? []);
   const [catalogFailed, setCatalogFailed] = createSignal(props.sources === null);
-  const [catalogRetrying, setCatalogRetrying] = createSignal(false);
   const [selection, setSelection] = createSignal<string[]>(props.route.selection ?? defaultSelection(props.sources ?? []));
   const [items, setItems] = createSignal(props.items);
   const [range, setRange] = createSignal(props.range);
@@ -105,7 +80,6 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const [explicit, setExplicit] = createSignal(props.route.selection !== null);
   const [date, setDate] = createSignal(props.route.date);
   const [visible, setVisible] = createSignal<{ first: string; last: string } | null>(null);
-  const [detail, setDetail] = createSignal<{ key: string; anchor: DOMRect } | null>(null);
   const view = () => props.route.view;
   const lookup = createMemo(() => calendarLookup(sources()));
   const chosen = createMemo(() => new Set(selection()));
@@ -208,15 +182,12 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     await readAll(() => keys, true);
   };
   const retryCatalog = async () => {
-    setCatalogRetrying(true);
     try {
       adoptSources(await fetchCalendarSources(controller.signal));
       setCatalogFailed(false);
       await readAll(() => selection(), true);
     } catch {
       setCatalogFailed(true);
-    } finally {
-      setCatalogRetrying(false);
     }
   };
   const loadBlock = (edge: "earlier" | "later") =>
@@ -245,8 +216,6 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   });
 
   // ---------------------------------------------------------------- choosing calendars
-  let chipHost: HTMLSpanElement | undefined;
-  const openChooser = () => chipHost?.querySelector<HTMLButtonElement>("button")?.click();
   const choose = (next: string[]) => {
     const added = next.filter((key) => !chosen().has(key));
     setExplicit(true);
@@ -254,119 +223,56 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     replaceUrl();
     if (added.length > 0) void readAll(() => added, true);
   };
-  /**
-   * The state at the end of a chooser row. It follows the reads itself, so the open menu keeps its rows, and its icon
-   * keeps one place whether it shows or not, so the menu never changes width.
-   */
-  const ChooserState = (stateProps: { calendarKey: string; busy: boolean }) => {
-    const state = () => (chosen().has(stateProps.calendarKey) ? reads().get(stateProps.calendarKey)?.state : undefined);
-    return (
-      <>
-        <Show when={stateProps.busy}>
-          <span class="spaces-calendar-chooser__note">{t.busyNote}</span>
-        </Show>
-        <span class="spaces-calendar-chooser__state" data-tone={state() === "failed" ? "warning" : undefined}>
-          <Show when={state() === "pending" || state() === "failed"}>
-            <i
-              class={state() === "failed" ? "ti ti-alert-triangle" : "ti ti-loader-2 animate-spin"}
-              role="img"
-              aria-label={state() === "failed" ? t.unreachable : t.loadingState}
-            />
-          </Show>
-        </span>
-      </>
-    );
-  };
-  const chooserOptions = createMemo((): FilterChipSection[] =>
-    sources().map((source) => ({
-      label: source.name,
-      multiple: true,
-      toggleAll: true,
-      options: source.calendars.map((calendar) => {
-        const key = calendarKey(source.appId, calendar.id);
-        return {
-          value: key,
-          label: calendar.name,
-          color: calendar.color,
-          trailing: <ChooserState calendarKey={key} busy={calendar.visibility === "busy"} />,
-        };
-      }),
-    })),
-  );
   const defaults = createMemo(() => defaultSelection(sources()));
   const changed = () => normalizeSelection(selection(), sources()) !== null;
+  /** What a chosen calendar's row says beside its name: busy times only, loading, or not answering. */
+  const chooserNote = (key: string, busy: boolean) => {
+    const state = chosen().has(key) ? reads().get(key)?.state : undefined;
+    return [busy ? t.busyNote : undefined, state === "failed" ? t.unreachable : state === "pending" ? t.loadingState : undefined]
+      .filter(Boolean)
+      .join(" · ");
+  };
+  /**
+   * The calendars by app as ticked entries, each app with "All" first; "Restore default" returns to the calendars Cloud
+   * starts with. k2b-ui gap: a menu entry has no colour swatch and no "only this one".
+   */
+  const chooserMenu = createMemo((): MenuEntry[] => [
+    ...sources()
+      .filter((source) => source.calendars.length > 0)
+      .map((source) => {
+        const keys = source.calendars.map((calendar) => calendarKey(source.appId, calendar.id));
+        const all = keys.every((key) => chosen().has(key));
+        return {
+          title: source.name,
+          items: [
+            {
+              label: t.allOf({ name: source.name }),
+              checked: all,
+              onClick: () => choose(all ? selection().filter((key) => !keys.includes(key)) : [...new Set([...selection(), ...keys])]),
+            },
+            ...source.calendars.map((calendar) => {
+              const key = calendarKey(source.appId, calendar.id);
+              return {
+                label: calendar.name,
+                checked: chosen().has(key),
+                meta: chooserNote(key, calendar.visibility === "busy") || undefined,
+                onClick: () => choose(chosen().has(key) ? selection().filter((entry) => entry !== key) : [...selection(), key]),
+              };
+            }),
+          ],
+        };
+      }),
+    ...(changed() && defaults().length > 0 ? [{ label: t.restoreDefault, icon: "restore", onClick: () => choose(defaults()) }] : []),
+  ]);
 
   // ---------------------------------------------------------------- detail
-  const isPhone = () => typeof matchMedia === "function" && matchMedia(PHONE_QUERY).matches;
-  /** The entry a pointer pressed just now; a keyboard activation opens beside the focused entry instead. */
-  let lastPointer: { element: HTMLElement | null; at: number } | null = null;
-  const onPointerDown = (event: PointerEvent) => {
-    if (event.target instanceof Element)
-      lastPointer = { element: event.target.closest<HTMLElement>("a,button,[data-calendar-event]"), at: Date.now() };
-  };
-  const activationAnchor = (): HTMLElement | null => {
-    const pressed = lastPointer && Date.now() - lastPointer.at < 1_000 ? lastPointer.element : null;
-    lastPointer = null;
-    return pressed ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  };
-  const openDetail = (item: SourcedCalendarItem, anchor: HTMLElement | null) => {
-    const found = lookup().get(calendarKey(item.appId, item.calendarId));
-    const content = (close: () => void) => (
-      <EventDetail item={item} source={found?.source} calendar={found?.calendar} dateConfig={props.dateConfig} onClose={close} />
-    );
-    if (isPhone()) {
-      setDetail({ key: itemKey(item), anchor: new DOMRect() });
-      void dialogCore
-        .open<void>(
-          (close, dialog) => (
-            <LocaleProvider locale={locale()}>
-              <BottomSheet onDismiss={dialog.requestDismiss}>
-                <BottomSheet.Body>{content(() => close())}</BottomSheet.Body>
-              </BottomSheet>
-            </LocaleProvider>
-          ),
-          { ...bottomSheetOptions, ariaLabel: t.eventDetails, history: true },
-        )
-        .finally(() => setDetail(null));
-      return;
-    }
-    detailReturn = anchor;
-    setDetail({ key: itemKey(item), anchor: (anchor ?? document.body).getBoundingClientRect() });
-  };
-  let detailReturn: HTMLElement | null = null;
-  let popover: HTMLDivElement | undefined;
-  const closeDetail = () => {
-    setDetail(null);
-    detailReturn?.focus({ preventScroll: true });
-  };
+  /** The open entry, in a dialog (a sheet on the phone); closing it hands the focus back to the entry. */
+  const [detail, setDetail] = createSignal<string | null>(null);
+  const openDetail = (item: SourcedCalendarItem) => setDetail(itemKey(item));
   const detailItem = () => {
     const open = detail();
-    return open ? itemsByKey().get(open.key) : undefined;
+    return open ? itemsByKey().get(open) : undefined;
   };
-  /** Beside the entry, on the side with room, inside the window. */
-  const placePopover = (element: HTMLDivElement, anchor: DOMRect) => {
-    const width = element.offsetWidth;
-    const height = element.offsetHeight;
-    let left = anchor.right + 10;
-    if (left + width > window.innerWidth - 12) left = anchor.left - width - 10;
-    left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
-    const top = Math.max(12, Math.min(anchor.top, window.innerHeight - height - 12));
-    element.style.left = `${left}px`;
-    element.style.top = `${top}px`;
-  };
-  const showPopover = (element: HTMLDivElement) => {
-    popover = element;
-    queueMicrotask(() => {
-      const open = detail();
-      if (!open || !element.isConnected) return;
-      if (!element.matches(":popover-open")) element.showPopover();
-      placePopover(element, open.anchor);
-      element.querySelector<HTMLElement>("a[href], button:not(.spaces-calendar-detail__close)")?.focus({ preventScroll: true });
-    });
-  };
-  onCleanup(() => {
-    if (popover?.matches(":popover-open")) popover.hidePopover();
-  });
 
   // ---------------------------------------------------------------- what is in view
   const todayKey = () => props.today;
@@ -409,32 +315,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   const asView = (value: string): CloudCalendarView =>
     value === "day" || value === "week" || value === "month" || value === "list" ? value : "week";
   const dateHref = (target: Date, next: string) => viewHref(asView(next), dates.formatDateKey(target, props.dateConfig));
-  const viewTabs = () =>
-    (
-      [
-        ["day", t.day, "ti ti-calendar-event"],
-        ["week", t.week, "ti ti-calendar-week"],
-        ["month", t.month, "ti ti-calendar-month"],
-        ["list", t.list, "ti ti-list"],
-      ] as const
-    ).map(([id, label, icon]) => ({ id, label, icon, href: viewHref(id) }));
-  const [pinned] = createPinnedSpaces(props.sidebar.pinnedSpaceIds);
-  const createSpace = createNewSpace(overview);
-  const navigation = createNavigation({
-    items: () =>
-      createSpacesNavigationItems({
-        ...props.sidebar,
-        pinnedSpaceIds: pinned(),
-        current: { kind: "calendar" },
-        canCreate: props.canCreateSpace,
-        myWorkLabel: overview.myWork,
-        calendarLabel: overview.calendar,
-        newSpaceLabel: overview.newSpace,
-      }),
-    onAction: async (action) => {
-      if (action === "new-space") await createSpace();
-    },
-  });
+  const nav = useSpacesNav({ ...props.sidebar, current: { kind: "calendar" }, canCreate: props.canCreateSpace });
 
   // The calendar's own shortcuts (Today, Next, Previous, the views, Go to) for the keys, the palette, and the help.
   const [commands, setCommands] = createSignal<readonly CalendarCommand[]>([]);
@@ -467,237 +348,159 @@ export default function CloudCalendar(props: CloudCalendarProps) {
       />
     );
   };
-  const statusLine = () => {
+  /** What the status row says beside the count: what still loads, which calendars show busy times only. */
+  const statusFacts = () => {
     const current = status();
-    if (!current) return null;
-    if (current.kind === "loading")
-      return (
-        <>
-          <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-          <span>{t.loading({ count: current.count, total: current.total })}</span>
-        </>
-      );
-    if (current.kind === "busy")
-      return (
-        <>
-          <i class="ti ti-lock" aria-hidden="true" />
-          <span>{t.busyOnly({ names: current.names.join(", ") })}</span>
-        </>
-      );
-    return (
-      <>
-        <i class="ti ti-alert-triangle" aria-hidden="true" />
-        <span>{current.kind === "failed" ? t.notResponding({ apps: current.apps.join(", "), count: current.count }) : t.truncated}</span>
-        <button type="button" class="spaces-calendar-status__retry" onClick={() => void retry()}>
-          {t.retry}
-        </button>
-        <Show when={current.kind === "failed"}>
-          <span class="spaces-calendar-status__fade">{t.othersCurrent}</span>
-        </Show>
-      </>
-    );
+    if (current?.kind === "loading") return [{ after: t.loading({ count: current.count, total: current.total }) }];
+    if (current?.kind === "busy") return [{ after: t.busyOnly({ names: current.names.join(", ") }) }];
+    return [];
   };
-  const tone = () => (status()?.kind === "failed" || status()?.kind === "truncated" ? "warning" : undefined);
-  const chooser = () => (
-    <span ref={chipHost} class="spaces-calendar-chooser">
-      <FilterChip
-        label={t.calendarsChip({ count: selection().length })}
-        icon="ti ti-calendar"
-        options={chooserOptions()}
-        value={selection()}
-        defaultValue={defaults()}
-        isActive={changed()}
-        only
-        swatches
-        onValueChange={choose}
-      />
-    </span>
-  );
-  const emptyState = () => (
-    <Show when={empty()}>
-      {(kind) => (
-        <div class="spaces-calendar-empty">
-          <Show when={kind() === "sources"}>
-            <Placeholder icon="ti ti-calendar" title={t.noSources} description={t.noSourcesBody} />
-          </Show>
-          <Show when={kind() === "selection"}>
-            <Placeholder
-              icon="ti ti-calendar-off"
-              title={t.noCalendarChosen}
-              description={t.noCalendarChosenBody}
-              action={
-                <span class="spaces-calendar-empty__actions">
-                  <Button variant="secondary" size="sm" onClick={openChooser}>
-                    {t.chooseCalendars}
-                  </Button>
-                  <Show when={defaults().length > 0}>
-                    <Button variant="ghost" size="sm" onClick={() => choose(defaults())}>
-                      {t.restoreDefault}
-                    </Button>
-                  </Show>
-                </span>
-              }
-            />
-          </Show>
-          <Show when={kind() === "events"}>
-            <Placeholder
-              icon="ti ti-calendar"
-              title={noEventsTitle()}
-              description={t.noEventsBody({ count: selection().length })}
-              action={
-                <span class="spaces-calendar-empty__actions">
-                  <Show when={todayKey() < shownDays().first || todayKey() > shownDays().last}>
-                    <a class="k2b-button" data-variant="secondary" data-size="sm" href={viewHref(view(), todayKey())}>
-                      {t.goToday}
-                    </a>
-                  </Show>
-                  <Button variant="ghost" size="sm" onClick={openChooser}>
-                    {t.chooseCalendars}
-                  </Button>
-                </span>
-              }
-            />
-          </Show>
-        </div>
-      )}
-    </Show>
-  );
+  /** Apps that did not answer, or a range cut short: the sentence of the warning above the calendar. */
+  const problem = (current: NonNullable<ReturnType<typeof status>>) =>
+    current.kind === "failed"
+      ? `${t.notResponding({ apps: current.apps.join(", "), count: current.count })} ${t.othersCurrent}`
+      : t.truncated;
+  const viewIcon = { day: "calendar-event", week: "calendar-week", month: "calendar-month", list: "list" } as const;
 
   return (
-    <AppWorkspace mobileSurface="flush" flat class="spaces-calendar-workspace">
-      <WorkspaceNavigationProvider label={t.calendar} navigation={navigation} />
-      <h1 class="sr-only">{t.calendar}</h1>
-      <AppWorkspace.Sidebar label="Spaces" collapsible>
-        <AppWorkspace.SidebarDesktop>
-          <SpacesSidebarList
-            spaces={props.sidebar.spaces}
-            pinnedSpaceIds={props.sidebar.pinnedSpaceIds}
-            myWorkCount={props.sidebar.myWorkCount}
-            current={{ kind: "calendar" }}
-            canCreate={props.canCreateSpace}
-          />
-        </AppWorkspace.SidebarDesktop>
-      </AppWorkspace.Sidebar>
-      <AppWorkspace.Head
-        views={<ViewTabs label={t.view} current={view()} items={viewTabs()} />}
-        actions={
-          <IconButton
-            label={overview.search}
-            onClick={() => void openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } })}
-          >
-            <i class="ti ti-search" aria-hidden="true" />
-          </IconButton>
-        }
-      />
-      <AppWorkspace.Content>
-        <AppWorkspace.Main class="spaces-calendar-main p-[var(--ui-space-shell)]" scroll={false} aria-busy={loading()}>
-          <Show
-            when={!catalogFailed()}
-            fallback={
-              <div class="spaces-calendar-empty" data-standalone="true">
-                <Placeholder
-                  state="error"
-                  title={t.catalogFailed}
-                  description={t.catalogFailedBody}
-                  action={
-                    <Button variant="secondary" size="sm" disabled={catalogRetrying()} onClick={() => void retryCatalog()}>
-                      <i class={`ti ${catalogRetrying() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} aria-hidden="true" />
-                      {t.retry}
-                    </Button>
+    <Workspace
+      sidebar={<SpacesNav nav={nav} />}
+      head={
+        <Bar
+          start={
+            <Tabs
+              label={t.view}
+              items={(["day", "week", "month", "list"] as const).map((id) => ({
+                label: { day: t.day, week: t.week, month: t.month, list: t.list }[id],
+                icon: viewIcon[id],
+                href: viewHref(id),
+                current: view() === id,
+              }))}
+            />
+          }
+          end={
+            <>
+              <Button
+                variant="ghost"
+                icon="search"
+                label={overview.search}
+                keep
+                onClick={() => void openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } })}
+              />
+              <Show when={!catalogFailed() && sources().some((source) => source.calendars.length > 0)}>
+                <Menu icon="calendar" items={chooserMenu()}>
+                  {t.calendarsChip({ count: selection().length })}
+                </Menu>
+              </Show>
+            </>
+          }
+        />
+      }
+    >
+      <Pane label={t.calendar} status={<StatusRow lead={t.shown({ count: shownCount() })} loading={loading()} facts={statusFacts()} />}>
+        <Show
+          when={!catalogFailed()}
+          fallback={<Failed text={`${t.catalogFailed} ${t.catalogFailedBody}`} onRetry={() => void retryCatalog()} />}
+        >
+          <Show when={status()?.kind === "failed" || status()?.kind === "truncated" ? status() : undefined}>
+            {(current) => (
+              <Notice tone="warn" icon="alert-triangle" actions={[{ label: t.retry, icon: "refresh", onClick: () => void retry() }]}>
+                {problem(current())}
+              </Notice>
+            )}
+          </Show>
+          <Show when={empty()}>
+            {(kind) => (
+              <Show when={kind() !== "sources"} fallback={<Empty icon="calendar" text={`${t.noSources} ${t.noSourcesBody}`} />}>
+                <Show
+                  when={kind() === "events"}
+                  fallback={
+                    <Empty
+                      icon="calendar-off"
+                      text={`${t.noCalendarChosen} ${t.noCalendarChosenBody}`}
+                      action={
+                        defaults().length > 0 ? { label: t.restoreDefault, icon: "restore", onClick: () => choose(defaults()) } : undefined
+                      }
+                    />
                   }
-                />
-              </div>
-            }
-          >
-            <div class="spaces-calendar-frame" onPointerDown={onPointerDown} data-print-region>
-              <Calendar
-                class="flex-1"
-                view={view() === "list" ? "list" : view()}
-                views={["day", "week", "month"]}
-                customViews={[{ value: "list", label: t.list, days: CALENDAR_LIST_DAYS }]}
-                viewSwitcher={false}
-                date={date()}
-                events={view() === "list" ? [] : events()}
-                startHour={8}
-                endHour={20}
-                dayHours={CALENDAR_DAY_HOURS}
-                range={view() === "list" ? undefined : range()}
-                onLoadEarlier={() => loadBlock("earlier")}
-                onLoadLater={() => loadBlock("later")}
-                onVisibleDateChange={(first, last, focus) => {
-                  setVisible({ first: dates.formatDateKey(first, props.dateConfig), last: dates.formatDateKey(last, props.dateConfig) });
-                  const key = dates.formatDateKey(focus, props.dateConfig);
-                  if (key === date()) return;
-                  setDate(key);
-                  replaceUrl();
-                }}
-                withWeekNumbers
-                onCommandsChange={setCommands}
-                dateConfig={props.dateConfig}
-                getViewHref={(next) => viewHref(asView(next))}
-                getDateHref={dateHref}
-                renderEvent={renderEvent}
-                selectedEventId={detail()?.key}
-                onEventActivate={(event) => {
-                  const item = itemsByKey().get(event.id);
-                  if (item) openDetail(item, activationAnchor());
-                }}
-                toolbarContent={
-                  <>
-                    {chooser()}
-                    <span class="spaces-calendar-status" data-tone={tone()} role="status">
-                      {statusLine()}
-                    </span>
-                  </>
-                }
-              >
-                <Show when={view() === "list"}>
-                  <AgendaList
-                    date={date()}
-                    items={shownItems()}
-                    lookup={lookup()}
-                    today={todayKey()}
-                    selectedKey={detail()?.key}
-                    dateConfig={props.dateConfig}
-                    onOpen={(item, anchor) => openDetail(item, anchor)}
+                >
+                  <Empty
+                    icon="calendar"
+                    text={`${noEventsTitle()} ${t.noEventsBody({ count: selection().length })}`}
+                    action={
+                      todayKey() < shownDays().first || todayKey() > shownDays().last
+                        ? { label: t.goToday, icon: "calendar-due", href: viewHref(view(), todayKey()) }
+                        : undefined
+                    }
                   />
                 </Show>
-              </Calendar>
-              {emptyState()}
-            </div>
+              </Show>
+            )}
           </Show>
-          <Show when={detail() && !isPhone() ? detailItem() : undefined}>
-            {(item) => {
-              const found = () => lookup().get(calendarKey(item().appId, item().calendarId));
-              return (
-                <div
-                  ref={showPopover}
-                  popover="auto"
-                  class="spaces-calendar-popover"
-                  role="dialog"
-                  aria-label={t.eventDetails}
-                  onToggle={(event) => {
-                    if ((event as ToggleEvent).newState === "closed") setDetail(null);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Escape") return;
-                    event.preventDefault();
-                    closeDetail();
-                  }}
-                >
-                  <EventDetail
-                    item={item()}
-                    source={found()?.source}
-                    calendar={found()?.calendar}
-                    dateConfig={props.dateConfig}
-                    onClose={closeDetail}
-                  />
-                </div>
-              );
-            }}
-          </Show>
-        </AppWorkspace.Main>
-      </AppWorkspace.Content>
-    </AppWorkspace>
+          {/* The calendar draws, scrolls and pages its days itself; its list view is the agenda of the next days. */}
+          <Canvas label={t.calendar}>
+            <Calendar
+              class="flex-1"
+              view={view() === "list" ? "list" : view()}
+              views={["day", "week", "month"]}
+              customViews={[{ value: "list", label: t.list, days: CALENDAR_LIST_DAYS }]}
+              viewSwitcher={false}
+              date={date()}
+              events={view() === "list" ? [] : events()}
+              startHour={8}
+              endHour={20}
+              dayHours={CALENDAR_DAY_HOURS}
+              range={view() === "list" ? undefined : range()}
+              onLoadEarlier={() => loadBlock("earlier")}
+              onLoadLater={() => loadBlock("later")}
+              onVisibleDateChange={(first, last, focus) => {
+                setVisible({ first: dates.formatDateKey(first, props.dateConfig), last: dates.formatDateKey(last, props.dateConfig) });
+                const key = dates.formatDateKey(focus, props.dateConfig);
+                if (key === date()) return;
+                setDate(key);
+                replaceUrl();
+              }}
+              withWeekNumbers
+              onCommandsChange={setCommands}
+              dateConfig={props.dateConfig}
+              getViewHref={(next) => viewHref(asView(next))}
+              getDateHref={dateHref}
+              renderEvent={renderEvent}
+              selectedEventId={detail() ?? undefined}
+              onEventActivate={(event) => {
+                const item = itemsByKey().get(event.id);
+                if (item) openDetail(item);
+              }}
+            >
+              <Show when={view() === "list"}>
+                <AgendaList
+                  date={date()}
+                  items={shownItems()}
+                  lookup={lookup()}
+                  today={todayKey()}
+                  selectedKey={detail() ?? undefined}
+                  dateConfig={props.dateConfig}
+                  onOpen={(item) => openDetail(item)}
+                />
+              </Show>
+            </Calendar>
+          </Canvas>
+        </Show>
+      </Pane>
+      <Show when={detailItem()}>
+        {(item) => {
+          const found = () => lookup().get(calendarKey(item().appId, item().calendarId));
+          return (
+            <EventDetail
+              item={item()}
+              source={found()?.source}
+              calendar={found()?.calendar}
+              dateConfig={props.dateConfig}
+              onClose={() => setDetail(null)}
+            />
+          );
+        }}
+      </Show>
+    </Workspace>
   );
 }

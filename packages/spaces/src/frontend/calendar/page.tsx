@@ -83,6 +83,7 @@ export default ssr<AuthContext>(async (c) => {
     <Layout
       c={c}
       help={spacesPageHelp.calendar}
+      ui="v2"
       fullWidth
       title={[
         { title: spaceMessages.resolve([locale]).t.start, href: "/" },

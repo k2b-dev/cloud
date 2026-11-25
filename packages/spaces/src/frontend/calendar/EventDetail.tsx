@@ -1,9 +1,9 @@
 import type { CalendarDescriptor } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { ButtonLink, IconButton } from "@k2b/ui";
+import { Button, Dialog, Facts, Notice } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import { summarizeRecurrence } from "@/presentation/recurrence";
-import { type CalendarSourceView, itemColor, itemTitle, nextDateKey, type SourcedCalendarItem, shiftDateKey } from "./calendar-model";
+import { type CalendarSourceView, itemTitle, nextDateKey, type SourcedCalendarItem, shiftDateKey } from "./calendar-model";
 import { useCalendarViewMessages } from "./messages";
 
 type Props = {
@@ -109,74 +109,41 @@ export default function EventDetail(props: Props) {
     return result;
   };
   return (
-    <div class="spaces-calendar-detail">
-      <IconButton class="spaces-calendar-detail__close" label={t.close} size="sm" variant="ghost" onClick={() => props.onClose()}>
-        <i class="ti ti-x" aria-hidden="true" />
-      </IconButton>
-      <h2 class="spaces-calendar-detail__title" style={{ "--spaces-calendar-color": itemColor(props.item, props.calendar) }}>
-        <span class="spaces-calendar-detail__dot" aria-hidden="true" />
-        <span>
-          <Show when={props.item.type === "busy"}>
-            <i class="ti ti-lock spaces-calendar-detail__lock" aria-hidden="true" />
+    <Dialog
+      title={title()}
+      open
+      onOpenChange={(open) => !open && props.onClose()}
+      foot={
+        <>
+          <Button onClick={() => props.onClose()}>{t.close}</Button>
+          <Show when={open()}>
+            {(link) => (
+              <Button variant="primary" href={link().href} forward>
+                {t.openIn({ name: target() })}
+              </Button>
+            )}
           </Show>
-          <span data-cancelled={props.item.type !== "deadline" && props.item.status === "cancelled" ? "true" : undefined}>{title()}</span>
-        </span>
-      </h2>
-      <div class="spaces-calendar-detail__rows">
-        <div class="spaces-calendar-detail__row">
-          <i class="ti ti-clock" aria-hidden="true" />
-          <span>
-            {when().main}
-            <small>{when().sub}</small>
-          </span>
-        </div>
-        <Show when={props.item.type === "deadline" && props.item.done}>
-          <div class="spaces-calendar-detail__row">
-            <i class="ti ti-circle-check" aria-hidden="true" />
-            <span>{t.done}</span>
-          </div>
-        </Show>
-        <Show when={series()}>
-          {(text) => (
-            <div class="spaces-calendar-detail__row">
-              <i class="ti ti-repeat" aria-hidden="true" />
-              <span>{text()}</span>
-            </div>
-          )}
-        </Show>
-        <Show when={location()}>
-          {(place) => (
-            <div class="spaces-calendar-detail__row">
-              <i class="ti ti-map-pin" aria-hidden="true" />
-              <span>{place()}</span>
-            </div>
-          )}
-        </Show>
-        <Show when={props.source}>
-          {(source) => (
-            <div class="spaces-calendar-detail__source">
-              <span class="spaces-calendar-detail__app" aria-hidden="true">
-                <i class={source().icon ?? "ti ti-calendar"} />
-              </span>
-              <span>
-                <b>{source().name}</b>
-                <Show when={props.calendar}>{(calendar) => <> · {calendar().name}</>}</Show>
-              </span>
-            </div>
-          )}
-        </Show>
-      </div>
-      <For each={notes()}>{(note) => <p class="spaces-calendar-detail__note">{note}</p>}</For>
-      <Show when={open()}>
-        {(link) => (
-          <div class="spaces-calendar-detail__actions">
-            <ButtonLink href={link().href} variant="secondary" size="sm">
-              {t.openIn({ name: target() })}
-              <i class="ti ti-arrow-up-right" aria-hidden="true" />
-            </ButtonLink>
-          </div>
+        </>
+      }
+    >
+      <Facts
+        items={[
+          { label: t.when, value: `${when().main} · ${when().sub}` },
+          ...(props.item.type === "deadline" && props.item.done ? [{ label: t.state, value: t.done }] : []),
+          ...(series() ? [{ label: t.repeats, value: series()! }] : []),
+          ...(location() ? [{ label: t.place, value: location()! }] : []),
+          ...(props.source
+            ? [{ label: t.source, value: props.calendar ? `${props.source.name} · ${props.calendar.name}` : props.source.name }]
+            : []),
+        ]}
+      />
+      <For each={notes()}>
+        {(note) => (
+          <Notice tone="note" icon={props.item.type === "busy" ? "lock" : "info-circle"}>
+            {note}
+          </Notice>
         )}
-      </Show>
-    </div>
+      </For>
+    </Dialog>
   );
 }
