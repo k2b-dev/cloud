@@ -5,6 +5,7 @@ import { registerSsrTestPlugin } from "../../../../packages/ui/test/ssr-test-plu
 // the Markdown twin that search and read_doc return carries the recipe's code and the generated props.
 registerSsrTestPlugin(await import("../../ssr"));
 const { recipeSource, v2Props } = await import("./build-results");
+const { firstSentence } = await import("./build-time");
 const { recipeNames, recipeStates } = await import("./recipes");
 const { parseTopic, propsMarkdown, topicMarkdown, topicShapeProblems } = await import("./topic-markdown");
 const { topics } = await import("./topics");
@@ -138,9 +139,10 @@ describe("generated props", () => {
   });
 
   test("the first sentence never ends inside a quote", () => {
-    expect(v2Props.Failed?.rows.find((row) => row.name === "text")?.description).toBe(
-      'What could not be loaded and what stays as it is, such as "Unterhaltungen konnten nicht geladen werden. Deine Ansicht und Auswahl bleiben erhalten."',
+    expect(firstSentence('What failed, such as "Nichts geladen. Die Ansicht bleibt." Then more.')).toBe(
+      'What failed, such as "Nichts geladen. Die Ansicht bleibt."',
     );
+    expect(firstSentence("One. Two.")).toBe("One.");
   });
 
   test("dotted parts and object types have props of their own", () => {

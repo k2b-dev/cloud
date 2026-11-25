@@ -42,15 +42,15 @@ export type PropsDoc = {
   groups: { title: string; rows: PropRow[] }[];
 };
 
-const firstSentence = (text: string) => {
+export const firstSentence = (text: string) => {
   const paragraph =
     text
       .trim()
       .split(/\n\s*\n/)[0]
       ?.replace(/\s+/g, " ") ?? "";
   // The first end of a sentence that does not stand inside a quote ("… nicht geladen werden. Deine Ansicht …").
-  for (const end of paragraph.matchAll(/[.!?](?=\s+[A-Z(`"„]|$)/g)) {
-    const sentence = paragraph.slice(0, end.index + 1);
+  for (const end of paragraph.matchAll(/[.!?]"?(?=\s+[A-Z(`"„]|$)/g)) {
+    const sentence = paragraph.slice(0, end.index + end[0].length);
     if ((sentence.match(/"/g)?.length ?? 0) % 2 === 0) return sentence;
   }
   return paragraph;
