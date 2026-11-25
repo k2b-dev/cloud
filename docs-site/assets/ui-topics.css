@@ -197,7 +197,7 @@ div.ui-topic__part,
 .ui-example {
   --w: 1440;
   --stage-h: var(--h);
-  margin: 1rem 0 0;
+  margin: 1rem 0 1.5rem;
   container-type: inline-size;
 }
 /* the v1 scope (for the segmented controls) brings a surface of its own; the example stands on the page */
