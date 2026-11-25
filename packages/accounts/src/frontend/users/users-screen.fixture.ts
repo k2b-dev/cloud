@@ -31,6 +31,8 @@ type Seed = {
   mail?: string | null;
   provider?: "local" | "ipa";
   expired?: boolean;
+  /** A picture that does not load: the initials stay. */
+  avatarHash?: string;
 };
 const person = (seed: Seed, index: number, prefix = "22222222-2222-4222-8222-"): AccountDirectoryPerson => {
   const words = seed.name.trim().split(/\s+/);
@@ -48,7 +50,7 @@ const person = (seed: Seed, index: number, prefix = "22222222-2222-4222-8222-"):
     sn: family,
     displayName: seed.name,
     mail: seed.mail === undefined ? `${uid}@${DOMAIN}` : seed.mail,
-    avatarHash: null,
+    avatarHash: seed.avatarHash ?? null,
     role: seed.role,
     status: seed.expired ? "expired" : seed.last === null ? "invited" : "active",
     lastLogin: seed.last === null ? null : daysAgo(seed.last),
@@ -125,17 +127,39 @@ export const FIXTURE_SERVICE_ACCOUNTS: AccountDirectoryEntry[] = [
 ];
 export const FIXTURE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses([...FIXTURE_PEOPLE, ...FIXTURE_SERVICE_ACCOUNTS]);
 
+/** Groups at their limits (break-ui): a slug of 120 characters, a one-letter name, and enough for twelve in one row. */
+const worstGroup = (index: number, name: string) => ({ id: `44444444-4444-4444-8444-${String(index).padStart(12, "0")}`, name });
+export const WORST_GROUPS = [
+  worstGroup(1, "verkauf-und-ankauf-laden-online-auktionshaus-sonderveranstaltungen-wochenende-und-feiertage-region-ortenau-nord"),
+  worstGroup(2, "j"),
+  ...Array.from({ length: 10 }, (_, index) =>
+    worstGroup(index + 3, ["Büro", "Verkauf", "Lager", "Geschäftsführung", "Aushilfen"][index % 5]! + ` ${index + 1}`),
+  ),
+];
+
 /**
- * The worst realistic accounts (break-ui): long, compound and non-Latin names, unbreakable addresses, a one-letter
- * name, a person without a name or address, an emoji name, many groups, every status, and three accounts on one address.
+ * The worst realistic accounts (break-ui): names at their limits (display name 160 characters), long, compound and
+ * non-Latin names, unbreakable addresses, a one-letter name, a person without a name or address, an emoji name, markup
+ * as a name, a picture that does not load, twelve groups, every status, a sign-in a moment in the future, and three
+ * accounts on one address. With the sample padded to 1,284 accounts, the counts need their thousands separator.
  */
 const worstSeeds: Seed[] = [
+  {
+    name: "Christopher Alexander Montgomery III von Oberhauser-Wettstein zu Hohenlohe-Langenburg und Waldenburg-Schillingsfürst",
+    role: "admin",
+    groups: WORST_GROUPS,
+    last: 0,
+    passkey: true,
+    uid: "c.montgomery",
+    mail: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+  },
   {
     name: "Aleksandra Wiśniewska-Kowalczyk",
     role: "admin",
     groups: Object.values(G),
     last: 0,
     passkey: true,
+    avatarHash: "missing-picture",
     mail: "aleksandra.wisniewska-kowalczyk@northwind-industries-holdings.example.com",
   },
   { name: "J", role: "guest", groups: [], last: null, passkey: false, uid: "j", mail: "a@b.test" },
@@ -160,7 +184,8 @@ const worstSeeds: Seed[] = [
   { name: "Đặng Thị Ngọc Hân", role: "member", groups: [G.workshop], last: 29, passkey: false, uid: "dang.han" },
   { name: "王秀英", role: "member", groups: [G.office], last: 31, passkey: false, uid: "wang.xiuying" },
   { name: "نور الهدى عبد الرحمن", role: "guest", groups: [G.temps], last: 6, passkey: false, uid: "nour.abdelrahman" },
-  { name: "🦊 Fox", role: "member", groups: [], last: 1, passkey: false, uid: "fox" },
+  { name: "🦊 Fox", role: "member", groups: [], last: -1, passkey: false, uid: "fox" },
+  { name: "<script>alert(1)</script> &amp; **fett**", role: "member", groups: [WORST_GROUPS[1]!], last: 1100, passkey: false, uid: "markup" },
   { name: "", role: "member", groups: [], last: null, passkey: false, uid: "svc-scanner", mail: null },
   {
     name: "Konstantin Oberhauser-Wettstein",
@@ -181,26 +206,27 @@ const worstSeeds: Seed[] = [
     mail: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
   },
 ];
-export const FIXTURE_WORST_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses([
+const worstAccounts: AccountDirectoryEntry[] = [
   ...worstSeeds.map((seed, index) => person(seed, index, "44444444-4444-4444-8444-")),
   service(11, "agent", "Benachrichtigungseinstellungen-Synchronisierung für Lager und Versand", "active", 0),
   service(12, "api-key", "X", "disabled", null),
-]);
-
-/** A Cloud with 1,250 accounts: the list still holds one page of them (break-ui "huge"). */
-export const FIXTURE_HUGE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses(
-  Array.from({ length: 1250 }, (_, index) => {
+];
+export const FIXTURE_WORST_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses(worstAccounts);
+/** The worst case in a Cloud of 1,284 accounts (break-ui "huge"): the list still holds one page of them. */
+export const FIXTURE_HUGE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses([
+  ...worstAccounts,
+  ...Array.from({ length: 1284 - worstAccounts.length }, (_, index) => {
     const base = seeds[index % 14]!;
     if (index % 50 === 49) return service(1000 + index, index % 100 === 99 ? "api-key" : "agent", `Agent ${index + 1}`, "active", index % 30);
     return person(
-      { ...base, name: `${base.name} ${index + 1}`, uid: `user${index + 1}`, mail: `user${index + 1}@${DOMAIN}`, last: index % 200 },
+      { ...base, name: `Aushilfe ${index + 1}`, uid: `aushilfe${index + 1}`, mail: `aushilfe${index + 1}@${DOMAIN}`, last: index % 200 },
       index,
       "55555555-5555-4555-8555-",
     );
   }),
-);
+]);
 
-/** The sample a test opens (break-ui states): the demo, the worst case, 1,250 accounts, or none. */
+/** The sample a test opens (break-ui states): the demo, the worst case, the worst case among 1,284 accounts, or none. */
 export const fixtureSample = (name: string | null | undefined): readonly AccountDirectoryEntry[] =>
   name === "worst" ? FIXTURE_WORST_ACCOUNTS : name === "huge" ? FIXTURE_HUGE_ACCOUNTS : name === "empty" ? [] : FIXTURE_ACCOUNTS;
 

@@ -2,6 +2,10 @@ import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { createMemo } from "solid-js";
 
+/** A count in the language's digits and thousands separator ("1,284", "1.284"). */
+const en = new Intl.NumberFormat("en").format;
+const de = new Intl.NumberFormat("de").format;
+
 /** The words of the user and group lists on v2: their filters, sorts, views, rows and states. */
 export const listMessages = i18n.define({
   baseLocale: "en",
@@ -47,7 +51,7 @@ export const listMessages = i18n.define({
       inSeveralGroups: ({ count }: { count: number }) =>
         i18n.plural(count, "en", {
           one: "1 of them in several groups",
-          other: `${count} of them in several groups`,
+          other: `${en(count)} of them in several groups`,
         }),
       groupedOnPage: "Groups arrange the accounts of this page.",
       noUsers: "No users yet.",
@@ -64,7 +68,7 @@ export const listMessages = i18n.define({
       hide: "Hide",
       previous: "Previous",
       next: "Next",
-      pageOf: ({ page, pages }: { page: number; pages: number }) => `Page ${page} of ${pages}`,
+      pageOf: ({ page, pages }: { page: number; pages: number }) => `Page ${en(page)} of ${en(pages)}`,
       moreGroups: ({ count }: { count: number }) => `+${count}`,
       expiresOn: ({ when }: { when: string }) => `expired ${when}`,
       // the account list
@@ -86,7 +90,7 @@ export const listMessages = i18n.define({
       noAccountMatches: "No account matches these filters.",
       noAgents: "No agents yet. Create one with cld admin agents create.",
       sharedOnPage: ({ count }: { count: number }) =>
-        i18n.plural(count, "en", { one: "1 address used by several accounts", other: `${count} addresses used by several accounts` }),
+        i18n.plural(count, "en", { one: "1 address used by several accounts", other: `${en(count)} addresses used by several accounts` }),
       // groups
       scope: "Groups",
       scopeOp: "are",
@@ -145,7 +149,7 @@ export const listMessages = i18n.define({
       inSeveralGroups: ({ count }) =>
         i18n.plural(count, "de", {
           one: "1 davon in mehreren Gruppen",
-          other: `${count} davon in mehreren Gruppen`,
+          other: `${de(count)} davon in mehreren Gruppen`,
         }),
       groupedOnPage: "Die Gruppen ordnen die Konten dieser Seite.",
       noUsers: "Noch keine Benutzer.",
@@ -162,7 +166,7 @@ export const listMessages = i18n.define({
       hide: "Ausblenden",
       previous: "Zurück",
       next: "Weiter",
-      pageOf: ({ page, pages }) => `Seite ${page} von ${pages}`,
+      pageOf: ({ page, pages }) => `Seite ${de(page)} von ${de(pages)}`,
       moreGroups: ({ count }) => `+${count}`,
       expiresOn: ({ when }) => `abgelaufen ${when}`,
       accounts: "Konten",
@@ -183,7 +187,7 @@ export const listMessages = i18n.define({
       noAccountMatches: "Kein Konto passt zu diesen Filtern.",
       noAgents: "Noch keine Agenten. Lege einen mit cld admin agents create an.",
       sharedOnPage: ({ count }) =>
-        i18n.plural(count, "de", { one: "1 Adresse mit mehreren Konten", other: `${count} Adressen mit mehreren Konten` }),
+        i18n.plural(count, "de", { one: "1 Adresse mit mehreren Konten", other: `${de(count)} Adressen mit mehreren Konten` }),
       scope: "Gruppen",
       scopeOp: "sind",
       managedByMe: "von mir verwaltet",

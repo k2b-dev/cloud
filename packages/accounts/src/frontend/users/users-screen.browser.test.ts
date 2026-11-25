@@ -237,6 +237,8 @@ describe("the account list on v2", () => {
         "Lager",
         "Verkauf",
         "Werkstatt",
+        // agents and the second account of Jonas have no group
+        "Ohne Gruppe",
       ]);
       // Milan Horvat (Geschäftsführung, Verkauf) and Petra Lindqvist (Verkauf, Werkstatt) stand twice
       const shown = await names(tab);
@@ -385,9 +387,19 @@ describe("the account list on v2", () => {
         await expectClean(tab);
         await shoot(tab, "worst-light-" + view.name);
         const text = (await tab.locator("#root").textContent()) ?? "";
-        // a person without a name or address is named by the account name; an emoji name keeps its emoji
+        // a person without a name or address is named by the account name; an emoji name and markup stay plain text
         expect(text).toContain("svc-scanner");
         expect(text).toContain("🦊 Fox");
+        expect(text).toContain("<script>alert(1)</script> &amp; **fett**");
+        if (view !== phone) {
+          // twelve groups: their count leads the cell, so the cut names never hide it
+          const groups = tab.locator("[data-k2-part=Table] tbody tr").filter({ hasText: "Christopher Alexander" }).locator("td").nth(4);
+          const chip = groups.locator("[data-k2-part=Chip]");
+          expect(await chip.textContent()).toBe("12");
+          const cell = await groups.boundingBox();
+          const mark = await chip.boundingBox();
+          expect(mark!.x + mark!.width).toBeLessThanOrEqual(cell!.x + cell!.width);
+        }
         expect(text).not.toContain("undefined");
         expect(text).not.toContain("NaN");
         expect(errors).toEqual([]);
@@ -397,7 +409,7 @@ describe("the account list on v2", () => {
     }
   }, 90_000);
 
-  test("1,250 accounts: the list is ready within 1.5 s and holds one page, so the page stays the same size", async () => {
+  test("1,284 accounts: the list is ready within 1.5 s and holds one page, so the page stays the same size", async () => {
     for (const view of [wide, phone]) {
       const started = Date.now();
       const { context, tab, errors } = await open(view, "/app/accounts/users", { sample: "huge" });
@@ -409,7 +421,7 @@ describe("the account list on v2", () => {
         // bounded DOM: about what one page of 100 rows needs, whatever the number of accounts
         const nodes = await tab.evaluate(() => document.querySelectorAll("#root *").length);
         expect(nodes).toBeLessThan(4000);
-        expect(await tab.locator("[data-status-row]").textContent()).toContain("100 von 1.250 Konten");
+        expect(await tab.locator("[data-status-row]").textContent()).toContain("100 von 1.284 Konten");
         expect(await tab.getByText("Seite 1 von 13").count()).toBe(1);
         await shoot(tab, "huge-light-" + view.name);
         await expectClean(tab);

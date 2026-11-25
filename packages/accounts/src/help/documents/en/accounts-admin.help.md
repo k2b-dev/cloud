@@ -14,9 +14,9 @@ In **Registration & requests**, you can set optional follow-up notices that depe
 
 ## Resolve duplicate email addresses {icon="users"}
 
-Open **Admin → Duplicate email addresses** to compare accounts that share an address. The match ignores letter case and spaces at the start or end.
+Open **Admin → Accounts** and choose the view **Duplicate email**. It lists the people whose address another account shares, grouped by address, so that the accounts of one address stand together. The match ignores letter case and spaces at the start or end. The filter **Email address is shared** gives the same accounts in any other view.
 
-Each account shows its last Cloud web sign-in. FreeIPA accounts also show the last Kerberos sign-in and the sync time. Kerberos activity can include use outside Cloud. All times are in UTC. **Not recorded** does not mean that nobody ever used the account.
+Each row shows when the account was last active. Open an account to see its last Cloud web sign-in; FreeIPA accounts also show the last Kerberos sign-in and the sync time. Kerberos activity can include use outside Cloud. All times are in UTC. **Not recorded** does not mean that nobody ever used the account.
 
 :::warning Deleting a FreeIPA account also deletes the user in FreeIPA
 Accounts does not move data or access to the remaining account.
@@ -28,12 +28,12 @@ Accounts does not move data or access to the remaining account.
 3. Confirm each deletion separately.
 :::
 
-Resolved addresses disappear from the list. You cannot delete your own account.
+Resolved addresses disappear from the view. You cannot delete your own account.
 
 ## Maintain users and groups {icon="user-cog"}
 
 :::reference
-- **Users:** Search accounts by uid, name, or email. Filter by role, group, status (active, invited, expired), last sign-in, passkey, and provider; sort by name or last activity; group by group, where a person in several groups stands in each. The views **Without passkey**, **Invited**, **Expired**, and **Inactive admins** are ready-made filters. Open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
+- **Accounts:** One list of people, agents, and API key accounts. Search by uid, name, or email. Filter by kind, status (active, invited, expired, disabled), and a shared email address; for people also by role, group, last sign-in, passkey, and provider. A filter that only people have shows only people. Sort by name, last activity, or email address; group by group, where a person in several groups stands in each, or by email address. The views **Without passkey**, **Invited**, **Expired**, **Inactive admins**, **Agents**, and **Duplicate email** are ready-made filters. Open a person to edit profile fields, avatar, roles, provider, expiry, and group membership; open an agent or API key account to manage its keys.
 - **Groups:** Open a group to review its facts, members, managers, and parent groups. Managers can add or remove users and groups where the page offers these changes.
 - **Linux identities:** While assignment is on in the Cloud administration under **Sign-in & security → Linux identities**, new local full accounts and promoted guests get Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can get a GID after the global setup. These actions do not enable computer sign-in or sudo.
 - **Deleted accounts:** Review accounts that were removed by a manual action, expiry cleanup, FreeIPA demotion, or a change of the sync scope. The row details keep their metadata available.

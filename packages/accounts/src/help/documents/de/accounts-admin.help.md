@@ -14,9 +14,9 @@ Unter **Registrierung & Anfragen** kannst du optionale Hinweise zur Nacharbeit f
 
 ## Doppelte E-Mail-Adressen bereinigen {icon="users"}
 
-Öffne **Administration → Doppelte E-Mail-Adressen**, um Konten mit derselben Adresse zu vergleichen. Der Vergleich ignoriert Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende.
+Öffne **Administration → Konten** und wähle die Ansicht **Doppelte E-Mail**. Sie zeigt die Personen, deren Adresse ein anderes Konto teilt, nach Adresse gruppiert, sodass die Konten einer Adresse zusammenstehen. Der Vergleich ignoriert Groß- und Kleinschreibung sowie Leerzeichen am Anfang und Ende. Der Filter **E-Mail-Adresse ist doppelt** zeigt dieselben Konten in jeder anderen Ansicht.
 
-Jedes Konto zeigt seine letzte Cloud-Web-Anmeldung. FreeIPA-Konten zeigen außerdem die letzte Kerberos-Anmeldung und den Zeitpunkt der Synchronisierung. Kerberos-Aktivität kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC. **Nicht erfasst** bedeutet nicht, dass niemand das Konto je benutzt hat.
+Jede Zeile zeigt, wann das Konto zuletzt aktiv war. Öffne ein Konto, um seine letzte Cloud-Web-Anmeldung zu sehen; FreeIPA-Konten zeigen außerdem die letzte Kerberos-Anmeldung und den Zeitpunkt der Synchronisierung. Kerberos-Aktivität kann Nutzung außerhalb von Cloud enthalten. Alle Uhrzeiten sind in UTC. **Nicht erfasst** bedeutet nicht, dass niemand das Konto je benutzt hat.
 
 :::warning Das Löschen eines FreeIPA-Kontos löscht auch den Benutzer in FreeIPA
 Daten und Zugriff gehen nicht auf das verbleibende Konto über.
@@ -28,12 +28,12 @@ Daten und Zugriff gehen nicht auf das verbleibende Konto über.
 3. Bestätige jede Löschung einzeln.
 :::
 
-Bereinigte Adressen verschwinden aus der Liste. Dein eigenes Konto kannst du nicht löschen.
+Bereinigte Adressen verschwinden aus der Ansicht. Dein eigenes Konto kannst du nicht löschen.
 
 ## Personen und Gruppen pflegen {icon="user-cog"}
 
 :::reference
-- **Benutzer:** Suche Konten nach UID, Name oder E-Mail-Adresse. Filtere nach Rolle, Gruppe, Status (aktiv, eingeladen, abgelaufen), letzter Anmeldung, Passkey und Anbieter; sortiere nach Name oder letzter Aktivität; gruppiere nach Gruppe, dabei steht eine Person in jeder ihrer Gruppen. Die Ansichten **Ohne Passkey**, **Eingeladen**, **Abgelaufen** und **Inaktive Admins** sind fertige Filter. Öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten.
+- **Konten:** Eine Liste für Personen, Agenten und API-Key-Konten. Suche nach UID, Name oder E-Mail-Adresse. Filtere nach Art, Status (aktiv, eingeladen, abgelaufen, deaktiviert) und doppelter E-Mail-Adresse, bei Personen auch nach Rolle, Gruppe, letzter Anmeldung, Passkey und Anbieter. Ein Filter, den nur Personen haben, zeigt nur Personen. Sortiere nach Name, letzter Aktivität oder E-Mail-Adresse; gruppiere nach Gruppe, dabei steht eine Person in jeder ihrer Gruppen, oder nach E-Mail-Adresse. Die Ansichten **Ohne Passkey**, **Eingeladen**, **Abgelaufen**, **Inaktive Admins**, **Agenten** und **Doppelte E-Mail** sind fertige Filter. Öffne eine Person, um Profilfelder, Avatar, Rollen, Anbieter, Ablaufdatum und Gruppenmitgliedschaften zu bearbeiten; öffne einen Agenten oder ein API-Key-Konto, um seine Schlüssel zu verwalten.
 - **Gruppen:** Öffne eine Gruppe, um ihre Angaben, Mitglieder, Verantwortlichen und übergeordneten Gruppen zu prüfen. Verantwortliche können Personen und Gruppen hinzufügen oder entfernen, wo die Seite diese Änderungen anbietet.
 - **Linux-Identitäten:** Ist die Vergabe in der Cloud-Administration unter **Anmeldung & Sicherheit → Linux-Identitäten** eingeschaltet, erhalten neue lokale Vollkonten und hochgestufte Gäste ihre Linux-Attribute automatisch. Die Administration kann fehlende Attribute älterer Konten ergänzen und Home und Shell überschreiben. FreeIPA-Werte sind schreibgeschützt. Lokale Gruppen können nach der globalen Einrichtung eine GID erhalten. Diese Aktionen schalten weder die Anmeldung am Rechner noch sudo frei.
 - **Gelöschte Konten:** Prüfe Konten, die durch eine manuelle Aktion, eine Ablaufbereinigung, eine FreeIPA-Rückstufung oder eine Änderung des Synchronisierungsbereichs entfernt wurden. Die Zeilendetails enthalten weiterhin ihre Metadaten.

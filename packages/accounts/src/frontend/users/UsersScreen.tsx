@@ -218,13 +218,25 @@ export default function UsersScreen(props: UsersScreenProps) {
   };
   const roleWord = (entry: AccountDirectoryEntry) =>
     entry.kind === "person" ? { admin: t().admin, member: t().member, guest: t().guest }[entry.role] : "";
+  /** A person's first groups by name; the row says how many there are in all where these are not all of them. */
   const groupWords = (entry: AccountDirectoryEntry) =>
     entry.kind !== "person"
       ? ""
       : entry.groups
           .slice(0, 3)
           .map((group) => group.name)
-          .join(", ") + (entry.groupCount > 3 ? ` ${t().moreGroups({ count: entry.groupCount - 3 })}` : "");
+          .join(", ");
+  const groupCount = (entry: AccountDirectoryEntry) => (entry.kind === "person" ? entry.groupCount : 0);
+  // k2b-ui gap: a cut text with a count after it that always stays visible (lanes QW/MW). Until then the count of all
+  // groups leads the cell, so the "…" of a long list of names never hides it.
+  const groupCell = (entry: AccountDirectoryEntry) =>
+    groupCount(entry) > 3 ? (
+      <>
+        <Chip>{number(groupCount(entry))}</Chip> {groupWords(entry)}
+      </>
+    ) : (
+      groupWords(entry) || "–"
+    );
   const login = (entry: AccountDirectoryEntry) =>
     lastLoginText(entry.kind === "person" ? entry.lastLogin : entry.lastUsed, t(), {
       locale: locale(),
@@ -233,7 +245,11 @@ export default function UsersScreen(props: UsersScreenProps) {
     });
   /** The second line on the phone: a person's role and groups, a service account's kind. */
   const about = (entry: AccountDirectoryEntry) =>
-    entry.kind === "person" ? [roleWord(entry), groupWords(entry)].filter(Boolean).join(" · ") : kindWord(t(), entry);
+    entry.kind !== "person"
+      ? kindWord(t(), entry)
+      : [roleWord(entry), groupCount(entry) > 3 ? t().groupsCount({ count: number(groupCount(entry)) }) : groupWords(entry)]
+          .filter(Boolean)
+          .join(" · ");
   const groupOf = (row: UserRow) => {
     const members = rows().filter((other) => other.group?.id === row.group?.id).length;
     return {
@@ -386,7 +402,7 @@ export default function UsersScreen(props: UsersScreenProps) {
                 drop: true,
               },
               { title: t().role, width: { min: 90, default: 110 }, cell: (row) => roleWord(row.entry) || "–", drop: true },
-              { title: t().groups, width: { min: 140, default: 220 }, cell: (row) => groupWords(row.entry) || "–", drop: true },
+              { title: t().groups, width: { min: 140, default: 220 }, cell: (row) => groupCell(row.entry), drop: true },
               { title: t().status, width: { min: 110, default: 120 }, cell: (row) => statusChip(t(), row.entry) },
               {
                 title: t().passkey,
