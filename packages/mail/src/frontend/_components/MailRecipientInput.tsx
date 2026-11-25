@@ -45,6 +45,8 @@ export default function MailRecipientInput(props: {
   register?: (field: MailRecipientField) => () => void;
   /** The field the message cannot go without (To). */
   required?: boolean;
+  /** What a chip shows, such as the name alone in a head; the full recipient stays its hint and its name. */
+  chipText?: (recipient: string) => string;
 }) {
   const locale = useLocale();
   const t = () => mailComposerMessages.resolve([locale()]).t;
@@ -384,7 +386,7 @@ export default function MailRecipientInput(props: {
                     onClick={() => edit(index())}
                     onKeyDown={(event) => handlePillKeyDown(event, index())}
                   >
-                    {recipient}
+                    {props.chipText ? props.chipText(recipient) : recipient}
                   </button>
                   <IconButton
                     type="button"

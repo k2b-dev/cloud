@@ -102,7 +102,7 @@ import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-jou
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { quoteOriginalOf } from "./mail-quote-original";
-import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
+import { formatMailRecipients, parseMailRecipient, parseMailRecipients } from "./mail-recipient";
 import { mailSendLaterPresets } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
 import { frameMenuEntries, type MailReplyFrame, type MailReplyFrameParts } from "./mail-reply-frame";
@@ -2654,6 +2654,11 @@ export default function MailComposer(props: {
                     onChange={setTo}
                     disabled={fieldsDisabled()}
                     readOnly={paused()}
+                    // As at rest: the name alone; the address is the chip's hint and opens with the chip.
+                    chipText={(recipient) => {
+                      const parsed = parseMailRecipient(recipient);
+                      return parsed?.name || parsed?.address || recipient;
+                    }}
                   />
                 </div>
               ),
@@ -2662,8 +2667,9 @@ export default function MailComposer(props: {
                 if (!identity) return null;
                 return {
                   text: identity.label,
+                  // Always the same "from …" control as at rest; with one sender its menu names that sender.
                   choice:
-                    verifiedIdentities().length > 1
+                    verifiedIdentities().length > 0
                       ? {
                           label: () => t().changeSender({ label: identity.label, address: identity.fromAddress }),
                           value: identityId,

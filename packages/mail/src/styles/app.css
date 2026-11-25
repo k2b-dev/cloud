@@ -2297,11 +2297,50 @@
 .k2b-ui .mail-reply-box-recipients.mail-reply-frame-to {
   min-width: 4rem;
   flex: 1 1 0;
+  /* The recipient's name starts where the resting composer writes it: the field's inner edge stands left of it, so
+     its edge on hover and focus has room (its padding and its edge) and the name does not move when the reply opens. */
+  margin-inline-start: calc(-0.5rem - var(--k2b-edge-width));
+}
+/* The chips read as the resting row: the head's type, the whole name while there is room (the field scrolls, it never
+   cuts a single name short). */
+.k2b-ui .mail-reply-frame-to :is(.mail-recipient-pill-shell, .mail-recipient-input input) {
+  max-width: none;
+  font: inherit;
+}
+/* The text and its placeholder take the composer's own type and quiet colour, so the empty reply reads as at rest;
+   only written lines take the text colour. */
+.k2b-ui
+  .mail-reply-frame-body
+  :is(
+    .mail-compose-content,
+    .mail-inline-draft-text,
+    .mail-inline-draft-write,
+    .mail-inline-text-editor,
+    .mail-inline-text-editor > div,
+    .k2b-text-editor,
+    .k2b-ste-host,
+    .k2b-ste,
+    .cm-editor,
+    .cm-scroller,
+    .cm-content,
+    .cm-placeholder
+  ) {
+  font: inherit;
+  color: inherit;
+}
+.k2b-ui .mail-reply-frame-body .cm-line {
+  font: inherit;
+  color: var(--k2b-text);
+}
+.k2b-ui .mail-reply-frame-body .cm-line:has(.cm-placeholder) {
+  color: inherit;
 }
 /* In the frame the text starts on the frame's own edge and as high as the resting composer's words: two lines to
    write in above the signature, the same height as at rest. A long text scrolls inside, the head and foot stay. */
 .k2b-ui .mail-reply-frame .mail-compose-body.mail-reply-frame-body {
   --mail-compose-inset: 0px;
+  /* the scroll area brings v1's family; the frame's text keeps the composer's */
+  font-family: inherit;
   max-height: max(14rem, calc(100cqh - 18rem));
   padding-block-start: 0;
 }

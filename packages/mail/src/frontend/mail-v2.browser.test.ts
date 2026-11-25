@@ -510,12 +510,58 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
-  test("the reply's mode is one choice under its heading: choosing the note closes the menu and shows the note", async () => {
+  test("opening the reply moves nothing in its row: the mode, To, the recipient and the sender keep their place", async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
+    try {
+      await answerReplyApi(page);
+      // x of the mode's symbol, "An", the recipient's name and the sender's control, and the placeholder's type
+      const row = () =>
+        page.evaluate(() => {
+          const composer = Array.from(document.querySelectorAll('[data-k2-part="Composer"]')).at(-1)!;
+          const head = composer.querySelector(".k2-composer-head")!;
+          const x = (element: Element | null | undefined) => (element ? Math.round(element.getBoundingClientRect().x * 10) / 10 : null);
+          const name = head.querySelector(".mail-recipient-pill") ?? head.querySelector(":scope > .k2-text:not(.k2-t-meta)");
+          const from = Array.from(head.querySelectorAll('[data-k2-part="Button"]')).find((button) =>
+            button.textContent?.startsWith("von "),
+          );
+          const words =
+            composer.querySelector(".cm-placeholder") ??
+            composer.querySelector('[data-k2-part="Composer"] .k2-composer-start, .k2-composer-start');
+          const style = words ? getComputedStyle(words) : null;
+          return {
+            mode: x(head.querySelector(":scope > .k2-icon")),
+            to: x(head.querySelector(":scope > .k2-t-meta")),
+            name: x(name),
+            nameText: name?.textContent?.trim(),
+            from: x(from),
+            fromMenu: from?.getAttribute("aria-haspopup"),
+            placeholder: style && { size: style.fontSize, line: style.lineHeight, family: style.fontFamily, color: style.color },
+          };
+        });
+      const resting = await row();
+      await page.locator(".k2-composer-start").click();
+      await page.locator('[data-k2-part="Canvas"] [data-mail-reply-box="mail"] [contenteditable="true"]').first().waitFor();
+      await page.locator('[data-k2-part="Canvas"] .cm-placeholder').waitFor();
+      await settled(page);
+      const opened = await row();
+      expect(resting.mode).not.toBeNull();
+      expect(opened).toEqual(resting);
+      // The name alone, whole while there is room; the address is the chip's hint.
+      const chip = page.locator('[data-k2-part="Canvas"] .mail-recipient-pill');
+      expect(await chip.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+      expect(await chip.getAttribute("title")).toContain("einkauf@holzwerk-brandt.example");
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  test("the reply's mode is one choice at the top of More: choosing the note closes the menu and shows the note", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {
       await answerReplyApi(page);
       const composer = await openReply(page, "Hallo");
-      await composer.getByRole("button", { name: "Antworten. Art ändern" }).click();
+      await composer.getByRole("button", { name: "Mehr" }).click();
       const reply = page.getByRole("menuitemradio", { name: "Antworten", exact: true });
       await reply.waitFor();
       expect(await reply.getAttribute("aria-checked")).toBe("true");
