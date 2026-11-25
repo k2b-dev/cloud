@@ -19,11 +19,13 @@ type ButtonBase = {
   href?: string;
   /** With `href`: opens the page in place on a plain click (see `OnNavigate`); a disabled link never calls it. */
   onNavigate?: OnNavigate;
+  /** The deed of a button that has no address; never for what has one (use `href`). */
   onClick?: JSX.EventHandler<HTMLElement, MouseEvent>;
   /** The button opens a menu: a chevron after the label. */
   menu?: boolean;
   /** The button leads further, to a page with more: a chevron to the right after the label. */
   forward?: boolean;
+  /** The deed cannot be taken now: dimmed, and pressed no time; say why in the sentence beside it. */
   disabled?: boolean;
   /**
    * The deed of the button is under way, such as a save that waits for the server: a turning sign over the label, the
@@ -37,6 +39,7 @@ type ButtonBase = {
    * button is no toggle. Not for a link (`href`) and not for the primary action.
    */
   pressed?: boolean;
+  /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
@@ -49,7 +52,12 @@ type ButtonBase = {
 
 export type ButtonProps = ButtonBase &
   (
-    | { children: JSX.Element; label?: string }
+    | {
+        /** The words on the button. */
+        children: JSX.Element;
+        /** Another name for assistive technology, only where the words alone do not say enough. */
+        label?: string;
+      }
     | {
         children?: undefined;
         /** An icon button needs a name (rule 5: wrong fails at once). */

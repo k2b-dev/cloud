@@ -2,10 +2,11 @@ import { defaultPlugins, defineFibel } from "@k2b/fibel";
 import { agentSkillsPlugin, assistantPlugin, imprintPlugin, mcpPlugin, providerFromEnv } from "@k2b/fibel/plugins";
 import { cloudSitePlugin } from "./plugins/cloud-site";
 import { codeBlocksPlugin } from "./plugins/code-blocks";
+import { foldedNavPlugin } from "./plugins/folded-nav";
 import { lessonsPlugin } from "./plugins/lessons";
 import { docsPages } from "./src/docs/pages";
 import { siteFooterLinks, siteHeader, siteLocales, siteTheme, siteUrl } from "./src/site-config";
-import { uiPages } from "./src/ui/pages";
+import { uiPages, v1Section } from "./src/ui/pages";
 
 const assistantPlugins = process.env.FIBEL_AI_MODEL?.trim()
   ? [
@@ -86,7 +87,8 @@ export default defineFibel({
     ...assistantPlugins,
     imprintPlugin({ url: "https://impressum.k2b.dev" }),
     codeBlocksPlugin(),
-    cloudSitePlugin(["homepage.css", "docs-overview.css", "generated/cloud-ui.css", "ui-catalog.css", "code-area.css"], {
+    foldedNavPlugin([v1Section]),
+    cloudSitePlugin(["homepage.css", "docs-overview.css", "generated/cloud-ui.css", "ui-catalog.css", "ui-topics.css", "code-area.css"], {
       preloadDisplayFont: true,
     }),
   ],
