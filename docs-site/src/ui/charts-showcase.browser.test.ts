@@ -89,7 +89,7 @@ const islands = (page: Page) =>
                     .map((declaration) => declaration.replace(/\d+\.\d+/g, (number) => String(Number(Number(number).toFixed(3)))))
                     .sort()
                     .join(";")
-                : // stdlib numbers sparkline gradients per process, so a server that rendered earlier pages counts on.
+                : // The chart core numbers sparkline gradients per process, so a server that rendered earlier pages counts on.
                   attribute.value.replace(/stdlib-spark-grad-\d+/g, "stdlib-spark-grad");
           return `${attribute.name}="${value}"`;
         })
