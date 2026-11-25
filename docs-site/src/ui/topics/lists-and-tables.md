@@ -38,7 +38,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### List
 
-Many like things, one per line; `label` names it.
+Many like things, one per line; `label` names it. A list that can grow without end takes its data (`items`, `rowKey`, `row`) instead of written rows: only the rows in view and a margin around them are in the page, the server renders the first rows, the focused row stays while it scrolls away, and each row says where it stands. Use it for every list whose length you do not control.
 
 <Props of="List" />
 
@@ -50,7 +50,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. A table of any length keeps only the rows in view in the page; its head stays.
 
 <Props of="Table Column" />
 
@@ -84,6 +84,7 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 - Give every wide table a `phone(row)`.
 - Put the count and key figures in the `StatusRow`.
 - Keep row text short; long text is cut with "…" and shows whole on hover.
+- Give a list that can grow without end its `items`; write rows out only for a few fixed ones.
 
 ### Don't
 

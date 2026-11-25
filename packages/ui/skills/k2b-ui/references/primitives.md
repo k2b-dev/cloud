@@ -146,7 +146,18 @@ inside it.
 
 ### List and Row
 
-`List` holds `Row`s (`label` names it). A `Row`:
+`List` holds `Row`s (`label` names it). A list that can grow without end
+(conversations, records, a log) takes its data instead of written rows:
+`items`, `rowKey(item)` and `row(item, index) => <Row … />`, and `total`
+when more exist than are loaded. Use it by default for every list whose
+length you do not control: only the rows in view and a margin around them
+are in the page, the server renders the first rows (no shift on hydration),
+the focused row stays while it scrolls away, and each row says where it
+stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
+with a text `Button` after the list. Write rows out only for a few fixed
+ones.
+
+A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
@@ -214,6 +225,11 @@ Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
 are cut off at 390 px (the outline reports it). A phone row opens what
 `open(row)` names; a row's other deeds live on the page it opens.
+
+A table of any length keeps only the rows in view in the page (its head
+stays, empty rows hold the place of the others, `aria-rowcount` and
+`aria-rowindex` say where a row stands); a cell is made when its row first
+shows. Whether rows have two lines is read from the first page of rows.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder
 rows hold the place of the rows. `empty` (`{ icon, text, action? }`): with
