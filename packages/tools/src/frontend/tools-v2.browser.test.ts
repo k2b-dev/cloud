@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import { appHostCss } from "../../../ui/test/app-host-fixture";
-import { launchBrowser } from "../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../ui/test/browser";
 import { buildHarness } from "./tools/image-intake/browser-harness";
 
 // Every Tools screen on v2 at 1440, 1024 and 390 px: no outline problem, no layout problem, no loader in the first
@@ -65,8 +65,7 @@ for (const name of SCREENS)
     for (const width of [1440, 1024, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 900 } });
       try {
-        const errors: string[] = [];
-        page.on("pageerror", (error: Error) => errors.push(String(error)));
+        const errors = pageErrors(page);
         await page.goto(`${server.url.href}?screen=${name}`);
         expect({ width, errors, ...(await check(page, name, width)) }).toEqual({
           width,
