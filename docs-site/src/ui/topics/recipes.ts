@@ -1,5 +1,7 @@
 import { createComponent, type JSX } from "solid-js";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
+import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
+import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
 import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-detail";
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
@@ -30,6 +32,8 @@ export type RecipeModule = {
 /** Every recipe by its file name without `.tsx`. A new recipe file is one line here; a test fails on a missing one. */
 export const recipes = {
   form,
+  "form-detail": formDetail,
+  frame,
   "list-detail": listDetail,
   mail,
   record,

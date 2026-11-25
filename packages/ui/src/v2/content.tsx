@@ -116,7 +116,9 @@ export const Inline = (props: InlineProps) => (
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Fact = {
+  /** The quiet label before the value. */
   label: string;
+  /** The value: words, a `Chip` or a link. */
   value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
@@ -130,6 +132,7 @@ export type Fact = {
 };
 
 export type FactsProps = {
+  /** The labels with their values, in their order. */
   items: readonly Fact[];
   /** All facts on one line, labels quiet before their values. */
   inline?: boolean;

@@ -33,6 +33,7 @@ type FieldIds = {
 const FieldContext = createContext<FieldIds>();
 
 export type FieldProps = {
+  /** The question of the field, above the control. */
   label: string;
   /** The name the value is sent under; the control inside takes it. */
   name?: string;
@@ -47,6 +48,7 @@ export type FieldProps = {
    * label line shows nothing for it; the fields that may stay empty say "optional" instead (as the mockup does).
    */
   required?: boolean;
+  /** The one control: `Input`, `Select`, `DateInput` or `Choice`. */
   children: JSX.Element;
 };
 
@@ -137,7 +139,10 @@ export const Field = (props: FieldProps) => {
 };
 
 /** Fields side by side on one grid; one column on the phone. */
-Field.Row = (props: { children: JSX.Element }) => (
+Field.Row = (props: {
+  /** The `Field`s side by side. */
+  children: JSX.Element;
+}) => (
   <div class="k2-frow" data-k2-part="Field.Row">
     {props.children}
   </div>
@@ -146,18 +151,25 @@ Field.Row = (props: { children: JSX.Element }) => (
 const useField = () => useContext(FieldContext);
 
 export type InputProps = {
+  /** The text in the field. */
   value?: string;
+  /** A quiet example while the field is empty. */
   placeholder?: string;
+  /** The kind of text, which picks the phone's keyboard; `text` when not set. */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
   /** A text of several lines (80 px). */
   multiline?: boolean;
+  /** The smallest number a `number` field takes. */
   min?: number;
+  /** The largest number a `number` field takes. */
   max?: number;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
+  /** Called with the new text on every change. */
   onInput?: (value: string) => void;
   /**
    * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
@@ -235,13 +247,23 @@ export const Input = (props: InputProps) => {
   );
 };
 
-export type SelectOption = { value: string; label: string; disabled?: boolean };
+export type SelectOption = {
+  /** The value that is sent. */
+  value: string;
+  /** The words shown for it. */
+  label: string;
+  /** The option cannot be chosen now. */
+  disabled?: boolean;
+};
 
 export type SelectProps = {
+  /** The options: words, or a value with its words. */
   options: readonly (string | SelectOption)[];
   /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
+  /** The words while nothing is chosen, such as "Kunde wählen". */
   placeholder?: string;
   /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
@@ -317,10 +339,15 @@ export const Select = (props: SelectProps) => {
 };
 
 export type DateInputProps = {
+  /** The date as the person reads it, such as "27.11.2026". */
   value?: string;
+  /** Called with the new text on every change. */
   onInput?: (value: string) => void;
+  /** A quiet example date while the field is empty. */
   placeholder?: string;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
+  /** A name when the date stands without a Field. */
   label?: string;
 };
 
@@ -348,13 +375,17 @@ export const DateInput = (props: DateInputProps) => {
 };
 
 export type CheckProps = {
+  /** The words beside the box; they say what is turned on. */
   label: JSX.Element;
+  /** The name the box is sent under in a form. */
   name?: string;
   /** Set, not set, or mixed (some of a group). */
   checked?: boolean | "mixed";
   /** A switch instead of a box: on and off take effect at once. */
   switch?: boolean;
+  /** The box cannot be changed now: dimmed; its words say why. */
   disabled?: boolean;
+  /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
 };
 
@@ -449,11 +480,15 @@ export const MarkCheck = (
 );
 
 export type ChoiceProps = {
+  /** The name the choice is sent under in a form. */
   name: string;
+  /** The few options, all visible: words, or a value with its words. */
   options: readonly (string | { value: string; label: string })[];
+  /** The chosen value. */
   value?: string;
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
   /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
   disabled?: boolean;
