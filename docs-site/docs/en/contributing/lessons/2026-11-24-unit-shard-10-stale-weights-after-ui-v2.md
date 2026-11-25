@@ -1,0 +1,6 @@
+### A unit shard ran out of time because the warnings above its target went unread
+
+- **What happened:** CI unit shard 10 of 12 stopped at its 20-minute budget on pull request #4105 during `workspace root tests` ([#4113](https://github.com/k2b-dev/cloud/issues/4113)). On the green main merge queue run 45486435794, the same shard already took 16.3 minutes, shard 1 16.4 minutes, and shard 4 15.2 minutes.
+- **Root cause:** `scripts/test-weights.json` was stale. `@k2b/ui rest` grew from a weight of 419 seconds to up to 693 seconds with the UI v2 work, and `@k2b/cloud rest` grew from 847 to 984 seconds. That is 16.4 minutes for one suite, so no shard count could fit the 15-minute target. All three slow shards printed the warning above the target on main, but a warning on a green job leads to no action.
+- **Error class:** A CI shard grows toward its job limit.
+- **Guard:** `@k2b/cloud` gains a `code` test part for `src/code`, the weights come from the green main run and the failed pull request run, unit tests run in thirteen shards (14.65 minutes at most), and WebKit tests run in twenty-two (10.44 minutes). The runner tests still fail when a predicted shard exceeds its target. The warning above the target stays the early signal; refresh the weights as soon as it shows on a main run, not when a shard first fails.

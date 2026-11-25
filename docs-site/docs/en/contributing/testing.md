@@ -1360,7 +1360,7 @@ boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-Unit tests run in twelve shards, WebKit tests in nineteen, and integration tests
+Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in
 `scripts/test-weights.json`, assigning the longest suites first. An unknown
 suite counts as the median of its table. The browser table contains WebKit
@@ -1418,8 +1418,9 @@ Leave measured room below the target for new files. A recommendation that only
 just fits can fail the runner guard as soon as another browser file is added.
 If one suite alone exceeds that target, split the suite: `test:part:<name>`
 scripts in the package become the suites `<package> <name>` in place of its `test`
-script, and together they must run the same files. Cloud runs `src/ssr` and
-`src/ai` as separate `ssr` and `ai` parts; its `rest` part excludes both trees,
+script, and together they must run the same files. Cloud runs `src/ssr`,
+`src/ai`, and `src/code` as separate `ssr`, `ai`, and `code` parts; its `rest`
+part excludes these trees,
 and browser behavior tests keep their separate suite. When splitting a suite,
 the importer cannot divide its old aggregate measurement between new names.
 Derive initial weights from completed file-group timestamps, account for
@@ -1467,18 +1468,15 @@ adding one file in [#2810](https://github.com/k2b-dev/cloud/pull/2810) tipped
 the runner guard to 660.45 seconds against its 660-second target.
 
 The current browser weights use maxima from the WebKit jobs of runs
-[43605465168](https://github.com/k2b-dev/cloud/actions/runs/43605465168),
-[43604064299](https://github.com/k2b-dev/cloud/actions/runs/43604064299),
-[43600763560](https://github.com/k2b-dev/cloud/actions/runs/43600763560),
-[43593953102](https://github.com/k2b-dev/cloud/actions/runs/43593953102),
-[43588358082](https://github.com/k2b-dev/cloud/actions/runs/43588358082), and
-[43563379904](https://github.com/k2b-dev/cloud/actions/runs/43563379904),
-two of them failed runs. The table covers all 443 current files. Seventeen
-shards predict 681.5 seconds, above the target, and eighteen predict 643.6
-seconds, only 16.4 seconds below it. Nineteen predict 609.5 seconds
-(10.16 minutes), leaving 50.5 seconds (7.7%) below the target. Replaying the
-plan with ten additional unmeasured files at the table's 11.9-second median
-gives 616.2 seconds, still 43.8 seconds below the target.
+[45486435794](https://github.com/k2b-dev/cloud/actions/runs/45486435794), a
+main merge queue run, and
+[45498231860](https://github.com/k2b-dev/cloud/actions/runs/45498231860), a
+failed pull request run. The table covers all 514 current files. Nineteen
+shards predict 724.8 seconds, above the target, and twenty-one predict 655.9
+seconds, only 4.1 seconds below it. Twenty-two predict 626.1 seconds
+(10.44 minutes), leaving 33.9 seconds (5.1%) below the target. Replaying the
+plan with ten additional unmeasured files at the table's 11.6-second median
+gives 631.3 seconds, still 28.7 seconds below the target.
 These are historical planning estimates, not new CI wall times or a guarantee
 for files of any size. Keep contexts isolated between tests, as required above.
 Refresh the weights and reconsider the matrix when the measured workload grows;
@@ -1758,7 +1756,7 @@ NODE_ENV=production APP_ID=grids bun run packages/cloud/scripts/build.ts
 ```
 
 `bun run test` runs the browser tests in Chromium. The gate's `webkit` job runs
-them again in WebKit in nineteen shards with `bun run test --browser`, against
+them again in WebKit in twenty-two shards with `bun run test --browser`, against
 the Playwright image as in [Run WebKit locally](#run-webkit-locally). It runs
 when a workspace with browser tests or a shared input such as `packages/cloud`
 or `scripts/` changed. At its end, it lists every process that crashed on the
