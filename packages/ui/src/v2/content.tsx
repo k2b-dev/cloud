@@ -91,7 +91,9 @@ export const cutTail = (text: string, keep: CutProps["keep"]): number => {
   const extension = /\.[\p{L}\p{N}]{1,8}$/u.exec(text);
   if (!extension) return 0;
   // the extension and a few letters before it (whole characters), so a version ("v12.3") survives the cut
-  const before = Array.from(text.slice(0, text.length - extension[0].length)).slice(-6).join("");
+  const before = Array.from(text.slice(0, text.length - extension[0].length))
+    .slice(-6)
+    .join("");
   return extension[0].length + before.length;
 };
 
@@ -472,10 +474,14 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2" title={cut(1)}>{text()[1]}</span>
+        <span class="k2-row-l2" title={cut(1)}>
+          {text()[1]}
+        </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3" title={cut(2)}>{text()[2]}</span>
+        <span class="k2-row-l3" title={cut(2)}>
+          {text()[2]}
+        </span>
       </Show>
       <Show when={time() !== undefined}>
         <span class="k2-row-time">{time()}</span>

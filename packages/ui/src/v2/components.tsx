@@ -593,38 +593,38 @@ export const Notice = (props: NoticeProps) => {
     onCleanup(() => sizes.disconnect());
   });
   return (
-  <div
-    class="k2-notice"
-    data-k2-part="Notice"
-    data-tone={props.tone}
-    data-title={props.title ? "" : undefined}
-    data-open={open() ? "" : undefined}
-    role={props.tone === "bad" ? "alert" : "note"}
-  >
-    <Icon name={props.icon ?? toneIcon[props.tone]} />
-    <Show when={props.title}>
-      <span class="k2-notice-title">
-        {props.title}
-        <Show when={props.meta}>
-          {" "}
-          <span class="k2-notice-meta">· {props.meta}</span>
-        </Show>
+    <div
+      class="k2-notice"
+      data-k2-part="Notice"
+      data-tone={props.tone}
+      data-title={props.title ? "" : undefined}
+      data-open={open() ? "" : undefined}
+      role={props.tone === "bad" ? "alert" : "note"}
+    >
+      <Icon name={props.icon ?? toneIcon[props.tone]} />
+      <Show when={props.title}>
+        <span class="k2-notice-title">
+          {props.title}
+          <Show when={props.meta}>
+            {" "}
+            <span class="k2-notice-meta">· {props.meta}</span>
+          </Show>
+        </span>
+      </Show>
+      <span class="k2-notice-text" ref={text}>
+        {props.children}
       </span>
-    </Show>
-    <span class="k2-notice-text" ref={text}>
-      {props.children}
-    </span>
-    <Show when={long()}>
-      <button type="button" class="k2-notice-more" aria-expanded={open() ? "true" : "false"} onClick={() => setOpen(!open())}>
-        {open() ? t().showLess : t().showMore}
-      </button>
-    </Show>
-    <Show when={props.actions?.length}>
-      <span class="k2-notice-end">
-        <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
-      </span>
-    </Show>
-  </div>
+      <Show when={long()}>
+        <button type="button" class="k2-notice-more" aria-expanded={open() ? "true" : "false"} onClick={() => setOpen(!open())}>
+          {open() ? t().showLess : t().showMore}
+        </button>
+      </Show>
+      <Show when={props.actions?.length}>
+        <span class="k2-notice-end">
+          <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        </span>
+      </Show>
+    </div>
   );
 };
 

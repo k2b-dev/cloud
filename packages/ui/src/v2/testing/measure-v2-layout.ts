@@ -648,7 +648,9 @@ function measureInPage(options: InPage): DomResult {
       // A box of a few px holds no word of 2 letters or more: its text is gone (a sender of width 0 beside many marks).
       const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
       if ([...words].length >= 2 && box.width < Math.min(4, fontSize / 3)) {
-        squeezed.push(`${name(parent)} "${labelOf(parent)}" is ${round(box.width)} px wide; its text is gone, give it room or cut it with "…"`);
+        squeezed.push(
+          `${name(parent)} "${labelOf(parent)}" is ${round(box.width)} px wide; its text is gone, give it room or cut it with "…"`,
+        );
         continue;
       }
       // One letter per line: three or more line boxes, none wider than about a letter and a half.
