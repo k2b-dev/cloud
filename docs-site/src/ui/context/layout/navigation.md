@@ -150,6 +150,8 @@ row, where its link keeps modified clicks and new tabs. Keep longer lists in
 A group without its own action toggles its children when selected and shows a
 chevron. Set `defaultExpanded: false` to start a group collapsed; omitted groups
 start expanded. Later toggles belong to the renderer and do not change the model.
+Set `disclosure: false` on an item whose children always show, such as a mailbox
+and its folders: the row gets no toggle, so its link keeps the whole row.
 
 When disclosure must outlive one renderer, for example in a menu that mounts a
 new `Navigation` each time it opens, the owner keeps it: set `expanded` on the

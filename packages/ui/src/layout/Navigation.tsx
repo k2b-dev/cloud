@@ -32,8 +32,9 @@ export default function Navigation(props: NavigationProps) {
           const disabled = () => rows.disabled || item().disabled;
           const headingId = `k2b-navigation-section-${createUniqueId()}`;
           // `expanded` hands disclosure to the item's owner; every other toggle stays local to this renderer.
-          const open = () => item().expanded ?? expanded()[id] ?? item().defaultExpanded ?? true;
+          const open = () => item().disclosure === false || (item().expanded ?? expanded()[id] ?? item().defaultExpanded ?? true);
           const toggle = () => {
+            if (item().disclosure === false) return;
             if (item().expanded !== undefined) props.navigation.onExpandedChange?.(id, !open());
             else setExpanded((current) => ({ ...current, [id]: !open() }));
           };
@@ -87,11 +88,11 @@ export default function Navigation(props: NavigationProps) {
                           type="button"
                           class="k2b-navigation__control"
                           disabled={disabled()}
-                          aria-expanded={!item().action ? open() : undefined}
+                          aria-expanded={!item().action && item().disclosure !== false ? open() : undefined}
                           onClick={() => (item().action ? void activate(id, item().keepOpen) : toggle())}
                         >
                           {content()}
-                          <Show when={!item().action && item().children?.length}>
+                          <Show when={!item().action && item().children?.length && item().disclosure !== false}>
                             <i class={open() ? "ti ti-chevron-down" : "ti ti-chevron-right"} aria-hidden="true" />
                           </Show>
                         </button>
@@ -128,7 +129,7 @@ export default function Navigation(props: NavigationProps) {
                         </Link>
                       )}
                     </Show>
-                    <Show when={(item().href || item().action) && item().children?.length}>
+                    <Show when={(item().href || item().action) && item().children?.length && item().disclosure !== false}>
                       <button
                         type="button"
                         class="k2b-navigation__disclosure"
