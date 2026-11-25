@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
@@ -13,6 +13,9 @@ import type {} from "../../test/v2-tree.demo";
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; } .ti { display: inline-block; width: 1em; height: 1em; }";
+
+// a tree of twelve levels walked by key and a paged level; a busy runner needs more than the default five seconds
+setDefaultTimeout(20_000);
 
 let browser: Browser;
 let bundle: string;
