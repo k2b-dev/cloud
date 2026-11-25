@@ -5,8 +5,8 @@ import { Avatar, Band, Button, Chip, Cut, Empty, Failed, Icon, List, Notice, Row
 import { Show } from "solid-js";
 import type { MailListItem } from "../../../service/workspace";
 import { mailRowSnoozeDay, mailRowSuggestedBy } from "../MailConversationRow";
-import { mailListRowKey } from "../mail-list-projection";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
+import { mailListRowKey } from "../mail-list-projection";
 import { buildMailSelectionHref, isMailListItemActive, mailRouteUrl } from "../mail-navigation";
 import type { MailV2Text } from "./mail-v2-messages";
 import { mailV2RowTime } from "./mail-v2-time";

@@ -455,7 +455,13 @@ export default function MailReaderV2(props: {
               <Popover
                 variant="text"
                 title={props.text.readers}
-                content={<Text>{readers().map((reader) => reader.displayName).join(", ")}</Text>}
+                content={
+                  <Text>
+                    {readers()
+                      .map((reader) => reader.displayName)
+                      .join(", ")}
+                  </Text>
+                }
               >
                 {props.text.reading({ count: readers().length })}
               </Popover>
