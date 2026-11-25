@@ -1378,12 +1378,14 @@ const ViewMenu = (props: {
     return view && store ? { key: view.key, label: view.label, query: view.query, store } : undefined;
   };
   const writable = () => props.views.stores.some((store) => store.writable);
-  /** Runs a deed on a store; when it fails, a toast says what stays and offers to run it again. */
-  const attempt = async (deed: () => Promise<unknown>, failed: string): Promise<void> => {
+  /** Runs a deed on a store; when it fails, a short toast names what failed and offers to run the same deed again. */
+  const attempt = async (deed: () => Promise<unknown>, kind: "update" | "delete"): Promise<void> => {
     try {
       await deed();
     } catch {
-      toast(failed, { status: "bad", retry: () => attempt(deed, failed) });
+      const retry = () => attempt(deed, kind);
+      if (kind === "update") toast(t().updateFailed, { status: "bad", retry });
+      else toast(t().deleteFailed, { status: "bad", retry });
     }
   };
   const items = (): MenuEntry[] => {
@@ -1407,7 +1409,7 @@ const ViewMenu = (props: {
         onClick: () => {
           // the write is fixed when it is asked for: a retry writes this view and this query, whatever the list shows then
           const query = props.query;
-          return attempt(() => props.onUpdate(mine, query), t().updateFailed({ name: mine.label }));
+          return attempt(() => props.onUpdate(mine, query), "update");
         },
       });
     }
@@ -1432,14 +1434,11 @@ const ViewMenu = (props: {
           icon: "trash",
           danger: true,
           onClick: () =>
-            attempt(
-              async () => {
-                await mine.store.remove(mine.key);
-                props.views.onRemoved?.(mine.key, mine.store);
-                toast(t().deleted({ name: mine.label }));
-              },
-              t().deleteFailed({ name: mine.label }),
-            ),
+            attempt(async () => {
+              await mine.store.remove(mine.key);
+              props.views.onRemoved?.(mine.key, mine.store);
+              toast(t().deleted({ name: mine.label }));
+            }, "delete"),
         },
       );
     }

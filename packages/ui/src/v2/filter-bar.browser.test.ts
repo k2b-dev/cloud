@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-filter.demo";
 import { heights } from "./tokens";
@@ -62,8 +62,11 @@ const box = async (page: Page, selector: string) => {
   return found;
 };
 /** Waits until the element keeps its place for two frames, such as a sheet once it has slid up. */
-const steady = (page: Page, selector: string) =>
-  page.waitForFunction(
+const steady = async (page: Page, selector: string) => {
+  // each wait measures afresh: a top kept from an earlier wait would match the one frame in which a sheet whose content
+  // just changed still stands at its old place
+  await page.evaluate((s) => document.querySelector(s)?.removeAttribute("data-test-top"), selector);
+  await page.waitForFunction(
     (s) => {
       const element = document.querySelector(s);
       if (!element) return false;
@@ -77,6 +80,7 @@ const steady = (page: Page, selector: string) =>
     selector,
     { polling: 100, timeout: 5000 },
   );
+};
 const calls = (page: Page) =>
   page.evaluate(() => (window.__lookup?.calls ?? []).map((call) => ({ query: call.query, aborted: call.aborted() })));
 
@@ -165,7 +169,7 @@ test("nothing moves when a statement is hovered, focused or opened, or when the 
   await withPage(articles, async (page) => {
     const before = await box(page, ".k2-fbar-item:first-child .k2-stmt");
     const status = await box(page, "[data-status-row]");
-    await page.locator(".k2-fbar-item:first-child .k2-stmt").hover();
+    await hoverInPlace(page.locator(".k2-fbar-item:first-child .k2-stmt"));
     await settled(page);
     expect(await box(page, ".k2-fbar-item:first-child .k2-stmt")).toEqual(before);
     await page.keyboard.press("Tab");
@@ -478,6 +482,7 @@ test("phone: each sheet session is one history entry, so Back returns to the sta
       const session = async (value: RegExp) => {
         await openSheet(page);
         await page.locator(".k2-fsheet-row").first().tap();
+        await steady(page, '[role="dialog"]');
         await page.getByRole("option", { name: value }).tap();
         await page.getByRole("button", { name: /Artikel zeigen$/ }).tap();
         await page.getByRole("dialog").waitFor({ state: "detached" });
@@ -527,6 +532,7 @@ test("at the length limit, presets and sorts that would not fit are locked where
     async (page) => {
       await openSheet(page);
       await page.locator(".k2-fsheet-row", { hasText: "Sortierung" }).tap();
+      await steady(page, '[role="dialog"]');
       expect(await page.getByRole("option", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
     },
     { width: 390, touch: true },
@@ -539,6 +545,7 @@ test("phone: “Keine Gruppen” in the sheet takes the grouping away", async ()
     async (page) => {
       await openSheet(page);
       await page.locator(".k2-fsheet-row", { hasText: "Gruppierung" }).tap();
+      await steady(page, '[role="dialog"]');
       await page.getByRole("option", { name: "Keine Gruppen" }).tap();
       await page.waitForFunction(() => !new URL(location.href).searchParams.has("group"));
     },
@@ -553,7 +560,7 @@ test("a view that fails to update says so and offers to try again", async () => 
     });
     await page.getByRole("button", { name: "Ansicht" }).click();
     await page.getByRole("menuitem", { name: /„Teure Möbel“ aktualisieren/ }).click();
-    await page.getByText("„Teure Möbel“ konnte nicht gespeichert werden. Die Ansicht bleibt, wie sie war.").waitFor();
+    await page.getByText("Ansicht nicht gespeichert").waitFor();
     await page.evaluate(() => {
       window.__failStore = false;
     });
@@ -624,7 +631,7 @@ test("retrying a failed view update writes exactly what failed, not what the lis
     });
     await page.getByRole("button", { name: "Ansicht" }).click();
     await page.getByRole("menuitem", { name: /„Teure Möbel“ aktualisieren/ }).click();
-    await page.getByText("„Teure Möbel“ konnte nicht gespeichert werden. Die Ansicht bleibt, wie sie war.").waitFor();
+    await page.getByText("Ansicht nicht gespeichert").waitFor();
     // the list moves on before the retry
     await page.getByRole("button", { name: "Filter Status entfernen" }).click();
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("status"));
