@@ -1,0 +1,478 @@
+/* The topic pages of the UI section (@k2b/ui/v2): topic, Example, Props, overview map. Thin edges, no box in a box. */
+.ui-topic {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-width: 64rem;
+  container-type: inline-size;
+}
+.ui-topic__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+  color: var(--c-muted);
+  font-family: var(--c-mono);
+  font-size: 0.76rem;
+}
+.ui-topic__chip {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--c-line);
+  border-radius: 999px;
+  color: var(--c-muted);
+  font-family: inherit;
+  font-size: 0.72rem;
+}
+.ui-topic__chip[data-tone="warn"] {
+  border-color: color-mix(in srgb, var(--k2b-warning-text) 35%, transparent);
+  color: var(--k2b-warning-text);
+}
+.ui-topic__head h1 {
+  margin: 0.4rem 0 0.6rem;
+  font-family: var(--c-display);
+  font-size: clamp(1.9rem, 4vw, 2.5rem);
+  line-height: 1.1;
+  color: var(--c-ink);
+}
+.ui-topic__lead,
+.ui-topic__lead p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--c-muted);
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+.ui-topic__section {
+  margin-top: 2.5rem;
+}
+.ui-topic__heading h2,
+.ui-topic__h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.25rem;
+  color: var(--c-ink);
+}
+.ui-topic__heading h3 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+}
+.ui-topic__h2 {
+  margin-top: 2.5rem;
+}
+.ui-topic__p {
+  max-width: 62ch;
+  margin: 0 0 1rem;
+  color: var(--c-muted);
+}
+.ui-topic__prose {
+  max-width: 62ch;
+}
+.ui-topic__prose > :first-child {
+  margin-top: 0;
+}
+
+/* "List or table?" and "Do and don't": two columns side by side, one under the other on a phone. */
+.ui-topic__columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+.ui-topic__column {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--c-line);
+  border-radius: var(--k2b-radius-surface);
+}
+.ui-topic__column h3 {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+.ui-topic__column[data-side="do"] h3 {
+  color: var(--k2b-success-text);
+}
+.ui-topic__column[data-side="dont"] h3 {
+  color: var(--k2b-danger-text);
+}
+.ui-topic__column .ui-topic__prose ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+/* Parts: one line each; its props fold open beneath it. */
+.ui-topic__parts {
+  border-top: 1px solid var(--c-line);
+}
+.ui-topic__part {
+  border-bottom: 1px solid var(--c-line);
+}
+div.ui-topic__part,
+.ui-topic__part > summary {
+  display: grid;
+  grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.7rem 0.25rem;
+}
+.ui-topic__part > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.ui-topic__part > summary::-webkit-details-marker {
+  display: none;
+}
+.ui-topic__part > summary:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+.ui-topic__part-name {
+  font-family: var(--c-mono);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--c-ink);
+}
+.ui-topic__part-line {
+  color: var(--c-muted);
+}
+.ui-topic__part-tag {
+  display: inline-flex;
+  gap: 0.25rem;
+  align-items: center;
+  color: var(--c-accent-ink);
+  font-size: 0.85rem;
+}
+.ui-topic__part[open] .ui-topic__part-tag i {
+  transform: rotate(180deg);
+}
+.ui-topic__part-body {
+  padding: 0 0 1rem;
+}
+@container (max-width: 40rem) {
+  div.ui-topic__part,
+  .ui-topic__part > summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .ui-topic__part-line {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* "Not in v2 yet" and other notes: a tinted band with a sign. */
+.ui-topic__missing {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  margin-top: 1.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--k2b-radius-surface);
+  background: var(--c-sunken);
+  color: var(--c-muted);
+}
+.ui-topic__missing > i {
+  margin-top: 0.2rem;
+}
+.ui-topic__missing p,
+.ui-topic__missing .ui-topic__prose p {
+  margin: 0;
+}
+.ui-topic__missing .ui-topic__heading h2 {
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+}
+.ui-topic__next {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 2.5rem;
+  color: var(--c-muted);
+}
+
+/* Example: one recipe live, its states and widths, its code. */
+.ui-example {
+  --w: 1440;
+  --stage-h: var(--h);
+  margin: 1rem 0 0;
+  border: 1px solid var(--c-line);
+  border-radius: var(--k2b-radius-surface);
+  container-type: inline-size;
+  overflow: hidden;
+}
+.ui-example[data-phone] {
+  --stage-h: var(--phone-h);
+}
+@media not all and (min-width: 768px) {
+  .ui-example[data-width="auto"] {
+    --w: 390;
+    --stage-h: var(--phone-h);
+  }
+}
+.ui-example__bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--c-line);
+}
+.ui-example__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.ui-example__open {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  color: var(--c-muted);
+}
+/* the link's name for assistive technology; the sign says it to the eye */
+.ui-example__name {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.ui-example__open:hover {
+  background: var(--c-sunken);
+  color: var(--c-ink);
+}
+.ui-example__open:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 1px;
+}
+/* The stage's height comes from the width and height alone, so nothing moves while the frame loads or scales. */
+.ui-example__stage {
+  position: relative;
+  height: min(calc(var(--stage-h) * 1px), calc(100cqw * var(--stage-h) / var(--w)));
+  overflow: hidden;
+  background: var(--c-sunken);
+}
+.ui-example__stage[hidden] {
+  display: none;
+}
+.ui-example__stage iframe {
+  position: absolute;
+  top: 0;
+  left: max(0px, calc((100cqw - var(--w) * 1px) / 2));
+  width: calc(var(--w) * 1px);
+  height: calc(var(--stage-h) * 1px);
+  border: 0;
+  transform-origin: 0 0;
+  background: var(--k2b-surface);
+}
+.ui-example:not([data-measured]) .ui-example__stage iframe {
+  visibility: hidden;
+}
+.ui-example__scale {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--k2b-surface);
+  color: var(--c-faint);
+  font-family: var(--c-mono);
+  font-size: 0.7rem;
+}
+.ui-example__code {
+  max-height: 36rem;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.ui-example__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.45rem 0.75rem;
+  border-top: 1px solid var(--c-line);
+  color: var(--c-faint);
+  font-size: 0.78rem;
+}
+.ui-example__fill {
+  flex: 1;
+}
+
+/* Props: a table per part, generated from the types. */
+.ui-props-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.ui-props {
+  border: 1px solid var(--c-line);
+  border-radius: var(--k2b-radius-surface);
+  overflow: hidden;
+}
+.ui-props__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--c-line);
+  color: var(--c-faint);
+  font-size: 0.8rem;
+}
+.ui-props__head b {
+  color: var(--c-ink);
+  font-family: var(--c-mono);
+  font-size: 0.88rem;
+}
+.ui-props__fill {
+  flex: 1;
+}
+.ui-props__chip {
+  padding: 0 0.45rem;
+  border: 1px solid var(--c-line);
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+.ui-props__scroll {
+  overflow-x: auto;
+}
+.ui-props table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.ui-props th,
+.ui-props td {
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.ui-props thead th {
+  color: var(--c-faint);
+  font-weight: 500;
+}
+.ui-props tbody tr + tr td,
+.ui-props tbody tr + tr th {
+  border-top: 1px solid var(--c-line);
+}
+.ui-props td:first-child {
+  white-space: nowrap;
+}
+.ui-props td:nth-child(2) code {
+  color: var(--c-accent-ink);
+}
+.ui-props td:last-child {
+  min-width: 16rem;
+  color: var(--c-muted);
+}
+.ui-props__required {
+  margin-left: 0.4rem;
+  color: var(--k2b-danger-text);
+  font-size: 0.7rem;
+}
+.ui-props__group th {
+  background: var(--c-sunken);
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+/* The overview: ways in, the map of topics with live thumbnails, the whole screens. */
+.ui-ways {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 1.75rem;
+}
+.ui-ways a {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--c-line);
+  border-radius: var(--k2b-radius-surface);
+  color: inherit;
+  text-decoration: none;
+}
+.ui-ways a span {
+  grid-column: 2;
+  color: var(--c-muted);
+  font-size: 0.88rem;
+}
+.ui-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+.ui-map__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0 0 0.75rem;
+  border: 1px solid var(--c-line);
+  border-radius: var(--k2b-radius-surface);
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+}
+.ui-map__tile:hover {
+  border-color: var(--c-line-2);
+}
+.ui-map__tile:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 2px;
+}
+.ui-map__tile > span {
+  padding: 0 0.85rem;
+}
+.ui-map__thumb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--c-line);
+  background: var(--c-sunken);
+  color: var(--c-faint);
+  font-size: 2rem;
+  overflow: hidden;
+}
+/* The live recipe at five times the tile's width (about 1400 px), scaled to a fifth. */
+.ui-map__frame {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.ui-map__frame iframe {
+  width: 500%;
+  height: 500%;
+  border: 0;
+  transform: scale(0.2);
+  transform-origin: 0 0;
+  background: var(--k2b-surface);
+}
+.ui-map__title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  color: var(--c-ink);
+  font-weight: 600;
+}
+.ui-map__number {
+  color: var(--c-faint);
+  font-family: var(--c-mono);
+  font-size: 0.8rem;
+}
+.ui-map__line {
+  color: var(--c-muted);
+  font-size: 0.88rem;
+}
+.ui-map__parts {
+  color: var(--c-faint);
+  font-family: var(--c-mono);
+  font-size: 0.74rem;
+}

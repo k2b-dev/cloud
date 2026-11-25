@@ -203,44 +203,45 @@ export const V2ScreenPage = (props: { name: V2ScreenName }) => {
   );
 };
 
-/** The Fibel page of one or more screens: what they show, where the knowledge lives, and each screen in a frame. */
-export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: string }) => {
+/**
+ * The demo screens of Fibel's page "Whole screens": each one framed like the Cloud shell and measured against its
+ * approved mockup, with the switch that shows their parts.
+ */
+export const V2DemoScreens = (props: { names: readonly V2ScreenName[] }) => {
   const frame = (name: V2ScreenName) => `v2-frame-${name}`;
   return (
-    <article class="ui-showcase ui-reference-showcase">
-      <header class="ui-reference-heading">
-        <div class="ui-page-heading">
-          <p>@k2b/ui/v2 · provisional</p>
-          <h1>{props.title}</h1>
-        </div>
-      </header>
-      <div class="ui-v2-demo">
-        <div class="ui-v2-demo__intro">
-          <p>
-            Every part of {props.names.length > 1 ? "these screens" : "this screen"} is a v2 primitive; there is no CSS of its own. How to
-            build it is in the agent skill <code>k2b-ui</code>, which ships with the package. Each screen is measured against its approved
-            mockup at 1440 and 390 px.
-          </p>
-          <p class="ui-v2-demo__actions">
-            <V2InspectSwitch frames={props.names.map(frame)} />
-          </p>
-        </div>
-        <For each={props.names}>
-          {(name) => {
-            const screen: V2Screen = v2Screens[name];
-            const src = `/en/ui/v2/screen/${name}`;
-            return (
-              <section class="ui-v2-demo__screen" aria-label={screen.title}>
-                <h2>{screen.title}</h2>
-                <p>
-                  {screen.description} Mockup: <code>{screen.mockup}</code>. <a href={src}>Open the screen on its own</a>.
-                </p>
-                <iframe id={frame(name)} class="ui-v2-demo__frame" src={src} title={`${screen.title}, built with @k2b/ui/v2`} />
-              </section>
-            );
-          }}
-        </For>
+    <section class="ui-v2-demo" aria-labelledby="v2-demo-screens">
+      <div class="ui-v2-demo__intro">
+        <h2 id="v2-demo-screens">Demo screens</h2>
+        <p>
+          Screens of real apps, framed like the Cloud shell. Every part is a v2 primitive; there is no CSS of their own. Each screen is
+          measured against its approved mockup at 1440 and 390 px.
+        </p>
+        <p class="ui-v2-demo__actions">
+          <V2InspectSwitch frames={props.names.map(frame)} />
+        </p>
       </div>
-    </article>
+      <For each={props.names}>
+        {(name) => {
+          const screen: V2Screen = v2Screens[name];
+          const src = `/en/ui/v2/screen/${name}`;
+          return (
+            <section class="ui-v2-demo__screen" aria-label={screen.title}>
+              <h3>{screen.title}</h3>
+              <p>
+                {screen.description} Mockup: <code>{screen.mockup}</code>. <a href={src}>Open the screen on its own</a>.
+              </p>
+              <iframe
+                id={frame(name)}
+                class="ui-v2-demo__frame"
+                src={src}
+                title={`${screen.title}, built with @k2b/ui/v2`}
+                loading="lazy"
+              />
+            </section>
+          );
+        }}
+      </For>
+    </section>
   );
 };
