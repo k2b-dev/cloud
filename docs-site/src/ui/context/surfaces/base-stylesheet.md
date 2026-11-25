@@ -108,7 +108,7 @@ the wrapper markup of the `Chart` component:
   gauge, and map, which keep their aspect ratio. It needs
   `preserveAspectRatio="none"` on the SVG and, on each `<text>`, a
   `transform-origin` at its `x` and `y` in pixels.
-- `data-chart-kind` names the stdlib renderer; `scatter` gets larger points
+- `data-chart-kind` names the chart renderer; `scatter` gets larger points
   and `sparkline` keeps room for its end markers.
 
 ## Accessibility

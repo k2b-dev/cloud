@@ -430,7 +430,7 @@ describe("@k2b/ui base stylesheet in a browser", () => {
     ],
   }));
 
-  test("colors a stdlib chart with the tokens in the dark theme", async () => {
+  test("colors a chart core SVG with the tokens in the dark theme", async () => {
     const svg = withoutStdlibStyle(charts.line({ series: cities, width: 640, height: 280, legend: true }));
     const tab = await open("desktop", "dark", { body: `<main>${chartMarkup("line", svg, 640, 280)}</main>` });
     try {

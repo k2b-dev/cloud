@@ -103,7 +103,7 @@ type BaseChartInput = Exclude<ChartInput, BalanceFlowInput>;
 
 /**
  * Plain-data chart options become the options of the shared
- * renderer (`@k2b/ui` Chart and `stdlib.charts`) and a data table with the same rows the chart marks. Pure, so the
+ * renderer (`@k2b/ui` Chart and `@k2b/ui/charts/core`) and a data table with the same rows the chart marks. Pure, so the
  * schema, the browser, and the CLI read a chart the same way.
  */
 

@@ -71,6 +71,9 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
+| saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
@@ -98,7 +101,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
 | more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | – |
 | the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | – |
-| a small panel behind a button (filters, a preview) | `Popover` with `title` and `content` | – |
+| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | – |
 | a short hint on a button | `Popover tip` around the `Button` | – |
 | "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | – |
 
@@ -157,7 +160,7 @@ a `Notice` that names the deed.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
-  `RecordHead`.
+  `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Menu`, `Menu.Context`, `Popover` (panel or `tip`),
   `useToast`.
 - **States:** `Empty`, `Loading`, `Failed`.
@@ -166,13 +169,21 @@ a `Notice` that names the deed.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 `Dialog` (its behaviour exists inside `@k2b/ui`, the v2 component
-follows), filter components, the mail
+follows), the mail
 and chat composer (comes from `@k2b/editor`), and an assistant message or
 answer card.
 How to stand in until then: a dialog is a `Pane detail` (see
-[primitives](references/primitives.md), "Pane.Split"); filters are a
-`Button variant="ghost" menu` or pressed `Chip`s in `StatusRow filters`,
-or a ghost icon button in a search field's `end`.
+[primitives](references/primitives.md), "Pane.Split").
+
+Filters, sorts and groups have exactly one way: declare them once with
+`defineListQuery`, show them with `FilterBar` and `ListOrder`. The state
+lives in the address through that declaration; the server reads it with
+`parse`, and the app filters itself, on its server, with its own access
+checks (`@k2b/ui` filters nothing and stores nothing). In the island,
+keep one signal that mirrors that state: start it with what the server parsed
+and set it in `onChange`, as the recipe does. Never parse search parameters
+yourself, keep filter state the address does not hold, or build filter chips
+by hand. Read [list queries](references/list-queries.md).
 
 ## See what you built
 
@@ -204,6 +215,7 @@ Details, the outline format and use outside the monorepo:
 | Finding | Fix |
 | --- | --- |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
+| own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |
 | `Button … stands alone in Pane` | move it into a `Bar end`, `Row action`, `Section actions` or `Notice actions` |

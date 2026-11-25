@@ -922,7 +922,7 @@
 
   /* Chart markup as the @k2b/ui Chart renders it: `.k2b-chart` wraps
      `.k2b-chart__svg` with `--k2b-chart-width` and `--k2b-chart-height` and
-     the @k2b/stdlib SVG. The page removes the `<style>` element stdlib embeds
+     the chart core SVG. The page removes the `<style>` element the core embeds
      in the SVG: its rules sit outside this layer and would override the
      tokens below. Cartesian geometry (`data-stretch`, with
      `preserveAspectRatio="none"` on the SVG and a `transform-origin` at each

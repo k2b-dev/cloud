@@ -356,5 +356,3 @@ export const handle = (req: Request) => {
 ```
 
 Catalog completeness belongs in a test: `expect(catalog.check()).toEqual([])`.
-Chart axes stay locale-neutral by default; pass
-`format: (v) => text.pprintNumber(v, { locale })` for localized ticks.
