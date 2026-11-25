@@ -43,6 +43,23 @@ focused entries above to keep list and proposal code out of a summary-only view.
   send Action would send. A list with `link` shows nothing until a request for
   it waits, and no count or bulk action.
 - `initial`: the SSR page for the same `app` and `link`.
+- `ui`: `"v2"` on a page whose layout has `ui: "v2"`. The list then draws
+  itself from `@k2b/ui/v2` primitives as the content of the page's `Pane`.
+  Without `app` it shows one `Section` per app, otherwise one `List`. Each
+  request is one row: the question, the reason with the expiry, and where it
+  comes from. Its answer is the row's action, and declining is a text button at
+  its end. The row opens **See everything** in a v2 `Dialog`. There the person
+  reads the full proposal, edits a draft, remembers the answer for the chat, or
+  answers. The `…` menu in the row has **See everything** and links to the chat
+  or Code version the request comes from. Requests, answers, outcomes and
+  failures are the same as without `ui`. **Reject all** asks with the v2
+  `confirm`.
+
+```tsx
+<Pane label={t.approvals}>
+  <Approvals ui="v2" app="inventory" initial={props.initial} />
+</Pane>
+```
 
 There are no look props. `ApprovalCard` and `ApprovalFrame` take data and
 answers only; the `approval-card-calls` rule rejects `class`, `style`, variants,

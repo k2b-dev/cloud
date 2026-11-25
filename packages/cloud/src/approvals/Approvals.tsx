@@ -1,29 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { Button, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
-import type { ActionCard } from "../ai/chat/action-card";
-import { refreshAppBadges } from "../browser/app-badges";
-import { coreClient } from "../clients/core";
 import { FeatCodeMark } from "../code/FeatCodeMark";
-import type { ApprovalDraftResult } from "../contracts/approvals";
-import {
-  APPROVALS_PAGE_PATH,
-  type ApprovalDecisionInput,
-  type ApprovalListQuery,
-  type ApprovalPage,
-  ApprovalPageSchema,
-  type PendingApproval,
-} from "../contracts/approvals";
-import { ApprovalCard } from "./ApprovalCard";
+import { APPROVALS_PAGE_PATH, type ApprovalPage, type PendingApproval } from "../contracts/approvals";
+import ApprovalsV2 from "./ApprovalsV2";
 import { approvalCard } from "./approval-card";
-import { editApprovalDraft } from "./draft";
-import { approvalMessages } from "./messages";
+import { ApprovalEntry, type ApprovalEntryProps, approvalOrigin, useApprovalMessages } from "./approval-entry";
+import { approvalCardInput, createApprovalList, READER_TIME_ZONE } from "./approval-list";
+import { ARM_DELAY_MS } from "./approval-place";
 
-/** How a decided request ends in this list. It stays in place as a receipt until the next load. */
-type Outcome = "approved" | "rejected" | "elsewhere" | "gone";
-
-/** Keep SSR and the first client render identical: the page has no reader zone of its own yet. */
-const READER_TIME_ZONE = "UTC";
 export type ApprovalsProps = {
   /** List the requests whose effect belongs to this app or that this app asked for. Without, every app's, grouped. */
   app?: string;
@@ -34,25 +19,14 @@ export type ApprovalsProps = {
   link?: string;
   /** The first page for the same query, loaded during SSR with `loadPendingApprovals`; without, the browser loads it. */
   initial?: ApprovalPage;
+  /**
+   * The page is built with `@k2b/ui/v2` (its layout has `ui: "v2"`): the list draws itself from v2 primitives as the
+   * content of the page's `Pane`, with the same requests, answers and outcomes.
+   */
+  ui?: "v2";
 };
 
-/** A click meant for the page must not approve a row that just appeared: decision buttons arm after this delay. */
-const ARM_DELAY_MS = 500;
-
-const useMessages = () => {
-  const locale = useLocale();
-  return () => approvalMessages.resolve([locale()]).t;
-};
-
-const cardInput = (item: PendingApproval) => ({
-  codeVersion: item.requester.kind === "code_version",
-  soleAdminNotice: item.soleAdminNotice,
-  sentence: item.sentence,
-  action: item.action,
-  appName: item.app.name,
-  appIcon: item.app.icon,
-  review: item.review,
-});
+const useMessages = useApprovalMessages;
 
 /** Origin of the request: the chat or Code version it waits in and when Cloud asked. The card shows the app and expiry. */
 function Origin(props: { item: PendingApproval }) {
@@ -77,57 +51,13 @@ function Origin(props: { item: PendingApproval }) {
         <Show when={props.item.requester.kind === "code_version"}>
           <FeatCodeMark variant="glyph" decorative class="cloud-approval__origin-mark" />
         </Show>
-        {props.item.requester.kind === "code_version"
-          ? props.item.requester.title
-            ? t().fromCode({ title: props.item.requester.title })
-            : t().fromUntitledCode
-          : automation()
-            ? props.item.requester.title
-              ? t().inChat({ title: props.item.requester.title })
-              : t().inUntitledChat
-            : props.item.requester.title
-              ? t().fromChat({ title: props.item.requester.title })
-              : t().fromUntitledChat}
+        {approvalOrigin(props.item, t())}
       </a>
       <span aria-hidden="true"> · </span>
       <time dateTime={props.item.createdAt}>{dates.formatDateTimeRelative(props.item.createdAt, { locale: locale() })}</time>
     </p>
   );
 }
-
-/** The outcome lines a request on this page can reach; the chat it came from shows how the Action itself ends. */
-const outcomeLines = (
-  card: ActionCard,
-  words: ReturnType<typeof approvalMessages.resolve>["t"],
-  reopen: () => void,
-  retry: () => void,
-  codeVersion: boolean,
-  reauthenticate: boolean,
-) => ({
-  sending: { tone: "running" as const, text: [{ kind: "text" as const, text: words.sending }], detail: words.savingDecision },
-  approved: {
-    tone: "done" as const,
-    text: [{ kind: "text" as const, text: words.approvedHere }],
-    detail: codeVersion ? words.versionApproved : words.continuesInChat,
-  },
-  rejected: { tone: "off" as const, text: card.forms.rejected, detail: words.declinedHere },
-  elsewhere: { tone: "off" as const, icon: "ti ti-info-circle", text: [{ kind: "text" as const, text: words.decidedElsewhere }] },
-  gone: { tone: "off" as const, icon: "ti ti-clock-x", text: [{ kind: "text" as const, text: words.gone }] },
-  busy: {
-    tone: "warning" as const,
-    icon: "ti ti-alert-triangle",
-    text: [{ kind: "text" as const, text: words.decisionBusy }],
-    detail: words.notApplied,
-    action: { label: words.retry, onSelect: retry },
-  },
-  failed: {
-    tone: "warning" as const,
-    icon: "ti ti-alert-triangle",
-    text: [{ kind: "text" as const, text: words.notApplied }],
-    detail: reauthenticate ? words.signInAgain : words.decisionFailed,
-    action: { label: words.answerAgain, onSelect: reopen },
-  },
-});
 
 /** Answers that arm late, so a click meant for what was there before cannot approve a request that just appeared. */
 function Armed(props: { children: JSX.Element }) {
@@ -140,53 +70,15 @@ function Armed(props: { children: JSX.Element }) {
 }
 
 /** One request as Cloud's approval, under where it comes from. Its answers arm late, so a click meant for the page cannot approve it. */
-function Row(props: {
-  item: PendingApproval;
-  editDraft?: (values: Record<string, string>) => Promise<boolean>;
-  outcome?: Outcome;
-  busy: boolean;
-  failed: boolean | "reauthenticate" | "busy";
-  decide: (input: ApprovalDecisionInput) => void;
-  reopen: () => void;
-  retry: () => void;
-}) {
+function Row(props: ApprovalEntryProps) {
   const t = useMessages();
   const locale = useLocale();
-  const card = createMemo(() => approvalCard(cardInput(props.item), locale(), READER_TIME_ZONE));
-  const current = () => props.outcome ?? (props.failed === "busy" ? "busy" : props.failed ? "failed" : "sending");
-  const state = () => (props.outcome || props.busy || props.failed ? "decided" : "open");
-  // `confirm` asks every time, whatever the stored options say.
-  const remember = () =>
-    props.item.remember.chat && props.item.assurance === "standard"
-      ? { website: Boolean(props.item.remember.website), onSelect: () => props.decide({ approved: true, remember: "chat" }) }
-      : undefined;
+  const card = createMemo(() => approvalCard(approvalCardInput(props.item), locale(), READER_TIME_ZONE));
   return (
     <article class="cloud-approval" data-decided={props.outcome} aria-label={t().approvalFor({ title: card().questionText })}>
       <Origin item={props.item} />
       <Armed>
-        <ApprovalCard
-          card={card()}
-          state={state()}
-          timeZone={READER_TIME_ZONE}
-          remember={remember()}
-          expiresAt={props.item.expiresAt}
-          onEditDraft={props.item.requester.kind === "code_version" ? undefined : props.editDraft}
-          unavailable={props.item.canApprove === false ? t().anotherAdminRequired : undefined}
-          onConfirm={() => props.decide({ approved: true })}
-          onDecline={() => props.decide({ approved: false })}
-          // The outcome lines join the card's sentence, so they speak the card's language, the reader's.
-          outcome={{
-            lines: outcomeLines(
-              card(),
-              approvalMessages.resolve([card().locale]).t,
-              props.reopen,
-              props.retry,
-              props.item.requester.kind === "code_version",
-              props.failed === "reauthenticate",
-            ),
-            current: current(),
-          }}
-        />
+        <ApprovalEntry {...props} card={card()} />
       </Armed>
     </article>
   );
@@ -197,136 +89,14 @@ function Row(props: {
  * in place, at their height, as a receipt; the list only changes when it loads again.
  */
 export default function Approvals(props: ApprovalsProps) {
+  if (props.ui === "v2") return <ApprovalsV2 app={props.app} link={props.link} initial={props.initial} />;
+  return <ApprovalsV1 {...props} />;
+}
+
+function ApprovalsV1(props: ApprovalsProps) {
   const t = useMessages();
-  const query = (cursor?: string): ApprovalListQuery => ({
-    ...(props.app ? { app: props.app } : {}),
-    ...(props.link ? { link: props.link } : {}),
-    ...(cursor ? { cursor } : {}),
-  });
-  const [page, setPage] = createSignal<ApprovalPage | null>(props.initial ?? null);
-  const [items, setItems] = createSignal<PendingApproval[]>(props.initial?.items ?? []);
-  const [outcomes, setOutcomes] = createSignal<ReadonlyMap<string, Outcome>>(new Map());
-  const [busy, setBusy] = createSignal<ReadonlySet<string>>(new Set());
-  const [failed, setFailed] = createSignal<ReadonlyMap<string, true | "reauthenticate" | "busy">>(new Map());
-  const retryInputs = new Map<string, ApprovalDecisionInput>();
-  const [loadError, setLoadError] = createSignal(false);
-  const [loadingMore, setLoadingMore] = createSignal(false);
-  // A failed next page keeps the rows already shown; the error sits next to the button that retries it.
-  const [moreError, setMoreError] = createSignal(false);
-
-  const fetchPage = async (cursor?: string): Promise<ApprovalPage> => {
-    const response = await coreClient.approvals.$get({ query: query(cursor) });
-    if (!response.ok) throw new Error(`Approvals answered ${response.status}`);
-    return ApprovalPageSchema.parse(await response.json());
-  };
-  const reload = async () => {
-    setLoadError(false);
-    try {
-      const next = await fetchPage();
-      setPage(next);
-      setItems(next.items);
-      setOutcomes(new Map());
-    } catch {
-      setLoadError(true);
-    }
-  };
-  const loadMore = async () => {
-    const cursor = page()?.nextCursor;
-    if (!cursor || loadingMore()) return;
-    setLoadingMore(true);
-    try {
-      const next = await fetchPage(cursor);
-      setMoreError(false);
-      const known = new Set(items().map((item) => item.id));
-      setItems([...items(), ...next.items.filter((item) => !known.has(item.id))]);
-      setPage({ ...next, count: page()?.count ?? next.count });
-    } catch {
-      setMoreError(true);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
-  onMount(() => {
-    if (!props.initial) void reload();
-  });
-
-  const toggle = (set: ReadonlySet<string>, id: string, on: boolean) => {
-    const next = new Set(set);
-    if (on) next.add(id);
-    else next.delete(id);
-    return next;
-  };
-  // A draft edited here keeps its row: the new review and digest overlay the loaded request.
-  const [edited, setEdited] = createSignal<ReadonlyMap<string, ApprovalDraftResult>>(new Map());
-  const withEdit = (item: PendingApproval): PendingApproval => {
-    const edit = edited().get(item.id);
-    return edit ? { ...item, review: edit.review, digest: edit.digest } : item;
-  };
-  const decide = async (item: PendingApproval, input: ApprovalDecisionInput): Promise<void> => {
-    if (busy().has(item.id) || outcomes().has(item.id)) return;
-    retryInputs.delete(item.id);
-    setBusy((current) => toggle(current, item.id, true));
-    setFailed((current) => {
-      const next = new Map(current);
-      next.delete(item.id);
-      return next;
-    });
-    try {
-      // The digest names the review on screen, so an answer never approves one the person did not see.
-      const digest = edited().get(item.id)?.digest ?? item.digest;
-      const response = await coreClient.approvals[":id"].decision.$post({
-        param: { id: item.id },
-        json: { ...input, ...(digest ? { digest } : {}) },
-      });
-      const error: unknown = response.ok ? null : await response.json().catch(() => null);
-      if (error && typeof error === "object" && "code" in error && error.code === "BUSY") {
-        retryInputs.set(item.id, input);
-        setFailed((current) => new Map(current).set(item.id, "busy"));
-        return;
-      }
-      const outcome: Outcome | null = response.ok
-        ? input.approved
-          ? "approved"
-          : "rejected"
-        : response.status === 409
-          ? "elsewhere"
-          : response.status === 404
-            ? "gone"
-            : null;
-      if (!outcome) {
-        if (
-          error &&
-          typeof error === "object" &&
-          "code" in error &&
-          error.code === "SELF_APPROVAL" &&
-          item.requester.kind === "code_version"
-        ) {
-          setItems((current) =>
-            current.map((entry) => (entry.id === item.id ? { ...entry, canApprove: false, soleAdminNotice: undefined } : entry)),
-          );
-          return;
-        }
-        if (error && typeof error === "object" && "code" in error && error.code === "REAUTHENTICATE") {
-          setFailed((current) => new Map(current).set(item.id, "reauthenticate"));
-          return;
-        }
-        throw new Error(`Decision answered ${response.status}`);
-      }
-      setOutcomes((current) => new Map(current).set(item.id, outcome));
-      refreshAppBadges();
-    } catch {
-      setFailed((current) => new Map(current).set(item.id, true));
-    } finally {
-      setBusy((current) => toggle(current, item.id, false));
-    }
-  };
-
-  const open = createMemo(() => items().filter((item) => !outcomes().has(item.id)));
-  const openCount = () => Math.max(0, (page()?.count ?? items().length) - outcomes().size);
-  const rejectAll = async () => {
-    const targets = open();
-    if (targets.length === 0) return;
-    const confirmed = await prompts.confirm(
+  const list = createApprovalList(props, (targets) =>
+    prompts.confirm(
       targets.some((item) => item.requester.kind === "code_version")
         ? t().rejectAllWithVersions
         : t().rejectAllBody({ count: targets.length }),
@@ -335,46 +105,22 @@ export default function Approvals(props: ApprovalsProps) {
         confirmText: t().rejectAll,
         variant: "danger",
       },
-    );
-    // One after another: rejecting is cheap, and the list stays readable while the receipts appear.
-    if (confirmed) for (const item of targets) await decide(item, { approved: false });
-  };
-  // Without an app filter, the Core page groups the requests by the app that owns the effect.
-  const groups = createMemo(() => {
-    const byApp = new Map<string, PendingApproval[]>();
-    for (const item of items()) byApp.set(item.app.id, [...(byApp.get(item.app.id) ?? []), item]);
-    return [...byApp.values()];
-  });
-  const rows = (list: PendingApproval[]) => (
-    <For each={list}>
+    ),
+  );
+  const { page, items, outcomes, busy, failed, loadError, loadingMore, moreError, reload, loadMore, open, openCount, rejectAll, groups } =
+    list;
+  const rows = (entries: PendingApproval[]) => (
+    <For each={entries}>
       {(item) => (
         <Row
-          item={withEdit(item)}
-          editDraft={
-            item.digest
-              ? async (values) => {
-                  const current = edited().get(item.id)?.digest ?? item.digest!;
-                  const result = await editApprovalDraft(item.id, values, current);
-                  setEdited((map) => new Map(map).set(item.id, result));
-                  return true;
-                }
-              : undefined
-          }
+          item={list.withEdit(item)}
+          editDraft={list.editDraft(item)}
           outcome={outcomes().get(item.id)}
           busy={busy().has(item.id)}
           failed={failed().get(item.id) ?? false}
-          decide={(input) => void decide(item, input)}
-          retry={() => {
-            const input = retryInputs.get(item.id);
-            if (input) void decide(item, input);
-          }}
-          reopen={() =>
-            setFailed((current) => {
-              const next = new Map(current);
-              next.delete(item.id);
-              return next;
-            })
-          }
+          decide={(input) => void list.decide(item, input)}
+          retry={() => list.retry(item)}
+          reopen={() => list.reopen(item)}
         />
       )}
     </For>

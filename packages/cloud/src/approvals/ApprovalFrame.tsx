@@ -9,9 +9,10 @@ import {
   NoticeRow,
   type NoticeRowProps,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, on, onCleanup, Show, useContext } from "solid-js";
 import { type ActionText, actionPlainText } from "../ai/chat/action-card";
 import { actionMessages } from "../ai/chat/action-messages";
+import { ApprovalPlaceContext } from "./approval-place";
 
 export type ApprovalFrameState = "open" | "sending" | "decided" | "expired" | "loading";
 /** State metadata is for accessibility; the visible sentence says the state exactly once. */
@@ -68,6 +69,13 @@ export type ApprovalFrameProps = {
 };
 
 export function ApprovalFrame(props: ApprovalFrameProps): JSX.Element {
+  // A v2 list places each approval; there it is one v2 row with the same answers.
+  const place = useContext(ApprovalPlaceContext);
+  if (place) return place.frame(props);
+  return <ApprovalFrameV1 {...props} />;
+}
+
+function ApprovalFrameV1(props: ApprovalFrameProps): JSX.Element {
   const t = () => actionMessages(props.locale);
   let root: HTMLElement | undefined;
   let detailsAbort: AbortController | undefined;

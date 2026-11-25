@@ -400,6 +400,10 @@ Decided rows stay as receipts until the next load. Without `link` the list
 includes an empty state.
 Without `initial`, the component loads in the browser.
 
+On a page built with `@k2b/ui/v2` (its layout has `ui: "v2"`), pass
+`ui="v2"` and place the list in the page's `Pane`. It then draws itself from
+v2 primitives and keeps the same requests, answers, and outcomes.
+
 An optional navigation row can use `ApprovalsNavStatus` and `approvalNavCount`
 from the same UI entry point. Pass the app ID and the initial page's `count`.
 `ApprovalsNavStatus` renders the count. `approvalNavCount(app, initial)` reads
