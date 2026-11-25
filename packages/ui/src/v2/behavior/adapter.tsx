@@ -231,10 +231,14 @@ export function part<P extends Primitive>(
   // element over. The children are created here too, not before: an inactive panel's content does not exist (on the
   // server either), and whatever it creates is disposed when the part goes.
   const render = () => {
-    const given = untrack(() => user.children);
     // A children function gets the slot state and runs again only when a state key it reads changes (one memo per
     // key). Components it creates (a `For` over `state.items`) track their own reads, so they are not recreated.
-    const content = typeof given === "function" && given.length > 0 ? () => given(state) : given;
+    // Other children are read where they are inserted, as Solid reads `props.children`: a text such as a dialog's
+    // title follows its prop.
+    const content = () => {
+      const given = user.children;
+      return typeof given === "function" && given.length > 0 ? given(state) : given;
+    };
     let element: HTMLElement | undefined;
     let bound = ref(record, host);
     if (!isServer) {

@@ -1,4 +1,4 @@
-import { createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
@@ -28,18 +28,35 @@ export type DialogProps = {
 const focusable =
   'input:not([type="hidden"]):not([disabled]), textarea:not([disabled]), select:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
+/** The phone of v2: every width below 768 px, the one query of v2.css for the phone layout. */
+const phoneQuery = "not all and (min-width: 768px)";
+
+/** Whether the window is the v2 phone; false on the server, where a dialog is closed anyway. */
+const usePhone = () => {
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    const media = matchMedia(phoneQuery);
+    const update = () => setPhone(media.matches);
+    update();
+    media.addEventListener("change", update);
+    onCleanup(() => media.removeEventListener("change", update));
+  });
+  return phone;
+};
+
 /**
- * The one dialog: 480 px in the middle of the window; on a small touch screen a sheet from the bottom, which a swipe
- * down closes. Head, content and foot are parts of one thing, so only spacing separates them (rule 9). While the
- * content scrolls, a hairline shows at the edge behind which more content lies. Focus stays inside, Escape and the
- * close button close it, focus returns to what opened it.
+ * The one dialog: 480 px in the middle of the window; on the phone (below 768 px, where v2 lays out the phone) a sheet
+ * from the bottom, which a swipe down closes. Head, content and foot are parts of one thing, so only spacing separates
+ * them (rule 9). While the content scrolls, a hairline shows at the edge behind which more content lies. Focus stays
+ * inside, Escape and the close button close it, focus returns to what opened it.
  */
 export const Dialog = (props: DialogProps) => {
   const t = useUiMessages();
+  const phone = usePhone();
   const dialog = useDialog(() => ({
     open: props.open,
     onOpenChange: props.onOpenChange,
-    presentation: "auto",
+    presentation: phone() ? "sheet" : "dialog",
     // core's `dismissible: false` refuses Escape too; Escape still closes, everything else that is refused stays
     dismissible: props.dismissible !== false,
     onDismissAttempt: (reason) => {
@@ -50,18 +67,39 @@ export const Dialog = (props: DialogProps) => {
   let foot: HTMLDivElement | undefined;
   const firstFocus = () => body?.querySelector<HTMLElement>(focusable) ?? foot?.querySelector<HTMLElement>(focusable) ?? null;
   const [more, setMore] = createSignal<"above" | "below" | "both">();
-  let observer: ResizeObserver | undefined;
-  onCleanup(() => observer?.disconnect());
   const measure = (body: HTMLElement) => {
     const above = body.scrollTop > 0;
     const below = body.scrollTop + body.clientHeight < body.scrollHeight - 1;
     setMore(above && below ? "both" : above ? "above" : below ? "below" : undefined);
   };
+  // The content's box keeps its height while its parts grow inside it (it scrolls), so the parts are watched too, and
+  // parts that come later as well. Nothing is watched while the dialog is closed.
+  let watching: { sizes: ResizeObserver; parts: MutationObserver } | undefined;
+  const stop = () => {
+    watching?.sizes.disconnect();
+    watching?.parts.disconnect();
+    watching = undefined;
+  };
+  onCleanup(stop);
+  createEffect(() => {
+    if (!props.open) stop();
+  });
   const watch = (element: HTMLElement) => {
     body = element;
-    observer?.disconnect();
-    observer = new ResizeObserver(() => measure(element));
-    observer.observe(element);
+    stop();
+    const sizes = new ResizeObserver(() => measure(element));
+    const observeAll = () => {
+      sizes.disconnect();
+      sizes.observe(element);
+      for (const part of element.children) sizes.observe(part);
+    };
+    const parts = new MutationObserver(() => {
+      observeAll();
+      measure(element);
+    });
+    observeAll();
+    parts.observe(element, { childList: true });
+    watching = { sizes, parts };
     queueMicrotask(() => measure(element));
   };
   return (
@@ -116,31 +154,34 @@ const question = createQuestion<ConfirmOptions>();
  * Asks before something happens that cannot be taken back, and resolves `true` when the person agrees:
  * `if (await Dialog.confirm({ title: "Auftrag verwerfen?", confirm: "Verwerfen" })) discard()`. An alert dialog in
  * the shape of `Dialog`, without a close button: Escape and the other button answer no, focus starts on the other
- * button, a press outside does nothing, and it is never a sheet. `Workspace` renders it, so every v2 page can ask.
+ * button, a press outside does nothing, and it is never a sheet. `Workspace` renders it, so every v2 page can ask; a
+ * page without a Workspace has no one to answer, and the question is answered no at once (with a warning).
  */
-export const confirm = (options: ConfirmOptions): Promise<boolean> => question.ask(options);
+export const confirm = (options: ConfirmOptions): Promise<boolean> => {
+  if (hosts().length === 0) {
+    console.warn("Dialog.confirm: no v2 Workspace on the page renders the dialog that answers; the answer is no.");
+    return Promise.resolve(false);
+  }
+  return question.ask(options);
+};
 
-// The Workspace whose dialog answers `confirm` now: the first one on the page that is still there.
-let answering: object | undefined;
+// The mounted Workspaces that can answer `confirm`, in the order they came; the first one answers. A signal at module
+// level, as the question is: the list only changes in the browser, after a Workspace mounted.
+const [hosts, setHosts] = createSignal<readonly object[]>([]);
 
 /**
  * The alert dialog that answers `confirm` (internal; every `Workspace` renders it). One question needs one answer, so
- * on a page with more than one Workspace only the first one mounted answers; when it leaves, the next one mounted
- * later takes over. It shows nothing until it asks, on the server too, so it never changes what the server sent.
+ * on a page with more than one Workspace the first one mounted answers; when it leaves, the next one takes over. It
+ * shows nothing until it asks, on the server too, so it never changes what the server sent.
  */
 export const ConfirmDialog = () => {
-  const [answers, setAnswers] = createSignal(false);
+  const me = {};
   onMount(() => {
-    if (answering) return;
-    const me = {};
-    answering = me;
-    setAnswers(true);
-    onCleanup(() => {
-      if (answering === me) answering = undefined;
-    });
+    setHosts((list) => [...list, me]);
+    onCleanup(() => setHosts((list) => list.filter((host) => host !== me)));
   });
   return (
-    <Show when={answers()}>
+    <Show when={hosts()[0] === me}>
       <ConfirmSurface />
     </Show>
   );
