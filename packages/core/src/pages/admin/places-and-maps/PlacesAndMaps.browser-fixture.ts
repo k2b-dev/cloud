@@ -14,10 +14,19 @@ import {
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import { createComponent } from "solid-js";
-import { Dynamic, renderToString } from "solid-js/web";
+import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
-import type { PlacesAndMapsInitial } from "./PlacesAndMaps.island";
+import { adminNavFixture } from "../admin-v2.fixture";
+import type { PlacesAndMapsInitial } from "./PlacesAndMaps";
 
+// The Base settings sections under their entry in the admin bar, Places & maps open.
+const placesSections = [
+  { label: "Allgemein", icon: "adjustments", href: "/admin/base", nested: true },
+  { label: "Rechtliches", icon: "gavel", href: "/admin/base/legal", nested: true },
+  { label: "PDF-Erstellung", icon: "file-type-pdf", href: "/admin/base/pdf", nested: true },
+  { label: "Orte & Karten", icon: "map-pin", href: "/admin/base/places", nested: true, current: true },
+  { label: "CLI", icon: "terminal-2", href: "/admin/base/cli", nested: true },
+];
 const lea = { id: "11111111-1111-4111-8111-111111111111", name: "Lea Schulz" };
 const user: User = {
   id: lea.id,
@@ -137,6 +146,7 @@ export async function placesAndMapsBrowserFixture() {
   const css = [
     "@layer properties, theme, base, components, utilities;",
     ...(await Promise.all(styles.map((build) => build.outputs[0]!.text()))),
+    await Bun.file(resolve(import.meta.dir, "../../../../../ui/src/v2/v2.css")).text(),
   ].join("\n");
   const publicDir = join(root, "public");
   await (await import("../../../../scripts/font-assets")).buildFontAssets(publicDir);
@@ -240,24 +250,19 @@ export async function placesAndMapsBrowserFixture() {
     const title = placesAndMapsMessages.resolve([locale]).t.title;
     c.set("page", { title, theme });
     const initial: PlacesAndMapsInitial = { status: state.status, usage: state.usage, actorId: user.id };
+    const props = { nav: adminNavFixture("/admin/base", placesSections), initial };
     const body = renderToString(() =>
       createComponent(AdminLayout, {
         c,
+        ui: "v2",
         title,
         get children() {
-          return createComponent(Dynamic, {
-            component: "div",
-            class: "flex min-h-0 flex-1 flex-col",
-            id: "places-and-maps-fixture",
-            get children() {
-              return createComponent(PlacesAndMaps, { initial });
-            },
-          });
+          return createComponent(PlacesAndMaps, props);
         },
       }),
     );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script type="application/json" id="places-and-maps-fixture-data">${JSON.stringify(initial)}</script><script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/public/fonts.css"><link rel="stylesheet" href="/public/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui${theme === "dark" ? " k2b-dark" : ""}">${body}<script type="application/json" id="places-and-maps-fixture-data">${JSON.stringify(props)}</script><script src="/fixture.js"></script></body></html>`,
     );
   });
   const server = Bun.serve({

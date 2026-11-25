@@ -1,34 +1,42 @@
-import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { coreSettings } from "@k2b/cloud/services";
+import { listApps } from "@k2b/cloud";
+import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { coreSettings, settingsListLegacyKeys } from "@k2b/cloud/services";
 import { geoAdmin } from "@k2b/cloud/services/geo/admin";
-import { AdminAreaPane } from "@k2b/cloud/ssr";
+import { formatDateTime } from "@k2b/cloud/shared";
+import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
-import type { RegistryFormSection } from "../_area/RegistryForm.island";
+import type { RegistryFormSection } from "../_area/RegistryForm";
 import PlacesAndMaps from "../places-and-maps/PlacesAndMaps.island";
-import DocumentationLink from "../settings/_components/DocumentationLink";
+import { settingsDocumentationHref } from "../settings/documentation";
 import { buildEntries } from "../settings/entries";
-import { BaseArea, type BaseSection, baseText } from "./area";
+import { type BaseSection, baseNav, baseText } from "./area";
+import BaseScreen from "./BaseScreen.island";
 import { cliSections, generalSections, legalSections, pdfSections } from "./sections";
-import { BaseFormView } from "./view";
 
-/** One registry form as a section of the Base settings area. */
+/** One registry form as a section of the Base settings area. General also reads the stored settings no app declares. */
 const formSection = (section: Exclude<BaseSection, "places">, groups: string[], sections: (locale: string) => RegistryFormSection[]) =>
   ssr<AuthContext>(async (c) => {
     const locale = getLocale(c);
-    const [entries, documentationBase] = await Promise.all([
+    const [entries, documentationBase, legacy] = await Promise.all([
       Promise.all(groups.map((group) => buildEntries(group, locale))).then((lists) => lists.flat()),
       coreSettings.get<string>("app.documentation_url"),
+      section === "general"
+        ? listApps().then((apps) => settingsListLegacyKeys(apps.flatMap((app) => [...(app.settingKeys ?? [])])))
+        : Promise.resolve(undefined),
     ]);
+    const dates = { ...getDateConfig(c), locale };
     return () => (
-      <BaseFormView
-        c={c}
-        locale={locale}
-        section={section}
-        groups={groups}
-        sections={sections(locale)}
-        entries={entries}
-        documentationBase={documentationBase}
-      />
+      <AdminLayout c={c} ui="v2" title={baseText(locale)[section]}>
+        <BaseScreen
+          nav={baseNav(c, locale, section)}
+          section={section}
+          documentationHref={settingsDocumentationHref(documentationBase, section)}
+          groups={groups}
+          sections={sections(locale)}
+          entries={entries}
+          legacy={legacy?.map((item) => ({ ...item, updated: formatDateTime(item.updatedAt, dates) }))}
+        />
+      </AdminLayout>
     );
   });
 
@@ -40,7 +48,6 @@ export const cliPage = formSection("cli", ["cli"], cliSections);
 /** Places & maps keeps its own flow: the key is tested before it applies, and the budget saves as one pair. */
 export const placesPage = ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
-  const t = baseText(locale);
   const user = c.get("user");
   const [status, usage, documentationBase] = await Promise.all([
     geoAdmin.status(user).catch(() => null),
@@ -48,14 +55,12 @@ export const placesPage = ssr<AuthContext>(async (c) => {
     coreSettings.get<string>("app.documentation_url"),
   ]);
   return () => (
-    <BaseArea c={c} locale={locale} section="places">
-      <AdminAreaPane
-        label={t.places}
-        description={t.placesDescription}
-        actions={<DocumentationLink base={documentationBase} topic="places" />}
-      >
-        <PlacesAndMaps initial={{ status, usage, actorId: user.id }} documentationBase={documentationBase} embedded />
-      </AdminAreaPane>
-    </BaseArea>
+    <AdminLayout c={c} ui="v2" title={baseText(locale).places}>
+      <PlacesAndMaps
+        nav={baseNav(c, locale, "places")}
+        documentationHref={settingsDocumentationHref(documentationBase, "places")}
+        initial={{ status, usage, actorId: user.id }}
+      />
+    </AdminLayout>
   );
 });

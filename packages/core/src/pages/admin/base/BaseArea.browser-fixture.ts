@@ -12,7 +12,13 @@ import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
-export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail";
+export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail" | "legacy";
+
+/** Stored settings no app declares any more, worded as the server sends them. */
+const legacyRows = [
+  { key: "mail.old_relay_host", updatedAt: "2025-03-02T08:00:00.000Z", decryptable: true, updated: "02.03.2025, 09:00" },
+  { key: "ai.retired_provider_secret", updatedAt: "2025-06-11T12:30:00.000Z", decryptable: false, updated: "11.06.2025, 14:30" },
+];
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -117,7 +123,9 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   const root = mkdtempSync(join(tmpdir(), "core-base-area-"));
   process.once("exit", () => rmSync(root, { recursive: true, force: true }));
   registerSsrTestPlugin({ dev: true, rootDir: root });
-  const { BaseFormView } = await import("./view");
+  const { AdminLayout } = await import("@k2b/cloud/ssr");
+  const { default: BaseScreen } = await import("./BaseScreen");
+  const { adminNavFixture } = await import("../admin-v2.fixture");
   const { cliSections, generalSections, pdfSections } = await import("./sections");
   const { SigninFormView } = await import("../signin/view");
   const { freeipaSections, signinSections } = await import("../signin/sections");
@@ -160,6 +168,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   const css = [
     "@layer properties, theme, base, components, utilities;",
     ...(await Promise.all(styles.map((build) => build.outputs[0]!.text()))),
+    await Bun.file(resolve(import.meta.dir, "../../../../../ui/src/v2/v2.css")).text(),
   ].join("\n");
   const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
   const fontCss =
@@ -169,6 +178,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
 
   let stored = fixtureEntries("normal");
   let saves = 0;
+  let legacyDeletes = 0;
   type Variables = {
     runtime: CloudRuntime;
     user: User;
@@ -195,9 +205,25 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     c.set("page", { title: "Base settings", theme: "light" });
     const entries = (state === "normal" ? stored : fixtureEntries(state)).filter((item) => groups.includes(item.group));
     const sections = section === "general" ? generalSections(locale) : section === "cli" ? cliSections(locale) : pdfSections(locale);
-    const body = renderToString(() => createComponent(BaseFormView, { c, locale, section, groups, sections, entries }));
+    const nav = adminNavFixture("/admin/base", [
+      { label: "Allgemein", icon: "adjustments", href: "/admin/base", nested: true, current: section === "general" },
+      { label: "PDF-Erstellung", icon: "file-type-pdf", href: "/admin/base/pdf", nested: true, current: section === "pdf" },
+      { label: "CLI", icon: "terminal-2", href: "/admin/base/cli", nested: true, current: section === "cli" },
+    ]);
+    const legacy = section === "general" ? (state === "legacy" ? legacyRows : []) : undefined;
+    const screen = { nav, section, groups, sections, entries, legacy, documentationHref: "https://docs.example.org/en/docs/x" };
+    const body = renderToString(() =>
+      createComponent(AdminLayout, {
+        c,
+        ui: "v2",
+        title: "Base settings",
+        get children() {
+          return createComponent(BaseScreen, screen);
+        },
+      }),
+    );
     return c.html(
-      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script src="/fixture.js"></script></body></html>`,
+      `<!doctype html><html lang="${locale}" class="light" data-theme="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fonts.css"><style>${css}</style></head><body class="k2b-ui">${body}<script type="application/json" id="base-screen-props">${JSON.stringify(screen).replaceAll("<", "\\u003c")}</script><script src="/fixture.js"></script></body></html>`,
     );
   };
   const renderSignin = (section: "signin" | "freeipa", group: string) => (c: Context<{ Variables: Variables }>) => {
@@ -278,7 +304,12 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       );
       return new Response(null, { status: 204 });
     }
+    if (url.pathname === "/api/admin/core/settings/legacy" && request.method === "DELETE") {
+      legacyDeletes += 1;
+      return Response.json({ deleted: legacyRows.map((row) => row.key) });
+    }
     if (url.pathname === "/api/admin/core/settings/legacy") return Response.json([]);
+    if (url.pathname === "/api/admin/core/settings/cache") return Response.json({ success: true });
     if (url.pathname === "/api/admin/core/settings/test-freeipa") return Response.json({ ok: true });
     if (url.pathname === "/api/admin/core/settings/test-pdf") return Response.json({ bytes: 18234, contentType: "application/pdf" });
     return Response.json({ message: "Synthetic fixture: not available" }, { status: 503 });
@@ -302,6 +333,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
   return {
     url: `http://127.0.0.1:${server.port}`,
     saves: () => saves,
+    legacyDeletes: () => legacyDeletes,
     reset() {
       stored = fixtureEntries("normal");
       saves = 0;
