@@ -101,20 +101,22 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     const html = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get("Referrer-Policy")).toBe("same-origin");
-    expect(html.match(/data-help-view(?:="")?[\s\S]*?<\/section>/)?.[0]).toContain('data-help-topic="spaces-share"');
-    expect(html).not.toContain('data-help-topic="unknown-id"');
     const dom = createDomTestHarness();
     dom.document.body.innerHTML = html;
-    expect(dom.document.querySelector("[data-help-tasks]")?.closest("solid-island")).toBeNull();
-    expect(dom.document.querySelector("[data-help-search]")?.closest("solid-island")).toBeNull();
-    expect(dom.document.querySelector('[data-help-group="reference"]')?.closest("solid-island")).toBeNull();
-    expect(dom.document.querySelector('[data-help-group="reference"]')?.textContent).toContain("spaces fixture roles");
-    expect(dom.document.querySelector("[data-help-shortcuts]")?.textContent).toContain("Open global search");
-    expect(dom.document.querySelectorAll("solid-island")).toHaveLength(7);
+    const section = (title: string) => dom.document.querySelector(`section[data-k2-part="Section"][aria-label="${title}"]`);
+    // The v2 reader is one island that the server renders with its first view: the start and its search.
+    expect(dom.document.querySelectorAll('[data-k2-part="Workspace"]')).toHaveLength(1);
+    expect(dom.document.querySelector('[data-k2-part="Workspace"]')?.closest(".k2-ui")).not.toBeNull();
+    expect(section("For this view")?.querySelector('a[href="?topic=spaces-share"]')).not.toBeNull();
+    expect(html).not.toContain("?topic=unknown-id");
+    expect(section("Look up")?.textContent).toContain("spaces fixture roles");
+    expect(section("Everywhere")?.textContent).toContain("Open global search");
+    expect(dom.document.querySelector('input[type="search"]')).not.toBeNull();
+    expect(dom.document.querySelectorAll('[data-k2-part="Loading"]')).toHaveLength(0);
     dom.cleanup();
     expect(html).toContain("--app-canvas-from:#16a34a");
     expect(html).toContain('data-panel-provider="core"');
-    for (const absent of ["rail-item", "cloud-app-canvas", 'id="cloud-panel"', "Help for spaces"]) expect(html).not.toContain(absent);
+    for (const absent of ["rail-item", "cloud-app-canvas", 'id="cloud-panel"']) expect(html).not.toContain(absent);
     for (const id of ["restricted", "app-denied", "admin-only", "nope"]) {
       const unavailable = await (await server.request(`${panelUrl(id)}&topic=${id}-share`)).text();
       expect(unavailable).toContain("This Help is not available");
@@ -122,10 +124,10 @@ test("Help panel SSR authorizes selectors and renders the first view without she
       expect(unavailable).not.toContain("fixture article");
       expect(unavailable).not.toContain("Server fixture lead.");
       expect(unavailable).not.toContain("fixture app");
-      expect(unavailable).not.toContain("data-help-shortcuts");
+      expect(unavailable).not.toContain("Open global search");
       expect(unavailable).not.toContain("--app-accent:");
-      expect(unavailable).not.toContain("data-help-search");
-      expect(unavailable).not.toContain("data-help-menu");
+      expect(unavailable).not.toContain('type="search"');
+      expect(unavailable).not.toContain("Copy as Markdown");
     }
     expect(requestedApps).not.toContain("restricted");
     expect(requestedApps).not.toContain("app-denied");
@@ -136,30 +138,27 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     expect(core).not.toContain("spaces fixture article");
     const nullContext = await (await server.request("/panel?cloud_panel_context=null")).text();
     expect(nullContext).toContain("core fixture article");
-    const duplicates = await (await server.request(panelUrl("spaces", ["spaces-share", "spaces-share", "unknown-id"]))).text();
-    const viewSection = duplicates.match(/data-help-view(?:="")?[\s\S]*?<\/section>/)?.[0] ?? "";
-    expect(viewSection.match(/data-help-topic="spaces-share"/g)).toHaveLength(1);
+    const duplicates = createDomTestHarness();
+    duplicates.document.body.innerHTML = await (
+      await server.request(panelUrl("spaces", ["spaces-share", "spaces-share", "unknown-id"]))
+    ).text();
+    expect(duplicates.document.querySelectorAll('section[aria-label="For this view"] a[href="?topic=spaces-share"]')).toHaveLength(1);
+    duplicates.cleanup();
     const empty = await (await server.request(panelUrl("empty"))).text();
     expect(empty).toContain("No Help articles here yet");
     for (const topic of ["spaces-share", "unknown-id", "UpperCase", "x".repeat(181)]) {
-      const article = await (await server.request(`${panelUrl("spaces")}&topic=${topic}`)).text();
-      expect(article.includes("data-help-article-head")).toBe(topic === "spaces-share");
+      const article = createDomTestHarness();
+      article.document.body.innerHTML = await (await server.request(`${panelUrl("spaces")}&topic=${topic}`)).text();
+      const detail = article.document.querySelector('[data-k2-part="Pane"][data-detail]');
+      expect(detail !== null).toBe(topic === "spaces-share");
       if (topic === "spaces-share") {
-        expect(article).toContain('class="help-article-facts"');
-        expect(article).toContain("Server fixture lead.");
-        expect(article).toContain("Server fixture body.");
-        const dom = createDomTestHarness();
-        dom.document.body.innerHTML = article;
-        const body = dom.document.querySelector(".help-document");
-        expect(body?.closest("solid-island")).toBeNull();
-        const data = JSON.parse(dom.document.querySelector("[data-help-panel-data]")?.textContent ?? "{}");
-        expect(data.article.markdown).toContain("Server fixture body.");
-        expect("html" in data.article).toBe(false);
-        expect(dom.document.querySelectorAll("[data-help-panel-data]")).toHaveLength(1);
-        dom.cleanup();
-        expect(article).toContain("2 steps");
-        expect(article).not.toContain('data-state="loading"');
-      } else expect(article).not.toContain("Server fixture lead.");
+        // The article renders with the page: its facts, lead and body, and no loading shape.
+        expect(detail?.textContent).toContain("2 steps");
+        expect(detail?.textContent).toContain("Server fixture lead.");
+        expect(detail?.textContent).toContain("Server fixture body.");
+        expect(detail?.querySelectorAll('[data-k2-part="Loading"]')).toHaveLength(0);
+      } else expect(article.document.body.textContent).not.toContain("Server fixture lead.");
+      article.cleanup();
     }
     expect(articleReads).toEqual(["spaces/spaces-share"]);
     const german = await (
@@ -173,8 +172,8 @@ test("Help panel SSR authorizes selectors and renders the first view without she
     expect(helpMessages.resolve(["de"]).t.openAsPage).toBe("Als Seite öffnen");
     fail = true;
     const failed = await (await server.request(panelUrl("spaces"))).text();
-    expect(failed).toContain("data-help-unavailable");
-    expect(failed).toContain("Reload");
+    expect(failed).toContain("Help could not be loaded");
+    expect(failed).toContain('data-k2-part="Failed"');
   } finally {
     reader.mockRestore();
     for (const spy of spies) spy.mockRestore();

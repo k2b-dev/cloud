@@ -9,7 +9,7 @@ import { keyboardPlatform } from "@k2b/ui";
 import { loadCodeHelpReference } from "../../code/help-reference";
 import { ssr } from "../../config";
 import { corePageMessages } from "../messages";
-import { CodeHelpSection } from "./CodeHelpSection";
+import { codeHelpStartSection } from "./CodeHelpSection";
 
 export default ssr<AuthContext>(async (c) => {
   const { t } = corePageMessages.resolve([getLocale(c)]);
@@ -42,7 +42,7 @@ export default ssr<AuthContext>(async (c) => {
   const url = new URL(c.req.url);
   const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
   return () => (
-    <PanelLayout c={c} title={t.help}>
+    <PanelLayout c={c} title={t.help} ui="v2">
       <LayoutHelpPanel
         documents={documents}
         app={app ? { id: app.id, name: app.name, icon: app.icon } : undefined}
@@ -54,9 +54,8 @@ export default ssr<AuthContext>(async (c) => {
         pageBase={help?.pageBase}
         platform={platform}
         state={state}
-        startSection={
-          app && code ? <CodeHelpSection reference={code} appName={app.name} reloadHref={`${url.pathname}${url.search}`} /> : undefined
-        }
+        ui="v2"
+        sections={app && code ? [codeHelpStartSection(code, app.name, `${url.pathname}${url.search}`, getLocale(c))] : undefined}
       />
     </PanelLayout>
   );

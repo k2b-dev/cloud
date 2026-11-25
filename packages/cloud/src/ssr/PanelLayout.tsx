@@ -12,6 +12,8 @@ export type PanelLayoutProps = {
   c: MinimalLayoutContext & { header(name: string, value: string): void };
   title: string;
   children: JSX.Element;
+  /** The provider page is built with `@k2b/ui/v2`: the page carries its app's v2 colours, as `Layout ui="v2"` does. */
+  ui?: "v2";
 };
 
 /** A provider page embedded in the shell's same-origin panel. */
@@ -24,6 +26,7 @@ export default function PanelLayout(props: PanelLayoutProps) {
   const app = resolveRuntimeRoute(apps, new URL(props.c.req.raw.url).pathname)?.app;
   props.c.get("page").title = props.title;
   props.c.get("page").appPrimary = app?.appearance?.primary;
+  props.c.get("page").appUi = props.ui;
   return (
     <LocaleProvider locale={getLocale(props.c)}>
       {(() => {

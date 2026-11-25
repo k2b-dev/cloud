@@ -10,6 +10,9 @@ export const codeHelpMessages = i18n.define({
       lead: ({ app }: { app: string }) => `What your Code can do in ${app}. The label shows when a call runs in your own Code.`,
       operations: ({ count }: { count: number }) => `Operations (${count})`,
       events: ({ count }: { count: number }) => `Events (${count})`,
+      operationsTitle: "Operations",
+      eventsTitle: "Events",
+      importLabel: "Import",
       policy: ({ value }: { value: CodePolicyValue }) =>
         ({ automatic: "Automatic", admin: "Administrator approves", never: "Never" })[value],
       policyHint: ({ value }: { value: CodePolicyValue }) =>
@@ -31,6 +34,9 @@ export const codeHelpMessages = i18n.define({
         `Was dein Code in ${app} tun kann. Die Markierung zeigt, wann ein Aufruf in deinem eigenen Code läuft.`,
       operations: ({ count }: { count: number }) => `Operationen (${count})`,
       events: ({ count }: { count: number }) => `Ereignisse (${count})`,
+      operationsTitle: "Operationen",
+      eventsTitle: "Ereignisse",
+      importLabel: "Import",
       policy: ({ value }: { value: CodePolicyValue }) =>
         ({ automatic: "Automatisch", admin: "Administration gibt frei", never: "Nie" })[value],
       policyHint: ({ value }: { value: CodePolicyValue }) =>

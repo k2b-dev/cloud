@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
-import { panelIslandEntries } from "../../../../../scripts/fixtures/help-panel";
+import { panelV2IslandEntries as panelIslandEntries } from "../../../../../scripts/fixtures/help-panel";
 import { islandBundleSize } from "../../../../../scripts/fixtures/island-bundle-size";
 import { islandIdFromFile } from "../../../../ssr/src/island-id";
 import { defaultRailPreferences, help, panelUrl, rail, server, settings, snapshot } from "./panel.test-fixture";

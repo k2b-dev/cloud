@@ -18,12 +18,13 @@ export default ssr<AuthContext>(async (c) => {
   const initialArticle = initialTopic && app ? await preloadLayoutHelpArticle(c, app.id, initialTopic) : null;
   c.get("page").title = t.helpTitle({ appName: app.name });
   return () => (
-    <Layout c={c} title={[{ title: app.name, href: app.nav?.href || app.adminHref }, { title: t.help }]}>
+    <Layout c={c} fullWidth ui="v2" title={[{ title: app.name, href: app.nav?.href || app.adminHref }, { title: t.help }]}>
       <CoreLayoutHelp
         documents={help.documents}
         initialTopic={initialTopic}
         initialArticle={initialArticle ?? undefined}
         pageBase={help.pageBase}
+        ui="v2"
       />
     </Layout>
   );

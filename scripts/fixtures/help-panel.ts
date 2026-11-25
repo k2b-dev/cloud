@@ -13,6 +13,10 @@ export const panelIslandEntries = [
   "HelpPanelArticle",
   "PanelRuntime",
 ].map((name) => resolve(import.meta.dir, `../../packages/cloud/src/ssr/${name}.island.tsx`));
+/** The islands of Core's v2 Help panel page (`LayoutHelpPanel ui="v2"`): the one reader and the panel runtime. */
+export const panelV2IslandEntries = ["help-v2/HelpReaderPanel", "PanelRuntime"].map((name) =>
+  resolve(import.meta.dir, `../../packages/cloud/src/ssr/${name}.island.tsx`),
+);
 export const panelFixtureDocuments = [
   { id: "share", title: "Share a Space", description: "Invite people.", kind: "task" as const, icon: "ti ti-share" },
   { id: "roles", title: "Roles", kind: "reference" as const },
