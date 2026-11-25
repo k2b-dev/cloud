@@ -77,16 +77,20 @@ test("maxVisible: the newest three show, the others wait and move up when one cl
 
 test("a toast closes after its time, but not while the pointer rests on it", async () => {
   await withPage(async (page) => {
-    await page.getByTestId("a-save").click();
-    const toast = page.locator('[data-toast="Gespeichert 1"]');
+    // playwright clock: the toast's timer is the subject; the page's time runs only when the test says.
+    await page.clock.install();
+    await page.getByTestId("a-brief").click();
+    const toast = page.locator('[data-toast="Kurz"]');
     await toast.waitFor();
     // hover: no geometry is read after the hover.
     await hoverInPlace(toast);
-    // fixed wait: longer than the toast's 1.5 s, to show the hover holds it.
-    await page.waitForTimeout(2000);
+    // playwright clock: longer than the toast's 1.5 s, while the pointer holds it.
+    await page.clock.runFor(2000);
     expect(await toast.count()).toBe(1);
     await page.mouse.move(5, 5);
-    expect(await until(page, `!document.querySelector('[data-toast="Gespeichert 1"]')`)).toBe(true);
+    // playwright clock: past its 1.5 s once nothing holds it.
+    await page.clock.runFor(2000);
+    expect(await toast.count()).toBe(0);
   });
 });
 

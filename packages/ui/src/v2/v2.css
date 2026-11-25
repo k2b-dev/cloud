@@ -935,11 +935,13 @@
   align-items: center;
   gap: 8px;
 }
-/* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5) */
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:last-child {
+/* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5).
+   "The last button" skips popups: a menu or popover renders right after its button while it is open (in the top
+   layer), and the button must not jump when it opens. */
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -8px;
 }
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:last-child {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -6px;
 }
 .k2-ui .k2-group[data-folded] {
@@ -1158,12 +1160,12 @@
   color: var(--k2-subtle);
 }
 /* a text button at the end of a row stands with its text, not its box, on the text edge (K5) */
-.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:last-child,
-.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:last-child {
+.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))),
+.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -8px;
 }
-.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:last-child,
-.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:last-child {
+.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))),
+.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
@@ -1304,7 +1306,7 @@
   vertical-align: top;
   margin-block: -2px;
 }
-.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:last-child {
+.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
@@ -1608,7 +1610,7 @@
   align-items: center;
 }
 /* an icon button at the end stands with its icon on the text edge */
-.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:last-child {
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -10px;
 }
 
@@ -2829,10 +2831,7 @@
 }
 /* Menu, popover, tip: floating surfaces of 8 px radius with the one shadow and the one hairline. They sit in the top
    layer and the behaviour layer places them, so the stylesheet resets what the browser gives a popover. A closed tip
-   stays in the page with `hidden`, which wins over every display rule here. */
-.k2-ui :is(.k2-menu, .k2-pop, .k2-tip)[hidden] {
-  display: none;
-}
+   stays in the page with `hidden` (the rule for `[hidden]` above wins). */
 .k2-ui :is(.k2-menu, .k2-pop) {
   margin: 0;
   background: var(--k2-surface);
@@ -2920,6 +2919,27 @@
 .k2-ui .k2-mi[data-pending] {
   cursor: progress;
 }
+/* A section of a menu: a quiet heading in the meta role over its entries, its words on the words of the entries;
+   lines around the section come from the menu (menuEntries), none inside it */
+.k2-ui .k2-mgroup {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-mh {
+  display: flex;
+  align-items: flex-end;
+  flex: none;
+  height: 28px;
+  padding: 0 8px 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+  color: var(--k2-subtle);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.k2-ui .k2-menu:has(.k2-mi-lead) .k2-mh {
+  padding-left: 32px;
+}
 .k2-ui .k2-msep {
   flex: none;
   height: 1px;
@@ -2969,11 +2989,12 @@
 /* Toast: one sentence and at most one deed such as "Undo", at the bottom in the middle; the newest stands on top, so
    nothing that is already shown moves when another comes */
 /* The region is a popover in the top layer (core's popover="manual"), so its inset, margin and box are set here in
-   full. Like core's defaults it centres with `translate` and keeps clear of the safe area. */
+   full. Like core's defaults it centres with `translate` and keeps clear of the safe area and of an open on-screen
+   keyboard (`--keyboard-inset`, which core writes on the region from the visual viewport). */
 .k2-ui .k2-toasts {
   --k2-toasts-bottom: 16px;
   position: fixed;
-  inset: auto auto calc(var(--k2-toasts-bottom) + env(safe-area-inset-bottom, 0px)) 50%;
+  inset: auto auto calc(var(--k2-toasts-bottom) + var(--keyboard-inset, 0px) + env(safe-area-inset-bottom, 0px)) 50%;
   translate: -50% 0;
   margin: 0;
   padding: 0;
@@ -2989,6 +3010,10 @@
   width: max-content;
   max-width: calc(100vw - 32px);
   pointer-events: none;
+}
+/* closed while it shows no toast (see openWhileShowing in toast.tsx) */
+.k2-ui .k2-toasts[popover]:not(:popover-open) {
+  display: none;
 }
 .k2-ui .k2-toasts > ol {
   display: flex;

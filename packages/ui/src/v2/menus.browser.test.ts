@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Locator, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-menus.demo";
 import { heights } from "./tokens";
@@ -149,6 +149,73 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
     // the same element: new data for an open menu updates its entries in place
     expect(await page.evaluate((el) => el?.isConnected, element)).toBe(true);
     expect(await deeds(page)).toEqual(["open-only:false"]);
+    // an entry that came in stands where the tick stood: it is a plain deed with its own handler, not the old tick
+    const added = page.getByRole("menuitem", { name: "Alle zeigen" });
+    expect(await added.getAttribute("aria-checked")).toBeNull();
+    expect(await page.getByRole("menuitemcheckbox", { name: "Nur offene zeigen" }).getAttribute("aria-checked")).toBe("false");
+    await added.click();
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["open-only:false", "show-all"]);
+  });
+});
+
+test("menu: sections with headings; a choice is one radio group, choosing closes the menu and moves the tick", async () => {
+  await withPage(async (page) => {
+    const trigger = page.getByRole("button", { name: "Antwort" });
+    await trigger.click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    // each section is a group named by its heading; a line stands between sections, none inside one
+    const groups = await page
+      .locator(`${menu} [role=group]`)
+      .evaluateAll((all) => all.map((el) => document.getElementById(el.getAttribute("aria-labelledby") ?? "")?.textContent));
+    expect(groups).toEqual(["Antwortart", "Absender", "Entwurf"]);
+    expect(await page.locator(`${menu} > .k2-msep`).count()).toBe(2);
+    expect(await page.locator(`${menu} .k2-mgroup .k2-msep`).count()).toBe(0);
+    const options = page.getByRole("menuitemradio");
+    expect(await options.count()).toBe(5);
+    const reply = page.getByRole("menuitemradio", { name: "Antworten", exact: true });
+    expect(await reply.getAttribute("aria-checked")).toBe("true");
+    expect(await reply.locator(".k2-mi-tick .k2-icon").count()).toBe(1);
+    // the heading: 28 px, its words on the words of the entries
+    const heading = await box(page.locator(`${menu} .k2-mh`).first());
+    expect(heading.height).toBe(28);
+    const words = await page
+      .locator(`${menu} .k2-mh`)
+      .first()
+      .evaluate((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().left;
+      });
+    expect(Math.abs(words - (await box(reply.locator(".k2-mi-label"))).x)).toBeLessThanOrEqual(1);
+    await page.getByRole("menuitemradio", { name: "Allen antworten" }).click();
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["kind:all"]);
+    // with the keys: the chosen one carries the tick now, and Enter on another sender chooses it
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(menu).waitFor();
+    expect(await page.getByRole("menuitemradio", { name: "Allen antworten" }).getAttribute("aria-checked")).toBe("true");
+    expect(await reply.getAttribute("aria-checked")).toBe("false");
+    for (let step = 0; step < 4; step++) await page.keyboard.press("ArrowDown");
+    expect(await focused(page)).toBe("info@werkstatt.example");
+    await page.keyboard.press("Enter");
+    await closed(page, menu);
+    expect(await deeds(page)).toEqual(["kind:all", "sender:info@werkstatt.example"]);
+  });
+});
+
+test("menu: the '…' at the end of a row stays where it is while its menu is open", async () => {
+  await withPage(async (page) => {
+    const button = page.getByRole("button", { name: "Aktionen für Küchenfront" });
+    const before = await box(button);
+    await button.click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    expect(await box(button)).toEqual(before);
+    await page.keyboard.press("Escape");
+    await closed(page, menu);
   });
 });
 
@@ -165,6 +232,9 @@ test("context menu: a right-click on a row opens the row's menu at the pointer; 
     // at the pointer: core leaves a gap of a few px so the pointer does not rest on the first entry
     expect(Math.abs(m.x - (r.x + 200))).toBeLessThanOrEqual(4);
     expect(Math.abs(m.y - (r.y + 10))).toBeLessThanOrEqual(4);
+    // the menu stands outside the list: a list holds only its rows
+    expect(await page.locator(menu).evaluate((el) => el.closest(".k2-list, [role=list]") === null)).toBe(true);
+    expect(await page.locator(".k2-list > *").count()).toBe(3);
     await page.getByRole("menuitem", { name: "Duplizieren" }).click();
     await closed(page, menu);
     expect(await deeds(page)).toEqual(["duplicate:A-1043"]);
@@ -172,6 +242,26 @@ test("context menu: a right-click on a row opens the row's menu at the pointer; 
     await page.getByRole("button", { name: "Aktionen für Regal Archiv" }).click();
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     expect(await deeds(page)).toEqual(["duplicate:A-1043", "delete:A-1044"]);
+  });
+});
+
+test("context menu: Shift+F10 opens it at the row; a long press shows no link preview of the system", async () => {
+  await withPage(async (page) => {
+    const row = page.locator(".k2-list > .k2-row").nth(2);
+    // iOS opens its own preview on a long press unless the area says no: core's long press binding writes
+    // `-webkit-touch-callout: none` on the area. Only iOS keeps that property, so the test reads the mark the same
+    // binding leaves in every engine, its delay.
+    expect(await row.evaluate((el) => el.style.getPropertyValue("--hold-delay"))).toBe("500ms");
+    // Safari (WebKit) fires no context menu event for Shift+F10, a key macOS does not know; there the "…" of the row
+    // is the way with the keys (the skill asks for both)
+    if (browserName === "webkit") return;
+    await row.locator("button, a").first().focus();
+    await page.keyboard.press("Shift+F10");
+    await page.locator(menu).waitFor();
+    await settled(page);
+    expect(await focused(page)).toBe("Öffnen");
+    await page.keyboard.press("Escape");
+    await closed(page, menu);
   });
 });
 
@@ -208,6 +298,9 @@ test("tip: hovering the button shows its hint above it after a moment; the butto
     // above the button, or below it where the button stands at the top of the window; never on it
     expect(h.y + h.height <= b.y || h.y >= b.y + b.height).toBe(true);
     expect(await button.getAttribute("aria-describedby")).toBe(await tip.getAttribute("id"));
+    // one hint: the browser's own (`title`) gives way while the tip is bound, and the tip is not in the head's bar
+    expect(await button.getAttribute("title")).toBeNull();
+    expect(await tip.evaluate((el) => el.closest(".k2-bar") === null)).toBe(true);
     await page.mouse.move(700, 600);
     await page.waitForFunction(() => !document.querySelector(".k2-tip:not([hidden])"));
   });
@@ -215,6 +308,19 @@ test("tip: hovering the button shows its hint above it after a moment; the butto
 
 test("toast: at the bottom in the middle with Undo; Undo runs and closes it", async () => {
   await withPage(async (page) => {
+    // an empty region is no open popover: a page that lets an open popover take Escape first still gets it
+    await page.waitForFunction(() => document.querySelector('[data-slot="toast-region"][popover]') !== null);
+    expect(await page.evaluate(() => document.querySelector(":popover-open"))).toBeNull();
+    // and Escape reaches the page untouched (Mail closes its reader with it)
+    await page.evaluate(() => {
+      window.__escape = "none";
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") window.__escape = event.defaultPrevented ? "taken" : "page";
+      });
+    });
+    await page.locator("body").focus();
+    await page.keyboard.press("Escape");
+    expect(await page.evaluate(() => window.__escape)).toBe("page");
     await page.getByRole("button", { name: "Speichern" }).click();
     const toast = page.locator(".k2-toast");
     await toast.waitFor();
@@ -224,11 +330,20 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
     expect(Math.round(900 - (t.y + t.height))).toBe(16);
     expect(t.height).toBe(44);
     expect(await toast.locator(".k2-toast-text").textContent()).toBe("Auftrag gespeichert");
+    // the page's one region is the Workspace's, also for a toast asked for above the Workspace (no region of its own)
+    expect(
+      await page.evaluate(() => [...document.querySelectorAll('[data-slot="toast-region"]')].map((el) => el.closest(".k2-ws") !== null)),
+    ).toEqual([true]);
     // a landmark while it holds toasts, named in the page's language
     expect(await page.getByRole("region", { name: "Benachrichtigungen" }).count()).toBe(1);
+    // an open on-screen keyboard: core writes its height on the region, and the toast stays above it
+    await page.locator(".k2-toasts").evaluate((el) => (el as HTMLElement).style.setProperty("--keyboard-inset", "300px"));
+    await settled(page);
+    expect(Math.round(900 - ((await box(toast)).y + t.height))).toBe(316);
     await page.getByRole("button", { name: "Rückgängig" }).click();
     await closed(page, ".k2-toast");
     expect(await deeds(page)).toEqual(["save", "undo"]);
+    await page.waitForFunction(() => document.querySelectorAll(":popover-open").length === 0);
   });
 });
 

@@ -29,6 +29,9 @@ function Workspace(props: { name: string; duration: number }): JSX.Element {
       >
         Verschieben
       </button>
+      <button type="button" class="btn" data-testid={`${props.name}-brief`} onClick={() => toaster.show({ title: "Kurz", duration: 1500 })}>
+        Kurz
+      </button>
       <Region
         class="toasts"
         data-testid={`${props.name}-region`}
@@ -54,8 +57,9 @@ function Workspace(props: { name: string; duration: number }): JSX.Element {
 export function Demo() {
   return (
     <div class="form">
-      <Workspace name="a" duration={1500} />
-      <Workspace name="b" duration={1500} />
+      {/* Toasts stay until dismissed, so no test depends on how fast a page runs; the brief one has its own time. */}
+      <Workspace name="a" duration={Infinity} />
+      <Workspace name="b" duration={Infinity} />
     </div>
   );
 }

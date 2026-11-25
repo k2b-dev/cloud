@@ -19,6 +19,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -205,6 +206,8 @@ export const Workspace = (props: WorkspaceProps) => {
       </Show>
       {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
       <ConfirmDialog host={() => element} />
+      {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
+      <Toasts />
     </div>
   );
 };

@@ -42,6 +42,12 @@ const normalized = (page: Page, html?: string) =>
     // Core puts the toast region in the top layer (`popover`) and measures the viewport into custom properties once
     // it binds; an empty region shows nothing either way, which the pixel check below proves.
     const toastRegion = (node: Element) => node.getAttribute("data-slot") === "toast-region";
+    // Core's Resizable lays panels out in the page only: each panel's size as `--resizable-panel-size` (the server
+    // renders the same width from the panel's default), and the grip's tab stop and values once there is a layout
+    // ("never in the server's HTML", core's resizable.js). The pixel check below proves the widths are the same.
+    const liveResizable = (node: Element, name: string) =>
+      node.getAttribute("data-slot") === "resizable-handle" &&
+      ["tabindex", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-controls"].includes(name);
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
@@ -49,6 +55,10 @@ const normalized = (page: Page, html?: string) =>
         node.removeAttribute("popover");
         for (const name of [...node.style].filter((property) => property.startsWith("--"))) node.style.removeProperty(name);
       }
+      if (node instanceof HTMLElement && node.getAttribute("data-slot") === "resizable-panel")
+        node.style.removeProperty("--resizable-panel-size");
+      // Core measures an open tree group for its expand animation once it binds (`--tree-group-height`).
+      if (node instanceof HTMLElement && node.getAttribute("data-slot") === "tree-group") node.style.removeProperty("--tree-group-height");
       // Core's `bindHold` sets two style properties on the item it binds: `--hold-delay` for CSS and, against iOS's
       // long-press callout, `-webkit-touch-callout`. Neither is painted; both are left out here.
       if (node instanceof HTMLElement) {
@@ -62,6 +72,7 @@ const normalized = (page: Page, html?: string) =>
           (attr) =>
             !unpainted.has(attr.name) &&
             !boundTabStop(node, attr.name) &&
+            !liveResizable(node, attr.name) &&
             !(input && (attr.name === "value" || attr.name === "checked")) &&
             !(attr.name === "style" && !attr.value.trim()),
         )

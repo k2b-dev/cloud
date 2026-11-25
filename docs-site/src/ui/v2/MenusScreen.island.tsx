@@ -2,7 +2,7 @@ import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row
 import { createSignal, For } from "solid-js";
 
 // Menu, Popover and Toast of @k2b/ui/v2 on a list of orders in Grids: "Neu" opens a menu with a submenu of templates,
-// "…" holds view settings that toggle, the filter is a panel, the refresh button has a hint. Every row has its deeds
+// the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a panel, the refresh button has a hint. Every row has its deeds
 // on a right-click or a long press and behind its own "…"; deleting one answers with a toast and "Rückgängig".
 
 type Order = { id: string; title: string; customer: string };
@@ -19,6 +19,7 @@ export default function MenusScreen() {
   const [orders, setOrders] = createSignal(all);
   const [grouped, setGrouped] = createSignal(true);
   const [done, setDone] = createSignal(false);
+  const [sort, setSort] = createSignal("due");
   const [urgent, setUrgent] = createSignal(false);
   const [mine, setMine] = createSignal(true);
   const remove = (order: Order) => {
@@ -33,9 +34,23 @@ export default function MenusScreen() {
     { label: "Löschen", icon: "trash", danger: true, onClick: () => remove(order) },
   ];
   const view = (): MenuEntry[] => [
-    { label: "Nach Kunde gruppieren", checked: grouped(), onClick: () => setGrouped(!grouped()) },
-    { label: "Erledigte zeigen", checked: done(), onClick: () => setDone(!done()) },
-    "separator",
+    {
+      title: "Sortieren nach",
+      choice: sort(),
+      onChoose: setSort,
+      items: [
+        { label: "Fälligkeit", value: "due" },
+        { label: "Kunde", value: "customer" },
+        { label: "Nummer", value: "id" },
+      ],
+    },
+    {
+      title: "Anzeigen",
+      items: [
+        { label: "Nach Kunde gruppieren", checked: grouped(), onClick: () => setGrouped(!grouped()) },
+        { label: "Erledigte zeigen", checked: done(), onClick: () => setDone(!done()) },
+      ],
+    },
     { label: "Als CSV exportieren", icon: "download" },
     { label: "Drucken", icon: "printer", disabled: true },
   ];

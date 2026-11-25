@@ -216,7 +216,7 @@ export const uiPages = [
     title: "UI v2 · Bedienung",
     navTitle: "v2 demo: controls",
     description:
-      "A form with the controls of @k2b/ui/v2, their states (picture, sorting, busy, disabled), and its menus, popovers and toasts, in realistic screens. Provisional until the maintainer approves v2.",
+      "A form with the controls of @k2b/ui/v2 in realistic screens, their states (picture, sorting, busy, disabled), and its menus, popovers and toasts. Provisional until the maintainer approves v2.",
     section: "Start",
     order: 11,
     layout: "full",
