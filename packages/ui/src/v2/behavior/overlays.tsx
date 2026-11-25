@@ -3,6 +3,7 @@
  * focus and typeahead are core's. Each `use…` hook makes one instance and returns its parts as components; the v2
  * primitives add structure and look. No ui-sdk type crosses this module's exports.
  */
+import { isFocusFromKeyboard } from "@ui-sdk/core";
 import { alertDialog as alertDialogPrimitive, createConfirm } from "@ui-sdk/core/alert-dialog";
 import { dialog as dialogPrimitive } from "@ui-sdk/core/dialog";
 import { drawer as drawerPrimitive } from "@ui-sdk/core/drawer";
@@ -41,6 +42,17 @@ export type DialogParts = {
  * on small touch screens (decided by core each time it opens; the server renders the dialog).
  */
 export type Presentation = "auto" | "dialog" | "sheet";
+
+/**
+ * Gives the first focus of an overlay to `element` without a focus ring, unless the last thing the person did was a key
+ * (a dialog opened with Enter shows where the focus stands). A tap, a click or a page that opens with the dialog shows
+ * none, as a button pressed with the pointer shows none; the next key shows the ring. Core then moves the focus to the
+ * same element, which changes nothing. `focusVisible` is a hint the browser may ignore; Chromium and WebKit take it.
+ */
+export const quietFocus = (element: HTMLElement) => {
+  if (isFocusFromKeyboard()) return;
+  element.focus({ preventScroll: true, focusVisible: false });
+};
 
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
 export type DialogOptions = OverlayOptions & {

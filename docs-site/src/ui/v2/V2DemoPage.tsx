@@ -49,15 +49,6 @@ export const v2Screens = {
     phone: { app: "Mail" },
     render: () => <MailScreen open={false} />,
   },
-  "mail-select": {
-    title: "Mail · Auswahl",
-    description:
-      "The same inbox with two messages selected: every row has its box in the lead, named by its sender, a selected row is blue, and the status row is the bar of what can be done with them. On the phone the list stays the page.",
-    mockup: "tabelle-grids.html (selection), mail.html",
-    app: "#0f766e",
-    phone: { app: "Mail" },
-    render: () => <MailSelectScreen />,
-  },
   "mail-tablet": {
     title: "Mail · Tablet",
     description:
@@ -66,6 +57,15 @@ export const v2Screens = {
     app: "#0f766e",
     phone: { app: "Mail" },
     render: () => <MailTabletScreen />,
+  },
+  "mail-select": {
+    title: "Mail · Auswahl",
+    description:
+      "The same inbox with two messages selected: every row has its box in the lead, named by its sender, a selected row is blue, and the status row is the bar of what can be done with them. On the phone the list stays the page.",
+    mockup: "tabelle-grids.html (selection), mail.html",
+    app: "#0f766e",
+    phone: { app: "Mail" },
+    render: () => <MailSelectScreen />,
   },
   record: {
     title: "Kundenakte · Überblick",

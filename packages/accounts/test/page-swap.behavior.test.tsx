@@ -19,11 +19,14 @@ describe("Accounts page swaps", () => {
         const { showChanges, openPage } = usePageSwap();
         await showChanges();
         await openPage("/app/accounts/users");
+        // a closed dialog's address takes the place of the open one, so Back skips it
+        await openPage("/app/accounts/agents/a", { replace: true });
         dispose();
       });
       expect(swapped.mock.calls).toEqual([
         ["/app/accounts/groups?scope=all", { replace: true, scroll: "preserve" }],
         ["/app/accounts/users"],
+        ["/app/accounts/agents/a", { replace: true }],
       ]);
     } finally {
       swapped.mockRestore();

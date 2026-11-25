@@ -56,6 +56,8 @@
   /* the sign of a warning: a step lighter than its words */
   --k2-warn-ink: #b45309;
   --k2-warn-dot: #f59e0b;
+  /* a toggle that is on (a favourite): its symbol and words (akte.html, the star in the head) */
+  --k2-pressed: #b45309;
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
@@ -167,6 +169,7 @@
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
   --k2-warn-ink: #fbbf24;
+  --k2-pressed: #fbbf24;
   --k2-sticky-edge: rgb(0 0 0 / 0.45);
   --k2-card-edge: rgb(255 255 255 / 0.08);
   --k2-ink-mix: #ffffff;
@@ -450,8 +453,11 @@
   --k2-pill: var(--k2-n100);
   --k2-pill-edge: var(--k2-line-control);
   --k2-dot: var(--k2-n500);
+  /* the middle of the line, at most half a window down; once the page is live, the middle of the part of the line in
+     sight (layout.tsx) */
+  --k2-grip-top: calc(min(50%, 50vh) - 10px);
   position: absolute;
-  top: calc(50% - 10px);
+  top: var(--k2-grip-top);
   left: -5px;
   width: 11px;
   height: 20px;
@@ -1381,7 +1387,8 @@
 .k2-ui .k2-table[data-grid] tbody tr:not([data-group]):hover > td {
   background: var(--k2-n50);
 }
-.k2-ui .k2-table[data-grid] tbody tr[aria-current] > td {
+/* The open row (`current`) is tinted in every table that knows its rows, not only in a large one. */
+.k2-ui .k2-table tbody tr[aria-current] > td {
   background: var(--k2-app-tint);
 }
 .k2-ui .k2-table[data-grid] tbody tr[data-selected] > td {
@@ -1880,6 +1887,11 @@
 .k2-ui .k2-btn[aria-disabled="true"]:not([aria-busy]) {
   opacity: 0.5;
 }
+/* A toggle that is on (`pressed`, such as a favourite): its symbol and words in the one colour of pressed, the frame
+   and the size as they are, so nothing moves when it turns on. The primary action is no toggle. */
+.k2-ui .k2-btn[aria-pressed="true"]:not([data-variant="primary"]) {
+  color: var(--k2-pressed);
+}
 /* Busy: the sign turns over the label, which keeps its place unseen, so the button keeps its width; the button keeps
    its look (it is not off, its deed is under way). */
 .k2-ui .k2-btn[data-busy] {
@@ -2283,6 +2295,10 @@
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
 }
+/* the actions beside tabs keep their room; the tabs give way, whole tab by whole tab */
+.k2-ui .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) > .k2-bar-end {
+  flex: none;
+}
 .k2-ui .k2-tabs-nav {
   display: flex;
   gap: 24px;
@@ -2676,6 +2692,26 @@
 .k2-ui .k2-record-id > .k2-icon {
   font-size: 14px;
   color: var(--k2-subtle);
+}
+/* A record's identity never runs under the head's actions: the actions keep their width, and the identity gives way
+   in its own place. The identifiers go first (cut, then out of sight), then the name is cut with "…"; avatar and
+   kinds stay. (On the phone the head grows instead, and the identifiers leave.) */
+.k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-record-name) > .k2-bar-end {
+  flex-shrink: 0;
+}
+.k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name) {
+  overflow: hidden;
+}
+.k2-ui .k2-bar-start > .k2-record-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-bar-start > .k2-record-id {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
 }
 /* the person or thing of a record, leading its head: 32 px and soft */
 .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av {
@@ -3241,6 +3277,7 @@
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start:has(> .k2-record-name) {
     flex-wrap: wrap;
+    overflow: visible;
   }
   .k2-ui .k2-record-id {
     display: none;
@@ -3319,10 +3356,6 @@
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
     display: none;
   }
-  .k2-ui .k2-row[data-digest] {
-    grid-template-columns: 16px minmax(0, 1fr) auto;
-    grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
-  }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3348,6 +3381,13 @@
   container: k2-pane / inline-size;
 }
 @container k2-pane (max-width: 479px) {
+  /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
+     break after every word (akte.html at 1024 px, where the record's main column is 400 px). The query is the pane's,
+     so a digest finds its narrow form inside a `Pane`. */
+  .k2-ui .k2-row[data-digest] {
+    grid-template-columns: 16px minmax(0, 1fr) auto;
+    grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
+  }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;

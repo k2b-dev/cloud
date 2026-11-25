@@ -120,6 +120,27 @@ test("a head that sorts is pressed, with the mouse and the keyboard; the cell sa
   });
 });
 
+test("a toggle says whether it is on and turns its symbol to the colour of pressed, without moving", async () => {
+  await withPage(async (page) => {
+    const star = page.getByRole("button", { name: "Favorit" });
+    const look = () =>
+      star.evaluate((element) => ({
+        pressed: element.getAttribute("aria-pressed"),
+        color: getComputedStyle(element.querySelector(".k2-icon")!).color,
+        box: (({ left, top, width, height }) => `${left},${top} ${width}x${height}`)(element.getBoundingClientRect()),
+      }));
+    const off = await look();
+    expect(off.pressed).toBe("false");
+    await star.click();
+    await settled(page);
+    // the colour of pressed (light): the orange of the mockup's favourite star
+    expect(await look()).toEqual({ pressed: "true", color: "rgb(180, 83, 9)", box: off.box });
+    await star.click();
+    await settled(page);
+    expect(await look()).toEqual(off);
+  });
+});
+
 test("a busy button keeps its width, its name and the focus, and takes no second press", async () => {
   await withPage(async (page) => {
     const button = page.getByRole("button", { name: "Bild ändern" });

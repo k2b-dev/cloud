@@ -261,7 +261,9 @@ lines instead of cutting a thing.
   `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
-  of the form do nothing), `type`, `keep` (stays
+  of the form do nothing), `pressed` (a toggle such as a favourite star:
+  `true` is on, its symbol and words in the one colour of pressed, `false`
+  is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
@@ -331,7 +333,41 @@ lines instead of cutting a thing.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
-  copy? }[]`. Put it in the head `Bar start`.
+  copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
+  ids give way first (always on the phone), then the name is cut with "…";
+  the head's actions keep their place.
+
+## Overlays: Menu, Popover, Toast
+
+- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
+  `variant`, `disabled`; children are the words). Without words it is the
+  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
+  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
+  Promise keeps the menu open and the entry busy), `href`, `danger`,
+  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  (an entry that toggles; `onClick` flips it, the tick stands at the end),
+  `items` (a submenu to the side); or `"separator"` between groups; or a
+  section `{ title, items }` under a quiet heading. A section with
+  `choice` and `onChoose` is one choice (reply kind, sender, order): its
+  entries are options (`value`, else `label`), the chosen one carries the
+  tick, choosing closes the menu. Lines around sections and before the
+  first `danger` entry come by themselves. The menu lines up with
+  its button; there is no `align`.
+- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
+  right-click or a long press opens the menu at the pointer, Shift+F10 at
+  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
+  Give the same entries to a "…" in the row's `end` for those who do not
+  right-click.
+- `Popover`: a panel behind a button: the button's look like `Menu`,
+  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
+  and a press outside close it. With `tip` instead, a short hint on its one
+  child (a `Button`) after a moment on hover or focus.
+- `useToast()`: call it in the component, then
+  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
+  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
+  `undo`; `status` `ok` or `bad` adds a sign (`bad` is announced at once).
+  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
+  place of a problem.
 
 ## Overlays: Menu, Popover, Toast
 

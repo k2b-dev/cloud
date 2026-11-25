@@ -289,18 +289,31 @@ export const Tabs = (props: TabsProps) => {
       const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
       setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
     };
-    const sizes = new ResizeObserver(measure);
+    // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
+    // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
+    // resize loop); the next frame measures what it changed.
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    const sizes = new ResizeObserver(later);
     sizes.observe(row);
     const watchAll = () => {
       for (const child of row?.children ?? []) sizes.observe(child);
     };
     const parts = new MutationObserver(() => {
       watchAll();
-      measure();
+      later();
     });
     watchAll();
     parts.observe(row, { childList: true });
     onCleanup(() => {
+      cancelAnimationFrame(frame);
       sizes.disconnect();
       parts.disconnect();
     });
@@ -613,7 +626,10 @@ export type RecordHeadProps = {
   avatar?: Person;
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];
-  /** Identifiers and contact at a glance; they leave on the phone. */
+  /**
+   * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on
+   * the phone), before the name is cut with "…"; the head's actions keep their place.
+   */
   ids?: readonly RecordId[];
 };
 
