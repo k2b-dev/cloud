@@ -1,24 +1,25 @@
+import { type DateContext, dates } from "@k2b/stdlib";
+import { useLocale } from "@k2b/ui";
 import {
+  Bar,
   Button,
-  CheckboxCard,
-  ChoiceChips,
-  DatePicker,
-  DateRangePicker,
-  type DateRangeValue,
-  DateTimePicker,
-  type FieldSuggestion,
-  MultiSelectInput,
-  NumberInput,
-  PanelDialog,
-  prompts,
-  SegmentedControl,
+  Check,
+  Chip,
+  Choice,
+  confirm,
+  DateInput,
+  Dialog,
+  Field,
+  Inline,
+  Input,
+  Lookup,
+  Menu,
+  Notice,
   Select,
-  SuggestionGroup,
-  Switch,
-  TextInput,
-  useLocale,
-} from "@k2b/ui";
+  Text,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { apiClient } from "@/api/client";
 import { ESTIMATE_STEP_MINUTES, type EstimateSuggestionResult, type SpaceItemAssignee } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import {
@@ -147,15 +148,6 @@ export default function ItemForm(props: ItemFormProps) {
   };
   onMount(() => void requestEstimate());
   onCleanup(() => estimateRequest?.abort());
-  const estimateSuggestion = (): FieldSuggestion<number> | undefined => {
-    const result = estimate();
-    if (result === "loading") return { id: "estimate", state: "loading" };
-    if (result.state === "none") return undefined;
-    if (result.state === "failed")
-      return { id: "estimate", state: "error", onRetry: result.reason === "error" ? () => void requestEstimate() : undefined };
-    const { id, minutes, confidence, reason } = result.suggestion;
-    return { id, state: "ready", value: minutes, confidence, reason: reason ?? undefined, accepted: estimateAccepted() };
-  };
   const acceptEstimate = () => {
     const current = estimate();
     if (current === "loading" || current.state !== "ready") return;
@@ -237,7 +229,7 @@ export default function ItemForm(props: ItemFormProps) {
     if (
       !opening &&
       ownInput() &&
-      !(await prompts.confirm(t.replaceInputQuestion, { title: t.replaceInputTitle, confirmText: t.replaceInput, icon: "ti ti-template" }))
+      !(await confirm({ title: t.replaceInputTitle, description: t.replaceInputQuestion, confirm: t.replaceInput }))
     )
       return;
     setTemplateId(id);
@@ -314,7 +306,7 @@ export default function ItemForm(props: ItemFormProps) {
    * The form keeps event times as instants and an all-day range as local midnights with an exclusive end, the way
    * items store them; the picker shows and returns an all-day range as inclusive calendar dates.
    */
-  const changeEventRange = (value: DateRangeValue) => {
+  const changeEventRange = (value: { start: string | null; end: string | null }) => {
     const start = value.start && allDay() ? allDayStart(value.start, props.dateConfig) : value.start;
     const end = value.end && allDay() ? allDayEnd(value.end, props.dateConfig) : value.end;
     setStartsAt(start ?? "");
@@ -539,474 +531,407 @@ export default function ItemForm(props: ItemFormProps) {
     }
   };
 
-  /** The assistant's line heads the general fields when it may suggest an estimate; otherwise they render as before. */
-  const EstimateGroup = (group: { children: JSX.Element }) => (
-    <Show when={loadEstimate} fallback={group.children}>
-      <SuggestionGroup
-        class="spaces-item-form__suggestions"
-        source={t.estimateSuggestionSource}
-        title={estimateTitle()}
-        onAcceptAll={acceptEstimate}
-      >
-        {group.children}
-      </SuggestionGroup>
-    </Show>
+  const peopleSeen: SpaceItemAssignee[] = [];
+  const loadPeople = async (search: string, context: { signal: AbortSignal; limit: number }) => {
+    const response = await apiClient[":id"]["assignable-users"].$get(
+      { param: { id: props.spaceId }, query: { search } },
+      { init: { signal: context.signal } },
+    );
+    if (!response.ok) throw new Error(t.loadAssigneesFailed);
+    const users = await response.json();
+    peopleSeen.push(...users);
+    return { items: users.slice(0, context.limit).map((user) => ({ value: user.id, label: user.displayName })) };
+  };
+  const pickPeople = (ids: string[]) =>
+    setAssignees(
+      ids.flatMap((id) => {
+        const known = assignees().find((person) => person.id === id) ?? peopleSeen.find((person) => person.id === id);
+        return known ? [known] : [];
+      }),
+    );
+  const tagNames = () =>
+    selectedTags()
+      .map((id) => props.tags?.find((tag) => tag.id === id)?.name)
+      .filter(Boolean)
+      .join(", ");
+  /** The day and the time of a value the form keeps (a date key or an instant), as the person reads them. */
+  const dayOf = (value: string) => (value ? datePart(value, props.dateConfig) : "");
+  const timeOf = (value: string) => (value && !isDateOnlyDeadline(value) ? dates.formatTime(value, props.dateConfig) : "");
+  const validTime = (time: string) => /^\d{1,2}:\d{2}$/.test(time.trim());
+  /** A deadline is a day, or a day and a time; the time is optional. */
+  const setDeadlineParts = (day: string, time: string) => {
+    if (!day) return changeDeadline(null);
+    if (time.trim() && !validTime(time)) return setError(t.invalidTime);
+    changeDeadline(time.trim() ? instantFromLocalDateTime(day, time.trim().padStart(5, "0"), props.dateConfig) : day);
+  };
+  /** An event's start or end from its day and time; an all-day event counts whole days. */
+  const setEventPart = (edge: "start" | "end", day: string, time: string) => {
+    const range = eventRange();
+    if (allDay()) {
+      changeEventRange(edge === "start" ? { start: day || null, end: range.end } : { start: range.start, end: day || null });
+      return;
+    }
+    if (day && !validTime(time)) return setError(t.invalidTime);
+    const instant = day ? instantFromLocalDateTime(day, time.trim().padStart(5, "0"), props.dateConfig) : null;
+    changeEventRange(edge === "start" ? { start: instant, end: range.end } : { start: range.start, end: instant });
+  };
+  const deadlineFields = () => (
+    <Field.Row>
+      <Field label={t.deadline} name="deadline" optional={t.optional}>
+        <DateInput value={dayOf(deadline())} onInput={(day) => setDeadlineParts(day, timeOf(deadline()))} />
+      </Field>
+      <Field label={t.time} name="deadline-time" optional={t.optional}>
+        {/* k2b-ui gap: no time field in v2 yet; a time is typed as hours and minutes. */}
+        <Input
+          value={timeOf(deadline())}
+          placeholder={DEADLINE_DEFAULT_TIME}
+          onInput={(time) => setDeadlineParts(dayOf(deadline()) || dayOf(new Date().toISOString()), time)}
+        />
+      </Field>
+    </Field.Row>
   );
+  const scheduleFields = () => (
+    <>
+      <Field.Row>
+        <Field label={t.start} name="starts" required>
+          <DateInput value={dayOf(startsAt())} onInput={(day) => setEventPart("start", day, timeOf(startsAt()) || "09:00")} />
+        </Field>
+        <Show when={!allDay()}>
+          <Field label={t.time} name="starts-time">
+            <Input value={timeOf(startsAt())} placeholder="09:00" onInput={(time) => setEventPart("start", dayOf(startsAt()), time)} />
+          </Field>
+        </Show>
+      </Field.Row>
+      <Field.Row>
+        <Field label={t.end} name="ends" required>
+          <DateInput
+            value={allDay() ? (eventRange().end ?? "") : dayOf(endsAt())}
+            onInput={(day) => setEventPart("end", day, timeOf(endsAt()) || "10:00")}
+          />
+        </Field>
+        <Show when={!allDay()}>
+          <Field label={t.time} name="ends-time">
+            <Input
+              value={timeOf(endsAt())}
+              placeholder="10:00"
+              onInput={(time) => setEventPart("end", dayOf(endsAt()) || dayOf(startsAt()), time)}
+            />
+          </Field>
+        </Show>
+      </Field.Row>
+      <Check switch label={t.allDayEvent} checked={allDay()} onChange={handleAllDayChange} />
+    </>
+  );
+  const estimateNotice = () => {
+    const result = estimate();
+    if (!loadEstimate || result === "loading" || result.state === "none") return null;
+    return result;
+  };
 
   return (
-    <PanelDialog>
-      <form
-        onSubmit={handleSubmit}
-        class="spaces-item-form flex min-h-0 flex-1 flex-col overflow-hidden"
-        data-presentation={quickCreate() ? "compact" : "full"}
-      >
-        <PanelDialog.Header title={props.title ?? defaultTitle()} icon={props.icon ?? defaultIcon()} close={props.onCancel} />
-        <PanelDialog.Body>
-          <Show when={!isEditMode() && references().length}>
-            <PanelDialog.Section title={commandMessages().linkedSource} icon="ti ti-link">
-              <For each={references()}>
-                {(reference) => (
-                  <Button
-                    variant="subtle"
-                    size="sm"
-                    aria-label={commandMessages().removeSource({ title: reference.label })}
-                    onClick={() => setReferences((items) => items.filter((item) => item !== reference))}
-                  >
-                    <i class="ti ti-link" aria-hidden="true" /> {reference.label} <i class="ti ti-x" aria-hidden="true" />
-                  </Button>
-                )}
-              </For>
-            </PanelDialog.Section>
-          </Show>
-          <Show when={!isEditMode()}>
-            <SegmentedControl
-              ariaLabel={t.type}
-              options={[
-                { value: "task" as const, label: t.task, icon: "ti ti-checkbox" },
-                { value: "event" as const, label: t.event, icon: "ti ti-calendar-event" },
-              ]}
-              value={itemType}
-              onValueChange={handleTypeChange}
-            />
-          </Show>
-          <Show when={quickCreate() && kindTemplates().length > 0}>
-            <Show
-              when={kindTemplates().length <= MAX_TEMPLATE_CHIPS}
-              fallback={
-                <Select
-                  label={t.template}
-                  placeholder={t.chooseTemplate}
-                  icon="ti ti-template"
-                  value={templateId}
-                  onValueChange={(value) => void chooseTemplate(value ?? BLANK_TEMPLATE)}
-                  options={templateOptions().map((option) => ({ id: option.value, label: option.label, icon: option.icon }))}
-                  searchable
-                />
-              }
-            >
-              <ChoiceChips
-                label={t.template}
-                value={templateId}
-                onValueChange={(value) => void chooseTemplate(value)}
-                options={templateOptions()}
-                class="spaces-template-choice"
-              />
-            </Show>
-          </Show>
-          <Show
-            when={quickCreate()}
-            fallback={
-              <>
-                <EstimateGroup>
-                  <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
-                    <TextInput
-                      label={t.title}
-                      description={!isEditMode() ? t.titleDescription : undefined}
-                      placeholder={t.titlePlaceholder}
-                      icon="ti ti-text-caption"
-                      value={title}
-                      onValueChange={(v) => {
-                        setTitle(v);
-                        setError("");
-                      }}
-                      required
-                    />
-                    <TextInput
-                      label={t.description}
-                      description={!isEditMode() ? t.descriptionHint : undefined}
-                      placeholder={t.markdownDescriptionPlaceholder}
-                      value={description}
-                      onValueChange={setDescription}
-                      markdown
-                    />
-                    <Show when={!isEvent()}>
-                      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <DateTimePicker
-                          label={t.deadline}
-                          description={!isEditMode() ? t.deadlineDescription : undefined}
-                          value={() => deadline() || null}
-                          onValueChange={changeDeadline}
-                          dateConfig={props.dateConfig}
-                          presets={deadlinePresets(props.dateConfig)}
-                          optionalTime
-                          defaultTime={DEADLINE_DEFAULT_TIME}
-                          clearable
-                        />
-                        <NumberInput
-                          label={t.estimatedDuration}
-                          description={!isEditMode() ? t.estimatedDurationDescription : undefined}
-                          value={estimatedDurationMinutes}
-                          onValueChange={setEstimatedDurationMinutes}
-                          min={ESTIMATE_STEP_MINUTES}
-                          max={2_147_483_647}
-                          step={ESTIMATE_STEP_MINUTES}
-                          suffix="min"
-                          allowNegative={false}
-                          clearable
-                          suggestion={estimateSuggestion}
-                          onSuggestionAccept={() => setEstimateAccepted(true)}
-                        />
-                      </div>
-                    </Show>
-
-                    <Show when={isEvent()}>
-                      <DateRangePicker
-                        withTime={!allDay()}
-                        label={t.schedule}
-                        description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
-                        value={eventRange}
-                        onValueChange={changeEventRange}
-                        dateConfig={props.dateConfig}
-                        datePresets={scheduleDatePresets(props.dateConfig)}
-                        durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
-                        required
-                        clearable
-                      />
-                      <CheckboxCard
-                        label={t.allDayEvent}
-                        description={t.allDayEventDescription}
-                        icon="ti ti-calendar"
-                        variant="input"
-                        value={allDay}
-                        onValueChange={handleAllDayChange}
-                      />
-                    </Show>
-                  </PanelDialog.Section>
-                </EstimateGroup>
-
-                <Show when={isEvent()}>
-                  <PanelDialog.Section title={t.repeat} subtitle={t.repeatDescription} icon="ti ti-repeat">
-                    <CheckboxCard
-                      label={t.repeatEvent}
-                      description={t.repeatEventDescription}
-                      icon="ti ti-repeat"
-                      variant="input"
-                      value={recurrenceEnabled}
-                      onValueChange={handleRecurrenceEnabled}
-                    />
-                    <Show when={recurrenceEnabled()}>
-                      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <Select
-                          label={t.frequency}
-                          description={!isEditMode() ? t.frequencyDescription : undefined}
-                          icon="ti ti-repeat"
-                          value={recurrenceFrequency}
-                          onValueChange={(value) => value && setRecurrenceFrequency(value as RecurrenceFrequency)}
-                          options={recurrenceFrequencyOptions(props.dateConfig)}
-                        />
-                        <NumberInput
-                          label={t.every}
-                          description={!isEditMode() ? t.intervalDescription : undefined}
-                          icon="ti ti-refresh"
-                          value={recurrenceInterval}
-                          onValueChange={setRecurrenceInterval}
-                          min={1}
-                          step={1}
-                          allowNegative={false}
-                        />
-                      </div>
-                      <Show when={recurrenceFrequency() === "weekly"}>
-                        <div>
-                          <p class="mb-1 block text-sm font-medium">{t.weekdays}</p>
-                          <p class="mb-2 text-xs text-dimmed">{t.weekdaysDescription}</p>
-                          <div class="grid grid-cols-7 gap-1">
-                            <For each={weekdayOptions(props.dateConfig)}>
-                              {(day) => (
-                                <Button
-                                  type="button"
-                                  variant={recurrenceByDay().includes(day.id) ? "subtle" : "secondary"}
-                                  size="sm"
-                                  aria-label={day.fullLabel}
-                                  aria-pressed={recurrenceByDay().includes(day.id)}
-                                  class="w-full justify-center px-0"
-                                  onClick={() => toggleRecurrenceDay(day.id)}
-                                >
-                                  {day.label}
-                                </Button>
-                              )}
-                            </For>
-                          </div>
-                        </div>
-                      </Show>
-                      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                        <Select
-                          label={t.ends}
-                          description={!isEditMode() ? t.endsDescription : undefined}
-                          icon="ti ti-calendar-due"
-                          value={recurrenceEndMode}
-                          onValueChange={(value) => value && setRecurrenceEndMode(value as RecurrenceEndMode)}
-                          options={recurrenceEndOptions(props.dateConfig)}
-                        />
-                        <Show when={recurrenceEndMode() === "on"}>
-                          <DatePicker
-                            label={t.until}
-                            description={!isEditMode() ? t.untilDescription : undefined}
-                            value={() => recurrenceUntil() || null}
-                            onValueChange={(value) => setRecurrenceUntil(value ?? "")}
-                            dateConfig={props.dateConfig}
-                            clearable
-                          />
-                        </Show>
-                        <Show when={recurrenceEndMode() === "after"}>
-                          <NumberInput
-                            label={t.occurrences}
-                            description={!isEditMode() ? t.occurrencesDescription : undefined}
-                            icon="ti ti-list-numbers"
-                            value={recurrenceCount}
-                            onValueChange={setRecurrenceCount}
-                            min={1}
-                            step={1}
-                            allowNegative={false}
-                            clearable
-                          />
-                        </Show>
-                      </div>
-                      <div
-                        class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-secondary dark:bg-zinc-900/50"
-                        role="status"
-                        aria-live="polite"
-                        aria-atomic="true"
-                      >
-                        <i class="ti ti-calendar-repeat mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                        <span>{recurrenceSummary()}</span>
-                      </div>
-                    </Show>
-                  </PanelDialog.Section>
-                </Show>
-
-                <Show when={isEvent()}>
-                  <PanelDialog.Section title={t.eventDetails} subtitle={t.eventDetailsDescription} icon="ti ti-map-pin">
-                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                      <TextInput
-                        label={t.location}
-                        description={!isEditMode() ? t.locationDescription : undefined}
-                        placeholder={t.locationPlaceholder}
-                        icon="ti ti-map-pin"
-                        value={location}
-                        onValueChange={setLocation}
-                      />
-                      <TextInput
-                        label={t.url}
-                        description={!isEditMode() ? t.urlDescription : undefined}
-                        placeholder="https://..."
-                        icon="ti ti-link"
-                        type="url"
-                        inputMode="url"
-                        value={url}
-                        onValueChange={(v) => {
-                          setUrl(v);
-                          setError("");
-                        }}
-                      />
-                    </div>
-                  </PanelDialog.Section>
-                </Show>
-
-                <PanelDialog.Section title={t.organize} subtitle={t.organizeDescription} icon="ti ti-tags">
-                  <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                    <Select
-                      label={t.status}
-                      description={!isEditMode() ? t.statusDescription : undefined}
-                      placeholder={t.selectColumn}
-                      icon="ti ti-progress"
-                      value={columnId}
-                      onValueChange={(value) => value && setColumnId(value)}
-                      options={columnOptions()}
-                      required={!isEvent()}
-                    />
-                    <Select
-                      label={t.priority}
-                      description={!isEditMode() ? t.priorityDescription : undefined}
-                      placeholder={t.selectPriority}
-                      icon="ti ti-flag"
-                      value={priority}
-                      onValueChange={(value) => setPriority(value ?? "")}
-                      options={priorityOptions(props.dateConfig?.locale)}
-                      clearable
-                    />
-                  </div>
-                  <Show when={props.tags && props.tags.length > 0}>
-                    <MultiSelectInput
-                      label={t.tags}
-                      description={!isEditMode() ? t.tagsDescription : undefined}
-                      placeholder={t.selectTags}
-                      searchPlaceholder={t.searchTags}
-                      icon="ti ti-tags"
-                      value={selectedTags}
-                      onValueChange={setSelectedTags}
-                      options={(props.tags ?? []).map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
-                      clearable
-                    />
-                  </Show>
-
-                  <Show when={!isEditMode() && !isEvent() && (templateId() !== BLANK_TEMPLATE || checklist().length > 0)}>
-                    <TextInput
-                      label={t.templateChecklist}
-                      description={t.templateChecklistDescription}
-                      value={() => checklist().join("\n")}
-                      onValueChange={(value) =>
-                        setChecklist(
-                          value
-                            .split("\n")
-                            .map((line) => line.trim())
-                            .filter(Boolean),
-                        )
-                      }
-                      multiline
-                      lines={3}
-                    />
-                  </Show>
-                  <Show when={!isEditMode() && (templateId() !== BLANK_TEMPLATE || assignCreator())}>
-                    <Switch label={t.assignMe} description={t.assignMeDescription} value={assignCreator} onValueChange={setAssignCreator} />
-                  </Show>
-
-                  <div class="flex flex-col gap-3">
-                    <div>
-                      <p class="mb-1 block text-sm font-medium">{t.assignees}</p>
-                      <p class="text-xs text-dimmed">{t.assigneesDescription}</p>
-                    </div>
-                    <SpaceAssigneePicker
-                      spaceId={props.spaceId}
-                      value={assignees}
-                      onChange={(next) => setAssignees(next)}
-                      placeholder={t.searchPeople}
-                    />
-                  </div>
-                </PanelDialog.Section>
-              </>
-            }
-          >
-            <div class="flex flex-col gap-5">
-              <TextInput
-                label={t.title}
-                placeholder={isEvent() ? t.eventTitle : t.titlePlaceholder}
-                icon="ti ti-text-caption"
-                value={title}
-                onValueChange={(value) => {
-                  setTitle(value);
-                  setError("");
-                }}
-                autofocus
-                required
-              />
-
-              <TextInput
-                label={t.description}
-                placeholder={t.markdownDescriptionPlaceholder}
-                value={description}
-                onValueChange={setDescription}
-                multiline
-                lines={3}
-              />
-
-              <Show when={selectedTemplate() && proposals().length > 0}>
-                <ChoiceChips
-                  label={isEvent() ? t.templateWhen : t.templateDue}
-                  description={t.templateProposal({ rule: describeTemplateDateRule(selectedTemplate()!, locale()) })}
-                  value={dateChoice}
-                  onValueChange={chooseDate}
-                  options={dateOptions()}
-                  class="spaces-template-dates"
-                />
-              </Show>
-              {/* A deadline the dialog was opened with shows, so the task is never created with a date it hides. */}
-              <Show when={!isEvent() && (dateChoice() === OTHER_DATE || (Boolean(props.defaults?.deadline) && !selectedTemplate()))}>
-                <DateTimePicker
-                  label={t.deadline}
-                  value={() => deadline() || null}
-                  onValueChange={changeDeadline}
-                  dateConfig={props.dateConfig}
-                  presets={deadlinePresets(props.dateConfig)}
-                  optionalTime
-                  defaultTime={DEADLINE_DEFAULT_TIME}
-                  clearable
-                />
-              </Show>
-
-              <Show when={templateSummary().length > 0}>
-                <p class="spaces-template-summary text-xs text-dimmed" data-testid="template-summary">
-                  <span>{t.fromTemplate}</span> <span class="text-secondary">{templateSummary().join(" · ")}</span>
-                </p>
-              </Show>
-
-              <Show when={plusColumn()}>
-                {(column) => (
-                  <p class="flex items-center gap-1.5 text-xs text-dimmed" data-testid="plus-column">
-                    <i class="ti ti-layout-kanban" aria-hidden="true" />
-                    {t.landsInColumn({ column: column().name })}
-                  </p>
-                )}
-              </Show>
-
-              <Show when={isEvent()}>
-                <DateRangePicker
-                  withTime={!allDay()}
-                  label={t.schedule}
-                  description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
-                  value={eventRange}
-                  onValueChange={changeEventRange}
-                  dateConfig={props.dateConfig}
-                  datePresets={scheduleDatePresets(props.dateConfig)}
-                  durationPresets={allDay() ? undefined : EVENT_DURATION_PRESETS}
-                  required
-                  clearable
-                />
-
-                <Switch label={t.allDayEvent} value={allDay} onValueChange={handleAllDayChange} />
-              </Show>
-            </div>
-          </Show>
-
-          <Show when={error()}>
-            <div class="flex items-center gap-1 text-sm text-red-500" role="alert">
-              <i class="ti ti-alert-circle" />
-              {error()}
-            </div>
-          </Show>
-        </PanelDialog.Body>
-
-        <PanelDialog.Footer>
+    <Dialog
+      title={props.title ?? defaultTitle()}
+      open
+      onOpenChange={(open) => !open && props.onCancel()}
+      foot={
+        <>
           <Show when={quickCreate()}>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setShowFullEditor(true)}>
+            <Button variant="text" onClick={() => setShowFullEditor(true)}>
               {t.moreOptions}
             </Button>
           </Show>
-          {/* Two lines beside the buttons, reserved from the first frame, so the footer keeps its height when the note shows. */}
-          <Show when={loadEstimate}>
-            <p class="spaces-item-form__open-suggestion" aria-live="polite">
-              {estimateOpen() ? t.estimateSuggestionUnsaved : ""}
-            </p>
+          <Button onClick={props.onCancel} disabled={submitting()}>
+            {t.cancel}
+          </Button>
+          <Button variant="primary" busy={submitting()} onClick={() => void handleSubmit(new Event("submit"))}>
+            {props.submitLabel ?? defaultSubmitLabel()}
+          </Button>
+        </>
+      }
+    >
+      <Show when={!isEditMode() && references().length}>
+        <Field label={commandMessages().linkedSource} name="references">
+          <Inline>
+            <For each={references()}>
+              {(reference) => (
+                <Chip icon="link" onClick={() => setReferences((items) => items.filter((item) => item !== reference))}>
+                  {`${reference.label} ×`}
+                </Chip>
+              )}
+            </For>
+          </Inline>
+        </Field>
+      </Show>
+      <Show when={!isEditMode()}>
+        <Choice
+          name="kind"
+          label={t.type}
+          value={itemType()}
+          options={[
+            { value: "task", label: t.task },
+            { value: "event", label: t.event },
+          ]}
+          onChange={(value) => handleTypeChange(value === "event" ? "event" : "task")}
+        />
+      </Show>
+      <Show when={quickCreate() && kindTemplates().length > 0}>
+        <Field label={t.template} name="template">
+          <Select
+            value={templateId()}
+            options={templateOptions().map((option) => ({ value: option.value, label: option.label }))}
+            onChange={(value) => void chooseTemplate(value)}
+          />
+        </Field>
+      </Show>
+      <Field label={t.title} name="title" error={error() === t.titleRequired ? error() : undefined} required>
+        <Input
+          value={title()}
+          placeholder={isEvent() ? t.eventTitle : t.titlePlaceholder}
+          onInput={(value) => {
+            setTitle(value);
+            setError("");
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.isComposing) void handleSubmit(new Event("submit"));
+          }}
+        />
+      </Field>
+      <Field label={t.description} name="description" hint={!isEditMode() ? t.descriptionHint : undefined} optional={t.optional}>
+        <Input multiline value={description()} placeholder={t.markdownDescriptionPlaceholder} onInput={setDescription} />
+      </Field>
+      <Show when={selectedTemplate() && proposals().length > 0}>
+        <Field
+          label={isEvent() ? t.templateWhen : t.templateDue}
+          name="template-date"
+          hint={t.templateProposal({ rule: describeTemplateDateRule(selectedTemplate()!, locale()) })}
+        >
+          <Select
+            value={dateChoice() ?? ""}
+            options={dateOptions().map((option) => ({ value: option.value, label: option.label }))}
+            onChange={chooseDate}
+          />
+        </Field>
+      </Show>
+      <Show when={templateSummary().length > 0}>
+        <Text type="meta">{`${t.fromTemplate} ${templateSummary().join(" · ")}`}</Text>
+      </Show>
+      <Show when={plusColumn()}>{(column) => <Text type="meta">{t.landsInColumn({ column: column().name })}</Text>}</Show>
+      <Show
+        when={!quickCreate()}
+        fallback={
+          <>
+            {/* A deadline the dialog was opened with shows, so the task is never created with a date it hides. */}
+            <Show when={!isEvent() && (dateChoice() === OTHER_DATE || (Boolean(props.defaults?.deadline) && !selectedTemplate()))}>
+              {deadlineFields()}
+            </Show>
+            <Show when={isEvent()}>{scheduleFields()}</Show>
+          </>
+        }
+      >
+        <Show when={!isEvent()}>
+          {deadlineFields()}
+          <Field
+            label={t.estimatedDuration}
+            name="estimate"
+            hint={!isEditMode() ? t.estimatedDurationDescription : undefined}
+            optional="min"
+          >
+            <Input
+              type="number"
+              min={ESTIMATE_STEP_MINUTES}
+              value={estimatedDurationMinutes() === null ? "" : String(estimatedDurationMinutes())}
+              onInput={(value) => {
+                const parsed = Number.parseInt(value, 10);
+                setEstimatedDurationMinutes(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
+              }}
+            />
+          </Field>
+          <Show when={estimateNotice()}>
+            {(result) => {
+              const ready = () => {
+                const current = result();
+                return current.state === "ready" ? current : null;
+              };
+              return (
+                <Notice
+                  tone="ai"
+                  icon="sparkles"
+                  title={t.estimateSuggestionSource}
+                  actions={
+                    ready() && !estimateAccepted()
+                      ? [{ label: t.estimateSuggestionAccept, onClick: acceptEstimate }]
+                      : result().state === "failed" && (result() as { reason?: string }).reason === "error"
+                        ? [{ label: t.retry, onClick: () => void requestEstimate() }]
+                        : undefined
+                  }
+                >
+                  {ready() ? `${estimateTitle()} ${ready()!.suggestion.minutes} min` : estimateTitle()}
+                </Notice>
+              );
+            }}
           </Show>
-          <div class="ml-auto flex items-center gap-2">
-            <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={submitting()}>
-              {t.cancel}
-            </Button>
-            <Button type="submit" size="sm" loading={submitting()}>
-              {props.submitLabel ?? defaultSubmitLabel()}
-            </Button>
-          </div>
-        </PanelDialog.Footer>
-      </form>
-    </PanelDialog>
+          <Show when={estimateOpen()}>
+            <Text type="meta">{t.estimateSuggestionUnsaved}</Text>
+          </Show>
+        </Show>
+        <Show when={isEvent()}>
+          {scheduleFields()}
+          <Check switch label={t.repeatEvent} checked={recurrenceEnabled()} onChange={handleRecurrenceEnabled} />
+          <Show when={recurrenceEnabled()}>
+            <Field.Row>
+              <Field label={t.frequency} name="frequency">
+                <Select
+                  value={recurrenceFrequency()}
+                  options={recurrenceFrequencyOptions(props.dateConfig).map((option) => ({ value: option.id, label: option.label }))}
+                  onChange={(value) => {
+                    const next = (["daily", "weekly", "monthly", "yearly"] as const).find((entry) => entry === value);
+                    if (next) setRecurrenceFrequency(next);
+                  }}
+                />
+              </Field>
+              <Field label={t.every} name="interval">
+                <Input
+                  type="number"
+                  min={1}
+                  value={String(recurrenceInterval() ?? 1)}
+                  onInput={(value) => setRecurrenceInterval(Math.max(1, Number.parseInt(value, 10) || 1))}
+                />
+              </Field>
+            </Field.Row>
+            <Show when={recurrenceFrequency() === "weekly"}>
+              <Bar
+                start={
+                  <Inline>
+                    <For each={weekdayOptions(props.dateConfig)}>
+                      {(day) => (
+                        <Button
+                          pressed={recurrenceByDay().includes(day.id)}
+                          title={day.fullLabel}
+                          onClick={() => toggleRecurrenceDay(day.id)}
+                        >
+                          {day.label}
+                        </Button>
+                      )}
+                    </For>
+                  </Inline>
+                }
+              />
+            </Show>
+            <Field.Row>
+              <Field label={t.ends} name="ends-mode">
+                <Select
+                  value={recurrenceEndMode()}
+                  options={recurrenceEndOptions(props.dateConfig).map((option) => ({ value: option.id, label: option.label }))}
+                  onChange={(value) => {
+                    const next = (["never", "on", "after"] as const).find((entry) => entry === value);
+                    if (next) setRecurrenceEndMode(next);
+                  }}
+                />
+              </Field>
+              <Show when={recurrenceEndMode() === "on"}>
+                <Field label={t.until} name="until">
+                  <DateInput value={recurrenceUntil()} onInput={setRecurrenceUntil} />
+                </Field>
+              </Show>
+              <Show when={recurrenceEndMode() === "after"}>
+                <Field label={t.occurrences} name="count">
+                  <Input
+                    type="number"
+                    min={1}
+                    value={recurrenceCount() === null ? "" : String(recurrenceCount())}
+                    onInput={(value) => setRecurrenceCount(Number.parseInt(value, 10) || null)}
+                  />
+                </Field>
+              </Show>
+            </Field.Row>
+            <Text type="meta">{recurrenceSummary()}</Text>
+          </Show>
+          <Field.Row>
+            <Field label={t.location} name="location" optional={t.optional}>
+              <Input value={location()} placeholder={t.locationPlaceholder} onInput={setLocation} />
+            </Field>
+            <Field label={t.url} name="url" optional={t.optional} error={error() === t.validEventUrl ? error() : undefined}>
+              <Input
+                type="url"
+                value={url()}
+                placeholder="https://"
+                onInput={(value) => {
+                  setUrl(value);
+                  setError("");
+                }}
+              />
+            </Field>
+          </Field.Row>
+        </Show>
+        <Field.Row>
+          <Field label={t.status} name="status" required={!isEvent()}>
+            <Select
+              value={columnId()}
+              placeholder={t.selectColumn}
+              options={columnOptions().map((option) => ({ value: option.id, label: option.label }))}
+              onChange={setColumnId}
+            />
+          </Field>
+          <Field label={t.priority} name="priority" optional={t.optional}>
+            <Select
+              value={priority() ?? ""}
+              options={[
+                { value: "", label: t.noPriority },
+                ...priorityOptions(props.dateConfig?.locale).map((option) => ({ value: option.id, label: option.label })),
+              ]}
+              onChange={setPriority}
+            />
+          </Field>
+        </Field.Row>
+        <Show when={props.tags && props.tags.length > 0}>
+          <Field label={t.tags} name="tags" optional={t.optional}>
+            {/* k2b-ui gap: no tags input in v2 yet (#4191); the tags are ticked in a menu. */}
+            <Menu
+              items={(props.tags ?? []).map((tag) => ({
+                label: tag.name,
+                checked: selectedTags().includes(tag.id),
+                onClick: () =>
+                  setSelectedTags((current) => (current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id])),
+              }))}
+            >
+              {tagNames() || t.selectTags}
+            </Menu>
+          </Field>
+        </Show>
+        <Show when={!isEditMode() && !isEvent() && (templateId() !== BLANK_TEMPLATE || checklist().length > 0)}>
+          <Field label={t.templateChecklist} name="checklist" hint={t.templateChecklistDescription} optional={t.optional}>
+            <Input
+              multiline
+              value={checklist().join("\n")}
+              onInput={(value) =>
+                setChecklist(
+                  value
+                    .split("\n")
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                )
+              }
+            />
+          </Field>
+        </Show>
+        <Show when={!isEditMode() && (templateId() !== BLANK_TEMPLATE || assignCreator())}>
+          <Check switch label={t.assignMe} checked={assignCreator()} onChange={setAssignCreator} />
+        </Show>
+        <Field label={t.assignees} name="assignees" hint={t.assigneesDescription} optional={t.optional}>
+          <Lookup
+            label={t.searchPeople}
+            value={assignees().map((person) => person.id)}
+            known={assignees().map((person) => ({ value: person.id, label: person.displayName }))}
+            load={loadPeople}
+            onChange={pickPeople}
+          />
+        </Field>
+      </Show>
+      <Show when={error() && error() !== t.titleRequired && error() !== t.validEventUrl}>
+        <Notice tone="bad" icon="alert-circle">
+          {error()}
+        </Notice>
+      </Show>
+    </Dialog>
   );
 }

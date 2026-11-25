@@ -25,6 +25,7 @@ import { apiClient } from "@/api/client";
 import type { CalendarItem, Recurrence, SpaceColumn, SpaceItem, SpaceItemTemplate } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { createRetryToasts } from "../../../lib/feedback";
+import { openDialog } from "../../../lib/open-dialog";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
 import { openTemplateDialog } from "../edit/TemplateDialog";
@@ -34,7 +35,6 @@ import { type CreateMenuChoice, calendarTemplateSections } from "../shared/creat
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
-import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { countCalendarEvents } from "./count";
@@ -597,22 +597,19 @@ export default function Calendar(props: CalendarProps) {
     const spaceId = props.spaceId;
     try {
       // The dialog stays open until the create answers, so a failure shows in it with the input still there.
-      const item = await dialogCore.open<SpaceItem | null>(
-        (close) => (
-          <ItemForm
-            spaceId={spaceId}
-            columns={props.columns}
-            tags={props.tags}
-            templates={props.templates}
-            quickCreate
-            defaults={{ ...filterDefaults(), ...defaults }}
-            onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
-            onCancel={() => close(null)}
-            dateConfig={props.dateConfig}
-          />
-        ),
-        itemCreateDialogOptions,
-      );
+      const item = await openDialog<SpaceItem | null>(locale(), (close) => (
+        <ItemForm
+          spaceId={spaceId}
+          columns={props.columns}
+          tags={props.tags}
+          templates={props.templates}
+          quickCreate
+          defaults={{ ...filterDefaults(), ...defaults }}
+          onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
+          onCancel={() => close(null)}
+          dateConfig={props.dateConfig}
+        />
+      ));
       if (item) announceCreated(item);
     } finally {
       setCreateDialogPending(false);

@@ -1,14 +1,15 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Dropdown, dialogCore, toast, useLocale } from "@k2b/ui";
+import { Dropdown, useLocale } from "@k2b/ui";
+import { useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import type { SpaceColumn, SpaceItem, SpaceItemResourceReferenceInput, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { createRetryToasts } from "../../../lib/feedback";
+import { openDialog } from "../../../lib/open-dialog";
 import { useSpaceMessages } from "../../messages";
 import { openTemplateDialog } from "../edit/TemplateDialog";
 import type { CreateMenuChoice } from "../shared/create-menu";
 import { createSpaceItem } from "../shared/editItem";
 import ItemForm from "../shared/ItemForm";
-import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import type { ItemType } from "../shared/item-form/types";
 import { invalidateSpacesData } from "../workspace/workspace-events";
 import { CreateMenu } from "./CreateMenu";
@@ -38,6 +39,7 @@ export function createItemController(props: Props) {
   const t = useSpaceMessages();
   const locale = useLocale();
   const retryToast = createRetryToasts();
+  const toast = useToast();
   const defaultType = () => props.defaultType ?? "task";
   const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [pending, setPending] = createSignal(false);
@@ -49,34 +51,31 @@ export function createItemController(props: Props) {
     // The Space is the one the dialog opened for, even when a compose command selects another while it is open.
     const spaceId = props.spaceId;
     const template = options.templateId ? props.templates?.find((candidate) => candidate.id === options.templateId) : undefined;
-    if (options.templateId && !template) toast.error(t.templateGone);
+    if (options.templateId && !template) toast(t.templateGone, { status: "bad" });
     try {
       // The dialog stays open until the create answers, so a failure shows in it with the input still there.
-      const item = await dialogCore.open<SpaceItem | null>(
-        (close) => (
-          <ItemForm
-            spaceId={spaceId}
-            columns={props.columns}
-            tags={props.tags}
-            templates={props.templates}
-            quickCreate
-            defaults={{
-              type: template?.kind ?? options.type ?? defaultType(),
-              columnId: props.defaultColumnId,
-              references: options.references,
-              title: options.title,
-              templateId: template?.id,
-            }}
-            onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
-            onCancel={() => close(null)}
-            dateConfig={props.dateConfig}
-          />
-        ),
-        itemCreateDialogOptions,
-      );
+      const item = await openDialog<SpaceItem | null>(locale(), (close) => (
+        <ItemForm
+          spaceId={spaceId}
+          columns={props.columns}
+          tags={props.tags}
+          templates={props.templates}
+          quickCreate
+          defaults={{
+            type: template?.kind ?? options.type ?? defaultType(),
+            columnId: props.defaultColumnId,
+            references: options.references,
+            title: options.title,
+            templateId: template?.id,
+          }}
+          onSubmit={async (data) => close(await createSpaceItem(spaceId, data, t.createItemFailed))}
+          onCancel={() => close(null)}
+          dateConfig={props.dateConfig}
+        />
+      ));
       if (item) {
         // The new entry can land outside the current view or filter, so it is confirmed.
-        toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
+        toast(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated, { status: "ok" });
         refreshWorkspace();
       }
       if (options.returnTo) window.location.assign(options.returnTo);

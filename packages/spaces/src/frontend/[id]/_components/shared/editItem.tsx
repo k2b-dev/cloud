@@ -1,5 +1,4 @@
 import type { DateContext } from "@k2b/stdlib";
-import { dialogCore, panelDialogOptions } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import {
   type EstimateSuggestionResult,
@@ -8,6 +7,7 @@ import {
   type SpaceItem,
   type SpaceTag,
 } from "@/contracts";
+import { openDialog } from "../../../lib/open-dialog";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages } from "../../messages";
 import { type ClaimFields, resolveAssigneeClaim } from "./claim/claim";
@@ -87,33 +87,29 @@ export const openEditItemDialog = async (params: EditItemParams): Promise<ItemFo
   const locale = params.dateConfig?.locale;
   const { t } = spaceMessages.resolve(locale ? [locale] : []);
   return (
-    (await dialogCore.open<ItemFormData | null>(
-      (close) => (
-        <ItemForm
-          spaceId={params.spaceId}
-          item={params.item}
-          columns={params.columns}
-          tags={params.tags}
-          onSubmit={async (data) => {
-            // Removing the person who works on the task asks as in the details; declining keeps the dialog open.
-            const claim = data.assigneeIds
-              ? await resolveAssigneeClaim(params.item.claim, params.currentUserId, params.item.assignees ?? [], data.assigneeIds, t)
-              : {};
-            if (!claim) return;
-            await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, claim, locale });
-            close(data);
-          }}
-          onCancel={() => close(null)}
-          submitLabel={t.saveItem}
-          title={t.editItem}
-          icon="ti ti-edit"
-          dateConfig={params.dateConfig}
-          loadEstimateSuggestion={
-            params.estimateSuggestion ? (signal) => loadEstimateSuggestion(params.spaceId, params.item.id, signal) : undefined
-          }
-        />
-      ),
-      panelDialogOptions,
-    )) ?? null
+    (await openDialog<ItemFormData | null>(locale ?? (document.documentElement.lang || "en"), (close) => (
+      <ItemForm
+        spaceId={params.spaceId}
+        item={params.item}
+        columns={params.columns}
+        tags={params.tags}
+        onSubmit={async (data) => {
+          // Removing the person who works on the task asks as in the details; declining keeps the dialog open.
+          const claim = data.assigneeIds
+            ? await resolveAssigneeClaim(params.item.claim, params.currentUserId, params.item.assignees ?? [], data.assigneeIds, t)
+            : {};
+          if (!claim) return;
+          await saveItemFormData({ spaceId: params.spaceId, itemId: params.item.id, data, claim, locale });
+          close(data);
+        }}
+        onCancel={() => close(null)}
+        submitLabel={t.saveItem}
+        title={t.editItem}
+        dateConfig={params.dateConfig}
+        loadEstimateSuggestion={
+          params.estimateSuggestion ? (signal) => loadEstimateSuggestion(params.spaceId, params.item.id, signal) : undefined
+        }
+      />
+    ))) ?? null
   );
 };
