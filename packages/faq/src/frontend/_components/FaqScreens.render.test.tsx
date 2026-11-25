@@ -20,7 +20,7 @@ const parser = new dom.window.DOMParser();
 /** The server HTML as a document, and the text a person reads in it. */
 const parse = (html: string) => {
   const body = parser.parseFromString(html, "text/html").body;
-  const workspace = body.firstElementChild;
+  const workspace = body.querySelector("[data-k2-workspace]");
   if (!workspace) throw new Error("The screen rendered nothing.");
   // Happy DOM's Element is the DOM Element at run time; only its TypeScript type is its own (as in describe.test.ts).
   const outline = describeV2(workspace as unknown as Element);
@@ -52,12 +52,15 @@ describe("the FAQ to read, on the server", () => {
 });
 
 describe("the FAQ administration, on the server", () => {
-  test("the list names each entry's audiences and languages; nothing is open without an address", () => {
-    const { text, outline } = parse(renderToString(() => createComponent(FaqAdminFixture, { locale: "de" })));
+  test("the admin bar stays beside the list; it names each entry's audiences and languages; nothing is open without an address", () => {
+    const { body, text, outline } = parse(renderToString(() => createComponent(FaqAdminFixture, { locale: "de" })));
     expect(text).toContain("3 Einträge");
     expect(text).toContain("sichtbar unter /faq");
     expect(text).toContain("Gastprofile · Vollprofile");
     expect(text).toContain("Kein Eintrag geöffnet");
+    // the admin bar is the page's sidebar, with FAQ as the open entry
+    expect(body.querySelector('[data-k2-part="Nav"] a[href="/admin/faq"][aria-current="page"]')).not.toBeNull();
+    expect(body.querySelector('[data-k2-part="Nav"] a[href="/admin/files"]')).not.toBeNull();
     expect(outline).toContain('primary "Neuer Eintrag"');
     expect(outline).not.toContain("Problems (");
   });

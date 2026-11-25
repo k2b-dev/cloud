@@ -1,3 +1,4 @@
+import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import {
   Band,
@@ -10,13 +11,13 @@ import {
   Input,
   List,
   Menu,
+  type NavProps,
   Notice,
   Pane,
   Row,
   StatusRow,
   Text,
   useToast,
-  Workspace,
 } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -24,7 +25,7 @@ import type { CreateFaq, FaqAudience, FaqEntry, FaqTranslations } from "@/contra
 import { type FaqText, useFaqMessages } from "../messages";
 import type { FaqAdminEntry, FaqAdminOpen } from "./faq-admin-open";
 
-type Props = { entries: readonly FaqAdminEntry[]; open: FaqAdminOpen | null };
+type Props = { nav: NavProps; entries: readonly FaqAdminEntry[]; open: FaqAdminOpen | null };
 
 export const FAQ_ADMIN_PATH = "/admin/faq";
 export const faqEntryHref = (id: string) => `${FAQ_ADMIN_PATH}?entry=${encodeURIComponent(id)}`;
@@ -47,11 +48,10 @@ export default function FaqAdminScreen(props: Props) {
   const t = useFaqMessages();
   const currentId = () => (props.open?.kind === "edit" ? props.open.entry.id : null);
   return (
-    <Workspace
+    <AdminWorkspace
+      nav={props.nav}
       detail
       detailEmpty={{ icon: "help", text: t().noneOpen }}
-      // k2b-ui gap: AdminLayout has no v2 form yet, so the admin sidebar is missing on this page; the shell's trail
-      // (Start › Admin › FAQ) leads back to the admin area until AdminLayout ui="v2" lands.
       head={
         <Bar
           start={<Text type="body">FAQ</Text>}
@@ -121,7 +121,7 @@ export default function FaqAdminScreen(props: Props) {
           }
         </Show>
       </Pane.Split>
-    </Workspace>
+    </AdminWorkspace>
   );
 }
 

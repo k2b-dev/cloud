@@ -7,7 +7,6 @@ export const faqMessages = i18n.define({
   messages: {
     en: {
       start: "Start",
-      admin: "Admin",
       anonymous: "Public",
       anonymousFull: "Public (not signed in)",
       guests: "Guest profiles",
@@ -53,7 +52,6 @@ export const faqMessages = i18n.define({
     },
     de: {
       start: "Start",
-      admin: "Administration",
       anonymous: "Öffentlich",
       anonymousFull: "Öffentlich (ohne Anmeldung)",
       guests: "Gastprofile",

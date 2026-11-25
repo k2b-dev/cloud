@@ -1,4 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
+import type { NavProps } from "@k2b/ui/v2";
 import type { FaqEntry } from "@/contracts";
 import { faqMessages } from "../messages";
 import FaqAdminScreen from "./FaqAdminScreen";
@@ -84,6 +85,23 @@ export const WORST_ENTRIES: FaqEntry[] = [
   ),
 ];
 
+/** The admin bar as `adminNavigation(c)` builds it, shortened to a few invented entries. */
+export const FIXTURE_NAV: NavProps = {
+  title: "Administration",
+  icon: "settings",
+  groups: [
+    { items: [{ label: "Übersicht", icon: "layout-dashboard", href: "/admin" }] },
+    {
+      label: "Apps",
+      items: [
+        { label: "Dateien", icon: "folder", href: "/admin/files" },
+        { label: "FAQ", icon: "help", href: "/admin/faq", current: true },
+        { label: "Mail", icon: "mail", href: "/admin/mail" },
+      ],
+    },
+  ],
+};
+
 const resolve = (item: FaqEntry, locale: string) =>
   locale === "de" && item.translations.de ? item.translations.de : item.translations.en!;
 
@@ -106,7 +124,7 @@ export const FaqAdminFixture = (props: { search?: string; locale?: string; worst
   const open = openFromAddress(entries, new URLSearchParams(props.search ?? "").get("entry"));
   return (
     <LocaleProvider locale={locale}>
-      <FaqAdminScreen entries={entries} open={open} />
+      <FaqAdminScreen nav={FIXTURE_NAV} entries={entries} open={open} />
     </LocaleProvider>
   );
 };
