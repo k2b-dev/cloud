@@ -804,3 +804,49 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     TEST_TIMEOUT,
   );
 });
+
+describe("v2 panes that stand one under the other", () => {
+  // Below 768 px the side column stands under the table; up to 480 px of its pane the large table still shows (its
+  // phone rows only below), so its own last line meets the seam unless it gives way.
+  test(
+    "a large table above a stacked side column at 600 px: one line at the seam",
+    async () => {
+      const page = await open("accessGrid", { width: 600 });
+      try {
+        const shown = await page.evaluate(() => getComputedStyle(document.querySelector(".k2-table[data-grid]")!).display);
+        expect(shown).toBe("table");
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+describe("v2 heads that sort lead to an address", () => {
+  test(
+    "without a deed in place, a head that sorts is a link to the page sorted so; the server markup says the order",
+    async () => {
+      const page = await open("access");
+      try {
+        const heads = await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-table th")].map((th) => [
+            th.getAttribute("aria-sort"),
+            th.querySelector("a.k2-th-sort")?.getAttribute("href") ?? null,
+          ]),
+        );
+        // the sorted column leads to its other direction, another column to its first
+        expect(heads).toEqual([
+          ["ascending", "?sort=-0"],
+          [null, "?sort=1"],
+          [null, null],
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});

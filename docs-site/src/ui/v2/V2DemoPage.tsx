@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import KeysScreen from "./KeysScreen.island";
 import MailSelectScreen from "./MailSelectScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
@@ -80,6 +81,15 @@ export const v2Screens = {
     app: "#047857",
     phone: { back: "Aufträge" },
     render: () => <FormScreen />,
+  },
+  keys: {
+    title: "Zustände · Schlüssel eines Agenten",
+    description:
+      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), disabled fields and a disabled deed of a notice, and facts with a token in monospace. On the phone the side column stands under the table, with one line between them.",
+    mockup: "tabelle.html (Sortiert), index.html (Button, Field)",
+    app: "#7c3aed",
+    phone: { back: "Agenten" },
+    render: () => <KeysScreen />,
   },
 } satisfies Record<string, V2Screen>;
 

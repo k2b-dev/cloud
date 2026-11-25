@@ -168,7 +168,8 @@
     "test": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*'",
     "test:part:ssr": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ssr",
     "test:part:ai": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/ai",
-    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**'",
+    "test:part:code": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' src/code",
+    "test:part:rest": "bun test --isolate --path-ignore-patterns '**/*.behavior.test.*' --path-ignore-patterns 'src/ssr/**' --path-ignore-patterns 'src/ai/**' --path-ignore-patterns 'src/code/**'",
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
