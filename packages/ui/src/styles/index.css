@@ -2332,7 +2332,7 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   pointer-events: none;
 }
 
-/* stdlib embeds `color: #1f2937` in the SVG's own <style>; three classes beat
+/* The chart core embeds `color: #1f2937` in the SVG's own <style>; three classes beat
  * its single-class rule so the chart follows the wrapper in both schemes. */
 .k2b-ui .k2b-chart .stdlib-chart {
   color: inherit;

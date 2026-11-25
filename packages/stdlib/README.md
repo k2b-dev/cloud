@@ -25,7 +25,7 @@ bun add solid-js lean-qr
 
 | Import | Environment | What's inside |
 |---|---|---|
-| `@k2b/stdlib` | Universal | encoding, crypto, password, dates (incl. German public holidays), i18n, money, text, fuzzy, highlight, charts, cache, result, svg, timing, streaming, search-params, file-icons, gradients |
+| `@k2b/stdlib` | Universal | encoding, crypto, password, dates (incl. German public holidays), i18n, money, text, fuzzy, highlight, cache, result, svg, timing, streaming, search-params, file-icons, gradients |
 | `@k2b/stdlib/finance` | Universal, optional peers | DATEV CSV, [DATEV XML packages for Belegtransfer](docs/datev-xml.md), SEPA XML, [E-Invoice XML/PDF reading and XML generation](docs/einvoice.md) with [explicit payment rounding](docs/einvoice.md#explicit-payment-rounding-bt-114), and [camt.052 account report import](docs/camt.md); [formats, examples and runtime requirements](docs/finance.md) |
 | `@k2b/stdlib/qr` | Universal (requires `lean-qr`) | qr -- WiFi/email/tel/vCard/event payload generators and SVG rendering |
 | `@k2b/stdlib/browser` | Browser-only | files (OPFS, ZIP), images (canvas pipeline), cookies, clipboard, notifications, **kvStore** (OPFS-backed key-value, cross-tab `watch` subscriptions), theme |
@@ -37,6 +37,11 @@ The split is by **runtime requirement**, not import preference: `browser` module
 Since 0.36.0, monthly DATEV booking batches can link to separately transferred
 images: set `DatevPosting.documentGuid` and transfer the same GUID with XML
 `kind: "documentImage"`. See [Beleglink and image-only transfer](docs/datev-xml.md#transfer-images-and-link-monthly-bookings).
+
+Charts are not part of stdlib. They live only in `@k2b/ui/charts`. The pure
+SVG core `@k2b/ui/charts/core` exports the former `charts` namespace, the 14
+SVG functions and helpers such as `computeDomain` and `niceStep` with the same
+signatures and markup.
 
 ## Quick Start
 
@@ -201,55 +206,6 @@ const renderFormula = highlight.compile([
 highlight.presets.sql(`SELECT id FROM users WHERE email = $1`);
 ```
 
-### Dashboard with Inline SVG Charts
-
-```typescript
-import { charts } from "@k2b/stdlib";
-
-// Bar chart with title, value labels, target reference, formatted axis
-const revenue = charts.bar({
-  title: "Quarterly Revenue",
-  data: [
-    { label: "Q1", value: 124 }, { label: "Q2", value: 187 },
-    { label: "Q3", value: 162 }, { label: "Q4", value: 215 },
-  ],
-  yAxis: { format: v => `€${v}k` },
-  references: [{ value: 200, label: "Target" }],
-  showValues: true,
-});
-
-// Inline sparkline for a metric-row trend indicator
-const trend = charts.sparkline({
-  data: weeklyVisitors,
-  smooth: true, area: true, showMinMax: true, showLast: true,
-});
-
-// Dashboard panels for monitoring-style UIs
-const cpu = charts.gauge({ value: 72, min: 0, max: 100, label: "CPU", unit: "%" });
-const health = charts.stateTimeline({
-  rows: [{ label: "API", intervals: [{ from: 0, to: 8, state: "ok" }] }],
-  states: [{ state: "ok", label: "OK" }],
-});
-const regions = charts.map({
-  series: [{
-    label: "Healthy",
-    data: [{ latitude: 52.52, longitude: 13.405, label: "Berlin" }],
-  }],
-  viewport: { latitude: 52.52, longitude: 13.405, zoom: 2 },
-  legend: true,
-});
-
-// Scientific scatter with error bars and linear-regression overlay
-const correlation = charts.scatter({
-  series: [{ data: trials.map(t => ({ x: t.id, y: t.mean, errY: t.sd })) }],
-  trendline: true,
-  yAxis: { label: "Reaction (ms ± σ)" },
-});
-
-// All functions return SVG strings — inject via innerHTML or write to disk
-document.getElementById("revenue").innerHTML = revenue;
-```
-
 ### Reactive Cross-Tab Storage
 
 ```typescript
@@ -303,7 +259,7 @@ hotkeys.create({
 ## Documentation
 
 ```
-docs/core.md      -- encoding, crypto, password, dates, i18n, money, text, fuzzy, highlight, charts, cache, result, svg, streaming, ...
+docs/core.md      -- encoding, crypto, password, dates, i18n, money, text, fuzzy, highlight, cache, result, svg, streaming, ...
 docs/browser.md   -- files, images, cookies, clipboard, notifications, kv-store, theme
 docs/solid.md     -- mutation, query, hotkeys, dnd, timed, localstorage, ...
 
