@@ -12,18 +12,18 @@ const app = (id: string, routes: string[]): AppRegistryEntry => ({
   startedAt: 0,
 });
 
-test("retiring the Capabilities app removes only its routes after registry withdrawal", () => {
-  const capabilities = app("capabilities", ["/app/capabilities", "/public/capabilities"]);
+test("withdrawing an unknown application removes only its routes after registry withdrawal", () => {
+  const retired = app("retired-app", ["/app/retired-app", "/public/retired-app"]);
   const providers = [app("core", ["/", "/api/capabilities"]), app("mail", ["/app/mail", "/api/mail"])];
-  const before = buildAppRoutesDetailed([...providers, capabilities]);
+  const before = buildAppRoutesDetailed([...providers, retired]);
   expect(before.warnings).toEqual([]);
-  expect(before.routes.filter((route) => route.appId === "capabilities").map((route) => route.prefix)).toEqual([
-    "/app/capabilities",
-    "/public/capabilities",
+  expect(before.routes.filter((route) => route.appId === "retired-app").map((route) => route.prefix)).toEqual([
+    "/app/retired-app",
+    "/public/retired-app",
   ]);
   const after = buildAppRoutesDetailed(providers);
   expect(after.warnings).toEqual([]);
-  expect(after.routes).toEqual(before.routes.filter((route) => route.appId !== "capabilities"));
+  expect(after.routes).toEqual(before.routes.filter((route) => route.appId !== "retired-app"));
   expect(after.routes.some((route) => route.prefix === "/api/capabilities" && route.appId === "core")).toBe(true);
 });
 

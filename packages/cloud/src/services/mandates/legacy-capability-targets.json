@@ -1657,7 +1657,6 @@
   { "appId": "assistant", "capabilityId": "project.search", "kind": "query", "providerName": "assistant__query__project_dot_search" },
   { "appId": "assistant", "capabilityId": "chat.search", "kind": "query", "providerName": "assistant__query__chat_dot_search" },
   { "appId": "accounts", "capabilityId": "search", "kind": "query", "providerName": "accounts__query__search" },
-  { "appId": "capabilities", "capabilityId": "search", "kind": "query", "providerName": "capabilities__query__search" },
   {
     "appId": "gateway-ops",
     "capabilityId": "app-status.summary",

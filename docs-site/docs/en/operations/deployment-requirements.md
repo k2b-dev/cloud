@@ -44,14 +44,15 @@ Capabilities workload and its service from your manifests. Remove its app-key
 mount and secret from deployment configuration once the old service is gone.
 The new release no longer publishes a Capabilities application image.
 
-A stopped app leaves the live registry, navigation, launcher, and gateway route
-table on graceful shutdown, or after its last heartbeat lease expires (up to
-three minutes). Until expiry, an old route can still point to the stopped
-service and return a gateway error; other applications remain available. An
-older Capabilities process that is still running remains a valid registered
-application until you stop it.
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its routes; otherwise its last
+heartbeat lease expires within three minutes. Until expiry, an old route can
+point to the stopped service and return a gateway error. Other applications
+remain available.
 
-The application had no owned database schema or migrations. The database schema
+The application had no owned database schema or migrations, so there is no
+application data to export. The database schema
 named `capabilities` belongs to the platform and must be kept. This upgrade does
 not delete existing data: shared execution history, grants, enrolled app keys,
 application package assignments, and remembered application metadata remain.

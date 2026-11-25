@@ -134,11 +134,11 @@ suiteFor(
     expect(known?.firstSeenAt).toBeTruthy();
   });
 
-  test("a retired Capabilities application keeps its data and can hide its stopped listing", async () => {
-    const retired = app("capabilities");
+  test("an unknown application keeps its data and can hide its stopped listing", async () => {
+    const retired = app("retired-app");
     await knownApps.rememberApps([retired]);
     await registeredApps.upsertRegisteredApps([retired]);
-    await sql`INSERT INTO auth.app_access_state(app_id) VALUES ('capabilities')`;
+    await sql`INSERT INTO auth.app_access_state(app_id) VALUES ('retired-app')`;
     const listing = await knownApps.listAppListing({ liveApps: [] });
     expect(listing.find((row) => row.id === retired.id)).toMatchObject({ id: retired.id, live: null });
     const status = await gatewayStatus.readGatewayAppStatusDetail({ appId: retired.id, window: "24h" }, context());
@@ -159,7 +159,7 @@ suiteFor(
     expect(result.ok).toBe(true);
     expect((await knownApps.listAppListing({ liveApps: [] })).some((row) => row.id === retired.id)).toBe(false);
     expect((await knownApps.listKnownApps()).find((row) => row.id === retired.id)?.hidden).toBe(true);
-    expect(await sql`SELECT app_id FROM auth.app_access_state WHERE app_id = 'capabilities'`).toHaveLength(1);
+    expect(await sql`SELECT app_id FROM auth.app_access_state WHERE app_id = 'retired-app'`).toHaveLength(1);
   });
 
   test("Gateway role compiles, returns null for absent data, localizes links, and pages tied failures without dropping microseconds", async () => {

@@ -14,18 +14,18 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
-  test("keeps an older Capabilities application registered after its workspace is removed", () => {
+  test("accepts an unknown application through the generic registry contract", () => {
     const entry = {
       ...valid,
-      id: "capabilities",
-      package: "capabilities",
-      name: "Capabilities",
-      baseUrl: "http://app-capabilities:3000",
-      routes: ["/app/capabilities", "/public/capabilities"],
+      id: "retired-app",
+      package: "retired-app",
+      name: "Retired app",
+      baseUrl: "http://app-retired-app:3000",
+      routes: ["/app/retired-app", "/public/retired-app"],
       access: { kind: "signedIn" },
-      nav: { href: "/app/capabilities", match: "/app/capabilities", section: "more", requiresAuth: true },
+      nav: { href: "/app/retired-app", match: "/app/retired-app", section: "more", requiresAuth: true },
     };
-    expect(resolveApplicationPackage(entry.id, entry.package)).toBe("capabilities");
+    expect(resolveApplicationPackage(entry.id, entry.package)).toBe("retired-app");
     expect(validateAppRegistryEntry(entry)).toBeNull();
     expect(asAppRegistryEntry(entry)).toMatchObject(entry);
   });

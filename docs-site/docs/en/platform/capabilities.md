@@ -2487,9 +2487,9 @@ contract.
 ### Execution history
 
 Every capability invocation is recorded once, by the dispatcher, in the
-platform-owned `capabilities.executions` table. The assistant, MCP, the
-Capabilities workspace app, and app-to-app mandate calls all produce the same
-row, so operators read one history instead of one per surface. An Action review
+platform-owned `capabilities.executions` table. Assistant, MCP, CLI and
+app-to-app mandate calls all produce the same row, so operators read one history
+instead of one per surface. An Action review
 is a read-only preview and is not an execution, so it is not recorded.
 
 A row holds correlation and shape, never payloads: `request_id`, `origin`,

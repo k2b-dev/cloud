@@ -2843,7 +2843,7 @@ hand; entries come from squash-commit titles on `main`.
 
 ### Features
 
-* align Weather, Pulse, Venue, and Capabilities overviews as cards ([#130](https://github.com/k2b-dev/cloud/issues/130)) ([ce747fa](https://github.com/k2b-dev/cloud/commit/ce747fa0137ee0edc30cbdea6878d9f66edd4056))
+* align Weather, Pulse, and Venue overviews as cards ([#130](https://github.com/k2b-dev/cloud/issues/130)) ([ce747fa](https://github.com/k2b-dev/cloud/commit/ce747fa0137ee0edc30cbdea6878d9f66edd4056))
 * **grids:** show bases as the overview sidebar with a centered activity column ([#129](https://github.com/k2b-dev/cloud/issues/129)) ([45795c1](https://github.com/k2b-dev/cloud/commit/45795c1e4f076fa9a835c08b0c402e40bc81521f))
 * **mail:** pull to refresh the conversation list ([#109](https://github.com/k2b-dev/cloud/issues/109)) ([ad3a5f4](https://github.com/k2b-dev/cloud/commit/ad3a5f4a6166138e4a27622578f5eeb3d625d5d1))
 * **overview:** sidebar-first Mail and Notebooks overviews ([#125](https://github.com/k2b-dev/cloud/issues/125)) ([311972c](https://github.com/k2b-dev/cloud/commit/311972c0b8f642983422273891e79cdd1e6eb9fd))
