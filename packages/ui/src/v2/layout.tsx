@@ -1,5 +1,19 @@
-import { createContext, createSignal, For, type JSX, onCleanup, onMount, children as resolveChildren, Show, useContext } from "solid-js";
+import {
+  createContext,
+  createEffect,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  useContext,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useUiMessages } from "../intl/messages";
+import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
@@ -46,30 +60,112 @@ export type WorkspaceProps = {
   head?: JSX.Element;
   /** The main action; on the phone it floats at the bottom right. */
   primary?: Action;
-  /** A `Pane` or `Pane.Split`. */
+  /**
+   * A detail opens beside the columns at times (a reader beside a list): the sidebar makes room for it also while it
+   * is closed, so opening and closing it never moves the sidebar between column and drawer. Keep the `width` of the
+   * column beside it while the detail is closed; alone it fills the room.
+   */
+  detail?: boolean;
+  /**
+   * A `Pane` or `Pane.Split`, written inside the Workspace: its columns tell it their widths, so it knows when the
+   * sidebar becomes a drawer. A column made before the Workspace (kept in a variable) is not counted.
+   */
   children: JSX.Element;
 };
 
 const sidebarDefault: Width = { min: 200, default: 248 };
+/** What a column without a width keeps at least: the concept's main column, 400 px (as in v2.css). */
+const flexibleMin = 400;
+
+/**
+ * A column of the workspace and what it needs at least: its minimum, or 400 px for a column without a width; a detail
+ * says so, since the workspace counts it once, open or closed.
+ */
+type Column = { readonly need: number; readonly detail: boolean };
+/** The columns of a workspace register here: the panes at its top, alone or side by side in a `Pane.Split`. */
+const ColumnsContext = createContext<((column: Column) => void) | undefined>();
 
 /**
  * The working surface of an app: a sidebar, a head and the columns below it, with one hairline between columns and
  * a grip on every line that moves. On the phone the sidebar leaves and columns become pages.
+ *
+ * The sidebar stands beside the columns while the workspace holds it at its default width and every column at its
+ * minimum, with the lines between them; a detail it declares (`detail`) counts also while it is closed. Where it does not (a tablet, a narrow window), the sidebar is a drawer from
+ * the start of the window, opened by a button at the start of the head; picking an entry in it closes it. The
+ * stylesheet decides this from the workspace's own width, on the server's page too, so nothing moves when the page
+ * comes alive.
  */
 export const Workspace = (props: WorkspaceProps) => {
+  const t = useUiMessages();
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  const [columns, setColumns] = createSignal<readonly Column[]>([]);
+  const register = (column: Column) => {
+    setColumns((list) => [...list, column]);
+    onCleanup(() => setColumns((list) => list.filter((other) => other !== column)));
+  };
+  // The room the sidebar needs beside the columns: its default, every column's minimum, the lines, the outer edge.
+  // A detail counts once, open or closed, when the workspace declares one, so the room stays the same when it opens.
+  const room = () => {
+    const list = columns().filter((column) => !column.detail);
+    const details = columns().filter((column) => column.detail);
+    const detail = props.detail || details.length > 0 ? Math.max(flexibleMin, ...details.map((column) => column.need)) : 0;
+    const panes = list.length + (detail ? 1 : 0);
+    return width().default + 1 + list.reduce((sum, column) => sum + column.need, 0) + detail + Math.max(0, panes - 1) + 2;
+  };
+  const id = createUniqueId();
+  // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
+  // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
+  const drawerRule = () =>
+    `@media (min-width: 768px) { @container k2-ws-${id} (width < ${room()}px) { ` +
+    `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
+  const [drawerOpen, setDrawerOpen] = createSignal(false);
+  const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
+  let toggle: HTMLElement | undefined;
+  // When the window grows while the drawer is open, the sidebar is a column again and the drawer closes.
+  createEffect(() => {
+    if (!drawerOpen() || !element) return;
+    const sizes = new ResizeObserver(() => {
+      if (toggle && toggle.getClientRects().length === 0) setDrawerOpen(false);
+    });
+    sizes.observe(element);
+    onCleanup(() => sizes.disconnect());
+  });
+  // Picking an entry (a link, a button that is no disclosure) closes the drawer; the page it opens is what matters.
+  const pick = (event: MouseEvent) => {
+    if (event.target instanceof Element && event.target.closest("a[href], button:not([aria-expanded])")) setDrawerOpen(false);
+  };
+  const toggleButton = () => (
+    <drawer.Trigger
+      ref={(button: HTMLElement) => {
+        toggle = button;
+      }}
+      class="k2-btn k2-ws-toggle"
+      data-variant="ghost"
+      data-icon-only=""
+      aria-label={t().showSidebar}
+      title={t().showSidebar}
+    >
+      <Icon name="layout-sidebar" />
+    </drawer.Trigger>
+  );
   return (
     <div
       ref={element}
       class="k2-ws"
       data-k2-workspace=""
       data-k2-part="Workspace"
-      style={custom({ "--k2-ws-side": `${width().default}px`, "--k2-ws-side-min": `${width().min}px` })}
+      data-k2-ws={id}
+      style={custom({
+        "--k2-ws-side": `${width().default}px`,
+        "--k2-ws-side-min": `${width().min}px`,
+        "container-name": sidebar() ? `k2-ws-${id}` : undefined,
+      })}
     >
       <Show when={sidebar()}>
         <aside class="k2-ws-side" data-k2-column="">
@@ -78,13 +174,28 @@ export const Workspace = (props: WorkspaceProps) => {
         <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
-        <Show when={head()}>
-          <div class="k2-slot" data-slot="head">
+        <Show when={head() || sidebar()}>
+          <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
+            <Show when={sidebar()}>{toggleButton()}</Show>
             {head()}
           </div>
         </Show>
-        {props.children}
+        <ColumnsContext.Provider value={register}>{props.children}</ColumnsContext.Provider>
       </div>
+      <Show when={sidebar()}>
+        <style>{drawerRule()}</style>
+        {/* the sidebar once more, made only while the drawer is open (in the browser, after a press) */}
+        <drawer.Popup
+          class="k2-drawer"
+          data-k2-part="Drawer"
+          aria-label={t().sidebar}
+          style={custom({ "--k2-drawer-w": `${width().default}px` })}
+          backdrop={{ class: "k2-backdrop" }}
+          onClick={pick}
+        >
+          {props.sidebar}
+        </drawer.Popup>
+      </Show>
       <Show when={props.primary}>
         {(action) => (
           // a disabled link is an anchor without an address, as in `Button`
@@ -169,6 +280,15 @@ export const Pane = (props: PaneProps) => {
     },
   };
   useContext(SplitContext)?.(entry);
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
+  useContext(ColumnsContext)?.({
+    get need() {
+      return props.width?.min ?? flexibleMin;
+    },
+    get detail() {
+      return props.detail === true;
+    },
+  });
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
@@ -224,7 +344,7 @@ export const Pane = (props: PaneProps) => {
         </div>
       </Show>
       <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
-        {props.children}
+        <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
       </div>
     </section>
   );
