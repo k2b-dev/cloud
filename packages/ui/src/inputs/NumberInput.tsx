@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, type JSX, mergeProps, on, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria, fieldDescribedBy } from "../internal/field";
-import { decimalSeparator, useLocale } from "../intl/locale";
+import { decimalSeparator, parseLocalizedNumber, useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import type { FieldSuggestionProps, ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
@@ -48,27 +48,6 @@ export type NumberInputProps = Omit<
      */
     formatValue?: (value: number) => string;
   };
-
-/**
- * Reads typed or pasted text with the locale's marks: `decimal` separates the
- * fraction, the other of `.` and `,` groups thousands, one to three digits and
- * then groups of three. One mark of the other kind that cannot group (`3.14` in
- * German) still reads as the decimal separator. Text that fits neither reading
- * is `"invalid"`, never a shortened number.
- */
-function parseLocalizedNumber(text: string, decimal: string): number | null | "invalid" {
-  const point = decimal === "," ? "," : ".";
-  const group = point === "," ? "." : ",";
-  const body = text.replaceAll(decimal, point);
-  if (!body) return null;
-  let canonical: string;
-  if (new RegExp(`^-?(\\d*|[1-9]\\d{0,2}(\\${group}\\d{3})+)(\\${point}\\d*)?$`).test(body))
-    canonical = body.replaceAll(group, "").replace(point, ".");
-  else if (new RegExp(`^-?\\d*\\${group}\\d*$`).test(body)) canonical = body.replace(group, ".");
-  else return "invalid";
-  // Separators or a minus alone; a minus anywhere but first, such as in `1.234,56-`, already failed above.
-  return /\d/.test(canonical) ? Number(canonical) : "invalid";
-}
 
 // Intl rounds a number by its shortest decimal form, half away from zero: `1.005` rounds to `1.01`,
 // not to the `1.00` of the binary float that `toFixed` sees. Typed text up to 15 digits is that form.

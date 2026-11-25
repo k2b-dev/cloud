@@ -7,6 +7,7 @@ import {
   Dialog,
   Field,
   Input,
+  LookupSelect,
   Menu,
   Nav,
   Notice,
@@ -18,12 +19,34 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
+import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal } from "solid-js";
 
 // A realistic form with the controls of @k2b/ui/v2: a new order in Grids. Fields share one grid, errors stand at the
 // field. More deeds wait behind "…": "Als Vorlage speichern" opens a dialog with a field (a sheet on a phone), and
 // "Verwerfen" (red, after a line) asks with `Dialog.confirm`, as "Abbrechen" does. A toast with "Rückgängig" answers the
-// main action. Only primitives; an island so the controls answer. The open list of a selection follows.
+// main action. Only primitives; an island so the controls answer. The open list of a selection follows. The customer
+// is one of many, so it is a LookupSelect that searches; the contact person is a person of that customer.
+
+const CUSTOMERS: readonly LookupItem[] = [
+  { value: "k-17", label: "Familie Oswald", meta: "Freiburg" },
+  { value: "k-23", label: "Architekturbüro Winter", meta: "Lahr" },
+  { value: "k-31", label: "Stadtwerke Auental", meta: "Kehl" },
+  { value: "k-44", label: "Haus Bergmann", meta: "Offenburg" },
+];
+const CONTACTS: Readonly<Record<string, readonly LookupItem[]>> = {
+  "k-17": [
+    { value: "p-1", label: "Maria Oswald" },
+    { value: "p-2", label: "Jonas Oswald" },
+  ],
+  "k-23": [{ value: "p-3", label: "Ada Renz", meta: "Projektleitung" }],
+  "k-31": [{ value: "p-4", label: "Tim Fehr", meta: "Einkauf" }],
+  "k-44": [{ value: "p-5", label: "Lena Bergmann" }],
+};
+// the app's own search, here in memory; a real one asks its server with the signal
+const search = (items: readonly LookupItem[]) => async (query: string, context: { limit: number }) => ({
+  items: items.filter((item) => item.label.toLowerCase().includes(query.toLowerCase())).slice(0, context.limit),
+});
 
 export default function FormScreen() {
   const toast = useToast();
@@ -36,6 +59,8 @@ export default function FormScreen() {
       cancel: "Weiter bearbeiten",
     });
   const [quantity, setQuantity] = createSignal("0");
+  const [customer, setCustomer] = createSignal<string | undefined>("k-17");
+  const [contact, setContact] = createSignal<string | undefined>();
   const [notify, setNotify] = createSignal(true);
   const [urgent, setUrgent] = createSignal(false);
   const [delivery, setDelivery] = createSignal("Lieferung");
@@ -100,11 +125,26 @@ export default function FormScreen() {
         </Notice>
         <Section icon="user" color="#2563eb" title="Kunde">
           <Field.Row>
-            <Field name="customer" label="Kunde">
-              <Select options={["Familie Oswald", "Architekturbüro Winter", "Stadtwerke Auental"]} value="Familie Oswald" />
+            <Field name="customer" label="Kunde" hint="412 Kunden">
+              <LookupSelect
+                value={customer()}
+                onChange={(value) => {
+                  setCustomer(value);
+                  setContact(undefined);
+                }}
+                load={search(CUSTOMERS)}
+                known={CUSTOMERS}
+                placeholder="Kunde wählen"
+              />
             </Field>
             <Field name="contact" label="Ansprechperson" optional="optional">
-              <Input placeholder="Wer nimmt den Auftrag ab?" />
+              <LookupSelect
+                value={contact()}
+                onChange={setContact}
+                load={(query, context) => search(CONTACTS[customer() ?? ""] ?? [])(query, context)}
+                known={Object.values(CONTACTS).flat()}
+                placeholder="Wer nimmt den Auftrag ab?"
+              />
             </Field>
           </Field.Row>
         </Section>

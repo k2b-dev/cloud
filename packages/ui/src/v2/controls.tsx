@@ -1,17 +1,20 @@
 import {
   createContext,
+  createEffect,
   createRenderEffect,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
   children as resolveChildren,
   Show,
   useContext,
 } from "solid-js";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isDateKey } from "../inputs/date-picker";
-import { useLocale } from "../intl/locale";
+import { decimalSeparator, parseLocalizedNumber, useLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
@@ -165,7 +168,10 @@ export type InputProps = {
    * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
    * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
    * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
-   * itself with `preventDefault`).
+   * itself with `preventDefault`). A `number` is a text field with the decimal keyboard and no spinner that reads and
+   * shows numbers in the locale of @k2b/ui ("1.500,5" in German): `value` and `onInput` carry the plain number
+   * ("1500.5"), "" when empty, or the text as typed when it is no number, and a form sends the plain number. `min` and
+   * `max` stop a form that is sent outside them, with a short message at the field.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
@@ -217,6 +223,7 @@ const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  const number = useNumberText(props);
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const shared = () => ({
@@ -243,18 +250,40 @@ export const Input = (props: InputProps) => {
       <Show
         when={props.multiline}
         fallback={
-          <input
-            {...shared()}
-            ref={(element) => forwardRef(props.ref, element)}
-            type={props.type ?? "text"}
-            min={props.min}
-            max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              props.onKeyDown?.(event);
-              if (props.type === "search") foldHeadSearch(event);
-            }}
-          />
+          <Show
+            when={props.type === "number"}
+            fallback={
+              <input
+                {...shared()}
+                ref={(element) => forwardRef(props.ref, element)}
+                type={props.type ?? "text"}
+                min={props.min}
+                max={props.max}
+                onInput={(event) => props.onInput?.(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  props.onKeyDown?.(event);
+                  if (props.type === "search") foldHeadSearch(event);
+                }}
+              />
+            }
+          >
+            <input
+              {...shared()}
+              name={undefined}
+              value={number.text()}
+              ref={(element) => {
+                number.check(element);
+                forwardRef(props.ref, element);
+              }}
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              onInput={(event) => number.input(event.currentTarget)}
+              onBlur={(event) => number.settle(event.currentTarget)}
+              onKeyDown={(event) => props.onKeyDown?.(event)}
+            />
+            <Show when={shared().name}>{(name) => <input type="hidden" name={name()} value={number.plain()} />}</Show>
+          </Show>
         }
       >
         <textarea
@@ -269,6 +298,62 @@ export const Input = (props: InputProps) => {
       </Show>
     </span>
   );
+};
+
+/**
+ * The text of a number field: shown in the locale ("1.500" in German), read back with the locale's marks, and the
+ * plain number the app and the form get. A number the app sets from outside replaces the text; what is typed stays
+ * until the field is left, then it shows in the locale's form.
+ */
+const useNumberText = (props: InputProps) => {
+  const locale = useLocale();
+  const said = useUiMessages();
+  const format = (value: number) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(value);
+  const show = (value: string) => {
+    const amount = value.trim() === "" ? Number.NaN : Number(value);
+    return Number.isFinite(amount) ? format(amount) : value;
+  };
+  const read = (text: string) => parseLocalizedNumber(text.trim(), decimalSeparator(locale()));
+  const plainOf = (text: string) => {
+    const amount = read(text);
+    return amount === null ? "" : amount === "invalid" ? text : String(amount);
+  };
+  const [text, setText] = createSignal(show(props.value ?? ""));
+  let sent = props.value ?? "";
+  createEffect(
+    on(
+      () => props.value ?? "",
+      (value) => {
+        if (value === sent) return;
+        sent = value;
+        setText(show(value));
+      },
+      { defer: true },
+    ),
+  );
+  const problem = (value: string) => {
+    const amount = read(value);
+    if (amount === null) return "";
+    if (amount === "invalid") return said().numberInvalid;
+    if (props.min !== undefined && amount < props.min) return said().numberMin({ min: format(props.min) });
+    if (props.max !== undefined && amount > props.max) return said().numberMax({ max: format(props.max) });
+    return "";
+  };
+  return {
+    text,
+    plain: () => plainOf(text()),
+    check: (element: HTMLInputElement) => element.setCustomValidity(problem(element.value)),
+    input: (element: HTMLInputElement) => {
+      setText(element.value);
+      element.setCustomValidity(problem(element.value));
+      sent = plainOf(element.value);
+      props.onInput?.(sent);
+    },
+    settle: (element: HTMLInputElement) => {
+      const amount = read(element.value);
+      if (typeof amount === "number") setText(format(amount));
+    },
+  };
 };
 
 export type SelectOption = { value: string; label: string; disabled?: boolean };

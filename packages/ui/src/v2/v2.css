@@ -4007,7 +4007,7 @@
   padding-inline: 0;
   gap: 0;
 }
-.k2-ui .k2-fed-body[data-flush] > :is(.k2-fed-range, .k2-fed-error) {
+.k2-ui .k2-fed-body[data-flush] > .k2-fed-error {
   margin: 0 12px 8px;
 }
 .k2-ui .k2-fed-sub {
@@ -4037,27 +4037,17 @@
   color: var(--k2-app-text);
   font-weight: 600;
 }
-.k2-ui .k2-fed-presets {
+/* The number entry of "Ab …" or "Bis …": a text field that reads the locale's numbers (no spinner), the unit at its
+   end, "Anwenden" under it; inside the popover beside the editor it is the popover's whole content */
+.k2-ui .k2-nentry {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  gap: 8px;
+  width: 200px;
+  max-width: 100%;
 }
-.k2-ui .k2-fed-presets > .k2-btn {
-  height: var(--k2-h-control-small);
-  padding: 0 10px;
-  font: var(--k2-t-meta);
-  font-weight: 500;
-}
-.k2-ui .k2-fed-range {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 12px minmax(0, 1fr);
-  gap: 0 6px;
-  align-items: end;
-}
-.k2-ui .k2-fed-dash {
-  text-align: center;
-  color: var(--k2-subtle);
-  padding-bottom: 8px;
+.k2-ui .k2-nentry .k2-fed-field > .k2-input > input {
+  font-variant-numeric: tabular-nums;
 }
 .k2-ui .k2-fed-field {
   display: flex;
@@ -4391,6 +4381,9 @@
 }
 .k2-ui .k2-fsheet-pick .k2-dpick {
   width: 308px;
+}
+.k2-ui .k2-fsheet-pick .k2-nentry {
+  width: 100%;
 }
 .k2-ui .k2-fsheet-pick .k2-cal-row {
   grid-template-columns: repeat(7, 44px);

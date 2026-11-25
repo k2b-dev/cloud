@@ -63,3 +63,24 @@ export const useDateConfigLocale = (config: () => DateContext | undefined): (() 
  */
 export const decimalSeparator = (locale: string): string =>
   new Intl.NumberFormat(locale).formatToParts(1.1).find((part) => part.type === "decimal")?.value ?? ".";
+
+/**
+ * Reads typed or pasted text with the locale's marks: `decimal` separates the
+ * fraction, the other of `.` and `,` groups thousands, one to three digits and
+ * then groups of three. One mark of the other kind that cannot group (`3.14` in
+ * German) still reads as the decimal separator. Text that fits neither reading
+ * is `"invalid"`, never a shortened number.
+ */
+export function parseLocalizedNumber(text: string, decimal: string): number | null | "invalid" {
+  const point = decimal === "," ? "," : ".";
+  const group = point === "," ? "." : ",";
+  const body = text.replaceAll(decimal, point);
+  if (!body) return null;
+  let canonical: string;
+  if (new RegExp(`^-?(\\d*|[1-9]\\d{0,2}(\\${group}\\d{3})+)(\\${point}\\d*)?$`).test(body))
+    canonical = body.replaceAll(group, "").replace(point, ".");
+  else if (new RegExp(`^-?\\d*\\${group}\\d*$`).test(body)) canonical = body.replace(group, ".");
+  else return "invalid";
+  // Separators or a minus alone; a minus anywhere but first, such as in `1.234,56-`, already failed above.
+  return /\d/.test(canonical) ? Number(canonical) : "invalid";
+}

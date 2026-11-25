@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
-import { useLocale } from "../intl/locale";
+import { decimalSeparator, parseLocalizedNumber, useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
@@ -40,6 +40,9 @@ const isPeriod = (value: unknown): value is PeriodValue =>
 const periodValue = (value: unknown): PeriodValue | undefined => (isPeriod(value) ? value : undefined);
 const periodOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "dateRange" | "timeRange" }> | undefined =>
   definition.kind === "dateRange" || definition.kind === "timeRange" ? definition : undefined;
+const rangeValue = (value: unknown): NumberRange | undefined => (isRange(value) ? value : undefined);
+const rangeOf = (definition: ListQueryField): Extract<ListQueryField, { kind: "numberRange" }> | undefined =>
+  definition.kind === "numberRange" ? definition : undefined;
 const codes = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : typeof value === "string" ? [value] : [];
 
@@ -739,7 +742,10 @@ type EditorProps = {
   onRemove?: () => void;
   /** In the phone sheet: no head of its own (the sheet names the field). */
   bare?: boolean;
-  /** In the phone sheet: "Von …" and "Bis …" of a period open their calendar as the sheet's next step. */
+  /**
+   * In the phone sheet: "Von …" and "Bis …" of a period open their calendar, "Ab …" and "Bis …" of a number range
+   * their number entry, as the sheet's next step.
+   */
   onBound?: (bound: Bound) => void;
 };
 
@@ -753,7 +759,7 @@ const Editor = (props: EditorProps) => {
     setTimeout(() => {
       if (!root.isConnected || (!root.contains(document.activeElement) && document.activeElement !== document.body)) return;
       const target = root.querySelector<HTMLElement>(
-        '.k2-lookup-search input, [role="option"][tabindex="0"], [role="option"], .k2-fed-field input, .k2-fed-presets .k2-btn',
+        '.k2-lookup-search input, [role="option"][tabindex="0"], [role="option"], .k2-fed-field input, .k2-fed-bounds > .k2-mi',
       );
       target?.focus({ preventScroll: true });
     });
@@ -838,7 +844,15 @@ const EditorBody = (props: EditorProps) => {
         />
       );
     case "numberRange":
-      return <RangeEditor definition={definition} value={isRange(props.value) ? props.value : undefined} onChange={props.onChange} />;
+      return (
+        <RangeEditor
+          definition={definition}
+          value={isRange(props.value) ? props.value : undefined}
+          possible={props.possible}
+          onChange={props.onChange}
+          onBound={props.onBound}
+        />
+      );
     case "dateRange":
     case "timeRange":
       return (
@@ -976,106 +990,194 @@ const EditField = (props: {
   </label>
 );
 
-const RangeEditor = (props: {
-  definition: Extract<ListQueryField, { kind: "numberRange" }>;
-  value?: NumberRange;
-  onChange: (value: unknown) => boolean;
-}) => {
+type RangeField = Extract<ListQueryField, { kind: "numberRange" }>;
+
+/** The address text of a range, which names a preset as an option of the list ("500..2000"). */
+const rangeCode = (range: NumberRange) => `${range.min ?? ""}..${range.max ?? ""}`;
+
+/** A range in words with the app's unit: "bis 500 €", "500 € bis 2.000 €", "ab 2.000 €". */
+const useRangeWords = (unit: () => string | undefined) => {
   const t = useFilterMessages();
   const format = useFormats(() => "UTC");
-  const [min, setMin] = createSignal(props.value?.min?.toString() ?? "");
-  const [max, setMax] = createSignal(props.value?.max?.toString() ?? "");
+  const amount = (value: number) => `${format().number(value)}${unit() ? ` ${unit()}` : ""}`;
+  const range = (value: NumberRange) => {
+    if (value.min !== undefined && value.max !== undefined) return t().between({ min: amount(value.min), max: amount(value.max) });
+    if (value.min !== undefined) return `${t().from} ${amount(value.min)}`;
+    return value.max !== undefined ? `${t().upTo} ${amount(value.max)}` : "";
+  };
+  return { amount, range };
+};
+
+/**
+ * One bound of a number range: a text field that reads and shows numbers in the locale of `@k2b/ui` ("1.500" is one
+ * thousand five hundred in German), with the unit at its end and no spinner. Enter or "Anwenden" applies; an empty
+ * field takes the bound out. What does not apply says why under the field, which stays open.
+ */
+const NumberEntry = (props: {
+  label: string;
+  value?: number;
+  unit?: string;
+  /** Applies the bound; an error text when it does not apply. */
+  onApply: (value: number | undefined) => string | undefined;
+  /** The phone sheet: the keyboard waits for a tap, as everywhere in the sheet. */
+  sheet?: boolean;
+}) => {
+  const t = useFilterMessages();
+  const locale = useLocale();
+  const shown = (value: number | undefined) =>
+    value === undefined ? "" : new Intl.NumberFormat(locale(), { maximumFractionDigits: 20 }).format(value);
+  const [text, setText] = createSignal(shown(props.value));
+  const [error, setError] = createSignal<string>();
+  const apply = () => {
+    const read = parseLocalizedNumber(text().trim(), decimalSeparator(locale()));
+    if (read === "invalid" || (read !== null && !Number.isFinite(read))) return setError(t().notANumber);
+    const refused = props.onApply(read ?? undefined);
+    setError(refused);
+    if (!refused) setText(shown(read ?? undefined));
+  };
+  return (
+    <div class="k2-nentry" data-k2-part="NumberEntry">
+      <label class="k2-fed-field">
+        <span class="k2-fed-label">{props.label}</span>
+        <span class="k2-input" data-invalid={error() ? "" : undefined}>
+          <input
+            ref={(input) => !props.sheet && setTimeout(() => input.isConnected && input.focus({ preventScroll: true }))}
+            type="text"
+            inputmode="decimal"
+            autocomplete="off"
+            spellcheck={false}
+            value={text()}
+            aria-invalid={error() ? "true" : undefined}
+            onInput={(event) => {
+              setText(event.currentTarget.value);
+              setError(undefined);
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.isComposing) return;
+              event.preventDefault();
+              apply();
+            }}
+          />
+          <Show when={props.unit}>
+            <span class="k2-fed-unit">{props.unit}</span>
+          </Show>
+        </span>
+      </label>
+      <Show when={error()}>
+        {(message) => (
+          <p class="k2-fed-error" role="alert">
+            {message()}
+          </p>
+        )}
+      </Show>
+      <div class="k2-dpick-foot">
+        <span class="k2-dpick-end">
+          <Button variant="primary" onClick={apply}>
+            {t().apply}
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+};
+
+/** The range after one bound was set (`undefined` takes it out), or why it cannot be. */
+const rangeWith = (value: NumberRange | undefined, bound: Bound, amount: number | undefined): { value?: NumberRange } | { error: "invalid" } => {
+  const next = { min: bound === "from" ? amount : value?.min, max: bound === "to" ? amount : value?.max };
+  if (next.min !== undefined && next.max !== undefined && next.min > next.max) return { error: "invalid" };
+  return { value: next.min === undefined && next.max === undefined ? undefined : next };
+};
+
+/** The number entry of one bound, applied through the address; `onDone` once it applied. */
+const RangeBound = (props: {
+  definition: RangeField;
+  value?: NumberRange;
+  bound: Bound;
+  onChange: (value: unknown) => boolean;
+  onDone: () => void;
+  sheet?: boolean;
+}) => {
+  const t = useFilterMessages();
+  return (
+    <NumberEntry
+      label={`${props.definition.label} ${props.bound === "from" ? t().atLeast : t().atMost}`}
+      value={props.bound === "from" ? props.value?.min : props.value?.max}
+      unit={props.definition.unit}
+      sheet={props.sheet}
+      onApply={(amount) => {
+        const next = rangeWith(props.value, props.bound, amount);
+        if ("error" in next) return t().rangeInvalid;
+        if (!props.onChange(next.value)) return t().valueRejected;
+        props.onDone();
+        return undefined;
+      }}
+    />
+  );
+};
+
+/**
+ * A number range, in the pattern of a period: the presets as a list with one tick, then "Ab …" and "Bis …" with their
+ * value, each opening a small number entry beside the editor like a submenu (on the phone the sheet's next step).
+ */
+const RangeEditor = (props: {
+  definition: RangeField;
+  value?: NumberRange;
+  possible: (value: unknown) => boolean;
+  onChange: (value: unknown) => boolean;
+  onBound?: (bound: Bound) => void;
+}) => {
+  const t = useFilterMessages();
+  const words = useRangeWords(() => props.definition.unit);
   const [rejected, setRejected] = createSignal(false);
-  // The fields follow the filter when it changes elsewhere (Zurücksetzen, back, a preset); what is typed and not yet
-  // applied stays until then.
   createEffect(
     on(
-      () => `${props.value?.min ?? ""}..${props.value?.max ?? ""}`,
-      () => {
-        setMin(props.value?.min?.toString() ?? "");
-        setMax(props.value?.max?.toString() ?? "");
-        setRejected(false);
-      },
+      () => (props.value ? rangeCode(props.value) : ""),
+      () => setRejected(false),
       { defer: true },
     ),
   );
-  const number = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
-  const invalid = () => {
-    const low = number(min());
-    const high = number(max());
-    return low !== undefined && high !== undefined && low > high;
-  };
-  const commit = () => {
-    setRejected(false);
-    if (invalid()) return;
-    const low = number(min());
-    const high = number(max());
-    const unreadable = (value: number | undefined) => value !== undefined && !Number.isFinite(value);
-    if (unreadable(low) || unreadable(high)) {
-      setRejected(true);
-      return;
-    }
-    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high }));
-  };
-  const unit = () => (props.definition.unit ? ` ${props.definition.unit}` : "");
-  const presetLabel = (range: NumberRange) => {
-    const show = (amount: number) => `${format().number(amount)}${unit()}`;
-    if (range.min !== undefined && range.max !== undefined) return t().between({ min: show(range.min), max: show(range.max) });
-    if (range.min !== undefined) return `${t().from} ${show(range.min)}`;
-    return range.max !== undefined ? `${t().upTo} ${show(range.max)}` : "";
+  const presets = () => props.definition.presets.map((range) => ({ value: rangeCode(range), label: words.range(range), range }));
+  const shown = (bound: Bound) => {
+    const amount = bound === "from" ? props.value?.min : props.value?.max;
+    return amount === undefined ? undefined : words.amount(amount);
   };
   return (
-    <div class="k2-fed-body">
-      <Show when={props.definition.presets.length > 0}>
-        <div class="k2-fed-presets">
-          <For each={props.definition.presets}>
-            {(range) => (
-              <Button
-                pressed={props.value?.min === range.min && props.value?.max === range.max}
-                onClick={() => {
-                  setMin(range.min?.toString() ?? "");
-                  setMax(range.max?.toString() ?? "");
-                  setRejected(!props.onChange(range));
-                }}
-              >
-                {presetLabel(range)}
-              </Button>
-            )}
-          </For>
-        </div>
+    <div class="k2-fed-body" data-flush="">
+      <Show when={presets().length > 0}>
+        <Options
+          label={props.definition.label}
+          options={presets()}
+          multiple={false}
+          value={props.value ? [rangeCode(props.value)] : []}
+          possible={(code) => {
+            const preset = presets().find((entry) => entry.value === code);
+            return preset !== undefined && props.possible(preset.range);
+          }}
+          onChange={(next) => {
+            const preset = presets().find((entry) => entry.value === next[0]);
+            if (preset) setRejected(!props.onChange(preset.range));
+          }}
+        />
+        <div class="k2-fed-sub">{t().customAmount}</div>
       </Show>
-      <div class="k2-fed-range">
-        <EditField
-          label={t().from_}
-          type="number"
-          value={min()}
-          unit={props.definition.unit}
-          invalid={invalid() || rejected()}
-          onCommit={(text, unreadable) => {
-            if (unreadable) return setRejected(true);
-            setMin(text);
-            commit();
-          }}
-        />
-        <span class="k2-fed-dash" aria-hidden="true">
-          –
-        </span>
-        <EditField
-          label={t().to}
-          type="number"
-          value={max()}
-          unit={props.definition.unit}
-          invalid={invalid() || rejected()}
-          onCommit={(text, unreadable) => {
-            if (unreadable) return setRejected(true);
-            setMax(text);
-            commit();
-          }}
-        />
+      <div class="k2-fed-bounds" role="group" aria-label={t().customAmount}>
+        <For each={["from", "to"] as const}>
+          {(bound) => (
+            <BoundEntry
+              label={bound === "from" ? t().atLeast : t().atMost}
+              shown={shown(bound)}
+              onStep={props.onBound && (() => props.onBound?.(bound))}
+            >
+              {(close) => (
+                <RangeBound definition={props.definition} value={props.value} bound={bound} onChange={props.onChange} onDone={close} />
+              )}
+            </BoundEntry>
+          )}
+        </For>
       </div>
-      <Show when={invalid() || rejected()}>
+      <Show when={rejected()}>
         <p class="k2-fed-error" role="alert">
-          {invalid() ? t().rangeInvalid : t().valueRejected}
+          {t().valueRejected}
         </p>
       </Show>
     </div>
@@ -1771,7 +1873,11 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
   const choices = () => sortChoices(props.query, props.state, t());
   const title = () => {
     const current = field();
-    if (current && props.place?.bound) return `${current.definition.label} · ${props.place.bound === "from" ? t().from_ : t().to}`;
+    const bound = props.place?.bound;
+    if (current && bound) {
+      const words = current.definition.kind === "numberRange" ? [t().atLeast, t().atMost] : [t().from_, t().to];
+      return `${current.definition.label} · ${bound === "from" ? words[0] : words[1]}`;
+    }
     return (
       current?.definition.label ?? (props.place?.display === "sort" ? t().sort : props.place?.display === "group" ? t().group : t().filters)
     );
@@ -1878,9 +1984,9 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
             {(current) => (
               <Show
                 when={(() => {
-                  const period = periodOf(current().definition);
+                  const definition = current().definition;
                   const bound = props.place?.bound;
-                  return period && bound ? { period, bound } : undefined;
+                  return bound && (periodOf(definition) || definition.kind === "numberRange") ? { definition, bound } : undefined;
                 })()}
                 fallback={
                   <Editor
@@ -1900,15 +2006,35 @@ const Sheet = <F extends Fields, S extends string, G extends string>(props: {
               >
                 {(step) => (
                   <div class="k2-fsheet-pick">
-                    <BoundPicker
-                      sheet
-                      definition={step().period}
-                      value={periodValue(filters()[current().key])}
-                      bound={step().bound}
-                      timeZone={props.timeZone}
-                      onChange={(value) => props.onField(current().key, value)}
-                      onDone={() => props.onPlace({ field: current().key })}
-                    />
+                    <Show
+                      when={periodOf(step().definition)}
+                      fallback={
+                        <Show when={rangeOf(step().definition)}>
+                          {(range) => (
+                            <RangeBound
+                              sheet
+                              definition={range()}
+                              value={rangeValue(filters()[current().key])}
+                              bound={step().bound}
+                              onChange={(value) => props.onField(current().key, value)}
+                              onDone={() => props.onPlace({ field: current().key })}
+                            />
+                          )}
+                        </Show>
+                      }
+                    >
+                      {(period) => (
+                        <BoundPicker
+                          sheet
+                          definition={period()}
+                          value={periodValue(filters()[current().key])}
+                          bound={step().bound}
+                          timeZone={props.timeZone}
+                          onChange={(value) => props.onField(current().key, value)}
+                          onDone={() => props.onPlace({ field: current().key })}
+                        />
+                      )}
+                    </Show>
                   </div>
                 )}
               </Show>
