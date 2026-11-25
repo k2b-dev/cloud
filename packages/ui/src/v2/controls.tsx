@@ -172,6 +172,8 @@ export type InputProps = {
   ref?: HTMLInputElement | HTMLTextAreaElement | ((element: HTMLInputElement | HTMLTextAreaElement) => void);
   /** At the end inside the field: a symbol, or a ghost icon button such as the filter of a search. */
   end?: JSX.Element;
+  /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
+  disabled?: boolean;
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -193,12 +195,14 @@ export const Input = (props: InputProps) => {
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
     "aria-describedby": field?.described,
     required: field?.required || undefined,
+    disabled: props.disabled,
   });
   return (
     <span
       class="k2-input"
       data-k2-part="Input"
       data-invalid={field?.invalid ? "" : undefined}
+      data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
     >
@@ -366,7 +370,12 @@ export const Check = (props: CheckProps) => {
   const checked = () => (props.onChange ? props.checked : own());
   const set = () => checked() === true || checked() === "mixed";
   return (
-    <label class="k2-choice" data-k2-part="Check" data-switch={props.switch ? "" : undefined}>
+    <label
+      class="k2-choice"
+      data-k2-part="Check"
+      data-switch={props.switch ? "" : undefined}
+      data-disabled={props.disabled ? "" : undefined}
+    >
       <span class="k2-mark">
         <input
           class="k2-mark-input"
@@ -437,6 +446,8 @@ export type ChoiceProps = {
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
   onChange?: (value: string) => void;
+  /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
+  disabled?: boolean;
 };
 
 /**
@@ -467,10 +478,11 @@ const ChoiceGroup = (props: ChoiceProps) => {
       aria-label={field ? undefined : props.label}
       aria-labelledby={field?.label}
       aria-describedby={field?.described}
+      aria-disabled={props.disabled ? "true" : undefined}
     >
       <For each={options()}>
         {(option) => (
-          <label class="k2-choice">
+          <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
             <span class="k2-mark">
               <input
                 class="k2-mark-input"
@@ -479,6 +491,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 value={option.value}
                 checked={option.value === value()}
                 required={field?.required || undefined}
+                disabled={props.disabled}
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);

@@ -74,7 +74,8 @@ group use `Text`, `Table`, `Facts`, `Row`.
 
 ### `2 primary buttons (…)` (outline)
 
-One filled action per page. The others: default (framed), `ghost`, or
+One filled action per surface: the page, and each open dialog or sheet
+(`in dialog "…"` names which). The others: default (framed), `ghost`, or
 `text` in heads and row ends.
 
 ### `the primary action is hidden at this width` (outline at 390 px)

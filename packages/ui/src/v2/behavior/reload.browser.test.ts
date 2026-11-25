@@ -41,6 +41,12 @@ const normalized = (page: Page, html?: string) =>
     const walk = (node: Node): string => {
       if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? "";
       if (!(node instanceof Element)) return "";
+      // Core's `bindHold` sets two style properties on the item it binds: `--hold-delay` for CSS and, against iOS's
+      // long-press callout, `-webkit-touch-callout`. Neither is painted; both are left out here.
+      if (node instanceof HTMLElement) {
+        node.style.removeProperty("--hold-delay");
+        node.style.removeProperty("-webkit-touch-callout");
+      }
       // The server writes an input's value as an attribute, the client as a property; an emptied style is no style.
       const input = node instanceof HTMLInputElement;
       const attrs = [...node.attributes]

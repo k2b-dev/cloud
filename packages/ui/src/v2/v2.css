@@ -109,6 +109,7 @@
 
   /* the four type roles and three weights */
   --k2-font: "IBM Plex Sans", system-ui, sans-serif;
+  --k2-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --k2-t-meta: 400 12px/16px var(--k2-font);
   --k2-t-row: 400 13px/20px var(--k2-font);
   --k2-t-body: 400 14px/20px var(--k2-font);
@@ -1326,7 +1327,7 @@
   background: var(--k2-surface);
 }
 .k2-ui .k2-table[data-grid] tr:last-child td {
-  border-bottom: var(--k2-hairline);
+  border-bottom: var(--k2-table-end, var(--k2-hairline));
 }
 .k2-ui .k2-table[data-grid] :is(th, td)[data-sticky] {
   position: sticky;
@@ -1375,13 +1376,37 @@
 .k2-ui .k2-table[data-grid] td:not([data-select]):hover {
   box-shadow: inset 0 0 0 1px var(--k2-line-control);
 }
-.k2-ui .k2-table[data-grid] th[aria-sort] {
+/* The sorted column carries an arrow after its words and darker words (tabelle.html "Sortiert"). A head that sorts is
+   its words as a link or button: no frame (it is a head, not a control in a row), darker under the pointer, the ring
+   of a link on focus. */
+.k2-ui .k2-table th[aria-sort] {
   color: var(--k2-text);
 }
-.k2-ui .k2-table[data-grid] th > .k2-icon {
+.k2-ui .k2-table th > .k2-icon,
+.k2-ui .k2-th-sort > .k2-icon {
   font-size: 12px;
   margin-left: 4px;
   vertical-align: -1px;
+}
+.k2-ui .k2-th-sort {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  text-decoration: none;
+  text-align: inherit;
+  white-space: nowrap;
+  cursor: default;
+}
+.k2-ui .k2-th-sort:hover {
+  color: var(--k2-text);
+}
+.k2-ui .k2-th-sort:focus-visible {
+  outline: 2px solid var(--k2-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 .k2-ui .k2-table[data-grid] tr[data-group] > td {
   height: var(--k2-h-columns);
@@ -1484,9 +1509,11 @@
 }
 
 /* ── Facts: label quiet 12, value 13, 32 px per row, copy at the value ──────────────────────────────────────── */
+/* the label column takes the longest label, at least 80 px (short labels keep the values on one edge) and at most
+   160 px, where a longer label wraps */
 .k2-ui .k2-facts {
   display: grid;
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr);
   gap: 0 8px;
   padding: 0 var(--k2-edge);
   align-items: start;
@@ -1501,6 +1528,7 @@
   line-height: 20px;
   color: var(--k2-subtle);
   padding: 6px 0;
+  max-width: 160px;
 }
 .k2-ui .k2-fact-pair > dd {
   display: flex;
@@ -1514,6 +1542,20 @@
 .k2-ui .k2-fact-value {
   flex: 1;
   min-width: 0;
+}
+/* a value read sign by sign (a token, an ID): monospace, broken at any sign, selected whole by one click */
+.k2-ui .k2-fact-value[data-mono] {
+  font-family: var(--k2-font-mono);
+  word-break: break-all;
+  -webkit-user-select: all;
+  user-select: all;
+}
+/* the quiet word under it is no part of the value: selected and broken as text */
+.k2-ui .k2-fact-value[data-mono] > small {
+  font-family: var(--k2-font);
+  word-break: normal;
+  -webkit-user-select: text;
+  user-select: text;
 }
 .k2-ui .k2-fact-value > small {
   display: block;
@@ -1738,6 +1780,23 @@
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 16%, var(--k2-surface));
   color: var(--k2-c, var(--k2-n600));
 }
+/* A picture lies over the initials in the same round place, so nothing moves while it loads or when it fails; once it
+   shows, the initials under it leave (a picture may be transparent). */
+.k2-ui .k2-av[data-image] {
+  position: relative;
+  overflow: hidden;
+}
+/* the places set the colour of the initials, so they leave by their fill, which no place sets */
+.k2-ui .k2-av[data-image="shown"] {
+  -webkit-text-fill-color: transparent;
+}
+.k2-ui .k2-av > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 /* the bar sits in the line of its words, on their middle; the words may wrap under it on a narrow column */
 .k2-ui .k2-progress {
   display: inline;
@@ -1783,8 +1842,39 @@
   border-color: var(--k2-blue);
 }
 .k2-ui .k2-btn:disabled,
-.k2-ui .k2-btn[aria-disabled="true"] {
+.k2-ui .k2-btn[aria-disabled="true"]:not([aria-busy]) {
   opacity: 0.5;
+}
+/* Busy: the sign turns over the label, which keeps its place unseen, so the button keeps its width; the button keeps
+   its look (it is not off, its deed is under way). */
+.k2-ui .k2-btn[data-busy] {
+  position: relative;
+}
+.k2-ui .k2-btn[data-busy] > :not(.k2-btn-busy) {
+  opacity: 0;
+}
+.k2-ui .k2-btn-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.k2-ui .k2-btn-busy > .k2-icon {
+  animation: k2-spin 900ms linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-btn-busy > .k2-icon {
+    animation: none;
+  }
+}
+@keyframes k2-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .k2-ui .k2-btn[data-variant="primary"] {
   background: var(--k2-blue);
@@ -1946,6 +2036,20 @@
 }
 .k2-ui .k2-input[data-invalid] {
   border-color: var(--k2-bad);
+}
+/* A disabled field is a grey well with a light edge, also when it is invalid (its message stays), so it never reads
+   as one to fill; the outer size stays. */
+.k2-ui .k2-input[data-disabled] {
+  background: var(--k2-n100);
+  border-color: var(--k2-line);
+}
+.k2-ui .k2-input[data-disabled] > :is(input, textarea) {
+  color: var(--k2-subtle);
+  -webkit-text-fill-color: var(--k2-subtle);
+}
+/* a box, a switch or the options of a choice that cannot be changed now: dimmed like a disabled button */
+.k2-ui .k2-choice[data-disabled] {
+  opacity: 0.5;
 }
 .k2-ui .k2-input > input,
 .k2-ui .k2-input > textarea {
@@ -2524,6 +2628,10 @@
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
+/* a way that cannot be taken now: dimmed like a disabled button */
+.k2-ui .k2-sec-link:is(:disabled, [aria-disabled="true"]) {
+  opacity: 0.5;
+}
 /* … and in a side column a quiet row with its summary ("All details · Bank, Person ›") */
 .k2-ui .k2-pane[data-side] .k2-sec-link {
   align-self: stretch;
@@ -2862,8 +2970,14 @@
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
-  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child {
+  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
+  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
     border-bottom: 0;
+  }
+  /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
+  /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+  .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
+    --k2-table-end: 0;
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > :not([data-keep]) {
     display: none;
