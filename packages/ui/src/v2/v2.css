@@ -3565,7 +3565,7 @@
   align-self: center;
   display: block;
   padding: 12px;
-  background: #fff;
+  background: var(--k2-white);
   border: var(--k2-hairline);
   border-radius: var(--k2-r-control);
   line-height: 0;
