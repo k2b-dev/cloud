@@ -5,6 +5,7 @@ import {
   bar,
   barGauge,
   boxplot,
+  type ChartDatum,
   charts,
   computeBoxStats,
   computeDomain,
@@ -12,6 +13,7 @@ import {
   // helpers
   escapeXml,
   extendDomainToNice,
+  funnel,
   gauge,
   heatmap,
   histogram,
@@ -2282,6 +2284,366 @@ describe("charts.stateTimeline", () => {
   });
 });
 
+describe("charts.funnel", () => {
+  const stages = [
+    { label: "Besucher", value: 12400 },
+    { label: "Registriert", value: 4960 },
+    { label: "Aktiviert", value: 2730 },
+    { label: "Abo abgeschlossen", value: 820 },
+    { label: "Verlängert", value: 610 },
+  ];
+  const compare = { label: "Durchschnitt", values: [31000, 10850, 6510, 2480, 1710] };
+  const decode = (svg: string): ChartDatum[] =>
+    [...svg.matchAll(/data-chart-datum="([^"]+)"/g)].map((match) =>
+      JSON.parse(
+        match[1]!
+          .replaceAll("&quot;", '"')
+          .replaceAll("&apos;", "'")
+          .replaceAll("&#39;", "'")
+          .replaceAll("&lt;", "<")
+          .replaceAll("&gt;", ">")
+          .replaceAll("&amp;", "&"),
+      ),
+    );
+  const field = (datum: ChartDatum, key: string) => datum.values.find((value) => value.key === key);
+  const rects = (svg: string) => [...svg.matchAll(/<rect class="stdlib-chart-funnel-bar [^"]*"[^>]*>/g)].map((match) => match[0]);
+  const attr = (tag: string, name: string) => Number(tag.match(new RegExp(`\\b${name}="([^"]+)"`))![1]);
+  const paths = (svg: string, kind: "bar" | "compare") =>
+    [...svg.matchAll(new RegExp(`<path class="stdlib-chart-funnel-${kind}[^"]*" d="([^"]+)"`, "g"))].map((match) =>
+      [...match[1]!.matchAll(/[ML](-?[\d.]+),(-?[\d.]+)/g)].map((point) => [Number(point[1]), Number(point[2])]),
+    );
+
+  it("exports the renderer through the namespace and package root", async () => {
+    const { charts: rootCharts, funnel: rootFunnel } = await import("./index");
+    expect(typeof funnel).toBe("function");
+    expect(charts.funnel).toBe(funnel);
+    expect(rootFunnel).toBe(funnel);
+    expect(rootCharts.funnel).toBe(funnel);
+  });
+
+  it("inspects each stage with its source index, value, share and previous step", () => {
+    const data = decode(funnel({ stages, inspect: true }));
+    expect(data).toHaveLength(5);
+    expect(data.map((datum) => datum.role)).toEqual(Array(5).fill("item"));
+    expect(data.map((datum) => datum.index)).toEqual([0, 1, 2, 3, 4]);
+    data.forEach((datum, i) => {
+      expect(datum.label).toBe(stages[i]!.label);
+      expect(field(datum, "value")?.value).toBe(stages[i]!.value);
+      expect(field(datum, "share")?.value).toBeCloseTo(stages[i]!.value / stages[0]!.value);
+      if (i === 0) expect(field(datum, "step")).toBeUndefined();
+      else expect(field(datum, "step")?.value).toBeCloseTo(stages[i]!.value / stages[i - 1]!.value);
+    });
+  });
+
+  it("supports conversion relative to the start or no step conversion", () => {
+    const svg = funnel({ stages, conversion: "first", inspect: true });
+    expect(svg).toContain("of start");
+    decode(svg)
+      .slice(1)
+      .forEach((datum, i) => {
+        expect(field(datum, "step")?.value).toBeCloseTo(stages[i + 1]!.value / stages[0]!.value);
+      });
+    const firstCompare = decode(funnel({ stages, compare, conversion: "first", inspect: true }));
+    expect(field(firstCompare[2]!, "compareStep")?.value).toBeCloseTo(6510 / 31000);
+    for (const comparison of [undefined, compare]) {
+      const none = funnel({ stages, compare: comparison, conversion: "none", inspect: true });
+      expect(none).not.toContain("continue");
+      expect(decode(none).every((datum) => !field(datum, "step") && !field(datum, "compareStep") && !field(datum, "deviation"))).toBe(true);
+    }
+  });
+
+  it("formats German numbers and percentages", () => {
+    const svg = funnel({ stages, locale: "de" });
+    expect(svg).toContain("12.400");
+    expect(svg).toContain("55\u00a0%");
+  });
+
+  it("compares each series against its own start, with one tick per stage and signed pp", () => {
+    const svg = funnel({ stages, compare, inspect: true });
+    const data = decode(svg);
+    expect(field(data[0]!, "share")?.value).toBe(1);
+    expect(field(data[0]!, "compareShare")?.value).toBe(1);
+    expect(count(svg, 'class="stdlib-chart-funnel-tick"') - 1).toBe(5); // Exclude legend tick.
+    data.forEach((datum, i) => {
+      expect(field(datum, "compareValue")?.value).toBe(compare.values[i]!);
+      expect(field(datum, "compareShare")?.value).toBeCloseTo(compare.values[i]! / compare.values[0]!);
+      if (i === 0) {
+        expect(field(datum, "compareStep")).toBeUndefined();
+        expect(field(datum, "deviation")).toBeUndefined();
+      } else {
+        const step = stages[i]!.value / stages[i - 1]!.value;
+        const compareStep = compare.values[i]! / compare.values[i - 1]!;
+        expect(field(datum, "compareStep")?.value).toBeCloseTo(compareStep);
+        expect(field(datum, "deviation")?.value).toBe(Math.round((step - compareStep) * 1e4) / 100);
+      }
+    });
+    expect(field(data[1]!, "deviation")).toEqual({ key: "deviation", value: 5, formatted: "+5 pp" });
+    expect(field(data[2]!, "deviation")).toEqual({ key: "deviation", value: -4.96, formatted: "−5 pp" });
+    expect(svg).toContain("avg 35%");
+    expect(svg).toContain("+5 pp");
+    expect(svg).toContain("−5 pp");
+    const equal = decode(funnel({ stages, compare: { label: "Same", values: stages.map((stage) => stage.value) }, inspect: true }));
+    expect(field(equal[1]!, "deviation")?.formatted).toBe("±0 pp");
+  });
+
+  it("draws trapezoids symmetric around one center", () => {
+    const marks = paths(funnel({ stages, shape: "funnel" }), "bar");
+    expect(marks).toHaveLength(5);
+    const cx = (marks[0]![0]![0]! + marks[0]![1]![0]!) / 2;
+    for (const mark of marks) {
+      expect((mark[0]![0]! + mark[1]![0]!) / 2).toBeCloseTo(cx);
+      expect((mark[2]![0]! + mark[3]![0]!) / 2).toBeCloseTo(cx);
+      expect(mark[0]![0]).toBeLessThan(mark[1]![0]!);
+    }
+  });
+
+  it("splits comparison trapezoids on opposite sides of the same center axis", () => {
+    const svg = funnel({ stages, compare, shape: "funnel", inspect: true });
+    const main = paths(svg, "bar");
+    const comparison = paths(svg, "compare");
+    expect(main).toHaveLength(5);
+    expect(comparison).toHaveLength(5);
+    const cx = decode(svg)[0]!.anchor[0];
+    main.forEach((mark, i) => {
+      expect(Math.max(...mark.map((point) => point[0]!))).toBe(cx - 1);
+      expect(Math.min(...comparison[i]!.map((point) => point[0]!))).toBe(cx + 1);
+      expect(decode(svg)[i]!.anchor[0]).toBe(cx);
+    });
+  });
+
+  it("draws rising stages longer, with absolute values or comparison shares", () => {
+    const rising = [
+      { label: "Start", value: 100 },
+      { label: "Rise", value: 140 },
+    ];
+    for (const comparison of [undefined, { label: "Average", values: [1000, 1200] }]) {
+      const svg = funnel({ stages: rising, compare: comparison });
+      const bars = rects(svg);
+      expect(bars).toHaveLength(2);
+      expect(attr(bars[1]!, "width")).toBeGreaterThan(attr(bars[0]!, "width"));
+      expect(attr(bars[1]!, "width") / attr(bars[0]!, "width")).toBeCloseTo(1.4, 2);
+    }
+  });
+
+  it("renders an empty state and keeps invalid or missing values out of inspection", () => {
+    expect(funnel({ stages: [] })).toContain("no data");
+    const invalid = [0, NaN, Infinity, -1, 20].map((value, i) => ({ label: `Stage ${i}`, value }));
+    for (const shape of ["bars", "funnel"] as const) {
+      for (const comparison of [
+        undefined,
+        { label: "Short", values: [100, 40] },
+        { label: "Long", values: [0, NaN, Infinity, -2, 30, 99] },
+      ]) {
+        const svg = funnel({ stages: invalid, compare: comparison, shape, inspect: true });
+        expect(svg).toContain("<svg");
+        expect(svg).not.toMatch(/NaN|Infinity/);
+        expect(svg).toContain("–");
+        const data = decode(svg);
+        expect(data).toHaveLength(5);
+        expect(data.every((datum) => !field(datum, "share") && !field(datum, "deviation"))).toBe(true);
+        for (const datum of data.slice(1, 4)) expect(field(datum, "value")).toBeUndefined();
+      }
+      const single = funnel({ stages: [stages[0]!], shape });
+      expect(single).not.toContain("continue");
+      expect(single).not.toMatch(/NaN|Infinity/);
+    }
+    const extra = { ...compare, values: [...compare.values, Infinity, 1e9] };
+    expect(funnel({ stages, compare: extra })).toBe(funnel({ stages, compare }));
+    const badCompare = funnel({ stages, compare: { label: "Invalid", values: [100, NaN, Infinity, -1] }, inspect: true });
+    expect(badCompare).not.toMatch(/NaN|Infinity/);
+    expect(count(badCompare, 'class="stdlib-chart-funnel-tick"') - 1).toBe(1);
+    expect(decode(badCompare).every((datum) => !field(datum, "deviation"))).toBe(true);
+    const short = funnel({ stages, compare: { label: "Short", values: [100, 40] }, inspect: true });
+    expect(count(short, 'class="stdlib-chart-funnel-tick"') - 1).toBe(2);
+    for (const datum of decode(short).slice(2)) {
+      for (const key of ["compareValue", "compareShare", "compareStep", "deviation"]) expect(field(datum, key)).toBeUndefined();
+    }
+  });
+
+  it("escapes visible labels and preserves their exact inspection value", () => {
+    const label = `<img src=x onerror=alert(1)>"'`;
+    const svg = funnel({ stages: [{ label, value: 1 }], inspect: true });
+    expect(svg).not.toContain("<img");
+    expect(svg).toContain("&lt;img");
+    expect(decode(svg)[0]!.label).toBe(label);
+  });
+
+  it("puts narrow labels above bars and shortens long labels beside values", () => {
+    const label = "W".repeat(100);
+    const svg = funnel({ stages: stages.map((stage) => ({ ...stage, label })), width: 360, locale: "de" });
+    const labels = [...svg.matchAll(/<text class="stdlib-chart-funnel-label"[^>]*>.*?<\/text>/g)].map((match) => match[0]);
+    const values = [...svg.matchAll(/<text class="stdlib-chart-funnel-value"[^>]*>.*?<\/text>/g)].map((match) => match[0]);
+    const bars = rects(svg);
+    expect(labels).toHaveLength(5);
+    labels.forEach((text, i) => {
+      expect(attr(text, "y")).toBeLessThan(attr(bars[i]!, "y"));
+      expect(attr(text, "y")).toBe(attr(values[i]!, "y"));
+      expect(text).toContain(`<title>${label}</title>`);
+      expect(text).toMatch(/<\/title>W+…<\/text>/);
+    });
+    // W is about 0.9em; leave room for the right-aligned "2.730 · 22 %" (~90px).
+    const shown = labels[2]!.match(/<\/title>(W+)…/)![1]!;
+    expect(attr(labels[2]!, "x") + shown.length * 13 * 0.9 + 8).toBeLessThan(attr(values[2]!, "x") - 90);
+    expect(values[2]!.replace(/<[^>]+>/g, "")).toBe("2.730 · 22\u00a0%");
+  });
+
+  it("applies plain-text step, comparison, deviation and start overrides", () => {
+    const labels = { step: "↓ {share} weiter", compare: "Mittel {share}", deviation: "Abstand {delta} Punkte", start: "Beginn" };
+    const svg = funnel({ stages, compare, labels, inspect: true });
+    expect(svg).toContain("↓ 40% weiter");
+    expect(svg).not.toContain("continue");
+    expect(svg).not.toContain("avg ");
+    expect(svg).toContain("Mittel 35%");
+    expect(svg).toContain("Abstand +5 Punkte");
+    expect(field(decode(svg)[1]!, "deviation")?.formatted).toBe("Abstand +5 Punkte");
+    expect(funnel({ stages, shape: "funnel", labels })).toContain("Beginn");
+    expect(funnel({ stages, shape: "funnel" })).toContain(">Start</text>");
+    expect(funnel({ stages, labels })).not.toContain("Beginn");
+    expect(svg).not.toContain("Beginn");
+  });
+
+  it("omits overflowing ratios instead of corrupting scale and inspection", () => {
+    const extreme = [
+      { label: "Tiny", value: 1e-200 },
+      { label: "Huge", value: 1e200 },
+    ];
+    for (const shape of ["bars", "funnel"] as const) {
+      const svg = funnel({ stages: extreme, compare: { label: "Average", values: [100, 40] }, shape, inspect: true });
+      expect(svg).not.toMatch(/NaN|Infinity|null/);
+      const data = decode(svg);
+      expect(data).toHaveLength(2);
+      expect(field(data[1]!, "share")).toBeUndefined();
+      expect(field(data[1]!, "compareShare")?.value).toBeCloseTo(0.4);
+    }
+  });
+
+  it("omits deviations that overflow and keeps comparison ticks inside the viewport", () => {
+    const svg = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e305 },
+      ],
+      compare: { label: "Average", values: [1, 1] },
+      inspect: true,
+    });
+    expect(svg).not.toMatch(/NaN|Infinity|∞|null/);
+    const deviation = field(decode(svg)[1]!, "deviation")?.value;
+    expect(typeof deviation === "number" && Number.isFinite(deviation)).toBe(true);
+    for (const width of [480, 360]) {
+      const chart = funnel({ stages: stages.slice(0, 2), compare: { label: "Average", values: [100, 100] }, width });
+      const height = Number(chart.match(/viewBox="0 0 [\d.]+ ([\d.]+)"/)![1]);
+      for (const tick of [...chart.matchAll(/<rect class="stdlib-chart-funnel-tick"[^>]*>/g)].map((match) => match[0])) {
+        expect(attr(tick, "x")).toBeGreaterThanOrEqual(0);
+        expect(attr(tick, "x") + attr(tick, "width")).toBeLessThanOrEqual(width);
+        expect(attr(tick, "y") + attr(tick, "height")).toBeLessThanOrEqual(height);
+      }
+    }
+  });
+
+  it("fits rising split shares and full-width labels inside their columns", () => {
+    const rising = [
+      { label: "A", value: 1 },
+      { label: "B", value: 100 },
+    ];
+    const svg = funnel({ stages: rising, compare: { label: "Average", values: [1, 100] }, shape: "funnel" });
+    const share = svg.match(/<text class="stdlib-chart-funnel-compare-value" x="([\d.]+)"[^>]*>10K%<\/text>/);
+    expect(share).not.toBeNull();
+    expect(Number(share![1]) + 4 * 13 * 0.9).toBeLessThanOrEqual(480);
+    const cjk = "顧客登録完了顧客登録完了顧客登録完了顧客登録完了顧客登録";
+    const narrow = funnel({ stages: [{ label: cjk, value: 2730 }], width: 360 });
+    expect(narrow).toContain(`<title>${cjk}</title>`);
+    const shown = narrow.match(/<\/title>([^<]+)…<\/text>/)![1]!;
+    expect([...shown].length * 13).toBeLessThan(360 - 90);
+  });
+
+  it("keeps empty trapezoids inspectable and extreme percentages compact", () => {
+    for (const comparison of [undefined, { label: "Average", values: [10, 0] }]) {
+      const svg = funnel({
+        stages: [
+          { label: "A", value: 10 },
+          { label: "B", value: 0 },
+        ],
+        compare: comparison,
+        shape: "funnel",
+        inspect: true,
+      });
+      const groups = [...svg.matchAll(/<g data-chart-role="item"[\s\S]*?<\/g>/g)].map((match) => match[0]);
+      expect(groups).toHaveLength(2);
+      for (const group of groups)
+        expect(group).toMatch(
+          /<rect class="stdlib-chart-funnel-hit" x="0" y="[\d.]+" width="480" height="[1-9][\d.]*" fill="transparent"\/>/,
+        );
+    }
+    expect(
+      funnel({
+        stages: [
+          { label: "A", value: 1 },
+          { label: "B", value: 1 },
+        ],
+        shape: "funnel",
+      }),
+    ).not.toContain('class="stdlib-chart-funnel-hit"');
+    const extreme = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e7 },
+        { label: "C", value: 2e12 },
+      ],
+      compare: { label: "Average", values: [1e9, 1] },
+      shape: "funnel",
+      width: 360,
+      inspect: true,
+    });
+    expect(extreme).toContain(">1B%</text>");
+    expect(extreme).toContain(">&lt;0.01%</text>");
+    expect(extreme).not.toContain("1,000,000,000%");
+    expect(field(decode(extreme)[2]!, "value")?.formatted).toBe("2T");
+    expect(field(decode(extreme)[2]!, "value")?.value).toBe(2e12);
+  });
+
+  it("bounds labels for extreme finite values with scientific notation", () => {
+    const svg = funnel({
+      stages: [
+        { label: "A", value: 1 },
+        { label: "B", value: 1e305 },
+      ],
+      compare: { label: "Average", values: [1, 1] },
+      inspect: true,
+    });
+    const text = svg.replace(/<style>[\s\S]*?<\/style>/, "").replace(/<title>[\s\S]*?<\/title>/g, "");
+    for (const run of text.matchAll(/>([^<]+)</g)) expect(run[1]!.length).toBeLessThan(40);
+    expect(svg).toContain("1E305");
+    expect(svg).toContain("1E307%");
+  });
+
+  it("fits long legend labels inside the SVG and keeps the full text", () => {
+    const main = "Current month";
+    const other = "Average conversion rate over the previous twelve months";
+    for (const shape of ["bars", "funnel"] as const) {
+      for (const width of [480, 360]) {
+        const svg = funnel({ stages, label: main, compare: { label: other, values: compare.values }, shape, width });
+        const legends = [...svg.matchAll(/<text class="stdlib-chart-funnel-legend"[^>]*>.*?<\/text>/g)].map((match) => match[0]);
+        expect(legends).toHaveLength(2);
+        const right = legends.find((text) => text.includes(other.slice(0, 6)))!;
+        expect(right).toContain(`<title>${other}</title>`);
+        expect(right).toContain("…");
+      }
+    }
+  });
+
+  it("keeps all four variants themeable, deterministic and free of IDs", () => {
+    for (const shape of ["bars", "funnel"] as const) {
+      for (const comparison of [undefined, compare]) {
+        const opts = { stages, shape, compare: comparison, inspect: true };
+        const svg = funnel(opts);
+        expect(svg).toBe(funnel(opts));
+        expect(svg).not.toMatch(/\bid\s*=/);
+        expect(svg.replace(/<style>[\s\S]*?<\/style>/g, "")).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+      }
+    }
+  });
+});
+
 // =====================================================================
 // namespace
 // =====================================================================
@@ -2302,6 +2664,7 @@ describe("charts namespace", () => {
     expect(charts.heatmap).toBe(heatmap);
     expect(charts.map).toBe(map);
     expect(charts.stateTimeline).toBe(stateTimeline);
+    expect(charts.funnel).toBe(funnel);
   });
 });
 

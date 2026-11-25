@@ -993,7 +993,7 @@ is not bounded by the compiler.
 
 SVG chart generators for plots and dashboard panels: scatter, line, bar, pie,
 donut, sparkline, histogram, boxplot, gauge, barGauge, stat, heatmap,
-map, stateTimeline. All return SVG strings — inject into the DOM, write to disk, or
+map, stateTimeline, funnel. All return SVG strings — inject into the DOM, write to disk, or
 send over the wire. Pure native, no peer dependencies. Stylable via CSS classes
 and CSS custom properties.
 
@@ -1162,6 +1162,22 @@ charts.map(opts: ChartOptions & {
   legend?: boolean;
 }): string
 
+charts.funnel(opts: Omit<ChartOptions, "padding"> & {
+  stages: { label: string; value: number }[];
+  label?: string;                  // main series legend label with compare
+  compare?: { label: string; values: readonly number[] };
+  conversion?: "previous" | "first" | "none"; // default "previous"
+  shape?: "bars" | "funnel";       // default "bars"
+  locale?: string;                 // default "en"
+  labels?: {
+    step?: string;                 // "↓ {share} continue"; "of start" with first
+    compare?: string;              // "avg {share}"
+    deviation?: string;            // "{delta} pp" (signed whole points)
+    start?: string;                // "Start"; funnel shape without compare only
+  };
+  inspect?: boolean;
+}): string                         // width 480; height is a content minimum
+
 charts.stateTimeline(opts: ChartOptions & {
   rows: { label: string; intervals: { from: number; to: number; state: string; label?: string }[] }[];
   states?: { state: string; label?: string; color?: string }[];
@@ -1240,6 +1256,12 @@ charts.gauge({
 charts.barGauge({ data: [{ label: "Disk", value: 91, unit: "%" }] });
 charts.stat({ label: "Requests / min", value: 12482, delta: 8.4, sparkline: weeklyRequests });
 charts.heatmap({ data: [{ x: "12:00", y: "p95", value: 89 }], showValues: true });
+charts.funnel({
+  stages: [{ label: "Besucher", value: 12400 }, { label: "Registriert", value: 4960 }],
+  compare: { label: "Durchschnitt", values: [31000, 10850] },
+  locale: "de", labels: { step: "↓ {share} weiter", compare: "Ø {share}" },
+  inspect: true,
+});
 charts.map({
   series: [{
     label: "Healthy",
@@ -1273,7 +1295,8 @@ Charts ship with embedded default CSS. Override via:
 
 Dashboard panel class families are intentionally semantic and styleable:
 `.stdlib-chart-gauge-*`, `.stdlib-chart-bar-gauge-*`, `.stdlib-chart-stat-*`,
-`.stdlib-chart-heatmap-*`, `.stdlib-chart-map-*`, and `.stdlib-chart-state-*`.
+`.stdlib-chart-heatmap-*`, `.stdlib-chart-map-*`, `.stdlib-chart-state-*`, and
+`.stdlib-chart-funnel-*`.
 
 Pass `className` to scope per-instance styles.
 
@@ -1281,6 +1304,10 @@ Pass `className` to scope per-instance styles.
 - All chart functions return SVG strings, not DOM nodes — caller injects via `innerHTML` or writes to disk.
 - Embedded `<style>` block lists `.stdlib-chart-series-N` rules BEFORE shape-specific rules so shape rules (`fill: none` on line, `stroke: white` on slice/point, `stroke: none` on legend label) win on specificity tie.
 - Empty data renders an empty-state SVG with `.stdlib-chart-empty-text` — except sparkline, which renders a stable-size empty SVG (no text, preserves inline layout).
+- `funnel` without comparison draws lengths as `value / max(values)`, so rising stages stay longer. With `compare`, both series show shares of their own first stage, scaled to the largest share across both; absolute counts stay in the inspection datum/tooltip. Bars use ticks, while `shape: "funnel"` splits the series left/right of one center axis.
+- Funnel conversion defaults to the previous stage; `"first"` uses the start and `"none"` hides steps. Deviation is main minus comparison conversion in percentage points, rounded to two decimals in data and whole points in text. Label templates substitute locale-formatted `{share}` or signed `{delta}`. Below width 420, bars place shortened labels above the bar; full labels and legend names remain in `<title>`. Counts ≥ 1e9 and shares ≥ 10,000 % use compact notation (scientific from 1e15); shares below 0.01 % read `<0.01%`.
+- Funnel inspection emits one `"item"` per stage with its source index and keys `value`, `share`, `step`, plus `compareValue`, `compareShare`, `compareStep`, `deviation` with comparison. Non-computable keys are omitted; step keys require a later stage and enabled conversion. Negative/non-finite values and ratios with a zero denominator show `–`; missing/invalid comparison positions get no mark or deviation, and extra positions are ignored. The funnel shape adds a transparent row-wide `.stdlib-chart-funnel-hit` rect per datum (only with `inspect`) so zero-width stages stay inspectable. Empty stages show `no data`.
+- Funnel main marks use `--stdlib-chart-c1`, comparison marks use `currentColor`, and deviation colors match stat deltas; override `.stdlib-chart-funnel-*` classes.
 - Dashboard panels are intentionally static SVGs: `gauge`/`barGauge`/`stat` show reduced values, `heatmap` expects already-bucketed `{x,y,value}` cells, and `stateTimeline` expects explicit `{from,to,state}` intervals.
 - `map` uses an embedded, simplified Natural Earth 1:110m world land path without Antarctica and an equirectangular projection. It filters out-of-range coordinates, escapes labels into SVG `<title>` elements, and leaves clustering or aggregation to the caller.
 - `gauge` renders threshold colors as non-overlapping arc-gradient segments: a faint full scale plus an opaque value arc up to the current value. `showNeedle` is opt-in and should usually stay false for compact dashboards.

@@ -52,6 +52,16 @@ const fiveSlices = [
   { label: "Other", value: 6 },
 ];
 
+const funnelStages = [
+  { label: "Besucher", value: 12400 },
+  { label: "Registriert", value: 4960 },
+  { label: "Aktiviert", value: 2730 },
+  { label: "Abo abgeschlossen", value: 820 },
+  { label: "Verlängert", value: 610 },
+];
+const funnelCompare = { label: "Durchschnitt", values: [31000, 10850, 6510, 2480, 1710] };
+const funnelLabels = { step: "↓ {share} weiter", compare: "Ø {share}", deviation: "{delta} Pp.", start: "Start" };
+
 // Box-Muller for an approximately gaussian sample.
 const gauss = (mean: number, sd: number): number => {
   const u1 = Math.random();
@@ -64,6 +74,41 @@ const gauss = (mean: number, sd: number): number => {
 type Case = { name: string; title: string; svg: string };
 
 const cases: Case[] = [
+  {
+    name: "funnel-bars",
+    title: "Funnel — bars with step conversion",
+    svg: charts.funnel({ stages: funnelStages, locale: "de", labels: funnelLabels, inspect: true }),
+  },
+  {
+    name: "funnel-shape",
+    title: "Funnel — centered trapezoids",
+    svg: charts.funnel({ stages: funnelStages, shape: "funnel", locale: "de", labels: funnelLabels, inspect: true }),
+  },
+  {
+    name: "funnel-compare",
+    title: "Funnel — comparison ticks (C1), each series relative to its start",
+    svg: charts.funnel({
+      stages: funnelStages,
+      label: "Aktuell",
+      compare: funnelCompare,
+      locale: "de",
+      labels: funnelLabels,
+      inspect: true,
+    }),
+  },
+  {
+    name: "funnel-split",
+    title: "Funnel — split comparison (D1), shared center axis",
+    svg: charts.funnel({
+      stages: funnelStages,
+      label: "Aktuell",
+      compare: funnelCompare,
+      shape: "funnel",
+      locale: "de",
+      labels: funnelLabels,
+      inspect: true,
+    }),
+  },
   {
     name: "scatter",
     title: "Scatter — bubble chart, multi-series, autoVariant markers",
@@ -568,6 +613,10 @@ const card = (c: Case, idPrefix = ""): string =>
 
 const themedSubset: Case[] = cases.filter((c) =>
   [
+    "funnel-bars",
+    "funnel-shape",
+    "funnel-compare",
+    "funnel-split",
     "line",
     "bar-multicolor",
     "donut",
