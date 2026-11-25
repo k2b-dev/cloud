@@ -95,6 +95,7 @@ const uiMessages = i18n.define({
       edit: "Edit",
       sidebar: "Sidebar",
       showSidebar: "Show sidebar",
+      nothingSelected: "Nothing selected",
       yes: "Yes",
     },
     de: {
@@ -187,6 +188,7 @@ const uiMessages = i18n.define({
       edit: "Bearbeiten",
       sidebar: "Seitenleiste",
       showSidebar: "Seitenleiste zeigen",
+      nothingSelected: "Nichts ausgewählt",
       yes: "Ja",
     },
   },

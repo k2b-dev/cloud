@@ -15,6 +15,9 @@ const open = sources[1]!;
 export default function SourcesScreen() {
   return (
     <Workspace
+      // a detail opens beside the list: the sidebar keeps room for it, and its place says so while none is open
+      detail
+      detailEmpty={{ icon: "activity", text: "Keine Quelle ausgewählt" }}
       sidebar={
         <Nav
           title="Pulse"

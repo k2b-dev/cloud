@@ -65,6 +65,9 @@ const open = threads[0]!;
 export default function MailScreen() {
   return (
     <Workspace
+      // a detail opens beside the list: the sidebar keeps room for it, and its place says so while none is open
+      detail
+      detailEmpty={{ icon: "mail", text: "Keine Nachricht ausgewählt" }}
       sidebar={
         <Nav
           title="Mail"

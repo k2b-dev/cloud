@@ -27,7 +27,13 @@ The working surface of an app: one per screen.
 - `head`: a `Bar` across the main column (56 px).
 - `primary`: the main `Action`. It floats bottom right on the phone only;
   also put the same action as `Button variant="primary"` in the head end.
-- children: a `Pane` or a `Pane.Split`.
+- children: a `Pane` or a `Pane.Split`, written as JSX inside the Workspace
+  (a pane made before it, kept in a variable, is not counted).
+- `detail` (`true` or the detail's minimum, default 400) when a detail opens
+  beside the columns; `detailEmpty={{ icon, text }}` stands in its place while
+  none is open, so nothing moves when it opens. Keep the list's `width`.
+- Tablet: where the sidebar at its default does not fit beside every column
+  at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
 
 ### Pane
