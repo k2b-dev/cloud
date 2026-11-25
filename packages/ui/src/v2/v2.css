@@ -790,7 +790,8 @@
   border: var(--k2-hairline);
   border-radius: var(--k2-r-control);
   min-width: 0;
-  max-width: 100%;
+  /* a long name never makes one tile as wide as the row: it is cut in the middle (`Cut`) */
+  max-width: min(100%, 320px);
 }
 .k2-ui .k2-tile > span {
   display: flex;
@@ -806,6 +807,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Words cut in the middle: the start gives way with "…", the end (a domain, an extension) stays whole while it fits */
+.k2-ui .k2-cut {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.k2-ui .k2-cut > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-cut > span + span {
+  flex: none;
+  max-width: 100%;
 }
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */

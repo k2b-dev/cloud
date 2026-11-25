@@ -72,6 +72,46 @@ export const Text = (props: TextProps) => {
   );
 };
 
+export type CutProps = {
+  /** The words, such as an address or a file name. */
+  text: string;
+  /**
+   * What stays whole at the end when the words have no room: an address keeps its domain ("@example.com"), a file
+   * name its last letters and extension ("v12.3.pdf").
+   */
+  keep: "domain" | "extension";
+};
+
+/** How many characters at the end of `text` stay whole (see `CutProps.keep`). */
+export const cutTail = (text: string, keep: CutProps["keep"]): number => {
+  if (keep === "domain") {
+    const at = text.lastIndexOf("@");
+    return at > 0 ? text.length - at : 0;
+  }
+  const extension = /\.[\p{L}\p{N}]{1,8}$/u.exec(text);
+  if (!extension) return 0;
+  // the extension and a few letters before it (whole characters), so a version ("v12.3") survives the cut
+  const before = Array.from(text.slice(0, text.length - extension[0].length)).slice(-6).join("");
+  return extension[0].length + before.length;
+};
+
+/**
+ * Words cut in the middle where they have no room, so their end stays readable: "bob.lange-adr…@example.com",
+ * "Angebot_Holzwerk…nal_v3.pdf". Their whole words show on hover. Use it for addresses and file names in a row,
+ * a tile or a head; other text is cut at its end by the place it stands in.
+ */
+export const Cut = (props: CutProps) => {
+  const split = () => props.text.length - cutTail(props.text, props.keep);
+  return (
+    <span class="k2-cut" title={props.text}>
+      <span>{props.text.slice(0, split())}</span>
+      <Show when={split() < props.text.length}>
+        <span>{props.text.slice(split())}</span>
+      </Show>
+    </span>
+  );
+};
+
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
 
