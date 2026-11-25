@@ -8,10 +8,10 @@
     "./http": "./src/http.ts",
     "./node": "./src/node.ts",
     "./udp-client": "./src/udp-client.ts",
-    "./ui": "./src/ui/Speedtest.island.tsx",
+    "./pane": "./src/ui/SpeedtestPane.tsx",
+    "./state": "./src/ui/speedtest-state.ts",
     "./messages": "./src/ui/messages.ts",
-    "./format": "./src/ui/format.ts",
-    "./styles.css": "./src/ui/styles.css"
+    "./format": "./src/ui/format.ts"
   },
   "scripts": {
     "typecheck": "tsc --checkers 2 -p tsconfig.json --noEmit --pretty false"

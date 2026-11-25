@@ -1,5 +1,4 @@
-/* The shared component owns its utility scan; consumers only import this stylesheet. */
-@source "./**/*.{ts,tsx}";
+/* The v1 speed test of Tools (SpeedTestView.tsx); the app's own utility scan covers it. */
 
 .tools-speedtest { display: flex; flex-direction: column; gap: 1rem; min-width: 0; container-type: inline-size; }
 .tools-speedtest h2, .tools-speedtest p { margin: 0; }

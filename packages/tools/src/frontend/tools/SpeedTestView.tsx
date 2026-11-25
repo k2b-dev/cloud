@@ -1,15 +1,15 @@
+import type { Mode } from "@k2b/speedtest";
+import { formatSpeedTestReading, speedTestSparklineTooltip } from "@k2b/speedtest/format";
+import { type CliVariant, createSpeedtest } from "@k2b/speedtest/state";
 import { Button, Chart, CopyButton, DashboardPanel, ProgressBar, SegmentedControl, StatCell, StatGrid, useLocale } from "@k2b/ui";
 import { createUniqueId } from "solid-js";
-import type { Mode } from "../engine";
-import { formatSpeedTestReading, speedTestSparklineTooltip } from "./format";
-import { type CliVariant, createSpeedtest } from "./speedtest-state";
 
-export { speedTestMessages } from "./messages";
-export { type CliVariant, speedtestSnippet } from "./speedtest-state";
+export { speedTestMessages } from "@k2b/speedtest/messages";
+export { type CliVariant, speedtestSnippet } from "@k2b/speedtest/state";
 
 /**
- * The v1 screen of a measurement, kept while Tools still renders v1; the public site draws `SpeedtestPane` (v2). A
- * browser module (`.island.tsx`): Tools mounts it as its island through `@k2b/speedtest/ui`, and its charts need one.
+ * The v1 screen of the speed test in Tools, on the shared measurement of `@k2b/speedtest/state`; Tools' v2 rebuild
+ * replaces it with `SpeedtestPane`. Its island is `SpeedTest.island.tsx`.
  */
 export default function SpeedTest(props: { server?: string; enabled?: boolean; initialCliVariant?: CliVariant }) {
   const {
