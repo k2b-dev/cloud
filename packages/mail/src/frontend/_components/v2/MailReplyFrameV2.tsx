@@ -13,6 +13,10 @@ import type { MailV2Text } from "./mail-v2-messages";
  * waits under "More"), no pressed or pending state of a button (Formatting and a running Send show only through the
  * text they change and the status), no section heading in a menu (sections stand between lines), no choice of one in
  * a menu (a tick keeps the menu open, so the chosen entry carries a check and the menu closes as in v1).
+ *
+ * TODO(lane E, once #4109 at eb9de782de or later is in the pilot): menus get sections and real single choices; merge
+ * feat/mail-v2-reply-frame (commit 6bd1a24287: mode, sender and signature as choices under their headings, Send later
+ * as a section) instead of the check workaround. Once #4122 is on main: Formatting takes `Button pressed`.
  */
 export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: MailV2Text }) {
   const parts = () => props.parts;

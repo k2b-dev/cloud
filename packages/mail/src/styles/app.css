@@ -2313,6 +2313,21 @@
   min-height: 0;
   flex-basis: 0;
 }
+/* The lines above the text take no room, and no gap of the frame, while there is nothing to say. */
+.k2b-ui .mail-reply-frame-top:not(:has(> *)) {
+  display: none;
+}
+/* The signature stays as the resting composer shows it: right under the text, with no box of its own (v1's block
+   brings 22 px of edges), 13/20 in the subtle text colour. It still stands before the quote, as the sent mail has it. */
+.k2b-ui .mail-reply-frame-body .mail-inline-draft-signature:not([data-signature-sent-html]) {
+  margin-block: 0.375rem 0;
+  padding-block: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  color: var(--k2b-text-subtle);
+  white-space: pre-line;
+}
 .k2b-ui .mail-reply-box-pending,
 .k2b-ui .mail-reply-box-note,
 .k2b-ui .mail-reply-box-state {

@@ -522,11 +522,22 @@ describe("Mail on the v2 pilot in its live states", () => {
   test("the open composer keeps the place of the resting one and draws no second line", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 2200);
     try {
+      await page.locator(".k2-composer-signature").getByText("Tischlerei Solberg & Kramer").waitFor();
       const resting = await page.locator('[data-k2-part="Composer"]').boundingBox();
+      const restingSignature = await page.locator(".k2-composer-signature").boundingBox();
       await page.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
+      // The seed carries the sender's signature, as the server derives it; the frame shows it once it loaded.
+      const signature = page.locator('[data-k2-part="Canvas"] [data-mail-draft-signature]');
+      await signature.getByText("Tischlerei Solberg & Kramer").waitFor();
       await settled(page);
       const open = await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').boundingBox();
+      // The signature looks as it did at rest: the same edge and the same two quiet lines, no block of its own.
+      const openSignature = await signature.boundingBox();
+      expect({ left: openSignature?.x, height: openSignature?.height }).toEqual({
+        left: restingSignature?.x,
+        height: restingSignature?.height,
+      });
       // 8 px from the column's edges and 12 px below the summary, like the resting frame. Head and foot keep their
       // height; the text grows only by the quote of the answered message, which shows what goes along, and one line.
       expect({ left: open?.x, top: open?.y, width: open?.width }).toEqual({ left: resting?.x, top: resting?.y, width: resting?.width });

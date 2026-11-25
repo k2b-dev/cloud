@@ -25,6 +25,7 @@ const menuItem = (item: Exclude<DropdownItem, { items: unknown }>): MenuItem => 
   return {
     label: item.label,
     // A choice of one closes the menu as in v1, so the chosen one carries a check instead of v2's tick, which stays open.
+    // TODO(lane E): a real single choice once #4109 (eb9de782de) is in the pilot; see MailReplyFrameV2.
     icon: "choice" in item && item.choice === "radio" ? (checked ? "check" : icon) : icon,
     disabled: item.disabled,
     danger: item.variant === "danger",
