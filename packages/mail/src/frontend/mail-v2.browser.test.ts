@@ -214,6 +214,11 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Technische Details" }).waitFor();
       await page.getByRole("menuitem", { name: "Antworten" }).waitFor();
       await page.keyboard.press("Escape");
+      // The head's "…": the open mailbox's rare deeds, led by pinning and hiding it (v1's mailbox menu).
+      await page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"]').getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
+      await page.keyboard.press("Escape");
       // The head's filter menu at the search field, v1's (F9).
       await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
       await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();

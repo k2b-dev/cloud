@@ -1,11 +1,12 @@
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { announce, useLocale } from "@k2b/ui";
+import { announce, type DropdownItem, useLocale } from "@k2b/ui";
 import { Bar, Button, Input, Menu, Nav, type NavGroup, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
+import { mailOverviewMessages } from "../../mail-overview-messages";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
 import type { MailSidebarMailbox } from "../MailSidebar";
 import { createMailSearchFilterMenu } from "../MailWorkspaceHead";
@@ -86,6 +87,30 @@ export default function MailWorkspaceV2(props: {
   const openView: OnNavigate = (nav) => c().navigateWorkspace(nav);
   const openRow = (nav: LinkNavigateEvent, item: MailListItem) =>
     c().navigateConversation(nav.href, item, nav.event.detail === 0 ? "keyboard" : "pointer");
+  // The head's "…": the open mailbox's rare deeds, v1's mailbox menu (settings, health, details, …), led by pinning and
+  // hiding it, as v1's open sidebar row offers them.
+  const overviewText = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
+  const mailboxMenu = () => {
+    const id = c().data.mailbox.id;
+    const name = c().data.mailbox.name;
+    const preferences = props.shell.preferences;
+    const pinned = preferences.isPinned(id);
+    const own: DropdownItem[] = [
+      {
+        items: preferences.isHidden(id)
+          ? [{ label: overviewText().showMailbox({ name }), icon: "ti ti-eye", action: () => preferences.change(id, "hidden", false) }]
+          : [
+              {
+                label: pinned ? overviewText().unpinMailbox({ name }) : overviewText().pinMailbox({ name }),
+                icon: pinned ? "ti ti-flag-off" : "ti ti-flag",
+                action: () => preferences.change(id, "pinned", !pinned),
+              },
+              { label: overviewText().hideMailbox({ name }), icon: "ti ti-eye-off", action: () => preferences.change(id, "hidden", true) },
+            ],
+      },
+    ];
+    return mailV2MenuEntries([...own, ...c().mailboxMenu.sections()]);
+  };
   // The filter menu at the search field, v1's (F9): what narrows the list, all in the URL.
   const filter = createMailSearchFilterMenu({
     get requestUrl() {
@@ -273,6 +298,7 @@ export default function MailWorkspaceV2(props: {
                   onKeyDown={searchKey}
                   end={<Menu icon="adjustments-horizontal" label={filter.label()} items={mailV2MenuEntries(filter.items())} />}
                 />
+                <Menu items={mailboxMenu()} />
                 <Show when={c().canWrite() && !c().assignedOnly()}>
                   <Button variant="primary" icon="pencil" href={composeHref()} onClick={compose}>
                     {c().sidebarText().compose}
