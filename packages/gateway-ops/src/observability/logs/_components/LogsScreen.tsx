@@ -22,7 +22,7 @@ import {
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "../api-client";
 import type { LogEntry, LogLevel } from "../contracts";
@@ -102,7 +102,6 @@ export default function LogsScreen(props: LogsScreenProps) {
   const [online, setOnline] = createSignal(true);
   const [ignored, setIgnored] = createSignal(props.ignored);
   const [cleanupOpen, setCleanupOpen] = createSignal(false);
-  const [searchOpen, setSearchOpen] = createSignal(false);
   const [page, setPage] = createSignal(props.page);
   const format = createMemo(() => logRowFormatter(locale(), props.timeZone));
   const rows = createMemo(() => (data()?.entries ?? []).map((entry) => format().row(entry, props.today)));
@@ -113,17 +112,19 @@ export default function LogsScreen(props: LogsScreenProps) {
 
   let controller: AbortController | undefined;
   let loading = false;
+  /** A load the person started is running: the status row shows its loading mark. Live refreshes stay quiet. */
+  const [refreshing, setRefreshing] = createSignal(false);
   /**
    * Loads the list for a state through the API; the old rows stay until the new ones come. A newer load aborts an
    * older one. A live refresh (`quiet`) never aborts a load the person started, and its failure only marks live.
    */
-  // k2b-ui gap: 4 – StatusRow has no reserved loading sign, so nothing shows that new rows are on their way.
   const load = async (next: LogsState, quiet = false): Promise<boolean> => {
     if (quiet && loading) return true;
     controller?.abort();
     const current = new AbortController();
     controller = current;
     loading = !quiet;
+    setRefreshing(!quiet);
     const params = query().serialize(next);
     params.set("per_page", String(LOGS_PER_PAGE));
     if (page() > 1) params.set("page", String(page()));
@@ -145,7 +146,10 @@ export default function LogsScreen(props: LogsScreenProps) {
       else setError(failure instanceof Error ? failure.message : t().storeUnavailable);
       return false;
     } finally {
-      if (controller === current) loading = false;
+      if (controller === current) {
+        loading = false;
+        setRefreshing(false);
+      }
     }
   };
 
@@ -335,8 +339,6 @@ export default function LogsScreen(props: LogsScreenProps) {
               <Menu
                 label={t().moreActions}
                 items={[
-                  // k2b-ui gap: 8 – the head's search field gives way on the phone (Input has no `keep`); this entry keeps it.
-                  { label: t().searchMenu, icon: "search", onClick: () => setSearchOpen(true) },
                   { label: t().retention, icon: "archive", href: "/admin/observability/retention" },
                   { label: t().cleanup, icon: "trash", danger: true, onClick: () => setCleanupOpen(true) },
                 ]}
@@ -363,17 +365,15 @@ export default function LogsScreen(props: LogsScreenProps) {
               />
               <StatusRow
                 lead={data() ? t().entriesOf({ count: number(rows().length), total: number(total()) }) : t().unavailable}
-                // k2b-ui gap: 2 – StatusRow keeps its facts in a narrow column (concept 6d drops them below 760 px). Beside
-                // an open entry the list is that narrow, so the counts give way there, and the concept's sentence
-                // "Live: neue Einträge kommen oben dazu" is left out so the row fits at 1024 px.
+                loading={refreshing()}
                 facts={[
-                  ...(props.entry || !data()
+                  ...(!data()
                     ? []
                     : [
                         { value: number(data()?.levels.error ?? 0), after: t().errors },
                         { value: number(data()?.levels.warn ?? 0), after: t().warnings },
                       ]),
-                  // Only a refresh that fails needs a sentence (it retries on its own).
+                  // The switch says live is on; a sentence only when live cannot refresh (it retries on its own).
                   ...(live() && !online() ? [{ after: t().liveOffline }] : live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
                 ]}
                 filters={
@@ -411,15 +411,10 @@ export default function LogsScreen(props: LogsScreenProps) {
                     }
                   : { icon: "list-search", text: t().noEntries }
               }
-              // k2b-ui gap: 3 – a phone row has no place for a trailing status chip; the level word leads the second line.
               phone={(row) => ({
-                lines: [
-                  row.message,
-                  [row.level === "error" || row.level === "warn" ? levelWord(row.level) : "", row.source, row.requestId, row.duration]
-                    .filter(Boolean)
-                    .join(" · "),
-                ],
+                lines: [row.message, [row.source, row.requestId, row.duration].filter(Boolean).join(" · ")],
                 time: row.time.slice(-12, -4),
+                marks: levelChip(row.level),
               })}
               columns={[
                 { title: t().at, width: { min: 110, default: 120 }, cell: (row) => row.time },
@@ -451,15 +446,6 @@ export default function LogsScreen(props: LogsScreenProps) {
           <LogEntryPane selected={props.selected} timeZone={props.timeZone} closeHref={href({ entry: null })} listLabel={t().logs} />
         </Show>
       </Pane.Split>
-      <SearchDialog
-        open={searchOpen()}
-        onOpenChange={setSearchOpen}
-        value={state().search ?? ""}
-        onSearch={(text) => {
-          setSearchOpen(false);
-          search(text);
-        }}
-      />
       <CleanupDialog
         open={cleanupOpen()}
         onOpenChange={setCleanupOpen}
@@ -478,47 +464,6 @@ const windowHours = (state: LogsState): number => {
   if (time.kind === "preset") return LOG_TIME_PRESETS[time.preset] / 60;
   return time.from ? (Date.now() - Date.parse(time.from)) / 3_600_000 : 24 * 31;
 };
-
-/** The free search as a dialog, for the phone, where the head's search field gives way (k2b-ui gap: 8). */
-function SearchDialog(props: { open: boolean; onOpenChange: (open: boolean) => void; value: string; onSearch: (text: string) => void }) {
-  const locale = useLocale();
-  const t = () => logsMessages.resolve([locale()]).t;
-  const [text, setText] = createSignal(props.value);
-  // each opening starts from the search the list shows now
-  createEffect(
-    on(
-      () => props.open,
-      (open) => open && setText(props.value),
-    ),
-  );
-  return (
-    <Dialog
-      title={t().search}
-      open={props.open}
-      onOpenChange={props.onOpenChange}
-      foot={
-        <>
-          <Button onClick={() => props.onOpenChange(false)}>{t().cancel}</Button>
-          <Button icon="search" onClick={() => props.onSearch(text())}>
-            {t().searchShort}
-          </Button>
-        </>
-      }
-    >
-      <Field label={t().search}>
-        <Input
-          type="search"
-          icon="search"
-          value={props.value}
-          onInput={setText}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.isComposing) props.onSearch(text());
-          }}
-        />
-      </Field>
-    </Dialog>
-  );
-}
 
 /** "Alte Einträge löschen …": the number of days to keep, then one deed that deletes what is older. */
 function CleanupDialog(props: { open: boolean; onOpenChange: (open: boolean) => void; onDone: (deleted: number) => void }) {

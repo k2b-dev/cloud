@@ -280,12 +280,15 @@ describe("the log list on v2", () => {
     }
   }, 60_000);
 
-  test("on the phone the search stays reachable through the menu, and an open entry keeps its copy button", async () => {
+  test("on the phone the search stays in the head, rows end in their level, and an open entry keeps its copy button", async () => {
     const { context, tab, errors, calls } = await open({ width: 390, height: 844, touch: true }, "/admin/observability/logs?time=last-15m");
     try {
-      await tab.getByRole("button", { name: "More log actions" }).click();
-      await tab.getByRole("menuitem", { name: "Search messages …" }).click();
-      await tab.getByRole("dialog").getByRole("searchbox").fill("Greylisting");
+      // the level stands as a chip at the end of each phone row
+      const first = tab.locator('[data-k2-part="Row"]', { hasText: "Upstream mail: Zeitüberschreitung nach 30 s" }).filter({ visible: true });
+      expect(await first.locator('[data-k2-part="Chip"]').innerText()).toBe("Error");
+      const search = tab.getByRole("searchbox", { name: "Search messages" });
+      await search.tap();
+      await search.fill("Greylisting");
       await tab.keyboard.press("Enter");
       await tab.waitForURL(/q=Greylisting/);
       await tab.waitForFunction(() => window.document.body.innerText.includes("3 of 3 entries"));
