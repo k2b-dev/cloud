@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page, Route } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-states-navigation.client";
 import type { FixtureState } from "../../test/v2-states-navigation.fixture";
@@ -93,35 +94,6 @@ const setState = async (page: Page, state: FixtureState) => {
 const seen = (page: Page) => page.evaluate(() => window.__k2Seen ?? []);
 const hash = (page: Page) => page.evaluate(() => location.hash);
 
-/** Runs in the page: where the live page differs from what the server sent (elements, texts, attributes). */
-const differencesInPage = () => {
-  const found: string[] = [];
-  const nodes = (parent: Node) =>
-    Array.from(parent.childNodes).filter((node) => node.nodeType === 1 || (node.nodeType === 3 && node.textContent !== ""));
-  const walk = (a: Node, b: Node, path: string) => {
-    if (a.nodeType === 3 || b.nodeType === 3) {
-      if (a.nodeType !== b.nodeType || a.textContent !== b.textContent) found.push(`${path}: "${a.textContent}" became "${b.textContent}"`);
-      return;
-    }
-    if (!(a instanceof Element) || !(b instanceof Element)) return;
-    if (a.tagName !== b.tagName) {
-      found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
-      return;
-    }
-    for (const name of new Set([...a.getAttributeNames(), ...b.getAttributeNames()]))
-      if (name !== "data-hk" && name !== "style" && a.getAttribute(name) !== b.getAttribute(name))
-        found.push(`${path} [${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
-    const [left, right] = [nodes(a), nodes(b)];
-    if (left.length !== right.length) found.push(`${path}: ${left.length} children became ${right.length}`);
-    left.forEach((child, index) => {
-      const other = right[index];
-      if (other) walk(child, other, `${path} > ${index}`);
-    });
-  };
-  walk(window.__k2Sent!, document.getElementById("root")!, "root");
-  return found;
-};
-
 /** Where the parts that must not move stand, and how high each row of the list and the table is. */
 const places = (page: Page) =>
   page.evaluate(() => {
@@ -149,7 +121,7 @@ const places = (page: Page) =>
 describe("states: loading, empty and failed stand where the data will stand", () => {
   test("hydration: the loading page in the browser is what the server sent", async () => {
     await withPage(async (page) => {
-      expect(await page.evaluate(differencesInPage)).toEqual([]);
+      expect(await page.evaluate(sentVsLive)).toEqual([]);
       // assistive technology hears "loading" once per place (the list and the table; the phone list is hidden on a
       // wide screen), from a status line outside anything busy; the placeholders themselves are hidden from it
       expect(await page.getByRole("status").allTextContents()).toEqual(["Wird geladen...", "Wird geladen..."]);
