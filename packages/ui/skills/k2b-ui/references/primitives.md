@@ -297,6 +297,13 @@ lines instead of cutting a thing.
   default a square picture as a data URL; upload and return a URL for
   large files), `accept`, `round` (a person's picture), `disabled`. A
   dropped or pasted file counts as chosen.
+- `Slider`: a number on a range: `value`, `onChange` (every step),
+  `onCommit` (the drag or key press ended: save here), `min`, `max`,
+  `step`, `format` (`Intl.NumberFormat` options, such as percent),
+  `disabled`. The number reads at the end.
+- `ColorInput`: a colour as `#rrggbb`: `value`, `onChange`, `onCommit`,
+  `swatches` (presets), `disabled`. Swatch and code (any CSS colour typed
+  in), a surface of saturation and brightness, a hue slider, the presets.
 - `CodeInput`: a one-time or pairing code, a box per character: `value`,
   `onInput`, `onComplete` (the last box filled), `length` (6),
   `characters` (`digits` or `alphanumeric`), `autocomplete`

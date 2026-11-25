@@ -66,6 +66,8 @@ export {
   type ChoiceProps,
   CodeInput,
   type CodeInputProps,
+  ColorInput,
+  type ColorInputProps,
   DateInput,
   type DateInputProps,
   Field,
@@ -77,6 +79,8 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Slider,
+  type SliderProps,
   TagsInput,
   type TagsInputProps,
 } from "./controls";

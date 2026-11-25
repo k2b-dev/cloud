@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-/** The words of the v2 form controls (tags, image, disclosure), resolved from the inherited render locale. */
+/** The words of the v2 form controls (tags, image, colour), resolved from the inherited render locale. */
 const controlMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -12,6 +12,10 @@ const controlMessages = i18n.define({
       removeImage: "Remove image",
       noImage: "No image",
       imageFailed: "The image could not be read. Choose another one.",
+      colorArea: "Saturation and brightness",
+      hue: "Hue",
+      colorCode: "Colour code",
+      color: ({ value }: { value: string }) => `Colour ${value}`,
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -20,6 +24,10 @@ const controlMessages = i18n.define({
       removeImage: "Bild entfernen",
       noImage: "Kein Bild",
       imageFailed: "Das Bild ließ sich nicht lesen. Wähle ein anderes.",
+      colorArea: "Sättigung und Helligkeit",
+      hue: "Farbton",
+      colorCode: "Farbcode",
+      color: ({ value }: { value: string }) => `Farbe ${value}`,
     },
   },
 });

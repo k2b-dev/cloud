@@ -20,7 +20,7 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 ## Settings with more than text
 
-The sign-in settings of an app: a field that goes back to its default through the deed at the end of its label line, a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, a code from another device, and questions that open in place. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
+The sign-in settings of an app: a field that goes back to its default through the deed at the end of its label line, a choice the operator fixed (a dimmed `Select`), allowed domains as tags, a logo, an accent colour, how dark the background is, a code from another device, and questions that open in place. Switch the state: nothing set yet, and every control locked while a save runs or for a person who may only read.
 
 <Example recipe="settings" height="760" />
 
@@ -79,6 +79,18 @@ Several short values, such as domains or server addresses, as chips in one field
 One image with its preview, a button to choose or change it and one to remove it; a dropped or pasted file counts as chosen.
 
 <Props of="ImageInput" />
+
+### Slider
+
+A number on a range, such as an opacity or a zoom, with the number as it reads at the end; `onCommit` saves when a drag ends.
+
+<Props of="Slider" />
+
+### ColorInput
+
+A colour: its swatch and code, a surface of saturation and brightness, a hue slider and the given swatches.
+
+<Props of="ColorInput" />
 
 ### CodeInput
 

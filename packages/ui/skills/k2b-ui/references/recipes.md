@@ -89,7 +89,8 @@ in its words. Its footer `Bar` saves with a default button.
 
 The sign-in settings of an app: a `Field` with an `action` that resets it
 to its default, a `Select` the operator fixed (`disabled`), allowed
-domains in a `TagsInput`, a logo in an `ImageInput`, a pairing code in a
+domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
 `CodeInput`, and two `Disclosure`s with questions in a `Section`.
 
 - A field's deed stands at the end of its label line and never moves the

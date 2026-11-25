@@ -137,6 +137,43 @@ test("code: typing fills the boxes, the last box completes it, the input is the 
   });
 });
 
+test("slider: named by its field, arrows step it, the end of a key press commits, the number reads at the end", async () => {
+  await withPage(async (page) => {
+    const slider = page.getByRole("slider", { name: "Abdunkeln" });
+    expect(await slider.inputValue()).toBe("30");
+    await slider.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => (window.__deeds ?? []).includes("dim:100"));
+    expect(await page.locator(".k2-slider-value").textContent()).toBe("100");
+    const [control, thumb] = [
+      await field(page, "Abdunkeln").locator(".k2-slider").boundingBox(),
+      await page.locator(".k2-slider-thumb").boundingBox(),
+    ];
+    expect(control?.height).toBe(36);
+    expect(thumb?.width).toBe(16);
+  });
+});
+
+test("colour: a swatch press sets it, a typed CSS colour becomes its code, the hue thumb is named and steps", async () => {
+  await withPage(async (page) => {
+    const code = page.getByRole("textbox", { name: "Farbcode" });
+    expect(await code.inputValue()).toBe("#b45309");
+    await page.getByRole("option", { name: "Farbe #1d4ed8" }).click();
+    expect(await code.inputValue()).toBe("#1d4ed8");
+    await code.fill("rgb(15, 118, 110)");
+    await code.press("Enter");
+    await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
+    expect(await page.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
+    const hue = page.getByRole("slider", { name: "Farbton" });
+    const before = await hue.getAttribute("aria-valuenow");
+    await hue.focus();
+    await page.keyboard.press("ArrowRight");
+    expect(await hue.getAttribute("aria-valuenow")).not.toBe(before);
+    expect(await page.getByRole("slider", { name: "Sättigung und Helligkeit" }).count()).toBe(1);
+  });
+});
+
 test("disclosure and folded group open and close in place and say so", async () => {
   await withPage(async (page) => {
     const question = page.getByRole("button", { name: "Was passiert mit laufenden Sitzungen?" });

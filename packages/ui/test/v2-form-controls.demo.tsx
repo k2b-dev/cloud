@@ -1,5 +1,20 @@
 import { createSignal } from "solid-js";
-import { Band, CodeInput, Disclosure, Field, Group, ImageInput, Pane, Section, Select, TagsInput, Text, Workspace } from "../src/v2";
+import {
+  Band,
+  CodeInput,
+  ColorInput,
+  Disclosure,
+  Field,
+  Group,
+  ImageInput,
+  Pane,
+  Section,
+  Select,
+  Slider,
+  TagsInput,
+  Text,
+  Workspace,
+} from "../src/v2";
 
 // The form controls of v2 beyond text, as a settings page uses them: a field with a reset deed, a select that is
 // locked and one with a dimmed option, tags, an image, a code, a disclosure and a folded group. Each deed lands in
@@ -19,6 +34,8 @@ export function Demo() {
   const [session, setSession] = createSignal("7 Tage");
   const [tags, setTags] = createSignal(["werkstatt.example"]);
   const [image, setImage] = createSignal<string | null>(null);
+  const [dim, setDim] = createSignal(30);
+  const [accent, setAccent] = createSignal("#b45309");
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -69,6 +86,17 @@ export function Demo() {
                 setImage(value);
                 did(`image:${value === null ? "none" : "set"}`);
               }}
+            />
+          </Field>
+          <Field name="dim" label="Abdunkeln">
+            <Slider value={dim()} onChange={setDim} onCommit={(value) => did(`dim:${value}`)} min={0} max={100} step={10} />
+          </Field>
+          <Field name="accent" label="Akzentfarbe">
+            <ColorInput
+              value={accent()}
+              onChange={setAccent}
+              onCommit={(value) => did(`accent:${value}`)}
+              swatches={["#0f766e", "#1d4ed8"]}
             />
           </Field>
           <Field name="code" label="Code vom anderen Gerät">

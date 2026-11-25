@@ -174,6 +174,17 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const placeholder = element.querySelector("input")?.getAttribute("placeholder");
       return `TagsInput${tags.length ? `: ${tags.join(", ")}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
+    if (name === "Slider") {
+      const value =
+        element.querySelector(".k2-slider-value")?.textContent ||
+        (element.querySelector("input[type=range]") as HTMLInputElement | null)?.value;
+      return `Slider ${quote(value ?? "", 20)}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ColorInput") {
+      const code = element.querySelector(".k2-color-head input") as HTMLInputElement | null;
+      const swatches = element.querySelectorAll(".k2-color-preset").length;
+      return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
     if (name === "ImageInput") {
       const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
       return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;

@@ -1,7 +1,24 @@
 // Recipe: a settings page with the controls beyond text: a field that goes back to its default, a choice the person
-// may not change, a list of values as tags, an image, a code from another device, and questions that open in place.
+// may not change, a list of values as tags, an image, a colour, a number on a range, a code from another device, and
+// questions that open in place.
 // The values live in the app; the primitives only show them.
-import { Band, Bar, Button, CodeInput, Disclosure, Field, ImageInput, Pane, Section, Select, TagsInput, Text, Workspace } from "@k2b/ui/v2";
+import {
+  Band,
+  Bar,
+  Button,
+  CodeInput,
+  ColorInput,
+  Disclosure,
+  Field,
+  ImageInput,
+  Pane,
+  Section,
+  Select,
+  Slider,
+  TagsInput,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 
 // A small logo as a data URL, so the recipe draws without the network.
 const logo =
@@ -36,6 +53,14 @@ export default function SignInSettings(props: Props) {
             <ImageInput value={props.empty ? null : logo} onChange={() => undefined} disabled={props.locked} />
           </Field>
         </Band>
+        <Section title="Anmeldeseite">
+          <Field name="accent" label="Akzentfarbe">
+            <ColorInput value="#0f766e" swatches={["#0f766e", "#1d4ed8", "#b45309", "#8e1b6f"]} disabled={props.locked} />
+          </Field>
+          <Field name="dim" label="Hintergrund abdunkeln">
+            <Slider value={0.3} min={0} max={0.8} step={0.05} format={{ style: "percent" }} disabled={props.locked} />
+          </Field>
+        </Section>
         <Section title="Gerät koppeln">
           <Field name="code" label="Code vom anderen Gerät" hint="Sechs Ziffern, sie gelten fünf Minuten.">
             <CodeInput autocomplete="off" disabled={props.locked} />

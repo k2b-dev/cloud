@@ -10,8 +10,10 @@ import {
   useContext,
 } from "solid-js";
 import { isServer } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
 import { useFilePick } from "./behavior/files";
+import { useColor, useRange } from "./behavior/pickers";
 import { type ChoiceItem, useCombobox, useSelect } from "./behavior/select";
 import { ActionButton, Button } from "./button";
 import { useControlMessages } from "./control-messages";
@@ -60,7 +62,7 @@ export type FieldProps = {
    * the label line's 20 px, so the field keeps its height with and without it. It takes the place of `optional`.
    */
   action?: Action;
-  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `TagsInput`, `ImageInput` or `CodeInput`. */
+  /** The one control: `Input`, `Select`, `DateInput`, `Choice`, `TagsInput`, `ImageInput`, `CodeInput`, `Slider` or `ColorInput`. */
   children: JSX.Element;
 };
 
@@ -619,7 +621,7 @@ export const ImageInput = (props: ImageInputProps) => {
     onReject: () => setFailed(true),
   }));
   return (
-    <pick.Root class="k2-image" data-k2-part="ImageInput" aria-label={field ? undefined : props.label}>
+    <pick.Root class="k2-image" data-k2-part="ImageInput" role={field ? undefined : "group"} aria-label={field ? undefined : props.label}>
       <pick.Dropzone class="k2-image-preview" data-round={props.round ? "" : undefined}>
         <Show when={value()} fallback={<Icon name="photo" />}>
           {(source) => <img src={source()} alt="" />}
@@ -659,6 +661,135 @@ export const ImageInput = (props: ImageInputProps) => {
         </span>
       </Show>
     </pick.Root>
+  );
+};
+
+export type SliderProps = {
+  /** The number. With `onChange` the caller holds it; without, the slider keeps it. */
+  value?: number;
+  /** Called on every step of a drag or a key. */
+  onChange?: (value: number) => void;
+  /** Called once a drag or a key press ends, with the final number: for saving. */
+  onCommit?: (value: number) => void;
+  /** The smallest number (0 by default). */
+  min?: number;
+  /** The largest number (100 by default). */
+  max?: number;
+  /** The step between two numbers (1 by default). */
+  step?: number;
+  /** How the number reads at the end and for assistive technology, such as `{ style: "percent" }` or a unit. */
+  format?: Intl.NumberFormatOptions;
+  /** The name the number is sent under in a form; the field's name by default. */
+  name?: string;
+  /** A name when the slider stands without a Field. */
+  label?: string;
+  /** The number cannot be changed now: dimmed, the value still shown. */
+  disabled?: boolean;
+};
+
+/**
+ * A number on a range, such as a volume, a zoom or an opacity: a track with one round thumb in the control's 36 px, the
+ * number as it reads at the end. Arrows, Page keys, Home and End move it; a phone's screen reader adjusts it with its
+ * own gestures (the behaviour layer on the ui-sdk core).
+ */
+export const Slider = (props: SliderProps) => {
+  const field = useField();
+  const locale = useLocale();
+  const range = useRange(() => ({
+    ...(props.onChange ? { value: props.value ?? props.min ?? 0 } : { defaultValue: props.value ?? props.min ?? 0 }),
+    onValueChange: (next: number) => props.onChange?.(next),
+    onValueCommit: (next: number) => props.onCommit?.(next),
+    min: props.min,
+    max: props.max,
+    step: props.step,
+    format: props.format,
+    locale: locale(),
+    disabled: props.disabled,
+    name: props.name ?? field?.name,
+    thumbInputId: field?.control,
+  }));
+  return (
+    <range.Root
+      class="k2-slider"
+      data-k2-part="Slider"
+      data-disabled={props.disabled ? "" : undefined}
+      aria-label={field ? undefined : props.label}
+      aria-labelledby={field?.label}
+      aria-describedby={field?.described}
+    >
+      <range.Control class="k2-slider-control">
+        <range.Track class="k2-slider-track">
+          <range.Indicator class="k2-slider-fill" />
+        </range.Track>
+        <range.Thumb class="k2-slider-thumb" />
+      </range.Control>
+      <range.Value class="k2-slider-value">{(state: { text?: string }) => state.text ?? ""}</range.Value>
+      <range.Input />
+    </range.Root>
+  );
+};
+
+export type ColorInputProps = {
+  /** The colour as `#rrggbb`. With `onChange` the caller holds it; without, the picker keeps it. */
+  value?: string;
+  /** Called on every change, with `#rrggbb`. */
+  onChange?: (value: string) => void;
+  /** Called once a drag, a typed colour or a press on a swatch ends: for saving. */
+  onCommit?: (value: string) => void;
+  /** Colours to pick at a press, such as the colours of the app's areas. */
+  swatches?: readonly string[];
+  /** The name the colour is sent under in a form; the field's name by default. */
+  name?: string;
+  /** A name when the picker stands without a Field. */
+  label?: string;
+  /** The colour cannot be changed now: dimmed, the colour still shown. */
+  disabled?: boolean;
+};
+
+/**
+ * A colour: its swatch and its code (any CSS colour typed in becomes `#rrggbb` on Enter), a surface of saturation and
+ * brightness and a hue slider under it, and the given swatches; arrows move each thumb (the behaviour layer on the
+ * ui-sdk core).
+ */
+export const ColorInput = (props: ColorInputProps) => {
+  const field = useField();
+  field?.group();
+  const t = useControlMessages();
+  const color = useColor(() => ({
+    ...(props.onChange ? { value: props.value ?? "#000000" } : { defaultValue: props.value ?? "#000000" }),
+    onValueChange: (next: string) => props.onChange?.(next),
+    onValueCommit: (next: string) => props.onCommit?.(next),
+    disabled: props.disabled,
+    name: props.name ?? field?.name,
+  }));
+  return (
+    <color.Root
+      class="k2-color"
+      data-k2-part="ColorInput"
+      data-disabled={props.disabled ? "" : undefined}
+      aria-label={field ? undefined : props.label}
+    >
+      <span class="k2-color-head">
+        <color.Swatch class="k2-color-swatch" aria-hidden="true" />
+        <span class="k2-input" data-disabled={props.disabled ? "" : undefined}>
+          <color.Input id={field?.control} aria-label={t().colorCode} aria-describedby={field?.described} />
+        </span>
+      </span>
+      <color.Area class="k2-color-area">
+        <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} />
+      </color.Area>
+      <color.Slider class="k2-color-hue" channel="hue">
+        <color.SliderThumb class="k2-color-thumb" channel="hue" aria-label={t().hue} />
+      </color.Slider>
+      <Show when={props.swatches?.length}>
+        <color.Swatches class="k2-color-swatches" aria-label={props.label ?? t().colorCode}>
+          <For each={props.swatches}>
+            {(swatch) => <color.SwatchItem class="k2-color-preset" value={swatch} aria-label={t().color({ value: swatch })} />}
+          </For>
+        </color.Swatches>
+      </Show>
+      <color.HiddenInput />
+    </color.Root>
   );
 };
 
