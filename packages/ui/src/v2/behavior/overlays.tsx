@@ -3,6 +3,7 @@
  * focus and typeahead are core's. Each `use…` hook makes one instance and returns its parts as components; the v2
  * primitives add structure and look. No ui-sdk type crosses this module's exports.
  */
+import { alertDialog as alertDialogPrimitive, createConfirm } from "@ui-sdk/core/alert-dialog";
 import { dialog as dialogPrimitive } from "@ui-sdk/core/dialog";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
@@ -34,11 +35,33 @@ export type DialogParts = {
   Close: SlotComponent;
 };
 
+/**
+ * How a dialog presents: `"sheet"` slides up from the bottom of the screen and can be swiped away; `"auto"` does that
+ * on small touch screens (decided by core each time it opens; the server renders the dialog).
+ */
+export type Presentation = "auto" | "dialog" | "sheet";
+
 /** A modal dialog: focus moves in and stays in, Escape and Close close it, focus returns to the trigger. */
-export function useDialog(options: () => OverlayOptions & { modal?: boolean } = () => ({})): DialogParts {
+export type DialogOptions = OverlayOptions & {
+  modal?: boolean;
+  presentation?: Presentation;
+  /** `false`: Escape, an outside press, a swipe on a sheet and Android's back gesture do not close it; its parts do. */
+  dismissible?: boolean;
+  /** A refused dismissal and how it was tried: "escape-key", "outside-press", "back" or "swipe". */
+  onDismissAttempt?: (reason: string) => void;
+};
+
+export function useDialog(options: () => DialogOptions = () => ({})): DialogParts {
   // An async action in the dialog announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
-  const handle = usePrimitive(dialogPrimitive, () => ({ ...options(), pendingAnnouncement: t().loading }));
+  const handle = usePrimitive(dialogPrimitive, () => {
+    const { onDismissAttempt, ...given } = options();
+    return {
+      ...given,
+      pendingAnnouncement: t().loading,
+      onDismissAttempt: onDismissAttempt && ((details: { reason: string }) => onDismissAttempt(details.reason)),
+    };
+  });
   const Backdrop = popupComponent(handle, "backdrop");
   const Content = popupComponent(handle, "content");
   return {
@@ -100,5 +123,46 @@ export function usePopover(options: () => OverlayOptions = () => ({})): PopoverP
     Popup: popupComponent(handle, "content"),
     Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
+  };
+}
+
+export type QuestionParts<Payload> = Omit<DialogParts, "Trigger"> & {
+  /** What is asked now; read it while the dialog shows (it renders only while open). */
+  payload: () => Payload | undefined;
+};
+
+export type Question<Payload> = {
+  /** Asks and resolves `true` when the Close part with `value="confirm"` answers, `false` on any other close. */
+  ask: (payload: Payload) => Promise<boolean>;
+  /** The alert dialog that answers: render it once. Never a sheet; an outside press does not close it. */
+  useDialog: () => QuestionParts<Payload>;
+};
+
+/**
+ * A question any code can ask (`if (await question.ask(…)) …`), answered by one alert dialog rendered elsewhere, one
+ * question at a time. Core's `createConfirm`; focus starts on the first Close part, the least destructive answer.
+ */
+export function createQuestion<Payload>(): Question<Payload> {
+  const confirm = createConfirm<Payload>();
+  return {
+    ask: (payload) => confirm(payload),
+    useDialog: () => {
+      const t = useBehaviorMessages();
+      const handle = usePrimitive(alertDialogPrimitive, () => ({ controller: confirm.controller, pendingAnnouncement: t().loading }));
+      const Backdrop = popupComponent(handle, "backdrop");
+      const Content = popupComponent(handle, "content");
+      return {
+        Popup: (props) => (
+          <>
+            <Backdrop {...(props.backdrop ?? {})} />
+            <Content {...props} backdrop={undefined} />
+          </>
+        ),
+        Title: slotComponent(handle, "title", "h2"),
+        Description: slotComponent(handle, "description", "p"),
+        Close: slotComponent(handle, "close", "button"),
+        payload: () => confirm.controller.getPayload(),
+      };
+    },
   };
 }

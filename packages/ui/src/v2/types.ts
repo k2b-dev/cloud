@@ -28,6 +28,8 @@ export type Action = {
   meta?: string;
   /** The action leads further, to a page with more: a chevron to the right after the label. */
   forward?: boolean;
+  /** The action cannot be taken now, such as while something it needs is missing: dimmed, not pressable. */
+  disabled?: boolean;
 };
 
 /** At most two actions, such as the text buttons in the head of a section; a third does not fit by type. */
@@ -36,12 +38,17 @@ export type TwoActions = readonly [Action] | readonly [Action, Action];
 /** The colours of meaning. A tone is never decoration: it says ok, wait, wrong, AI or "yours". */
 export type Status = "ok" | "warn" | "bad";
 
-/** A person or an organisation shown as initials on a colour. */
+/** A person or an organisation shown as a picture, or as initials on a colour. */
 export type Person = {
   name: string;
   initials?: string;
   /** The colour behind the initials; without it the fixed colour of the name, the same everywhere in Cloud. */
   color?: string;
+  /**
+   * The address of a picture of the person. It lies over the initials in the same round place: while it loads and
+   * when it fails the initials show, and nothing moves.
+   */
+  image?: string;
 };
 
 /** The initials of a name: the first letters of its first two words. */
