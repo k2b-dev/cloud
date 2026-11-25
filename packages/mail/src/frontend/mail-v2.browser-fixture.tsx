@@ -193,11 +193,11 @@ export const mailV2Data = (url: URL, now: number): MailboxPageData => {
     // "Alle E-Mails"); the shared fixture's is English.
     listTitle: data.listTitle === "All mail" && url.searchParams.get("locale") !== "en" ? "Alle E-Mails" : data.listTitle,
     folders: data.folders
-      .filter((folder) => ["Inbox1", "Drafts1", "Sent1", "Filed1", "Long01"].includes(folder.id))
+      .filter((folder) => ["Inbox1", "Drafts1", "Sent1", "Archive1", "Trash1", "Junk1", "Filed1", "Long01"].includes(folder.id))
       .map((folder) => ({
         ...folder,
         name: folder.id === "Filed1" ? "Lieferanten" : folder.id === "Long01" ? "Reklamationen" : folder.name,
-        unread: folder.id === "Inbox1" ? 7 : 0,
+        unread: folder.id === "Inbox1" ? 7 : 0, // the mockup counts only the inbox
         total: folder.id === "Drafts1" ? 2 : folder.total,
       })),
     scheduledCount: 1,

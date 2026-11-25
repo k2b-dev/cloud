@@ -132,7 +132,7 @@ describe("Mail on the v2 pilot", () => {
     const page = await open(MAIL_V2_PATH, 1440, 560);
     try {
       await page.evaluate(() => Object.assign(window, { stayed: true }));
-      const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
+      const list = page.locator('[data-k2-part="Pane"] > [data-scroll-preserve^="mail-list-"]');
       const position = () => list.evaluate((element) => element.scrollTop);
       const scrollTo = async (y: number) => {
         await list.evaluate((element, y) => {
@@ -242,22 +242,65 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
-  // At 1024 px the sidebar is a drawer (#4123): the workspace keeps room for the reader, so opening a mail moves nothing.
-  test("at 1024 px opening a mail moves neither the list nor the sidebar", async () => {
-    const page = await open(MAIL_V2_PATH, 1024);
+  // At 1024 px the sidebar is a drawer, at 1440 px a column (#4123): the workspace keeps room for the reader and the
+  // list keeps its width, so opening and closing a mail moves nothing; the reader's place says so while none is open.
+  for (const width of [1024, 1440])
+    test(`at ${width} px opening and closing a mail moves neither the list nor the sidebar`, async () => {
+      const page = await open(MAIL_V2_PATH, width);
+      try {
+        const place = () =>
+          page.evaluate(() => {
+            const row = document.querySelector('[data-k2-part="List"] > [data-k2-part="Row"]')!.getBoundingClientRect();
+            const nav = document.querySelector('[data-k2-workspace] [data-k2-part="Nav"]')?.getBoundingClientRect();
+            return { rowLeft: Math.round(row.left), rowWidth: Math.round(row.width), sidebar: Boolean(nav && nav.width > 0) };
+          });
+        await page.getByText("Keine Nachricht ausgewählt").waitFor();
+        const before = await place();
+        await rowLink(page, "Holzwerk Brandt").click();
+        await page.waitForURL(/conversation=Demo01/);
+        await settled(page);
+        expect(await place()).toEqual(before);
+        expect(await page.getByText("Keine Nachricht ausgewählt").count()).toBe(0);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+        await page.locator("body").press("Escape");
+        await page.waitForURL((url) => !url.searchParams.has("conversation"));
+        await settled(page);
+        expect(await place()).toEqual(before);
+        expect(errorsOf.get(page)).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+
+  // v1's sidebar deeds: archive, bin and spam fold under "Mehr"; the group's "…" holds a new mailbox and the deleted
+  // ones; each mailbox's "…" pins or releases and hides it. The head's "Weitere" lists the views that wait behind it.
+  test("the sidebar's Mehr, the group's and each mailbox's deeds, and the head's further views", async () => {
+    const page = await open(MAIL_V2_PATH);
     try {
-      const place = () =>
-        page.evaluate(() => {
-          const row = document.querySelector('[data-k2-part="List"] > [data-k2-part="Row"]')!.getBoundingClientRect();
-          const nav = document.querySelector('[data-k2-workspace] [data-k2-part="Nav"]')?.getBoundingClientRect();
-          return { rowLeft: Math.round(row.left), sidebar: Boolean(nav && nav.width > 0) };
-        });
-      const before = await place();
-      await rowLink(page, "Holzwerk Brandt").click();
-      await page.waitForURL(/conversation=Demo01/);
+      const nav = page.locator('[data-k2-workspace] [data-k2-part="Nav"]');
+      const more = nav.getByRole("button", { name: "Mehr", exact: true });
+      expect(await more.getAttribute("aria-expanded")).toBe("false");
+      expect(await nav.getByRole("link", { name: "Papierkorb" }).count()).toBe(0);
+      await more.click();
+      await nav.getByRole("link", { name: "Papierkorb" }).click();
+      await page.waitForURL(/folder=Trash1/);
       await settled(page);
-      expect(await place()).toEqual(before);
-      expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
+      // the open folder keeps its fold open
+      expect(await more.getAttribute("aria-expanded")).toBe("true");
+      await nav.getByRole("button", { name: "Postfächer verwalten" }).click();
+      await page.getByRole("menuitem", { name: "Neues Postfach" }).waitFor();
+      await page.getByRole("menuitem", { name: "Gelöschte Postfächer" }).waitFor();
+      await page.keyboard.press("Escape");
+      await nav.getByRole("button", { name: "Aktionen für Kontakt" }).click();
+      await page.getByRole("menuitem", { name: "Kontakt lösen" }).waitFor();
+      await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
+      await page.keyboard.press("Escape");
+      await page
+        .locator('[data-k2-workspace] [data-k2-part="Tabs"]')
+        .getByRole("button", { name: /Weitere/ })
+        .click();
+      await page.getByRole("menuitem", { name: /^Erledigt/ }).click();
+      await page.waitForURL(/view=done/);
       expect(errorsOf.get(page)).toEqual([]);
     } finally {
       await page.close();
@@ -509,7 +552,7 @@ describe("Mail on the v2 pilot", () => {
   test("a live mail keeps the focused row focused and a scrolled list where it was", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 560);
     try {
-      const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
+      const list = page.locator('[data-k2-part="Pane"] > [data-scroll-preserve^="mail-list-"]');
       await list.evaluate((element) => {
         element.scrollTop = 120;
       });

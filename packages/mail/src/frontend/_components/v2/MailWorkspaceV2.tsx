@@ -193,6 +193,8 @@ export default function MailWorkspaceV2(props: {
     },
     contactDirectory,
   });
+  // A pinned mailbox wears its flag, as in the mockup.
+  const mailboxIcon = (id: string) => (props.shell.preferences.isPinned(id) ? "flag" : "mail");
   const navItems = createMemo((): NavItem[] => {
     const data = c().data;
     const openId = data.mailbox.id;
@@ -238,7 +240,7 @@ export default function MailWorkspaceV2(props: {
     const opened: NavItem[] = [
       {
         label: data.mailbox.name,
-        icon: "mail",
+        icon: mailboxIcon(data.mailbox.id),
         href: `/app/mail/${openId}`,
         onNavigate: props.shell.openMailbox,
         current: atRoot,
@@ -247,8 +249,8 @@ export default function MailWorkspaceV2(props: {
       ...primary.slice(0, 2),
       ...outbox,
       ...primary.slice(2),
-      ...own.map(folderItem),
       ...more,
+      ...own.map(folderItem),
     ];
     const ordered = orderMailboxes(props.shell.mailboxes, props.shell.preferences.pinnedMailboxIds());
     const visible = ordered.filter((mailbox) => mailbox.id === openId || !props.shell.preferences.isHidden(mailbox.id));
@@ -259,7 +261,7 @@ export default function MailWorkspaceV2(props: {
         : [
             {
               label: mailbox.name,
-              icon: "mail",
+              icon: mailboxIcon(mailbox.id),
               href: `/app/mail/${mailbox.id}`,
               onNavigate: props.shell.openMailbox,
               menu: rowMenu(mailbox.id, mailbox.name),
@@ -273,7 +275,7 @@ export default function MailWorkspaceV2(props: {
     {
       label: text().mailboxes,
       action: {
-        label: overviewText().mailboxActions,
+        label: text().manageMailboxes,
         items: [
           ...(canCreate()
             ? [
@@ -297,7 +299,6 @@ export default function MailWorkspaceV2(props: {
     },
   ]);
   // Hidden mailboxes fold into one quiet entry at the foot, as in v1's sidebar: it opens them below itself.
-  const [hiddenOpen, setHiddenOpen] = createSignal(false);
   const navFoot = createMemo((): NavItem[] | undefined => {
     if (hiddenCount() === 0) return undefined;
     const hidden = orderMailboxes(props.shell.mailboxes, props.shell.preferences.pinnedMailboxIds()).filter(
@@ -306,21 +307,16 @@ export default function MailWorkspaceV2(props: {
     return [
       {
         label: text().hidden({ count: hiddenCount() }),
-        icon: hiddenOpen() ? "chevron-down" : "chevron-right",
-        onClick: () => setHiddenOpen((open) => !open),
+        items: hidden.map(
+          (mailbox): NavItem => ({
+            label: mailbox.name,
+            icon: "mail",
+            href: `/app/mail/${mailbox.id}`,
+            onNavigate: props.shell.openMailbox,
+            menu: rowMenu(mailbox.id, mailbox.name),
+          }),
+        ),
       },
-      ...(hiddenOpen()
-        ? hidden.map(
-            (mailbox): NavItem => ({
-              label: mailbox.name,
-              icon: "mail",
-              href: `/app/mail/${mailbox.id}`,
-              onNavigate: props.shell.openMailbox,
-              nested: true,
-              menu: rowMenu(mailbox.id, mailbox.name),
-            }),
-          )
-        : []),
     ];
   });
 
