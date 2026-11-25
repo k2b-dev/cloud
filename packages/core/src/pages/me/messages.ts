@@ -486,6 +486,7 @@ export const accountMessages = i18n.define({
       groups: "Groups",
       connectAction: "CLI & MCP",
       connectTitle: "Connect the CLI and agents",
+      details: "Details",
     },
     de: {
       start: "Start",
@@ -981,6 +982,7 @@ export const accountMessages = i18n.define({
       groups: "Gruppen",
       connectAction: "CLI & MCP",
       connectTitle: "CLI und Agenten verbinden",
+      details: "Details",
     },
   },
 });

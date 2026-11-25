@@ -434,3 +434,112 @@ describe("account pages on v2", () => {
     }
   }, 30_000);
 });
+
+// break-ui: the realistic worst case of every value the account record and the activity render, through the same
+// boundary as the sample data (the services), never a switch in the product.
+const worstUser: User = {
+  ...localUser,
+  uid: "aleksandra.wisniewska-kowalczyk",
+  givenname: "Aleksandra Maria",
+  sn: "Wiśniewska-Kowalczyk von Hohenzollern-Sigmaringen",
+  displayName: "Aleksandra Maria Wiśniewska-Kowalczyk von Hohenzollern-Sigmaringen",
+  mail: "aleksandra.wisniewska-kowalczyk@northwind-industries-holdings.example.com",
+  memberofGroup: Array.from({ length: 48 }, (_, index) => `fachschaft-informatik-arbeitsgruppe-barrierefreiheit-${index + 1}`),
+  manages: ["fachschaft-informatik-arbeitsgruppe-barrierefreiheit-1", "j"],
+  accountExpires: new Date(Date.parse(now) + 3 * 86_400_000).toISOString(),
+};
+const worstCase = () => {
+  user = worstUser;
+  spies.push(
+    spyOn(services.webauthn, "listForUser").mockResolvedValue(
+      Array.from({ length: 6 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000002${String(index).padStart(2, "0")}`,
+        userId: worstUser.id,
+        name:
+          index === 0
+            ? "MacBook Pro 16″ (M3 Max) – Büro Raum 2.0.41, Schreibtisch am Fenster"
+            : index === 1
+              ? "J"
+              : `YubiKey 5C NFC #${index}`,
+        transports: ["usb", "nfc", "ble", "hybrid", "internal"],
+        deviceType: "multiDevice" as const,
+        backedUp: index % 2 === 0,
+        createdAt: now,
+        lastUsedAt: index === 1 ? null : now,
+      })),
+    ),
+    spyOn(services.serviceAccountCredentials, "listForDelegatedUser").mockResolvedValue(
+      Array.from({ length: 12 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000001${String(index).padStart(2, "0")}`,
+        serviceAccountId: "00000000-0000-4000-8000-000000000102",
+        name: index === 0 ? "Nightly export of the Fachschaft budget spreadsheet to the archive server (do not delete)" : `Skript ${index}`,
+        kind: "api_token",
+        status: "active",
+        tokenPrefix: "cld_7f3a9c21",
+        scopes: index % 2 ? ["ai:inference"] : [],
+        expiresAt: index % 3 ? null : now,
+        lastUsedAt: now,
+        createdBy: null,
+        createdAt: now,
+        revokedAt: null,
+        revokedBy: null,
+      })) as never,
+    ),
+    spyOn(services.notifications.user.history, "list").mockResolvedValue({
+      items: Array.from({ length: 25 }, (_, index) => ({
+        id: `00000000-0000-4000-8000-0000000004${String(index).padStart(2, "0")}`,
+        eventId: `00000000-0000-4000-8000-0000000005${String(index).padStart(2, "0")}`,
+        definitionId: "core.account-expiry",
+        appId: index % 2 ? "core" : "an-app-that-is-not-installed-any-more",
+        label: "Ablauf des Kontos",
+        title:
+          index === 0
+            ? "Dein Konto „aleksandra.wisniewska-kowalczyk“ läuft in 3 Tagen ab – verlängere es jetzt, damit du nichts verlierst"
+            : "Erinnerung",
+        targetHref: index % 3 ? "/me" : null,
+        channel: index % 2 ? "email" : "browser",
+        destinationLabel: "aleksandra.wisniewska-kowalczyk@northwind-industries-holdings.example.com",
+        required: false,
+        status: (["failed", "delivered", "suppressed", "deferred"] as const)[index % 4]!,
+        attemptCount: 3,
+        errorCode: index % 4 === 0 ? "provider_error" : null,
+        errorMessage: index % 4 === 0 ? "550 5.1.1 The email account that you tried to reach does not exist." : null,
+        createdAt: now,
+        deliveredAt: null,
+      })),
+      total: 1284,
+      page: 1,
+      perPage: 25,
+      totalPages: 52,
+    }),
+  );
+};
+
+describe("account pages with the worst case of their data", () => {
+  test("long names, many groups, keys and deliveries keep the v2 rules at 1440 and 390 px", async () => {
+    worstCase();
+    const findings: string[] = [];
+    for (const screen of [
+      { path: "/me" as const, name: "worst-profile" },
+      { path: "/me/security" as const, name: "worst-security" },
+      { path: "/me/access" as const, query: "?groups=all", name: "worst-access" },
+      { path: "/me/activity" as const, query: "?kind=deliveries", name: "worst-deliveries" },
+    ])
+      for (const view of [desktop, phone]) {
+        const tab = await open(view, screen.path, "de", screen.query);
+        try {
+          const outline = await describeV2Page(tab, "main");
+          if (outline.includes("Problems ("))
+            findings.push(`${screen.name} ${view.name} outline:\n${outline.slice(outline.indexOf("Problems ("))}`);
+          const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+          for (const problem of layout.problems) findings.push(`${screen.name} ${view.name} layout: ${problem}`);
+          const overflow = await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+          if (overflow > 0) findings.push(`${screen.name} ${view.name}: the page scrolls sideways by ${overflow} px`);
+          if (shots) await tab.screenshot({ path: join(shots, `${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+    expect(findings).toEqual([]);
+  }, 120_000);
+});

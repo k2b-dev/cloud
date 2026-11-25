@@ -98,20 +98,22 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                 }}
                 phone={(row) => ({ lines: [row.title, row.source], time: row.time, marks: chip(row) })}
                 columns={[
-                  { title: t().time, width: { min: 170, default: 190 }, cell: (row) => row.time },
+                  { title: t().time, width: { min: 160, default: 170 }, cell: (row) => row.time },
                   {
                     title: list().kind === "deliveries" ? t().notification : t().activity,
-                    width: { min: 200, default: 260 },
+                    width: { min: 180, default: 240 },
                     wrap: true,
                     cell: (row) => (row.href ? <Text href={row.href}>{row.title}</Text> : row.title),
                   },
                   {
                     title: list().kind === "deliveries" ? t().source : t().context,
-                    width: { min: 140, default: 220 },
+                    width: { min: 120, default: 170 },
                     cell: (row) => row.source,
                     drop: true,
                   },
-                  { title: t().status, cell: (row) => (row.detail ? { lines: [row.state.label, row.detail] } : chip(row)) },
+                  { title: t().status, width: { min: 110, default: 130 }, cell: chip },
+                  // why a delivery failed or where it went; on the phone the row keeps its state
+                  { title: t().details, wrap: true, cell: (row) => row.detail ?? "–", drop: true },
                 ]}
               />
               <Show when={list().pages > 1}>
