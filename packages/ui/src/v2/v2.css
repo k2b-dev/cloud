@@ -56,6 +56,8 @@
   /* the sign of a warning: a step lighter than its words */
   --k2-warn-ink: #b45309;
   --k2-warn-dot: #f59e0b;
+  /* a toggle that is on (a favourite): its symbol and words (akte.html, the star in the head) */
+  --k2-pressed: #b45309;
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
@@ -167,6 +169,7 @@
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
   --k2-warn-ink: #fbbf24;
+  --k2-pressed: #fbbf24;
   --k2-sticky-edge: rgb(0 0 0 / 0.45);
   --k2-card-edge: rgb(255 255 255 / 0.08);
   --k2-ink-mix: #ffffff;
@@ -247,6 +250,9 @@
   --k2-pane-min: initial;
   --k2-ws-side: initial;
   --k2-ws-side-min: initial;
+  --k2-ws-toggle: initial;
+  --k2-ws-drawer: initial;
+  --k2-drawer-w: initial;
   --k2-p: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
@@ -384,6 +390,49 @@
 .k2-ui .k2-ws-main > .k2-split {
   flex: 1;
   min-height: 0;
+}
+/* The sidebar as a drawer (a tablet, a narrow window): where the workspace cannot hold the sidebar at its default
+   beside every column at its minimum, the rule the workspace makes from its own widths hides the sidebar and sets
+   --k2-ws-toggle and --k2-ws-drawer on the head. The button that opens the drawer then stands at the start of the
+   head, its icon on the text edge, and the head's own content moves past it. */
+/* the workspace's width is the one the rule asks for, so it takes the width of its place and brings none of its own */
+.k2-ui .k2-ws {
+  container-type: inline-size;
+}
+/* the button stands in the workspace (its reference box), where the head starts while the sidebar is a drawer */
+.k2-ui .k2-btn.k2-ws-toggle {
+  display: var(--k2-ws-toggle, none);
+  position: absolute;
+  top: calc((var(--k2-h-head) - var(--k2-h-control)) / 2);
+  left: calc(var(--k2-edge) - 10px);
+  z-index: 1;
+}
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar {
+  padding-left: calc(var(--k2-edge) + var(--k2-ws-drawer, 0) * (var(--k2-h-control) + 8px - 10px));
+}
+/* a workspace without a head: the button stands in a head of its own */
+.k2-ui .k2-ws-main > [data-slot="head"][data-toggle-only] > .k2-ws-toggle {
+  position: static;
+  margin: calc((var(--k2-h-head) - var(--k2-h-control)) / 2) 0 calc((var(--k2-h-head) - var(--k2-h-control)) / 2)
+    calc(var(--k2-edge) - 10px);
+}
+/* the drawer: the sidebar from the start of the window, as wide as its column, its free corners round */
+.k2-ui .k2-drawer {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 70;
+  width: var(--k2-drawer-w);
+  max-width: calc(100vw - 48px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--k2-surface);
+  color: var(--k2-text);
+  border-radius: 0 var(--k2-r-overlay) var(--k2-r-overlay) 0;
+  box-shadow: var(--k2-float-large);
 }
 
 /* The seam is the one line between two columns and the home of its grip (K13). A grip is a small round pill,
@@ -1625,6 +1674,27 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
+/* A line of things that has no room wraps, in a column of any width, so no chip or action is cut in half (or lost);
+   a line that fits stays one line. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* A bar in the flow of a column (not a head or a status row, which have their own narrow forms) with such a line:
+   its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
+   line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
+   second line makes it higher. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
+  height: auto;
+  min-height: var(--k2-h-bar);
+  padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
+  display: contents;
+}
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-btn {
   align-self: flex-start;
@@ -1814,6 +1884,11 @@
 .k2-ui .k2-btn:disabled,
 .k2-ui .k2-btn[aria-disabled="true"]:not([aria-busy]) {
   opacity: 0.5;
+}
+/* A toggle that is on (`pressed`, such as a favourite): its symbol and words in the one colour of pressed, the frame
+   and the size as they are, so nothing moves when it turns on. The primary action is no toggle. */
+.k2-ui .k2-btn[aria-pressed="true"]:not([data-variant="primary"]) {
+  color: var(--k2-pressed);
 }
 /* Busy: the sign turns over the label, which keeps its place unseen, so the button keeps its width; the button keeps
    its look (it is not off, its deed is under way). */
@@ -3076,6 +3151,11 @@
   .k2-ui .k2-split > .k2-pane > .k2-scroll {
     overflow: visible;
   }
+  /* the place of a detail that is not open: the list is the page (with no line after it) */
+  .k2-ui .k2-split > [data-detail-empty],
+  .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
+    display: none;
+  }
   .k2-ui .k2-split:not(:has(> .k2-pane[data-detail])) > .k2-pane > .k2-scroll {
     -webkit-mask-image: none;
     mask-image: none;
@@ -3281,26 +3361,6 @@
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
-  }
-  /* A line of things that has no room wraps, so no chip or action is cut in half (or lost). */
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-  /* A bar in the flow of a column (not a head or a status row, which have their own narrow forms) with such a line:
-     its things and its end flow as one line that wraps, the end after the last thing when it has room there. One
-     line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a
-     second line makes it higher. */
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar:has(> .k2-bar-start > .k2-inline) {
-    height: auto;
-    min-height: var(--k2-h-bar);
-    padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
-    flex-wrap: wrap;
-    row-gap: 8px;
-  }
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start:has(> .k2-inline),
-  .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-bar > .k2-bar-start > .k2-inline {
-    display: contents;
   }
 }
 

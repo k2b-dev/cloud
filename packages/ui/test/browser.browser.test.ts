@@ -13,6 +13,7 @@ import {
   recordTestServer,
   settled,
   viewTransitionEnded,
+  waitInPage,
 } from "../test/browser";
 
 if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
@@ -430,6 +431,33 @@ if (process.env.UI_BROWSER_RECOVERY_CHILD === "1") {
       await context.close();
     }
   }, 20_000);
+
+  // Guard for #4121: a wait that cannot finish names Playwright's reason, not only the page's (empty) errors.
+  test("waitInPage() fails with Playwright's reason, kept as cause, and what the page reported", async () => {
+    const context = await browser.newContext();
+    try {
+      const page = await context.newPage();
+      await page.setContent("<!doctype html><p>never ready</p>");
+      const waiting = waitInPage(
+        page,
+        "the page did not hydrate",
+        () => false,
+        () => ["TypeError: boom"],
+      ).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      await page.close();
+      const error = await waiting;
+      if (!(error instanceof Error) || !(error.cause instanceof Error)) throw new Error(`no error with a cause: ${String(error)}`);
+      expect(error.message.startsWith("the page did not hydrate: ")).toBe(true);
+      expect(error.message).toContain("has been closed");
+      expect(error.message).toContain(error.cause.message.split("\n")[0] ?? "");
+      expect(error.message.endsWith("\nthe page reported: TypeError: boom")).toBe(true);
+    } finally {
+      await context.close();
+    }
+  });
 
   test("viewTransitionEnded() waits for a transition that stays active after its animations stopped", async () => {
     const context = await browser.newContext();

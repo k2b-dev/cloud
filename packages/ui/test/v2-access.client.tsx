@@ -21,6 +21,7 @@ const counts = { sort: 0, picture: 0, resume: 0, sentBusy: 0, sentIdle: 0 };
 window.__k2Counts = counts;
 const [sort, setSort] = createSignal<AccessSort>({ column: 0, direction: "ascending" });
 const [busy, setBusy] = createSignal(false);
+const [favourite, setFavourite] = createSignal(false);
 window.__k2Done = () => setBusy(false);
 
 const root = document.getElementById("root");
@@ -37,6 +38,8 @@ render(
           direction: now.column === column && now.direction === "ascending" ? "descending" : "ascending",
         }));
       }}
+      favourite={favourite()}
+      onFavourite={() => setFavourite((on) => !on)}
       onPicture={() => {
         counts.picture++;
         setBusy(true);

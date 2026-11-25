@@ -2,6 +2,7 @@ import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
 import KeysScreen from "./KeysScreen.island";
 import MailSelectScreen from "./MailSelectScreen.island";
+import MailTabletScreen from "./MailTabletScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
 import { DeliveriesScreen, RecordScreen } from "./record-screen";
@@ -47,6 +48,15 @@ export const v2Screens = {
     app: "#0f766e",
     phone: { app: "Mail" },
     render: () => <MailScreen open={false} />,
+  },
+  "mail-tablet": {
+    title: "Mail · Tablet",
+    description:
+      "The inbox in a window of 1024 px: the sidebar does not fit beside the list and the reader, so it is a drawer from the start of the window, opened here by its button at the start of the head. The workspace keeps room for the reader also while no message is open, so opening a message never moves the sidebar. In a wider window the sidebar is a column.",
+    mockup: "mail.html (concept: Schublade am Tablet)",
+    app: "#0f766e",
+    phone: { app: "Mail" },
+    render: () => <MailTabletScreen />,
   },
   "mail-select": {
     title: "Mail · Auswahl",

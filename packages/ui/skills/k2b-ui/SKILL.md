@@ -84,6 +84,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | – |
+| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | – |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
 | a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |

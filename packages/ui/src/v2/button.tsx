@@ -31,6 +31,12 @@ type ButtonBase = {
    * app says what came of the deed (a toast, a notice, the next page).
    */
   busy?: boolean;
+  /**
+   * A toggle and whether it is on, such as a favourite star or "reply to all": `true` shows its symbol and words in
+   * the colour of pressed and says "pressed" to assistive technology; `false` is a toggle that is off. Without it the
+   * button is no toggle. Not for a link (`href`) and not for the primary action.
+   */
+  pressed?: boolean;
   type?: "button" | "submit";
   /** Stays in a head on the phone, where the other actions move into the menu. */
   keep?: boolean;
@@ -70,6 +76,7 @@ export const Button = (props: ButtonProps) => {
       disabled={props.href ? undefined : props.disabled}
       aria-disabled={(props.href && props.disabled) || props.busy ? "true" : undefined}
       aria-busy={props.busy ? "true" : undefined}
+      aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       aria-label={iconOnly() ? props.label : undefined}
       title={iconOnly() ? props.label : props.title}
       aria-haspopup={props.menu ? "menu" : undefined}
