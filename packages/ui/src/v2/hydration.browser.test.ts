@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
@@ -70,56 +71,9 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
   }
 };
 
-/**
- * Runs in the page: where the live page differs from what the server sent, in elements, texts and attributes. The
- * keys of hydration and comments do not count; a style counts by its declarations, not their spelling. A place the
- * live page measures (a grip in the middle of the part of its line in sight) is set after hydration and does not count.
- */
-const differencesInPage = () => {
-  const sent = window.__k2Sent!;
-  const live = document.getElementById("root")!;
-  const found: string[] = [];
-  const style = (element: Element) => {
-    const probe = document.createElement("i");
-    probe.setAttribute("style", element.getAttribute("style") ?? "");
-    return Array.from(probe.style)
-      .filter((name) => name !== "--k2-grip-top")
-      .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
-      .sort()
-      .join(";");
-  };
-  const nodes = (parent: Node) =>
-    Array.from(parent.childNodes).filter((node) => node.nodeType === 1 || (node.nodeType === 3 && node.textContent !== ""));
-  const walk = (a: Node, b: Node, path: string) => {
-    if (a.nodeType === 3 || b.nodeType === 3) {
-      if (a.nodeType !== b.nodeType || a.textContent !== b.textContent)
-        found.push(`${path}: text "${a.textContent}" became "${b.textContent}"`);
-      return;
-    }
-    if (!(a instanceof Element) || !(b instanceof Element)) return;
-    if (a.tagName !== b.tagName) {
-      found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
-      return;
-    }
-    const names = new Set([...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk"));
-    for (const name of names) {
-      const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);
-      if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
-    }
-    const [left, right] = [nodes(a), nodes(b)];
-    if (left.length !== right.length) found.push(`${path} ${a.tagName.toLowerCase()}: ${left.length} children became ${right.length}`);
-    left.forEach((child, index) => {
-      const other = right[index];
-      if (other) walk(child, other, `${path} > ${index}`);
-    });
-  };
-  walk(sent, live, "root");
-  return found;
-};
-
 test("hydration: the live page is what the server sent, in elements, texts and attributes", async () => {
   await withPage(async (page) => {
-    expect(await page.evaluate(differencesInPage)).toEqual([]);
+    expect(await page.evaluate(sentVsLive)).toEqual([]);
   });
 });
 
@@ -149,7 +103,7 @@ test("the comparison of sent and live pages finds a changed attribute and a chan
       const title = document.querySelector(".k2-row-title")!.firstChild!;
       title.textContent = `${title.textContent} (neu)`;
     });
-    const found = await page.evaluate(differencesInPage);
+    const found = await page.evaluate(sentVsLive);
     expect(found.some((line) => line.includes("[data-probe]"))).toBe(true);
     expect(found.some((line) => line.includes("(neu)"))).toBe(true);
   });
