@@ -22,7 +22,6 @@ import { HELP_ACCESS_LEVELS, HELP_KINDS } from "../shared/help";
 import { appAccentStyle } from "./app-appearance";
 import type { LayoutHelpArticle } from "./help";
 import { helpMessages } from "./help-messages";
-import { HelpReader } from "./help-v2/HelpReader";
 import { helpArticleParts } from "./layout-help-article";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
@@ -46,11 +45,6 @@ export type LayoutHelpPageProps = {
   embedded?: boolean;
   /** Canonical full-page Help route owned by the current app. */
   pageBase?: string;
-  /**
-   * The page is built with `@k2b/ui/v2` (its layout has `ui: "v2"`): the reader draws itself from v2 primitives, the
-   * articles as a list and the open one beside it. An embedded reader stays as it is.
-   */
-  ui?: "v2";
 };
 
 type HelpView = "hub" | "article";
@@ -849,7 +843,6 @@ const createSession = (initialTopic?: string): HelpSession => {
  * article, while other articles load from the central Help API.
  */
 export function LayoutHelpPage(props: LayoutHelpPageProps) {
-  if (props.ui === "v2" && !props.embedded) return <HelpPageV2 {...props} />;
   const session = createSession(props.initialTopic);
   return (
     <HelpShell
@@ -862,42 +855,6 @@ export function LayoutHelpPage(props: LayoutHelpPageProps) {
       surface={props.embedded ? "embedded" : "page"}
       pageBase={props.pageBase}
       syncPageUrl={!props.embedded && !!props.pageBase}
-    />
-  );
-}
-
-/** The full-page reader on v2, with the page's shortcuts. */
-function HelpPageV2(props: LayoutHelpPageProps) {
-  const locale = useLocale();
-  const shell = useShellData();
-  const app = shell?.apps.find((candidate) => candidate.id === shell.appId);
-  const seed: HelpShortcutCommand[] = shell ? shellShortcuts(platformMessages.resolve([locale()]).t, { panel: !!shell.panel }) : [];
-  const read = (): HelpShortcutCommand[] => {
-    const commands = contextCommandsWithShortcuts();
-    return [...seed.filter((command) => !commands.some((other) => other.id === command.id)), ...commands];
-  };
-  return (
-    <HelpReader
-      surface="page"
-      documents={props.documents}
-      app={shell?.appId && app ? { id: shell.appId, name: app.label, icon: app.iconClass } : undefined}
-      initialTopic={props.initialTopic}
-      initialArticle={props.initialArticle}
-      pageBase={props.pageBase}
-      platform={shell?.platform}
-      state={shell?.helpFailed ? "failed" : undefined}
-      shortcuts={
-        props.includeShortcuts === false
-          ? undefined
-          : {
-              seed,
-              read,
-              subscribe: (update) => {
-                window.addEventListener(COMMANDS_CHANGED, update);
-                return () => window.removeEventListener(COMMANDS_CHANGED, update);
-              },
-            }
-      }
     />
   );
 }

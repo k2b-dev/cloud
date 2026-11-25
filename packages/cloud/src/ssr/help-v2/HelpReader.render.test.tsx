@@ -33,13 +33,13 @@ test("the start renders the articles for this view, the tasks, the kinds, the ho
   expect(html).toContain("Open global search");
   expect(parts(html, "Loading")).toBe(0);
   // No article is open: the place beside the list says how to open one.
-  expect(parts(html, "Pane")).toBe(1);
+  expect(html).not.toContain('data-detail=""');
   expect(html).toContain("Choose an article to read it here.");
 });
 
 test("an open article renders with the page, without a loading shape", () => {
   const html = render({ initialTopic: "share" });
-  expect(html).toContain("data-detail");
+  expect(html).toContain('data-detail=""');
   expect(html).toContain("Invite a person by name.");
   expect(html).toContain("2 steps");
   expect(html).toContain("You need");

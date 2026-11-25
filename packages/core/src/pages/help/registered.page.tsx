@@ -24,7 +24,6 @@ export default ssr<AuthContext>(async (c) => {
         initialTopic={initialTopic}
         initialArticle={initialArticle ?? undefined}
         pageBase={help.pageBase}
-        ui="v2"
       />
     </Layout>
   );

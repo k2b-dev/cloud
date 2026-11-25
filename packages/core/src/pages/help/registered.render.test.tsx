@@ -119,7 +119,9 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
         expect(titleRow).toContain(locale === "de" ? "Hilfe" : "Help");
         expect(html).toContain(`${id}-start`);
         if (topic) {
-          expect(html).toContain('class="help-article-facts"');
+          // The open article is the v2 detail beside the list, with its facts.
+          expect(html).toContain('data-detail=""');
+          expect(html).toContain('data-k2-part="Facts"');
           expect(html).toContain("Server fixture lead.");
           expect(html).toContain("Server fixture body.");
           // Only the serialized parts carry rendered HTML; Markdown and the DOM keep their own copy.
@@ -131,7 +133,7 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
           const props = fromJSON<{ initialArticle: { payload: Record<string, unknown> } }>(JSON.parse(decoded));
           expect("html" in props.initialArticle.payload).toBe(false);
           if (locale === "en") expect(html).toContain("2 steps");
-          expect(html).not.toContain('data-state="loading"');
+          expect(html).not.toContain('data-k2-part="Loading"');
         } else expect(html).not.toContain("Server fixture lead.");
         for (const other of ["spaces", "timetrack", "restricted"].filter((other) => other !== id))
           expect(html).not.toContain(`${other}-start`);
@@ -140,7 +142,7 @@ test("registered Help keeps the owning app's rail, canvas and localized way up",
 
     for (const topic of ["unknown-id", "UpperCase"]) {
       const html = await (await server.request(`/help/apps/spaces/${topic}`)).text();
-      expect(html).not.toContain("data-help-article-head");
+      expect(html).not.toContain('data-detail=""');
       expect(html).not.toContain("Server fixture lead.");
     }
     for (const id of ["restricted", "missing", "core"])

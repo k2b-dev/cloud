@@ -1,5 +1,7 @@
-import { Layout, type LayoutHelpPageProps } from "@k2b/cloud/ssr/islands";
+import LayoutHelpPageV2 from "@k2b/cloud/ssr/help-v2/HelpPage";
+import type { LayoutHelpPageProps } from "@k2b/cloud/ssr/islands";
 
-export default function CoreLayoutHelp(props: LayoutHelpPageProps) {
-  return <Layout.HelpPage {...props} />;
+/** An app's full-page Help on v2, under Core's `/help/apps/<id>`. */
+export default function CoreLayoutHelp(props: Omit<LayoutHelpPageProps, "embedded" | "accent">) {
+  return <LayoutHelpPageV2 {...props} />;
 }
