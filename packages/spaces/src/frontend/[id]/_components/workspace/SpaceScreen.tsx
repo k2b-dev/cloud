@@ -3,7 +3,7 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { listenPopState } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Bar, Canvas, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
 import { spaceCommandMessages } from "../../../../commands";
@@ -329,30 +329,26 @@ export default function SpaceScreen(props: SpaceScreenProps) {
           />
         </Show>
         <Show when={view === "calendar"}>
-          <Pane label={t.calendar}>
-            <Canvas label={t.calendar}>
-              <SpacesCalendarRoute
-                spaceId={state.space.id}
-                baseUrl={route.itemLinkBaseUrl}
-                columns={state.space.columns}
-                tags={state.space.tags}
-                templates={state.space.templates}
-                initialState={{
-                  view: state.calendarView,
-                  date: state.calendarDate,
-                  filter: state.calendarFilter,
-                  range: state.calendarRange,
-                  items: state.calendarItems,
-                  weather: state.calendarWeather,
-                  tray: state.calendarTray,
-                }}
-                selectedItemId={selectedCalendarEventId(state)}
-                dateConfig={props.dateConfig}
-                canWrite={state.canWrite}
-                currentUserId={state.currentUserId}
-              />
-            </Canvas>
-          </Pane>
+          <SpacesCalendarRoute
+            spaceId={state.space.id}
+            baseUrl={route.itemLinkBaseUrl}
+            columns={state.space.columns}
+            tags={state.space.tags}
+            templates={state.space.templates}
+            initialState={{
+              view: state.calendarView,
+              date: state.calendarDate,
+              filter: state.calendarFilter,
+              range: state.calendarRange,
+              items: state.calendarItems,
+              weather: state.calendarWeather,
+              tray: state.calendarTray,
+            }}
+            selectedItemId={selectedCalendarEventId(state)}
+            dateConfig={props.dateConfig}
+            canWrite={state.canWrite}
+            currentUserId={state.currentUserId}
+          />
         </Show>
         {detail.open() ? (
           <ItemDetailPane

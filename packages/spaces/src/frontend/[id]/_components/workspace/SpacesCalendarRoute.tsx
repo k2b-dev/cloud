@@ -1,12 +1,14 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, InlineGuidance, useLocale } from "@k2b/ui";
-import { createEffect, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Canvas, Failed, FilterBar, Menu, Pane, StatusRow } from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
 import Calendar from "../calendar";
-import { type CalendarFilter, parseCalendarRoute } from "../calendar/filter";
+import { type CalendarColorBy, type CalendarFilter, parseCalendarRoute } from "../calendar/filter";
+import { calendarFilterOf, calendarStateOf, type SpaceCalendarState, spaceCalendarQuery } from "../calendar/query";
 import {
   CALENDAR_MAX_DAYS,
   type CalendarRange,
@@ -16,7 +18,7 @@ import {
   isBlockLoadingCalendarView,
   mergeCalendarItems,
 } from "../calendar/range";
-import type { CalendarView, DayWeather } from "../calendar/types";
+import type { CalendarProps, CalendarView, DayWeather } from "../calendar/types";
 import { calendarViewSource, useSpacesCalendarQuery } from "./calendar-query";
 import { loadSpacesViewSnapshot } from "./view-query";
 import type { CalendarTray } from "./workspace-types";
@@ -212,44 +214,85 @@ export default function SpacesCalendarRoute(props: Props) {
     onCleanup(unsubscribe);
   });
 
+  const query = createMemo(() => spaceCalendarQuery(locale(), { columns: props.columns, tags: props.tags }));
+  const [controls, setControls] = createSignal<Parameters<NonNullable<CalendarProps["onControls"]>>[0]>();
+  // The server counts the loaded entries; the calendar counts the days in view once it lays them out.
+  const [shownCount, setShownCount] = createSignal(props.initialState.items.length);
+  const barState = () => calendarStateOf(state().filter, "calendar");
+  const base = (): SpaceCalendarState => ({ ...query().reset(), view: "calendar" });
+  const colorLabel = (colorBy: CalendarColorBy) => ({ tag: t.tag, status: t.status, priority: t.priority, person: t.person })[colorBy];
+
   return (
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-scroll-preserve={`spaces-main-${props.spaceId}`}>
-      <Show when={navigation.error()}>
-        {(error) => (
-          <div class="flex items-center justify-between gap-2 pb-1">
-            <InlineGuidance tone="danger" icon="ti ti-alert-circle" role="alert">
-              {error().message}
-            </InlineGuidance>
-            <Button type="button" variant="ghost" size="xs" onClick={() => void navigation.refresh()}>
-              {t.retry}
-            </Button>
-          </div>
-        )}
-      </Show>
-      <Calendar
-        spaceId={props.spaceId}
-        items={shown().items}
-        range={shown().range}
-        columns={props.columns}
-        tags={props.tags}
-        templates={props.templates}
-        filter={state().filter}
-        selectedItemId={selectedItemId()}
-        view={state().view}
-        date={new Date(state().date)}
-        baseUrl={props.baseUrl}
-        weather={state().weather}
-        dateConfig={props.dateConfig}
-        canWrite={props.canWrite}
-        currentUserId={props.currentUserId}
-        onNavigateHref={navigation.navigateHref}
-        onRouteChange={navigation.open}
-        onFollowHref={navigation.follow}
-        navigationPending={navigation.pending() || loadingBlocks() > 0}
-        onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
-        onLoadLater={stream() ? () => loadBlock("later") : undefined}
-        tray={state().tray}
-      />
-    </div>
+    <Pane
+      label={t.calendar}
+      status={
+        <>
+          <FilterBar
+            query={query()}
+            state={barState()}
+            base={base()}
+            onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
+            icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
+            results={t.shownCount({ count: shownCount() })}
+          />
+          <StatusRow
+            lead={t.shownCount({ count: shownCount() })}
+            loading={navigation.pending() || loadingBlocks() > 0}
+            filters={
+              <Menu
+                variant="ghost"
+                items={[
+                  {
+                    title: t.colorBy,
+                    choice: state().filter.colorBy,
+                    onChoose: (value) => {
+                      const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
+                      if (colorBy) controls()?.setColorBy(colorBy);
+                    },
+                    items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
+                      label: colorLabel(colorBy),
+                      value: colorBy,
+                    })),
+                  },
+                ]}
+              >
+                {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
+              </Menu>
+            }
+          />
+        </>
+      }
+    >
+      <Show when={navigation.error()}>{(error) => <Failed text={error().message} onRetry={() => void navigation.refresh()} />}</Show>
+      {/* The calendar draws its days, drags and resizes entries, creates in place and keeps its tray below the day. */}
+      <Canvas label={t.calendar}>
+        <Calendar
+          spaceId={props.spaceId}
+          items={shown().items}
+          range={shown().range}
+          columns={props.columns}
+          tags={props.tags}
+          templates={props.templates}
+          filter={state().filter}
+          selectedItemId={selectedItemId()}
+          view={state().view}
+          date={new Date(state().date)}
+          baseUrl={props.baseUrl}
+          weather={state().weather}
+          dateConfig={props.dateConfig}
+          canWrite={props.canWrite}
+          currentUserId={props.currentUserId}
+          onNavigateHref={navigation.navigateHref}
+          onRouteChange={navigation.open}
+          onFollowHref={navigation.follow}
+          navigationPending={navigation.pending() || loadingBlocks() > 0}
+          onLoadEarlier={stream() ? () => loadBlock("earlier") : undefined}
+          onLoadLater={stream() ? () => loadBlock("later") : undefined}
+          tray={state().tray}
+          onControls={setControls}
+          onShownCount={setShownCount}
+        />
+      </Canvas>
+    </Pane>
   );
 }

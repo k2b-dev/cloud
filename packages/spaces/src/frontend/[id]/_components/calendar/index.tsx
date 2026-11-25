@@ -13,11 +13,8 @@ import {
   type CalendarSelectionControls,
   Calendar as CoreCalendar,
   type CalendarView as CoreCalendarView,
-  Dropdown,
   type DropdownItem,
   dialogCore,
-  FilterChip,
-  type FilterChipSection,
   PanelDialog,
   panelDialogOptions,
   toast,
@@ -25,16 +22,7 @@ import {
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js";
 import { apiClient } from "@/api/client";
-import {
-  AssignedToFilterSchema,
-  type CalendarItem,
-  ItemTypeSchema,
-  PrioritySchema,
-  type Recurrence,
-  type SpaceColumn,
-  type SpaceItem,
-  type SpaceItemTemplate,
-} from "@/contracts";
+import type { CalendarItem, Recurrence, SpaceColumn, SpaceItem, SpaceItemTemplate } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
 import { createRetryToasts } from "../../../lib/feedback";
 import { readResponseError } from "../../../lib/response";
@@ -47,11 +35,10 @@ import { createSpaceItem } from "../shared/editItem";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { allDayEnd, allDayStart, instantFromLocalDateTime } from "../shared/item-form/date";
 import { itemCreateDialogOptions } from "../shared/item-form/dialog";
-import { CreateMenu } from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesDetailNavigation, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { calendarItemColors, isCalendarFlagged, isCalendarTask } from "./colors";
 import { countCalendarEvents } from "./count";
-import { type CalendarColorBy, CalendarColorBySchema, type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
+import { type CalendarColorBy, type CalendarFilter, writeCalendarFilter } from "./filter";
 import { CalendarItemContent } from "./ItemContent";
 import QuickCreate, {
   type CalendarDays,
@@ -381,59 +368,6 @@ export default function Calendar(props: CalendarProps) {
         },
       ]),
     );
-  const tagOptions = (): FilterChipSection[] => [
-    {
-      multiple: true,
-      options: props.tags.map((tag) => ({ value: tag.id, label: tag.name, color: tag.color })),
-    },
-  ];
-  // The color choice is one row of this menu: it changes no data, and the toolbar has no room for another control.
-  const scopeOptions: FilterChipSection[] = [
-    {
-      label: t.type,
-      options: [
-        { value: "type:all", label: t.eventsAndDeadlines, icon: "ti ti-calendar" },
-        { value: "type:event", label: t.events, icon: "ti ti-calendar-event" },
-        { value: "type:task", label: t.deadlines, icon: "ti ti-calendar-due" },
-      ],
-    },
-    {
-      label: t.assignment,
-      options: [
-        { value: "assigned:all", label: t.anyone, icon: "ti ti-users" },
-        { value: "assigned:assigned", label: t.assigned, icon: "ti ti-user-check" },
-        { value: "assigned:me", label: t.me, icon: "ti ti-user" },
-        { value: "assigned:unassigned", label: t.unassigned, icon: "ti ti-user-off" },
-      ],
-    },
-    {
-      label: t.colorBy,
-      layout: "row",
-      options: [
-        { value: "color:tag", label: t.tag },
-        { value: "color:status", label: t.status },
-        { value: "color:priority", label: t.priority },
-        { value: "color:person", label: t.person },
-      ],
-    },
-  ];
-  const priorityOptions: FilterChipSection[] = [
-    {
-      multiple: true,
-      options: [
-        { value: "urgent", label: t.urgent, color: "#ef4444" },
-        { value: "high", label: t.high, color: "#f97316" },
-        { value: "medium", label: t.medium, color: "#eab308" },
-        { value: "low", label: t.low, color: "#3b82f6" },
-      ],
-    },
-  ];
-  const columnOptions = (): FilterChipSection[] => [
-    {
-      multiple: true,
-      options: props.columns.map((column) => ({ value: column.id, label: column.name, color: column.color ?? undefined })),
-    },
-  ];
   const navigateRoute = (href: string, options: { replace?: boolean } = {}) => {
     if (props.onRouteChange) return props.onRouteChange(href, options);
     requestSpacesRouteNavigation(href, { ...options, scroll: "preserve" });
@@ -454,6 +388,9 @@ export default function Calendar(props: CalendarProps) {
       { replace: true },
     );
   };
+  // The page's filter bar and colour menu change the calendar through its own route, which keeps the scrolled day.
+  props.onControls?.({ setFilter, setColorBy });
+  createEffect(() => props.onShownCount?.(shownCount()));
   // The day and week views keep the URL on the day the reader scrolled to, so an item opens on the URL as it stands.
   const selectEvent = (event: CalendarEvent) => {
     if (event.href) requestSpacesDetailNavigation(event.href, { scroll: "preserve" });
@@ -896,81 +833,6 @@ export default function Calendar(props: CalendarProps) {
         withWeekNumbers
         dayBadges={dayBadges()}
         dateConfig={props.dateConfig}
-        toolbarActions={
-          <Show when={props.canWrite}>
-            <CreateMenu
-              kind="calendar"
-              templates={props.templates ?? []}
-              choose={chooseFromToolbar}
-              shortcuts
-              disabled={creatingEvent()}
-              align="end"
-            >
-              <Dropdown.Trigger variant="input" size="sm" class="shrink-0 whitespace-nowrap">
-                <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} aria-hidden="true" />
-                {/* A phone keeps the icon, so the header holds Today, the views, and this button in one row. */}
-                <span class="max-sm:sr-only">{t.newEvent}</span>
-                <i class="ti ti-chevron-down text-xs opacity-70 max-sm:hidden" aria-hidden="true" />
-              </Dropdown.Trigger>
-            </CreateMenu>
-          </Show>
-        }
-        toolbarContent={
-          <>
-            <FilterChip
-              label={t.scope}
-              icon="ti ti-filter"
-              options={scopeOptions}
-              value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`, `color:${props.filter.colorBy}`]}
-              // The color is a display choice, not a filter: Reset keeps it and appears only for a changed filter.
-              defaultValue={[
-                `type:${defaultCalendarFilter.type}`,
-                `assigned:${defaultCalendarFilter.assignedTo}`,
-                `color:${props.filter.colorBy}`,
-              ]}
-              isActive={props.filter.type !== defaultCalendarFilter.type || props.filter.assignedTo !== defaultCalendarFilter.assignedTo}
-              onValueChange={(values) => {
-                const type = ItemTypeSchema.catch(defaultCalendarFilter.type).parse(
-                  values.find((value) => value.startsWith("type:"))?.slice(5),
-                );
-                const assignedTo = AssignedToFilterSchema.catch(defaultCalendarFilter.assignedTo).parse(
-                  values.find((value) => value.startsWith("assigned:"))?.slice(9),
-                );
-                const colorBy = CalendarColorBySchema.catch(defaultCalendarFilter.colorBy).parse(
-                  values.find((value) => value.startsWith("color:"))?.slice(6),
-                );
-                if (type === props.filter.type && assignedTo === props.filter.assignedTo) setColorBy(colorBy);
-                else setFilter({ type, assignedTo, colorBy });
-              }}
-            />
-            <FilterChip
-              label={t.priority}
-              icon="ti ti-flag"
-              options={priorityOptions}
-              value={props.filter.priorities}
-              onValueChange={(priorities) => setFilter({ priorities: PrioritySchema.array().catch([]).parse(priorities) })}
-            />
-            <FilterChip
-              label={t.status}
-              icon="ti ti-layout-kanban"
-              options={columnOptions()}
-              value={props.filter.columnIds}
-              onValueChange={(columnIds) => setFilter({ columnIds })}
-            />
-            <Show when={props.tags.length > 0}>
-              <FilterChip
-                label={t.tags}
-                icon="ti ti-tag"
-                options={tagOptions()}
-                value={props.filter.tagIds}
-                onValueChange={(tagIds) => setFilter({ tagIds })}
-              />
-            </Show>
-            <span class="ml-auto min-w-[7.5rem] text-right text-xs text-[var(--k2b-text-muted)] tabular-nums whitespace-nowrap max-sm:hidden">
-              {t.shownCount({ count: shownCount() })}
-            </span>
-          </>
-        }
         getViewHref={(view) =>
           buildCalendarHref(props.baseUrl, asView(view), shownDate(), props.filter, undefined, undefined, props.dateConfig)
         }
