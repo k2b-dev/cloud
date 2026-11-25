@@ -36,11 +36,12 @@ const users = () => {
   );
 };
 
-const descriptions: Record<string, string> = {
-  Büro: "Empfang, Post und Termine",
-  Verkauf: "Ankauf und Verkauf im Laden und online",
-  Lager: "Wareneingang, Lagerorte und Versand",
-};
+// keyed by the sample groups' IDs; the German names stay display text
+const descriptions = new Map<string, string>([
+  [FIXTURE_GROUPS.office.id, "Empfang, Post und Termine"],
+  [FIXTURE_GROUPS.sales.id, "Ankauf und Verkauf im Laden und online"],
+  [FIXTURE_GROUPS.store.id, "Wareneingang, Lagerorte und Versand"],
+]);
 
 const groups = () => {
   const address = parseGroupsAddress(groupsQuery("de", "all"), params);
@@ -51,7 +52,7 @@ const groups = () => {
     .map((group, index) => ({
       id: group.id,
       name: group.name,
-      description: descriptions[group.name] ?? null,
+      description: descriptions.get(group.id) ?? null,
       provider: index % 3 === 2 ? ("ipa" as const) : ("local" as const),
       posix: index % 2 === 0,
       managed: group.name === "Lager",
