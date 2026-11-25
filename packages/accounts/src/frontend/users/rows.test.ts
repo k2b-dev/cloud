@@ -50,7 +50,12 @@ test("grouped by group, a person stands in each of their groups, groups by name,
 });
 
 test("grouped by address, accounts that share one stand together, compared trimmed and in any case", () => {
-  const page = [entry("jonas", [], "j.hartwig@example.test"), entry("jhartwig", [], " J.Hartwig@example.test"), entry("lina", [], "lina@example.test"), agent];
+  const page = [
+    entry("jonas", [], "j.hartwig@example.test"),
+    entry("jhartwig", [], " J.Hartwig@example.test"),
+    entry("lina", [], "lina@example.test"),
+    agent,
+  ];
   const rows = userRows(page, "mail", "de");
   expect(rows.map((row) => row.key)).toEqual([
     "j.hartwig@example.test:jonas",

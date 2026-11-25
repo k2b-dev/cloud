@@ -11,6 +11,8 @@ import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory, fixtu
  * address is parsed with the same declaration and the sample is filtered like the service does. The test answers the
  * users and groups API from the same sample.
  */
+// what the list costs once its code is there: from here (the server's answer included) to the rendered rows
+performance.mark("accounts-start");
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const failed = document.documentElement.dataset.failed === "true";
@@ -79,3 +81,4 @@ const groups = () => {
 };
 
 render(() => <LocaleProvider locale="de">{location.pathname.endsWith("/groups") ? groups() : users()}</LocaleProvider>, host);
+performance.mark("accounts-ready");

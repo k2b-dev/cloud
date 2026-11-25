@@ -47,8 +47,7 @@ export const userRows = (entries: readonly AccountDirectoryEntry[], grouping: Ro
     for (const entry of entries)
       if (headingsOf(entry, grouping).some((own) => own.id === heading.id))
         rows.push({ key: `${heading.id}:${entry.id}`, entry, group: heading });
-  for (const entry of entries)
-    if (headingsOf(entry, grouping).length === 0) rows.push({ key: `none:${entry.id}`, entry, group: null });
+  for (const entry of entries) if (headingsOf(entry, grouping).length === 0) rows.push({ key: `none:${entry.id}`, entry, group: null });
   return rows;
 };
 

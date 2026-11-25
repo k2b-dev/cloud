@@ -339,9 +339,7 @@ test("the user list reads the list's address: filters, search and sort reach the
     expect((await users.request("/?login=0001-01-01..")).status).toBe(400);
     // the list of people takes the shared-address filter; other kinds belong to GET /api/accounts/accounts
     expect((await users.request("/?duplicate=yes&sort=mail.asc")).status).toBe(200);
-    expect(directory).toHaveBeenLastCalledWith(
-      expect.objectContaining({ duplicateMail: true, sort: { field: "mail", direction: "asc" } }),
-    );
+    expect(directory).toHaveBeenLastCalledWith(expect.objectContaining({ duplicateMail: true, sort: { field: "mail", direction: "asc" } }));
     expect(directory.mock.lastCall?.[0]).not.toHaveProperty("kinds");
     const agents = await users.request("/?kind=agent");
     expect(agents.status).toBe(400);

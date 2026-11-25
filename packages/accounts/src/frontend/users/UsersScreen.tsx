@@ -86,8 +86,7 @@ const statusChip = (t: ListMessages, entry: AccountDirectoryEntry) =>
     <Chip status="bad">{entry.status === "expired" ? t.expired : t.disabled}</Chip>
   );
 
-const kindWord = (t: ListMessages, entry: AccountDirectoryEntry) =>
-  ({ person: t.person, agent: t.agent, "api-key": t.apiKey })[entry.kind];
+const kindWord = (t: ListMessages, entry: AccountDirectoryEntry) => ({ person: t.person, agent: t.agent, "api-key": t.apiKey })[entry.kind];
 
 /** Each kind of service account in its own symbol and colour, so agents and API key accounts stand out among people. */
 const SERVICE_LOOK = {
@@ -386,12 +385,12 @@ export default function UsersScreen(props: UsersScreenProps) {
               currentView() === "agents" && !changed()
                 ? { icon: "robot", text: t().noAgents }
                 : changed()
-                ? {
-                    icon: "filter-off",
-                    text: t().noAccountMatches,
-                    action: { label: t().resetFilters, icon: "filter-off", href: href(base()) },
-                  }
-                : { icon: "users", text: t().noAccounts }
+                  ? {
+                      icon: "filter-off",
+                      text: t().noAccountMatches,
+                      action: { label: t().resetFilters, icon: "filter-off", href: href(base()) },
+                    }
+                  : { icon: "users", text: t().noAccounts }
             }
             phone={(row) => ({
               lines: [avatar(row.entry).name, about(row.entry)],

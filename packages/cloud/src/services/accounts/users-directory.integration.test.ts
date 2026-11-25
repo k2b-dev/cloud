@@ -172,19 +172,16 @@ suite("the administration's user list (integration)", () => {
       return result.data;
     };
     const list = (query: Parameters<typeof read>[0] = {}) =>
-      read(query).then((page) => page.items.map((entry) => `${entry.kind}:${(entry.kind === "person" ? entry.displayName : entry.name).split(" ")[0]}`));
+      read(query).then((page) =>
+        page.items.map((entry) => `${entry.kind}:${(entry.kind === "person" ? entry.displayName : entry.name).split(" ")[0]}`),
+      );
 
     try {
       const all = await read();
       expect(all.total).toBe(6);
-      expect(all.items.map((entry) => `${entry.kind}:${(entry.kind === "person" ? entry.displayName : entry.name).split(" ")[0]}`)).toEqual([
-        "person:Ada",
-        "agent:Bot",
-        "api-key:Importer",
-        "person:Jonas",
-        "person:Jonny",
-        "person:Noor",
-      ]);
+      expect(all.items.map((entry) => `${entry.kind}:${(entry.kind === "person" ? entry.displayName : entry.name).split(" ")[0]}`)).toEqual(
+        ["person:Ada", "agent:Bot", "api-key:Importer", "person:Jonas", "person:Jonny", "person:Noor"],
+      );
       // what a service account row shows: its state and when one of its keys was used last
       const bots = all.items.filter((entry) => entry.kind !== "person");
       expect(bots).toMatchObject([
@@ -200,7 +197,12 @@ suite("the administration's user list (integration)", () => {
       expect(await list({ statuses: ["disabled"] })).toEqual(["api-key:Importer"]);
       expect(await list({ statuses: ["invited"] })).toEqual(["person:Noor"]);
       // a filter only a person has narrows the list to people
-      expect(await list({ passkey: false, kinds: ["person", "agent"] })).toEqual(["person:Ada", "person:Jonas", "person:Jonny", "person:Noor"]);
+      expect(await list({ passkey: false, kinds: ["person", "agent"] })).toEqual([
+        "person:Ada",
+        "person:Jonas",
+        "person:Jonny",
+        "person:Noor",
+      ]);
       // a shared address: trimmed and in any case, as the duplicate address page matched it
       expect(await list({ duplicateMail: true })).toEqual(["person:Jonas", "person:Jonny"]);
       expect((await read({ duplicateMail: true })).items.every((entry) => entry.kind === "person" && entry.duplicateMail)).toBe(true);

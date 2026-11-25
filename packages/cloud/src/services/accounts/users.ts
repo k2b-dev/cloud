@@ -1,13 +1,5 @@
 import type { SQL } from "bun";
-import type {
-  BaseUser,
-  MutationResult,
-  PaginationResponse,
-  Role,
-  User,
-  UserProfile,
-  UserProvider,
-} from "../../contracts/shared";
+import type { BaseUser, MutationResult, PaginationResponse, Role, User, UserProfile, UserProvider } from "../../contracts/shared";
 import { sql } from "../../runtime/clients";
 import { freeipa } from "../../server/services";
 import { createAuthLoginUrl } from "../../shared/redirect";

@@ -80,7 +80,9 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
     query.passkey !== undefined ||
     query.duplicateMail !== undefined;
   const people = kinds.has("person") && (!statuses || [...statuses].some((status) => PERSON_STATUSES.has(status)));
-  const serviceKinds = personOnly ? [] : (["agent", "api-key"] as const).filter((kind) => kinds.has(kind)).map((kind) => SERVICE_KINDS[kind]);
+  const serviceKinds = personOnly
+    ? []
+    : (["agent", "api-key"] as const).filter((kind) => kinds.has(kind)).map((kind) => SERVICE_KINDS[kind]);
   const services = serviceKinds.length > 0 && (!statuses || [...statuses].some((status) => SERVICE_STATUSES.has(status)));
   if (!people && !services) return { items: [], total: 0 };
   const search = query.search ? `%${freeipa.util.escapeLike(query.search.toLowerCase())}%` : null;

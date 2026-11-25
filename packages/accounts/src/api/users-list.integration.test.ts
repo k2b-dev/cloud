@@ -38,7 +38,8 @@ const person = async (name: string, admin = false, mark = tag) => {
 /** The list's own statements, as the meter keeps their first 120 characters: one count and one page, as before v2. */
 const listStatements = (statements: string[]) =>
   statements.filter(
-    (statement) => statement.startsWith("SELECT ((SELECT COUNT(*) FROM ") || statement.startsWith("SELECT p.entry_kind, p.id, p.effective_admin,"),
+    (statement) =>
+      statement.startsWith("SELECT ((SELECT COUNT(*) FROM ") || statement.startsWith("SELECT p.entry_kind, p.id, p.effective_admin,"),
   );
 
 const kind = (statement: string) =>

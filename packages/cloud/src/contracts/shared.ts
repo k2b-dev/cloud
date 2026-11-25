@@ -97,7 +97,10 @@ export const AccountDirectoryServiceAccountSchema = z.object({
 });
 
 /** One account of the administration's account list. */
-export const AccountDirectoryEntrySchema = z.discriminatedUnion("kind", [AccountDirectoryPersonSchema, AccountDirectoryServiceAccountSchema]);
+export const AccountDirectoryEntrySchema = z.discriminatedUnion("kind", [
+  AccountDirectoryPersonSchema,
+  AccountDirectoryServiceAccountSchema,
+]);
 export type AccountDirectoryEntry = z.infer<typeof AccountDirectoryEntrySchema>;
 
 export const IpaUserDataSchema = z.object({

@@ -185,7 +185,14 @@ const worstSeeds: Seed[] = [
   { name: "王秀英", role: "member", groups: [G.office], last: 31, passkey: false, uid: "wang.xiuying" },
   { name: "نور الهدى عبد الرحمن", role: "guest", groups: [G.temps], last: 6, passkey: false, uid: "nour.abdelrahman" },
   { name: "🦊 Fox", role: "member", groups: [], last: -1, passkey: false, uid: "fox" },
-  { name: "<script>alert(1)</script> &amp; **fett**", role: "member", groups: [WORST_GROUPS[1]!], last: 1100, passkey: false, uid: "markup" },
+  {
+    name: "<script>alert(1)</script> &amp; **fett**",
+    role: "member",
+    groups: [WORST_GROUPS[1]!],
+    last: 1100,
+    passkey: false,
+    uid: "markup",
+  },
   { name: "", role: "member", groups: [], last: null, passkey: false, uid: "svc-scanner", mail: null },
   {
     name: "Konstantin Oberhauser-Wettstein",
@@ -217,7 +224,8 @@ export const FIXTURE_HUGE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresse
   ...worstAccounts,
   ...Array.from({ length: 1284 - worstAccounts.length }, (_, index) => {
     const base = seeds[index % 14]!;
-    if (index % 50 === 49) return service(1000 + index, index % 100 === 99 ? "api-key" : "agent", `Agent ${index + 1}`, "active", index % 30);
+    if (index % 50 === 49)
+      return service(1000 + index, index % 100 === 99 ? "api-key" : "agent", `Agent ${index + 1}`, "active", index % 30);
     return person(
       { ...base, name: `Aushilfe ${index + 1}`, uid: `aushilfe${index + 1}`, mail: `aushilfe${index + 1}@${DOMAIN}`, last: index % 200 },
       index,
@@ -250,7 +258,10 @@ const PERSON_STATUSES = ["active", "invited", "expired"];
  * What the server answers for a list state, over a sample: the same filters and sort as the account directory query.
  * The test stands in for the server with it, so the page and the API answer alike.
  */
-export const fixtureDirectory = (state: UsersState, sample: readonly AccountDirectoryEntry[] = FIXTURE_ACCOUNTS): AccountDirectoryEntry[] => {
+export const fixtureDirectory = (
+  state: UsersState,
+  sample: readonly AccountDirectoryEntry[] = FIXTURE_ACCOUNTS,
+): AccountDirectoryEntry[] => {
   const query = directoryQueryOf(state, FIXTURE_TIME_ZONE, new Date(FIXTURE_NOW));
   const search = query.search?.toLowerCase();
   // the filters only a person has narrow the list to people, as the service does
