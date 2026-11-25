@@ -224,6 +224,22 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // As v1's sidebar: the hidden mailboxes fold into one quiet entry, which opens them below itself.
+  test("the sidebar's Hidden entry opens the hidden mailboxes below itself", async () => {
+    const page = await open(MAIL_V2_PATH);
+    try {
+      const nav = page.locator('[data-k2-part="Nav"]');
+      expect(await nav.getByRole("link", { name: "Archiv 2024" }).count()).toBe(0);
+      await nav.getByRole("button", { name: "Ausgeblendet (1)" }).click();
+      await nav.getByRole("link", { name: "Archiv 2024" }).waitFor();
+      await nav.getByRole("button", { name: "Ausgeblendet (1)" }).click();
+      await nav.getByRole("link", { name: "Archiv 2024" }).waitFor({ state: "detached" });
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   // The frame is a sandboxed document: it loads Cloud's shared faces across origins (Core sends them with CORS).
   test("a message's text reads in IBM Plex Sans, not in the system's font", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);

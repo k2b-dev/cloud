@@ -184,9 +184,32 @@ export default function MailWorkspaceV2(props: {
   const hiddenCount = () => props.shell.mailboxes.filter((mailbox) => props.shell.preferences.isHidden(mailbox.id)).length;
   // The sidebar's entries, also in the shell's phone menu ("Mail ⌄"), where the sidebar gives way.
   const navGroups = createMemo((): NavGroup[] => [{ label: text().mailboxes, items: navItems() }]);
-  const navFoot = createMemo((): NavItem[] | undefined =>
-    hiddenCount() > 0 ? [{ label: text().hidden({ count: hiddenCount() }), icon: "eye-off" }] : undefined,
-  );
+  // Hidden mailboxes fold into one quiet entry at the foot, as in v1's sidebar: it opens them below itself.
+  const [hiddenOpen, setHiddenOpen] = createSignal(false);
+  const navFoot = createMemo((): NavItem[] | undefined => {
+    if (hiddenCount() === 0) return undefined;
+    const hidden = orderMailboxes(props.shell.mailboxes, props.shell.preferences.pinnedMailboxIds()).filter(
+      (mailbox) => mailbox.id !== c().data.mailbox.id && props.shell.preferences.isHidden(mailbox.id),
+    );
+    return [
+      {
+        label: text().hidden({ count: hiddenCount() }),
+        icon: hiddenOpen() ? "chevron-down" : "chevron-right",
+        onClick: () => setHiddenOpen((open) => !open),
+      },
+      ...(hiddenOpen()
+        ? hidden.map(
+            (mailbox): NavItem => ({
+              label: mailbox.name,
+              icon: "mail",
+              href: `/app/mail/${mailbox.id}`,
+              onNavigate: props.shell.openMailbox,
+              nested: true,
+            }),
+          )
+        : []),
+    ];
+  });
 
   // ── Head ───────────────────────────────────────────────────────────────────────────────────────────────────────
   const tabs = createMemo(() => {
