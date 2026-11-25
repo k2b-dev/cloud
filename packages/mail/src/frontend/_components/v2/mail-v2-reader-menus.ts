@@ -11,6 +11,7 @@ import { createMailConversationState } from "../mail-conversation-state";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
 import { createMailSummaryEdit } from "../mail-summary-edit";
+import { askMailV2Summary, pickMailV2Item } from "./mail-v2-dialogs";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
@@ -38,12 +39,13 @@ export function createMailV2ReaderMenus(props: {
     disposed = true;
   });
 
-  // The summary's "Bearbeiten" and the entry of "…" write it through v1's form, save and Retry.
+  // The summary's "Bearbeiten" and the entry of "…" write it in a v2 dialog, with v1's save and Retry.
   const summary = createMailSummaryEdit({
     mailboxId: () => data().mailbox.id,
     conversationId: () => data().selectedConversationId,
     summary: () => data().conversationSummary,
     onSaved: () => c().applySavedConversationSummary,
+    ask: (text, value) => askMailV2Summary(locale(), text, value),
   });
 
   const conversationState = createMailConversationState({
@@ -62,6 +64,8 @@ export function createMailV2ReaderMenus(props: {
     subject: () => data().selectedSubject,
     enabled: () => !c().assignedOnly(),
     canWrite: () => c().canWrite(),
+    pick: (text, load) =>
+      pickMailV2Item(locale(), { ...text, cancel: t().cancel }, async (query, { signal }) => ({ items: await load(query, signal) })),
   });
 
   const snoozedUntil = () => conversationState.state()?.snoozedUntil ?? null;

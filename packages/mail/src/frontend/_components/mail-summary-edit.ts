@@ -21,6 +21,11 @@ export function createMailSummaryEdit(props: {
   summary: () => ConversationContentSummary | null;
   /** Shows the saved summary in the view; read when a save succeeds. */
   onSaved: () => (conversationId: string, summary: ConversationContentSummary) => Promise<void>;
+  /**
+   * Asks for the text in the reader's own dialog (Mail's v2 pilot); v1's form by default. Resolves with the text, ""
+   * to remove the summary, `null` when the person closed the dialog.
+   */
+  ask?: (text: { title: string; label: string; hint: string; confirm: string; cancel: string }, value: string) => Promise<string | null>;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
@@ -79,6 +84,30 @@ export function createMailSummaryEdit(props: {
     const conversationId = props.conversationId();
     const current = props.summary();
     if (!conversationId || !current || instance.loading()) return;
+    const ask = props.ask;
+    const typed = ask
+      ? await ask(
+          {
+            title: current.summary ? t().editSummary : t().createSummary,
+            label: t().summary,
+            hint: t().summaryDescription,
+            confirm: current.summary ? t().saveSummary : t().createSummary,
+            cancel: t().cancel,
+          },
+          current.summary ?? "",
+        )
+      : await askInForm(current);
+    // Another mailbox or conversation opened while the form was open: its summary is not this one.
+    if (typed === null || disposed || instance !== save() || conversationId !== props.conversationId()) return;
+    await instance.mutate({
+      mailboxId: props.mailboxId(),
+      conversationId,
+      expectedSummaryRevision: current.summaryRevision,
+      summary: typed,
+    });
+  };
+  /** v1's form for the summary. */
+  const askInForm = async (current: ConversationContentSummary): Promise<string | null> => {
     const values = await prompts.form({
       title: current.summary ? t().editSummary : t().createSummary,
       icon: "ti ti-notes",
@@ -97,14 +126,7 @@ export function createMailSummaryEdit(props: {
       },
       confirmText: current.summary ? t().saveSummary : t().createSummary,
     });
-    // Another mailbox or conversation opened while the form was open: its summary is not this one.
-    if (!values || disposed || instance !== save() || conversationId !== props.conversationId()) return;
-    await instance.mutate({
-      mailboxId: props.mailboxId(),
-      conversationId,
-      expectedSummaryRevision: current.summaryRevision,
-      summary: String(values.summary ?? ""),
-    });
+    return values ? String(values.summary ?? "") : null;
   };
   return { edit, saving, abort: () => save().abort() };
 }
