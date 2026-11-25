@@ -76,7 +76,7 @@ render(
               items={[
                 { label: "Alle", href: "#alle", current: true },
                 { label: "Fehler", count: 5, href: "#fehler" },
-                { label: "Warnungen", count: 6, href: "#warnungen" },
+                { label: "Warn", count: 6, href: "#warn" },
                 {
                   label: "Weitere",
                   count: "+2",

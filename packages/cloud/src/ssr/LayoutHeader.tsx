@@ -49,7 +49,8 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         slot="header"
         panelOpen={props.panelOpen}
         authenticated={props.authenticated}
-        pageSearch={props.pageSearch}
+        // only a v2 page sends it, so the island's props of every other page stay as they were
+        {...(props.pageSearch ? { pageSearch: true } : {})}
         title={props.title}
         launchpad={props.launchpad}
         breadcrumbs={props.breadcrumbs}

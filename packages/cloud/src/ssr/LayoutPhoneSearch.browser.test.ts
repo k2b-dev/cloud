@@ -185,7 +185,9 @@ test("the phone bar's search opens the head's field over the head, and Escape gi
       }),
     );
     const button = page.getByRole("button", { name: "Search", exact: true });
-    await button.evaluate((trigger) => trigger.addEventListener("click", () => window.openPageSearch?.(trigger)));
+    await button.evaluate((trigger) => {
+      if (trigger instanceof HTMLElement) trigger.addEventListener("click", () => window.openPageSearch?.(trigger));
+    });
     await button.click();
     await settled(page);
     const search = page.getByRole("searchbox", { name: "Suchen" });

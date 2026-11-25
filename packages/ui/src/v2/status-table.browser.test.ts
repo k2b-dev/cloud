@@ -242,7 +242,7 @@ test("390 px in a host's bar: the folded search leaves the head to its tabs, ope
         });
       const folded = await state();
       // every view keeps its tab beside the menu of further views; none joins that menu for the search's sake
-      expect([folded.tabs, folded.menu]).toEqual([["Alle", "Fehler", "Warnungen"], "Weitere+2"]);
+      expect([folded.tabs, folded.menu]).toEqual([["Alle", "Fehler", "Warn"], "Weitere+2"]);
       expect(folded.field[0]).toBeLessThanOrEqual(1);
       // the host focuses the field (the shell's phone bar does it on a tap): it opens over the head
       await search.focus();

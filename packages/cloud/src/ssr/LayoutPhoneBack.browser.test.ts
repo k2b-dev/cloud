@@ -188,7 +188,7 @@ test("an open detail's way back takes the title's place in the phone bar; search
   const page = await open({});
   try {
     // One row: the way back where the title was, then the bar's controls, each reached by a tap on it.
-    expect(await barRow(page)).toEqual(["Posteingang at 8", "Open global search at 278", "Open help at 314", "Open apps at 350"]);
+    expect(await barRow(page)).toEqual(["Posteingang at 8", "Search at 278", "Open help at 314", "Open apps at 350"]);
     expect(await backRoom(page)).toEqual({ nameEndsBeforeControls: true });
     expect(await cardTop(page)).toBe(0);
     expect(await page.locator(".layout-header-title").isVisible()).toBe(false);
@@ -196,7 +196,7 @@ test("an open detail's way back takes the title's place in the phone bar; search
     expect(await page.getByRole("link", { name: "Posteingang" }).count()).toBe(1);
     expect(await page.getByText("Alle · Handlungsbedarf").isVisible()).toBe(false);
     // The keyboard meets the bar's controls first and then the way back, the first stop of the content.
-    expect(await tabOrder(page, 4)).toEqual(["Open global search", "Open help", "Open apps", "Posteingang"]);
+    expect(await tabOrder(page, 4)).toEqual(["Search", "Open help", "Open apps", "Posteingang"]);
   } finally {
     await page.close();
   }
@@ -208,7 +208,7 @@ test("a long list name ends before the bar's controls", async () => {
   try {
     expect(await barRow(page)).toEqual([
       "Suchergebnisse für Eichenplatten aus dem Lager Nord at 8",
-      "Open global search at 278",
+      "Search at 278",
       "Open help at 314",
       "Open apps at 350",
     ]);
@@ -236,7 +236,7 @@ test("a v2 list page shows the app's name, search, help and the app menu in the 
     const title = await page.locator(".layout-header-title").boundingBox();
     expect(await page.locator(".layout-header-title").textContent()).toBe("Mail");
     expect(title && title.y + title.height <= 46).toBe(true);
-    expect(await barRow(page)).toEqual(["Open global search at 278", "Open help at 314", "Open apps at 350"]);
+    expect(await barRow(page)).toEqual(["Search at 278", "Open help at 314", "Open apps at 350"]);
   } finally {
     await page.close();
   }
