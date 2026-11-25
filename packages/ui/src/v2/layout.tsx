@@ -4,6 +4,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
+import { ConfirmDialog } from "./overlays";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -60,8 +61,10 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  let element: HTMLDivElement | undefined;
   return (
     <div
+      ref={element}
       class="k2-ws"
       data-k2-workspace=""
       data-k2-part="Workspace"
@@ -102,6 +105,8 @@ export const Workspace = (props: WorkspaceProps) => {
           </Dynamic>
         )}
       </Show>
+      {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
+      <ConfirmDialog host={() => element} />
     </div>
   );
 };

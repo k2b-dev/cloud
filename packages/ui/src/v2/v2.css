@@ -214,7 +214,7 @@
   overflow-wrap: anywhere;
 }
 .k2-ui > .k2-text,
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group) > .k2-text {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-dialog-body) > .k2-text {
   display: block;
   padding-inline: var(--k2-edge);
 }
@@ -259,6 +259,10 @@
 .k2-ui :where([class^="k2-"], [class*=" k2-"])::after {
   box-sizing: border-box;
 }
+/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden */
+.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden] {
+  display: none !important;
+}
 /* elements a primitive draws without a class of their own */
 .k2-ui :where(.k2-table th, .k2-table td, .k2-fact-pair > dt, .k2-fact-pair > dd, .k2-path > b, .k2-tile > span) {
   box-sizing: border-box;
@@ -284,7 +288,7 @@
 .k2-ui :where(.k2-ni) {
   width: 100%;
 }
-.k2-ui :where(.k2-btn, .k2-row, .k2-chip, .k2-ni, .k2-mark-input, .k2-input > input, .k2-input > textarea, .k2-native-select) {
+.k2-ui :where(.k2-btn, .k2-row, .k2-chip, .k2-ni, .k2-mark-input, .k2-input > input, .k2-input > textarea) {
   font: inherit;
   color: inherit;
   margin: 0;
@@ -1600,7 +1604,7 @@
 .k2-ui .k2-inline > * {
   flex: none;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
 /* a button in the flow of a column keeps its own width and stands on the text edge (only the phone's FAB is wide) */
@@ -1964,7 +1968,7 @@
   flex-direction: column;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-choice, .k2-choices) {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
 }
 .k2-ui .k2-input {
@@ -2063,11 +2067,11 @@
   row-gap: 4px;
   min-width: 0;
 }
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-field {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-input {
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body) > .k2-input {
   margin-inline: var(--k2-edge);
 }
 .k2-ui .k2-field-label {
@@ -2100,20 +2104,27 @@
   height: 20px;
   vertical-align: top;
 }
+/* the field of a selection is a button: the value on the left, the chevron at the end; its value in the type of an
+   input's value */
 .k2-ui .k2-input[data-select] {
-  position: relative;
-}
-.k2-ui .k2-native-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  opacity: 0;
   cursor: default;
+  width: 100%;
+  text-align: left;
+  font: var(--k2-t-row);
+  color: var(--k2-text);
 }
-.k2-ui .k2-input[data-select]:has(> .k2-native-select:focus-visible) {
+.k2-ui .k2-input[data-select]:focus-visible {
+  outline: none;
   border-color: var(--k2-blue);
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+/* the open list of a selection: at least as wide as its field, an option per row like a menu, the check at the end */
+.k2-ui .k2-menu[data-listbox] {
+  width: auto;
+  min-width: var(--anchor-width, 232px);
+  max-height: min(320px, var(--available-height, 320px));
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 /* the copy button beside a value: quiet, 28 px, its icon on the text edge */
 .k2-ui .k2-fact-pair > dd > .k2-btn {
@@ -2688,16 +2699,39 @@
   flex-direction: column;
   border: 0;
   padding: 0;
+  /* a modal sits in the middle of the window, in the top layer */
+  position: fixed;
+  inset: 0;
+  height: fit-content;
+  margin: auto;
+  z-index: 70;
 }
-.k2-ui .k2-dialog > .k2-bar {
+.k2-ui .k2-dialog > .k2-slot > .k2-bar {
   border-bottom: 0;
   position: relative;
   z-index: 1;
   background: var(--k2-surface);
   height: var(--k2-h-head);
 }
-.k2-ui .k2-dialog > .k2-bar:last-child {
+.k2-ui .k2-dialog > [data-slot="foot"] > .k2-bar {
   justify-content: flex-end;
+}
+/* the close button in the head is small and stands with its icon on the edge */
+.k2-ui .k2-dialog > [data-slot="head"] .k2-btn[data-icon-only] {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  margin-right: -10px;
+}
+/* On a small touch screen the dialog is a sheet (core's presentation "auto"): the whole width at the bottom, its top
+   corners round, as high as its content up to most of the screen; a swipe down closes it. */
+.k2-ui .k2-dialog[data-presentation="sheet"] {
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  inset: auto 0 0;
+  margin: 0;
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 .k2-ui .k2-dialog-title {
   font: var(--k2-t-body);
@@ -2714,12 +2748,10 @@
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
-.k2-ui .k2-dialog[data-more="above"] > .k2-bar:first-child,
-.k2-ui .k2-dialog[data-more="both"] > .k2-bar:first-child {
+.k2-ui .k2-dialog:is([data-more="above"], [data-more="both"]) > [data-slot="head"] > .k2-bar {
   box-shadow: 0 1px 0 var(--k2-line);
 }
-.k2-ui .k2-dialog[data-more="below"] > .k2-bar:last-child,
-.k2-ui .k2-dialog[data-more="both"] > .k2-bar:last-child {
+.k2-ui .k2-dialog:is([data-more="below"], [data-more="both"]) > [data-slot="foot"] > .k2-bar {
   box-shadow: 0 -1px 0 var(--k2-line);
 }
 /* a tinted notice in a dialog needs no line: the tint is its edge */
@@ -2729,6 +2761,7 @@
 .k2-ui .k2-backdrop {
   position: fixed;
   inset: 0;
+  z-index: 69;
   background: rgb(9 9 11 / 0.32);
 }
 /* Menu: entries 32 px, 4 px inside the menu of 8 px radius; a separator reaches the menu's edges */

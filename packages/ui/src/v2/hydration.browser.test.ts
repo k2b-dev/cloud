@@ -255,7 +255,9 @@ test("fields: one control is labelled, a field of choices is a named group, a me
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');
-    await select.locator("select").selectOption("Montage");
+    await select.click();
+    await page.locator('.k2-menu[data-listbox] .k2-mi:has-text("Montage")').click();
+    await page.locator(".k2-menu[data-listbox]").waitFor({ state: "hidden" });
     expect(await select.locator(".k2-input-value").textContent()).toBe("Montage");
     const check = page.getByRole("checkbox", { name: "Kunde benachrichtigen" });
     await check.check();
