@@ -11,7 +11,8 @@ import type { MailV2Text } from "./mail-v2-messages";
  *
  * k2b-ui gaps, until v2 has them: no recipient field (Mail's chips stand in the head), no split button (Send later
  * waits under "More"), no pressed or pending state of a button (Formatting and a running Send show only through the
- * text they change and the status), no section heading in a menu (sections stand between lines).
+ * text they change and the status), no section heading in a menu (sections stand between lines), no choice of one in
+ * a menu (a tick keeps the menu open, so the chosen entry carries a check and the menu closes as in v1).
  */
 export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: MailV2Text }) {
   const parts = () => props.parts;
@@ -68,7 +69,13 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
               />
             )}
           </Show>
-          <Button variant="ghost" icon="paperclip" label={parts().tools.attach.label()} onClick={() => parts().tools.attach.run()} />
+          <Button
+            variant="ghost"
+            icon="paperclip"
+            label={parts().tools.attach.label()}
+            disabled={parts().tools.attach.disabled()}
+            onClick={() => parts().tools.attach.run()}
+          />
           <Show when={parts().tools.signature()}>
             {(signature) => (
               <Menu

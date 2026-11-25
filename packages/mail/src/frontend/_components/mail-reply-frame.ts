@@ -19,16 +19,21 @@ export type MailReplyFrame = {
 /** A menu the frame opens from its own button; the entries are the composer's or the box's. */
 export type MailReplyFrameMenu = { label: () => string; items: () => MenuEntry[]; disabled?: () => boolean };
 
-const menuItem = (item: Exclude<DropdownItem, { items: unknown }>): MenuItem => ({
-  label: item.label,
-  icon: item.icon?.replace(/^ti\s+/, "").replace(/^ti-/, ""),
-  disabled: item.disabled,
-  danger: item.variant === "danger",
-  meta: item.description,
-  ...("choice" in item ? { checked: typeof item.checked === "function" ? item.checked() : item.checked } : {}),
-  ...(item.action ? { onClick: item.action } : {}),
-  ...(item.href ? { href: item.href } : {}),
-});
+const menuItem = (item: Exclude<DropdownItem, { items: unknown }>): MenuItem => {
+  const icon = item.icon?.replace(/^ti\s+/, "").replace(/^ti-/, "");
+  const checked = "choice" in item ? (typeof item.checked === "function" ? item.checked() : item.checked) : undefined;
+  return {
+    label: item.label,
+    // A choice of one closes the menu as in v1, so the chosen one carries a check instead of v2's tick, which stays open.
+    icon: "choice" in item && item.choice === "radio" ? (checked ? "check" : icon) : icon,
+    disabled: item.disabled,
+    danger: item.variant === "danger",
+    meta: item.description,
+    ...("choice" in item && item.choice === "checkbox" ? { checked } : {}),
+    ...(item.action ? { onClick: item.action } : {}),
+    ...(item.href ? { href: item.href } : {}),
+  };
+};
 
 /**
  * The composer's and the box's menus, which v1 draws as `Dropdown` entries, as entries of a v2 `Menu`: each section
@@ -60,7 +65,7 @@ export type MailReplyFrameParts = {
   tools: {
     /** Formatting is offered for Markdown text only. */
     formatting: () => { pressed: boolean; disabled: boolean; toggle: () => void; label: string } | null;
-    attach: { label: () => string; run: () => void };
+    attach: { label: () => string; disabled: () => boolean; run: () => void };
     signature: () => MailReplyFrameMenu | null;
     assistant: { label: () => string; disabled: () => boolean; run: () => void };
     /** Link, emoji, image, preview, quote, calendar, delivery options, plain text, subject, write large, window, later. */

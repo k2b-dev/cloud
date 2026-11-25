@@ -2603,16 +2603,19 @@ export default function MailComposer(props: {
             {
               label: r().sendLaterTomorrow,
               icon: "sunrise",
+              disabled: sendHeld(),
               meta: dates.formatDateTime(shown.tomorrow, props.dateConfig),
               onClick: () => void sendOrSayWhy({ scheduledAt: at("tomorrow") }),
             },
             {
               label: r().sendLaterMonday,
               icon: "calendar-week",
+              disabled: sendHeld(),
               meta: dates.formatDateTime(shown.monday, props.dateConfig),
               onClick: () => void sendOrSayWhy({ scheduledAt: at("monday") }),
             },
-            { label: r().sendLaterCustom, icon: "clock", onClick: () => void schedule() },
+            // Like v1's split button, Send later waits while Send waits (uploads, offline, a held reply).
+            { label: r().sendLaterCustom, icon: "clock", disabled: sendHeld(), onClick: () => void schedule() },
           ];
         };
         return (
@@ -2825,7 +2828,7 @@ export default function MailComposer(props: {
                         toggle: () => setInlineFormatting((value) => !value),
                       }
                     : null,
-                attach: { label: () => t().attachFiles, run: () => void chooseAttachments() },
+                attach: { label: () => t().attachFiles, disabled: () => !editable(), run: () => void chooseAttachments() },
                 signature: () => {
                   if (!signatureChoiceVisible()) return null;
                   const name = signatureTemplateId()
@@ -2842,8 +2845,9 @@ export default function MailComposer(props: {
                         unavailable: t().unavailableSignature,
                       }).map((option) => ({
                         label: option.label,
+                        // One signature is chosen: the menu closes, the chosen one carries the check.
+                        icon: option.value === (signatureTemplateId() ?? "") ? "check" : undefined,
                         meta: option.description,
-                        checked: option.value === (signatureTemplateId() ?? ""),
                         onClick: () => setSignatureTemplateId(option.value || null),
                       })),
                   };
@@ -2913,7 +2917,8 @@ export default function MailComposer(props: {
               },
               send: {
                 label: () => t().send,
-                run: () => void sendDraft(sendFailure() ? currentDelivery : {}),
+                // Disabled while Send waits; sendOrSayWhy still answers a held Send instead of ending silently.
+                run: () => void sendOrSayWhy(sendFailure() ? currentDelivery : {}),
                 busy: () => send.loading(),
                 disabled: () => sendHeld() || send.loading(),
                 blocked: sendBlockedReason,
