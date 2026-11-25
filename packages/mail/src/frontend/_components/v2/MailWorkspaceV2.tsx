@@ -2,7 +2,22 @@ import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { announce, type DropdownItem, useLocale } from "@k2b/ui";
-import { Bar, Button, Input, Menu, Nav, type NavGroup, type NavItem, type OnNavigate, Pane, StatusRow, Tabs, Workspace } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Input,
+  Menu,
+  type MenuEntry,
+  Nav,
+  type NavGroup,
+  type NavItem,
+  type OnNavigate,
+  Pane,
+  StatusRow,
+  type Tab,
+  Tabs,
+  Workspace,
+} from "@k2b/ui/v2";
 import { type Accessor, createComputed, createMemo, createSignal, Show } from "solid-js";
 import { mailFolderNames } from "../../../folder-names";
 import type { MailListItem } from "../../../service/workspace";
@@ -10,8 +25,10 @@ import { mailOverviewMessages } from "../../mail-overview-messages";
 import type { MailboxController, MailWorkspaceDom } from "../../mail-workspace";
 import type { MailSidebarMailbox } from "../MailSidebar";
 import { createMailSearchFilterMenu } from "../MailWorkspaceHead";
+import { useMailContactDirectory } from "../mail-contact-directory-context";
 import { buildVisibleMailFolderTree, flattenMailFolderTree } from "../mail-folder-tree";
 import { mailListRowKey } from "../mail-list-projection";
+import { createMailboxManagement } from "../mail-mailbox-management";
 import type { MailboxPreferences } from "../mail-mailbox-preferences";
 import { orderMailboxes } from "../mail-mailbox-preferences";
 import { buildMailListHref, buildMailSearchHref, buildMailSelectionHref, mailRouteUrl } from "../mail-navigation";
@@ -149,6 +166,33 @@ export default function MailWorkspaceV2(props: {
   };
 
   // ── Sidebar ────────────────────────────────────────────────────────────────────────────────────────────────────
+  // Each mailbox's own deeds at its row's "…", as v1's sidebar rows offer them: pin or release it, hide or show it.
+  const rowMenu = (id: string, name: string): MenuEntry[] => {
+    const preferences = props.shell.preferences;
+    if (preferences.isHidden(id))
+      return [{ label: overviewText().showMailbox({ name }), icon: "eye", onClick: () => preferences.change(id, "hidden", false) }];
+    const pinned = preferences.isPinned(id);
+    return [
+      {
+        label: pinned ? overviewText().unpinMailbox({ name }) : overviewText().pinMailbox({ name }),
+        icon: pinned ? "flag-off" : "flag",
+        onClick: () => preferences.change(id, "pinned", !pinned),
+      },
+      { label: overviewText().hideMailbox({ name }), icon: "eye-off", onClick: () => preferences.change(id, "hidden", true) },
+    ];
+  };
+  // The group's "…": a new mailbox and the deleted ones, v1's deeds of the mailbox list.
+  const contactDirectory = useMailContactDirectory();
+  const canCreate = () => Boolean(props.session.currentUserId);
+  const management = createMailboxManagement({
+    get canCreate() {
+      return canCreate();
+    },
+    get currentUserEmail() {
+      return props.session.currentUserEmail;
+    },
+    contactDirectory,
+  });
   const navItems = createMemo((): NavItem[] => {
     const data = c().data;
     const openId = data.mailbox.id;
@@ -189,13 +233,22 @@ export default function MailWorkspaceV2(props: {
       : [];
     const secondary = tree.filter((folder) => SECONDARY_ROLES.has(folder.role)).map(folderItem);
     const own = tree.filter((folder) => !SECONDARY_ROLES.has(folder.role) && !(PRIMARY_ROLES as readonly string[]).includes(folder.role));
+    // Archive, bin and spam fold under "Mehr", as in v1's sidebar; the fold opens by itself while one of them is open.
+    const more: NavItem[] = secondary.length > 0 ? [{ label: c().sidebarText().more, nested: true, items: secondary }] : [];
     const opened: NavItem[] = [
-      { label: data.mailbox.name, icon: "mail", href: `/app/mail/${openId}`, onNavigate: props.shell.openMailbox, current: atRoot },
+      {
+        label: data.mailbox.name,
+        icon: "mail",
+        href: `/app/mail/${openId}`,
+        onNavigate: props.shell.openMailbox,
+        current: atRoot,
+        menu: rowMenu(data.mailbox.id, data.mailbox.name),
+      },
       ...primary.slice(0, 2),
       ...outbox,
       ...primary.slice(2),
-      ...secondary,
       ...own.map(folderItem),
+      ...more,
     ];
     const ordered = orderMailboxes(props.shell.mailboxes, props.shell.preferences.pinnedMailboxIds());
     const visible = ordered.filter((mailbox) => mailbox.id === openId || !props.shell.preferences.isHidden(mailbox.id));
@@ -203,12 +256,46 @@ export default function MailWorkspaceV2(props: {
     return visible.flatMap((mailbox) =>
       mailbox.id === openId
         ? opened
-        : [{ label: mailbox.name, icon: "mail", href: `/app/mail/${mailbox.id}`, onNavigate: props.shell.openMailbox } satisfies NavItem],
+        : [
+            {
+              label: mailbox.name,
+              icon: "mail",
+              href: `/app/mail/${mailbox.id}`,
+              onNavigate: props.shell.openMailbox,
+              menu: rowMenu(mailbox.id, mailbox.name),
+            } satisfies NavItem,
+          ],
     );
   });
   const hiddenCount = () => props.shell.mailboxes.filter((mailbox) => props.shell.preferences.isHidden(mailbox.id)).length;
   // The sidebar's entries, also in the shell's phone menu ("Mail ⌄"), where the sidebar gives way.
-  const navGroups = createMemo((): NavGroup[] => [{ label: text().mailboxes, items: navItems() }]);
+  const navGroups = createMemo((): NavGroup[] => [
+    {
+      label: text().mailboxes,
+      action: {
+        label: overviewText().mailboxActions,
+        items: [
+          ...(canCreate()
+            ? [
+                {
+                  label: c().sidebarText().newMailbox,
+                  icon: "mail-plus",
+                  disabled: management.creating(),
+                  onClick: () => void management.createMailbox(),
+                },
+              ]
+            : []),
+          {
+            label: overviewText().deletedMailboxes,
+            icon: "trash",
+            disabled: management.restoring(),
+            onClick: () => void management.openDeletedMailboxes(),
+          },
+        ],
+      },
+      items: navItems(),
+    },
+  ]);
   // Hidden mailboxes fold into one quiet entry at the foot, as in v1's sidebar: it opens them below itself.
   const [hiddenOpen, setHiddenOpen] = createSignal(false);
   const navFoot = createMemo((): NavItem[] | undefined => {
@@ -230,6 +317,7 @@ export default function MailWorkspaceV2(props: {
               href: `/app/mail/${mailbox.id}`,
               onNavigate: props.shell.openMailbox,
               nested: true,
+              menu: rowMenu(mailbox.id, mailbox.name),
             }),
           )
         : []),
@@ -237,7 +325,7 @@ export default function MailWorkspaceV2(props: {
   });
 
   // ── Head ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  const tabs = createMemo(() => {
+  const tabs = createMemo((): Tab[] => {
     const current = c().currentTab();
     const all = c().viewTabs();
     const shown = all.filter((tab) => HEAD_TABS.has(tab.id));
@@ -248,7 +336,20 @@ export default function MailWorkspaceV2(props: {
       ...(openFurther
         ? [{ label: openFurther.label, count: openFurther.count, href: openFurther.href, onNavigate: openView, current: true }]
         : []),
-      ...(further.length > 0 ? [{ label: text().moreViews, count: `+${further.length}`, menu: true }] : []),
+      // "Weitere +N": the views that wait behind it, each opening in place like a tab.
+      ...(further.length > 0
+        ? [
+            {
+              label: text().moreViews,
+              count: `+${further.length}`,
+              menu: further.map((tab) => ({
+                label: tab.label,
+                meta: tab.count === undefined ? undefined : String(tab.count),
+                onClick: () => void c().openWorkspaceHref(tab.href),
+              })),
+            },
+          ]
+        : []),
     ];
   });
   const composeHref = () => `/app/mail/compose?mailbox=${c().data.mailbox.id}&autostart=1`;

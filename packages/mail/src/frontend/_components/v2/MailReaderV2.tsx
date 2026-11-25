@@ -343,63 +343,66 @@ export default function MailReaderV2(props: {
           }
         />
       }
-    >
-      <Bar
-        start={
-          <Inline>
-            <Text type="meta">{props.text.messages({ count: item()?.messageCount ?? data().detailMessages.length })}</Text>
-            {statusChip()}
-            <For each={tags()}>
-              {(tag) => (
-                <Chip tag color={tag.color}>
-                  {tag.name}
-                </Chip>
-              )}
-            </For>
-            {/* What other apps linked to the conversation: one item opens directly, several in a menu (v1's chip). */}
-            <Show when={menus.linked().length > 0}>
-              <Show
-                when={menus.linked().length === 1 ? menus.linked()[0] : null}
-                fallback={
-                  <Menu
-                    icon="link"
-                    items={menus
-                      .linked()
-                      .map((linked) => ({ label: linked.title, icon: linked.icon.replace(/^ti\s+ti-/, ""), href: linked.href }))}
-                  >
-                    {readerText().linkedCount({ count: menus.linked().length })}
-                  </Menu>
-                }
-              >
-                {(only) => (
-                  <Chip icon="link" href={only().href}>
-                    {readerText().linkedCount({ count: 1 })}
+      // The conversation's state stays under the head while the reader scrolls (Pane status).
+      status={
+        <Bar
+          start={
+            <Inline>
+              <Text type="meta">{props.text.messages({ count: item()?.messageCount ?? data().detailMessages.length })}</Text>
+              {statusChip()}
+              <For each={tags()}>
+                {(tag) => (
+                  <Chip tag color={tag.color}>
+                    {tag.name}
+                  </Chip>
+                )}
+              </For>
+              {/* What other apps linked to the conversation: one item opens directly, several in a menu (v1's chip). */}
+              <Show when={menus.linked().length > 0}>
+                <Show
+                  when={menus.linked().length === 1 ? menus.linked()[0] : null}
+                  fallback={
+                    <Menu
+                      icon="link"
+                      items={menus
+                        .linked()
+                        .map((linked) => ({ label: linked.title, icon: linked.icon.replace(/^ti\s+ti-/, ""), href: linked.href }))}
+                    >
+                      {readerText().linkedCount({ count: menus.linked().length })}
+                    </Menu>
+                  }
+                >
+                  {(only) => (
+                    <Chip icon="link" href={only().href}>
+                      {readerText().linkedCount({ count: 1 })}
+                    </Chip>
+                  )}
+                </Show>
+              </Show>
+              <Show when={c().canWrite() && item()}>
+                {(open) => (
+                  <Chip icon="plus" onClick={() => void c().manageConversationTags(open())}>
+                    {props.text.tag}
                   </Chip>
                 )}
               </Show>
+            </Inline>
+          }
+          end={
+            <Show when={readers().length > 0}>
+              <For each={readers().slice(0, 3)}>{(reader) => <Avatar name={reader.displayName} />}</For>
+              <Text type="meta">
+                {props.text.reading({
+                  names: readers()
+                    .map((reader) => reader.displayName)
+                    .join(", "),
+                })}
+              </Text>
             </Show>
-            <Show when={c().canWrite() && item()}>
-              {(open) => (
-                <Chip icon="plus" onClick={() => void c().manageConversationTags(open())}>
-                  {props.text.tag}
-                </Chip>
-              )}
-            </Show>
-          </Inline>
-        }
-        end={
-          <Show when={readers().length > 0}>
-            <For each={readers().slice(0, 3)}>{(reader) => <Avatar name={reader.displayName} />}</For>
-            <Text type="meta">
-              {props.text.reading({
-                names: readers()
-                  .map((reader) => reader.displayName)
-                  .join(", "),
-              })}
-            </Text>
-          </Show>
-        }
-      />
+          }
+        />
+      }
+    >
       <Show when={data().conversationSummary?.summary}>
         {(summary) => (
           <Notice
