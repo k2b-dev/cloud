@@ -854,7 +854,6 @@ restores the global search without reopening the dialog.
 | Assistant project | `assistant.project` with the public project ID | Your chats in the selected project, matched by title and message content |
 | Mail mailbox | `mail.mailbox` with the public mailbox ID | Messages and attachments in that mailbox, newest first |
 | Accounts | Accounts app context | Groups; administrators can also find users and service accounts |
-| Capabilities | Capabilities app context | Apps, Queries and Actions in the inspector |
 
 Project and mailbox scopes are hidden contexts, not additional discoverable
 tags. Providers authorize the resource before searching and apply its scope

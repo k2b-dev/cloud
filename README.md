@@ -25,7 +25,7 @@ the workspace with `bun scripts/workspace.ts apps`.
 
 | Group | Apps |
 |---|---|
-| **Platform** | [`gateway`](packages/gateway) — routing and app registry &nbsp;•&nbsp; [`core`](packages/core) — auth, profile, settings, legal pages, transactional email &nbsp;•&nbsp; [`dashboard`](packages/dashboard) — personal start page with app widgets &nbsp;•&nbsp; [`capabilities`](packages/capabilities) — discover and run the queries and actions apps publish |
+| **Platform** | [`gateway`](packages/gateway) — routing and app registry &nbsp;•&nbsp; [`core`](packages/core) — auth, profile, settings, legal pages, transactional email &nbsp;•&nbsp; [`dashboard`](packages/dashboard) — personal start page with app widgets |
 | **Identity & access** | [`accounts`](packages/accounts) — users and groups, FreeIPA and local &nbsp;•&nbsp; [`oauth`](packages/oauth) — OAuth2 issuer &nbsp;•&nbsp; [`proxy-auth`](packages/proxy-auth) — Traefik forward-auth &nbsp;•&nbsp; [`ipa-hosts`](packages/ipa-hosts) — FreeIPA host management |
 | **Operations** | [`gateway-ops`](packages/gateway-ops) — app registry, routes, logs, webhooks, notifications &nbsp;•&nbsp; [`pulse`](packages/pulse) — metrics, events, states, and dashboards |
 | **Productivity** | [`assistant`](packages/assistant) — AI chat with code mode &nbsp;•&nbsp; [`mail`](packages/mail) — collaborative email &nbsp;•&nbsp; [`notebooks`](packages/notebooks) — collaborative notes &nbsp;•&nbsp; [`spaces`](packages/spaces) — kanban, list, and calendar with iCal &nbsp;•&nbsp; [`grids`](packages/grids) — structured data with bases, views, forms, documents, and workflows &nbsp;•&nbsp; [`filesv2`](packages/filesv2) — Cloud and FreeIPA storage through Filegate &nbsp;•&nbsp; [`contacts`](packages/contacts) — directory views |

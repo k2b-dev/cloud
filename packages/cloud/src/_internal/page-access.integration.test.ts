@@ -31,7 +31,6 @@ const protectedPages = [
   ...[
     "accounts",
     "assistant",
-    "capabilities",
     "contacts",
     "dashboard",
     "grids",
@@ -52,7 +51,6 @@ const pagePrefixes = [
     "accounts",
     "api-docs",
     "assistant",
-    "capabilities",
     "contacts",
     "dashboard",
     "grids",
@@ -90,7 +88,6 @@ const missingResources = [
   "/app/accounts/users/00000000-0000-0000-0000-000000000000",
   "/app/assistant?project=not-a-real-id",
   "/app/assistant?conversation=not-a-real-id",
-  "/app/capabilities/not-a-real-app",
   "/app/contacts/not-a-real-id",
   "/app/grids/not-a-real-id",
   "/app/grids/not-a-real-id/query-reference",

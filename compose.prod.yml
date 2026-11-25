@@ -175,19 +175,6 @@ services:
     security_opt: [no-new-privileges:true]
     image: ghcr.io/k2b-dev/cloud-app-assistant:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
-  app-capabilities:
-    secrets:
-      - source: capabilities-app-key
-        target: capabilities.key
-    depends_on:
-      app-core:
-        condition: service_healthy
-    environment:
-      CLOUD_APP_KEY_FILE: /run/secrets/capabilities.key
-      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-    <<: *app-defaults
-    image: ghcr.io/k2b-dev/cloud-app-capabilities:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-
   # Chat is unreleased: its image is built and published, but a plain `up`
   # leaves it out. `--profile unreleased` or naming the service starts it,
   # which is for test installations only. Do not start it.
@@ -446,8 +433,6 @@ secrets:
     file: ./secrets/api-docs.key
   assistant-app-key:
     file: ./secrets/assistant.key
-  capabilities-app-key:
-    file: ./secrets/capabilities.key
   chat-app-key:
     file: ./secrets/chat.key
   contacts-app-key:

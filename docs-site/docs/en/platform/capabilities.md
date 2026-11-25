@@ -2453,9 +2453,9 @@ cld capabilities action inventory item.rename \
   --input '{"name":"Dock"}'
 ```
 
-The Capabilities playground at `/app/capabilities` lists the live catalog,
-renders schema-driven inputs, invokes operations, and builds matching cURL
-requests. It is a discovery and debugging surface, not the app's normal UI.
+Use `cld capabilities catalog` to inspect the live catalog and the CLI commands
+above to invoke operations. Administrators can also inspect registered
+capabilities in **Administration → Observability → Capabilities**.
 
 ### Cloud MCP
 

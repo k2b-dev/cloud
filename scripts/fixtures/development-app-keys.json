@@ -20,12 +20,6 @@
       "grants": []
     },
     {
-      "appId": "capabilities",
-      "keyId": "7a7c1fe8-48b0-4eef-ab4b-d4d94f77242e",
-      "seed": "enwf6EiwDu_LS9TZT3ckLv5NkvwD4jW08ZJj9dkrA1g",
-      "grants": []
-    },
-    {
       "appId": "chat",
       "keyId": "2e87fb64-eaa2-4164-a390-158e44e00266",
       "seed": "Lof7ZOqicWSjkBWOROACZuoiZW4DZklVwBp6YRbbq58",

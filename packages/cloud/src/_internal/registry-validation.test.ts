@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveApplicationPackage } from "./application-package";
 import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 
 const valid = {
@@ -13,6 +14,21 @@ const valid = {
 
 describe("validateAppRegistryEntry", () => {
   test("accepts a valid entry", () => expect(validateAppRegistryEntry(valid)).toBeNull());
+  test("keeps an older Capabilities application registered after its workspace is removed", () => {
+    const entry = {
+      ...valid,
+      id: "capabilities",
+      package: "capabilities",
+      name: "Capabilities",
+      baseUrl: "http://app-capabilities:3000",
+      routes: ["/app/capabilities", "/public/capabilities"],
+      access: { kind: "signedIn" },
+      nav: { href: "/app/capabilities", match: "/app/capabilities", section: "more", requiresAuth: true },
+    };
+    expect(resolveApplicationPackage(entry.id, entry.package)).toBe("capabilities");
+    expect(validateAppRegistryEntry(entry)).toBeNull();
+    expect(asAppRegistryEntry(entry)).toMatchObject(entry);
+  });
   test("accepts an empty description without accepting a non-string", () => {
     expect(validateAppRegistryEntry({ ...valid, description: "" })).toBeNull();
     expect(validateAppRegistryEntry({ ...valid, description: 42 })).toContain("description");

@@ -223,28 +223,6 @@ services:
   # Extras — only started with `--profile extra` or ad-hoc via dev:app
   # ══════════════════════════════════════════════════════════════════
 
-  app-capabilities:
-    secrets:
-      - source: capabilities-app-key
-        target: capabilities.key
-    depends_on:
-      app-core:
-        condition: service_healthy
-    environment:
-      NODE_ENV: development
-      APP_ID: capabilities
-      CLOUD_APP_KEY_FILE: /run/secrets/capabilities.key
-      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-    <<: *app
-    container_name: app-capabilities
-    profiles: [extra]
-    volumes:
-      - ./packages/cloud/src:/app/packages/cloud/src
-      - ./packages/cloud/scripts:/app/packages/cloud/scripts
-      - ./packages/capabilities/src:/app/packages/capabilities/src
-      - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/capabilities/src/index.ts
-
   app-notebooks:
     secrets:
       - source: notebooks-app-key
@@ -630,8 +608,6 @@ secrets:
     file: ./.local/dev-app-keys/api-docs.key
   assistant-app-key:
     file: ./.local/dev-app-keys/assistant.key
-  capabilities-app-key:
-    file: ./.local/dev-app-keys/capabilities.key
   chat-app-key:
     file: ./.local/dev-app-keys/chat.key
   contacts-app-key:
