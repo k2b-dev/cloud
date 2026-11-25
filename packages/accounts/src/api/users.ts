@@ -233,7 +233,9 @@ const app = new Hono<AuthContext>()
       const pagination = parsePagination(c.req.valid("query"));
       const raw = new URL(c.req.url).searchParams;
       const params = legacyUsersParams(raw) ?? raw;
+      // The API pages with its own `page` and `per_page`; the list page's own page limit does not apply here.
       params.delete("per_page");
+      params.delete("page");
       // The list arranges groups on its page; the API returns the users of the page and ignores the grouping.
       params.delete("group");
       const address = parseUsersAddress(usersQuery(getLocale(c)), params);
@@ -241,16 +243,18 @@ const app = new Hono<AuthContext>()
       if (refused.length > 0)
         return c.json({ message: `Invalid list parameters: ${refused.map((issue) => issue.param || issue.code).join(", ")}` }, 400);
 
-      const usersPage = await accountsService.user.directory({
+      const result = await accountsService.user.directory({
+        actor: toAccountsActor(expectUserBackedActor(c)),
         ...directoryQueryOf(address.state, getTimeZone(c)),
         pagination: { page: pagination.page, perPage: pagination.perPage },
       });
+      if (!result.ok) return respond(c, result);
 
       return respond(
         c,
         ok({
-          users: usersPage.items,
-          pagination: createPagination(pagination, usersPage.total),
+          users: result.data.items,
+          pagination: createPagination(pagination, result.data.total),
         }),
       );
     },

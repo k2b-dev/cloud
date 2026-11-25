@@ -66,7 +66,7 @@ const withUsers = async (
   const directory = spyOn(accountsAppService.user, "directory").mockImplementation(async ({ pagination }) => {
     const page = pagination?.page ?? 1;
     const items = (page - 1) * 100 < total ? people : [];
-    return { items, page, perPage: 100, total, hasNext: page * 100 < total };
+    return { ok: true as const, data: { items, page, perPage: 100, total, hasNext: page * 100 < total } };
   });
   const groups = spyOn(accountsAppService.group, "list").mockResolvedValue({
     items: [{ ...SALES, provider: "local", description: null, gidnumber: null, personalOwner: null }],
@@ -106,6 +106,7 @@ test("the address filters, sorts and groups the list on the server, and a row le
   expect(calls).toEqual([
     [
       {
+        actor: expect.objectContaining({ userId: admin.id }),
         search: "ren",
         roles: ["admin"],
         groupIds: [SALES.id],

@@ -31,6 +31,7 @@ import {
   USER_VIEW_KEYS,
   USER_VIEWS,
   USERS_PAGE_MAX,
+  USERS_PAGE_PATH,
   USERS_PER_PAGE,
   type UsersState,
   type UserView,
@@ -106,7 +107,8 @@ export default function UsersScreen(props: UsersScreenProps) {
   const pages = () => Math.min(USERS_PAGE_MAX, Math.max(1, Math.ceil(total() / USERS_PER_PAGE)));
   const grouped = () => state().group === "member-of";
   const rows = createMemo(() => userRows(entries() ?? [], grouped(), locale()));
-  const context = () => query().serialize(state()).toString();
+  /** The list address a row carries to the user's page, its page included, so the way back lands where it left. */
+  const context = () => href(state(), page()).slice(USERS_PAGE_PATH.length + 1);
   const href = (next: UsersState, nextPage = 1) => usersHref(query(), next, nextPage);
 
   let controller: AbortController | undefined;

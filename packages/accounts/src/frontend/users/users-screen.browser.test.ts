@@ -85,7 +85,7 @@ const page = (failed: boolean) =>
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
-type Seen = { pages: string[]; api: string[] };
+type Seen = { pages: string[]; api: string[]; created: unknown[] };
 
 const open = async (view: View, address: string, options: { failed?: boolean } = {}) => {
   const context: BrowserContext = await browser.newContext({
@@ -99,7 +99,7 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
-  const seen: Seen = { pages: [], api: [] };
+  const seen: Seen = { pages: [], api: [], created: [] };
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/app/accounts/groups") return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(false) });
@@ -114,6 +114,16 @@ const open = async (view: View, address: string, options: { failed?: boolean } =
         json: { users, pagination: { page: 1, per_page: 100, total: users.length, total_pages: 1, has_next: false } },
       });
     }
+    if (url.pathname === "/api/accounts/groups" && route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { name: string; provider: "ipa" | "local"; description?: string };
+      seen.created.push(body);
+      const group = { id: "33333333-3333-4333-8333-000000000099", name: body.name, provider: body.provider };
+      return route.fulfill({
+        status: 201,
+        json: { ...group, description: body.description ?? null, gidnumber: null, personalOwner: null },
+      });
+    }
+    if (url.pathname === "/api/accounts/action-notice") return route.fulfill({ json: { failed: false, notice: null } });
     if (url.pathname === "/api/accounts/groups") {
       const ids = url.searchParams.get("ids")?.split(",");
       const items = fixtureGroupItems(url.searchParams.get("search") ?? "").filter((item) => !ids || ids.includes(item.value));
@@ -293,6 +303,26 @@ describe("the user list on v2", () => {
       } finally {
         await context.close();
       }
+    }
+  }, 60_000);
+
+  test("“Neue Gruppe” opens the v2 dialog with the same fields and creates the normalized group", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/accounts/groups");
+    try {
+      await tab.getByRole("button", { name: "Neue Gruppe" }).first().click();
+      const dialog = tab.locator("[data-k2-part=Dialog]");
+      await dialog.waitFor();
+      expect(await dialog.getByRole("heading").first().textContent()).toBe("Gruppe erstellen");
+      await dialog.getByRole("textbox", { name: /Name/ }).fill("Mein Team!");
+      expect(await dialog.textContent()).toContain("Name: mein-team");
+      expect(await dialog.getByRole("checkbox", { name: "Als POSIX-Gruppe erstellen" }).isChecked()).toBe(true);
+      await shoot(tab, "new-group-light-1440");
+      await dialog.getByRole("button", { name: "Gruppe erstellen" }).click();
+      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
+      expect(seen.created).toEqual([{ provider: "ipa", name: "mein-team", posix: true }]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
     }
   }, 60_000);
 

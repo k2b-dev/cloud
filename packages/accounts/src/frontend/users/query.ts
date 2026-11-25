@@ -25,8 +25,11 @@ export const USERS_PER_PAGE = 100;
 export const USERS_SEARCH_MAX = 200;
 /** Most groups one filter names, as the service allows it. */
 export const USERS_GROUPS_MAX = 20;
-/** Last page the list opens. */
+/** Last page the list page opens; the users API pages with its own `page` and `per_page`. */
 export const USERS_PAGE_MAX = 1000;
+/** The days a last-sign-in range may name: every day a sign-in can have, and one before the last day a date holds. */
+export const LOGIN_DAY_MIN = "1970-01-01";
+export const LOGIN_DAY_MAX = "9999-12-30";
 
 const ROLES = ["admin", "member", "guest"] as const satisfies readonly UserDirectoryRole[];
 const STATUSES = ["active", "invited", "expired"] as const satisfies readonly UserDirectoryStatus[];
@@ -139,6 +142,11 @@ export const parseUsersAddress = (query: UsersQuery, params: URLSearchParams): U
   if (groups && (groups.length > USERS_GROUPS_MAX || !groups.every((id) => UUID.test(id)))) {
     issues.push({ code: "invalid", param: "member-of", value: groups.join(",") });
     state = query.clear(state, "member-of");
+  }
+  const login = state.filters.login;
+  if (login?.kind === "range" && [login.from, login.to].some((day) => day !== undefined && (day < LOGIN_DAY_MIN || day > LOGIN_DAY_MAX))) {
+    issues.push({ code: "invalid", param: "login", value: params.get("login") ?? "" });
+    state = query.clear(state, "login");
   }
   if (state.view !== undefined && !isUserView(state.view)) {
     issues.push({ code: "invalid", param: "view", value: state.view });

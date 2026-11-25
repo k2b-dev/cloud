@@ -20,7 +20,8 @@ import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
-import { useNewGroup } from "./new-group";
+import NewGroupDialog from "./NewGroupDialog";
+import { useGroupCreated } from "./new-group";
 import { GROUPS_PAGE_PATH, type GroupScope, type GroupsState, groupsHref, groupsQuery } from "./query";
 import { RELATIONS_PATH } from "./relations/relations-view";
 
@@ -58,7 +59,9 @@ export default function GroupsScreen(props: GroupsScreenProps) {
   const locale = useLocale();
   const t = useListMessages();
   const { showChanges, openPage } = usePageSwap();
-  const newGroup = useNewGroup({ freeIpaEnabled: props.freeIpaEnabled, linuxEnabled: props.linuxEnabled });
+  const groupCreated = useGroupCreated();
+  // the form lives while the dialog is open: a new dialog starts empty
+  const [creating, setCreating] = createSignal(false);
   const query = createMemo(() => groupsQuery(locale(), props.defaultScope));
   const [state, setState] = createSignal<GroupsState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
@@ -124,7 +127,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
                 }}
               />
               <Show when={props.isAdmin}>
-                <Button variant="primary" icon="plus" busy={newGroup.opening()} onClick={() => void newGroup.open()}>
+                <Button variant="primary" icon="plus" onClick={() => setCreating(true)}>
                   {t().newGroup}
                 </Button>
               </Show>
@@ -132,8 +135,19 @@ export default function GroupsScreen(props: GroupsScreenProps) {
           }
         />
       }
-      primary={props.isAdmin ? { label: t().newGroup, icon: "plus", onClick: () => void newGroup.open() } : undefined}
+      primary={props.isAdmin ? { label: t().newGroup, icon: "plus", onClick: () => setCreating(true) } : undefined}
     >
+      <Show when={creating()}>
+        <NewGroupDialog
+          open
+          freeIpaEnabled={props.freeIpaEnabled}
+          linuxEnabled={props.linuxEnabled}
+          close={(result) => {
+            setCreating(false);
+            if (result) void groupCreated(result);
+          }}
+        />
+      </Show>
       <Pane
         label={t().groups}
         scrollKey="accounts-groups"

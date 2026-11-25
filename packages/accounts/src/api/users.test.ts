@@ -298,11 +298,8 @@ test("admin updates pass an explicit null to remove an email", async () => {
 
 test("the user list reads the list's address: filters, search and sort reach the one directory query", async () => {
   const directory = spyOn(accountsAppService.user, "directory").mockResolvedValue({
-    items: [],
-    page: 1,
-    perPage: 50,
-    total: 0,
-    hasNext: false,
+    ok: true,
+    data: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
   });
   try {
     const group = "33333333-3333-4333-8333-333333333333";
@@ -312,6 +309,8 @@ test("the user list reads the list's address: filters, search and sort reach the
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ users: [], pagination: expect.objectContaining({ total: 0, per_page: 50 }) });
     expect(directory).toHaveBeenLastCalledWith({
+      // the service checks the caller itself
+      actor: expect.objectContaining({ userId: adminId, roles: ["admin"] }),
       search: "ada",
       roles: ["admin", "guest"],
       groupIds: [group],
@@ -331,7 +330,27 @@ test("the user list reads the list's address: filters, search and sort reach the
     const refused = await users.request("/?role=owner");
     expect(refused.status).toBe(400);
     expect(await refused.json()).toMatchObject({ message: expect.stringContaining("role") });
-    expect(directory).toHaveBeenCalledTimes(2);
+    // the API keeps its own pagination: a page past the list page's last one is still a page
+    expect((await users.request("/?page=1001&per_page=20")).status).toBe(200);
+    expect(directory).toHaveBeenLastCalledWith(expect.objectContaining({ pagination: { page: 1001, perPage: 20 } }));
+    // a day the list cannot turn into an instant is refused up front, never a server error
+    expect((await users.request("/?login=..9999-12-31")).status).toBe(400);
+    expect((await users.request("/?login=0001-01-01..")).status).toBe(400);
+    expect(directory).toHaveBeenCalledTimes(3);
+  } finally {
+    directory.mockRestore();
+  }
+});
+
+test("a refused directory answers with the service's status", async () => {
+  const directory = spyOn(accountsAppService.user, "directory").mockResolvedValue({
+    ok: false,
+    error: { code: "FORBIDDEN", message: "Admin access required", status: 403 },
+  });
+  try {
+    const res = await users.request("/");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ message: "Admin access required" });
   } finally {
     directory.mockRestore();
   }

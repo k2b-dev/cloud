@@ -14,6 +14,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: groupsPage } = await import("./groups/page");
 const { default: userPage } = await import("./users/detail/page");
+const { default: usersPage } = await import("./users/page");
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "quinn",
@@ -56,6 +57,7 @@ const server = () => {
     await next();
   });
   app.get("/app/accounts/groups", ...groupsPage);
+  app.get("/app/accounts/users", ...usersPage);
   app.get("/app/accounts/users/:id", ...userPage);
   return app;
 };
@@ -131,6 +133,56 @@ test("direct and indirect user memberships hide personal groups and keep normal 
       expect(html.includes(`/app/accounts/groups/${inherited.id}`)).toBe(query !== "");
       expect(list).toHaveBeenCalledWith({ pagination: { page: 1, perPage: 1000 }, scope: { userId: user.id, mode: "member" } });
     }
+  } finally {
+    for (const spy of spies) spy.mockRestore();
+  }
+});
+
+test("list page 2 -> a user's page -> back lands on page 2 with the same filters", async () => {
+  const entry = { ...user, role: "admin" as const, status: "active" as const, lastLogin: null, passkey: false, groups: [], groupCount: 0 };
+  const spies = [
+    stubRailSnapshot(),
+    spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
+    spyOn(services.coreSettings, "get").mockResolvedValue(false),
+    spyOn(services.appApproval, "config").mockRejectedValue(new Error("Not configured")),
+    spyOn(services.accountsAppService.user, "directory").mockResolvedValue({
+      ok: true,
+      data: { items: [entry], page: 2, perPage: 100, total: 150, hasNext: false },
+    }),
+    spyOn(services.accountsAppService.group, "list").mockResolvedValue(empty),
+    spyOn(services.accountsAppService.user, "get").mockResolvedValue(user),
+    spyOn(services.linuxIdentities, "get").mockResolvedValue({
+      config,
+      user: {
+        id: user.id,
+        uid: user.uid,
+        displayName: user.displayName,
+        provider: "local",
+        profile: "user",
+        identity: null,
+        state: "ready",
+      },
+    }),
+    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
+    spyOn(services.accountsAppService.user.groupId, "list").mockResolvedValue([]),
+    spyOn(services.serviceAccountCredentials, "listOverview").mockResolvedValue(empty),
+    spyOn(services.appApproval, "listUserDevices").mockResolvedValue([]),
+    spyOn(services.pwaDevices, "listUserDevices").mockResolvedValue([]),
+  ];
+  try {
+    const list = await server().request("/app/accounts/users?status=active&sort=login.desc&page=2", {
+      headers: { "Accept-Language": "en" },
+    });
+    const listHtml = await list.text();
+    expect(list.status, listHtml).toBe(200);
+    const prefix = `href="/app/accounts/users/${user.id}?list=`;
+    const at = listHtml.indexOf(prefix);
+    const row = at < 0 ? undefined : listHtml.slice(at + 6, listHtml.indexOf('"', at + 6)).replaceAll("&amp;", "&");
+    expect(row).toBe(`/app/accounts/users/${user.id}?list=${encodeURIComponent("status=active&sort=login.desc&page=2")}`);
+    const detail = await server().request(row!, { headers: { "Accept-Language": "en" } });
+    const detailHtml = await detail.text();
+    expect(detail.status, detailHtml).toBe(200);
+    expect(detailHtml).toContain('href="/app/accounts/users?status=active&amp;sort=login.desc&amp;page=2"');
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

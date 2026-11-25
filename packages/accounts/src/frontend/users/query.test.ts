@@ -43,6 +43,15 @@ describe("the user list's address", () => {
     expect(address.issues.map((issue) => issue.param).sort()).toEqual(["member-of", "page", "q", "role", "view"]);
   });
 
+  test("a last-sign-in range names only days a date can hold, so the next day after its end exists", () => {
+    for (const login of ["..9999-12-31", "0001-01-01..", "1969-12-31..2026-01-01"]) {
+      const address = parse(`login=${login}`);
+      expect(address.state.filters.login).toBeUndefined();
+      expect(address.issues).toEqual([{ code: "invalid", param: "login", value: login }]);
+    }
+    expect(parse("login=2026-01-01..9999-12-30").state.filters.login).toEqual({ kind: "range", from: "2026-01-01", to: "9999-12-30" });
+  });
+
   test("allows at most 20 groups in one filter", () => {
     const ids = Array.from({ length: 21 }, (_, index) => `33333333-3333-4333-8333-${String(index).padStart(12, "0")}`);
     expect(parse(`member-of=${ids.join(",")}`).state.filters["member-of"]).toBeUndefined();

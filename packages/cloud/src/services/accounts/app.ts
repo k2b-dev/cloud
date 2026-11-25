@@ -344,14 +344,17 @@ export const accountsAppService = {
     },
     /**
      * The administration's user list with its filters and sort: the one query its page, its API and its CLI share.
-     * Callers check the administrator role first (the routes do).
+     * It checks the administrator role itself, so a page, an API or a CLI reaching it gets the same answer.
      */
     directory: async (
-      query: Omit<users.UserDirectoryQuery, "page" | "perPage"> & { pagination?: PageParams },
-    ): Promise<Paginated<UserDirectoryEntry>> => {
-      const { page, perPage } = paginate(query.pagination);
+      config: Omit<users.UserDirectoryQuery, "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
+    ): Promise<Result<Paginated<UserDirectoryEntry>>> => {
+      // The list names every account with its sign-ins and groups: administrators only, whichever way it is reached.
+      if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));
+      const { actor: _actor, pagination, ...query } = config;
+      const { page, perPage } = paginate(pagination);
       const result = await users.directory({ ...query, page, perPage });
-      return { items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total };
+      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
     },
     get: async (config: { id: string } | { uid: string }, options?: Parameters<typeof users.get>[1]): Promise<User | null> =>
       users.get(config, options),

@@ -11,10 +11,13 @@ const suite = databaseSuite();
 suite("the administration's user list (integration)", () => {
   test("filters, sorts and names each account's groups, in two statements", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
-    const user = async (name: string, values: { profile?: "user" | "guest"; admin?: boolean; login?: string; expires?: string }) => {
+    const user = async (
+      name: string,
+      values: { provider?: "local" | "ipa"; profile?: "user" | "guest"; admin?: boolean; login?: string; expires?: string },
+    ) => {
       const [row] = await sql<{ id: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, mail, admin, last_login_local, account_expires)
-        VALUES (${`dir-${name.toLowerCase()}-${tag}`}, 'local', ${values.profile ?? "user"}, ${`${name} ${tag}`},
+        VALUES (${`dir-${name.toLowerCase()}-${tag}`}, ${values.provider ?? "local"}, ${values.profile ?? "user"}, ${`${name} ${tag}`},
           ${`${name.toLowerCase()}-${tag}@example.test`}, ${values.admin ?? false}, ${values.login ?? null}, ${values.expires ?? null})
         RETURNING id
       `;
@@ -31,6 +34,11 @@ suite("the administration's user list (integration)", () => {
     const ben = await user("Ben", { login: day(120) });
     await user("Cleo", { profile: "guest" });
     await user("Dora", { login: day(40), expires: day(1) });
+    // a FreeIPA guest in an administrators' group stays a guest, as `buildRoles` decides for the session
+    const ivo = await user("Ivo", { provider: "ipa", profile: "guest", login: day(10) });
+    const [adminGroup] = (await getFreeIpaConfig()).groupsAdmin;
+    await sql`INSERT INTO auth.ipa_user_effective_groups (user_id, group_name) VALUES (${ivo}::uuid, ${adminGroup!})`;
+    const admin = { userId: ada, uid: `dir-ada-${tag}`, roles: ["user", "admin"], provider: "local" };
     const sales = await group("sales");
     const board = await group("board");
     const personal = await group("ada-personal");
@@ -48,15 +56,18 @@ suite("the administration's user list (integration)", () => {
       INSERT INTO auth.webauthn_credentials (user_id, name, credential_id, public_key)
       VALUES (${ben}::uuid, 'key', ${`dir-cred-${tag}`}, '\\x00'::bytea)
     `;
-    const list = (query: Omit<Parameters<typeof accountsAppService.user.directory>[0], "search"> = {}) =>
-      accountsAppService.user
-        .directory({ search: tag, ...query })
-        .then((page) => page.items.map((entry) => entry.displayName.split(" ")[0]));
+    const read = async (query: Omit<Parameters<typeof accountsAppService.user.directory>[0], "search" | "actor"> = {}) => {
+      const result = await accountsAppService.user.directory({ actor: admin, search: tag, ...query });
+      if (!result.ok) throw new Error(result.error.message);
+      return result.data;
+    };
+    const list = (query: Parameters<typeof read>[0] = {}) =>
+      read(query).then((page) => page.items.map((entry) => entry.displayName.split(" ")[0]));
 
     try {
       // what a row shows: role, state, groups without the personal one, the passkey
-      const all = await accountsAppService.user.directory({ search: tag });
-      expect(all.total).toBe(4);
+      const all = await read();
+      expect(all.total).toBe(5);
       const byName: Record<string, UserDirectoryEntry> = Object.fromEntries(
         all.items.map((entry) => [entry.displayName.split(" ")[0], entry]),
       );
@@ -65,22 +76,31 @@ suite("the administration's user list (integration)", () => {
       expect(byName.Ben).toMatchObject({ role: "member", status: "active", passkey: true, groupCount: 1 });
       expect(byName.Cleo).toMatchObject({ role: "guest", status: "invited", lastLogin: null, groups: [] });
       expect(byName.Dora).toMatchObject({ role: "member", status: "expired" });
+      expect(byName.Ivo).toMatchObject({ role: "guest", profile: "guest" });
+      expect(byName.Ivo!.roles).not.toContain("admin");
 
-      expect(await list()).toEqual(["Ada", "Ben", "Cleo", "Dora"]);
-      expect(await list({ sort: { field: "name", direction: "desc" } })).toEqual(["Dora", "Cleo", "Ben", "Ada"]);
-      expect(await list({ sort: { field: "lastLogin", direction: "desc" } })).toEqual(["Ada", "Dora", "Ben", "Cleo"]);
-      expect(await list({ sort: { field: "lastLogin", direction: "asc" } })).toEqual(["Cleo", "Ben", "Dora", "Ada"]);
-      expect(await list({ roles: ["admin", "guest"] })).toEqual(["Ada", "Cleo"]);
+      expect(await list()).toEqual(["Ada", "Ben", "Cleo", "Dora", "Ivo"]);
+      expect(await list({ sort: { field: "name", direction: "desc" } })).toEqual(["Ivo", "Dora", "Cleo", "Ben", "Ada"]);
+      expect(await list({ sort: { field: "lastLogin", direction: "desc" } })).toEqual(["Ada", "Ivo", "Dora", "Ben", "Cleo"]);
+      expect(await list({ sort: { field: "lastLogin", direction: "asc" } })).toEqual(["Cleo", "Ben", "Dora", "Ivo", "Ada"]);
+      expect(await list({ roles: ["admin", "guest"] })).toEqual(["Ada", "Cleo", "Ivo"]);
+      expect(await list({ roles: ["admin"] })).toEqual(["Ada"]);
+      expect(await list({ roles: ["guest"] })).toEqual(["Cleo", "Ivo"]);
       expect(await list({ roles: ["member"] })).toEqual(["Ben", "Dora"]);
       expect(await list({ groupIds: [board] })).toEqual(["Ada"]);
       expect(await list({ groupIds: [sales, board] })).toEqual(["Ada", "Ben"]);
       expect(await list({ statuses: ["invited", "expired"] })).toEqual(["Cleo", "Dora"]);
       expect(await list({ lastLogin: "never" })).toEqual(["Cleo"]);
-      expect(await list({ lastLogin: { since: new Date(day(30)) } })).toEqual(["Ada"]);
+      expect(await list({ lastLogin: { since: new Date(day(30)) } })).toEqual(["Ada", "Ivo"]);
       expect(await list({ lastLogin: { until: new Date(day(90)) } })).toEqual(["Ben"]);
       expect(await list({ passkey: true })).toEqual(["Ben"]);
       expect(await list({ passkey: false, roles: ["member"] })).toEqual(["Dora"]);
-      expect(await list({ pagination: { page: 2, perPage: 3 } })).toEqual(["Dora"]);
+      expect(await list({ pagination: { page: 2, perPage: 3 } })).toEqual(["Dora", "Ivo"]);
+
+      // the service checks the administrator role itself: a full account without it learns nothing
+      const member = { userId: ben, uid: `dir-ben-${tag}`, roles: ["user"], provider: "local" };
+      const refused = await accountsAppService.user.directory({ actor: member, search: tag });
+      expect(refused.ok ? "ok" : refused.error.status).toBe(403);
 
       // the list costs what it cost before v2: one count and one page, whatever the filters (the FreeIPA settings
       // it reads come from the settings cache, warmed here as on every running server)
@@ -89,6 +109,7 @@ suite("the administration's user list (integration)", () => {
       try {
         const statements = await meter.during(() =>
           accountsAppService.user.directory({
+            actor: admin,
             search: tag,
             roles: ["admin", "member"],
             groupIds: [sales],

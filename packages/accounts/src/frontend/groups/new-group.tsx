@@ -20,15 +20,23 @@ import { showAccountActionNotice } from "../action-notice";
 import { useAccountsMessages } from "../messages";
 
 type ProviderChoice = "ipa" | "local";
-const normalizeName = (value: string) =>
+export const normalizeName = (value: string) =>
   value
     .toLowerCase()
     .replace(/[_ ]/g, "-")
     .replace(/[^a-z0-9-]/g, "");
 type CreateGroupPayload = { provider: ProviderChoice; name: string; description?: string; posix?: boolean };
-type CreateGroupResult = { group: BaseGroup };
+export type CreateGroupResult = { group: BaseGroup };
 
-export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled: boolean; close: (result?: CreateGroupResult) => void }) {
+/**
+ * The state and deeds of the form for a new group, shared by the v1 dialog (relations page) and the v2 dialog of the
+ * group list: the same fields, the same name rules, the same request and the same question before an edited form closes.
+ */
+export const useCreateGroupForm = (props: {
+  freeIpaEnabled: boolean;
+  linuxEnabled: boolean;
+  close: (result?: CreateGroupResult) => void;
+}) => {
   const messages = useAccountsMessages();
   const formId = createUniqueId();
   const [provider, setProvider] = createSignal<ProviderChoice>(props.freeIpaEnabled ? "ipa" : "local");
@@ -80,6 +88,53 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled
       posix: posix(),
     });
   };
+  const choosePosix = (value: boolean) => {
+    if (provider() === "local") setLocalPosix(value);
+    else setIpaPosix(value);
+    setError(undefined);
+    setDirty(true);
+  };
+  return {
+    messages,
+    formId,
+    provider,
+    setProvider,
+    name,
+    setName,
+    description,
+    setDescription,
+    posix,
+    choosePosix,
+    setDirty,
+    closing,
+    error,
+    setError,
+    createMutation,
+    requestClose,
+    submit,
+  };
+};
+
+export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled: boolean; close: (result?: CreateGroupResult) => void }) {
+  const {
+    messages,
+    formId,
+    provider,
+    setProvider,
+    name,
+    setName,
+    description,
+    setDescription,
+    posix,
+    choosePosix,
+    setDirty,
+    closing,
+    error,
+    setError,
+    createMutation,
+    requestClose,
+    submit,
+  } = useCreateGroupForm(props);
   return (
     <PanelDialog>
       <PanelDialog.Header
@@ -148,12 +203,7 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled
               provider() === "local" && !props.linuxEnabled ? messages().localPosixUnavailable : messages().posixGroupDescription
             }
             value={posix}
-            onValueChange={(value) => {
-              if (provider() === "local") setLocalPosix(value);
-              else setIpaPosix(value);
-              setError(undefined);
-              setDirty(true);
-            }}
+            onValueChange={choosePosix}
             disabled={createMutation.loading() || (provider() === "local" && !props.linuxEnabled)}
           />
           <Show when={createMutation.error()}>
@@ -177,15 +227,11 @@ export function CreateGroupDialog(props: { freeIpaEnabled: boolean; linuxEnabled
   );
 }
 
-/**
- * Opens the dialog for a new group and, once created, tells what happened and shows the page again. Call it while an
- * island renders; the island and the v2 group list both use it.
- */
-export const useNewGroup = (props: { freeIpaEnabled?: boolean; linuxEnabled: boolean }) => {
+/** Once a group is created: says so, shows the notice for its follow-up deeds, and shows the page again. */
+export const useGroupCreated = () => {
   const { showChanges } = usePageSwap();
   const messages = useAccountsMessages();
-  const [opening, setOpening] = createSignal(false);
-  const showResult = async (result: CreateGroupResult) => {
+  return async (result: CreateGroupResult) => {
     toast.success(messages().groupCreatedMessage({ name: result.group.name }));
     await showAccountActionNotice(
       { action: "group.create", id: result.group.id, name: result.group.name, provider: result.group.provider },
@@ -193,6 +239,12 @@ export const useNewGroup = (props: { freeIpaEnabled?: boolean; linuxEnabled: boo
     );
     showChanges();
   };
+};
+
+/** Opens the v1 dialog for a new group (the relations page) and, once created, shows the result. Call it in an island. */
+export const useNewGroup = (props: { freeIpaEnabled?: boolean; linuxEnabled: boolean }) => {
+  const showResult = useGroupCreated();
+  const [opening, setOpening] = createSignal(false);
   const open = async () => {
     if (opening()) return;
     setOpening(true);

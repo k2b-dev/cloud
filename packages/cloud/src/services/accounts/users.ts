@@ -402,7 +402,8 @@ export const directory = async (query: UserDirectoryQuery): Promise<{ items: Use
   if (groupIds?.length === 0 || query.roles?.length === 0 || query.statuses?.length === 0) return { items: [], total: 0 };
 
   const groupsAdmin = (await getFreeIpaConfig()).groupsAdmin;
-  const adminExpression = sql`CASE
+  // As `buildRoles`: only a full account is an administrator, also a FreeIPA guest in an administrators' group is not.
+  const adminExpression = sql`u.profile = 'user' AND CASE
     WHEN u.provider = 'local' THEN u.admin
     ELSE EXISTS(
       SELECT 1 FROM auth.ipa_user_effective_groups eg
@@ -427,7 +428,7 @@ export const directory = async (query: UserDirectoryQuery): Promise<{ items: Use
     const parts: SQL.Query<unknown>[] = [];
     if (roles.has("admin")) parts.push(sql`a.effective_admin`);
     if (roles.has("member")) parts.push(sql`(NOT a.effective_admin AND u.profile = 'user')`);
-    if (roles.has("guest")) parts.push(sql`(NOT a.effective_admin AND u.profile = 'guest')`);
+    if (roles.has("guest")) parts.push(sql`u.profile = 'guest'`);
     conditions.push(sql`(${parts.reduce((acc, part) => sql`${acc} OR ${part}`)})`);
   }
   if (groupIds) {

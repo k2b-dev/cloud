@@ -3,6 +3,7 @@ import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server
 import { accountsAppService as accountsService } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
+import { toAccountsActor } from "../../shared/actor";
 import AccountsNavigation from "../AccountsNavigation.island";
 import { accountsNavigationItems } from "../accounts-nav";
 import { listMessages } from "../list-messages";
@@ -23,7 +24,7 @@ import UsersScreen from "./UsersScreen.island";
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const timeZone = getTimeZone(c);
-  expectUserBackedActor(c);
+  const actor = toAccountsActor(expectUserBackedActor(c));
   const url = new URL(c.req.url);
   // Addresses from before v2 (`search`, `profile`) lead to the same list in the v2 address.
   const legacy = legacyUsersHref(url.searchParams);
@@ -41,7 +42,8 @@ export default ssr<AuthContext>(async (c) => {
   const [pendingRequests, list, groups] = await Promise.all([
     accountsService.accountRequest.countPending(),
     accountsService.user
-      .directory({ ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
+      .directory({ actor, ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
+      .then((result) => (result.ok ? result.data : null))
       .catch(() => null),
     groupIds
       ? accountsService.group.list({ pagination: { page: 1, perPage: groupIds.length }, scope: { mode: "all", ids: [...groupIds] } })
