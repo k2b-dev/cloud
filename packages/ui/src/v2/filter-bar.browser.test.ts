@@ -313,6 +313,28 @@ test("“+ Filter” adds a dashed statement that applies once it has a value; a
   });
 });
 
+test("at the length limit of the address a change is refused and every filter stays", async () => {
+  // 1,995 characters of owned parameters: one more value or a sort goes over the 2,000 a link carries
+  const base = "status=consigned&q=";
+  const search = `${base}${"x".repeat(1995 - base.length)}`;
+  await withPage(search, async (page) => {
+    expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
+    await page.locator(".k2-stmt-b").first().click();
+    await page.getByRole("option", { name: /Fotografiert/ }).click();
+    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    expect(new URL(page.url()).searchParams.get("status")).toBe("consigned");
+    expect(await statements(page)).toEqual(["Status ist Eingeliefert"]);
+    expect(await page.getByRole("option", { name: /Fotografiert/ }).getAttribute("aria-selected")).toBe("false");
+    await page.keyboard.press("Escape");
+    // a sort that would not fit is locked in its menu; the current one stays chosen
+    await page.locator(".k2-order .k2-btn").first().click();
+    expect(await page.getByRole("menuitemradio", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Eingang ↓" }).getAttribute("aria-checked")).toBe("true");
+    await page.keyboard.press("Escape");
+    expect(new URL(page.url()).search.length).toBe(search.length + 1);
+  });
+});
+
 test("a value the address cannot hold is refused at its field; nothing is written and nothing throws", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();

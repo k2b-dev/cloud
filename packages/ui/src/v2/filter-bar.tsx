@@ -170,6 +170,24 @@ const stateText = <F extends Fields, S extends string, G extends string>(query: 
   return params.toString();
 };
 
+/**
+ * The state after one change of the address, or `undefined` when the address cannot hold it. `parse` reports every
+ * part it had to drop, a value it does not accept or a query over the 2,000 characters a link carries (then it falls
+ * back to the default state); any report refuses the change, so a list never silently loses its filters. The change
+ * goes through the address text because the editors hold values of any field; `set` gives the same guarantee for
+ * code that knows its field's type.
+ */
+const follow = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+  state: ListQueryState<F, S, G>,
+  edit: (params: URLSearchParams) => void,
+): ListQueryState<F, S, G> | undefined => {
+  const params = query.serialize(state);
+  edit(params);
+  const { state: next, issues } = query.parse(params);
+  return issues.length > 0 ? undefined : next;
+};
+
 /** The phone of v2: every width below 768 px. */
 const phoneQuery = "not all and (min-width: 768px)";
 const isPhone = () => !isServer && matchMedia(phoneQuery).matches;
@@ -271,10 +289,8 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   // What the address cannot hold (a value parse would drop, a number it cannot write, more than 2000 characters) is
   // never written: the editor that asked says so at its field, and the list stays as it is.
   const apply = (edit: (params: URLSearchParams) => void): boolean => {
-    const params = props.query.serialize(props.state);
-    edit(params);
-    const { state: next, issues } = props.query.parse(params);
-    if (issues.length > 0) return false;
+    const next = follow(props.query, props.state, edit);
+    if (!next) return false;
     const inEditor = open() !== undefined || sheet() !== undefined;
     write(next, inEditor ? !pushed : true);
     if (inEditor) pushed = true;
@@ -620,6 +636,7 @@ type EditorProps = {
 /** The editor of one field, inside the statement's popover or the phone sheet: head, then the values. */
 const Editor = (props: EditorProps) => {
   const t = useFilterMessages();
+  const [refused, setRefused] = createSignal(false);
   // The focus goes to the first control of the values, not to "Entfernen" in the head: the search of a lookup, the
   // option that holds the list's tab stop, or the first field. Core moves it into the popup first; this follows.
   const focusValues = (root: HTMLElement) =>
@@ -649,7 +666,22 @@ const Editor = (props: EditorProps) => {
           </Show>
         </div>
       </Show>
-      <EditorBody {...props} />
+      <EditorBody
+        {...props}
+        onChange={(value) => {
+          const applied = props.onChange(value);
+          setRefused(!applied);
+          return applied;
+        }}
+      />
+      {/* ranges, periods and text say it at their own fields */}
+      <Show
+        when={refused() && (props.definition.kind === "choice" || props.definition.kind === "lookup" || props.definition.kind === "bool")}
+      >
+        <p class="k2-fed-error" data-flush="" role="alert">
+          {t().valueRejected}
+        </p>
+      </Show>
     </div>
   );
 };
@@ -1052,10 +1084,10 @@ export type ListOrderProps<F extends Fields, S extends string, G extends string>
  */
 export const ListOrder = <F extends Fields, S extends string, G extends string>(props: ListOrderProps<F, S, G>) => {
   const t = useFilterMessages();
+  // a choice whose state the address cannot hold is locked in the menu, so a choice never drops the filters
   const change = (edit: (params: URLSearchParams) => void) => {
-    const params = props.query.serialize(props.state);
-    edit(params);
-    const next = props.query.parse(params).state;
+    const next = follow(props.query, props.state, edit);
+    if (!next) return;
     if (!isServer) {
       const text = props.query.serialize(next, location.search).toString();
       history.pushState(history.state, "", `${location.pathname}${text ? `?${text}` : ""}${location.hash}`);
@@ -1083,7 +1115,11 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               title: t().sort,
               choice: `${props.state.sort.field}.${props.state.sort.direction}`,
               onChoose: (value) => change((params) => params.set("sort", value)),
-              items: sortEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
+              items: sortEntries(props.query, t()).map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) => params.set("sort", entry.value)),
+              })),
             },
           ]}
         >
@@ -1099,7 +1135,13 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
               title: t().group,
               choice: props.state.group ?? "",
               onChoose: (value) => change((params) => (value ? params.set("group", value) : params.delete("group"))),
-              items: groups().map((entry) => ({ label: entry.label, value: entry.value })),
+              items: groups().map((entry) => ({
+                label: entry.label,
+                value: entry.value,
+                disabled: !follow(props.query, props.state, (params) =>
+                  entry.value ? params.set("group", entry.value) : params.delete("group"),
+                ),
+              })),
             },
           ]}
         >

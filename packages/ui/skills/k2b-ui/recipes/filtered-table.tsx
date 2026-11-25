@@ -62,7 +62,15 @@ export default function FilteredOrders() {
     <Workspace
       head={
         <Bar
-          start={<Tabs label="Ansichten" items={[{ label: "Alle", count: 34, current: true, href: "?" }, { label: "Diese Woche", count: 6, href: "?view=week" }]} />}
+          start={
+            <Tabs
+              label="Ansichten"
+              items={[
+                { label: "Alle", count: 34, current: true, href: "?" },
+                { label: "Diese Woche", count: 6, href: "?view=week" },
+              ]}
+            />
+          }
           end={
             <>
               <Input type="search" icon="search" label="Auftrag oder Kunde" placeholder="Auftrag oder Kunde" />
@@ -105,7 +113,11 @@ export default function FilteredOrders() {
             { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true },
             { title: "Auftrag", width: { min: 160, default: 220 }, cell: (row) => row.title },
             { title: "Kunde", width: { min: 140, default: 200 }, cell: (row) => row.customer, drop: true },
-            { title: "Status", width: { min: 100, default: 120 }, cell: (row) => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip> },
+            {
+              title: "Status",
+              width: { min: 100, default: 120 },
+              cell: (row) => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip>,
+            },
             { title: "Fällig", width: { min: 90, default: 110 }, cell: (row) => row.due, drop: true },
             { title: "Betrag", width: { min: 90, default: 110 }, align: "end", cell: (row) => euro(row.amount) },
           ]}

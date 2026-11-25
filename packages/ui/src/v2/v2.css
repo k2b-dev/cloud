@@ -3639,8 +3639,8 @@
   margin: 0;
   display: block;
   height: 100%;
-  line-height: var(--k2-h-control-small);
-  padding: 0 2px 0 12px;
+  /* one line of the meta role (16 px) in the 28 px of the statement */
+  padding: 6px 2px 6px 12px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3721,8 +3721,7 @@
   border: 1px dashed var(--k2-app, var(--k2-blue));
 }
 .k2-ui .k2-stmt[data-draft] > .k2-stmt-b {
-  line-height: calc(var(--k2-h-control-small) - 2px);
-  padding: 0 11px;
+  padding: 5px 11px;
 }
 .k2-ui .k2-stmt-op {
   color: var(--k2-subtle);
@@ -3838,6 +3837,9 @@
   margin: 0;
   font: var(--k2-t-meta);
   color: var(--k2-bad);
+}
+.k2-ui .k2-fed-error[data-flush] {
+  padding: 4px 12px 0;
 }
 
 /* Options of an editor and a lookup: rows of 32 px, the check (or tick) first, a count at the end */
