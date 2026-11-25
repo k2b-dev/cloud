@@ -477,4 +477,31 @@ failed call.
 - `onBefore(vars, { cancel })`: `return cancel()` ends the call as `aborted`
   without `onError`; `return` lets TypeScript narrow after it.
 
+---
+
+## v0.36 → next (charts removed, breaking)
+
+**What changed:** The root entry no longer exports the chart module. Charts
+live only in `@k2b/ui/charts`. Removed: the `charts` namespace; the functions
+`scatter`, `line`, `bar`, `pie`, `donut`, `sparkline`, `histogram`, `boxplot`,
+`gauge`, `barGauge`, `stat`, `heatmap`, `map` and `stateTimeline`; the helpers
+`chartDatumSvg`, `svgRoot`, `escapeXml`, `normalizePadding`, `computeDomain`,
+`niceStep`, `extendDomainToNice`, `mapRange`, `mapLog`, `niceLogTicks`,
+`linearRegression`, `computeBoxStats`, `autoBin`, `linePathD`, `smoothPathD`,
+`arcPathD`, `markerPath` and `stepPathD`; and the types `Point`, `Series`,
+`MarkerShape`, `LineStyle`, `MapPoint`, `MapSeries`, `MapViewport`,
+`MapOptions`, `BarItem`, `SliceItem`, `AxisOptions`, `Padding`, `ChartDatum`,
+`ChartOptions` and `ReferenceLine`.
+
+**What to grep for:** imports of these names from `@k2b/stdlib`.
+
+**What to change:** Render interactive charts with `Chart` from
+`@k2b/ui/charts`. For pure SVG on the server or in a script, import the same
+names from `@k2b/ui/charts/core`; they keep their signatures and markup.
+
+```diff
+-import { charts, computeDomain } from "@k2b/stdlib";
++import { charts, computeDomain } from "@k2b/ui/charts/core";
+```
+
 <!-- Future version sections append here -->
