@@ -499,6 +499,7 @@ describe(`Spaces templates in the + dialog in ${browserName}`, () => {
               return [
                 createComponent(PanelDialog.Header, { title: "Als Vorlage speichern", icon: "ti ti-template", close: () => {} }),
                 createComponent(TemplateForm, {
+                  title: "Als Vorlage speichern",
                   spaceId: "Space1",
                   kind: draft.kind,
                   draft,

@@ -1,7 +1,8 @@
-import { AccessSummary, type GrantableLevel, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
+import { accessMemberEntries, type GrantableLevel, openAccessDialog, type ResourceApiKey, ResourceApiKeys } from "@k2b/cloud/access/ui";
 import type { Principal } from "@k2b/cloud/contracts";
-import { Button, prompts, SettingsGroup } from "@k2b/ui";
-import { createComputed, createSignal, on, onCleanup } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Canvas, Row, Section, useToast } from "@k2b/ui/v2";
+import { createComputed, createSignal, For, on, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -17,6 +18,8 @@ export function PermissionsSection(props: {
   onWorkspaceChange?: () => void;
 }) {
   const m = useSpaceMessages();
+  const locale = useLocale();
+  const toast = useToast();
   const [entries, setEntries] = createSignal(visibleEntries(props.accessEntries));
   // A refreshed settings context replaces the list.
   createComputed(
@@ -82,48 +85,58 @@ export function PermissionsSection(props: {
     edit()
       .catch((error: Error) => {
         // A closed settings panel says nothing over the page the person moved on to.
-        if (!disposed) void prompts.error(error.message);
+        if (!disposed) toast(error.message, { status: "bad" });
       })
       .finally(() => {
         running = false;
       });
   };
   return (
-    <SettingsGroup title={m.peopleAndGroups} description={m.accessDescription}>
-      <SettingsGroup.Action>
-        <Button size="sm" variant="secondary" onClick={run}>
-          <i class="ti ti-lock-access" aria-hidden="true" />
-          {m.editAccess}
-        </Button>
-      </SettingsGroup.Action>
-      <AccessSummary entries={entries()} />
-    </SettingsGroup>
+    <Section
+      icon="shield"
+      title={m.peopleAndGroups}
+      summary={m.accessDescription}
+      actions={[{ label: m.editAccess, icon: "lock-access", onClick: run }]}
+    >
+      <For each={accessMemberEntries(entries(), { locale: locale() })}>
+        {(entry) =>
+          entry.kind === "person" ? (
+            <Row avatar={{ name: entry.name, image: entry.src ?? undefined }} lines={[entry.name, entry.role]} />
+          ) : (
+            <Row icon={entry.kind === "group" ? "users" : entry.kind === "service" ? "robot" : "world"} lines={[entry.name, entry.role]} />
+          )
+        }
+      </For>
+    </Section>
   );
 }
 
 export function ApiKeysSection(props: { spaceId: string; apiKeys: ResourceApiKey[] }) {
   const m = useSpaceMessages();
   return (
-    <SettingsGroup title={m.integrationAccess} description={m.integrationAccessDescription}>
-      <ResourceApiKeys
-        title={m.apiKeys}
-        description={m.apiKeysDescription}
-        initialKeys={props.apiKeys}
-        createKey={async (input) => {
-          const res = await apiClient[":id"]["api-keys"].$post({
-            param: { id: props.spaceId },
-            json: input,
-          });
-          if (!res.ok) throw new Error(await readErrorMessage(res, m.createApiKeyFailed));
-          return (await res.json()) as { credential: ResourceApiKey; token: string };
-        }}
-        revokeKey={async (credentialId) => {
-          const res = await apiClient[":id"]["api-keys"][":credentialId"].$delete({
-            param: { id: props.spaceId, credentialId },
-          });
-          if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeApiKeyFailed));
-        }}
-      />
-    </SettingsGroup>
+    <Section icon="key" title={m.integrationAccess} summary={m.integrationAccessDescription}>
+      {/* The platform's key list (create, show once, revoke) draws itself; it has no v2 form yet. */}
+      <Canvas label={m.apiKeys}>
+        <ResourceApiKeys
+          title={m.apiKeys}
+          description={m.apiKeysDescription}
+          initialKeys={props.apiKeys}
+          createKey={async (input) => {
+            const res = await apiClient[":id"]["api-keys"].$post({
+              param: { id: props.spaceId },
+              json: input,
+            });
+            if (!res.ok) throw new Error(await readErrorMessage(res, m.createApiKeyFailed));
+            return (await res.json()) as { credential: ResourceApiKey; token: string };
+          }}
+          revokeKey={async (credentialId) => {
+            const res = await apiClient[":id"]["api-keys"][":credentialId"].$delete({
+              param: { id: props.spaceId, credentialId },
+            });
+            if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeApiKeyFailed));
+          }}
+        />
+      </Canvas>
+    </Section>
   );
 }

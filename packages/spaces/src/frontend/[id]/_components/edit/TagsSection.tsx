@@ -1,8 +1,10 @@
-import { type MutationOutcome, mutation as mutations } from "@k2b/stdlib/solid";
-import { prompts, SettingsGroup, TagEditor } from "@k2b/ui";
+import { mutation as mutations } from "@k2b/stdlib/solid";
+import { confirm, Empty, Menu, Row, Section, useToast } from "@k2b/ui/v2";
+import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceTag } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
+import { NameColorDialog } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
 
 export function TagsSection(props: {
@@ -13,7 +15,8 @@ export function TagsSection(props: {
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const m = useSpaceMessages();
-  const reconcile = () => void props.onSettingsChange?.().catch((error) => prompts.error(error.message));
+  const toast = useToast();
+  const reconcile = () => void props.onSettingsChange?.().catch((error: Error) => toast(error.message, { status: "bad" }));
 
   const createMut = mutations.create({
     mutation: async (data: { name: string; color: string }) => {
@@ -65,36 +68,64 @@ export function TagsSection(props: {
     },
   });
 
-  const throwMutationError = (outcome: MutationOutcome, error: Error | null) => {
-    if (outcome === "error") throw error;
+  const [editing, setEditing] = createSignal<SpaceTag | "new" | null>(null);
+  const busy = () => createMut.loading() || updateMut.loading() || deleteMut.loading();
+  const tagOf = (value: SpaceTag | "new") => (value === "new" ? undefined : value);
+  createEffect(() => props.onDirtyChange(editing() !== null));
+  const save = async (data: { name: string; color: string }) => {
+    const current = editing();
+    setEditing(null);
+    const outcome = current === "new" ? await createMut.mutate(data) : current ? await updateMut.mutate({ id: current.id, ...data }) : null;
+    const error = createMut.error() ?? updateMut.error();
+    if (outcome === "error" && error) toast(error.message, { status: "bad" });
   };
-  let deletePromptPending = false;
-
+  const remove = async (tag: SpaceTag) => {
+    if (busy()) return;
+    if (!(await confirm({ title: m.deleteTag, description: m.deleteTagConfirm, confirm: m.delete }))) return;
+    if ((await deleteMut.mutate(tag)) === "error") toast(deleteMut.error()?.message ?? m.deleteTagFailed, { status: "bad" });
+  };
   return (
-    <SettingsGroup title={m.vocabulary} description={m.vocabularyDescription}>
-      <TagEditor
-        items={props.tags}
-        defaultColor="#3b82f6"
-        disabled={createMut.loading() || updateMut.loading() || deleteMut.loading()}
-        onDirtyChange={props.onDirtyChange}
-        onCreate={async (value) => {
-          throwMutationError(await createMut.mutate(value), createMut.error());
-        }}
-        onUpdate={async (tag, value) => {
-          throwMutationError(await updateMut.mutate({ id: tag.id, ...value }), updateMut.error());
-        }}
-        onDelete={async (tag) => {
-          if (deletePromptPending || deleteMut.loading()) return;
-          deletePromptPending = true;
-          try {
-            const confirmed = await prompts.confirm(m.deleteTagConfirm, { title: m.deleteTag, variant: "danger" });
-            if (!confirmed) return;
-            throwMutationError(await deleteMut.mutate(tag), deleteMut.error());
-          } finally {
-            deletePromptPending = false;
-          }
-        }}
-      />
-    </SettingsGroup>
+    <Section
+      icon="tags"
+      title={m.vocabulary}
+      summary={m.vocabularyDescription}
+      count={props.tags.length}
+      actions={[{ label: m.newTag, icon: "plus", disabled: busy(), onClick: () => setEditing("new") }]}
+    >
+      <Show when={props.tags.length > 0} fallback={<Empty icon="tags" text={m.noTags} />}>
+        <For each={props.tags}>
+          {(tag) => (
+            <Row
+              icon="tag"
+              color={tag.color}
+              lines={[tag.name]}
+              end={
+                <Menu
+                  label={m.moreActionsFor({ label: tag.name })}
+                  items={[
+                    { label: m.editTag, icon: "pencil", onClick: () => setEditing(tag) },
+                    { label: m.deleteTag, icon: "trash", danger: true, onClick: () => void remove(tag) },
+                  ]}
+                />
+              }
+            />
+          )}
+        </For>
+      </Show>
+      <Show when={editing()}>
+        {(current) => (
+          <NameColorDialog
+            title={current() === "new" ? m.newTag : m.editTag}
+            initialName={tagOf(current())?.name ?? ""}
+            initialColor={tagOf(current())?.color ?? "#3b82f6"}
+            namePlaceholder={m.tagNamePlaceholder}
+            confirmLabel={current() === "new" ? m.create : m.save}
+            busy={busy()}
+            onSave={(data) => void save(data)}
+            onClose={() => setEditing(null)}
+          />
+        )}
+      </Show>
+    </Section>
   );
 }

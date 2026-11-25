@@ -1,44 +1,63 @@
-import { Button, ColorInput, TextInput } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, Dialog, Field, Input, Select } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
+import { spaceColorOptions } from "../../../_components/space-colors";
 import { useSpaceMessages } from "../../messages";
 
-export function NameColorForm(props: {
-  mode: "create" | "edit";
+/**
+ * A name and a colour in a dialog, for a new or a renamed tag or status. It closes when the save starts; the section
+ * says when a save fails.
+ */
+export function NameColorDialog(props: {
+  title: string;
   initialName?: string;
   initialColor?: string | null;
-  nameLabel: string;
   namePlaceholder: string;
-  createLabel: string;
+  confirmLabel: string;
+  busy: boolean;
   onSave: (data: { name: string; color: string }) => void;
-  onCancel: () => void;
-  loading: boolean;
+  onClose: () => void;
 }) {
   const m = useSpaceMessages();
+  const locale = useLocale();
   const [name, setName] = createSignal(props.initialName ?? "");
   const [color, setColor] = createSignal(props.initialColor ?? "#6b7280");
-
-  const handleSubmit = (e: Event) => {
-    e.preventDefault();
-    if (!name().trim()) return;
-    props.onSave({ name: name(), color: color() });
-    if (props.mode === "create") {
-      setName("");
-      setColor("#6b7280");
-    }
+  const [missing, setMissing] = createSignal(false);
+  const save = () => {
+    if (!name().trim()) return setMissing(true);
+    props.onSave({ name: name().trim(), color: color() });
   };
-
   return (
-    <form onSubmit={handleSubmit} class="flex flex-col gap-2 py-2">
-      <TextInput label={props.nameLabel} placeholder={props.namePlaceholder} value={name} onValueChange={setName} required />
-      <ColorInput label={m.color} value={color} onValueChange={setColor} />
-      <div class="flex gap-2 mt-1">
-        <Button type="submit" disabled={props.loading} size="sm">
-          {props.loading ? <i class="ti ti-loader-2 animate-spin" /> : props.mode === "create" ? props.createLabel : m.save}
-        </Button>
-        <Button type="button" onClick={props.onCancel} variant="secondary" size="sm">
-          {m.cancel}
-        </Button>
-      </div>
-    </form>
+    <Dialog
+      title={props.title}
+      open
+      onOpenChange={(open) => !open && props.onClose()}
+      foot={
+        <>
+          <Button onClick={() => props.onClose()}>{m.cancel}</Button>
+          <Button variant="primary" busy={props.busy} onClick={save}>
+            {props.confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <Field label={m.name} name="name" error={missing() ? m.nameRequired : undefined} required>
+        <Input
+          value={name()}
+          placeholder={props.namePlaceholder}
+          onInput={(value) => {
+            setName(value);
+            setMissing(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.isComposing) save();
+          }}
+        />
+      </Field>
+      <Field label={m.color} name="color">
+        {/* k2b-ui gap: v2 has no colour input; the named palette, with the current colour as its own entry. */}
+        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+      </Field>
+    </Dialog>
   );
 }

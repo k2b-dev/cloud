@@ -1,11 +1,11 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, Switch } from "@k2b/ui";
+import { Check, confirm, Empty, Menu, type MenuEntry, Row, Section, useToast } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type BoardColumn, boardColumnOrderId, orderBoardColumns } from "@/board-columns";
 import type { SpaceColumn, SpaceVirtualColumn, SpaceVirtualColumnKind } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
-import { NameColorForm } from "./NameColorForm";
+import { NameColorDialog } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
 
 export function StatusesSection(props: {
@@ -17,6 +17,7 @@ export function StatusesSection(props: {
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const m = useSpaceMessages();
+  const toast = useToast();
   const [optimisticBoard, setOptimisticBoard] = createSignal<BoardColumn[] | null>(null);
   const [pendingVirtual, setPendingVirtual] = createSignal<Partial<Record<SpaceVirtualColumnKind, boolean>>>({});
   // Statuses and enabled automatic columns share one board order. A switch shows its column change at
@@ -37,9 +38,8 @@ export function StatusesSection(props: {
   };
   const columns = () => board().flatMap((entry) => (entry.kind === "column" ? [entry.column] : []));
   const virtualLabel = (kind: SpaceVirtualColumnKind) => (kind === "blocked" ? m.blockedColumn : m.overdueColumn);
-  const entryLabel = (entry: BoardColumn) => (entry.kind === "column" ? entry.column.name : virtualLabel(entry.kind));
   const [editingId, setEditingId] = createSignal<string | "new" | null>(null);
-  const reconcile = () => void props.onSettingsChange?.().catch((error) => prompts.error(error.message));
+  const reconcile = () => void props.onSettingsChange?.().catch((error) => toast(error.message, { status: "bad" }));
 
   createEffect(() => props.onDirtyChange(editingId() !== null));
   onCleanup(() => props.onDirtyChange(false));
@@ -60,7 +60,7 @@ export function StatusesSection(props: {
       props.onWorkspaceChange?.();
       reconcile();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast(err.message, { status: "bad" }),
   });
 
   const updateMut = mutations.create({
@@ -79,7 +79,7 @@ export function StatusesSection(props: {
       props.onWorkspaceChange?.();
       reconcile();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast(err.message, { status: "bad" }),
   });
 
   const deleteMut = mutations.create<SpaceColumn, SpaceColumn>({
@@ -96,7 +96,7 @@ export function StatusesSection(props: {
       props.onWorkspaceChange?.();
       reconcile();
     },
-    onError: (err) => prompts.error(err.message),
+    onError: (err) => toast(err.message, { status: "bad" }),
   });
 
   type ReorderIntent = { columnIds: string[] };
@@ -117,11 +117,11 @@ export function StatusesSection(props: {
         setOptimisticBoard(null);
         return;
       }
-      void refresh.catch((error) => prompts.error(error.message)).finally(() => setOptimisticBoard(null));
+      void refresh.catch((error) => toast(error.message, { status: "bad" })).finally(() => setOptimisticBoard(null));
     },
     onError: (err) => {
       setOptimisticBoard(null);
-      prompts.error(err.message);
+      toast(err.message, { status: "bad" });
     },
     onAbort: () => setOptimisticBoard(null),
   });
@@ -141,11 +141,11 @@ export function StatusesSection(props: {
     onSuccess: () => {
       props.onWorkspaceChange?.();
       const refresh = props.onSettingsChange?.() ?? Promise.resolve();
-      void refresh.catch((error) => prompts.error(error.message)).finally(() => setPendingVirtual({}));
+      void refresh.catch((error) => toast(error.message, { status: "bad" })).finally(() => setPendingVirtual({}));
     },
     onError: (err) => {
       setPendingVirtual({});
-      prompts.error(err.message);
+      toast(err.message, { status: "bad" });
     },
   });
   let reorderSubmitting = false;
@@ -154,9 +154,10 @@ export function StatusesSection(props: {
     if (deletePromptPending || deleteMut.loading()) return;
     deletePromptPending = true;
     try {
-      const confirmed = await prompts.confirm(m.deleteStatusConfirm({ name: column.name }), {
+      const confirmed = await confirm({
         title: m.deleteStatus,
-        variant: "danger",
+        description: m.deleteStatusConfirm({ name: column.name }),
+        confirm: m.delete,
       });
       if (confirmed) await deleteMut.mutate(column);
     } finally {
@@ -178,112 +179,97 @@ export function StatusesSection(props: {
     void reorderMut.mutate({ columnIds: next.map(boardColumnOrderId) }).finally(() => (reorderSubmitting = false));
   };
 
+  const editingColumn = () => columns().find((item) => item.id === editingId());
   return (
     <>
-      <Show when={editingId()}>
-        {(id) => {
-          const column = () => columns().find((item) => item.id === id());
-          return (
-            <SettingsGroup
-              title={id() === "new" ? m.newStatus : column() ? m.editStatus({ name: column()!.name }) : m.editGenericStatus}
-              description={m.statusFormDescription}
-            >
-              <NameColorForm
-                mode={id() === "new" ? "create" : "edit"}
-                initialName={column()?.name}
-                initialColor={column()?.color}
-                nameLabel={m.name}
-                namePlaceholder={m.statusNamePlaceholder}
-                createLabel={m.createStatus}
-                onSave={(data) => {
-                  const current = column();
-                  if (id() === "new") createMut.mutate(data);
-                  else if (current) updateMut.mutate({ id: current.id, name: data.name, color: data.color ?? null });
-                }}
-                onCancel={() => setEditingId(null)}
-                loading={createMut.loading() || updateMut.loading()}
-              />
-            </SettingsGroup>
-          );
-        }}
-      </Show>
-
-      {/* Above the list: the rows a switch adds or removes then never move the switch itself. */}
-      <SettingsGroup title={m.automaticColumns} description={m.automaticColumnsDescription}>
+      {/* Above the list: the rows a switch adds or removes never move the switch itself. */}
+      <Section icon="robot" title={m.automaticColumns} summary={m.automaticColumnsDescription}>
         <For each={["blocked", "overdue"] as const}>
           {(kind) => (
-            <Switch
-              label={virtualLabel(kind)}
-              description={kind === "blocked" ? m.blockedColumnDescription : m.overdueColumnDescription}
-              value={virtualEnabled(kind)}
-              disabled={toggleVirtualMut.loading() || reorderMut.loading()}
-              onValueChange={(enabled) => void toggleVirtualMut.mutate({ kind, enabled })}
+            <Row
+              icon={kind === "blocked" ? "lock" : "alert-triangle"}
+              lines={[virtualLabel(kind), kind === "blocked" ? m.blockedColumnDescription : m.overdueColumnDescription]}
+              end={
+                <Check
+                  switch
+                  label={virtualLabel(kind)}
+                  checked={virtualEnabled(kind)}
+                  disabled={toggleVirtualMut.loading() || reorderMut.loading()}
+                  onChange={(enabled) => void toggleVirtualMut.mutate({ kind, enabled })}
+                />
+              }
             />
           )}
         </For>
-      </SettingsGroup>
-
-      <SettingsCollection title={m.workflowStatuses} description={m.workflowStatusesDescription} empty={m.noStatuses}>
-        <SettingsCollection.Action>
-          <Button type="button" size="sm" disabled={editingId() !== null} onClick={() => setEditingId("new")}>
-            <i class="ti ti-plus" aria-hidden="true" />
-            {m.newStatus}
-          </Button>
-        </SettingsCollection.Action>
-        <For each={board()}>
-          {(entry, index) => {
-            const position = () => m.positionOf({ position: index() + 1, count: board().length });
-            const reorder = () => (
-              <SettingsCollection.Item.Reorder
-                label={entryLabel(entry)}
-                index={index()}
-                count={board().length}
-                disabled={reorderMut.loading() || toggleVirtualMut.loading()}
-                onMove={(direction) => moveColumn(index(), direction)}
-              />
-            );
-            if (entry.kind !== "column") {
-              return (
-                <SettingsCollection.Item
-                  title={virtualLabel(entry.kind)}
-                  description={`${m.automaticColumn} · ${position()}`}
-                  icon={<i class={`ti ${entry.kind === "blocked" ? "ti-lock" : "ti-alert-triangle"} text-dimmed`} aria-hidden="true" />}
-                >
-                  <SettingsCollection.Item.Actions>{reorder()}</SettingsCollection.Item.Actions>
-                </SettingsCollection.Item>
+      </Section>
+      <Section
+        icon="columns-3"
+        title={m.workflowStatuses}
+        summary={m.workflowStatusesDescription}
+        count={columns().length}
+        actions={[{ label: m.newStatus, icon: "plus", disabled: editingId() !== null, onClick: () => setEditingId("new") }]}
+      >
+        <Show when={board().length > 0} fallback={<Empty icon="columns-3" text={m.noStatuses} />}>
+          <For each={board()}>
+            {(entry, index) => {
+              const position = () => m.positionOf({ position: index() + 1, count: board().length });
+              const moving = () => reorderMut.loading() || toggleVirtualMut.loading();
+              // k2b-ui gap: no drag handle for a list in v2 yet; a status moves one place up or down from its menu.
+              const moves = (): MenuEntry[] => [
+                { label: m.moveUp, icon: "arrow-up", disabled: moving() || index() === 0, onClick: () => moveColumn(index(), -1) },
+                {
+                  label: m.moveDown,
+                  icon: "arrow-down",
+                  disabled: moving() || index() === board().length - 1,
+                  onClick: () => moveColumn(index(), 1),
+                },
+              ];
+              return entry.kind !== "column" ? (
+                <Row
+                  icon={entry.kind === "blocked" ? "lock" : "alert-triangle"}
+                  lines={[virtualLabel(entry.kind), `${m.automaticColumn} · ${position()}`]}
+                  end={<Menu label={m.moreActionsFor({ label: virtualLabel(entry.kind) })} items={moves()} />}
+                />
+              ) : (
+                <Row
+                  icon="circle-filled"
+                  color={entry.column.color ?? "#6b7280"}
+                  lines={[entry.column.name, position()]}
+                  end={
+                    <Menu
+                      label={m.moreActionsFor({ label: entry.column.name })}
+                      items={[
+                        ...moves(),
+                        { label: m.editGenericStatus, icon: "pencil", onClick: () => setEditingId(entry.column.id) },
+                        { label: m.deleteStatus, icon: "trash", danger: true, onClick: () => void deleteColumn(entry.column) },
+                      ]}
+                    />
+                  }
+                />
               );
-            }
-            const column = entry.column;
-            return (
-              <SettingsCollection.Item
-                title={column.name}
-                description={position()}
-                icon={<span class="h-3 w-3 rounded-full" style={`background-color:${column.color || "#6b7280"}`} />}
-              >
-                <SettingsCollection.Item.Actions>
-                  {reorder()}
-                  <IconButton
-                    label={m.editNamedStatus({ name: column.name })}
-                    size="sm"
-                    onClick={() => setEditingId(column.id)}
-                    title={m.editGenericStatus}
-                  >
-                    <i class="ti ti-pencil" aria-hidden="true" />
-                  </IconButton>
-                  <IconButton
-                    label={m.deleteNamedStatus({ name: column.name })}
-                    size="sm"
-                    onClick={() => void deleteColumn(column)}
-                    title={m.deleteStatus}
-                  >
-                    <i class="ti ti-trash" aria-hidden="true" />
-                  </IconButton>
-                </SettingsCollection.Item.Actions>
-              </SettingsCollection.Item>
-            );
-          }}
-        </For>
-      </SettingsCollection>
+            }}
+          </For>
+        </Show>
+      </Section>
+      <Show when={editingId()}>
+        {(id) => (
+          <NameColorDialog
+            title={id() === "new" ? m.newStatus : editingColumn() ? m.editStatus({ name: editingColumn()!.name }) : m.editGenericStatus}
+            initialName={editingColumn()?.name}
+            initialColor={editingColumn()?.color}
+            namePlaceholder={m.statusNamePlaceholder}
+            confirmLabel={id() === "new" ? m.createStatus : m.save}
+            busy={createMut.loading() || updateMut.loading()}
+            onSave={(data) => {
+              const current = editingColumn();
+              setEditingId(null);
+              if (id() === "new") void createMut.mutate(data);
+              else if (current) void updateMut.mutate({ id: current.id, name: data.name, color: data.color });
+            }}
+            onClose={() => setEditingId(null)}
+          />
+        )}
+      </Show>
     </>
   );
 }

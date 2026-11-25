@@ -17,7 +17,6 @@ import { createSpaceSearch } from "../search/SearchButton";
 import { createMenuEntries } from "../shared/create-menu";
 import { createIcalCopy } from "../sidebar/CopyICalButton";
 import { createItemController } from "../sidebar/CreateItemButton";
-import { createSpaceSettings } from "../sidebar/SpaceSettingsButton";
 import type { SpacesSidebarData } from "../sidebar/SpacesSidebarList";
 import BoardPane from "./BoardPane";
 import ItemsPane from "./ItemsPane";
@@ -167,12 +166,11 @@ export default function SpaceScreen(props: SpaceScreenProps) {
     ),
   );
 
-  const settings = createSpaceSettings({ spaceId: state.space.id, baseUrl: route.itemLinkBaseUrl, dateConfig: props.dateConfig });
   const ical = createIcalCopy({ icalToken: state.space.icalToken });
   const shortcuts = createKanbanShortcuts({ canWrite: state.canWrite });
   const cloudId = useCloudIdCopy();
   const spaceMenu = (): MenuEntry[] => [
-    { label: t.spaceSettings, icon: "settings", onClick: () => void settings.openDialog() },
+    { label: t.spaceSettings, icon: "settings", href: `${spaceHref}/settings` },
     { label: t.searchInSpace({ space: state.space.name }), icon: "search", meta: "⌘ ⇧ K", onClick: () => void searchSpace() },
     ...(state.space.icalToken
       ? [

@@ -1,8 +1,10 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, ColorInput, IconButton, prompts, Select, SettingsCollection, SettingsGroup } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, confirm, Dialog, Empty, Failed, Field, Menu, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceWormhole, SpaceWormholeDestination } from "@/contracts";
+import { spaceColorOptions } from "../../../_components/space-colors";
 import { useSpaceMessages } from "../../messages";
 import { subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { readErrorMessage } from "./utils";
@@ -17,6 +19,7 @@ function WormholeForm(props: {
   onSave: (value: FormValue) => void;
 }) {
   const m = useSpaceMessages();
+  const locale = useLocale();
   const initialTarget = props.initial?.target;
   const [targetSpaceId, setTargetSpaceId] = createSignal(initialTarget?.spaceId ?? props.destinations[0]?.spaceId ?? "");
   const [targetColumnId, setTargetColumnId] = createSignal(initialTarget?.columnId ?? "");
@@ -31,52 +34,53 @@ function WormholeForm(props: {
     setTargetColumnId(destination?.columns[0]?.id ?? "");
   };
 
-  const submit = (event: Event) => {
-    event.preventDefault();
+  const submit = () => {
     const columnId = selectedColumnId();
     if (!columnId) return;
     props.onSave({ targetColumnId: columnId, color: color() });
   };
 
   return (
-    <form onSubmit={submit} class="flex flex-col gap-3 py-2">
-      <Select
-        label={m.destinationSpace}
-        description={m.destinationSpaceDescription}
-        value={targetSpaceId}
-        onValueChange={(value) => value && changeTargetSpace(value)}
-        options={props.destinations.map((destination) => ({
-          value: destination.spaceId,
-          label: destination.spaceName,
-          icon: "ti ti-layout-kanban",
-        }))}
-        required
-      />
-      <Select
-        label={m.destinationStatus}
-        description={m.destinationStatusDescription}
-        value={selectedColumnId}
-        onValueChange={(value) => value && setTargetColumnId(value)}
-        options={columns().map((column) => ({ value: column.id, label: column.name, icon: "ti ti-columns-3" }))}
-        disabled={columns().length === 0}
-        required
-      />
-      <ColorInput label={m.color} description={m.wormholeColorDescription} value={color} onValueChange={setColor} />
-      <div class="flex items-center gap-2">
-        <Button type="submit" size="sm" disabled={props.loading || !selectedColumnId()}>
-          <i class={`ti ${props.loading ? "ti-loader-2 animate-spin" : "ti-check"}`} />
-          {props.initial ? m.save : m.createWormhole}
-        </Button>
-        <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={props.loading}>
-          {m.cancel}
-        </Button>
-      </div>
-    </form>
+    <Dialog
+      title={props.initial ? m.editWormhole : m.newWormhole}
+      open
+      onOpenChange={(open) => !open && props.onCancel()}
+      foot={
+        <>
+          <Button onClick={props.onCancel} disabled={props.loading}>
+            {m.cancel}
+          </Button>
+          <Button variant="primary" busy={props.loading} disabled={!selectedColumnId()} onClick={submit}>
+            {props.initial ? m.save : m.createWormhole}
+          </Button>
+        </>
+      }
+    >
+      <Field label={m.destinationSpace} name="wormhole-space" hint={m.destinationSpaceDescription} required>
+        <Select
+          value={targetSpaceId()}
+          options={props.destinations.map((destination) => ({ value: destination.spaceId, label: destination.spaceName }))}
+          onChange={changeTargetSpace}
+        />
+      </Field>
+      <Field label={m.destinationStatus} name="wormhole-status" hint={m.destinationStatusDescription} required>
+        <Select
+          value={selectedColumnId()}
+          options={columns().map((column) => ({ value: column.id, label: column.name }))}
+          onChange={setTargetColumnId}
+        />
+      </Field>
+      <Field label={m.color} name="wormhole-color" hint={m.wormholeColorDescription}>
+        {/* k2b-ui gap: v2 has no colour input; the named palette, with the current colour as its own entry. */}
+        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+      </Field>
+    </Dialog>
   );
 }
 
 export function WormholesSection(props: { spaceId: string; initialWormholes: SpaceWormhole[]; onDirtyChange: (dirty: boolean) => void }) {
   const m = useSpaceMessages();
+  const toast = useToast();
   const [optimisticOrder, setOptimisticOrder] = createSignal<SpaceWormhole[] | null>(null);
   const [editingId, setEditingId] = createSignal<string | "new" | null>(null);
 
@@ -94,7 +98,8 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["wormholes"], invalidate),
   });
   const wormholes = () => optimisticOrder() ?? wormholesQuery.data() ?? props.initialWormholes;
-  const refreshWormholes = () => void wormholesQuery.invalidate({ cursor: null }).catch(() => prompts.error(m.refreshWormholesFailed));
+  const refreshWormholes = () =>
+    void wormholesQuery.invalidate({ cursor: null }).catch(() => toast(m.refreshWormholesFailed, { status: "bad" }));
 
   const destinationsQuery = query.create<string, SpaceWormholeDestination[], { cursor: string | null }>({
     source: () => props.spaceId,
@@ -119,7 +124,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
       setEditingId(null);
       refreshWormholes();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const updateMutation = mutations.create<SpaceWormhole, FormValue & { id: string }>({
@@ -135,7 +140,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
       setEditingId(null);
       refreshWormholes();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const deleteMutation = mutations.create<string, SpaceWormhole>({
@@ -150,7 +155,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
       if (editingId() === id) setEditingId(null);
       refreshWormholes();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
   let deletePromptPending = false;
   const deleteWormhole = async (wormhole: SpaceWormhole) => {
@@ -158,11 +163,10 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     deletePromptPending = true;
     try {
       const label = wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.unavailableDestinationArticle;
-      const confirmed = await prompts.confirm(m.deleteWormholeConfirm({ destination: label }), {
+      const confirmed = await confirm({
         title: m.deleteWormhole,
-        icon: "ti ti-trash",
-        variant: "danger",
-        confirmText: m.delete,
+        description: m.deleteWormholeConfirm({ destination: label }),
+        confirm: m.delete,
       });
       if (confirmed) void deleteMutation.mutate(wormhole);
     } finally {
@@ -181,12 +185,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     onSuccess: () => {
       void wormholesQuery
         .invalidate({ cursor: null })
-        .catch(() => prompts.error(m.refreshWormholeOrderFailed))
+        .catch(() => toast(m.refreshWormholeOrderFailed, { status: "bad" }))
         .finally(() => setOptimisticOrder(null));
     },
     onError: (error) => {
       setOptimisticOrder(null);
-      prompts.error(error.message);
+      toast(error.message, { status: "bad" });
     },
     onAbort: () => setOptimisticOrder(null),
   });
@@ -214,113 +218,89 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     return id && id !== "new" ? wormholes().find((wormhole) => wormhole.id === id) : undefined;
   };
 
+  const label = (wormhole: SpaceWormhole) =>
+    wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.unavailableDestination;
+  const editable = () => editingId() === null && !destinationsQuery.loading() && destinations().length > 0;
   return (
-    <>
-      <Show when={editingId()}>
-        {(id) => (
-          <SettingsGroup title={id() === "new" ? m.newWormhole : m.editWormhole} description={m.wormholeFormDescription}>
-            <WormholeForm
-              destinations={destinations()}
-              initial={editingWormhole()}
-              loading={formLoading()}
-              onCancel={() => setEditingId(null)}
-              onSave={(value) => {
-                const wormhole = editingWormhole();
-                if (id() === "new") createMutation.mutate(value);
-                else if (wormhole) updateMutation.mutate({ id: wormhole.id, ...value });
-              }}
-            />
-          </SettingsGroup>
-        )}
+    <Section
+      icon="arrow-bounce"
+      title={m.destinations}
+      summary={m.destinationsDescription}
+      count={wormholes().length}
+      actions={[{ label: m.newWormholeAction, icon: "plus", disabled: !editable(), onClick: () => setEditingId("new") }]}
+    >
+      <Show when={wormholesQuery.error()}>
+        {(error) => <Failed text={`${m.wormholesUnavailable}: ${error().message}`} onRetry={() => void wormholesQuery.refresh()} />}
       </Show>
-
-      <SettingsCollection title={m.destinations} description={m.destinationsDescription} empty={m.noWormholes}>
-        <SettingsCollection.Action>
-          <Button
-            type="button"
-            size="sm"
-            disabled={editingId() !== null || destinationsQuery.loading() || destinations().length === 0}
-            onClick={() => setEditingId("new")}
-          >
-            <i class={`ti ${destinationsQuery.loading() ? "ti-loader-2 animate-spin" : "ti-plus"}`} aria-hidden="true" />
-            {m.newWormholeAction}
-          </Button>
-        </SettingsCollection.Action>
+      <Show when={destinationsQuery.error()}>
+        <Failed
+          text={`${m.destinationsUnavailable}. ${m.destinationsUnavailableDescription}`}
+          onRetry={() => void destinationsQuery.refresh()}
+        />
+      </Show>
+      <Show when={!destinationsQuery.loading() && !destinationsQuery.error() && destinations().length === 0}>
+        <Notice tone="note">{m.noWormholeDestination}</Notice>
+      </Show>
+      <Show when={wormholes().length > 0} fallback={<Empty icon="arrow-bounce" text={m.noWormholes} />}>
         <For each={wormholes()}>
           {(wormhole, index) => (
-            <SettingsCollection.Item
-              title={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.unavailableDestination}
-              description={
+            <Row
+              icon="arrow-bounce"
+              color={wormhole.color}
+              lines={[
+                label(wormhole),
                 wormhole.target
                   ? m.wormholePositionDescription({ position: index() + 1, count: wormholes().length })
-                  : m.restoreDestinationAccess
-              }
-              icon={<span class="h-3 w-3 rounded-full" style={`background-color:${wormhole.color}`} />}
-            >
-              <SettingsCollection.Item.Actions>
-                <SettingsCollection.Item.Reorder
-                  label={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.wormholeLabel}
-                  index={index()}
-                  count={wormholes().length}
-                  disabled={reorderMutation.loading()}
-                  onMove={(direction) => move(index(), direction)}
+                  : m.restoreDestinationAccess,
+              ]}
+              end={
+                <Menu
+                  label={m.moreActionsFor({ label: label(wormhole) })}
+                  items={[
+                    {
+                      label: m.moveUp,
+                      icon: "arrow-up",
+                      disabled: reorderMutation.loading() || index() === 0,
+                      onClick: () => move(index(), -1),
+                    },
+                    {
+                      label: m.moveDown,
+                      icon: "arrow-down",
+                      disabled: reorderMutation.loading() || index() === wormholes().length - 1,
+                      onClick: () => move(index(), 1),
+                    },
+                    ...(wormhole.target
+                      ? [{ label: m.editWormhole, icon: "pencil", disabled: !editable(), onClick: () => setEditingId(wormhole.id) }]
+                      : []),
+                    {
+                      label: m.deleteWormhole,
+                      icon: "trash",
+                      danger: true,
+                      disabled: deleteMutation.loading(),
+                      onClick: () => void deleteWormhole(wormhole),
+                    },
+                  ]}
                 />
-                <Show when={wormhole.target}>
-                  <IconButton
-                    label={m.editWormhole}
-                    size="sm"
-                    title={m.edit}
-                    disabled={editingId() !== null || destinationsQuery.loading() || destinations().length === 0}
-                    onClick={() => setEditingId(wormhole.id)}
-                  >
-                    <i class="ti ti-pencil" aria-hidden="true" />
-                  </IconButton>
-                </Show>
-                <IconButton
-                  label={m.deleteWormhole}
-                  size="sm"
-                  title={m.delete}
-                  disabled={deleteMutation.loading()}
-                  onClick={() => void deleteWormhole(wormhole)}
-                >
-                  <i class="ti ti-trash" aria-hidden="true" />
-                </IconButton>
-              </SettingsCollection.Item.Actions>
-            </SettingsCollection.Item>
+              }
+            />
           )}
         </For>
-      </SettingsCollection>
-
-      <Show when={wormholesQuery.error()}>
-        <SettingsGroup title={m.wormholesUnavailable} description={wormholesQuery.error()!.message}>
-          <SettingsGroup.Action>
-            <Button type="button" variant="secondary" size="sm" onClick={() => void wormholesQuery.refresh()}>
-              <i class="ti ti-refresh" aria-hidden="true" /> {m.retry}
-            </Button>
-          </SettingsGroup.Action>
-        </SettingsGroup>
       </Show>
-
-      <Show when={destinationsQuery.error()}>
-        <SettingsGroup title={m.destinationsUnavailable} description={m.destinationsUnavailableDescription}>
-          <SettingsGroup.Action>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void destinationsQuery.refresh();
-              }}
-            >
-              <i class="ti ti-refresh" aria-hidden="true" /> {m.retry}
-            </Button>
-          </SettingsGroup.Action>
-        </SettingsGroup>
+      <Show when={editingId()}>
+        {(id) => (
+          <WormholeForm
+            destinations={destinations()}
+            initial={editingWormhole()}
+            loading={formLoading()}
+            onCancel={() => setEditingId(null)}
+            onSave={(value) => {
+              const wormhole = editingWormhole();
+              if (id() === "new") createMutation.mutate(value);
+              else if (wormhole) updateMutation.mutate({ id: wormhole.id, ...value });
+            }}
+          />
+        )}
       </Show>
-
-      <Show when={!destinationsQuery.loading() && !destinationsQuery.error() && destinations().length === 0}>
-        <p class="text-sm text-dimmed">{m.noWormholeDestination}</p>
-      </Show>
-    </>
+    </Section>
   );
 }

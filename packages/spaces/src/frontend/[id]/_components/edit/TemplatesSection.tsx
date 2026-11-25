@@ -1,21 +1,26 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
+import { useLocale } from "@k2b/ui";
 import {
+  Bar,
   Button,
-  IconButton,
-  IconChoices,
-  MultiSelectInput,
-  NumberInput,
-  PanelDialog,
-  prompts,
-  SegmentedControl,
+  Check,
+  Choice,
+  confirm,
+  Dialog,
+  Empty,
+  Field,
+  Inline,
+  Input,
+  Lookup,
+  Menu,
+  Notice,
+  Row,
+  Section,
   Select,
-  SettingsCollection,
-  SettingsGroup,
-  Switch,
-  TextInput,
-  useLocale,
-} from "@k2b/ui";
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type {
@@ -35,7 +40,6 @@ import { useSpaceMessages } from "../../messages";
 import { templateIcon } from "../shared/create-menu";
 import { priorityOptions } from "../shared/item-form/options";
 import { browserTimeZone } from "../shared/item-form/templates";
-import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import { readErrorMessage } from "./utils";
 
 export type TemplateValue = Omit<CreateItemTemplate, "kind"> & { kind: ItemTemplateKind };
@@ -61,6 +65,12 @@ export type TemplateSuggestions = {
 };
 
 /** Quarter hours for the time Select; an empty choice keeps the default time. */
+/** Minutes typed into a number field; empty or not a positive number is none. */
+const minutes = (value: string): number | null => {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
 const TIMES = Array.from(
   { length: 96 },
   (_, index) => `${String(Math.floor(index / 4)).padStart(2, "0")}:${String((index % 4) * 15).padStart(2, "0")}`,
@@ -82,7 +92,9 @@ export function TemplateForm(props: {
   /** The name is taken; the field says so and stays editable. */
   nameTaken?: boolean;
   onNameInput?: () => void;
-  /** In a dialog the actions sit in a footer with a pointer to the settings. */
+  /** The dialog's title, such as "New task template" or "Save as template". */
+  title: string;
+  /** From the create menu or an item, the dialog points to the settings, where templates are managed. */
   variant?: "settings" | "dialog";
   onCancel: () => void;
   onSave: (value: TemplateValue) => void;
@@ -162,8 +174,7 @@ export function TemplateForm(props: {
   const toggleWeekday = (day: TemplateWeekday) =>
     setWeekdays((current) => (current.includes(day) ? current.filter((value) => value !== day) : [...current, day]));
 
-  const submit = (event: Event) => {
-    event.preventDefault();
+  const submit = () => {
     setError("");
     if (!name().trim()) return setError(t.nameRequired);
     if (ruleType() === "weekdays" && weekdays().length === 0) return setError(t.chooseWeekday);
@@ -200,67 +211,111 @@ export function TemplateForm(props: {
     });
   };
 
-  const fields = () => (
-    <>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-        <TextInput
-          label={t.templateName}
-          description={t.templateNameDescription}
-          value={name}
-          onValueChange={(value) => {
+  const loadPeople = async (search: string, context: { signal: AbortSignal; limit: number }) => {
+    const response = await apiClient[":id"]["assignable-users"].$get(
+      { param: { id: props.spaceId }, query: { search } },
+      { init: { signal: context.signal } },
+    );
+    if (!response.ok) throw new Error(await readErrorMessage(response, t.loadAssigneesFailed));
+    const users = await response.json();
+    peopleSeen.push(...users);
+    return { items: users.slice(0, context.limit).map((user) => ({ value: user.id, label: user.displayName })) };
+  };
+  /** People the lookup offered, so a pick keeps the name and kind the template stores. */
+  const peopleSeen: SpaceItemAssignee[] = [];
+  const pickPeople = (ids: string[]) =>
+    setAssignees(
+      ids.flatMap((id) => {
+        const known = assignees().find((person) => person.id === id) ?? peopleSeen.find((person) => person.id === id);
+        return known ? [known] : [];
+      }),
+    );
+  const tagNames = () =>
+    tagIds()
+      .map((id) => props.tags.find((tag) => tag.id === id)?.name)
+      .filter(Boolean)
+      .join(", ");
+
+  return (
+    <Dialog
+      title={props.title}
+      open
+      onOpenChange={(open) => !open && props.onCancel()}
+      foot={
+        <>
+          <Button onClick={props.onCancel} disabled={props.loading}>
+            {t.cancel}
+          </Button>
+          <Button variant="primary" busy={props.loading} onClick={submit}>
+            {props.saveError ? t.retry : props.initial ? t.save : props.variant === "dialog" ? t.saveTemplate : t.createTemplate}
+          </Button>
+        </>
+      }
+    >
+      <Field
+        label={t.templateName}
+        name="template-name"
+        hint={t.templateNameDescription}
+        error={props.nameTaken ? t.templateNameTaken : undefined}
+        required
+      >
+        <Input
+          value={name()}
+          onInput={(value) => {
             setName(value);
             props.onNameInput?.();
           }}
-          error={props.nameTaken ? t.templateNameTaken : undefined}
-          maxLength={100}
-          required
         />
-        <IconChoices label={t.templateIcon} value={icon} onValueChange={setIcon} options={iconOptions()} />
-      </div>
-      <div class="flex flex-col gap-4">
-        <div onFocusIn={() => (placeholderTarget = "title")}>
-          <TextInput
-            label={t.title}
-            description={t.templateTitleDescription}
-            placeholder={isEvent ? t.eventTitle : t.titlePlaceholder}
-            value={title}
-            onValueChange={setTitle}
-            maxLength={200}
-          />
-          <Show when={suggested}>
-            {(found) => (
-              <p class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dimmed" aria-live="polite">
-                <Show
-                  when={titleSuggestion() === "offered"}
-                  fallback={
-                    <Show when={titleSuggestion() === "replaced"} fallback={<span>{t.templateSuggestKept({ text: found().text })}</span>}>
-                      <i class="ti ti-check text-[var(--k2b-action)]" aria-hidden="true" />
-                      <span>{t.templateSuggestReplaced}</span>
-                      <Button type="button" variant="text" size="xs" onClick={undoTitle}>
-                        {t.templateSuggestUndo}
-                      </Button>
-                    </Show>
-                  }
-                >
-                  <i class="ti ti-sparkles text-[var(--k2b-action)]" aria-hidden="true" />
-                  <span>
-                    {found().token === "week"
-                      ? t.templateSuggestWeek({ text: found().text })
-                      : t.templateSuggestDate({ text: found().text })}
-                  </span>
-                  <Button type="button" variant="text" size="xs" onClick={replaceInTitle}>
-                    {t.templateSuggestReplace}
-                  </Button>
-                </Show>
-              </p>
-            )}
-          </Show>
-        </div>
-        <div onFocusIn={() => (placeholderTarget = "description")}>
-          <TextInput label={t.description} value={description} onValueChange={setDescription} multiline lines={3} />
-        </div>
-        <div class="-mt-2 flex flex-wrap items-center gap-1">
-          <span class="text-xs text-dimmed">{t.insertPlaceholder}:</span>
+      </Field>
+      <Field label={t.templateIcon} name="template-icon">
+        <Select value={icon()} options={iconOptions().map((option) => ({ value: option.value, label: option.label }))} onChange={setIcon} />
+      </Field>
+      <Field label={t.title} name="template-title" hint={t.templateTitleDescription} optional={t.optional}>
+        <Input
+          value={title()}
+          placeholder={isEvent ? t.eventTitle : t.titlePlaceholder}
+          onInput={(value) => {
+            setTitle(value);
+            placeholderTarget = "title";
+          }}
+        />
+      </Field>
+      <Show when={suggested}>
+        {(found) => (
+          <Notice
+            tone="ai"
+            icon="sparkles"
+            actions={
+              titleSuggestion() === "offered"
+                ? [{ label: t.templateSuggestReplace, onClick: replaceInTitle }]
+                : titleSuggestion() === "replaced"
+                  ? [{ label: t.templateSuggestUndo, onClick: undoTitle }]
+                  : undefined
+            }
+          >
+            {titleSuggestion() === "offered"
+              ? found().token === "week"
+                ? t.templateSuggestWeek({ text: found().text })
+                : t.templateSuggestDate({ text: found().text })
+              : titleSuggestion() === "replaced"
+                ? t.templateSuggestReplaced
+                : t.templateSuggestKept({ text: found().text })}
+          </Notice>
+        )}
+      </Show>
+      <Field label={t.description} name="template-description" optional={t.optional}>
+        <Input
+          multiline
+          value={description()}
+          onInput={(value) => {
+            setDescription(value);
+            placeholderTarget = "description";
+          }}
+        />
+      </Field>
+      <Bar
+        start={<Text type="meta">{t.insertPlaceholder}</Text>}
+        end={
           <For
             each={[
               { name: "date", label: t.placeholderDate },
@@ -269,240 +324,168 @@ export function TemplateForm(props: {
             ]}
           >
             {(placeholder) => (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => insertPlaceholder(placeholder.name)}
-              >
-                {`{{${placeholder.name}}}`} · {placeholder.label}
+              <Button variant="text" title={`{{${placeholder.name}}}`} onClick={() => insertPlaceholder(placeholder.name)}>
+                {placeholder.label}
               </Button>
             )}
           </For>
-        </div>
-      </div>
-
-      <div class="flex flex-col gap-3">
-        <div>
-          <p class="mb-1 block text-sm font-medium">{t.templateDates}</p>
-          <p class="text-xs text-dimmed">{t.templateDatesDescription}</p>
-        </div>
-        <SegmentedControl
-          ariaLabel={t.templateDates}
-          value={ruleType}
-          onValueChange={setRuleType}
+        }
+      />
+      <Field label={t.templateDates} name="template-dates" hint={t.templateDatesDescription}>
+        <Choice
+          name="template-dates"
+          value={ruleType()}
           options={[
-            { value: "none" as const, label: t.dateRuleNone },
-            { value: "weekdays" as const, label: t.dateRuleWeekdays },
-            { value: "offset" as const, label: t.dateRuleOffset },
+            { value: "none", label: t.dateRuleNone },
+            { value: "weekdays", label: t.dateRuleWeekdays },
+            { value: "offset", label: t.dateRuleOffset },
           ]}
+          onChange={(value) => {
+            const next = (["none", "weekdays", "offset"] as const).find((entry) => entry === value);
+            if (next) setRuleType(next);
+          }}
         />
-        <Show when={suggestedWeekday && weekdayName()}>
-          <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dimmed" aria-live="polite">
-            <Show
-              when={!weekdayTaken()}
-              fallback={
-                <>
-                  <i class="ti ti-check text-[var(--k2b-action)]" aria-hidden="true" />
-                  <span>{t.templateSuggestWeekdayDone({ day: weekdayName() })}</span>
-                </>
-              }
-            >
-              <i class="ti ti-sparkles text-[var(--k2b-action)]" aria-hidden="true" />
-              <span>{t.templateSuggestWeekday({ day: weekdayName() })}</span>
-              <Button type="button" variant="text" size="xs" onClick={takeWeekday}>
-                {t.templateSuggestYes}
-              </Button>
-            </Show>
-          </p>
-        </Show>
-        <Show when={ruleType() === "weekdays"}>
-          <div class="grid grid-cols-7 gap-1" role="group" aria-label={t.dateRuleWeekdays}>
-            <For each={weekdayOptions({ locale: locale() })}>
-              {(day) => (
-                <Button
-                  type="button"
-                  variant={weekdays().includes(day.id) ? "subtle" : "secondary"}
-                  size="sm"
-                  aria-label={day.fullLabel}
-                  aria-pressed={weekdays().includes(day.id)}
-                  class="w-full justify-center px-0"
-                  onClick={() => toggleWeekday(day.id)}
-                >
-                  {day.label}
-                </Button>
-              )}
-            </For>
-          </div>
-        </Show>
-        <Show when={ruleType() === "offset"}>
-          <NumberInput
-            label={t.offsetDays}
-            description={t.offsetDaysDescription}
-            value={offsetDays}
-            onValueChange={setOffsetDays}
+      </Field>
+      <Show when={suggestedWeekday && weekdayName()}>
+        <Notice tone="ai" icon="sparkles" actions={weekdayTaken() ? undefined : [{ label: t.templateSuggestYes, onClick: takeWeekday }]}>
+          {weekdayTaken() ? t.templateSuggestWeekdayDone({ day: weekdayName() }) : t.templateSuggestWeekday({ day: weekdayName() })}
+        </Notice>
+      </Show>
+      <Show when={ruleType() === "weekdays"}>
+        <Bar
+          start={
+            <Inline>
+              <For each={weekdayOptions({ locale: locale() })}>
+                {(day) => (
+                  <Button pressed={weekdays().includes(day.id)} title={day.fullLabel} onClick={() => toggleWeekday(day.id)}>
+                    {day.label}
+                  </Button>
+                )}
+              </For>
+            </Inline>
+          }
+        />
+      </Show>
+      <Show when={ruleType() === "offset"}>
+        <Field label={t.offsetDays} name="template-offset" hint={t.offsetDaysDescription}>
+          <Input
+            type="number"
             min={0}
             max={365}
-            step={1}
-            allowNegative={false}
+            value={offsetDays() === null ? "" : String(offsetDays())}
+            onInput={(value) => setOffsetDays(value === "" ? null : Math.max(0, Math.min(365, Number.parseInt(value, 10) || 0)))}
           />
-        </Show>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Show when={!(isEvent && allDay())}>
-            <Select
-              label={isEvent ? t.startTime : t.dueTime}
-              description={isEvent ? t.timeDescriptionEvent : t.timeDescriptionTask}
-              icon="ti ti-clock"
-              value={timeOfDay}
-              onValueChange={setTimeOfDay}
-              options={TIMES.map((time) => ({ id: time, label: time }))}
-              searchable
-              clearable
-            />
-          </Show>
-          <Show when={isEvent && !allDay()}>
-            <NumberInput
-              label={t.durationMinutes}
-              description={t.durationDescription}
-              value={duration}
-              onValueChange={setDuration}
-              min={1}
-              step={15}
-              suffix="min"
-              allowNegative={false}
-              clearable
-            />
-          </Show>
-          <Show when={!isEvent}>
-            <NumberInput
-              label={t.estimatedDuration}
-              value={estimate}
-              onValueChange={setEstimate}
-              min={1}
-              step={15}
-              suffix="min"
-              allowNegative={false}
-              clearable
-            />
-          </Show>
-        </div>
-        <Show when={isEvent}>
-          <Switch label={t.allDayEvent} value={allDay} onValueChange={setAllDay} />
-        </Show>
-        <p class="text-xs text-dimmed" role="status" aria-live="polite" data-testid="template-proposal-preview">
-          {preview()}
-        </p>
-      </div>
-
+        </Field>
+      </Show>
       <Show when={isEvent}>
-        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <TextInput label={t.location} icon="ti ti-map-pin" value={location} onValueChange={setLocation} maxLength={500} />
-          <TextInput
-            label={t.url}
-            icon="ti ti-link"
-            type="url"
-            inputMode="url"
-            value={url}
-            onValueChange={setUrl}
-            placeholder="https://..."
-          />
-        </div>
+        <Check switch label={t.allDayEvent} checked={allDay()} onChange={setAllDay} />
+      </Show>
+      <Field.Row>
+        <Show when={!(isEvent && allDay())}>
+          <Field
+            label={isEvent ? t.startTime : t.dueTime}
+            name="template-time"
+            hint={isEvent ? t.timeDescriptionEvent : t.timeDescriptionTask}
+          >
+            <Select
+              value={timeOfDay() ?? ""}
+              options={[{ value: "", label: t.noTime }, ...TIMES.map((time) => ({ value: time, label: time }))]}
+              onChange={(value) => setTimeOfDay(value || null)}
+            />
+          </Field>
+        </Show>
+        <Show when={isEvent && !allDay()}>
+          <Field label={t.durationMinutes} name="template-duration" hint={t.durationDescription} optional="min">
+            <Input
+              type="number"
+              min={1}
+              value={duration() === null ? "" : String(duration())}
+              onInput={(value) => setDuration(minutes(value))}
+            />
+          </Field>
+        </Show>
+        <Show when={!isEvent}>
+          <Field label={t.estimatedDuration} name="template-estimate" optional="min">
+            <Input
+              type="number"
+              min={1}
+              value={estimate() === null ? "" : String(estimate())}
+              onInput={(value) => setEstimate(minutes(value))}
+            />
+          </Field>
+        </Show>
+      </Field.Row>
+      <Text type="meta">{preview()}</Text>
+      <Show when={isEvent}>
+        <Field.Row>
+          <Field label={t.location} name="template-location" optional={t.optional}>
+            <Input value={location()} onInput={setLocation} />
+          </Field>
+          <Field label={t.url} name="template-url" optional={t.optional}>
+            <Input type="url" value={url()} placeholder="https://" onInput={setUrl} />
+          </Field>
+        </Field.Row>
       </Show>
       <Show when={!isEvent}>
-        <TextInput
-          label={t.templateChecklist}
-          description={t.templateChecklistDescription}
-          value={checklist}
-          onValueChange={setChecklist}
-          multiline
-          lines={3}
-        />
+        <Field label={t.templateChecklist} name="template-checklist" hint={t.templateChecklistDescription} optional={t.optional}>
+          <Input multiline value={checklist()} onInput={setChecklist} />
+        </Field>
       </Show>
-
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <Field label={t.priority} name="template-priority" optional={t.optional}>
         <Select
-          label={t.priority}
+          value={priority()}
           placeholder={t.selectPriority}
-          icon="ti ti-flag"
-          value={priority}
-          onValueChange={(value) => setPriority(value ?? "")}
-          options={priorityOptions(locale())}
-          clearable
+          options={[
+            { value: "", label: t.noPriority },
+            ...priorityOptions(locale()).map((option) => ({ value: option.id, label: option.label })),
+          ]}
+          onChange={setPriority}
         />
-        <Show when={props.tags.length > 0}>
-          <MultiSelectInput
-            label={t.tags}
-            placeholder={t.selectTags}
-            searchPlaceholder={t.searchTags}
-            icon="ti ti-tags"
-            value={tagIds}
-            onValueChange={setTagIds}
-            options={props.tags.map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
-            clearable
-          />
-        </Show>
-      </div>
-      <div class="flex flex-col gap-3">
-        <p class="text-sm font-medium">{t.assignees}</p>
-        <SpaceAssigneePicker spaceId={props.spaceId} value={assignees} onChange={setAssignees} placeholder={t.searchPeople} />
-        <Switch label={t.assignMe} description={t.assignMeDescription} value={assignCreator} onValueChange={setAssignCreator} />
-      </div>
-
+      </Field>
+      <Show when={props.tags.length > 0}>
+        <Field label={t.tags} name="template-tags" optional={t.optional}>
+          {/* k2b-ui gap: no tags input in v2 yet (#4191); the tags are ticked in a menu. */}
+          <Menu
+            items={props.tags.map((tag) => ({
+              label: tag.name,
+              checked: tagIds().includes(tag.id),
+              onClick: () =>
+                setTagIds((current) => (current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id])),
+            }))}
+          >
+            {tagNames() || t.selectTags}
+          </Menu>
+        </Field>
+      </Show>
+      <Field label={t.assignees} name="template-assignees" optional={t.optional}>
+        <Lookup
+          label={t.searchPeople}
+          value={assignees().map((person) => person.id)}
+          known={assignees().map((person) => ({ value: person.id, label: person.displayName }))}
+          load={loadPeople}
+          onChange={pickPeople}
+        />
+      </Field>
+      <Check switch label={t.assignMe} checked={assignCreator()} onChange={setAssignCreator} />
+      <Text type="meta">{t.assignMeDescription}</Text>
       <Show when={props.suggestions?.fromItem}>
         {(fromItem) => (
-          <div class="flex flex-col gap-1 text-xs text-dimmed">
-            <p>{t.templateNotCopied}</p>
-            <Show when={fromItem().dropped.length}>
-              <p>{t.templateAssigneesDropped({ names: fromItem().dropped.join(", ") })}</p>
-            </Show>
-          </div>
+          <Notice tone="note">
+            {fromItem().dropped.length
+              ? `${t.templateNotCopied} ${t.templateAssigneesDropped({ names: fromItem().dropped.join(", ") })}`
+              : t.templateNotCopied}
+          </Notice>
         )}
       </Show>
-
-      <Show when={error() || props.saveError}>
-        <p class="flex items-center gap-1 text-sm text-red-500" role="alert">
-          <i class="ti ti-alert-circle" aria-hidden="true" />
-          {error() || props.saveError}
-        </p>
+      <Show when={props.variant === "dialog"}>
+        <Text type="meta">{t.templateManageInSettings}</Text>
       </Show>
-    </>
-  );
-
-  // In a dialog the actions stay in its footer while the fields scroll.
-  if (props.variant === "dialog")
-    return (
-      <form onSubmit={submit} class="spaces-template-form flex min-h-0 flex-1 flex-col overflow-hidden">
-        <PanelDialog.Body>
-          <div class="flex flex-col gap-4 py-2">{fields()}</div>
-        </PanelDialog.Body>
-        <PanelDialog.Footer>
-          <div class="flex w-full flex-wrap items-center gap-2">
-            <span class="mr-auto text-xs text-dimmed">{t.templateManageInSettings}</span>
-            <Button type="button" variant="secondary" size="sm" class="max-sm:hidden" onClick={props.onCancel} disabled={props.loading}>
-              {t.cancel}
-            </Button>
-            {/* A fixed width keeps the footer still while the label changes to Saving or Try again. */}
-            <Button type="submit" size="sm" loading={props.loading} loadingLabel={t.savingTemplate} class="min-w-[9.5rem]">
-              {props.loading ? t.savingTemplate : props.saveError ? t.retry : t.saveTemplate}
-            </Button>
-          </div>
-        </PanelDialog.Footer>
-      </form>
-    );
-  return (
-    <form onSubmit={submit} class="spaces-template-form flex flex-col gap-4 py-2">
-      {fields()}
-      <div class="flex items-center gap-2">
-        <Button type="submit" size="sm" loading={props.loading}>
-          <i class="ti ti-check" aria-hidden="true" />
-          {props.initial ? t.save : t.createTemplate}
-        </Button>
-        <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={props.loading}>
-          {t.cancel}
-        </Button>
-      </div>
-    </form>
+      <Show when={error() || props.saveError}>
+        <Notice tone="bad" icon="alert-circle">
+          {error() || props.saveError}
+        </Notice>
+      </Show>
+    </Dialog>
   );
 }
 
@@ -517,6 +500,7 @@ export function TemplatesSection(props: {
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const t = useSpaceMessages();
+  const toast = useToast();
   const locale = useLocale();
   const [editing, setEditing] = createSignal<Editing | null>(null);
   createEffect(() => props.onDirtyChange(editing() !== null));
@@ -524,7 +508,7 @@ export function TemplatesSection(props: {
 
   const reconcile = () => {
     props.onWorkspaceChange?.();
-    void props.onSettingsChange?.().catch((error) => prompts.error(error.message));
+    void props.onSettingsChange?.().catch((error) => toast(error.message, { status: "bad" }));
   };
 
   const saveMutation = mutations.create<SpaceItemTemplate, { id?: string; value: TemplateValue }>({
@@ -546,7 +530,7 @@ export function TemplatesSection(props: {
       setEditing(null);
       reconcile();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
 
   const deleteMutation = mutations.create<string, SpaceItemTemplate>({
@@ -561,18 +545,17 @@ export function TemplatesSection(props: {
       if (editing()?.template?.id === id) setEditing(null);
       reconcile();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => toast(error.message, { status: "bad" }),
   });
   let deletePromptPending = false;
   const deleteTemplate = async (template: SpaceItemTemplate) => {
     if (deletePromptPending || deleteMutation.loading()) return;
     deletePromptPending = true;
     try {
-      const confirmed = await prompts.confirm(t.deleteTemplateConfirm({ name: template.name }), {
+      const confirmed = await confirm({
         title: t.deleteTemplate,
-        icon: "ti ti-trash",
-        variant: "danger",
-        confirmText: t.delete,
+        description: t.deleteTemplateConfirm({ name: template.name }),
+        confirm: t.delete,
       });
       if (confirmed) void deleteMutation.mutate(template);
     } finally {
@@ -580,74 +563,76 @@ export function TemplatesSection(props: {
     }
   };
 
-  const collection = (kind: ItemTemplateKind) => (
-    <SettingsCollection
-      title={kind === "task" ? t.taskTemplates : t.eventTemplates}
-      description={kind === "task" ? t.taskTemplatesDescription : t.eventTemplatesDescription}
-      empty={kind === "task" ? t.noTaskTemplates : t.noEventTemplates}
-    >
-      <SettingsCollection.Action>
-        <Button type="button" size="sm" disabled={editing() !== null} onClick={() => setEditing({ kind })}>
-          <i class="ti ti-plus" aria-hidden="true" />
-          {kind === "task" ? t.newTaskTemplate : t.newEventTemplate}
-        </Button>
-      </SettingsCollection.Action>
-      <For each={props.templates.filter((template) => template.kind === kind)}>
-        {(template) => (
-          <SettingsCollection.Item
-            title={template.name}
-            description={describeTemplateDateRule(template, locale())}
-            icon={<i class={`${templateIcon(template)} text-base text-dimmed`} aria-hidden="true" />}
-          >
-            <SettingsCollection.Item.Actions>
-              <IconButton
-                label={`${t.editTemplate}: ${template.name}`}
-                size="sm"
-                title={t.edit}
-                disabled={editing() !== null}
-                onClick={() => setEditing({ kind, template })}
-              >
-                <i class="ti ti-pencil" aria-hidden="true" />
-              </IconButton>
-              <IconButton
-                label={`${t.deleteTemplate}: ${template.name}`}
-                size="sm"
-                title={t.delete}
-                disabled={deleteMutation.loading()}
-                onClick={() => void deleteTemplate(template)}
-              >
-                <i class="ti ti-trash" aria-hidden="true" />
-              </IconButton>
-            </SettingsCollection.Item.Actions>
-          </SettingsCollection.Item>
-        )}
-      </For>
-    </SettingsCollection>
-  );
+  const collection = (kind: ItemTemplateKind) => {
+    const list = () => props.templates.filter((template) => template.kind === kind);
+    return (
+      <Section
+        icon={kind === "task" ? "checkbox" : "calendar-event"}
+        title={kind === "task" ? t.taskTemplates : t.eventTemplates}
+        summary={kind === "task" ? t.taskTemplatesDescription : t.eventTemplatesDescription}
+        count={list().length}
+        actions={[
+          {
+            label: kind === "task" ? t.newTaskTemplate : t.newEventTemplate,
+            icon: "plus",
+            disabled: editing() !== null,
+            onClick: () => setEditing({ kind }),
+          },
+        ]}
+      >
+        <Show when={list().length > 0} fallback={<Empty icon="template" text={kind === "task" ? t.noTaskTemplates : t.noEventTemplates} />}>
+          <For each={list()}>
+            {(template) => (
+              <Row
+                icon={templateIcon(template).replace(/^ti\s+ti-/, "")}
+                lines={[template.name, describeTemplateDateRule(template, locale())]}
+                end={
+                  <Menu
+                    label={t.moreActionsFor({ label: template.name })}
+                    items={[
+                      {
+                        label: t.editTemplate,
+                        icon: "pencil",
+                        disabled: editing() !== null,
+                        onClick: () => setEditing({ kind, template }),
+                      },
+                      {
+                        label: t.deleteTemplate,
+                        icon: "trash",
+                        danger: true,
+                        disabled: deleteMutation.loading(),
+                        onClick: () => void deleteTemplate(template),
+                      },
+                    ]}
+                  />
+                }
+              />
+            )}
+          </For>
+        </Show>
+      </Section>
+    );
+  };
 
   return (
     <>
-      <Show when={editing()} keyed>
-        {(current) => (
-          <SettingsGroup
-            title={current.template ? t.editTemplate : current.kind === "task" ? t.newTaskTemplate : t.newEventTemplate}
-            description={t.templateFormDescription}
-          >
-            <TemplateForm
-              spaceId={props.spaceId}
-              kind={current.kind}
-              initial={current.template}
-              tags={props.tags}
-              timeZone={props.dateConfig?.timeZone ?? browserTimeZone()}
-              loading={saveMutation.loading()}
-              onCancel={() => setEditing(null)}
-              onSave={(value) => void saveMutation.mutate({ id: current.template?.id, value })}
-            />
-          </SettingsGroup>
-        )}
-      </Show>
       {collection("task")}
       {collection("event")}
+      <Show when={editing()} keyed>
+        {(current) => (
+          <TemplateForm
+            title={current.template ? t.editTemplate : current.kind === "task" ? t.newTaskTemplate : t.newEventTemplate}
+            spaceId={props.spaceId}
+            kind={current.kind}
+            initial={current.template}
+            tags={props.tags}
+            timeZone={props.dateConfig?.timeZone ?? browserTimeZone()}
+            loading={saveMutation.loading()}
+            onCancel={() => setEditing(null)}
+            onSave={(value) => void saveMutation.mutate({ id: current.template?.id, value })}
+          />
+        )}
+      </Show>
     </>
   );
 }
