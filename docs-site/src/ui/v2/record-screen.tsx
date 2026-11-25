@@ -71,7 +71,7 @@ const RecordFrame = (props: { tab: "overview" | "deliveries"; children: JSX.Elem
         end={
           <>
             <Button variant="ghost" icon="search" label="In der Akte suchen" />
-            <Button variant="ghost" icon="star" label="Favorit" />
+            <Button variant="ghost" icon="star" label="Favorit" pressed />
             <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
             <Button variant="primary" icon="plus" menu>
               Neu
