@@ -48,6 +48,8 @@ export type MenuLevelParts = {
   bindContext: (element: HTMLElement) => () => void;
   /** A submenu of this level. Call it in a component under this level's popup. */
   useSubmenu: () => MenuLevelParts;
+  /** Closes the whole menu, as choosing an entry does; for a panel that picks something. */
+  close: () => void;
 };
 
 type MenuHandle = Handle<typeof menuPrimitive>;
@@ -97,6 +99,7 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
       return bindSlot(handle, "context-trigger", { id: `k2-context-${contextAreas}` }, element);
     },
     useSubmenu: () => levelParts(usePrimitive(menuPrimitive, () => ({ parent: handle.api }))),
+    close: () => handle.api.action(undefined),
   };
 };
 

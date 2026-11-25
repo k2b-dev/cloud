@@ -9,7 +9,7 @@ import type { OnNavigate } from "./types";
 /**
  * One entry of a menu, as data. `onClick` runs it; a Promise keeps the menu open and the entry busy until it settles.
  * `href` makes it a link. `checked` makes it an entry that toggles (the tick stands at its end, like in a selection).
- * `items` opens a submenu to the side. `danger` is red and stands after a line.
+ * `items` opens a submenu to the side, `panel` a panel such as a calendar. `danger` is red and stands after a line.
  */
 export type MenuItem = {
   label: string;
@@ -28,6 +28,11 @@ export type MenuItem = {
   checked?: boolean;
   /** A submenu, opened to the side. */
   items?: readonly MenuEntry[];
+  /**
+   * In place of `items`: a panel opened to the side like a submenu, such as a `DatePicker`; on the phone the sheet's
+   * next step. Its keys stay its own (only Escape goes back); `close` closes the menu once the panel has picked.
+   */
+  panel?: (close: () => void) => JSX.Element;
   /** In a section with `choice`: what choosing this entry gives; its `label` by default. */
   value?: string;
 };
@@ -218,7 +223,13 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
 type EntryKind = "submenu" | "tick" | "link" | "deed";
 
 const kindOf = (entry: MenuItem): EntryKind =>
-  entry.items ? "submenu" : entry.checked !== undefined ? "tick" : entry.href !== undefined && !entry.disabled ? "link" : "deed";
+  entry.items || entry.panel
+    ? "submenu"
+    : entry.checked !== undefined
+      ? "tick"
+      : entry.href !== undefined && !entry.disabled
+        ? "link"
+        : "deed";
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
@@ -261,8 +272,20 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         <sub.Trigger {...shared}>
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup class="k2-menu" data-k2-part="Menu" sideOffset={4} collisionPadding={8}>
-          <Entries level={sub} entries={props.item.items ?? []} />
+        <sub.Popup class="k2-menu" data-k2-part="Menu" data-panel={props.item.panel ? "" : undefined} sideOffset={4} collisionPadding={8}>
+          <Show when={props.item.panel} fallback={<Entries level={sub} entries={props.item.items ?? []} />}>
+            {(panel) => (
+              // the panel's keys (arrows, digits, Space) are its own, not the menu's walk and typeahead
+              <div
+                class="k2-mpanel"
+                role="group"
+                aria-label={props.item.label}
+                onKeyDown={(event) => event.key !== "Escape" && event.stopPropagation()}
+              >
+                {panel()(props.level.close)}
+              </div>
+            )}
+          </Show>
         </sub.Popup>
       </>
     );

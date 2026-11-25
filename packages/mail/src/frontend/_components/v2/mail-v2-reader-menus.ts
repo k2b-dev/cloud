@@ -1,8 +1,8 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DateContext } from "@k2b/stdlib";
-import { type DropdownAction, type DropdownItem, prompts, toast, useLocale } from "@k2b/ui";
+import { type DropdownAction, type DropdownItem, toast, useLocale } from "@k2b/ui";
 import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
-import { createMemo, createSignal, onCleanup } from "solid-js";
+import { createComponent, createMemo, createSignal, onCleanup } from "solid-js";
 import type { MailboxController } from "../../mail-workspace";
 import { useMailCloudId } from "../mail-cloud-id";
 import { createMailConversationLinks } from "../mail-conversation-links";
@@ -11,7 +11,8 @@ import { createMailConversationState } from "../mail-conversation-state";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
 import { createMailSummaryEdit } from "../mail-summary-edit";
-import { mailV2LaterTimes } from "./mail-v2-later";
+import { MailV2TimePicker } from "./MailV2TimePicker";
+import { mailV2LaterTimes, mailV2TimeZone } from "./mail-v2-later";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
 
@@ -66,24 +67,6 @@ export function createMailV2ReaderMenus(props: {
   });
 
   const snoozedUntil = () => conversationState.state()?.snoozedUntil ?? null;
-  /** Asks for a time; the form starts at the value set now. A form answered after the conversation changed is dropped. */
-  const askTime = async (title: string, label: string, current: string | null): Promise<string | null> => {
-    const conversationId = data().selectedConversationId;
-    const values = await prompts.form({
-      title,
-      icon: "ti ti-clock",
-      fields: { at: { type: "datetime", label, required: true, default: current ?? undefined } },
-    });
-    return values?.at && !disposed && conversationId === data().selectedConversationId ? String(values.at) : null;
-  };
-  const showLater = async () => {
-    const until = await askTime(readerText().laterTitle, readerText().laterField, snoozedUntil());
-    if (until) conversationState.snooze(until);
-  };
-  const remindMe = async () => {
-    const due = await askTime(readerText().reminderTitle, readerText().reminderField, conversationState.reminderDueAt());
-    if (due) conversationState.setReminder(due);
-  };
   const workStatus = () => c().selectedWorkStatus();
   const collaboration = () => (c().hasSelection() ? data().collaborationState : null);
 
@@ -94,24 +77,41 @@ export function createMailV2ReaderMenus(props: {
     onCleanup(() => window.clearInterval(tick));
   }
   /**
-   * A submenu of times for "Später anzeigen" and "Erinnere mich": the offered times, then any date and time.
-   * k2b-ui gap: "Datum und Uhrzeit …" opens v1's form until the v2 date picker can stand in a submenu.
+   * A submenu of times for "Später anzeigen" and "Erinnere mich": the offered times, then "Datum und Uhrzeit …" with
+   * the calendar to the side (on the phone the sheet's next step). A time picked after another conversation opened
+   * is dropped: it was offered for the one before.
    */
-  const timeItems = (choose: (at: string) => void, pick: () => void): MenuEntry[] => [
-    ...mailV2LaterTimes(props.dateConfig, v2Text(), now()).map(
-      (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), onClick: () => choose(time.at) }),
-    ),
-    "separator",
-    { label: v2Text().laterPick, onClick: pick },
-  ];
+  const timeItems = (label: string, current: string | null, choose: (at: string) => void): MenuEntry[] => {
+    const conversationId = data().selectedConversationId;
+    const pick = (at: string) => {
+      if (!disposed && conversationId === data().selectedConversationId) choose(at);
+    };
+    return [
+      ...mailV2LaterTimes(props.dateConfig, v2Text(), now()).map(
+        (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), onClick: () => pick(time.at) }),
+      ),
+      "separator",
+      {
+        label: v2Text().laterPick,
+        panel: (close) =>
+          createComponent(MailV2TimePicker, {
+            label,
+            timeZone: mailV2TimeZone(props.dateConfig),
+            current,
+            pastError: v2Text().laterPast,
+            onPick: (at) => {
+              close();
+              pick(at);
+            },
+          }),
+      },
+    ];
+  };
   const showLaterItem = (disabled: boolean): MenuItem => ({
     label: v2Text().showLater,
     icon: "clock",
     ...(disabled ? { disabled } : {}),
-    items: timeItems(
-      (at) => conversationState.snooze(at),
-      () => void showLater(),
-    ),
+    items: timeItems(readerText().laterField, snoozedUntil(), (at) => conversationState.snooze(at)),
   });
 
   // "Later" as in v1's reader: the conversation comes back at a time for everyone; the reminder reaches only you.
@@ -128,10 +128,7 @@ export function createMailV2ReaderMenus(props: {
       {
         label: conversationState.reminderDueAt() ? v2Text().changeReminder : v2Text().remindMe,
         icon: "bell",
-        items: timeItems(
-          (at) => conversationState.setReminder(at),
-          () => void remindMe(),
-        ),
+        items: timeItems(readerText().reminderField, conversationState.reminderDueAt(), (at) => conversationState.setReminder(at)),
       },
       ...(conversationState.reminderDueAt()
         ? [{ label: readerText().removeReminder, icon: "bell-off", onClick: () => conversationState.setReminder(null) }]
@@ -238,8 +235,9 @@ export function createMailV2ReaderMenus(props: {
                     },
                   ]
                 : []),
+              // its times come in `more` below, as the head's "Später" offers them
               ...(collaboration() && !headButtonsShown()
-                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: () => void showLater() }]
+                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: () => undefined }]
                 : []),
             ],
             organize: {

@@ -67,6 +67,7 @@ export const mailV2Messages = i18n.define({
       laterOnDay: ({ day, time }: { day: string; time: string }) => `${day}, ${time}`,
       laterNextWeek: "Next week",
       laterPick: "Date and time …",
+      laterPast: "This time has already passed.",
     },
     de: {
       mailboxes: "Postfächer",
@@ -131,6 +132,7 @@ export const mailV2Messages = i18n.define({
       laterOnDay: ({ day, time }: { day: string; time: string }) => `${day}, ${time}`,
       laterNextWeek: "Nächste Woche",
       laterPick: "Datum und Uhrzeit …",
+      laterPast: "Dieser Zeitpunkt ist schon vorbei.",
     },
   },
 });

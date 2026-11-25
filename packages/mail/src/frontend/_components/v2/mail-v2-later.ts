@@ -4,6 +4,10 @@ import type { MailV2Text } from "./mail-v2-messages";
 /** One time "Später" and "Erinnere mich" offer: its words, the real day as a quiet hint when it helps, the instant. */
 export type MailV2LaterTime = { label: string; meta?: string; at: string };
 
+/** The person's time zone for the offered times and the calendar: the configured one, else the browser's. */
+export const mailV2TimeZone = (config: DateContext) =>
+  dates.normalizeTimeZone(config.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+
 /** Moves a date key ("2026-11-27") by whole days; the calendar, not the clock, so a DST change cannot shift it. */
 const shiftDay = (key: string, days: number) => {
   const [year, month, day] = key.split("-").map(Number) as [number, number, number];
@@ -19,7 +23,7 @@ const weekdayOf = (key: string) => new Date(`${key}T00:00:00Z`).getUTCDay();
  * left out. A wall time a DST change skips moves forward as the clock does.
  */
 export const mailV2LaterTimes = (config: DateContext, text: MailV2Text, now = Date.now()): MailV2LaterTime[] => {
-  const timeZone = dates.normalizeTimeZone(config.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const timeZone = mailV2TimeZone(config);
   const format = (at: string, options: Intl.DateTimeFormatOptions) =>
     new Intl.DateTimeFormat(config.locale, { ...options, timeZone }).format(new Date(at));
   const at = (day: string, time: string) => dates.zonedDateTimeToInstant(`${day}T${time}`, timeZone, { disambiguation: "compatible" });
