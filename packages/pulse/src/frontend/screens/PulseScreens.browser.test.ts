@@ -179,12 +179,12 @@ const open = async (view: View, address: string, options: { variant?: string; ov
     if (url.pathname.startsWith("/api/")) return answer(route, calls, options.override);
     return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(options.variant ?? "normal") });
   });
-  const started = performance.now();
   await tab.goto(`${origin}${address}`);
   await tab.waitForSelector('body[data-ready="true"]');
+  const ready = Number(await tab.locator("body").getAttribute("data-ready-at"));
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
-  return { context, tab, errors, calls, ready: Math.round(performance.now() - started) };
+  return { context, tab, errors, calls, ready };
 };
 
 const shoot = async (tab: Page, name: string) => {

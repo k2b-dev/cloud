@@ -87,4 +87,6 @@ const screen = (): JSX.Element => {
 };
 
 render(() => <LocaleProvider locale="de">{screen()}</LocaleProvider>, host);
+// When the page stood: milliseconds from the start of navigation, measured in the page.
+document.body.dataset.readyAt = String(Math.round(performance.now()));
 document.body.dataset.ready = "true";
