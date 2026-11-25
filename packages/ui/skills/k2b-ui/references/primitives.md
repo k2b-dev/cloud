@@ -305,7 +305,12 @@ lines instead of cutting a thing.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
-  the tab ("Weitere +8") opens the views that have no tab of their own.
+  the tab ("Weitere +8") opens the views that have no tab of their own; it
+  stands at the end and its `count` counts its own entries. A tab is never
+  cut: one without room hides whole and joins that menu (and its count),
+  opening from there as it does as a tab; without a menu tab a tab "Mehr"
+  holds them. Known: while tabs hide, a gap of less than one tab may stand
+  before the menu tab.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `facts: { before?,
   value?, after? }[]` (leave on the phone, so put what must stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:

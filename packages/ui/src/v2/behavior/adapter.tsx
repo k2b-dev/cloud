@@ -48,6 +48,7 @@ import {
   Show,
   splitProps,
   untrack,
+  type ValidComponent,
 } from "solid-js";
 import { Dynamic, isServer, Portal, Properties } from "solid-js/web";
 
@@ -193,7 +194,7 @@ export function part<P extends Primitive>(
   slot: SlotName<P>,
   partProps: () => Props = () => ({}),
   user: PartProps = {},
-  tag = "div",
+  tag: ValidComponent = "div",
 ): JSX.Element {
   const current = () => handle.instance.part(slot, partProps());
   const record = untrack(current);
@@ -350,7 +351,7 @@ const kindOf = (spec: PropSpec | undefined) => (typeof spec === "string" ? spec 
 export function slotComponent<P extends Primitive>(
   handle: Handle<P>,
   slot: SlotName<P>,
-  tag: string,
+  tag: ValidComponent,
   fixed: () => Props = () => ({}),
 ): SlotComponent {
   const spec = schemaOf(handle.primitive).slots[slot] ?? {};

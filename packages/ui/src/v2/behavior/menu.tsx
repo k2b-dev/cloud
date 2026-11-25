@@ -5,6 +5,7 @@
  * its parent, so its trigger is an item of the parent menu. No ui-sdk type crosses this module's exports.
  */
 
+import { Link } from "@k2b/ssr/nav";
 import type { SlotName } from "@ui-sdk/core";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { menuCheckable, menuContextTrigger } from "@ui-sdk/core/renderer";
@@ -23,6 +24,11 @@ export type MenuLevelParts = {
   Item: SlotComponent;
   /** An item that is a link (`href`); core follows it and closes the menu. */
   LinkItem: SlotComponent;
+  /**
+   * An item that is a link opened in place: `href` and `onNavigate`, rendered as `@k2b/ssr/nav`'s `Link`, so a plain
+   * click (or Enter) calls `onNavigate` as a tab or a row does, and a modified click opens a new tab.
+   */
+  NavLinkItem: SlotComponent;
   /** An item that toggles: `value`, `label`, `checked`, `onCheckedChange`. */
   CheckboxItem: SlotComponent;
   /** One choice among its items: `name` (also what its `GroupLabel` names), `value`, `onValueChange`. */
@@ -70,6 +76,7 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
     Popup: popupComponent(handle, "content"),
     Item: slotComponent(handle, "item", "div"),
     LinkItem: slotComponent(handle, "item", "a"),
+    NavLinkItem: slotComponent(handle, "item", Link),
     CheckboxItem: featurePart(
       handle,
       "checkbox-item",

@@ -222,8 +222,9 @@ export type Tab = {
   onClick?: () => void;
   current?: boolean;
   /**
-   * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href`, or
-   * `onClick`). It is the menu's button and has no address of its own.
+   * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
+   * `onNavigate`, or `onClick`). It is the menu's button and has no address of its own. Its `count` counts these
+   * entries; tabs that hide for lack of room join the menu and its count ("+8" with one hidden shows "+9").
    */
   menu?: readonly MenuEntry[];
 };
@@ -247,16 +248,30 @@ const asEntry = (tab: Tab): MenuEntry => ({
   icon: tab.icon,
   meta: tab.count === undefined ? undefined : String(tab.count),
   href: tab.href,
+  onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
   checked: tab.current ? true : undefined,
 });
+
+/**
+ * The count of the menu tab: the app counts its own entries ("+8"); the tabs that hide for lack of room join them,
+ * so a count of a number or of "+n" grows by them. Other words stay as the app gives them.
+ */
+const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
+  if (hidden === 0 || count === undefined) return count;
+  if (typeof count === "number") return count + hidden;
+  const more = /^\+(\d+)$/.exec(count);
+  return more ? `+${Number(more[1]) + hidden}` : count;
+};
 
 /**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
  * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
- * menu tab a tab "More" opens them), the menu tab itself always stays whole.
+ * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
+ * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
+ * after the page loads).
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
@@ -320,7 +335,7 @@ export const Tabs = (props: TabsProps) => {
             }
             current={tab().current}
           >
-            <TabFace tab={tab()} />
+            <TabFace tab={index === withMenu().length - 1 ? { ...tab(), count: countWith(tab().count, more().length) } : tab()} />
           </MenuTab>
         )}
       </Index>

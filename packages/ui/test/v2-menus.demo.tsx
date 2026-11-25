@@ -151,7 +151,16 @@ export function Demo() {
               { label: "Offen", current: true, onClick: did("view:offen") },
               { label: "Erledigt", onClick: did("view:erledigt") },
               { label: "In Arbeit", count: 4, onClick: did("view:in-arbeit") },
-              { label: "Wartet auf Material", count: 2, onClick: did("view:material") },
+              // a view with an address that opens in place, as Mail's views do
+              {
+                label: "Wartet auf Material",
+                count: 2,
+                href: "#material",
+                onNavigate: (nav) => {
+                  did("view:material")();
+                  nav.push();
+                },
+              },
               {
                 label: "Weitere",
                 count: `+${views().length}`,

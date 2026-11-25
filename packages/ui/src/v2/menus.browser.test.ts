@@ -341,7 +341,8 @@ for (const width of [1440, 900, 700, 390])
           }, name);
         const views = await look("Ansichten");
         expect(views.whole).toBe(true);
-        expect(views.more).toEqual(["Weitere+2"]);
+        // the app counts its own two entries; the hidden views join the count
+        expect(views.more).toEqual([`Weitere+${2 + views.hidden.length}`]);
         const areas = await look("Bereiche");
         expect(areas.whole).toBe(true);
         if (width === 1440) expect([views.hidden, areas.hidden, areas.more]).toEqual([[], [], []]);
@@ -502,5 +503,37 @@ test("dark: the menu is the dark surface with the dark hairline", async () => {
       expect(look[1]).not.toBe("rgb(228, 228, 231)");
     },
     { theme: "dark" },
+  );
+});
+
+// A hidden view with an address opens from the menu the way its tab opens it: in place through its onNavigate, no
+// new page (Mail at 1024 px: "Wartet auf Antwort" from "Weitere" loaded the whole page).
+test("a hidden tab with an address opens in place from the menu of further views", async () => {
+  await withPage(
+    async (page) => {
+      const nav = page.getByRole("navigation", { name: "Ansichten" });
+      expect(await nav.locator('.k2-tab[data-overflow]:has-text("Wartet auf Material")').count()).toBe(1);
+      await page.evaluate(() => document.documentElement.setAttribute("data-same-page", ""));
+      await nav.getByRole("button", { name: /Weitere/ }).click();
+      await page.locator(menu).waitFor();
+      const entry = page.getByRole("menuitem", { name: /Wartet auf Material/ });
+      expect(await entry.getAttribute("href")).toBe("#material");
+      await entry.click();
+      await closed(page, menu);
+      await page.waitForFunction(() => location.hash === "#material");
+      expect(await deeds(page)).toEqual(["view:material"]);
+      expect(await page.evaluate(() => document.documentElement.hasAttribute("data-same-page"))).toBe(true);
+      // the keyboard: Enter on the entry opens it the same way
+      await page.evaluate(() => history.replaceState(null, "", "#"));
+      await nav.getByRole("button", { name: /Weitere/ }).focus();
+      await page.keyboard.press("Enter");
+      await page.locator(menu).waitFor();
+      await page.getByRole("menuitem", { name: /Wartet auf Material/ }).focus();
+      await page.keyboard.press("Enter");
+      await page.waitForFunction(() => location.hash === "#material");
+      expect(await deeds(page)).toEqual(["view:material", "view:material"]);
+      expect(await page.evaluate(() => document.documentElement.hasAttribute("data-same-page"))).toBe(true);
+    },
+    { width: 390 },
   );
 });
