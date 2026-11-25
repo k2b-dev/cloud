@@ -341,14 +341,37 @@
   ) {
   stroke: var(--k2-surface);
 }
-/* A chart without the v1 sheet (a page that loads only v2.css) reads the few v1 tokens its rules use from v2. With a
- * `.k2b-ui` ancestor the v1 sheet sets them, so a v1 page and a v2 screen of Cloud keep their own. */
+/* A chart without the v1 sheet (a page that loads only v2.css) reads the v1 tokens that its rules and its drawings
+ * (the fills the chart core writes into the SVG) use from v2, in the theme of its v2 scope. With a `.k2b-ui` ancestor
+ * the v1 sheet sets them, so a v1 page and a v2 screen of Cloud keep their own. */
 .k2-ui .k2b-chart:not(.k2b-ui *) {
   --k2b-chart-highlight-mix: var(--k2-ink-mix);
   --k2b-radius-control: var(--k2-r-control);
   --k2b-focus-width: 2px;
   --k2b-focus-ring: var(--k2-blue);
   --k2b-focus-offset: 0px;
+  --k2b-font-sans: var(--k2-font);
+  --k2b-text: var(--k2-text);
+  --k2b-text-secondary: var(--k2-muted);
+  --k2b-text-muted: var(--k2-subtle);
+  --k2b-placeholder-color: var(--k2-subtle);
+  --k2b-surface: var(--k2-surface);
+  --k2b-surface-muted: var(--k2-n100);
+  --k2b-surface-elevated: var(--k2-surface);
+  --k2b-border: var(--k2-line);
+  --k2b-border-strong: var(--k2-line-control);
+  --k2b-success-text: var(--k2-ok);
+  --k2b-warning-text: var(--k2-warn);
+  --k2b-danger-text: var(--k2-bad);
+  --k2b-info-text: var(--k2-blue-ink);
+  /* money in and out keep the marks of v1, which v2 has no tokens for */
+  --k2b-flow-in-mark: #0891b2;
+  --k2b-flow-out-mark: #8b5cf6;
+}
+:is(.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui), .k2-ui.dark, .k2-ui[data-theme="dark"])
+  .k2b-chart:not(.k2b-ui *) {
+  --k2b-flow-in-mark: #22d3ee;
+  --k2b-flow-out-mark: #a78bfa;
 }
 /* …and the one reset of the v1 sheet the chart's boxes count on: border-box, as `.k2b-ui *` sets it. */
 :where(.k2-ui .k2b-chart:not(.k2b-ui *)),

@@ -13,6 +13,11 @@ Object.assign(window, { setChartsState: setState });
 const months = ["Jun", "Jul", "Aug", "Sep", "Okt", "Nov"];
 const intake = [42, 51, 47, 63, 58, 71];
 const returns = [8, 11, 9, 14, 12, 10];
+// fixed days, so the calendar is the same on every run
+const calendarDays = Array.from({ length: 420 }, (_, i): [string, number] => [
+  new Date(Date.UTC(2025, 0, 6) + i * 86400000).toISOString().slice(0, 10),
+  (i * 17) % 211,
+]);
 
 const place = (height: number, label: string, chart: () => JSX.Element) => (
   <Canvas label={label} height={height}>
@@ -123,6 +128,28 @@ render(
                     ]
               }
             />
+          ))}
+        </Section>
+        <Section icon="stairs" title="Vom Bestand zum Bestand">
+          {place(220, "Bestand von Juni bis November", () => (
+            <Chart
+              kind="waterfall"
+              class="charts-v2-waterfall"
+              style={{ height: "100%" }}
+              locale="de"
+              start={{ label: "Juni", value: 120 }}
+              steps={[
+                { label: "Eingang", value: 332 },
+                { label: "Verkauft", value: -241 },
+                { label: "Retouren", value: 64 },
+              ]}
+              end={{ label: "November" }}
+            />
+          ))}
+        </Section>
+        <Section icon="calendar" title="Einlieferungen je Tag">
+          {place(200, "Einlieferungen je Tag", () => (
+            <Chart.Calendar class="charts-v2-calendar" style={{ height: "100%" }} locale="de" scale="sequential" data={calendarDays} />
           ))}
         </Section>
       </Pane>

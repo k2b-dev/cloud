@@ -239,7 +239,7 @@ for (const shape of shapes)
       const { page, errors } = await open(shape, width, "light");
       try {
         const ready = await places(page);
-        expect(ready.map((place) => place.inside)).toEqual(["k2b-chart", "k2b-chart", "k2b-chart", "k2b-chart"]);
+        expect(ready.map((place) => place.inside)).toEqual(Array.from({ length: 6 }, () => "k2b-chart"));
         for (const [state, part] of [
           ["loading", "Loading"],
           ["failed", "Failed"],
@@ -264,6 +264,80 @@ for (const shape of shapes)
         await page.close();
       }
     }, 30_000);
+
+for (const shape of shapes)
+  test(`${shape}: a scrolled calendar keeps its weekday head and year in place`, async () => {
+    const { page, errors } = await open(shape, 390, "light");
+    try {
+      const calendar = page.locator(".charts-v2-calendar");
+      const pinned = () =>
+        calendar
+          .locator("[data-calendar-pinned] text")
+          .evaluateAll((nodes) => nodes.map((node) => Math.round(node.getBoundingClientRect().x)));
+      const before = await pinned();
+      expect(before.length).toBeGreaterThan(0);
+      // the newest week stands at the end (row-reverse), so older weeks lie at negative scroll positions
+      await calendar.evaluate((element) => (element.scrollLeft = -150));
+      await settled(page);
+      expect(await calendar.evaluate((element) => element.scrollLeft)).toBe(-150);
+      // the head stays: a pinned word moves at most within one week (the weekday rail steps by 14 px), never with the
+      // 150 px the weeks scrolled
+      const after = await pinned();
+      expect(after.length).toBe(before.length);
+      for (const [index, x] of after.entries()) expect(Math.abs(x - before[index]!)).toBeLessThan(14);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+for (const shape of shapes)
+  test(`${shape}: in the dark the waterfall values and the calendar weekdays read on the dark surface`, async () => {
+    const { page, errors } = await open(shape, 1440, "dark");
+    try {
+      const found = await page.evaluate(() => {
+        const probe = document.createElement("span");
+        document.querySelector(".k2-ui")!.append(probe);
+        // every colour as sRGB through the engine: rgb(), color(srgb …) and color-mix() alike
+        const rgb = (color: string) => {
+          probe.style.color = color;
+          const value = getComputedStyle(probe).color;
+          const numbers = value.match(/[\d.]+/g)!.map(Number);
+          return value.startsWith("color(") ? numbers.slice(0, 3).map((n) => n * 255) : numbers.slice(0, 3);
+        };
+        const luminance = (color: string) => {
+          const [r, g, b] = rgb(color).map((c) => {
+            const s = c / 255;
+            return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          });
+          return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+        };
+        const contrast = (a: string, b: string) => {
+          const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+          return (hi! + 0.05) / (lo! + 0.05);
+        };
+        const surface = getComputedStyle(probe).getPropertyValue("--k2-surface");
+        const value = getComputedStyle(document.querySelector(".charts-v2-waterfall .k2b-waterfall-value")!).fill;
+        const weekdays = document.querySelector(".charts-v2-calendar [data-calendar-weekdays]")!;
+        const band = getComputedStyle(weekdays.querySelector("rect")!).fill;
+        const label = getComputedStyle(weekdays.querySelector("text")!).fill;
+        const found = {
+          value: contrast(value, surface),
+          band: luminance(band),
+          label: contrast(label, band),
+        };
+        probe.remove();
+        return found;
+      });
+      expect(found.value).toBeGreaterThanOrEqual(4.5);
+      // the band behind the weekday labels is the dark surface, not white
+      expect(found.band).toBeLessThan(0.05);
+      expect(found.label).toBeGreaterThanOrEqual(4.5);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 
 test("v2 only: a focused chart shows the v2 ring", async () => {
   const { page, errors } = await open("v2 only", 1440, "light");

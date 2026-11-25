@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { v1Leaks } from "./v2-sheet-v1-leaks";
 
 const packageRoot = resolve(import.meta.dir, "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "k2b-ui-packed-consumer-"));
@@ -322,14 +323,11 @@ try {
     throw new Error(`packed v2 stylesheet build failed\n${v2CssBuild.logs.join("\n")}`);
   }
   const v2CssOutput = await Bun.file(join(consumer, "v2-css-dist", "v2.css")).text();
-  // v2.css carries the chart's own stylesheet (src/styles/chart.css, scoped to `.k2b-ui` or `.k2-ui`), so a chart
-  // renders with v2.css alone; every other v1 class stays out.
-  const classes = (css: string) => new Set(Array.from(css.matchAll(/\.(k2b-[\w-]+)/g), (match) => match[1]!));
-  const chartClasses = classes(await Bun.file(resolve(packageRoot, "src/styles/chart.css")).text());
-  const v1Leaks = [...classes(v2CssOutput)].filter((name) => !chartClasses.has(name));
-  if (!/\.k2-ui\b/.test(v2CssOutput) || !v2CssOutput.includes("--k2-t-row") || v1Leaks.length > 0) {
+  // v2.css carries the chart's own stylesheet, so a chart renders with v2.css alone; every v1 rule in it hangs on a chart.
+  const leaks = v1Leaks(v2CssOutput);
+  if (!/\.k2-ui\b/.test(v2CssOutput) || !v2CssOutput.includes("--k2-t-row") || leaks.length > 0) {
     throw new Error(
-      `packed v2 stylesheet must carry the .k2-ui scope and its tokens, and of v1 only the chart sheet; found ${v1Leaks.join(", ")}`,
+      `packed v2 stylesheet must carry the .k2-ui scope and its tokens, and of v1 only chart rules; found ${leaks.join(", ")}`,
     );
   }
 
