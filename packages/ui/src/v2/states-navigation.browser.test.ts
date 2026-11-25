@@ -125,7 +125,8 @@ describe("states: loading, empty and failed stand where the data will stand", ()
       expect(await page.evaluate(sentVsLive)).toEqual([]);
       // assistive technology hears "loading" once per place (the list and the table; the phone list is hidden on a
       // wide screen), from a status line outside anything busy; the placeholders themselves are hidden from it
-      expect(await page.getByRole("status").allTextContents()).toEqual(["Wird geladen...", "Wird geladen..."]);
+      // (an empty status says nothing: the Workspace's toaster keeps one for its announcements)
+      expect((await page.getByRole("status").allTextContents()).filter(Boolean)).toEqual(["Wird geladen...", "Wird geladen..."]);
       expect(await page.locator('.k2-table[aria-busy="true"]').count()).toBe(1);
       expect(await page.locator('[aria-busy="true"] [role="status"]').count()).toBe(0);
       expect(await page.locator(".k2-skel:not([aria-hidden] *)").count()).toBe(0);

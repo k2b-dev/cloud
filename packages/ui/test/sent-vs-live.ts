@@ -5,7 +5,10 @@
  * - the keys of hydration (`data-hk`) and comments do not count;
  * - a style counts by its declarations, not their spelling;
  * - a place the live page measures after hydration does not count: a grip in the middle of the part of its line in
- *   sight (`--k2-grip-top`, layout.tsx). Add a property here only for such a measured place, never for a mismatch.
+ *   sight (`--k2-grip-top`, layout.tsx). Add a property here only for such a measured place, never for a mismatch;
+ * - the Workspace's toast region (`data-slot="toast-region"`, toast.tsx) is made a popover and measures the viewport
+ *   into custom properties once core binds it: its `popover` and its `--` properties do not count. Empty, it is
+ *   closed and shows nothing either way.
  *
  * Self-contained, as Playwright sends its source into the page.
  */
@@ -15,11 +18,12 @@ export const sentVsLive = (): string[] => {
   const live = document.getElementById("root");
   if (!(sent instanceof Node) || !live) return ["the page holds no sent copy (window.__k2Sent) or no #root"];
   const found: string[] = [];
+  const toastRegion = (element: Element) => element.getAttribute("data-slot") === "toast-region";
   const style = (element: Element) => {
     const probe = document.createElement("i");
     probe.setAttribute("style", element.getAttribute("style") ?? "");
     return Array.from(probe.style)
-      .filter((name) => !measured.has(name))
+      .filter((name) => !measured.has(name) && !(toastRegion(element) && name.startsWith("--")))
       .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
       .sort()
       .join(";");
@@ -37,7 +41,9 @@ export const sentVsLive = (): string[] => {
       found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
       return;
     }
-    const names = new Set([...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk"));
+    const names = new Set(
+      [...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk" && !(toastRegion(b) && name === "popover")),
+    );
     for (const name of names) {
       const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);
       if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);

@@ -92,6 +92,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
+| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | – |
+| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | – |
+| a small panel behind a button (filters, a preview) | `Popover` with `title` and `content` | – |
+| a short hint on a button | `Popover tip` around the `Button` | – |
+| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | – |
 
 ## The rules, and why
 
@@ -149,13 +154,15 @@ a `Notice` that names the deed.
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`.
+- **Overlays:** `Menu`, `Menu.Context`, `Popover` (panel or `tip`),
+  `useToast`.
 - **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-`Dialog`, `Menu`, `Popover`, `Tooltip`, `Toast` (their behaviour exists
-inside `@k2b/ui`, the v2 components follow), filter components, the mail
+`Dialog` (its behaviour exists inside `@k2b/ui`, the v2 component
+follows), filter components, the mail
 and chat composer (comes from `@k2b/editor`), and an assistant message or
 answer card.
 How to stand in until then: a dialog is a `Pane detail` (see
