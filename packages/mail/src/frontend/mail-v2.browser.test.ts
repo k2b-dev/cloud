@@ -132,7 +132,7 @@ describe("Mail on the v2 pilot", () => {
     const page = await open(MAIL_V2_PATH, 1440, 560);
     try {
       await page.evaluate(() => Object.assign(window, { stayed: true }));
-      const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
+      const list = page.locator('[data-k2-part="Pane"]:not([data-detail], [data-detail-empty]) > .k2-scroll');
       const position = () => list.evaluate((element) => element.scrollTop);
       const scrollTo = async (y: number) => {
         await list.evaluate((element, y) => {
@@ -509,7 +509,7 @@ describe("Mail on the v2 pilot", () => {
   test("a live mail keeps the focused row focused and a scrolled list where it was", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 1440, 560);
     try {
-      const list = page.locator('[data-k2-part="Pane"]:not([data-detail]) > .k2-scroll');
+      const list = page.locator('[data-k2-part="Pane"]:not([data-detail], [data-detail-empty]) > .k2-scroll');
       await list.evaluate((element) => {
         element.scrollTop = 120;
       });
