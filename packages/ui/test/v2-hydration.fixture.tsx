@@ -94,6 +94,14 @@ export function Fixture() {
               ]}
               href="#zeile"
             />
+            <Row
+              lines={[
+                "Spedition Falk",
+                "Lieferavis 4471",
+                "Ihre Sendung wird am 23.11. zwischen 7 und 11 Uhr zugestellt, bitte die Rampe frei halten",
+              ]}
+              time="Mo"
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>
@@ -140,6 +148,9 @@ export function Fixture() {
             </Field>
             <Field name="contact" label="Ansprechperson">
               <Input placeholder="Wer nimmt ab?" />
+            </Field>
+            <Field name="note" label="Notiz">
+              <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
           </Section>
           <Facts

@@ -44,7 +44,13 @@ export const indexClassGroups = (css: string): string => {
     const branches = selectors.nodes.flatMap((selector) => expand(selector));
     selectors.removeAll();
     for (const branch of branches) selectors.append(branch);
-    rule.selector = selectors.toString();
+    const distributed = selectors.toString();
+    if (distributed === rule.selector) return;
+    rule.selector = distributed;
+    // The bundler writes `:-webkit-any()`, `:-moz-any()` and `:is()` fallbacks of one rule in a row; distributed,
+    // they are the same rule, so only the first stays.
+    const previous = rule.prev();
+    if (previous?.type === "rule" && previous.toString() === rule.toString()) rule.remove();
   });
   return root.toString();
 };

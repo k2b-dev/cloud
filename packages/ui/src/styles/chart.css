@@ -1,0 +1,599 @@
+/* The chart's own stylesheet: the size, stretch, marks, inspection and tooltip of the Chart of @k2b/ui.
+ *
+ * It is plain CSS and ships twice, inside the v1 sheet (`styles.css`, imported by entry.css) and appended to
+ * `v2.css` by the build, so a chart sizes and styles itself in a v1 page, in a v2 screen of a v1 page, and in a page
+ * that loads only `v2.css`. Every rule starts at `:is(.k2b-ui, .k2-ui)`: the scope of either sheet, with the
+ * specificity of the `.k2b-ui` the rules had in the v1 sheet, so a v1 page renders exactly as before. Below `.k2-ui`
+ * the chart speaks v2 (see "A chart in a v2 screen"); without a `.k2b-ui` ancestor it reads the few v1 tokens it
+ * needs from v2 (see "A chart without the v1 sheet"). Keep this file free of `@apply` and theme functions: v2.css
+ * ships as written.
+ *
+ * Cloud's <Chart> wrapper is `relative block` plus the caller's own sizing;
+ * everything else here mirrors the utilities Cloud puts on the same nodes. */
+
+:is(.k2b-ui, .k2-ui) .k2b-chart {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/* Top legends share the caller's height with the plot. Geometry remains SVG-owned:
+ * inspection uses real SVG transforms and axis bounds, including this vertical offset. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] {
+  display: flex;
+  flex-direction: column;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="top-start"] > .k2b-chart__svg {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__legend {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  align-content: flex-start;
+  /* Bound wrapping while retaining at least 60% of small fixed viewports for data. */
+  box-sizing: border-box;
+  max-height: min(44px, 40%);
+  overflow-y: auto;
+  gap: 4px 14px;
+  padding: 6px 0 2px;
+  font-size: 12px;
+  line-height: 18px;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__legend-item {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__legend-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+}
+
+/* `:where()` keeps this a fallback: a caller class that sets `color` still
+ * wins, exactly like Cloud where the wrapper has no colour of its own. */
+:is(.k2b-ui, .k2-ui) :where(.k2b-chart) {
+  color: var(--k2b-text-muted);
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-drag="idle"] {
+  cursor: grab;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-drag="active"] {
+  cursor: grabbing;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-crosshair="true"] {
+  cursor: crosshair;
+}
+
+/* Only pan/zoom charts claim the touch gesture; hover-only line charts keep
+ * the page scrollable, matching Cloud. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-drag] {
+  touch-action: none;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-interactive="true"]:focus-visible {
+  border-radius: var(--k2b-radius-control);
+  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
+  outline-offset: min(var(--k2b-focus-offset), 0px);
+}
+
+/* System colors replace the accent ring, as for every field of the v1 sheet. */
+@media (forced-colors: active) {
+  :is(.k2b-ui, .k2-ui) .k2b-chart[data-interactive="true"]:focus-visible {
+    outline: var(--k2b-focus-width) solid CanvasText;
+    outline-offset: calc(-1 * var(--k2b-focus-width));
+  }
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg,
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* CSS owns the responsive layout, including the first server-rendered frame.
+ * atan2/tan expresses a length ratio without CSS typed division. Text and
+ * markers retain their pixel size while Cartesian geometry fills the box. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] {
+  container-type: size;
+  --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), 100cqw));
+  --k2b-chart-inverse-y: tan(atan2(var(--k2b-chart-height), 100cqh));
+}
+
+/* Preserve readable Y labels without imposing phone margins on wide line plots. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] > svg[data-line-axis-room] {
+  --k2b-line-inset: max(0px, calc((var(--k2b-line-label-room) - var(--k2b-line-axis-fraction) * 100cqw) * var(--k2b-line-axis-expand)));
+  --k2b-chart-inverse-x: tan(atan2(var(--k2b-chart-width), calc(100cqw - var(--k2b-line-inset))));
+  margin-left: var(--k2b-line-inset);
+  width: calc(100% - var(--k2b-line-inset));
+  overflow: visible;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] text {
+  scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+/* A date label gives way in a box narrower than it needs (`--k2b-tick-room`, see chart-tick-room.ts): every second
+ * label first, then every fourth, so dates never draw over each other on a phone. The ratio of the free room to one
+ * pixel, clamped, is 1 when the label fits and 0 when it does not. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] [data-time-tick] {
+  opacity: clamp(0, tan(atan2(calc(100cqw - var(--k2b-tick-room, 0px)), 1px)), 1);
+}
+
+/* The bottom Y label must clear the first centred date label in small cards. */
+@container (max-width: 400px) {
+  :is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="line"] .k2b-chart__svg[data-stretch] > svg[data-line-details="true"] > .stdlib-chart-grid:nth-child(1 of .stdlib-chart-grid) + .stdlib-chart-tick-label {
+    translate: 0 calc(-6px * var(--k2b-chart-inverse-y));
+  }
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] :is(circle, .stdlib-chart-point, .stdlib-chart-legend) {
+  transform-box: fill-box;
+  transform-origin: center;
+  scale: var(--k2b-chart-inverse-x) var(--k2b-chart-inverse-y);
+}
+
+/* Keep each legend together: shrinking the gaps while retaining full-size
+ * text would make labels overlap in narrow containers. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] .stdlib-chart-legend text {
+  scale: none;
+}
+
+/* Scatter marks need enough visible fill around their separating outline.
+ * Keep the increase in CSS pixels, independent of the responsive plot size. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="scatter"] .k2b-chart__svg[data-stretch] .stdlib-chart-point {
+  scale: calc(var(--k2b-chart-inverse-x) * 1.75) calc(var(--k2b-chart-inverse-y) * 1.75);
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg[data-stretch] :is(path, line, rect, circle) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* Reserve four CSS pixels for sparkline inspection markers and their stroke so
+ * a short sparkline cannot clip them when its logical padding is scaled. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg {
+  padding: 4px;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sparkline"] .k2b-chart__svg > svg {
+  overflow: visible;
+}
+
+/* Labels below columns keep their pixel distance from the axis; in a box shorter
+ * than the drawing they hang below it instead of crossing the axis. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg > svg[data-bar-layout="columns"] {
+  overflow: visible;
+}
+
+/* Horizontal bar rows keep their own height: one row per category never shrinks
+ * below its text. A shorter box scrolls; a taller one leaves room below. */
+:is(.k2b-ui, .k2-ui) .k2b-chart:has(> .k2b-chart__svg > svg[data-bar-layout="rows"]) {
+  overflow-y: auto;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg:has(> svg[data-bar-layout="rows"]) {
+  flex: none;
+  height: var(--k2b-chart-height);
+  max-width: var(--k2b-row-measure, 40rem);
+}
+
+/* Labels and guide strokes leave hit testing to the data geometry below. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-interactive] .k2b-chart__svg :is(.stdlib-chart-heatmap-label, .stdlib-chart-box-median, .stdlib-chart-box-whisker, .stdlib-chart-box-cap) {
+  pointer-events: none;
+}
+
+/* Inspection changes only paint and the out-of-flow tooltip. */
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-chart-datum] {
+  cursor: crosshair;
+}
+/* Calm hover: nothing else dims. A single mark gets a thin outline; a column or row
+ * of a category chart gets a light band behind it instead (data-inspecting="category"). */
+:is(.k2b-ui, .k2-ui) .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  vector-effect: non-scaling-stroke;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > :is(rect, path) {
+  stroke-width: 1.5px;
+}
+/* Points keep a 2 px ring: a tiny point is hit through its stroke, so a thinner ring would let the drawing take the pointer. */
+:is(.k2b-ui, .k2-ui) .k2b-chart:not([data-chart-kind="bar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected]:not([data-chart-role="value"]) > circle {
+  stroke-width: 2px;
+}
+/* Keyboard inspection outlines category marks; pointer hover keeps their resting paint. */
+:is(.k2b-ui, .k2-ui) .k2b-chart:focus-visible:is([data-chart-kind="bar"], [data-chart-kind="hbar"], [data-chart-kind="histogram"], [data-chart-kind="boxplot"]) [data-inspected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-inspection-color) !important;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+/* The band sits behind the marks without positioning the drawing, which would change what lies on top. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-inspecting="category"] {
+  isolation: isolate;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-inspecting="category"]::before {
+  content: "";
+  position: absolute;
+  left: var(--k2b-chart-band-left);
+  top: var(--k2b-chart-band-top);
+  width: var(--k2b-chart-band-width);
+  height: var(--k2b-chart-band-height);
+  z-index: -1;
+  border-radius: 3px;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  pointer-events: none;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-inspected] > .stdlib-chart-inspection-point {
+  fill: var(--k2b-chart-inspection-color);
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-inspected][data-chart-role="value"] > :is(.stdlib-chart-gauge-value, .stdlib-chart-stat-value) {
+  text-decoration: underline;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-inspecting="series"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--k2b-chart-inspection-x);
+  border-left: 1px dashed currentColor;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+/* The chart core embeds `color: #1f2937` in the SVG's own <style>; three classes beat
+ * its single-class rule so the chart follows the wrapper in both schemes. */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart {
+  color: inherit;
+}
+
+/* Axis and value text uses the UI font; tabular figures keep numbers aligned. */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-tick-label,
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-bar-value,
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-axis-label {
+  font-family: var(--k2b-font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Category labels and printed values read like text, not like recessive ticks. */
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-category-label {
+  font-size: 11px;
+  opacity: 0.8;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-bar-value {
+  font-size: 11px;
+  opacity: 0.9;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart-axis-label {
+  font-weight: 500;
+}
+
+/* A chart in a v2 screen (below `.k2-ui`, @k2b/ui/v2) speaks v2: its words take the v2 font and the meta role
+ * (12 px), its inks are the v2 inks instead of opacities, its lines the v2 hairline and control edge, a separator
+ * between marks is the v2 surface in both themes, and in a Canvas its words start at the v2 text edge. Only the
+ * mapping changes; the drawing and its geometry stay those of the chart core. */
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *) {
+  color: var(--k2-muted);
+  font-family: var(--k2-font);
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-canvas > *):not([data-chart-kind="map"]) {
+  margin-inline: var(--k2-edge);
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *) .stdlib-chart text {
+  font-family: var(--k2-font);
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-tick-label,
+    .stdlib-chart-axis-label,
+    .stdlib-chart-subtitle,
+    .stdlib-chart-reference-label,
+    .stdlib-chart-legend-label,
+    .stdlib-chart-empty-text,
+    .stdlib-chart-heatmap-label,
+    .stdlib-chart-state-label,
+    .stdlib-chart-map-empty
+  ) {
+  font-size: 12px;
+  fill: var(--k2-subtle);
+  opacity: 1;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-category-label,
+    .stdlib-chart-bar-value,
+    .stdlib-chart-label,
+    .stdlib-chart-bar-gauge-label,
+    .stdlib-chart-bar-gauge-value,
+    .k2b-chart-group-heading,
+    .k2b-chart-segment-value
+  ) {
+  font-size: 12px;
+  fill: var(--k2-muted);
+  opacity: 1;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *) .stdlib-chart-axis {
+  stroke: var(--k2-line-control);
+  opacity: 1;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *) .stdlib-chart-grid {
+  stroke: var(--k2-line);
+  opacity: 1;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-slice,
+    .stdlib-chart-point,
+    .stdlib-chart-box-outlier,
+    .stdlib-chart-heatmap-cell,
+    .stdlib-chart-state-region
+  ) {
+  stroke: var(--k2-surface);
+}
+/* A chart without the v1 sheet (a page that loads only v2.css) reads the v1 tokens that its rules and its drawings
+ * (the fills the chart core writes into the SVG) use from v2, in the theme of its v2 scope. With a `.k2b-ui` ancestor
+ * the v1 sheet sets them, so a v1 page and a v2 screen of Cloud keep their own. */
+.k2-ui .k2b-chart:not(.k2b-ui *) {
+  --k2b-chart-highlight-mix: var(--k2-ink-mix);
+  --k2b-radius-control: var(--k2-r-control);
+  --k2b-focus-width: 2px;
+  --k2b-focus-ring: var(--k2-blue);
+  --k2b-focus-offset: 0px;
+  --k2b-font-sans: var(--k2-font);
+  --k2b-text: var(--k2-text);
+  --k2b-text-secondary: var(--k2-muted);
+  --k2b-text-muted: var(--k2-subtle);
+  --k2b-placeholder-color: var(--k2-subtle);
+  --k2b-surface: var(--k2-surface);
+  --k2b-surface-muted: var(--k2-n100);
+  --k2b-surface-elevated: var(--k2-surface);
+  --k2b-border: var(--k2-line);
+  --k2b-border-strong: var(--k2-line-control);
+  --k2b-success-text: var(--k2-ok);
+  --k2b-warning-text: var(--k2-warn);
+  --k2b-danger-text: var(--k2-bad);
+  --k2b-info-text: var(--k2-blue-ink);
+  /* money in and out keep the marks of v1, which v2 has no tokens for */
+  --k2b-flow-in-mark: #0891b2;
+  --k2b-flow-out-mark: #8b5cf6;
+}
+:is(.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui), .k2-ui.dark, .k2-ui[data-theme="dark"])
+  .k2b-chart:not(.k2b-ui *) {
+  --k2b-flow-in-mark: #22d3ee;
+  --k2b-flow-out-mark: #a78bfa;
+}
+/* …and the one reset of the v1 sheet the chart's boxes count on: border-box, as `.k2b-ui *` sets it. */
+:where(.k2-ui .k2b-chart:not(.k2b-ui *)),
+:where(.k2-ui .k2b-chart:not(.k2b-ui *)) *,
+:where(.k2-ui .k2b-chart:not(.k2b-ui *)) *::before,
+:where(.k2-ui .k2b-chart:not(.k2b-ui *)) *::after {
+  box-sizing: border-box;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__empty:is(.k2-ui *) {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+/* The tooltip is a v2 overlay: the surface, hairline, radius and one shadow of a v2 popover, words in the meta role.
+ * Its place is that of every v1 hint (fixed, placed by the script), written here as well, so it holds without the v1
+ * sheet. */
+:is(.k2b-ui, .k2-ui) [popover].k2b-tooltip.k2b-chart__tooltip:is(.k2-ui *) {
+  position: fixed;
+  inset: auto;
+  z-index: 100;
+  margin: 0;
+  font: var(--k2-t-meta);
+  color: var(--k2-text);
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float);
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart a {
+  cursor: pointer;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart a:hover .stdlib-chart-state-region,
+:is(.k2b-ui, .k2-ui) .k2b-chart .stdlib-chart a:focus .stdlib-chart-state-region {
+  outline: none;
+  opacity: 0.8;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: var(--tw-leading, var(--text-xs--line-height, calc(1 / 0.75)));
+  color: var(--k2b-text-muted);
+}
+
+/* Measurement anchor for the tooltip; never visible. */
+:is(.k2b-ui, .k2-ui) .k2b-chart__anchor {
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart__controls {
+  position: absolute;
+  top: calc(var(--spacing, 0.25rem) * 2);
+  right: calc(var(--spacing, 0.25rem) * 2);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--spacing, 0.25rem) * 1);
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > :is(rect, path, circle):not(.k2b-chart-category-band) {
+  stroke: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)) !important;
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-inspection-point { fill: var(--k2b-chart-selection-color, var(--k2b-chart-selection-fallback-color)); opacity: 1; }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected][data-chart-role="value"] { text-decoration: underline; }
+
+/* Initial SSR selection uses the same palette before computed browser paint is available. */
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-0 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c1) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-1 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c2) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-2 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c3) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-3 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c4) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-4 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c5) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-5 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c6) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-6 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c7) 72%, var(--k2b-chart-highlight-mix)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .stdlib-chart-series-7 { --k2b-chart-selection-fallback-color: color-mix(in srgb, var(--stdlib-chart-c8) 72%, var(--k2b-chart-highlight-mix)); }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-chart-reference="true"] > :is(rect, circle, path) { fill: none !important; pointer-events: all; stroke: var(--k2b-chart-reference-color); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="map"] .k2b-chart__svg { container-type: size; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="map"] .k2b-chart__svg > svg { overflow: hidden; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="map"] .stdlib-chart-legend { translate: calc((100cqw - var(--k2b-chart-width)) / 2) calc(100cqh - var(--k2b-chart-height)); }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="map"] .stdlib-chart-map-point { transform-box: fill-box; transform-origin: center; scale: var(--k2b-map-inverse-scale); vector-effect: non-scaling-stroke; }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-inspecting="series"]::after { top: var(--k2b-chart-plot-top, 0); bottom: var(--k2b-chart-plot-bottom, 0); }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-cursor-source="true"][data-inspecting="series"]::before { content: ""; position: absolute; left: var(--k2b-chart-plot-left, 0); right: var(--k2b-chart-plot-right, 0); top: var(--k2b-chart-inspection-y); border-top: 1px dashed currentColor; opacity: .3; pointer-events: none; }
+:is(.k2b-ui, .k2-ui) .k2b-chart__tooltip-title { display: block; margin-bottom: .375rem; font-weight: 600; }
+:is(.k2b-ui, .k2-ui) .k2b-chart__tooltip-row { display: flex; align-items: center; gap: .5rem; line-height: 1.6; }
+:is(.k2b-ui, .k2-ui) .k2b-chart__tooltip-row > i { width: .625rem; height: .625rem; border-radius: .125rem; flex: none; }
+:is(.k2b-ui, .k2-ui) .k2b-chart__tooltip-row > span { flex: 1; opacity: .75; }
+:is(.k2b-ui, .k2-ui) .k2b-chart__tooltip-row > b { margin-left: .75rem; font-variant-numeric: tabular-nums; font-weight: 500; }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="treemap"] [data-inspected]:not([data-chart-role="value"]) > rect,
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="treemap"] [data-selected] > rect { stroke-width:1.5px; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > :is(.k2b-chart-pareto-current,.k2b-chart-category-band) { stroke: none !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-category-band { fill:color-mix(in srgb,var(--stdlib-chart-c1,#3b82f6) 7%,transparent); }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-previous { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: .8px; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="pareto"] :is([data-inspected],[data-selected]) > .k2b-chart-pareto-hatch { stroke: var(--stdlib-chart-c1,#3b82f6) !important; stroke-width: 1px; }
+
+/* Flow geometry keeps readable stage labels on a narrow host; sources are visible first. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sankey"] { overflow-x: auto; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sankey"] > .k2b-chart__svg { min-width: 620px; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sankey"] [data-inspected] > .k2b-chart-sankey-link,
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="sankey"] [data-selected] > .k2b-chart-sankey-link { fill-opacity: 0.6; stroke: none !important; }
+/* New distribution marks keep the selected state stronger than calm hover. */
+:is(.k2b-ui, .k2-ui) .k2b-chart:is([data-chart-kind="bubble"],[data-chart-kind="radar"]) [data-selected] > circle { stroke-width: 3px !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="radar"] [data-inspected] > .k2b-chart-radar-axis { stroke: var(--k2b-chart-inspection-color); stroke-width: 1.5px !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="radar"] [data-selected] > .k2b-chart-radar-axis { stroke-width: 2.5px !important; }
+
+
+/* Pointer hover paints only the band; keyboard inspection and selection outline the marks. */
+:is(.k2b-ui, .k2-ui) .k2b-chart-category-band { stroke: none; }
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-inspected] > .k2b-chart-category-band[fill="none"] { fill: color-mix(in srgb, currentColor 5%, transparent); }
+:is(.k2b-ui, .k2-ui) .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > :is(rect,path,circle):not(.k2b-chart-category-band),
+:is(.k2b-ui, .k2-ui) .k2b-chart:not(:focus-visible):has(svg[data-bar-layout] .k2b-chart-category-band) [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: none !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart-funnel :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 12.5px; }
+:is(.k2b-ui, .k2-ui) .k2b-chart-ranked :is(.stdlib-chart-tick-label, .stdlib-chart-bar-value) { font-size: 13px; }
+:is(.k2b-ui, .k2-ui) .stdlib-chart .k2b-chart-group-heading { font-size: 11.5px; font-weight: 600; opacity: 1; }
+:is(.k2b-ui, .k2-ui) .stdlib-chart .k2b-chart-segment-value { font-size: 11px; font-weight: 500; fill: currentColor; opacity: 1; }
+/* Category hover paints only the band; keyboard and selection outline marks. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="waterfall"] :is([data-inspected], [data-selected]) > .k2b-chart-category-band { fill-opacity: .05; stroke: none !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="waterfall"] [data-inspected="hover"]:not([data-selected]) > .k2b-waterfall-bar { stroke: none !important; }
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="waterfall"] .k2b-waterfall-value { font-weight: 600; fill: var(--k2b-text-secondary, #52525b); }
+/* Reserve from the viewport's own width, including 16px for a classic scrollbar.
+   Keeping size containment here preserves the explorer's intrinsic header width. */
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar] { container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); }
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar]::before { content: ""; grid-area: 1 / 1; height: var(--k2b-calendar-height); }
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer[data-inset] .k2b-chart-explorer__viewport[data-calendar][data-view="table"] { --k2b-calendar-available: calc(100cqw - 2 * var(--k2b-chart-explorer-inset)); }
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar] > * { grid-area: 1 / 1; min-height: 0; contain: size; }
+/* An optional external legend keeps its own row inside the same reserve. */
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar][data-legend] { grid-template-rows: minmax(0, 1fr) auto; }
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar][data-legend]::before { grid-row: 1 / 3; }
+:is(.k2b-ui, .k2-ui) .k2b-chart-explorer__viewport[data-calendar][data-legend] > .k2b-chart-legend { grid-area: 2 / 1; height: auto; contain: none; }
+/* The calendar viewport alone owns size queries. Reversed flex starts at the
+   newest week even before JavaScript, without changing tooltip text direction. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) {
+  display: flex;
+  flex-direction: row-reverse;
+  align-items: flex-start;
+  overflow-x: auto;
+  container-type: inline-size;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg:has(> svg[data-calendar]) {
+  flex: 0 0 100%;
+  margin-right: auto;
+  width: 100%;
+  height: auto;
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart__svg:has(> svg[data-calendar]) rect { vector-effect: non-scaling-stroke; }
+/* Geometry stays numeric in the core; these calculations also run in the server frame. */
+:is(.k2b-ui, .k2-ui) svg[data-calendar] {
+  --k2b-calendar-width: clamp(var(--k2b-calendar-min), 100cqw, var(--k2b-calendar-max));
+  --k2b-calendar-inverse: tan(atan2(var(--k2b-calendar-base), var(--k2b-calendar-width)));
+  /* CSS owns the server frame; after mount use the scrollport's actual range. */
+  --k2b-calendar-overflow: var(--k2b-calendar-measured-overflow, max(0px, calc(var(--k2b-calendar-width) - 100cqw)));
+  --k2b-calendar-rail: mod(calc(-1 * (var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px))), calc(var(--k2b-calendar-step) * var(--k2b-calendar-width)));
+}
+/* Pin headers and the rail in SVG coordinates, before or after mounting. */
+:is(.k2b-ui, .k2-ui) svg[data-calendar] [data-calendar-pinned] {
+  transform: translateX(calc((var(--k2b-calendar-overflow) + var(--k2b-calendar-scroll, 0px)) * var(--k2b-calendar-inverse)));
+}
+:is(.k2b-ui, .k2-ui) [data-calendar-weekdays] { transform: translateX(calc(var(--k2b-calendar-rail) * var(--k2b-calendar-inverse))); }
+/* Text blocks keep fixed pixel spacing around their grid/legend anchor. */
+:is(.k2b-ui, .k2-ui) svg[data-calendar] [data-calendar-fixed] {
+  transform-origin: 0 0;
+  scale: var(--k2b-calendar-inverse);
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-inspected]:not([data-selected]):not([data-chart-role="value"]) > rect { stroke-width: 1.5px; }
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="heatmap"]:has(svg[data-calendar]) [data-selected] > rect { stroke-width: 2.5px !important; }
+@media print {
+  :is(.k2b-ui, .k2-ui) svg[data-calendar] { --k2b-calendar-overflow: 0px !important; --k2b-calendar-scroll: 0px !important; }
+  :is(.k2b-ui, .k2-ui) .k2b-chart__svg:has(> svg[data-calendar]) { min-width: 0 !important; width: 100%; }
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="area"] [data-selected] > .k2b-area-inspection-point { opacity: 1; stroke-width: 1.5px; }
+
+/* Bubble radii must shrink with a narrow or short drawing: their centers are
+ * padded in SVG units, while the shared marker rule normally fixes pixel size. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] circle {
+  --k2b-bubble-shrink: max(1, var(--k2b-chart-inverse-x), var(--k2b-chart-inverse-y));
+  scale: calc(var(--k2b-chart-inverse-x) / var(--k2b-bubble-shrink)) calc(var(--k2b-chart-inverse-y) / var(--k2b-bubble-shrink));
+}
+
+/* Keep the two average lines in pixels, even when the SVG is short. The short
+ * variant retains the average values in its accessible SVG title. */
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-label {
+  transform: translateY(calc(11px - 11px / var(--k2b-chart-inverse-y)));
+}
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-average-value {
+  transform: translateY(calc(29px - 29px / var(--k2b-chart-inverse-y)));
+}
+@container (max-height: 199px) {
+  :is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="bubble"] .k2b-chart-bubble-average-value { display: none; }
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart[data-chart-kind="bubble"] .k2b-chart__svg[data-stretch] .k2b-chart-bubble-x-title {
+  transform: translateY(calc(14px - 14px / var(--k2b-chart-inverse-y)));
+}
+
+:is(.k2b-ui, .k2-ui) .k2b-chart [data-selected] > .k2b-chart-previous > rect { stroke: var(--k2b-chart-selection-color) !important; stroke-width: 2.5px !important; }
+:is(.k2b-ui, .k2-ui) .k2b-chart:focus-visible [data-inspected]:not([data-selected]) > .k2b-chart-previous > rect { stroke: var(--k2b-chart-inspection-color) !important; stroke-width: 1.5px; }
+
+:is(.k2b-ui, .k2-ui) [popover].k2b-tooltip.k2b-chart__tooltip {
+  white-space: normal;
+  pointer-events: none;
+  background: var(--k2b-surface-elevated);
+  color: var(--k2b-text);
+  border: 1px solid var(--k2b-border);
+  border-radius: .5rem;
+  padding: .625rem .75rem;
+  max-width: min(24rem, calc(100vw - 1rem));
+  max-height: calc(100dvh - 1rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}

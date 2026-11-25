@@ -477,8 +477,8 @@ Pane.Split = (props: { children: JSX.Element }) => {
  */
 const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
   const resolved = resolveChildren(() => props.children);
-  // a pane hidden by `Show` stays in the list as nothing: it gets no seam
-  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && pane !== "");
+  // a pane hidden by `Show` or `{open && <Pane …/>}` stays in the list as what renders nothing: it gets no seam
+  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && typeof pane !== "boolean" && pane !== "");
   const entryOf = (index: number) => {
     const pane = panes()[index];
     if (pane === undefined) return undefined;
@@ -651,6 +651,7 @@ export type CanvasProps = {
 /**
  * The one way out: a surface with its own drawing, where an app may write its own CSS. Never measured by the rules.
  * It draws no line of its own; the structure around it separates it, and a drawing that needs an edge draws it.
+ * While the drawing loads, has no data or fails, `Loading`, `Empty` or `Failed` stand inside it and keep its height.
  */
 export const Canvas = (props: CanvasProps) => (
   <div
