@@ -29,14 +29,10 @@ const toolComponents: Record<
     baseHref?: string;
   }) => JSX.Element
 > = {
-  mailto: () => <MailtoGenerator />,
-  qr: () => <QrCodeGenerator />,
-  color: () => <ColorConverter />,
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
-  encryption: () => <EncryptionTool />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
 };
@@ -48,6 +44,10 @@ const v2Tools: Partial<Record<string, () => JSX.Element>> = {
   lorem: () => <LoremIpsumGenerator />,
   hash: () => <HashGenerator />,
   encoding: () => <EncodingTool />,
+  mailto: () => <MailtoGenerator />,
+  color: () => <ColorConverter />,
+  encryption: () => <EncryptionTool />,
+  qr: () => <QrCodeGenerator />,
 };
 
 export default ssr<AuthContext>(async (c) => {

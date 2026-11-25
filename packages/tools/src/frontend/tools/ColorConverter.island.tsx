@@ -1,6 +1,10 @@
 import { i18n } from "@k2b/stdlib";
-import { ColorInput, CopyButton, NoticeCard, TextInput, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Band, Button, Canvas, Field, Input, Pane, Section } from "@k2b/ui/v2";
 import { batch, createSignal } from "solid-js";
+import ToolsScreen from "../ToolsScreen";
+import { useToolCopy } from "../tool-copy";
+import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const colorMessages = i18n.define({
   baseLocale: "en",
@@ -181,88 +185,75 @@ export default function ColorConverter() {
     isUpdating = false;
   };
 
-  const CopyBtn = (props: { value: string }) => <CopyButton text={props.value} class="shrink-0" />;
-
+  const copy = useToolCopy();
+  const w = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const copyButton = (value: () => string) => <Button variant="ghost" icon="copy" label={w().copy} onClick={() => void copy(value())} />;
   return (
-    <div class="flex flex-col gap-4">
-      <NoticeCard tone="info">{t().hint}</NoticeCard>
-
-      <div class="paper p-4 flex flex-col gap-4">
-        {/* Color preview */}
-        <div class="flex items-center gap-4">
-          <div
-            class="w-20 h-20 thumbnail border border-zinc-200 dark:border-zinc-700 shrink-0"
-            style={{ "background-color": pickerColor() }}
-          />
-          <div class="flex-1">
-            <ColorInput
-              label={t().colorPicker}
-              value={pickerColor}
-              onValueChange={(v) => {
-                setPickerColor(v);
-                syncFrom("picker");
-              }}
-            />
-          </div>
-        </div>
-
-        {/* HEX */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="HEX"
-              description={t().hexDescription}
+    <ToolsScreen tool="color">
+      <Pane label={w().result} scrollKey="tools-color">
+        <Section icon="palette" title={t().colorPicker} summary={t().hint}>
+          {/* k2b-ui gap: v2 has no colour picker; the swatch opens the browser's own picker until it has one. */}
+          <Canvas label={t().colorPicker} height={96}>
+            <label style={{ display: "block", height: "100%", margin: "0 20px", position: "relative", cursor: "pointer" }}>
+              <span
+                style={{
+                  display: "block",
+                  height: "100%",
+                  "border-radius": "8px",
+                  border: "1px solid rgb(0 0 0 / 0.1)",
+                  "background-color": pickerColor(),
+                }}
+              />
+              <input
+                type="color"
+                aria-label={t().colorPicker}
+                value={pickerColor()}
+                onInput={(event) => {
+                  setPickerColor(event.currentTarget.value);
+                  syncFrom("picker");
+                }}
+                style={{ position: "absolute", inset: "0", width: "100%", height: "100%", opacity: "0", cursor: "pointer" }}
+              />
+            </label>
+          </Canvas>
+        </Section>
+        <Band label={w().input}>
+          <Field label="HEX" hint={t().hexDescription} error={hexError()}>
+            <Input
+              icon="hash"
               placeholder="#000000"
-              icon="ti ti-hash"
-              value={hex}
-              onValueChange={(v) => {
-                setHex(v);
+              value={hex()}
+              end={copyButton(hex)}
+              onInput={(value) => {
+                setHex(value);
                 syncFrom("hex");
               }}
-              error={hexError}
             />
-          </div>
-          <CopyBtn value={hex()} />
-        </div>
-
-        {/* RGB */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="RGB"
-              description={t().rgbDescription}
+          </Field>
+          <Field label="RGB" hint={t().rgbDescription} error={rgbError()}>
+            <Input
               placeholder="255, 255, 255"
-              icon="ti ti-palette"
-              value={rgb}
-              onValueChange={(v) => {
-                setRgb(v);
+              value={rgb()}
+              end={copyButton(() => `rgb(${rgb()})`)}
+              onInput={(value) => {
+                setRgb(value);
                 syncFrom("rgb");
               }}
-              error={rgbError}
             />
-          </div>
-          <CopyBtn value={`rgb(${rgb()})`} />
-        </div>
-
-        {/* HSL */}
-        <div class="flex items-end gap-2">
-          <div class="flex-1">
-            <TextInput
-              label="HSL"
-              description={t().hslDescription}
-              placeholder="0, 100%, 50%"
-              icon="ti ti-color-swatch"
-              value={hsl}
-              onValueChange={(v) => {
-                setHsl(v);
+          </Field>
+          <Field label="HSL" hint={t().hslDescription} error={hslError()}>
+            <Input
+              placeholder="360, 100%, 100%"
+              value={hsl()}
+              end={copyButton(() => `hsl(${hsl()})`)}
+              onInput={(value) => {
+                setHsl(value);
                 syncFrom("hsl");
               }}
-              error={hslError}
             />
-          </div>
-          <CopyBtn value={`hsl(${hsl()})`} />
-        </div>
-      </div>
-    </div>
+          </Field>
+        </Band>
+      </Pane>
+    </ToolsScreen>
   );
 }

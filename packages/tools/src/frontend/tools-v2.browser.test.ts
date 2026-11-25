@@ -8,7 +8,7 @@ import { buildHarness } from "./tools/image-intake/browser-harness";
 
 // Every Tools screen on v2 at 1440, 1024 and 390 px: no outline problem, no layout problem, no loader in the first
 // picture, no page error. CLOUD_TOOLS_SHOTS=<dir> keeps a light screenshot and the outline of each.
-const SCREENS = ["catalog", "password", "uuid", "lorem", "hash", "encoding"];
+const SCREENS = ["catalog", "password", "uuid", "lorem", "hash", "encoding", "color", "mailto", "encryption", "qr"];
 const shots = process.env.CLOUD_TOOLS_SHOTS;
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;

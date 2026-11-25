@@ -16,6 +16,7 @@ export const toolsWorkspaceMessages = i18n.define({
       direction: "Direction",
       format: "Format",
       kind: "Kind",
+      optional: "optional",
       nothingYet: "The result appears here as soon as there is input.",
     },
     de: {
@@ -30,6 +31,7 @@ export const toolsWorkspaceMessages = i18n.define({
       direction: "Richtung",
       format: "Format",
       kind: "Art",
+      optional: "optional",
       nothingYet: "Das Ergebnis erscheint hier, sobald es eine Eingabe gibt.",
     },
   },
