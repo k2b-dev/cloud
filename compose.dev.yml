@@ -311,28 +311,6 @@ services:
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/contacts/src/index.ts
 
-  app-faq:
-    secrets:
-      - source: faq-app-key
-        target: faq.key
-    depends_on:
-      app-core:
-        condition: service_healthy
-    environment:
-      NODE_ENV: development
-      APP_ID: faq
-      CLOUD_APP_KEY_FILE: /run/secrets/faq.key
-      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-    <<: *app
-    container_name: app-faq
-    profiles: [extra]
-    volumes:
-      - ./packages/cloud/src:/app/packages/cloud/src
-      - ./packages/cloud/scripts:/app/packages/cloud/scripts
-      - ./packages/faq/src:/app/packages/faq/src
-      - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/faq/src/index.ts
-
   app-grids:
     secrets:
       - source: grids-app-key
@@ -638,8 +616,6 @@ secrets:
     file: ./.local/dev-app-keys/contacts.key
   dashboard-app-key:
     file: ./.local/dev-app-keys/dashboard.key
-  faq-app-key:
-    file: ./.local/dev-app-keys/faq.key
   filesv2-app-key:
     file: ./.local/dev-app-keys/filesv2.key
   gateway-ops-app-key:

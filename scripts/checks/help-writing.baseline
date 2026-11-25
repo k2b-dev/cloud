@@ -65,11 +65,6 @@ packages/core/src/help/documents/en/core-security.help.md | frontmatter | kind
 packages/core/src/help/documents/en/core-start.help.md | frontmatter | kind
 packages/dashboard/src/help/documents/en/dashboard-start.help.md | frontmatter | kind
 packages/dashboard/src/help/documents/en/dashboard-troubleshooting.help.md | frontmatter | kind
-packages/faq/src/help/documents/de/faq-admin.help.md | term | Administratoren
-packages/faq/src/help/documents/de/faq-start.help.md | term | Administratorrecht*
-packages/faq/src/help/documents/en/faq-admin.help.md | frontmatter | kind
-packages/faq/src/help/documents/en/faq-start.help.md | frontmatter | kind
-packages/faq/src/help/documents/en/faq-start.help.md | term | admin
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Administrator
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Adminrecht*
 packages/filesv2/src/help/documents/de/filesv2-admin.help.md | term | Anwendung

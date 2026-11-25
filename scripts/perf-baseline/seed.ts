@@ -296,7 +296,6 @@ export async function removePhone(api: Api, deviceId: string) {
 
 export const defaultPaths: Record<PageId, string> = {
   document: "/legal/privacy",
-  faq: "/faq",
   "mail-mailbox": "/app/mail",
   "assistant-chat": "/app/assistant",
   "notebooks-editor": "/app/notebooks",
@@ -352,22 +351,6 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
         page.notes.push(
           "Spaces fixture: one Space with 12 open tasks assigned to the administrator (Perf task 01–12), verified in the mine overview; check-off is undone after each sample.",
         );
-      } else if (page.id === "faq") {
-        for (const [question, answer] of [
-          [
-            "How is the performance baseline measured?",
-            "Production bundles are served through a fresh gateway. Three cold browser loads are measured per profile.",
-          ],
-          [
-            "What does time to interactive mean?",
-            "The latest of first contentful paint, the end of each initial island mount, the last script response and, in Chromium, the last long task.",
-          ],
-          [
-            "Can these numbers predict a real phone?",
-            "The phone profile emulates network and CPU limits on the local machine. Compare runs on the same host.",
-          ],
-        ])
-          await api.request("/api/faq", "POST", { translations: { en: { question, answer } }, audience: ["user", "guest", "anonymous"] });
       } else if (page.id === "notebooks-editor") {
         const book = resourceSchema.parse(
           await api.request("/api/notebooks", "POST", {
@@ -438,10 +421,9 @@ export async function seed(api: Api, runtime: Runtime, selected: PageId[], userI
 export async function waitForRoutes(api: Api, apps: string[], runtime: Runtime) {
   // Gateway health exposes a count, not app names. Confirm each app's public route
   // separately with the session. Core must prove authentication even when only
-  // public pages (FAQ or legal documents) are selected. Never follow auth redirects.
+  // public legal documents are selected. Never follow auth redirects.
   const routes: Record<string, string> = {
     core: "/api/me",
-    faq: "/faq",
     mail: "/app/mail",
     assistant: "/app/assistant",
     notebooks: "/app/notebooks",

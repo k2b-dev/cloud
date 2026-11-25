@@ -147,8 +147,8 @@ test("route readiness uses the session and retries login and consent redirects i
     ),
   );
   try {
-    await waitForRoutes(api, ["core", "faq", "mail", "gateway"], runtime);
-    expect(paths).toEqual(["/api/me", "/faq", "/app/mail", "/app/mail", "/app/mail", "/app/mail"]);
+    await waitForRoutes(api, ["core", "mail", "gateway"], runtime);
+    expect(paths).toEqual(["/api/me", "/app/mail", "/app/mail", "/app/mail", "/app/mail"]);
   } finally {
     fetchSpy.mockRestore();
   }
@@ -183,18 +183,16 @@ test("deterministic public-API fixtures resolve real page paths without model ca
   const signal = new AbortController().signal;
   const runtime = new FixtureRuntime(4100, "runtime", signal);
   const api = new FixtureApi(runtime.origin, signal);
-  const pages = await seed(api, runtime, ["notebooks-editor", "assistant-chat", "files", "faq", "accounts"], "admin-id");
+  const pages = await seed(api, runtime, ["notebooks-editor", "assistant-chat", "files", "accounts"], "admin-id");
   expect(pages.map((page) => page.path)).toEqual([
     "/app/notebooks/book/notes/note?mode=write",
     "/app/assistant?conversation=chat",
     "/app/filesv2?base=cloud%3Ausers%3Aadmin",
-    "/faq",
     "/app/accounts/users",
   ]);
   expect(pages.every((page) => page.status === "ok")).toBe(true);
   expect(api.requests.find((request) => request.path === "/api/notebooks/book/notes")?.input).toEqual({ contentMd: noteContent });
   expect(noteContent).toContain("```typescript");
-  expect(api.requests.filter((request) => request.path === "/api/faq")).toHaveLength(3);
   expect(api.requests.some((request) => request.path.includes("/turns"))).toBe(false);
   expect(api.requests.find((request) => request.path.endsWith("linux-identities/configuration"))?.input).toMatchObject({
     rangeReserved: true,

@@ -35,7 +35,6 @@ a running application for detailed usage instructions.
 
 | Application | Use it for |
 | --- | --- |
-| [FAQ](/en/apps/faq) | Publishing frequently asked questions and public help content |
 | [Quotes](/en/apps/quotes) | Showing a cached quote in Cloud surfaces and dashboards |
 | [Tools](/en/apps/tools) | Small utilities for recurring day-to-day tasks |
 | [Venues](/en/apps/venue) | Opening hours, staffing shifts, public status pages, and feedback |

@@ -51,13 +51,6 @@ export const DEVELOPMENT_APP_KEYS = [
     grants: [],
   },
   {
-    appId: "faq",
-    keyId: "596727af-30e0-48e5-aa89-5a61656e28d6",
-    publicKey: "__H2-G8DsH7M_kK6YDeXTqw-rtt5yxK9g1UrB9taXG4",
-    fingerprint: "0bceabad4050b5306bf17054cb94a994",
-    grants: [],
-  },
-  {
     appId: "filesv2",
     keyId: "56398209-6837-48e1-a3a3-5c57b13bb988",
     publicKey: "c7mtGr5MygjDAu6MYNT8Rzcqsn0bDik3KGb4PEyo0Qk",

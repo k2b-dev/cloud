@@ -37,7 +37,7 @@ browsers through `launchBrowser()` from `packages/ui/test/browser.ts`, so the
 gate also runs it in WebKit. A change in the transform,
 build, mount runtime, or adapters reaches every application: also run the
 `@k2b/ui` tests and build the production bundle of at least one application
-(`APP_ID=faq bun run packages/cloud/scripts/build.ts`).
+(`APP_ID=tools bun run packages/cloud/scripts/build.ts`).
 
 ## Key invariants
 

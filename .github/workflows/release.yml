@@ -267,7 +267,7 @@ jobs:
           "$GITHUB_WORKSPACE/.github/pull-images.sh" nats:2.14.3-alpine postgres:17-alpine valkey/valkey:8-alpine
           registry="ghcr.io/${OWNER,,}"
           ref() { jq -r --arg image "$1" '.[] | select(.image == $image) | .digest' "$RUNNER_TEMP/release-images.json"; }
-          for image in cloud-gateway cloud-core cloud-app-faq; do
+          for image in cloud-gateway cloud-core cloud-app-api-docs; do
             gh attestation verify "oci://$registry/$image@$(ref "$image")" \
               --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/build-images.yml"
@@ -298,21 +298,21 @@ jobs:
             --env ADMIN_LOGIN_TOKEN=release-smoke)
           docker run --detach --name app-core "${common[@]}" --publish 127.0.0.1:3001:3000 "$registry/cloud-core@$(ref cloud-core)"
           docker run --detach --name gateway "${common[@]}" --publish 127.0.0.1:3000:3000 "$registry/cloud-gateway@$(ref cloud-gateway)"
-          docker run --detach --name app-faq "${common[@]}" --publish 127.0.0.1:3002:3000 "$registry/cloud-app-faq@$(ref cloud-app-faq)"
+          docker run --detach --name app-api-docs "${common[@]}" --publish 127.0.0.1:3002:3000 "$registry/cloud-app-api-docs@$(ref cloud-app-api-docs)"
           for _attempt in {1..90}; do
             core=$(curl --silent --fail http://127.0.0.1:3001/_cloud/ready || true)
-            faq=$(curl --silent --fail http://127.0.0.1:3002/_cloud/ready || true)
+            api_docs=$(curl --silent --fail http://127.0.0.1:3002/_cloud/ready || true)
             routes=$(curl --silent --fail http://127.0.0.1:3000/health | jq -r '.routeTable.routeCount // 0' || echo 0)
-            if [[ -n "$core" && -n "$faq" && "$routes" -ge 2 ]]; then
-              echo "core: $core"; echo "faq: $faq"; echo "gateway routes: $routes"
-              for ready in "$core" "$faq"; do
+            if [[ -n "$core" && -n "$api_docs" && "$routes" -ge 2 ]]; then
+              echo "core: $core"; echo "api-docs: $api_docs"; echo "gateway routes: $routes"
+              for ready in "$core" "$api_docs"; do
                 [[ "$(jq -r .version <<<"$ready")" == "$VERSION" ]] || { echo "Runtime does not report version $VERSION." >&2; exit 1; }
               done
               exit 0
             fi
             sleep 2
           done
-          docker logs app-core; docker logs gateway; docker logs app-faq
+          docker logs app-core; docker logs gateway; docker logs app-api-docs
           exit 1
       - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Install and update cld from the published release with full verification
@@ -346,16 +346,16 @@ jobs:
           curl --silent --fail-with-body -X POST http://127.0.0.1:3000/api/auth/legal-consent \
             -H "authorization: Bearer $token" -H "origin: $APP_URL" -H 'content-type: application/json' \
             --data "{\"accepted\":true,\"version\":\"$version\"}"
-          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("faq") and index("apps")'
+          "$cld" --server http://127.0.0.1:3000 --token "$token" plugins list --json | jq -e '.plugins | map(.name) | index("api-docs") and index("apps")'
           "$cld" --server http://127.0.0.1:3000 --token "$token" plugins install --all
           "$cld" --server http://127.0.0.1:3000 --token "$token" apps list --json | jq -e '.items | type == "array"'
-          "$cld" --server http://127.0.0.1:3000 --token "$token" faq list --json | jq -e 'type == "array"'
-          "$cld" faq reference | grep -q '^# '
+          "$cld" --server http://127.0.0.1:3000 --token "$token" api-docs list --json | jq -e '.items | type == "array"'
+          "$cld" api-docs reference | grep -q '^# '
           # Installing plugins rewrote the skill: the table names the profile and the module's reference folder exists.
-          grep -F "| default | faq | $VERSION |" "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
-          test -f "$RUNNER_TEMP/cld-skills/cloud-cli/references/faq/$VERSION/index.md"
+          grep -F "| default | api-docs | $VERSION |" "$RUNNER_TEMP/cld-skills/cloud-cli/SKILL.md"
+          test -f "$RUNNER_TEMP/cld-skills/cloud-cli/references/api-docs/$VERSION/index.md"
       - if: always()
-        run: docker rm --force app-core app-faq gateway postgres nats valkey || true
+        run: docker rm --force app-core app-api-docs gateway postgres nats valkey || true
 
   # @k2b/cloud pins exact @k2b/ui, @k2b/ssr, @k2b/editor and @k2b/stdlib versions, so it
   # publishes only after npm-ui, npm-ssr, npm-editor and npm-stdlib finished (or were not

@@ -14,7 +14,6 @@ const request = (path: string, authenticated = false) =>
 const protectedPages = [
   "/admin",
   "/admin/base/places",
-  "/admin/faq",
   "/admin/contacts",
   "/admin/grids",
   "/admin/notebooks",
@@ -64,7 +63,6 @@ const pagePrefixes = [
     "weather",
   ].map((app) => `/app/${app}`),
   ...[
-    "faq",
     "contacts",
     "grids",
     "notebooks",
@@ -77,7 +75,6 @@ const pagePrefixes = [
     "gateway",
     "observability",
   ].map((app) => `/admin/${app}`),
-  "/faq",
   "/tools",
   "/share/grids",
   "/apps",
@@ -128,7 +125,7 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       expect(await response.text()).toContain("k2b-not-found");
     }, 20_000);
 
-  for (const path of ["/faq", "/tools", "/app/api-docs"])
+  for (const path of ["/tools", "/app/api-docs"])
     test(`public ${path} remains public`, async () => {
       const response = await request(path);
       expect(response.status).toBe(200);
@@ -160,11 +157,7 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       expect(response.headers.get("content-type")).not.toContain("text/html");
     }, 20_000);
 
-  test("FAQ API authentication remains JSON", async () => {
-    const response = await request("/api/faq");
-    expect(response.status).toBe(401);
-    expect(response.headers.get("content-type")).toContain("application/json");
-  }, 20_000);
+
 
   for (const path of missingResources)
     test.skipIf(!adminToken)(

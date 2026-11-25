@@ -252,7 +252,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
    * Legal/info links contributed by this app — aggregated app-wide via
    * `listLegalLinks()` and rendered in login footer, app Footer, rail more
    * dropdown. Each app contributes its own (e.g. core owns
-   * Imprint/Privacy/Terms; faq owns FAQ). KISS: no `external` flag, links
+   * Imprint/Privacy/Terms; applications add their own links). KISS: no `external` flag, links
    * always open in a new tab from the login footer.
    */
   legalLinks?: ReadonlyArray<{ label: string; href: string; icon?: string }>;

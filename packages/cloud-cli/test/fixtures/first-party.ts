@@ -21,7 +21,6 @@ export const FIRST_PARTY_MODULES: Readonly<Record<string, string>> = {
       "api-docs",
       "assistant",
       "contacts",
-      "faq",
       "filesv2",
       "grids",
       "ipa-hosts",

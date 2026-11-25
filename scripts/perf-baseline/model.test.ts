@@ -43,7 +43,7 @@ describe("performance baseline contracts", () => {
       keep: false,
       skipBuild: false,
       runs: 3,
-      pages: ["document", "faq", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
+      pages: ["document", "mail-mailbox", "assistant-chat", "notebooks-editor", "files", "accounts", "spaces"],
     });
     expect(
       parseArgs(["--pages", "files,document", "--runs", "1", "--skip-build", "--keep", "--out", ".local/example", "--compare", "old.json"]),
@@ -437,7 +437,7 @@ const asset = (input: Partial<PwaAsset> = {}): PwaAsset => ({
 
 test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flows", () => {
   expect(parseArgs([]).pages).toEqual([...defaultPageIds]);
-  expect(parseArgs(["--pages", "pwa,faq"]).pages).toEqual(["pwa", "faq"]);
+  expect(parseArgs(["--pages", "pwa,document"]).pages).toEqual(["pwa", "document"]);
   expect(pageApps.pwa).toEqual(["pwa", "spaces", "chat"]);
   expect(localPwaApps).toEqual(["assistant"]);
   expect(parseArgs(["--pages", "pwa", "--origin", "https://example.test:443/"])).toMatchObject({ origin: "https://example.test" });
@@ -450,7 +450,7 @@ test("pwa is opt-in; existing origins are HTTPS and restricted to the mobile flo
     "invalid",
   ])
     expect(() => parseArgs(["--pages", "pwa", "--origin", origin])).toThrow();
-  for (const extra of [["--pages", "faq"], ["--pages", "pwa,faq"], ["--pages", "pwa", "--skip-build"], ["--pages", "pwa", "--keep"], []])
+  for (const extra of [["--pages", "document"], ["--pages", "pwa,document"], ["--pages", "pwa", "--skip-build"], ["--pages", "pwa", "--keep"], []])
     expect(() => parseArgs(["--origin", "https://example.test", ...extra])).toThrow();
   for (const value of ["1", "2", "1000"]) expect(parseArgs(["--rtt", value]).rttMs).toBe(Number(value));
   for (const value of ["0", "-1", "1001", "2.5", "NaN", "1ms"]) expect(() => parseArgs(["--rtt", value])).toThrow();

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolveApplicationPackage } from "./application-package";
 import { asAppRegistryEntry, validateAppRegistryEntry } from "./registry-validation";
 
 const valid = {
@@ -141,4 +142,21 @@ test("registry readers drop unknown permissions without dropping routes or grant
   expect(asAppRegistryEntry(entry)).toEqual({ ...entry, platformPermissions: ["mail:send", "resources:readers"] });
   expect(asAppRegistryEntry({ ...valid, platformPermissions: ["future:permission"] })).toEqual({ ...valid, platformPermissions: [] });
   expect(entry.platformPermissions).toContain("future:permission");
+});
+
+test("keeps an older FAQ registration usable during a rolling removal", () => {
+  const entry = {
+    ...valid,
+    id: "faq",
+    package: "faq",
+    name: "FAQ",
+    baseUrl: "http://app-faq:3000",
+    routes: ["/faq", "/api/faq", "/admin/faq", "/public/faq"],
+    access: { kind: "signedIn", publicRoutes: ["/faq", "/api/faq/openapi.json"] },
+    nav: { href: "/faq", section: "hidden" },
+    legalLinks: [{ label: "FAQ", href: "/faq", icon: "ti ti-help-circle" }],
+  };
+  expect(validateAppRegistryEntry(entry)).toBeNull();
+  expect(asAppRegistryEntry(entry)).toMatchObject(entry);
+  expect(resolveApplicationPackage(entry.id, entry.package)).toBe("faq");
 });

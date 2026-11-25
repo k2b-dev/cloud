@@ -20,7 +20,6 @@ const rules = {
   chat: "signedIn",
   contacts: "noGuests",
   dashboard: "signedIn",
-  faq: "signedIn",
   filesv2: "signedIn",
   "gateway-ops": "roles",
   grids: "noGuests",
@@ -185,7 +184,6 @@ const publicPaths: Record<string, string[]> = {
   ],
   "api-docs": ["/app/api-docs", "/api/api-docs/sources"],
   assistant: ["/_internal/assistant/tools/execute"],
-  faq: ["/faq"],
   filesv2: [
     "/share/filesv2/transfer/ticket",
     "/share/filesv2/s/token",
@@ -316,7 +314,6 @@ const protectedPaths: Record<string, string[]> = {
     "/api/assistant/runner/studio",
     "/api/assistant/runner/studio/app",
   ],
-  faq: ["/admin/faq", "/api/faq"],
   filesv2: [
     "/api/filesv2/bases",
     "/api/filesv2/admin/shares",

@@ -79,3 +79,15 @@ describe("reserved /pwa prefix", () => {
     expect(warnings.map(({ appId, prefix, reason }) => [appId, prefix, reason])).toEqual([["spaces", "/app/contacts", "reserved_prefix"]]);
   });
 });
+
+test("a legacy FAQ lease can route until withdrawal without affecting platform Help", () => {
+  const core = app("core", ["/", "/api/help", "/help"]);
+  const faq = app("faq", ["/faq", "/api/faq", "/admin/faq", "/public/faq"]);
+  const before = buildAppRoutesDetailed([core, faq]);
+  expect(before.warnings).toEqual([]);
+  expect(before.routes.filter((route) => route.appId === "faq")).toHaveLength(4);
+  const after = buildAppRoutesDetailed([core]);
+  expect(after.warnings).toEqual([]);
+  expect(after.routes).toEqual(before.routes.filter((route) => route.appId === "core"));
+  expect(after.routes.map((route) => route.prefix)).toContain("/api/help");
+});

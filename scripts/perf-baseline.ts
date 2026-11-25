@@ -50,7 +50,7 @@ that administrator session; pwa uses a real paired app session.
 
   --help             Show this help; no build, Docker or browser launch.
   --pages a,b        Select pages (default: all eight cold-load pages):
-                     document,faq,mail-mailbox,assistant-chat,
+                     document,mail-mailbox,assistant-chat,
                      notebooks-editor,files,accounts,spaces; pwa is extra
   --panel            Measure visible Help content after full-document navigation;
                      no page baseline. Column 1440x900, drawer 834x1194,

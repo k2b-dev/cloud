@@ -1,6 +1,0 @@
-/* Scoped scan: only this app's own .ts/.tsx. Cloud-lib classes (UI components,
-   layout primitives, etc.) come in via global.css. Apps must NEVER scan each
-   other's source. */
-@import "tailwindcss/utilities.css" layer(utilities);
-@source "../**/*.{ts,tsx}";
-@custom-variant dark (&:where(.dark, .dark *));

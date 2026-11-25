@@ -211,17 +211,6 @@ services:
       - ./styles.css:/app/styles.css
     command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/contacts/src/index.ts
 
-  app-faq:
-    <<: *app
-    container_name: app-faq
-    profiles: [extra]
-    volumes:
-      - ./packages/cloud/src:/app/packages/cloud/src
-      - ./packages/cloud/scripts:/app/packages/cloud/scripts
-      - ./packages/faq/src:/app/packages/faq/src
-      - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/faq/src/index.ts
-
   app-grids:
     <<: *app
     container_name: app-grids

@@ -77,13 +77,12 @@ HTTPS port inside its namespace as on the host, so the browsers and host use
 the same `https://localhost:<port>` origin. Cold-load profiles use fresh contexts for each load; mobile flows keep one
 context through their tab switches and relaunches.
 
-The eight cold-load pages use the throwaway administrator's session, supplied
+The seven cold-load pages use the throwaway administrator's session, supplied
 by Core's administrator-token login, so the shell includes administrator
 navigation. The harness accepts the fresh installation's legal terms for that
 administrator through Core's public consent flow. It requires an authenticated `/api/me`
 response before checking routes or seeding; redirects to sign-in or consent
-do not count as route readiness. Public HTTP APIs seed three FAQ entries,
-a structured notebook note, an empty Assistant
+do not count as route readiness. Public HTTP APIs seed a structured notebook note, an empty Assistant
 conversation, one Space with the tasks starter, and two folders with three
 empty Markdown files. Files uses a
 throwaway Filegate volume and a fixture-only local Linux identity range.
@@ -105,7 +104,7 @@ private because it contains temporary credentials.
 
 Run `bun --no-env-file scripts/perf-baseline.ts --help` for every flag:
 `--pages`, `--panel`, `--runs`, `--origin`, `--rtt`, `--skip-build`, `--out`, `--compare`, and `--keep`.
-The default page list has eight entries: `document`, `faq`, `mail-mailbox`,
+The default page list has seven entries: `document`, `mail-mailbox`,
 `assistant-chat`, `notebooks-editor`, `files`, `accounts`, and `spaces`.
 `spaces` resolves to the Space created through `POST /api/spaces`.
 The `pwa` group runs only when named and can be combined with these pages in

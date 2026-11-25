@@ -69,6 +69,66 @@ before Studio cleanup begins. A running container alone is insufficient.
 Custom deployments must probe `/_cloud/ready` on Mail before starting
 Assistant; Compose does not enforce this order automatically.
 
+## Remove the FAQ application when upgrading
+
+The built-in FAQ application is removed from this release. Application Help
+continues to work. Your authored FAQ entries stay in `faq.entries`; no migration
+drops the schema or deletes entries, translations, audiences, or their order.
+The new release no longer publishes a FAQ application image.
+
+Before stopping the old service, export your entries with an administrator
+profile connected to the old installation. Choose an unused output filename:
+
+```bash
+cld --profile <admin-profile> faq list --json > faq-export.json
+```
+
+This command returns all entries, including IDs, translations, Markdown answers,
+audiences, positions, and creation timestamps. It needs the old running FAQ app
+and its installed `faq` CLI plugin; after removal, the API and this command are
+unavailable. Keep the JSON export as the complete source copy.
+
+To move the content into Notebooks, create a notebook and copy each question
+and Markdown answer into a note, in the desired order. Keep language variants
+in separate notes or sections. Review the notebook's sharing before copying:
+FAQ audiences are not converted into notebook access. Notebooks requires
+sign-in and notebook access; it does not replace anonymous FAQ publication.
+In-app Help remains application-authored documentation and does not import your
+FAQ entries automatically. If you have already upgraded, an operator with
+database access can still read the retained entries:
+
+```sql
+SELECT id, translations, audience, position, created_at
+FROM faq.entries
+ORDER BY position, created_at, id;
+```
+
+Stop and remove the old service using your previous Compose configuration,
+including your normal environment and infrastructure overlays:
+
+```bash
+docker compose -f compose.prod.yml stop app-faq
+docker compose -f compose.prod.yml rm -f app-faq
+```
+
+Then deploy the new release. For Kubernetes or custom deployments, remove the
+FAQ workload and service from your manifests. Remove its app-key mount and
+secret from deployment configuration after the service is gone. Revoke unused
+FAQ app keys separately through app-key administration; retained keys, grants,
+package assignments, and application history are not deleted by this upgrade.
+You can remove the cached CLI module with
+`cld --profile <admin-profile> plugins remove faq` after exporting.
+
+An old FAQ process remains a valid registered application until you stop it.
+Graceful shutdown withdraws its live registration; otherwise its last heartbeat
+lease expires within three minutes. The gateway and shell then drop its routes
+and footer link. Until expiry, a stopped service can still return a gateway
+error through an old route; other applications remain available. Remembered
+FAQ records remain visible as offline in **Administration → Apps** and can be
+hidden with the existing removal action, which leaves FAQ data and keys intact.
+Update bookmarks, integrations, and external links to `/faq`, `/admin/faq`, and
+`/api/faq`; those surfaces are removed without a redirect.
+
 ## Applications start with a key file and Core address
 
 This release supplies a Compose template that gives ordinary apps only
@@ -812,7 +872,6 @@ or mutate real data without approval.
 | App ID | Startup requirements | Feature dependencies and configuration | Functional check |
 | --- | --- | --- | --- |
 | [Contacts](/en/apps/contacts) (`contacts`) | Baseline | No additional external service for contact books and records. Cross-app use requires whichever consumer/provider is selected. | Create and read a disposable contact in a test book; verify another account's access boundary. |
-| [FAQ](/en/apps/faq) (`faq`) | Baseline | No additional external service for authored FAQ content. | Publish a test entry and verify its intended visibility on `/faq`. |
 | [Files](/en/apps/filesv2) (`filesv2`) | Baseline; application-owned storage assignments | Filegate 7.1.0 with independent roots, backend token, a browser-reachable public origin outside Cloud cookie scope, and exact CORS origins. Personal and group Cloud storage requires local Linux identities; [machine storage](/en/docs/identity/files-machine-storage) uses independent ownership, explicit path grants and the existing Filegate service identity without Unix provisioning. FreeIPA requires valid POSIX identities and root `execution: true` with the explicitly configured Unix-execution daemon privileges. Set `managed: true` only for exclusive Filegate writers; keep it false with external writers. File references survive rename and move only on Filegate 7 roots with `index: true` and `managed: true`. Optional: Collabora Online 26.04 or later with its own browser-reachable address and TLS; Collabora must reach Cloud's public address (or the configured WOPI origin) and Cloud must reach Collabora. Several Collabora instances need sticky routing on `WOPISrc`. | Inspect existing storage in `/admin/filesv2`, browse an authorized directory and download through a lease. Verify external filesystem additions and denied access. With Collabora configured, open one `odt` from two sessions, save, and inspect history according to the root cooldown. Verify conflicts on managed roots; unmanaged roots provide only best-effort conflict checks. Test the real mount and export before production acceptance. |
 | [Grids](/en/apps/grids) (`grids`) | Baseline | Files are stored in Postgres (`grids.max_file_size_mb` controls upload size). Document PDF rendering requires Gotenberg. Workflow email uses notifications as app `core` and requires a [default outgoing mail sender profile](/en/docs/operations/outgoing-mail). Other workflow integrations require their selected providers. | Create a test base/table/record; upload a small file. If documents are enabled, render a test PDF. |
 | [Mail](/en/apps/mail) (`mail`) | Baseline; an unconnected mailbox is not proof of provider readiness | Mailbox synchronization and delivery require configured IMAP/SMTP endpoints, TLS, credentials and network-policy approval. Users connect their own mailboxes through IMAP/SMTP; managed Google/Microsoft browser authorization is not available. Incoming automations need Mail's workload credential and mandates; AI steps need AI configuration, Spaces actions need Spaces. Recipient suggestions and participant contacts need the contact-directory app, Contacts by default (**Administration → Mail → Contact directory** or `cld mail admin contact-directory`). | Verify a test mailbox connection and synchronization; send only to an approved test recipient. Exercise one permitted automation if enabled. |

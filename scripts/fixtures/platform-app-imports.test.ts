@@ -13,7 +13,6 @@ test("application data declarations load before platform startup", async () => {
     "contacts",
     "core",
     "dashboard",
-    "faq",
     "filesv2",
     "gateway",
     "gateway-ops",

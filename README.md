@@ -29,7 +29,7 @@ the workspace with `bun scripts/workspace.ts apps`.
 | **Identity & access** | [`accounts`](packages/accounts) — users and groups, FreeIPA and local &nbsp;•&nbsp; [`oauth`](packages/oauth) — OAuth2 issuer &nbsp;•&nbsp; [`proxy-auth`](packages/proxy-auth) — Traefik forward-auth &nbsp;•&nbsp; [`ipa-hosts`](packages/ipa-hosts) — FreeIPA host management |
 | **Operations** | [`gateway-ops`](packages/gateway-ops) — app registry, routes, logs, webhooks, notifications &nbsp;•&nbsp; [`pulse`](packages/pulse) — metrics, events, states, and dashboards |
 | **Productivity** | [`assistant`](packages/assistant) — AI chat with code mode &nbsp;•&nbsp; [`mail`](packages/mail) — collaborative email &nbsp;•&nbsp; [`notebooks`](packages/notebooks) — collaborative notes &nbsp;•&nbsp; [`spaces`](packages/spaces) — kanban, list, and calendar with iCal &nbsp;•&nbsp; [`grids`](packages/grids) — structured data with bases, views, forms, documents, and workflows &nbsp;•&nbsp; [`filesv2`](packages/filesv2) — Cloud and FreeIPA storage through Filegate &nbsp;•&nbsp; [`contacts`](packages/contacts) — directory views |
-| **Content & misc** | [`faq`](packages/faq) &nbsp;•&nbsp; [`venue`](packages/venue) &nbsp;•&nbsp; [`weather`](packages/weather) &nbsp;•&nbsp; [`quotes`](packages/quotes) &nbsp;•&nbsp; [`tools`](packages/tools) |
+| **Content & misc** | [`venue`](packages/venue) &nbsp;•&nbsp; [`weather`](packages/weather) &nbsp;•&nbsp; [`quotes`](packages/quotes) &nbsp;•&nbsp; [`tools`](packages/tools) |
 | **Development** | [`api-docs`](packages/api-docs) — Scalar UI aggregating every running app's OpenAPI spec |
 
 The release set also contains the website image (`cloud-website`), the Cloud

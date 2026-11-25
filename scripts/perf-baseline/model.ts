@@ -2,7 +2,6 @@ import { z } from "zod";
 
 export const defaultPageIds = [
   "document",
-  "faq",
   "mail-mailbox",
   "assistant-chat",
   "notebooks-editor",
@@ -14,7 +13,6 @@ export const pageIds = [...defaultPageIds, "pwa"] as const;
 export type PageId = (typeof pageIds)[number];
 export const pageApps: Record<PageId, string[]> = {
   document: ["core"],
-  faq: ["faq"],
   "mail-mailbox": ["mail"],
   "assistant-chat": ["assistant"],
   "notebooks-editor": ["notebooks"],

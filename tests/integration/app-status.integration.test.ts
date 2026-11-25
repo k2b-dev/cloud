@@ -195,8 +195,8 @@ suiteFor(
     expect((await gatewayStatus.forgetGatewayAppStatus({ appId: "traffic" }, context(denied))).ok).toBe(false);
   });
 
-  test("remove route refuses live apps, keeps failed forgets visible, and hides only after provider forget succeeds", async () => {
-    const target = app("remove-me");
+  test.each(["remove-me", "faq"])("remove route refuses live apps, keeps failed forgets visible, and hides only after provider forget succeeds (%s)", async (appId) => {
+    const target = app(appId);
     await knownApps.rememberApps([target]);
     await registeredApps.upsertRegisteredApps([target]);
     const registry = () => Promise.resolve({ apps: [] as AppRegistryDetail[], issues: [] });

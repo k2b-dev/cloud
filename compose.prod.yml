@@ -231,19 +231,6 @@ services:
     <<: *app-defaults
     image: ghcr.io/k2b-dev/cloud-app-dashboard:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
 
-  app-faq:
-    secrets:
-      - source: faq-app-key
-        target: faq.key
-    depends_on:
-      app-core:
-        condition: service_healthy
-    environment:
-      CLOUD_APP_KEY_FILE: /run/secrets/faq.key
-      CLOUD_CORE_INTERNAL_ORIGIN: http://app-core:3000
-    <<: *app-defaults
-    image: ghcr.io/k2b-dev/cloud-app-faq:${CLOUD_IMAGE_TAG:?CLOUD_IMAGE_TAG is required}
-
   app-filesv2:
     secrets:
       - source: filesv2-app-key
@@ -454,8 +441,6 @@ secrets:
     file: ./secrets/contacts.key
   dashboard-app-key:
     file: ./secrets/dashboard.key
-  faq-app-key:
-    file: ./secrets/faq.key
   filesv2-app-key:
     file: ./secrets/filesv2.key
   gateway-ops-app-key:
