@@ -29,6 +29,7 @@ import type { LogEntry, LogLevel } from "../contracts";
 import { logsMessages } from "../messages";
 import {
   endsNow,
+  fitsRequestFilter,
   LOG_PAGE_MAX,
   LOG_TIME_PRESETS,
   LOG_VIEWS,
@@ -197,6 +198,7 @@ export default function LogsScreen(props: LogsScreenProps) {
 
   /** Only the entries of one request: the request filter through the declaration, as the filter bar would set it. */
   const showRequest = (id: string) => {
+    if (!fitsRequestFilter(id)) return;
     const next = query().set(state(), "request", id);
     if (next) apply(next);
   };
@@ -434,12 +436,13 @@ export default function LogsScreen(props: LogsScreenProps) {
                   width: { min: 90, default: 120 },
                   cell: (row) => {
                     const id = row.requestId;
-                    return id ? (
+                    // an ID longer than the request filter allows stays text: the list could not keep that filter
+                    return id && fitsRequestFilter(id) ? (
                       <Button variant="text" title={t().onlyThisRequest} onClick={() => showRequest(id)}>
                         {id}
                       </Button>
                     ) : (
-                      "—"
+                      (id ?? "—")
                     );
                   },
                   drop: true,

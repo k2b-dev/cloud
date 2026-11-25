@@ -4,6 +4,7 @@ import { createSignal, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
 import type { LogEntry } from "../contracts";
 import { logsMessages } from "../messages";
+import { fitsRequestFilter, LOG_REQUEST_MAX } from "../query";
 import { logRowFormatter, requestIdOf } from "../rows";
 
 type Props = {
@@ -94,7 +95,10 @@ export default function LogEntryPane(props: Props) {
               title={t().detail}
               actions={(() => {
                 const id = requestIdOf(open().metadata);
-                return id ? [{ label: words().onlyThisRequest, icon: "filter", onClick: () => props.onRequest(id) }] : undefined;
+                if (!id) return undefined;
+                // a request ID longer than the filter allows: the action stays, unavailable, and the ID says why below
+                const fits = fitsRequestFilter(id);
+                return [{ label: words().onlyThisRequest, icon: "filter", disabled: !fits, onClick: () => fits && props.onRequest(id) }];
               })()}
             >
               <Facts
@@ -113,6 +117,19 @@ export default function LogEntryPane(props: Props) {
                   { label: words().source, value: open().source },
                   { label: words().at, value: `${dateFormat().format(new Date(open().createdAt))} · ${clock(open())}` },
                   { label: "ID", value: open().id, mono: true, copy: open().id },
+                  ...(() => {
+                    const id = requestIdOf(open().metadata);
+                    if (!id) return [];
+                    return [
+                      {
+                        label: words().request,
+                        value: id,
+                        mono: true,
+                        copy: id,
+                        ...(fitsRequestFilter(id) ? {} : { hint: words().requestTooLong({ max: LOG_REQUEST_MAX }) }),
+                      },
+                    ];
+                  })(),
                 ]}
               />
             </Section>

@@ -366,6 +366,35 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
+  // A section's head actions keep their name everywhere. On the phone an action with a LEADING symbol shows only the
+  // symbol and keeps its words as its name and hint; a trailing chevron ("forward", "menu") is no reason to hide them.
+  for (const width of [1440, 390])
+    test(
+      `${width} px: section head actions keep their names; only a leading symbol may stand for the words`,
+      async () => {
+        const page = await open("headActions", { width });
+        try {
+          const found = await page.evaluate(() =>
+            [...document.querySelectorAll('[data-k2-part="Section"] .k2-sh-end .k2-btn')].map((button) => {
+              const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
+              return { words: label.textContent, shown: label.getBoundingClientRect().width > 0, title: button.getAttribute("title") };
+            }),
+          );
+          const phone = width === 390;
+          expect(found).toEqual([
+            { words: "Filtern", shown: !phone, title: "Filtern" },
+            { words: "Weiter", shown: true, title: null },
+            { words: "Rohdaten anzeigen", shown: true, title: null },
+          ]);
+          for (const name of ["Filtern", "Weiter", "Rohdaten anzeigen"])
+            expect(await page.getByRole("button", { name, exact: true }).count()).toBe(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
   // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
   // name stays its accessible name and its hint under the pointer.
   test(

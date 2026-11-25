@@ -56,6 +56,9 @@ const ROUNDS: LogEntry[] = Array.from({ length: 110 }, (_, index) => ({
   createdAt: new Date(Date.parse("2026-11-24T08:00:00.000Z") + (109 - index) * 40_000).toISOString(),
 }));
 
+/** 129 characters: longer than the request filter allows. */
+export const LONG_REQUEST_ID = `req-${"x".repeat(125)}`;
+
 export const fixtureEntries: LogEntry[] = [
   ...ENTRIES.map(([time, level, source, message, metadata], index) => ({
     id: String(9000 + index),
@@ -66,6 +69,15 @@ export const fixtureEntries: LogEntry[] = [
     createdAt: `2026-11-24T${time}Z`,
   })),
   ...ROUNDS,
+  // a request ID one character longer than the request filter allows (LOG_REQUEST_MAX)
+  {
+    id: "7000",
+    level: "info",
+    source: "gateway",
+    message: "Anfrage mit langem Request-Kopf",
+    metadata: { requestId: LONG_REQUEST_ID, durationMs: 12 },
+    createdAt: "2026-11-24T05:00:00.000Z",
+  },
 ];
 
 /** The service's filter over the invented entries: the same window, levels, sources and text matches. */

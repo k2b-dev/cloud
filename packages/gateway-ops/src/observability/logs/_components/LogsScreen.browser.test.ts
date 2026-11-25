@@ -249,7 +249,7 @@ describe("the log list on v2", () => {
 
       await tab.goBack();
       await tab.waitForFunction(() => !location.search.includes("level="));
-      await tab.waitForFunction(() => window.document.body.innerText.includes("25 of 125 entries"));
+      await tab.waitForFunction(() => window.document.body.innerText.includes("26 of 126 entries"));
       expect(new URL(tab.url()).searchParams.get("page")).toBe("2");
       expect(new URLSearchParams(calls.at(-1)).get("page")).toBe("2");
       expect(await tab.getByText("Page 2 of 2").isVisible()).toBe(true);

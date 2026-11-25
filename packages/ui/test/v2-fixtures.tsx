@@ -585,6 +585,26 @@ export const fixtures = {
   // the way back to a list with a long name, such as a search
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
+  // head actions of sections: with a leading symbol, with only a trailing "forward" chevron, and words only
+  headActions: () => (
+    <Workspace head={<Bar start={<Text type="body">Auftrag AU-1</Text>} />}>
+      <Pane label="Auftrag">
+        <Section
+          icon="info-circle"
+          title="Angaben"
+          actions={[
+            { label: "Filtern", icon: "filter" },
+            { label: "Weiter", forward: true },
+          ]}
+        >
+          <Text>Einbauschrank Flur, 180,50 €.</Text>
+        </Section>
+        <Section icon="braces" title="Daten" actions={[{ label: "Rohdaten anzeigen" }]}>
+          <Text>Drei Felder.</Text>
+        </Section>
+      </Pane>
+    </Workspace>
+  ),
   table: TableFixture,
   grid: GridFixture,
   controls: ControlsFixture,
