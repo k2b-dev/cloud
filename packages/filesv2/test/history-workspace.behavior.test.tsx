@@ -1,10 +1,10 @@
-import { afterEach, beforeEach, describe, expect, mock, setSystemTime, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, setSystemTime, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { BaseSummary, FileEntry } from "../src/contracts";
 import type { WorkspaceSnapshot } from "../src/frontend/workspace-state";
-import { current, entry, gone, page } from "./history-fixtures";
+import { chain, current, entry, gone, page } from "./history-fixtures";
 
 /*
  * The history wired into the real Files workspace: navigation, address state, SSR snapshots, old addresses and the
@@ -264,6 +264,51 @@ describe("Files history in the workspace", () => {
     await flush();
     expect(query(pending("activity")).cursor).toBe("cursor-2");
   });
+
+  // Leaving by a link or by Back now loads the v2 folder page, which ends the lookup with this page; unmount stays here.
+  for (const denied of [false, true]) {
+    test(`a deferred history target cannot report an obsolete ${denied ? "error" : "result"} after unmount`, async () => {
+      const { toast } = await import("@k2b/ui");
+      const report = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+      try {
+        const oldPath = "Kunden/Angebote";
+        const targetPath = "Archiv/Angebote";
+        const moved = entry({ action: "item.move", before: gone(`team/${oldPath}`), after: current(`team/${targetPath}`) });
+        const source = `/app/filesv2?base=${encodeURIComponent(home.id)}&path=${encodeURIComponent(oldPath)}`;
+        const dom = mount(
+          snapshotOf({
+            source,
+            moved: {
+              baseId: home.id,
+              path: oldPath,
+              entry: moved,
+              chain: chain({ endpoint: { baseId: home.id, path: targetPath, itemId: null }, certainty: "verified" }),
+            },
+          }),
+        );
+        await flush();
+        button(dom.root, "Go there")!.click();
+        await flush();
+        const resolving = pending("entry");
+        expect(resolving.signal?.aborted).toBe(false);
+        cleanup();
+        cleanup = () => {};
+        expect(resolving.signal?.aborted).toBe(true);
+        const count = apiRequests.length;
+        // The mock deliberately ignores abort, as a transport or a completed response may do.
+        resolving.resolve(
+          denied
+            ? Response.json({ code: "forbidden", message: "Access changed" }, { status: 403 })
+            : Response.json({ base: home, entry: { name: "Angebote", path: targetPath, directory: true, size: 0, modified: NOW } }),
+        );
+        await flush();
+        expect(apiRequests).toHaveLength(count);
+        expect(report).not.toHaveBeenCalled();
+      } finally {
+        report.mockRestore();
+      }
+    });
+  }
 
   test("restoring a trashed hit goes through the recovery endpoint and shows a refusal beside the action", async () => {
     const trashed = entry({

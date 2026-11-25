@@ -466,14 +466,19 @@ export default function FilesScreen(props: {
     },
     initial: snapshot().history,
     actions: {
+      // Opens where a history entry's item is now, after the server checked identity and rights again. A navigation, a
+      // history step or leaving the screen meanwhile ends the lookup: its result and its error belong to a page gone.
       onOpen: async (target: HistoryTarget) => {
+        if (workspace.pending()) return;
+        const signal = workspace.navigationSignal();
         try {
-          const resolved = await resolveTarget(target, h().actionFailed, workspace.navigationSignal());
+          const resolved = await resolveTarget(target, h().actionFailed, signal);
+          if (signal.aborted) return;
           const href = entryHref(resolved);
           if (ownsAddress(new URL(href, ORIGIN))) await go(href);
           else window.location.assign(href);
         } catch (error) {
-          toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
+          if (!signal.aborted) toast.error(error instanceof Error && error.message ? error.message : h().actionFailed);
         }
       },
       onRecheck: async (entry: Parameters<typeof recheckActivity>[0]) => {
