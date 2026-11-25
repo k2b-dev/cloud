@@ -105,9 +105,9 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron), `loading` (value and `meta` stand as bars of
-their lines' height until they come; symbol and label stay). Use for the key
-statements of a record.
+`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+what is there keeps its room unseen under it, a value not there yet is one
+line; symbol and label stay). Use for the key statements of a record.
 
 ### Tiles
 
@@ -223,9 +223,11 @@ edges.
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
 line with `end` (such as a print button). `loading` while the values are on
-their way: labels, hints and copy buttons (not yet usable) stay, each value
-is a quiet bar of its line's height, so nothing moves when they come; give
-`copy: ""` where a value will have one.
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 

@@ -577,8 +577,9 @@ export type CellProps = {
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
   /**
-   * The value is still on its way: it and its quiet line stand as bars of their lines' height while symbol and label
-   * stay, so nothing moves when it comes; assistive technology hears "Wird geladen…" at the value.
+   * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
+   * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
+   * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
    */
   loading?: boolean;
 };
@@ -609,13 +610,13 @@ Cells.Cell = (props: CellProps) => {
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
       <span class="k2-cell-value">
-        <Show when={!props.loading} fallback={<PlaceholderValue />}>
+        <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
           {props.value}
         </Show>
       </span>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">
-          <Show when={!props.loading} fallback={<span class="k2-skel" aria-hidden="true" />}>
+          <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
             {meta()}
           </Show>
         </span>

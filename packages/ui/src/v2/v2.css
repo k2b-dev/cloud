@@ -3584,6 +3584,20 @@
 .k2-ui .k2-facts[data-inline] .k2-skel {
   width: 48px;
 }
+/* A value that is there while a newer one comes keeps its exact room, unseen (its lines, chips and wrapping), and the
+   bar lies over its first line, so nothing moves when the newer one comes. */
+.k2-ui .k2-held {
+  display: contents;
+  visibility: hidden;
+}
+.k2-ui :is(.k2-fact-value, .k2-cell-value, .k2-cell-meta):has(> .k2-skel[data-over]) {
+  position: relative;
+}
+.k2-ui .k2-skel[data-over] {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
 /* words for assistive technology only, such as "loading" beside the placeholders */
 .k2-ui .k2-hidden-text {
   position: absolute;

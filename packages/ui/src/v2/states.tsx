@@ -1,4 +1,4 @@
-import { For, Index, Show } from "solid-js";
+import { For, Index, type JSX, children as resolveChildren, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton, Button } from "./button";
 import { Icon } from "./marks";
@@ -137,12 +137,30 @@ export const LoadingStatus = () => {
  * A value still on its way (internal: a loading `Facts` and `Cells.Cell`): a quiet bar exactly one line of the value
  * high, so nothing moves when the value comes; assistive technology hears "loading" at its place.
  */
-export const PlaceholderValue = () => {
+export const PlaceholderValue = (props: {
+  /** The value the place holds while a newer one comes (a refresh): it keeps its room, unseen, under the bar. */
+  children?: JSX.Element;
+  /** `false`: no words for assistive technology, for a second line of the same value (a cell's meta). */
+  said?: boolean;
+}) => {
   const t = useUiMessages();
+  const held = resolveChildren(() => props.children);
+  const holds = () => {
+    const value = held();
+    return value !== undefined && value !== null && value !== false && value !== "" && !(Array.isArray(value) && value.length === 0);
+  };
   return (
     <>
-      <span class="k2-skel" aria-hidden="true" />
-      <span class="k2-hidden-text">{t().loading}</span>
+      {/* a value that is there keeps its exact room (lines, chips, wrapping); only a value not yet there is one line */}
+      <Show when={holds()} fallback={<span class="k2-skel" aria-hidden="true" />}>
+        <span class="k2-held" aria-hidden="true">
+          {held()}
+        </span>
+        <span class="k2-skel" data-over="" aria-hidden="true" />
+      </Show>
+      <Show when={props.said !== false}>
+        <span class="k2-hidden-text">{t().loading}</span>
+      </Show>
     </>
   );
 };

@@ -150,10 +150,46 @@ export function Fixture() {
               { label: "Ort", value: "Auental", hint: "Lager Nord" },
             ]}
           />
-          <Facts inline loading={loading()} items={[{ label: "Stand", value: "Angebot" }]} />
+          {/* values that keep their room while they refresh: lines, a token that breaks, a chip; one not yet there */}
+          <Facts
+            loading={loading()}
+            items={[
+              {
+                label: "Anschrift",
+                value: (
+                  <>
+                    Holzweg 12
+                    <br />
+                    79102 Auental
+                    <br />
+                    Deutschland
+                  </>
+                ),
+              },
+              { label: "Schlüssel", value: "k2b_live_7Q4mX9pR2sT8vW1yZ3aB5cD6eF7gH8jK9", mono: true, copy: "k2b_live_7Q4mX9" },
+              { label: "Status", value: <Chip status="warn">Offen</Chip> },
+              { label: "Notiz", value: loading() ? "" : "Kommt morgen" },
+            ]}
+          />
+          <Facts
+            inline
+            loading={loading()}
+            items={[
+              { label: "Stand", value: "Angebot" },
+              { label: "Termin", value: "12. Dezember 2026" },
+              { label: "Betrag", value: "1.240,00 €" },
+              { label: "Ansprechperson", value: "Jonas Hartwig" },
+            ]}
+          />
           <Cells>
             <Cells.Cell icon="inbox" label="Offen" value="12" meta="3 davon heute" loading={loading()} />
-            <Cells.Cell icon="check" label="Erledigt" value="31" loading={loading()} />
+            <Cells.Cell
+              icon="check"
+              label="Erledigt"
+              value="31"
+              meta="Zuletzt die Treppe im Haus am Hang, der Einbauschrank im Flur und die Küche"
+              loading={loading()}
+            />
           </Cells>
           <Prose
             markdown={

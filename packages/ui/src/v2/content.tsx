@@ -136,9 +136,11 @@ export type FactsProps = {
   /** At the end of the inline line, such as "Print". */
   end?: JSX.Element;
   /**
-   * The values are still on their way: each stands as a quiet bar one line high while labels, hints and copy buttons
-   * (not yet usable) stay, so nothing moves when they come; assistive technology hears "Wird geladen…" at each value.
-   * Give the labels the values will have, and `copy` (an empty string is enough) where a value will have it.
+   * The values are on their way: a quiet bar lies on each, while labels, hints and copy buttons (not yet usable) stay.
+   * A value that is there (a refresh) keeps its exact room unseen under the bar, its lines, chips and wrapping; a value
+   * not there yet (`""`, `undefined`) is a bar of one line. So nothing moves when they come. Assistive technology
+   * hears "Wird geladen…" at each value. Give the labels the values will have, and `copy` (an empty string is
+   * enough) where a value will have it.
    */
   loading?: boolean;
 };
@@ -157,7 +159,7 @@ export const Facts = (props: FactsProps) => {
             <dt>{item.label}</dt>
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                <Show when={!props.loading} fallback={<PlaceholderValue />}>
+                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
                   {item.value}
                 </Show>
                 <Show when={item.hint}>
