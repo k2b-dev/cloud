@@ -1,0 +1,6 @@
+### A hydration test failed without saying why, because its catch dropped Playwright's error
+
+- **What happened:** A v2 hydration browser test failed once with only `the page did not hydrate: ` after 362 ms, well below the 2-second wait. It named no page or console error, and the next runs were green ([#4121](https://github.com/k2b-dev/cloud/issues/4121)).
+- **Root cause:** `hydration.browser.test.ts` and `states-navigation.browser.test.ts` caught the rejection of `waitForFunction` with `.catch(() => { throw new Error(…) })`. The new error held only the page's errors, so Playwright's own reason, such as a closed page or a destroyed context, was lost. Why the wait ended early is still unknown; the next red run will say.
+- **Error class:** A test replaces a caught error with its own and drops the original, so a rare failure cannot be diagnosed.
+- **Guard:** The `test-error-causes` rule fails a Playwright test whose catch handler throws without passing on the caught error, as a cause, in the message, or through a local built from it. Both waits use `waitInPage()` from `packages/ui/test/browser.ts`, which keeps Playwright's reason in the message and as `cause`; `browser.browser.test.ts` proves this with a page that closes during the wait.

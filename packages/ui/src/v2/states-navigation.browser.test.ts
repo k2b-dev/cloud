@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page, Route } from "playwright";
-import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled, waitInPage } from "../../test/browser";
 import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-states-navigation.client";
@@ -69,11 +69,12 @@ const withPage = async (run: (page: Page, hold: { requests: Route[] }) => Promis
         window.__k2Sent = document.getElementById("root")!.cloneNode(true);
       });
       await page.addScriptTag({ content: client });
-      await page
-        .waitForFunction(() => window.__k2Hydrated === true)
-        .catch(() => {
-          throw new Error(`the page did not hydrate: ${[...errors, ...consoleErrors].join(" | ")}`);
-        });
+      await waitInPage(
+        page,
+        "the page did not hydrate",
+        () => window.__k2Hydrated === true,
+        () => [...errors, ...consoleErrors],
+      );
     }
     await settled(page);
     await run(page, hold);
