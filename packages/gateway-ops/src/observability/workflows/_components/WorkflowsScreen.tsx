@@ -44,20 +44,6 @@ export type FamilyView = {
   activity: string;
   href: string;
 };
-export type RunView = {
-  key: string;
-  name: string;
-  meta: string;
-  error: string | null;
-  state: Worded;
-  lag: string;
-  lagWarn: boolean;
-  duration: string;
-  attempts: string;
-  attemptsWarn: boolean;
-  created: string;
-  href: string;
-};
 export type EffectView = {
   key: string;
   workflow: string;
@@ -134,7 +120,6 @@ export type WorkflowsScreenProps = {
     empty: string;
     filtered: boolean;
     families?: FamilyView[];
-    runs?: RunView[];
     effects?: EffectView[];
     events?: EventView[];
   } | null;
@@ -294,16 +279,6 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
                 <Show when={current().families}>
                   {(rows) => <FamiliesTable rows={rows()} empty={current().empty} compact={Boolean(props.detail)} />}
                 </Show>
-                <Show when={current().runs}>
-                  {(rows) => (
-                    <RunsTable
-                      rows={rows()}
-                      empty={current().empty}
-                      current={props.detail?.actions.runId}
-                      compact={Boolean(props.detail)}
-                    />
-                  )}
-                </Show>
                 <Show when={current().effects}>{(rows) => <EffectsTable rows={rows()} empty={current().empty} />}</Show>
                 <Show when={current().events}>{(rows) => <EventsTable rows={rows()} empty={current().empty} />}</Show>
               </Section>
@@ -359,44 +334,6 @@ function FamiliesTable(props: { rows: FamilyView[]; empty: string; compact?: boo
           { title: t().runtime, width: { min: 100, default: 110 }, align: "end", cell: (row) => row.runtime, drop: true },
           { title: t().backlog, align: "end", cell: (row) => toned(row.backlog, row.backlogWarn && "warn"), drop: true },
         ] satisfies Column<FamilyView>[]
-      ).filter((_, index) => !props.compact || index < 2)}
-    />
-  );
-}
-
-function RunsTable(props: { rows: RunView[]; empty: string; current?: string; compact?: boolean }) {
-  const locale = useLocale();
-  const t = () => gatewayOpsMessages.resolve([locale()]).t;
-  return (
-    <Table
-      label={t().runs}
-      rows={props.rows}
-      rowKey={(row) => row.key}
-      current={props.current}
-      open={(row) => ({ href: row.href })}
-      empty={{ icon: "player-play", text: props.empty }}
-      phone={(row) => ({ lines: [row.name, row.error ?? `${row.meta} · ${row.created}`], marks: worded(row.state) })}
-      columns={(
-        [
-          { title: t().workflowRun, width: { min: 220, default: 300 }, cell: (row) => ({ lines: [row.name, row.error ?? row.meta] }) },
-          { title: t().state, width: { min: 170, default: 190 }, cell: (row) => worded(row.state) },
-          {
-            title: t().startLag,
-            width: { min: 100, default: 110 },
-            align: "end",
-            cell: (row) => toned(row.lag, row.lagWarn && "warn"),
-            drop: true,
-          },
-          { title: t().duration, width: { min: 90, default: 100 }, align: "end", cell: (row) => row.duration, drop: true },
-          {
-            title: t().attempts,
-            width: { min: 80, default: 90 },
-            align: "end",
-            cell: (row) => toned(row.attempts, row.attemptsWarn && "warn"),
-            drop: true,
-          },
-          { title: t().created, align: "end", cell: (row) => row.created, drop: true },
-        ] satisfies Column<RunView>[]
       ).filter((_, index) => !props.compact || index < 2)}
     />
   );

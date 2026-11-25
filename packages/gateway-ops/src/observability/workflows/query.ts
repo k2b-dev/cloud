@@ -3,6 +3,8 @@
  * events) by app only. `view` names the queue (`runs` by default), `workflow`, `parent`, `run` and `page` are page
  * parameters. The SSR page reads the address only through these; the store filters.
  */
+
+import type { WorkflowRunState } from "@k2b/cloud/workflows";
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { gatewayOpsMessages } from "../../messages";
 import { WINDOWS, type WindowFilter, WORKFLOWS_BASE_PATH } from "./filters";
@@ -96,4 +98,23 @@ export const legacyWorkflowsHref = (params: URLSearchParams): string | null => {
   if (next.get("view") === "runs") next.delete("view");
   if (next.get("page") === "1") next.delete("page");
   return `${WORKFLOWS_BASE_PATH}${next.size ? `?${next}` : ""}`;
+};
+
+/** Läufe (lane C, `/admin/observability/runs`) lists workflow runs; its status words for the workflow run states. */
+const RUNS_STATUS: Record<WorkflowRunState, string> = {
+  failed: "failed",
+  needs_attention: "failed",
+  running: "running",
+  queued: "waiting",
+  waiting: "waiting",
+  canceled: "canceled",
+  succeeded: "succeeded",
+};
+
+/** The workflow runs in Läufe, of one app and in one state when given. This page keeps definitions and findings. */
+export const workflowRunsHref = (filter: { app?: string; state?: WorkflowRunState } = {}) => {
+  const params = new URLSearchParams({ kind: "workflow" });
+  if (filter.app) params.set("app", filter.app);
+  if (filter.state) params.set("status", RUNS_STATUS[filter.state]);
+  return `/admin/observability/runs?${params}`;
 };
