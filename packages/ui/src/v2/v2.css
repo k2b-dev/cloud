@@ -1050,6 +1050,10 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* Line 3 reaches the end of the row while no marks stand beside it, and is cut with "…" there. */
+.k2-ui .k2-row:not(:has(> .k2-row-marks)) > .k2-row-l3 {
+  grid-column-end: -1;
+}
 .k2-ui .k2-row[data-lines="2"] > .k2-row-l2 {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
@@ -2247,6 +2251,23 @@
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
 }
+/* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
+   of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;
+   Loading is one square placeholder on the text edge, as wide as the drawing, since a drawing has no rows. */
+.k2-ui .k2-canvas[data-height] > .k2-state {
+  box-sizing: border-box;
+  height: 100%;
+  justify-content: center;
+}
+.k2-ui .k2-canvas[data-height] > .k2-loading {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px var(--k2-edge);
+  background: var(--k2-n100) content-box;
+}
+.k2-ui .k2-canvas[data-height] > .k2-loading > .k2-row {
+  display: none;
+}
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */
 
@@ -2543,10 +2564,28 @@
   color: var(--k2-text);
   font-weight: 600;
 }
-.k2-ui .k2-status-lead + .k2-fact,
-.k2-ui .k2-status-busy + .k2-fact,
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
+}
+/* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
+   out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
+   high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
+   lead. The filters keep their room. */
+.k2-ui .k2-bar-start > .k2-status-facts {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
+  column-gap: 8px;
+  min-width: 0;
+  height: 1lh;
+  overflow: hidden;
+}
+.k2-ui .k2-status-facts::before {
+  content: "";
+  height: 1lh;
+}
+.k2-ui .k2-bar[data-status-row] > .k2-bar-end {
+  flex: none;
 }
 /* The loading mark: 16 px after the lead, there while the row can refresh (`loading` given), turning only while it
    does, so it moves nothing when it comes and goes. */
@@ -2566,14 +2605,6 @@
     animation: none;
   }
 }
-/* Below 760 px of its own width the row lets its key figures go, so the filters keep their words (the phone lets
-   them go too). A container measures inside its edges of 20 px: 720 px there is 760 px of the row. */
-@container k2-status (width < 720px) {
-  .k2-ui .k2-fact {
-    display: none;
-  }
-}
-
 /* Notice: a band with sign, sentence, consequence and at most one deed */
 .k2-ui .k2-notice {
   display: grid;
@@ -3319,14 +3350,17 @@
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-input-end {
     display: none;
   }
-  /* the field covers the head's views (their mark of the current one too, which stands on the head's line) */
+  /* the field covers the head's views; the cover draws no line of its own, the bar's line stays the one line */
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within)::after {
     content: "";
     position: absolute;
-    inset: 0 0 -1px;
+    inset: 0;
     z-index: 1;
-    border-bottom: var(--k2-hairline);
     background: var(--k2-surface);
+  }
+  /* the mark of the current view stands on the head's own line, below the cover: it gives way, the line stays one */
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab[aria-current] {
+    border-bottom-color: transparent;
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
     position: absolute;
