@@ -195,52 +195,57 @@ suiteFor(
     expect((await gatewayStatus.forgetGatewayAppStatus({ appId: "traffic" }, context(denied))).ok).toBe(false);
   });
 
-  test.each(["remove-me", "faq"])("remove route refuses live apps, keeps failed forgets visible, and hides only after provider forget succeeds (%s)", async (appId) => {
-    const target = app(appId);
-    await knownApps.rememberApps([target]);
-    await registeredApps.upsertRegisteredApps([target]);
-    const registry = () => Promise.resolve({ apps: [] as AppRegistryDetail[], issues: [] });
-    const service = {
-      registry,
-      hide: knownApps.hideKnownApp,
-      keepVisible: knownApps.keepAppListingVisible,
-      providers: knownApps.listingStatusProviders,
-      forget: async () => {
-        const result = await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context());
-        return { failures: result.ok ? [] : [result.error] };
-      },
-    };
-    const liveRoute = router((params) => removeAppListing(params, { ...service, registry: async () => ({ apps: [target], issues: [] }) }));
-    const running = await liveRoute.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" });
-    expect(running.status).toBe(409);
-    expect((await running.json()).code).toBe("app_running");
-    const failing = router((params) => removeAppListing(params, { ...service, forget: async () => ({ failures: ["offline"] }) }));
-    const failure = await failing.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" });
-    expect(failure.status).toBe(503);
-    expect((await failure.json()).code).toBe("forget_failed");
-    expect((await knownApps.listKnownApps()).find((row) => row.id === target.id)?.hidden).toBe(false);
-    await appRegistry().upsert({ key: `apps/${target.id}`, value: target });
-    expect((await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context())).ok).toBe(false);
-    await appRegistry().delete({ key: `apps/${target.id}` });
-    const success = await router((params) => removeAppListing(params, service)).request(`/api/admin/apps/${target.id}/listing`, {
-      method: "DELETE",
-    });
-    expect(success.status).toBe(200);
-    expect(success.headers.get("Cache-Control")).toContain("no-transform");
-    expect((await knownApps.listKnownApps()).find((row) => row.id === target.id)?.hidden).toBe(true);
-    expect((await registeredApps.listRegisteredApps()).some((row) => row.id === target.id)).toBe(false);
-    expect((await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context())).ok).toBe(true);
-    const readOnly = { ...adminAuthority(), credentialKind: "oauth" as const, scopes: ["read"] };
-    expect(
-      (
-        await router((params) => removeAppListing(params, service), readOnly).request(`/api/admin/apps/${target.id}/listing`, {
-          method: "DELETE",
-        })
-      ).status,
-    ).toBe(403);
-    const anonymous = new Hono().route("/api/admin/apps", createAdminAppListingRoutes());
-    expect((await anonymous.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" })).status).toBe(401);
-  });
+  test.each(["remove-me", "faq"])(
+    "remove route refuses live apps, keeps failed forgets visible, and hides only after provider forget succeeds (%s)",
+    async (appId) => {
+      const target = app(appId);
+      await knownApps.rememberApps([target]);
+      await registeredApps.upsertRegisteredApps([target]);
+      const registry = () => Promise.resolve({ apps: [] as AppRegistryDetail[], issues: [] });
+      const service = {
+        registry,
+        hide: knownApps.hideKnownApp,
+        keepVisible: knownApps.keepAppListingVisible,
+        providers: knownApps.listingStatusProviders,
+        forget: async () => {
+          const result = await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context());
+          return { failures: result.ok ? [] : [result.error] };
+        },
+      };
+      const liveRoute = router((params) =>
+        removeAppListing(params, { ...service, registry: async () => ({ apps: [target], issues: [] }) }),
+      );
+      const running = await liveRoute.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" });
+      expect(running.status).toBe(409);
+      expect((await running.json()).code).toBe("app_running");
+      const failing = router((params) => removeAppListing(params, { ...service, forget: async () => ({ failures: ["offline"] }) }));
+      const failure = await failing.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" });
+      expect(failure.status).toBe(503);
+      expect((await failure.json()).code).toBe("forget_failed");
+      expect((await knownApps.listKnownApps()).find((row) => row.id === target.id)?.hidden).toBe(false);
+      await appRegistry().upsert({ key: `apps/${target.id}`, value: target });
+      expect((await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context())).ok).toBe(false);
+      await appRegistry().delete({ key: `apps/${target.id}` });
+      const success = await router((params) => removeAppListing(params, service)).request(`/api/admin/apps/${target.id}/listing`, {
+        method: "DELETE",
+      });
+      expect(success.status).toBe(200);
+      expect(success.headers.get("Cache-Control")).toContain("no-transform");
+      expect((await knownApps.listKnownApps()).find((row) => row.id === target.id)?.hidden).toBe(true);
+      expect((await registeredApps.listRegisteredApps()).some((row) => row.id === target.id)).toBe(false);
+      expect((await gatewayStatus.forgetGatewayAppStatus({ appId: target.id }, context())).ok).toBe(true);
+      const readOnly = { ...adminAuthority(), credentialKind: "oauth" as const, scopes: ["read"] };
+      expect(
+        (
+          await router((params) => removeAppListing(params, service), readOnly).request(`/api/admin/apps/${target.id}/listing`, {
+            method: "DELETE",
+          })
+        ).status,
+      ).toBe(403);
+      const anonymous = new Hono().route("/api/admin/apps", createAdminAppListingRoutes());
+      expect((await anonymous.request(`/api/admin/apps/${target.id}/listing`, { method: "DELETE" })).status).toBe(401);
+    },
+  );
 
   test("provider-only hints remain visible after partial forget and retain unavailable reporting providers", async () => {
     const provider = { appId: "offline-monitor", name: "Offline monitor" };

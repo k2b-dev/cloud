@@ -62,19 +62,9 @@ const pagePrefixes = [
     "venue",
     "weather",
   ].map((app) => `/app/${app}`),
-  ...[
-    "contacts",
-    "grids",
-    "notebooks",
-    "mail",
-    "spaces",
-    "weather",
-    "ipa-hosts",
-    "proxy-auth",
-    "oauth",
-    "gateway",
-    "observability",
-  ].map((app) => `/admin/${app}`),
+  ...["contacts", "grids", "notebooks", "mail", "spaces", "weather", "ipa-hosts", "proxy-auth", "oauth", "gateway", "observability"].map(
+    (app) => `/admin/${app}`,
+  ),
   "/tools",
   "/share/grids",
   "/apps",
@@ -156,8 +146,6 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       expect(response.status).toBe(404);
       expect(response.headers.get("content-type")).not.toContain("text/html");
     }, 20_000);
-
-
 
   for (const path of missingResources)
     test.skipIf(!adminToken)(
