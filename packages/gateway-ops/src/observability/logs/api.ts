@@ -20,16 +20,17 @@ import {
   createPagination,
   ErrorResponseSchema,
   LogEntrySchema,
-  LogLevelSchema,
   PaginationQuerySchema,
   PaginationResponseSchema,
   parsePagination,
 } from "./contracts";
+import { LOG_REQUEST_MAX, LOG_SEARCH_MAX, LOG_SOURCES_MAX, logSearchOf, logsApiParams, logsQuery, parseLogsAddress } from "./query";
 import { loggingService } from "./service";
 
 const LogListResponseSchema = z.object({
   entries: z.array(LogEntrySchema),
   pagination: PaginationResponseSchema,
+  levels: z.object({ debug: z.number(), info: z.number(), warn: z.number(), error: z.number() }).describe("Matching entries per level"),
 });
 const LogSummaryResponseSchema = z.object({
   total: z.number(),
@@ -76,39 +77,36 @@ const app = new Hono<AuthContext>()
     v(
       "query",
       PaginationQuerySchema.extend({
-        source: z.string().optional(),
-        level: LogLevelSchema.optional(),
-        search: z.string().optional(),
+        time: z
+          .string()
+          .optional()
+          .describe(
+            "Time range, as in the page address: a preset (last-15m, last-1h, last-6h, last-24h, last-7d, last-30d) or YYYY-MM-DDTHH:MMZ..YYYY-MM-DDTHH:MMZ (UTC, either end open, at most 31 days); defaults to last-24h",
+          ),
+        level: z.string().optional().describe("Levels separated by commas: debug, info, warn, error"),
+        source: z.string().optional().describe(`Sources separated by commas, at most ${LOG_SOURCES_MAX}`),
+        request: z.string().max(LOG_REQUEST_MAX).optional().describe("Part of the metadata, such as a request ID"),
+        q: z.string().max(LOG_SEARCH_MAX).optional().describe("Part of the message or the metadata"),
+        search: z.string().max(LOG_SEARCH_MAX).optional().describe("Deprecated name of `q`"),
         since_hours: z.coerce
           .number()
           .int()
           .positive()
           .max(24 * 31)
-          .default(24)
-          .describe("Lookback window in hours; defaults to 24"),
+          .optional()
+          .describe("Deprecated lookback in hours; `time` replaces it"),
       }),
     ),
     async (c) => {
       const query = c.req.valid("query");
       const pagination = parsePagination(query);
-
-      const { items, total } = await loggingService.entry.list({
-        pagination,
-        filter: {
-          source: query.source,
-          level: query.level,
-          search: query.search,
-          sinceHours: query.since_hours,
-        },
-      });
-
-      return respond(
-        c,
-        ok({
-          entries: items,
-          pagination: createPagination(pagination, total),
-        }),
-      );
+      const { state, issues } = parseLogsAddress(logsQuery("en"), logsApiParams(new URL(c.req.url).searchParams));
+      if (issues.length > 0) {
+        const parts = issues.map((issue) => `${issue.param || "query"}=${issue.value}`).join(", ");
+        return respond(c, fail(err.badInput(`Invalid log filter: ${parts}`)));
+      }
+      const { entries, total, levels } = await loggingService.entry.search(logSearchOf(state), pagination.page, pagination.perPage);
+      return respond(c, ok({ entries, levels, pagination: createPagination(pagination, total) }));
     },
   )
 
@@ -172,8 +170,20 @@ const app = new Hono<AuthContext>()
         200: jsonResponse(z.object({ sources: z.array(z.string()) }), "List of unique source names"),
       },
     }),
+    v(
+      "query",
+      z.object({
+        since_hours: z.coerce
+          .number()
+          .int()
+          .positive()
+          .max(24 * 31)
+          .default(24)
+          .describe("Sources that logged within this many hours; defaults to 24"),
+      }),
+    ),
     async (c) => {
-      const sources = await loggingService.source.list();
+      const sources = await loggingService.source.list(c.req.valid("query").since_hours);
       return respond(c, ok({ sources }));
     },
   )
