@@ -115,10 +115,16 @@ export default ssr<AuthContext>(async (c) => {
         ]}
         screen={{ timerSeconds: screen.privacyTimerSeconds, platform, sharedWorkstation }}
         summaries={{
-          security: `${t.passkeyCount({ count: passkeys.length })} · ${activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity}`,
-          access: t.membershipSummary({ direct: user.memberofGroup.length, managed: user.manages.length }),
-          notifications: customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults,
-          developer: t.apiKeySummary({ count: apiKeys.length }),
+          security: {
+            value: t.passkeyCount({ count: passkeys.length }),
+            meta: activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity,
+          },
+          access: { value: t.groupCount({ count: user.memberofGroup.length }), meta: t.managedCount({ count: user.manages.length }) },
+          notifications: {
+            value: customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults,
+            meta: t.preferences,
+          },
+          developer: { value: t.apiKeyCount({ count: apiKeys.length }), meta: t.cliAndSsh },
         }}
         activity={activityPage.items.slice(0, 3).map((entry) => ({
           label: entry.label,

@@ -2,7 +2,7 @@ import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { AppPairingConfirmResultSchema, AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
 import { qr } from "@k2b/stdlib/qr";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Dialog, Loading, Notice, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Dialog, Notice, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
@@ -367,7 +367,7 @@ export default function Pairing(props: {
           </Text>
           <Text weight="strong">{t().pairStep}</Text>
         </Show>
-        <Show when={!checkingIdentity()} fallback={<Loading rows={2} lines={2} />}>
+        <Show when={!checkingIdentity()} fallback={<Text muted>{t().checkingIdentity}</Text>}>
           <Show when={props.actorId !== props.userId && !needsAuthentication()}>
             <Notice tone="warn">{t().assistedWarning}</Notice>
           </Show>

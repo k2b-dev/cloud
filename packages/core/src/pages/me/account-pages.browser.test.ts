@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { User } from "@k2b/cloud/contracts";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import { defaultRailPreferences } from "@k2b/cloud/contracts/rail-preferences";
@@ -12,8 +13,9 @@ import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
-import { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
+import type { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { LocaleProvider } from "@k2b/ui";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
@@ -21,9 +23,8 @@ import { createComponent, type JSX } from "solid-js";
 import { launchBrowser } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
-// Whether the account pages draw one frame or nested ones, and whether switching tabs moves
-// anything, is decided by the cascade of Tailwind, Cloud and @k2b/ui styles, which only a
-// real engine resolves.
+// The account pages on v2 as the server renders them, before any island hydrates: the v2 rules (outline and measured
+// layout), no loading state in the first picture, and what the address keeps. Only a real engine lays them out.
 const root = mkdtempSync(join(tmpdir(), "core-account-pages-browser-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
@@ -44,9 +45,10 @@ const pages = {
   "/me/notifications": (await import("./notifications.page")).default,
   "/me/notifications/history": (await import("./notification-history.page")).default,
   "/me/developer": (await import("./developer.page")).default,
+  "/me/security/activity": (await import("./activity.page")).default,
+  "/me/approvals": (await import("./approvals.page")).default,
 } as const;
 type Path = keyof typeof pages;
-const tabs: Path[] = ["/me", "/me/security", "/me/access", "/me/notifications", "/me/developer"];
 const { buildFontAssets } = await import("../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
 const publicDir = join(root, "public");
@@ -229,6 +231,7 @@ beforeEach(() => {
       enabled: true,
       adminPairing: false,
     }),
+    spyOn(server, "loadPendingApprovals").mockResolvedValue({ items: [], nextCursor: null } as never),
     spyOn(services.appApproval, "listDevices").mockResolvedValue({
       items: [
         {
@@ -269,7 +272,9 @@ beforeAll(async () => {
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
+  if (shots) mkdirSync(shots, { recursive: true });
   await buildFontAssets(publicDir);
   await buildTablerIconAssets(publicDir);
   browser = await launchBrowser();
@@ -280,28 +285,33 @@ afterAll(async () => {
 
 /** The server-rendered content of one account page. */
 const content = async (path: Path, locale: "en" | "de", query = "") => {
-  const app = new Hono()
+  const response = await request(path, locale, query);
+  expect(response.status).toBe(200);
+  return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
+};
+const request = (path: Path, locale: "en" | "de", query = "") =>
+  new Hono()
     .use("*", async (c, next) => {
       c.set("user" as never, user as never);
       c.set("runtime" as never, { apps: [] } as never);
       await next();
     })
-    .get(path, ...pages[path]);
-  const response = await app.request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
-  expect(response.status).toBe(200);
-  return /<body[^>]*>([\s\S]*)<\/body>/.exec(await response.text())![1]!;
-};
+    .get(path, ...pages[path])
+    .request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
 
-type View = { width: number; height: number; touch: boolean };
-const desktop: View = { width: 1440, height: 900, touch: false };
-const phone: View = { width: 390, height: 844, touch: true };
-// The WCAG reflow width.
-const narrowPhone: View = { width: 320, height: 640, touch: true };
+type View = { width: number; height: number; touch: boolean; name: string };
+const desktop: View = { width: 1440, height: 900, touch: false, name: "1440" };
+const tablet: View = { width: 1024, height: 768, touch: false, name: "1024" };
+const phone: View = { width: 390, height: 844, touch: true, name: "390" };
+const shots = process.env.CLOUD_ACCOUNT_SHOTS;
 
-/** A tab with the server-rendered page on Core's canvas, before any island hydrates; the caller closes it. */
-const open = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
+/**
+ * A tab with the server-rendered page in the v2 scope that `Layout ui="v2"` gives it, before any island hydrates:
+ * what a person sees first. The caller closes it.
+ */
+const open = async (view: View, path: Path, locale: "en" | "de", query = "") => {
   const tab = await browser.newPage({
-    javaScriptEnabled: false,
+    // JavaScript runs for the measurement only: the page has no island scripts, so it stays the server's picture.
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
     isMobile: view.touch,
@@ -309,110 +319,59 @@ const open = async (view: View, path: Path, locale: "en" | "de", dark = false) =
   });
   await tab.route(`${origin}/public/**`, (route) => route.fulfill({ path: join(root, new URL(route.request().url()).pathname) }));
   await tab.setContent(
-    `<!doctype html><html lang="${locale}" class="${dark ? "dark" : "light"}"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-      `<body class="k2b-ui"><div class="cloud-app-canvas relative flex min-h-dvh w-full" style="${CORE_CANVAS}" data-app-id="core">` +
-      `<div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col"><main class="layout-content-main min-h-0 min-w-0 flex-1">` +
-      `${await content(path, locale)}</main></div></div></body></html>`,
+    `<!doctype html><html lang="${locale}" class="light"><head><meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style>` +
+      `<style>html,body{height:100%;margin:0}main{position:fixed;inset:0;display:flex}</style></head>` +
+      `<body class="k2b-ui"><main class="layout-content-main k2-ui" style="${CORE_CANVAS}">${await content(path, locale, query)}</main></body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
   return tab;
 };
 
-/** Where the avatar, the tabs and the content sit, which frames the page draws, and whether it overflows. */
-const measure = async (view: View, path: Path, locale: "en" | "de", dark = false) => {
-  const tab = await open(view, path, locale, dark);
-  try {
-    return await tab.evaluate(() => {
-      const main = document.querySelector("main")!;
-      const nav = main.querySelector("nav")!;
-      const panel = main.querySelector(".account-page")!;
-      const visible = (value: string) => value !== "none" && !/rgba\(.*,\s*0\)$/.test(value) && value !== "transparent";
-      // Every block that paints a border or a shadow: a frame. Controls and their field edge, tags,
-      // table cells and the notices' forced-colours border are content, not frames.
-      const frames = Array.from(main.querySelectorAll<HTMLElement>("section, article, div, ul, header, nav"))
-        .filter(
-          (element) =>
-            element.checkVisibility() &&
-            !element.closest("button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card"),
-        )
-        .filter((element) => {
-          const style = getComputedStyle(element);
-          const border = Number.parseFloat(style.borderTopWidth) > 0 && style.borderTopStyle !== "none" && visible(style.borderTopColor);
-          return border || visible(style.boxShadow);
-        })
-        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
-      // A list inside the frame is rows with hairlines, never a grey tub: no block of rows paints its own fill. Controls
-      // keep their own track, such as the privacy timer's segmented row.
-      const tubs = Array.from(panel.querySelectorAll<HTMLElement>("ul, ol, div"))
-        .filter(
-          (element) =>
-            element.checkVisibility() &&
-            element.children.length > 1 &&
-            !element.closest(
-              "button, a, table, .tag, .k2b-input-shell, .k2b-multi-select-trigger, .k2b-notice-card, .k2b-segmented-control",
-            ),
-        )
-        .filter((element) => visible(getComputedStyle(element).backgroundColor))
-        .map((element) => element.className.toString().split(" ").slice(0, 3).join(" "));
-      const heading = panel.querySelector("h2")!;
-      const headingBox = heading.getBoundingClientRect();
-      const avatar = main.querySelector("header .k2b-avatar")!.getBoundingClientRect();
-      return {
-        avatar: `${Math.round(avatar.left)},${Math.round(avatar.top)} ${Math.round(avatar.width)}x${Math.round(avatar.height)}`,
-        navTop: Math.round(nav.getBoundingClientRect().top),
-        panelTop: Math.round(panel.getBoundingClientRect().top),
-        identityInFrame: !!main.querySelector("h1")!.closest(".paper, .k2b-paper"),
-        // Account pages are settings: the one frame stands flat, with its edge and no shadow (a quiet area).
-        frameShadow: getComputedStyle(panel).boxShadow,
-        frames,
-        tubs,
-        current: nav.querySelector('[aria-current="page"]')?.getAttribute("href"),
-        pageHeading: { text: heading.textContent, width: headingBox.width, height: headingBox.height },
-        sectionFrames: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).map((section) => {
-          const style = getComputedStyle(section);
-          return `${style.borderTopWidth} ${style.backgroundColor}`;
-        }),
-        // How far each section's first content sits below its header, or below the section's top where the header
-        // stands in its own column beside the content, and whether its actions stay inside the panel.
-        sectionSpacing: Array.from(panel.querySelectorAll<HTMLElement>(".k2b-settings-section")).flatMap((section): (number | string)[] => {
-          const header = section.querySelector(".k2b-settings-section__header")!.getBoundingClientRect();
-          const body = section.querySelector(".k2b-settings-section__body")!.getBoundingClientRect();
-          const first = Array.from(section.querySelectorAll<HTMLElement>(".k2b-settings-section__body *")).find(
-            (element) => element.checkVisibility() && element.getBoundingClientRect().height > 0,
-          );
-          if (!first) return [];
-          const top = first.getBoundingClientRect().top;
-          return header.right <= body.left
-            ? [`beside ${Math.round(top - section.getBoundingClientRect().top)}`]
-            : [Math.round(top - header.bottom)];
-        }),
-        actionsPastPanel: Math.max(
-          0,
-          ...Array.from(panel.querySelectorAll(".k2b-settings-section__actions")).map(
-            (actions) => actions.getBoundingClientRect().right - panel.getBoundingClientRect().right,
-          ),
-        ),
-        // The screen's width: Chromium's phone emulation widens `innerWidth` to wide content, as a page zoomed out.
-        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      };
-    });
-  } finally {
-    await tab.close();
-  }
-};
+const screens: { path: Path; query?: string; name: string }[] = [
+  { path: "/me", name: "profile" },
+  { path: "/me/security", name: "security" },
+  { path: "/me/security/activity", name: "activity" },
+  { path: "/me/access", name: "access" },
+  { path: "/me/notifications", name: "notifications" },
+  { path: "/me/notifications/history", name: "history" },
+  { path: "/me/developer", name: "developer" },
+  { path: "/me/approvals", name: "approvals" },
+];
 
-describe("account pages in a browser", () => {
+describe("account pages on v2", () => {
+  test("every page keeps the v2 rules at 1440, 1024 and 390 px, with no loading state in its first picture", async () => {
+    const counts: string[] = [];
+    const findings: string[] = [];
+    for (const screen of screens)
+      for (const view of [desktop, tablet, phone]) {
+        const tab = await open(view, screen.path, "de", screen.query);
+        try {
+          const outline = await describeV2Page(tab, "main");
+          if (outline.includes("Problems ("))
+            findings.push(`${screen.name} ${view.name} outline:\n${outline.slice(outline.indexOf("Problems ("))}`);
+          const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+          for (const problem of layout.problems) findings.push(`${screen.name} ${view.name} layout: ${problem}`);
+          // The server renders the data: the first picture has nothing that is still loading.
+          const loading = await tab.locator('[data-k2-part="Loading"], [aria-busy="true"]').count();
+          if (loading > 0) findings.push(`${screen.name} ${view.name}: ${loading} loading states in the first picture`);
+          if (view === desktop) counts.push(`${screen.path}\t${await tab.evaluate(() => document.querySelectorAll("main *").length)}`);
+          if (shots) await tab.screenshot({ path: join(shots, `${screen.name}-${view.name}.png`) });
+        } finally {
+          await tab.close();
+        }
+      }
+    if (process.env.CLOUD_ACCOUNT_METRICS) console.log(`DOMCOUNT\n${counts.join("\n")}`);
+    expect(findings).toEqual([]);
+  }, 240_000);
+
   test("access memberships omit internal groups from the session projection", async () => {
     user = { ...localUser, memberofGroup: [...localUser.memberofGroup, "internal-fixture-group"] };
     const html = await content("/me/access", "en");
     expect(html).not.toContain(">internal-fixture-group<");
     expect(html).not.toContain("search=internal-fixture-group");
     expect(html).toContain("team-design");
-    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({
-      userId: user.id,
-      recursive: false,
-    });
+    expect(services.accountsAppService.user.group.list).toHaveBeenCalledWith({ userId: user.id, recursive: false });
   });
 
   test("inherited memberships remain reachable when all direct groups are internal", async () => {
@@ -421,287 +380,51 @@ describe("account pages in a browser", () => {
     expect(direct).toContain('href="/me/access?groups=all"');
     expect(direct).not.toContain(">internal-fixture-group<");
     expect(direct).not.toContain(">inherited-fixture-team<");
-
     const inherited = await content("/me/access", "en", "?groups=all");
     expect(inherited).toContain(">inherited-fixture-team<");
     expect(inherited).not.toContain(">internal-fixture-group<");
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("mark the current account section with the selected edge and fill in Core's ink, in light and dark", async () => {
-    for (const dark of [false, true])
-      for (const path of tabs) {
-        const tab = await open(desktop, path, "en", dark);
-        try {
-          // The page renders without JavaScript and open() waits for its fonts; the current section is the condition.
-          await tab.locator('.account-tabs [aria-current="page"]').first().waitFor();
-          const colors = await tab.evaluate(() => {
-            const canvas = document.querySelector(".cloud-app-canvas")!;
-            const probe = document.createElement("span");
-            probe.style.cssText =
-              "position:absolute;visibility:hidden;background:color-mix(in srgb, var(--k2b-app-workspace-active) var(--k2b-edge-selected-fill), var(--k2b-surface));color:var(--ui-app-accent-text)";
-            canvas.append(probe);
-            const appFill = getComputedStyle(probe).backgroundColor;
-            const appInk = getComputedStyle(probe).color;
-            probe.style.background = "var(--ui-selected)";
-            const platformFill = getComputedStyle(probe).backgroundColor;
-            probe.style.background = "var(--k2b-tray)";
-            const tray = getComputedStyle(probe).backgroundColor;
-            probe.remove();
-            // The notification views are a segment: a grey track, the current view the selected thumb without a shadow.
-            const segment = canvas.querySelector(".account-tabs--segment");
-            const thumb = segment?.querySelector('[aria-current="page"]');
-            const current = canvas.querySelector('.account-tabs [aria-current="page"]')!;
-            return {
-              href: current.getAttribute("href"),
-              fill: getComputedStyle(current).backgroundColor,
-              ink: getComputedStyle(current).color,
-              appFill,
-              appInk,
-              platformFill,
-              segment: segment
-                ? {
-                    track: getComputedStyle(segment).backgroundColor,
-                    tray,
-                    thumb: thumb ? getComputedStyle(thumb).backgroundColor : null,
-                    shadow: thumb ? getComputedStyle(thumb).boxShadow : null,
-                  }
-                : null,
-              otherFills: Array.from(canvas.querySelectorAll('.account-tabs a:not([aria-current="page"])')).map(
-                (link) => getComputedStyle(link).backgroundColor,
-              ),
-            };
-          });
-          expect(colors.href).toBe(path);
-          expect(colors.fill).toBe(colors.appFill);
-          expect(colors.ink).toBe(colors.appInk);
-          expect(colors.fill).not.toBe(colors.platformFill);
-          if (path === "/me/notifications") {
-            expect(colors.segment?.track).toBe(colors.segment?.tray);
-            expect(colors.segment?.thumb).toBe(colors.appFill);
-            expect(colors.segment?.shadow?.split(/,(?![^(]*\))/).every((part) => part.includes("inset"))).toBe(true);
-          }
-          expect(colors.otherFills.length).toBeGreaterThan(0);
-          expect(colors.otherFills.every((fill) => fill === "rgba(0, 0, 0, 0)")).toBe(true);
-        } finally {
-          await tab.close();
-        }
-      }
-  }, 60_000);
+  test("an old link to the activity range opens the activity view with every parameter", async () => {
+    const response = await request("/me/security", "en", "?activityDays=7&from=mail");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/me/security/activity?activityDays=7&from=mail");
+  });
 
-  test("draw one frame: the identity and tabs sit on the canvas, the sections inside it are flat", async () => {
-    for (const view of [desktop, phone])
-      for (const dark of [false, true])
-        for (const path of Object.keys(pages) as Path[]) {
-          const result = await measure(view, path, "en", dark);
-          const label = `${path} ${view.width}px ${dark ? "dark" : "light"}`;
-          expect({ label, identityInFrame: result.identityInFrame, frames: result.frames, tubs: result.tubs }).toEqual({
-            label,
-            identityInFrame: false,
-            frames: ["k2b-paper account-page flex"],
-            tubs: [],
-          });
-          for (const frame of result.sectionFrames) expect(frame).toBe("0px rgba(0, 0, 0, 0)");
-          expect(result.frameShadow, label).toBe("rgba(0, 0, 0, 0) 0px 0px 0px 0px");
-          expect(result.overflow).toBeLessThanOrEqual(0);
-        }
-  }, 120_000);
+  test("the activity view reads its range from the address, 30 days without one", async () => {
+    await content("/me/security/activity", "en", "?activityDays=90");
+    expect(services.audit.listSelfServiceActivity).toHaveBeenLastCalledWith(expect.objectContaining({ days: 90 }));
+    await content("/me/security/activity", "en");
+    expect(services.audit.listSelfServiceActivity).toHaveBeenLastCalledWith(expect.objectContaining({ days: 30 }));
+  });
 
-  test("keep the avatar, the tabs and the content in place when switching tabs, in English and German", async () => {
-    for (const view of [desktop, phone])
-      for (const locale of ["en", "de"] as const) {
-        const results = [];
-        for (const path of tabs) results.push({ path, ...(await measure(view, path, locale)) });
-        for (const result of results) {
-          expect(result.current).toBe(result.path);
-          expect({ path: result.path, avatar: result.avatar, navTop: result.navTop, panelTop: result.panelTop }).toEqual({
-            path: result.path,
-            avatar: results[0]!.avatar,
-            navTop: results[0]!.navTop,
-            panelTop: results[0]!.panelTop,
-          });
-          expect(result.overflow).toBeLessThanOrEqual(0);
-        }
-      }
-  }, 120_000);
-
-  test("open every section's content at the same distance below its header, islands included", async () => {
-    requestsEnabled = true;
-    freeIpaEnabled = true;
-    for (const view of [desktop, phone])
-      for (const path of Object.keys(pages) as Path[]) {
-        const result = await measure(view, path, "en");
-        expect({ path, width: view.width, spacing: result.sectionSpacing.filter((gap) => gap !== 8 && gap !== "beside 8") }).toEqual({
-          path,
-          width: view.width,
-          spacing: [],
-        });
-      }
-    // The FreeIPA account request is offered on /me/access in this setup.
-    expect((await measure(phone, "/me/access", "en")).sectionSpacing.length).toBe(3);
-  }, 120_000);
-
-  test("keep a FreeIPA account's profile actions inside the panel down to 320px, in German", async () => {
-    user = ipaUser;
-    freeIpaEnabled = true;
-    for (const view of [phone, narrowPhone])
-      for (const path of tabs) {
-        const result = await measure(view, path, "de");
-        expect({ path, width: view.width, past: result.actionsPastPanel, overflow: result.overflow }).toEqual({
-          path,
-          width: view.width,
-          past: 0,
-          overflow: 0,
-        });
-      }
-  }, 120_000);
-
-  test("show registered excluded channels disabled and unchecked with the app reason", async () => {
-    const reason = "Nicht verfügbar: Jede Nachricht als E-Mail wäre zu viel.";
-    spies.unshift(
-      spyOn(services.notifications.user.preferences, "list").mockResolvedValue({
-        availableChannels: ["browser", "email"],
-        definitions: [
-          {
-            id: "demo.newUpdates",
-            appId: "demo",
-            kind: "newUpdates",
-            label: "Neue Meldungen",
-            description: "Wenn eine Meldung eingeht.",
-            recommendedChannels: ["browser"],
-            requiredChannels: [],
-            excludedChannels: ["email"],
-            excludedReason: reason,
-            selectedChannels: ["browser", "email"],
-            effectiveChannels: ["browser"],
-            customized: true,
-          },
-        ],
-      }),
-    );
-    for (const view of [desktop, phone]) {
-      for (const dark of [false, true]) {
-        const tab = await open(view, "/me/notifications", "de", dark);
-        try {
-          const email = tab.getByRole("checkbox", { name: "E-Mail", exact: true });
-          expect(await email.isDisabled()).toBe(true);
-          expect(await email.isChecked()).toBe(false);
-          expect(await tab.getByText(reason, { exact: true }).isVisible()).toBe(true);
-          const reasonId = await email.getAttribute("aria-describedby");
-          expect(reasonId).toBeTruthy();
-          expect(await tab.locator(`[id="${reasonId}"]`).textContent()).toBe(reason);
-          expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-          const shots = process.env.CORE_ACCOUNT_SHOTS;
-          if (shots)
-            await tab.screenshot({ path: `${shots}/notification-excluded-${dark ? "dark" : "light"}-${view.width}.png`, fullPage: true });
-        } finally {
-          await tab.close();
-        }
-      }
-    }
-  }, 60_000);
-
-  test("reserve the browser notification button's height before the island hydrates", async () => {
-    const tab = await open(phone, "/me/notifications", "en");
-    try {
-      const heights = await tab.evaluate(() => {
-        const section = Array.from(document.querySelectorAll(".k2b-settings-section")).find((candidate) =>
-          candidate.querySelector("h2")?.textContent?.includes("Browser notifications"),
-        )!;
-        const row = section.querySelector<HTMLElement>(".k2b-settings-section__actions > span")!;
-        const before = section.getBoundingClientRect().height;
-        // What hydration adds: a small button beside the status.
-        row.insertAdjacentHTML(
-          "beforeend",
-          '<button type="button" class="k2b-button" data-size="sm" data-variant="primary"><i class="ti ti-bell-plus"></i>Enable</button>',
-        );
-        return { before, after: section.getBoundingClientRect().height };
-      });
-      expect(heights.after).toBe(heights.before);
-    } finally {
-      await tab.close();
-    }
-  }, 30_000);
-
-  test("keep the quiet time section still when its status or a period's error changes", async () => {
-    // What the island shows later: a long status instead of "Off", and the error of a period without days. The
-    // description shares its lines with whatever stands beside the heading, so the widths that move differ.
-    const change = () =>
-      Array.from(document.querySelectorAll(".k2b-settings-section"))
-        .filter((section) => section.querySelector("h2")?.textContent?.includes("Do not disturb"))
-        .map((section) => {
-          const field = (label: string) =>
-            Array.from(section.querySelectorAll(".k2b-field")).find(
-              (candidate) => candidate.querySelector(".k2b-field__label")?.textContent?.trim() === label,
-            )!;
-          const top = (element: Element) => Math.round(element.getBoundingClientRect().top);
-          const measure = () => ({
-            body: top(section.querySelector(".k2b-settings-section__body")!),
-            from: top(field("From")),
-            remove: top(section.querySelector('[aria-label="Remove quiet hours"]')!),
-          });
-          const label = section.querySelector(".k2b-status-badge__label")!;
-          const before = measure();
-          const off = label.textContent;
-          label.textContent = "Quiet hours until 10/12/2026, 11:30 PM";
-          field("Days").insertAdjacentHTML("beforeend", '<p class="k2b-field__error" data-test-error>Choose at least one day.</p>');
-          const after = measure();
-          label.textContent = off;
-          section.querySelector("[data-test-error]")!.remove();
-          return { before, after };
-        })[0]!;
-    for (const view of [desktop, phone]) {
-      const tab = await open(view, "/me/notifications", "en");
-      try {
-        // On a phone the times sit below the days, so the error moves them like any field below it.
-        const widths = view === phone ? [phone.width, narrowPhone.width] : [1440, 1280, 1152, 1024, 900, 768];
-        const still = view === phone ? ["body"] : ["body", "from", "remove"];
-        const pick = (at: Record<string, number>) => Object.fromEntries(still.map((key) => [key, at[key]]));
-        for (const width of widths) {
-          await tab.setViewportSize({ width, height: view.height });
-          const { before, after } = await tab.evaluate(change);
-          expect({ width, ...pick(after) }).toEqual({ width, ...pick(before) });
-        }
-      } finally {
-        await tab.close();
-      }
-    }
-  }, 60_000);
-
-  test("let a long name wrap instead of cutting it off on a phone", async () => {
-    user = ipaUser;
-    const tab = await open(phone, "/me", "en");
-    try {
-      const name = await tab.evaluate(() => {
-        const heading = document.querySelector("main h1")!;
-        return { clipped: heading.scrollWidth > heading.clientWidth, lines: Math.round(heading.getBoundingClientRect().height / 25) };
-      });
-      expect(name).toEqual({ clipped: false, lines: 2 });
-    } finally {
-      await tab.close();
-    }
-  }, 30_000);
-
-  test("the delivery history shows no way up above the account tabs, which lead back to the notification preferences", async () => {
-    const html = await content("/me/notifications/history", "en");
-    expect(derivePageTrail(layoutTitle, "/me", "Cloud", "/me/notifications/history")).toEqual({ title: "Delivery history", ancestors: [] });
+  test("the delivery history and the activity are tabs of their area, and the history keeps its filter in the address", async () => {
+    const html = await content("/me/notifications/history", "en", "?status=failed&page=2");
+    expect(services.notifications.user.history.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", page: 2 }));
     expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
-  }, 30_000);
+    expect(await content("/me/security", "en")).toMatch(/<a [^>]*href="\/me\/security\/activity"/);
+  });
 
   test("warn about the account expiry only when it is close", async () => {
     const tone = async (days: number) => {
       user = { ...localUser, accountExpires: new Date(Date.now() + days * 86_400_000).toISOString() };
-      return /class="k2b-notice-card[^"]*"[^>]*data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
+      return /data-k2-part="Notice" data-tone="(\w+)"/.exec(await content("/me", "en"))?.[1];
     };
-    expect(await tone(120)).toBe("info");
-    expect(await tone(10)).toBe("warning");
-    expect(await tone(-1)).toBe("danger");
+    expect(await tone(120)).toBe("note");
+    expect(await tone(10)).toBe("warn");
+    expect(await tone(-1)).toBe("bad");
   }, 30_000);
 
-  test("announce the section heading the tabs already show only to assistive technology", async () => {
-    const result = await measure(desktop, "/me/access", "de");
-    expect(result.pageHeading.text).toBe("Gruppen und Zugriff");
-    expect(result.pageHeading.width).toBeLessThanOrEqual(1);
-    expect(result.pageHeading.height).toBeLessThanOrEqual(1);
+  test("a FreeIPA account with a long name keeps its deeds inside the column at 320 px, in German", async () => {
+    user = ipaUser;
+    freeIpaEnabled = true;
+    const tab = await open({ width: 320, height: 640, touch: true, name: "320" }, "/me", "de");
+    try {
+      expect(await describeV2Page(tab, "main")).not.toContain("Problems (");
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+    } finally {
+      await tab.close();
+    }
   }, 30_000);
 });

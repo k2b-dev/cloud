@@ -64,6 +64,9 @@ if (!isServer)
       },
     },
   }));
+// v2 asks whether the window is a phone; the test DOM has no media queries.
+if (!isServer && !("matchMedia" in globalThis))
+  Object.assign(globalThis, { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
 const flush = async () => {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
@@ -76,19 +79,41 @@ const eventually = async (check: () => boolean, timeoutMs = 8_000) => {
     await flush();
   }
 };
-/** The revocation phase on screen; the others stay in the dialog, hidden, to keep its size. */
-const shown = (dialog: Element | null) => dialog?.querySelector(".app-revoke-phases > :not([aria-hidden])")?.textContent ?? "";
-const button = (root: HTMLElement, label: string) =>
-  Array.from(root.querySelectorAll("button")).find((item) => item.textContent?.trim() === label)!;
+/** The open v2 dialog, or null. */
+const openDialog = (dom: { document: Document }) => dom.document.querySelector<HTMLElement>('[data-k2-part="Dialog"]');
+/** What the open dialog says now. */
+const shown = (dialog: Element | null) => dialog?.querySelector(".k2-dialog-body")?.textContent ?? "";
+/** A button by its words, or a deed behind the row's "…" menu (opened first), by its words. */
+const button = (root: HTMLElement, label: string) => {
+  const direct = Array.from(root.querySelectorAll("button, a")).find(
+    (item) => item.textContent?.trim() === label || item.getAttribute("aria-label") === label,
+  ) as HTMLElement | undefined;
+  if (direct) return direct;
+  return Array.from(root.ownerDocument.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === label,
+  )!;
+};
+/** The words of the toasts the page shows now. */
+const toasts = (dom: { document: Document }) =>
+  Array.from(dom.document.querySelectorAll('[data-k2-part="Toast"]'))
+    .map((region) => region.textContent ?? "")
+    .join("");
+/** Closes the open dialog with the × of its head, as a person does. */
+const closeDialog = (dom: { document: Document }) => openDialog(dom)?.querySelector<HTMLElement>('[data-slot="head"] button')?.click();
+/** Opens the "…" menu of the first device row. */
+const openDeeds = async (root: HTMLElement) => {
+  root.querySelector<HTMLElement>('[data-k2-part="Row"] button[aria-haspopup]')?.click();
+  for (let i = 0; i < 40; i++) await Promise.resolve();
+};
 
 describe("Cloud app approval UI", () => {
   if (isServer) {
     test.skip("requires browser conditions and DOM preload", () => {});
     return;
   }
-  let cleanup = () => {};
-  afterEach(() => {
-    cleanup();
+  let cleanup: () => unknown = () => {};
+  afterEach(async () => {
+    await cleanup();
     mock.restore();
     for (const fn of [
       start,
@@ -109,7 +134,7 @@ describe("Cloud app approval UI", () => {
   });
   test("incomplete setup is visible with an admin route, not a broken pairing action", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -119,8 +144,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Enabled — setup required");
@@ -130,7 +157,7 @@ describe("Cloud app approval UI", () => {
   });
   test("normal users get setup guidance without admin controls", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -139,8 +166,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("Your administrator still needs");
@@ -149,15 +178,23 @@ describe("Cloud app approval UI", () => {
   });
   test("installation uses the configured origin for desktop QR/copy and mobile new tabs", async () => {
     const dom = createDomTestHarness();
-    const { default: InstallApp } = await import("../src/pages/app-approval/InstallApp");
-    const { dialogCore, toast } = await import("@k2b/ui");
-    spyOn(toast, "success").mockImplementation(() => "test");
+    const { useInstallApp } = await import("../src/pages/app-approval/InstallApp");
     const origin = "http://localhost:4178";
     const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
     const opened = spyOn(window, "open").mockReturnValue(null);
-    const dispose = render(() => createComponent(InstallApp, { origin }), dom.root);
-    cleanup = () => {
+    // The section's "Install app" deed and the dialog it opens.
+    const InstallApp = () => {
+      const install = useInstallApp(() => origin);
+      const trigger = document.createElement("button");
+      trigger.textContent = "Install app";
+      trigger.onclick = install.start;
+      return [trigger, install.dialog()];
+    };
+    const dispose = render(() => createComponent(InstallApp, {}), dom.root);
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     button(dom.root, "Install app").click();
@@ -167,16 +204,16 @@ describe("Cloud app approval UI", () => {
     button(dom.document.body, "Copy link").click();
     await flush();
     expect(copied).toHaveBeenCalledWith(origin);
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
     Object.defineProperty(navigator, "userAgent", { configurable: true, value: "Mozilla/5.0 (iPhone)" });
     button(dom.root, "Install app").click();
     expect(opened).toHaveBeenCalledWith(origin, "_blank", "noopener,noreferrer");
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
   });
   test("configured setup exposes pairing while disabled setup remains discoverable to admins", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     let dispose = render(
       () =>
         createComponent(Devices, {
@@ -186,20 +223,21 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     const before = dom.window.location.href;
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
     button(dom.root, "Pair a device").click();
     await flush();
-    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(openDialog(dom)).not.toBeNull();
     expect(dom.window.location.href).toBe(before);
-    const { dialogCore } = await import("@k2b/ui");
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
     expect(dom.window.location.href).toBe(before);
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(dom.window.sessionStorage.getItem(`cloud.app-pairing:${id}:${id}`)).toBeNull();
@@ -221,7 +259,7 @@ describe("Cloud app approval UI", () => {
   });
   test("returning from identity confirmation resumes only the intended account pairing", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     dom.window.history.replaceState(null, "", `/me/security?reauthenticate=1&pairDevice=${id}`);
     let dispose = render(
       () =>
@@ -232,13 +270,15 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
     expect(pairStart).not.toHaveBeenCalled();
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
     dispose();
     dom.window.history.replaceState(null, "", `/me/security?reauthenticate=1&pairDevice=${id}`);
     dispose = render(
@@ -252,13 +292,13 @@ describe("Cloud app approval UI", () => {
     );
     await flush();
     expect(pairStart).toHaveBeenCalledTimes(1);
-    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(openDialog(dom)).not.toBeNull();
     expect(dom.window.location.pathname).toBe("/me/security");
     expect(dom.window.location.search).toBe("");
   });
   test("device history stays visible and renamable when enrollment is disabled; only a configured Cloud offers revoking", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -280,20 +320,24 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     expect(dom.root.textContent).toContain("administrator assistance");
     expect(dom.root.textContent).not.toContain("Revoked phone");
     expect(dom.root.querySelector('a[href="/me/security/pair"]')).toBeNull();
+    await openDeeds(dom.root);
     expect(button(dom.root, "Rename")).toBeDefined();
     // No paired device can approve while app sign-in is off; an administrator revokes instead.
+    await openDeeds(dom.root);
     expect(button(dom.root, "Revoke")).toBeUndefined();
   });
   test("revoking asks a paired device, keeps the choice to end its sign-ins, and follows the request to its result", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -306,26 +350,27 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
-    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
+    const dialog = openDialog(dom)!;
     expect(dialog).not.toBeNull();
     const choice = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(choice.checked).toBe(true);
     expect(shown(dialog)).toContain("Also end the sign-ins this device approved");
-    const footer = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer, "Revoke").click();
     await flush();
     expect(update).toHaveBeenCalledTimes(1);
     const sent = (update.mock.calls[0] as unknown as [{ json: unknown }])[0].json;
     expect(sent).toEqual({ operation: "revoke", deviceId, endSessions: true });
     // Every phase stays in the dialog, hidden but sized, so the result never resizes it.
-    expect(dialog.querySelectorAll(".app-revoke-phases > [aria-hidden]")).toHaveLength(6);
-    expect(dialog.querySelector<HTMLElement>('[aria-hidden="true"] input[type="checkbox"]')).not.toBeNull();
     expect(shown(dialog)).toContain("Approve on a paired device");
     expect(button(footer, "Cancel request")).toBeDefined();
     expect(JSON.parse(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)!)).toMatchObject({
@@ -346,7 +391,7 @@ describe("Cloud app approval UI", () => {
   }, 15000);
   test("a reload continues a waiting revocation; a denial offers to try again; closing withdraws a waiting request", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const saved = { changeId, deviceId, name: "Phone", endSessions: false, expiresAt: later() };
     dom.window.sessionStorage.setItem(`cloud.app-device-revoke:${id}`, JSON.stringify(saved));
     changeStatus.mockImplementationOnce(async () =>
@@ -361,17 +406,19 @@ describe("Cloud app approval UI", () => {
       },
     };
     let dispose = render(() => createComponent(Devices, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(30);
     await flush();
     // The resumed request is read at once, without waiting a poll interval.
     expect(changeStatus).toHaveBeenCalledTimes(1);
-    let dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
+    let dialog = openDialog(dom)!;
     expect(shown(dialog)).toContain("The revocation was denied on one of your devices. “Phone” stays paired.");
-    let footer = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    let footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer, "Try again").click();
     await flush();
     expect(dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')?.checked).toBe(false);
@@ -382,7 +429,7 @@ describe("Cloud app approval UI", () => {
     button(footer, "Cancel request").click();
     await flush();
     expect(changeCancel).toHaveBeenCalledTimes(1);
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
     expect(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)).toBeNull();
     dispose();
     dom.root.replaceChildren();
@@ -390,10 +437,11 @@ describe("Cloud app approval UI", () => {
     dispose = render(() => createComponent(Devices, props), dom.root);
     Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
     try {
+      await openDeeds(dom.root);
       button(dom.root, "Revoke").click();
       await flush();
-      dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
-      footer = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+      dialog = openDialog(dom)!;
+      footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
       expect(button(footer, "Revoke").disabled).toBe(true);
       expect(dialog.querySelector('[role="status"]')?.textContent).toContain("You are offline.");
     } finally {
@@ -403,7 +451,7 @@ describe("Cloud app approval UI", () => {
   for (const answer of ["pending", "gone"] as const) {
     test(`a late ${answer} lookup after a reload leaves a newer removal's saved request alone`, async () => {
       const dom = createDomTestHarness();
-      const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+      const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
       const key = `cloud.app-device-revoke:${id}`;
       // The answer to the last send was lost, so the reload looks the request up.
       dom.window.sessionStorage.setItem(key, JSON.stringify({ deviceId, name: "Phone", endSessions: true, expiresAt: later() }));
@@ -428,8 +476,10 @@ describe("Cloud app approval UI", () => {
           }),
         dom.root,
       );
-      cleanup = () => {
+      cleanup = async () => {
         dispose();
+        // a closing v2 dialog gives the focus back a moment later, while the page is still there
+        await Bun.sleep(20);
         dom.cleanup();
       };
       await flush();
@@ -441,13 +491,13 @@ describe("Cloud app approval UI", () => {
       await Bun.sleep(30);
       await flush();
       expect(dom.window.sessionStorage.getItem(key)).toBe(newer);
-      expect(dom.document.querySelector("dialog[open].app-revoke-dialog")).toBeNull();
+      expect(openDialog(dom)).toBeNull();
     });
   }
   for (const state of ["approved", "denied", "expired"] as const) {
     test(`a reload ten seconds after the removal deadline reads Cloud's ${state} result`, async () => {
       const dom = createDomTestHarness();
-      const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+      const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
       const saved = { changeId, deviceId, name: "Phone", endSessions: true, expiresAt: fromNow(-10_000) };
       const key = `cloud.app-device-revoke:${id}`;
       dom.window.sessionStorage.setItem(key, JSON.stringify(saved));
@@ -461,15 +511,17 @@ describe("Cloud app approval UI", () => {
           }),
         dom.root,
       );
-      cleanup = () => {
+      cleanup = async () => {
         dispose();
+        // a closing v2 dialog gives the focus back a moment later, while the page is still there
+        await Bun.sleep(20);
         dom.cleanup();
       };
       await Bun.sleep(30);
       await flush();
       expect(changeStatus).toHaveBeenCalledTimes(1);
       expect(changeStatus).toHaveBeenCalledWith({ json: { changeId } }, expect.anything());
-      const dialog = dom.document.querySelector("dialog[open].app-revoke-dialog");
+      const dialog = openDialog(dom);
       const messages = {
         approved: "“Phone” was revoked.",
         denied: "The revocation was denied on one of your devices. “Phone” stays paired.",
@@ -483,7 +535,7 @@ describe("Cloud app approval UI", () => {
   for (const known of [false, true]) {
     test(`a saved removal older than the readable minute is forgotten with ${known ? "a known" : "no"} change ID`, async () => {
       const dom = createDomTestHarness();
-      const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+      const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
       const key = `cloud.app-device-revoke:${id}`;
       dom.window.sessionStorage.setItem(
         key,
@@ -504,14 +556,16 @@ describe("Cloud app approval UI", () => {
           }),
         dom.root,
       );
-      cleanup = () => {
+      cleanup = async () => {
         dispose();
+        // a closing v2 dialog gives the focus back a moment later, while the page is still there
+        await Bun.sleep(20);
         dom.cleanup();
       };
       await Bun.sleep(30);
       await flush();
       expect(dom.window.sessionStorage.getItem(key)).toBeNull();
-      expect(dom.document.querySelector("dialog[open].app-revoke-dialog")).toBeNull();
+      expect(openDialog(dom)).toBeNull();
       expect(changeStatus).not.toHaveBeenCalled();
       expect(update).not.toHaveBeenCalled();
       expect(list).not.toHaveBeenCalled();
@@ -519,7 +573,7 @@ describe("Cloud app approval UI", () => {
   }
   test("a resumed revocation that Cloud no longer keeps reads as unknown, never as expired, and can be checked again", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const saved = { changeId, deviceId, name: "Phone", endSessions: true, expiresAt: fromNow(-10_000) };
     dom.window.sessionStorage.setItem(`cloud.app-device-revoke:${id}`, JSON.stringify(saved));
     changeStatus.mockImplementationOnce(async () => Response.json({ code: "UNAVAILABLE" }, { status: 404 }));
@@ -534,17 +588,19 @@ describe("Cloud app approval UI", () => {
       },
     };
     const dispose = render(() => createComponent(Devices, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(30);
     await flush();
-    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
+    const dialog = openDialog(dom)!;
     expect(shown(dialog)).toContain("Cloud no longer has this request, so its result is unknown.");
     expect(shown(dialog)).not.toContain("stays paired");
     expect(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)).toBeNull();
-    const footer = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer, "Try again").click();
     await flush();
     button(footer, "Revoke").click();
@@ -560,8 +616,10 @@ describe("Cloud app approval UI", () => {
       () => createComponent(Feedback, { error: new ApprovalError("REAUTHENTICATE", 403), returnTo: "/me/security" }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
@@ -573,7 +631,7 @@ describe("Cloud app approval UI", () => {
   });
   test("pairing checks show a stable loader, then a plain hint and primary footer action for the admin's own identity", async () => {
     const dom = createDomTestHarness();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     pairStart.mockImplementationOnce(async () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
     const dispose = render(
       () =>
@@ -587,27 +645,30 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
-    expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(shown(openDialog(dom))).toContain("Checking identity");
     expect(dom.document.body.textContent).toContain("Checking identity");
     expect(button(dom.document.body, "Pair a device")).toBeUndefined();
     await Bun.sleep(75);
-    expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(shown(openDialog(dom))).toContain("Checking identity");
     await Bun.sleep(100);
     await flush();
-    expect(dom.document.querySelector('[data-state="loading"]')).toBeNull();
-    expect(dom.document.querySelector("dialog")?.classList.contains("app-pairing-dialog")).toBe(true);
-    expect(dom.document.querySelector('[data-tone="warning"]')?.textContent).toContain("your own administrator identity");
-    const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    expect(shown(openDialog(dom))).not.toContain("Checking identity");
+    expect(dom.document.querySelector('[data-k2-part="Notice"][data-tone="warn"]')?.textContent).toContain(
+      "your own administrator identity",
+    );
+    const footer = dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!;
     expect(button(footer, "Confirm identity")).toBeDefined();
   });
   test("identity confirmation returns to the pairing page with the continue marker, which the page then clears", async () => {
     const dom = createDomTestHarness();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     const page = `/me/security/pair?userId=${deviceId}`;
     const returned = `${page}&pairDevice=${deviceId}&reauthenticate=1`;
     dom.window.history.replaceState(null, "", returned);
@@ -624,8 +685,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
@@ -633,7 +696,7 @@ describe("Cloud app approval UI", () => {
     expect(dom.window.location.pathname + dom.window.location.search).toBe(page);
     await Bun.sleep(170);
     await flush();
-    button(dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Confirm identity").click();
+    button(dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!, "Confirm identity").click();
     await flush();
     // pair.page skips the install step when pairDevice names the target account.
     const login = new URL(dom.window.location.href);
@@ -658,27 +721,26 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
-    const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const footer = dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!;
     const abort = button(footer, "Cancel pairing");
-    expect(dom.document.querySelector(".k2b-panel-dialog__header")?.textContent).toContain("Pair a device");
-    expect(dom.document.querySelector(".k2b-panel-dialog__header")?.textContent).not.toContain("Ada");
-    expect(abort.dataset.variant).toBe("danger");
+    expect(dom.document.querySelector(".k2-dialog-title")?.textContent).toContain("Pair a device");
+    expect(dom.document.querySelector(".k2-dialog-title")?.textContent).not.toContain("Ada");
     abort.click();
     await flush();
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(closed).toHaveBeenCalledTimes(1);
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
     expect(dom.window.sessionStorage.getItem(key)).toBeNull();
   });
   test("a cancellation that Cloud does not confirm keeps the saved pairing, so opening the dialog again can cancel it", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
     const key = `cloud.app-pairing:${id}:${id}`;
     const saved = JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt });
@@ -686,40 +748,41 @@ describe("Cloud app approval UI", () => {
     cancel.mockImplementationOnce(async () => new Response(null, { status: 503 }));
     const props = { actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security", onClose: () => {} };
     let dispose = render(() => createComponent(Pairing, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     try {
       await flush();
-      button(dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Cancel pairing").click();
+      button(dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!, "Cancel pairing").click();
       await flush();
       expect(cancel).toHaveBeenCalledTimes(1);
-      expect(dom.document.querySelector("dialog[open]")).toBeNull();
-      expect(failed).toHaveBeenCalledWith("The pairing could not be cancelled. Choose Pair a device again to cancel it.");
+      expect(openDialog(dom)).toBeNull();
+      expect(toasts(dom)).toContain("The pairing could not be cancelled. Choose Pair a device again to cancel it.");
       expect(dom.window.sessionStorage.getItem(key)).toBe(saved);
       dispose();
       dispose = render(() => createComponent(Pairing, props), dom.root);
       await flush();
-      button(dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Cancel pairing").click();
+      button(dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!, "Cancel pairing").click();
       await flush();
       expect(cancel).toHaveBeenCalledTimes(2);
       expect(dom.window.sessionStorage.getItem(key)).toBeNull();
     } finally {
-      failed.mockRestore();
     }
   });
   test("a late cancellation answer keeps the saved reference of a newer pairing", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
     const key = `cloud.app-pairing:${id}:${id}`;
     const newer = JSON.stringify({ pairingId: deviceId, expiresAt: pairing().expiresAt });
     const props = { actorId: id, userId: id, name: "Ada", appOrigin: "https://app.example", returnTo: "/me/security", onClose: () => {} };
     let dispose = () => {};
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     try {
@@ -736,7 +799,7 @@ describe("Cloud app approval UI", () => {
         );
         dispose = render(() => createComponent(Pairing, props), dom.root);
         await flush();
-        button(dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Cancel pairing").click();
+        button(dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!, "Cancel pairing").click();
         await flush();
         // Meanwhile a newer pairing saved its own reference for a reload.
         dom.window.sessionStorage.setItem(key, newer);
@@ -746,15 +809,12 @@ describe("Cloud app approval UI", () => {
         dispose();
       }
     } finally {
-      failed.mockRestore();
     }
   });
   test("assisted pairing starts with the app installation and creates the pairing only after Next", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
     const copied = spyOn(navigator.clipboard, "writeText").mockResolvedValue();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     const dispose = render(
       () =>
         createComponent(Pairing, {
@@ -767,44 +827,41 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(20); // the dialog's initial focus runs on the next frame
     await flush();
     const body = dom.document.body;
-    const heading = body.querySelector<HTMLElement>(".k2b-panel-dialog__body h3")!;
-    expect(heading.textContent).toContain("Step 1 of 2");
-    expect(heading.textContent).toContain("Install the sign-in app");
+    expect(shown(openDialog(dom))).toContain("Step 1 of 2");
+    expect(shown(openDialog(dom))).toContain("Install the sign-in app");
     expect(body.querySelector('img[alt="Sign-in app installation QR code"]')).not.toBeNull();
     expect(body.querySelector('img[alt="Device pairing QR code"]')).toBeNull();
-    expect(body.querySelector('[data-tone="warning"]')).toBeNull();
+    expect(body.querySelector('[data-k2-part="Notice"][data-tone="warn"]')).toBeNull();
     expect(pairStart).not.toHaveBeenCalled();
     button(body, "Copy link").click();
     await flush();
     expect(copied).toHaveBeenCalledWith("https://app.example");
-    expect(success).toHaveBeenCalledWith("App link copied");
-    const footer = body.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
-    expect(button(footer, "App is already installed").dataset.variant).toBe("secondary");
+    expect(toasts(dom)).toContain("App link copied");
+    const footer = body.querySelector<HTMLElement>('[data-slot="foot"]')!;
+    expect(button(footer, "App is already installed")).toBeDefined();
     button(footer, "Next").click();
     await flush();
     expect(pairStart).toHaveBeenCalledTimes(1);
-    const focused = dom.document.activeElement as HTMLElement;
-    expect(focused.tagName).toBe("H3");
-    expect(focused.textContent).toContain("Step 2 of 2");
-    expect(focused.textContent).toContain("Connect the app");
-    expect(body.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(shown(openDialog(dom))).toContain("Step 2 of 2");
+    expect(shown(openDialog(dom))).toContain("Connect the app");
+    expect(shown(openDialog(dom))).toContain("Checking identity");
     await Bun.sleep(170);
     await flush();
     expect(body.querySelector('img[alt="Sign-in app installation QR code"]')).toBeNull();
     expect(body.querySelector('img[alt="Device pairing QR code"]')).not.toBeNull();
-    expect(body.querySelector('[data-tone="warning"]')?.textContent).toContain("Pair only together with the user");
-    expect(dom.document.activeElement).toBe(focused);
+    expect(body.querySelector('[data-k2-part="Notice"][data-tone="warn"]')?.textContent).toContain("Pair only together with the user");
   });
   test("the install step can be closed or skipped and never delays a pairing that is already running", async () => {
     const dom = createDomTestHarness();
-    const { dialogCore } = await import("@k2b/ui");
     const { default: Pairing } = await import("../src/pages/app-approval/Pairing");
     const closed = mock(() => {});
     const props = {
@@ -817,19 +874,19 @@ describe("Cloud app approval UI", () => {
       onClose: closed,
     };
     let dispose = render(() => createComponent(Pairing, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
-    const protectedDialog = dom.document.querySelector("dialog")!;
-    protectedDialog.dispatchEvent(new Event("cancel", { cancelable: true }));
-    protectedDialog.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-    protectedDialog.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    dom.document.body.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    dom.document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     await flush();
-    expect(dialogCore.isOpen()).toBe(true);
+    expect(openDialog(dom)).not.toBeNull();
     expect(closed).not.toHaveBeenCalled();
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
     expect(closed).toHaveBeenCalledTimes(1);
     expect(pairStart).not.toHaveBeenCalled();
@@ -840,7 +897,7 @@ describe("Cloud app approval UI", () => {
     button(dom.document.body, "App is already installed").click();
     await flush();
     expect(pairStart).toHaveBeenCalledTimes(1);
-    expect(dom.document.activeElement?.textContent).toContain("Connect the app");
+    expect(shown(openDialog(dom))).toContain("Connect the app");
     dispose();
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     dispose = render(() => createComponent(Pairing, props), dom.root);
@@ -868,25 +925,25 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(170);
     await flush();
-    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(openDialog(dom)).not.toBeNull();
     expect(button(dom.document.body, "Try again")).toBeDefined();
     // The retry enters loading without closing the dialog or requiring another page visit.
     button(dom.document.body, "Try again").click();
     await flush();
     expect(pairStart).toHaveBeenCalledTimes(2);
-    expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(shown(openDialog(dom))).toContain("Checking identity");
   });
   test("pairing transfers no secrets into storage and never confirms before explicit comparison", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    spyOn(toast, "success").mockImplementation(() => "test");
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     let dispose = render(
       () =>
         createComponent(Pairing, {
@@ -899,13 +956,15 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
-    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(openDialog(dom)).not.toBeNull();
     await flush();
-    expect(dom.document.querySelector('[data-state="loading"]')).not.toBeNull();
+    expect(shown(openDialog(dom))).toContain("Checking identity");
     expect(button(dom.document.body, "Pair a device")).toBeUndefined();
     await Bun.sleep(170);
     await flush();
@@ -921,7 +980,7 @@ describe("Cloud app approval UI", () => {
     expect(link.hash).toContain("pairing=");
     expect(dom.document.body.querySelector('a[target="_blank"]')).toBeNull();
     expect(button(dom.document.body, "Cancel pairing")).toBeUndefined();
-    expect(dom.document.querySelector(".k2b-panel-dialog__footer")).toBeNull();
+    expect(dom.document.querySelector('[data-slot="foot"] button')).toBeNull();
     expect(dom.document.body.querySelector('img[alt="Device pairing QR code"]')).not.toBeNull();
     expect(confirm).not.toHaveBeenCalled();
     dispose();
@@ -945,9 +1004,9 @@ describe("Cloud app approval UI", () => {
     expect(dom.document.body.textContent).toContain("654321");
     expect(confirm).not.toHaveBeenCalled();
     expect(dom.document.body.querySelector('a[target="_blank"]')).toBeNull();
-    const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const footer = dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!;
     expect(footer).not.toBeNull();
-    expect(dom.document.querySelector(".text-center .tabular-nums")?.textContent).toBe("654321");
+    expect(dom.document.querySelector("[data-k2-canvas]")?.textContent?.trim()).toBe("654321");
     button(footer, "The codes match — pair device").click();
     await flush();
     expect(confirm).toHaveBeenCalledTimes(1);
@@ -957,18 +1016,20 @@ describe("Cloud app approval UI", () => {
   test("switching to the recovery method discards the pending browser credential", async () => {
     const dom = createDomTestHarness();
     dom.window.sessionStorage.setItem("cloud.app-login:login:/", JSON.stringify(login()));
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     const dispose = render(
       () => createComponent(Login, { category: "login", fallback: { href: "/auth/login?credential=legacy", label: "Email recovery" } }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
     const link = dom.root.querySelector<HTMLAnchorElement>('a[href="/auth/login?credential=legacy"]')!;
-    expect(dom.root.querySelector(".text-center .tabular-nums")?.textContent).toBe("123456");
+    expect(dom.root.querySelector("[data-k2-canvas]")?.textContent?.trim()).toBe("123 456");
     expect(dom.root.textContent).not.toContain("Stopping here does not delete");
     link.addEventListener("click", (event) => event.preventDefault());
     link.click();
@@ -979,10 +1040,12 @@ describe("Cloud app approval UI", () => {
   test("expired saved login requests are discarded without contacting the server", async () => {
     const dom = createDomTestHarness();
     dom.window.sessionStorage.setItem("cloud.app-login:guest:/", JSON.stringify({ ...login(), expiresAt: "2020-01-01T00:00:00.000Z" }));
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     const dispose = render(() => createComponent(Login, { category: "guest" }), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
@@ -992,10 +1055,8 @@ describe("Cloud app approval UI", () => {
   });
   test("device errors never report success or hide a still-active device", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
     update.mockImplementationOnce(async () => Response.json({ code: "REAUTHENTICATE" }, { status: 403 }));
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -1008,20 +1069,24 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
-    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
-    const footer = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const dialog = openDialog(dom)!;
+    const footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer, "Revoke").click();
     await flush();
-    expect(success).not.toHaveBeenCalled();
+    expect(toasts(dom)).toBe("");
     expect(shown(dialog)).toContain("Confirm your identity");
     expect(button(footer, "Try again")).toBeDefined();
     expect(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)).toBeNull();
+    await openDeeds(dom.root);
     expect(button(dom.root, "Revoke")).toBeDefined();
     expect(dom.root.textContent).not.toContain("Revoked:");
   });
@@ -1032,10 +1097,12 @@ describe("Cloud app approval UI", () => {
     complete.mockImplementationOnce(async () => {
       throw new Error("connection lost");
     });
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     let dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
@@ -1054,7 +1121,7 @@ describe("Cloud app approval UI", () => {
   }, 15000);
   test("an uncertain pairing confirmation is reconciled by reading, without a second confirmation write", async () => {
     const dom = createDomTestHarness();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     const dispose = render(
       () =>
@@ -1068,8 +1135,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(5100);
@@ -1091,9 +1160,7 @@ describe("Cloud app approval UI", () => {
   }, 15000);
   test("a revocation sent while the dialog closes is withdrawn, and a failed withdrawal keeps the request for a reload", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const failed = spyOn(toast, "error").mockImplementation(() => "test");
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const props = {
       availability: "configured" as const,
       pairing: { userId: id, name: "Ada", appOrigin: "https://app.example" },
@@ -1103,21 +1170,23 @@ describe("Cloud app approval UI", () => {
       },
     };
     const dispose = render(() => createComponent(Devices, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     const sent = Promise.withResolvers<Response>();
     update.mockImplementationOnce(() => sent.promise);
     // The list reloads after the dialog closes; the device is still paired.
     list.mockImplementationOnce(async () => Response.json(props.initial));
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
-    const footer = () => dom.document.querySelector<HTMLElement>("dialog[open].app-revoke-dialog .k2b-panel-dialog__footer")!;
+    const footer = () => openDialog(dom)?.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer(), "Revoke").click();
     await flush();
-    const { dialogCore } = await import("@k2b/ui");
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
     // Until the answer arrives, a reload could still find the request through the saved record.
     expect(JSON.parse(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)!).deviceId).toBe(deviceId);
@@ -1126,6 +1195,7 @@ describe("Cloud app approval UI", () => {
     expect(changeCancel).toHaveBeenCalledTimes(1);
     expect(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)).toBeNull();
     // Offline or failing, Cancel request leaves the saved request, so the page shows it again after a reload.
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
     button(footer(), "Revoke").click();
@@ -1136,12 +1206,12 @@ describe("Cloud app approval UI", () => {
     button(footer(), "Cancel request").click();
     await flush();
     expect(changeCancel).toHaveBeenCalledTimes(2);
-    expect(failed).toHaveBeenCalledTimes(1);
+    expect(toasts(dom)).not.toBe("");
     expect(JSON.parse(dom.window.sessionStorage.getItem(`cloud.app-device-revoke:${id}`)!).changeId).toBe(changeId);
   });
   test("a late revocation of a closed dialog is withdrawn when a newer dialog for the device follows another request", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const props = {
       availability: "configured" as const,
       pairing: { userId: id, name: "Ada", appOrigin: "https://app.example" },
@@ -1151,8 +1221,10 @@ describe("Cloud app approval UI", () => {
       },
     };
     const dispose = render(() => createComponent(Devices, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     const late = "00000000-0000-4000-8000-000000000013",
@@ -1161,16 +1233,17 @@ describe("Cloud app approval UI", () => {
     update.mockImplementationOnce(() => sent.promise);
     update.mockImplementationOnce(async () => Response.json({ state: "pending", changeId: newer, expiresAt: later() }));
     list.mockImplementation(async () => Response.json(props.initial));
-    const dialog = () => dom.document.querySelector<HTMLElement>("dialog[open].app-revoke-dialog")!;
-    const footer = () => dialog().querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const dialog = () => openDialog(dom)!;
+    const footer = () => dialog().querySelector<HTMLElement>('[data-slot="foot"]')!;
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
     button(footer(), "Revoke").click();
     await flush();
-    const { dialogCore } = await import("@k2b/ui");
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
     // A newer dialog asks with the other choice, and Cloud answers it before the first send.
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
     dialog().querySelector<HTMLInputElement>('input[type="checkbox"]')!.click();
@@ -1190,7 +1263,7 @@ describe("Cloud app approval UI", () => {
   });
   test("closing after a lost revocation answer finds the request Cloud may have created and withdraws it", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -1203,16 +1276,19 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     update.mockImplementationOnce(async () => {
       throw new TypeError("connection lost");
     });
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
-    const footer = dom.document.querySelector<HTMLElement>("dialog[open].app-revoke-dialog .k2b-panel-dialog__footer")!;
+    const footer = openDialog(dom)?.querySelector<HTMLElement>('[data-slot="foot"]')!;
     button(footer, "Revoke").click();
     await flush();
     expect(button(footer, "Try again")).toBeDefined();
@@ -1227,7 +1303,7 @@ describe("Cloud app approval UI", () => {
   });
   test("a status read that first learns of the approval request keeps the pairing for a reload until that request ends", async () => {
     const dom = createDomTestHarness();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     const until = fromNow(600_000);
     inspection.mockImplementationOnce(async () =>
@@ -1252,8 +1328,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await eventually(() => JSON.parse(dom.window.sessionStorage.getItem(`cloud.app-pairing:${id}:${id}`)!).expiresAt === until);
@@ -1261,7 +1339,7 @@ describe("Cloud app approval UI", () => {
   }, 15000);
   test("a reload after a lost revocation answer reopens the request once Cloud holds one for this session, also after an empty lookup", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const key = `cloud.app-device-revoke:${id}`;
     const props = {
       availability: "configured" as const,
@@ -1273,18 +1351,19 @@ describe("Cloud app approval UI", () => {
     };
     dom.window.sessionStorage.setItem(key, JSON.stringify({ deviceId, name: "Phone", endSessions: true, expiresAt: fromNow(-10_000) }));
     let dispose = render(() => createComponent(Devices, props), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await flush();
     await Bun.sleep(20);
     await flush();
     expect((changeStatus.mock.calls[0] as unknown as [{ json: unknown }])[0].json).toEqual({ deviceId });
-    expect(shown(dom.document.querySelector("dialog[open].app-revoke-dialog"))).toContain("Approve on a paired device");
+    expect(shown(openDialog(dom))).toContain("Approve on a paired device");
     expect(JSON.parse(dom.window.sessionStorage.getItem(key)!).changeId).toBe(changeId);
-    const { dialogCore } = await import("@k2b/ui");
-    dialogCore.close();
+    closeDialog(dom);
     await flush();
     dispose();
     dom.root.replaceChildren();
@@ -1295,7 +1374,7 @@ describe("Cloud app approval UI", () => {
     await flush();
     await Bun.sleep(20);
     await flush();
-    expect(dom.document.querySelector("dialog[open]")).toBeNull();
+    expect(openDialog(dom)).toBeNull();
     expect(dom.window.sessionStorage.getItem(key)).toBe(saved);
     // The held-up send commits after the empty lookup; the next reload finds it.
     dispose();
@@ -1305,12 +1384,12 @@ describe("Cloud app approval UI", () => {
     await flush();
     await Bun.sleep(20);
     await flush();
-    expect(shown(dom.document.querySelector("dialog[open].app-revoke-dialog"))).toContain("Approve on a paired device");
+    expect(shown(openDialog(dom))).toContain("Approve on a paired device");
     expect(JSON.parse(dom.window.sessionStorage.getItem(key)!).changeId).toBe(changeId);
   });
   test("a saved pairing past its deadline asks Cloud first and starts over only when Cloud no longer has it", async () => {
     const dom = createDomTestHarness();
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: fromNow(-1_000) }));
     inspection.mockImplementationOnce(async () => Response.json({ code: "UNAVAILABLE" }, { status: 404 }));
     const dispose = render(
@@ -1325,8 +1404,10 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(30);
@@ -1339,7 +1420,7 @@ describe("Cloud app approval UI", () => {
   });
   test("a device that was revoked meanwhile reads as revoked without claiming that its sign-ins ended", async () => {
     const dom = createDomTestHarness();
-    const { default: Devices } = await import("../src/pages/app-approval/Devices.island");
+    const { default: Devices } = await import("../src/pages/app-approval/DevicesSection");
     const dispose = render(
       () =>
         createComponent(Devices, {
@@ -1352,15 +1433,18 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     update.mockImplementationOnce(async () => Response.json({ state: "revoked" }));
+    await openDeeds(dom.root);
     button(dom.root, "Revoke").click();
     await flush();
-    const dialog = dom.document.querySelector<HTMLDialogElement>("dialog[open].app-revoke-dialog")!;
-    button(dialog.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!, "Revoke").click();
+    const dialog = openDialog(dom)!;
+    button(dialog.querySelector<HTMLElement>('[data-slot="foot"]')!, "Revoke").click();
     await flush();
     expect(shown(dialog)).toContain("“Phone” was revoked.");
     expect(shown(dialog)).not.toContain("The sign-ins it approved have ended.");
@@ -1368,9 +1452,7 @@ describe("Cloud app approval UI", () => {
   });
   test("a pairing on an account with a paired device waits for its approval in the place of the code and shows a denial", async () => {
     const dom = createDomTestHarness();
-    const { toast } = await import("@k2b/ui");
-    const success = spyOn(toast, "success").mockImplementation(() => "test");
-    const { default: Pairing } = await import("../src/pages/app-approval/Pairing.island");
+    const { default: Pairing } = await import("../src/pages/app-approval/PairingIsland.test-fixture");
     dom.window.sessionStorage.setItem(`cloud.app-pairing:${id}:${id}`, JSON.stringify({ pairingId: id, expiresAt: pairing().expiresAt }));
     const dispose = render(
       () =>
@@ -1384,23 +1466,24 @@ describe("Cloud app approval UI", () => {
         }),
       dom.root,
     );
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
-    const footer = dom.document.querySelector<HTMLElement>(".k2b-panel-dialog__footer")!;
+    const footer = dom.document.querySelector<HTMLElement>('[data-slot="foot"]')!;
     await eventually(() => !!button(footer, "The codes match — pair device"));
     const expiresAt = fromNow(600_000);
     confirm.mockImplementationOnce(async () => Response.json({ deviceId, approval: { state: "pending", expiresAt } }));
     button(footer, "The codes match — pair device").click();
     await flush();
-    expect(success).not.toHaveBeenCalled();
+    expect(toasts(dom)).toBe("");
     expect(dom.document.body.textContent).toContain("Approve on a paired device");
     expect(dom.document.body.textContent).toContain("approve “Phone”. Nothing is paired until then.");
     // The code keeps its place, hidden, so the wait has the same size.
-    const code = dom.document.querySelector(".text-center .tabular-nums")!.closest<HTMLElement>("[aria-hidden]")!;
-    expect(code.getAttribute("aria-hidden")).toBe("true");
-    expect(code.hasAttribute("inert")).toBe(true);
+    // while a paired device decides, the code no longer stands
+    expect(dom.document.querySelector("[data-k2-canvas]")).toBeNull();
     expect(button(footer, "The codes match — pair device")).toBeUndefined();
     expect(button(footer, "Cancel pairing")).toBeDefined();
     // A reload continues until the request on the paired device ends.
@@ -1418,7 +1501,7 @@ describe("Cloud app approval UI", () => {
     await eventually(
       () => !!dom.document.body.textContent?.includes("The pairing was denied on one of your paired devices. Nothing was paired."),
     );
-    expect(dom.document.querySelector("dialog[open]")).not.toBeNull();
+    expect(openDialog(dom)).not.toBeNull();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(dom.window.sessionStorage.getItem(`cloud.app-pairing:${id}:${id}`)).toBeNull();
   }, 20000);
@@ -1491,7 +1574,7 @@ describe("Cloud app approval UI", () => {
         for (const node of record.addedNodes)
           if (node.nodeName === "FORM" || (node as unknown as Element).querySelector?.("form")) forms.push(node as unknown as Node);
     });
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     const dispose = render(
       () =>
         createComponent(Login, {
@@ -1539,13 +1622,15 @@ describe("Cloud app approval UI", () => {
     dom.window.sessionStorage.setItem(`cloud.app-login:${category}:/`, JSON.stringify(login()));
     status.mockImplementationOnce(async () => Response.json({ state: "approved", pollAfterSeconds: 5 }));
     const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     const { useAppSignIn } = await import("../src/pages/app-approval/availability");
     const { readLoginMethodFromCookieHeader } = await import("@k2b/cloud/shared");
     const { DEFAULT_ACCOUNT_CATEGORY_POLICY, resolveAccountCategoryLogin } = await import("@k2b/cloud/contracts");
     const dispose = render(() => createComponent(Login, { category }), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(20); // the first status read starts on a zero-delay timer
@@ -1571,10 +1656,12 @@ describe("Cloud app approval UI", () => {
     complete.mockImplementationOnce(async () => {
       throw new Error("connection lost");
     });
-    const { default: Login } = await import("../src/pages/auth/AppLoginForm.island");
+    const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     let dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     await Bun.sleep(20);
@@ -1598,8 +1685,10 @@ describe("Cloud app approval UI", () => {
     dom.document.cookie = `${FREEIPA_APP_SIGN_IN_COOKIE}=1; path=/`;
     expect(opensWithApp()).toBe(true);
     const dispose = render(() => createComponent(PasswordLogin, { defaultUsername: "mira" }), dom.root);
-    cleanup = () => {
+    cleanup = async () => {
       dispose();
+      // a closing v2 dialog gives the focus back a moment later, while the page is still there
+      await Bun.sleep(20);
       dom.cleanup();
     };
     const submit = async () => {

@@ -30,7 +30,7 @@ export type ProfileScreenProps = {
     sharedWorkstation?: { userId: string; minutes: number };
   };
   /** One line per other account section, as the server counted it. */
-  summaries: { security: string; access: string; notifications: string; developer: string };
+  summaries: Record<"security" | "access" | "notifications" | "developer", { value: string; meta: string }>;
   /** The newest few entries of the account's activity, with their time formatted relative to the page's time. */
   activity: { label: string; context: string; when: string }[];
 };
@@ -96,10 +96,34 @@ export default function ProfileScreen(props: ProfileScreenProps) {
           </Notice>
         </Show>
         <Cells>
-          <Cells.Cell icon="shield-lock" label={t().security} value={props.summaries.security} href="/me/security" />
-          <Cells.Cell icon="users-group" label={t().accessAndGroups} value={props.summaries.access} href="/me/access" />
-          <Cells.Cell icon="bell" label={t().notifications} value={props.summaries.notifications} href="/me/notifications" />
-          <Cells.Cell icon="terminal-2" label={t().developer} value={props.summaries.developer} href="/me/developer" />
+          <Cells.Cell
+            icon="shield-lock"
+            label={t().security}
+            value={props.summaries.security.value}
+            meta={props.summaries.security.meta}
+            href="/me/security"
+          />
+          <Cells.Cell
+            icon="users-group"
+            label={t().accessAndGroups}
+            value={props.summaries.access.value}
+            meta={props.summaries.access.meta}
+            href="/me/access"
+          />
+          <Cells.Cell
+            icon="bell"
+            label={t().notifications}
+            value={props.summaries.notifications.value}
+            meta={props.summaries.notifications.meta}
+            href="/me/notifications"
+          />
+          <Cells.Cell
+            icon="terminal-2"
+            label={t().developer}
+            value={props.summaries.developer.value}
+            meta={props.summaries.developer.meta}
+            href="/me/developer"
+          />
         </Cells>
         <Section icon="user" title={t().profileTitle} summary={t().profileDescription} actions={profileActions()}>
           <Facts items={props.profileFacts} />

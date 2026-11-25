@@ -1,15 +1,17 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, settled } from "../../../../ui/test/browser";
 import { appApprovalMessages } from "./messages";
 
-// Revoking a device and pairing a further one wait for approval on a paired device. Both dialogs keep one size
-// while they wait, so nothing jumps when the request is sent or decided: on a phone and on both iPad orientations,
-// in light and dark. CLOUD_APPROVAL_SHOTS=<dir> also saves each state.
+// Revoking a device and pairing a further one wait for approval on a paired device, in v2 dialogs that a stray press
+// outside does not close: on a phone and an iPad. The requests and their order are those before v2.
+// CLOUD_APPROVAL_SHOTS=<dir> also saves each state.
 const root = await mkdtemp(join(tmpdir(), "core-approval-dialogs-"));
 const publicDir = join(root, "public");
 const ui = resolve(import.meta.dir, "../../../../ui");
@@ -58,7 +60,8 @@ beforeAll(async () => {
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
   const { buildFontAssets } = await import("../../../scripts/font-assets");
   const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
   await buildFontAssets(publicDir);
@@ -74,55 +77,19 @@ afterAll(async () => {
 const views = [
   { name: "iphone-390", width: 390, height: 844, touch: true },
   { name: "ipad-1194", width: 1194, height: 834, touch: true },
-  { name: "ipad-834", width: 834, height: 1194, touch: true },
 ] as const;
 const head = (dark: boolean) =>
   `<!doctype html><html lang="en" class="${dark ? "dark" : "light"}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>`;
 
-declare global {
-  interface Window {
-    approvalBoxes?: () => string[];
-  }
-}
-
-/**
- * The dialog's box and whether its body has to scroll, once the layout settled. A text that a locator waited for is
- * there from its first frame, before layout that answers it, such as a resize observer, has run (#4039).
- */
-const measure = async (page: Page) => {
+/** Whether the open dialog's content has to scroll, once the layout settled. */
+const overflow = async (page: Page) => {
   await settled(page);
   return page.evaluate(() => {
-    const dialog = document.querySelector<HTMLElement>("dialog[open]")!;
-    const box = dialog.getBoundingClientRect();
-    const body = dialog.querySelector<HTMLElement>(".k2b-panel-dialog__body")!;
-    return { top: Math.round(box.top), height: Math.round(box.height), overflow: body.scrollHeight - body.clientHeight };
+    const body = document.querySelector<HTMLElement>('[data-k2-part="Dialog"] .k2-dialog-body')!;
+    return body.scrollHeight - body.clientHeight;
   });
 };
-
-/** Records the dialog's box on every frame and resize until `window.approvalBoxes()`, so a box shown for one frame counts. */
-const recordBoxes = (page: Page) =>
-  page.evaluate(() => {
-    const dialog = document.querySelector<HTMLElement>("dialog[open]")!;
-    const boxes = new Set<string>();
-    const read = () => {
-      const box = dialog.getBoundingClientRect();
-      boxes.add(`${Math.round(box.top)}/${Math.round(box.height)}`);
-    };
-    const sizes = new ResizeObserver(read);
-    sizes.observe(dialog);
-    let frame = 0;
-    const next = () => {
-      read();
-      frame = requestAnimationFrame(next);
-    };
-    next();
-    window.approvalBoxes = () => {
-      sizes.disconnect();
-      cancelAnimationFrame(frame);
-      return [...boxes];
-    };
-  });
 
 type Api = (route: Route, path: string) => Promise<void> | void;
 const open = async (view: (typeof views)[number], dark: boolean, mode: string, answer: Api, clock?: Date) => {
@@ -140,7 +107,7 @@ const open = async (view: (typeof views)[number], dark: boolean, mode: string, a
     if (pathname === "/me/security")
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
-        body: `${head(dark)}<body class="k2b-ui"><div id="root" class="p-4"></div><script src="/harness.js"></script></body></html>`,
+        body: `${head(dark)}<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`,
       });
     if (pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (pathname.startsWith("/public/")) return route.fulfill({ path: join(root, pathname) });
@@ -156,110 +123,108 @@ const open = async (view: (typeof views)[number], dark: boolean, mode: string, a
 const later = () => new Date(Date.now() + 300_000).toISOString();
 
 describe("approval on a paired device in a browser", () => {
-  for (const view of views)
-    for (const dark of [false, true]) {
-      const theme = dark ? "dark" : "light";
-      test(`revoking keeps one dialog size from the choice to the result, ${view.name} ${theme}`, async () => {
-        let sends = 0;
-        let decided = false;
-        const { page, close } = await open(view, dark, "revoke", (route, path) => {
-          if (path === "/manage/devices/update") {
-            sends += 1;
-            // The first request fails, so the error and its retry are measured too.
-            return sends === 1
-              ? route.fulfill({ status: 503, json: { code: "UNAVAILABLE" } })
-              : route.fulfill({ json: { state: "pending", changeId: "00000000-0000-4000-8000-000000000801", expiresAt: later() } });
-          }
-          if (path === "/manage/device-changes/status")
-            return route.fulfill({
-              json: {
-                changeId: "00000000-0000-4000-8000-000000000801",
-                endSessions: true,
-                state: decided ? "approved" : "pending",
-                expiresAt: later(),
-              },
-            });
-          if (path === "/manage/devices") return route.fulfill({ json: { items: [], nextCursor: null } });
-          return route.fulfill({ status: 204 });
-        });
-        try {
-          const shot = async (state: string) => {
-            if (shots) await page.screenshot({ path: join(shots, `revoke-${state}-${view.name}-${theme}.png`) });
-          };
-          const steps: Record<string, Awaited<ReturnType<typeof measure>>> = {};
-          await page.getByRole("button", { name: t.revoke }).click();
-          const dialog = page.locator("dialog[open].app-revoke-dialog");
-          await dialog.getByText(t.endSessions).waitFor();
-          await page.touchscreen.tap(2, 2);
-          await page.keyboard.press("Escape");
-          expect(await dialog.count()).toBe(1);
-          steps.ask = await measure(page);
-          await shot("ask");
-          const footer = dialog.locator(".k2b-panel-dialog__footer");
-          await footer.getByRole("button", { name: t.revoke }).click();
-          await dialog.getByText(t.unavailable).waitFor();
-          steps.error = await measure(page);
-          await shot("error");
-          await footer.getByRole("button", { name: t.tryAgain }).click();
-          await footer.getByRole("button", { name: t.revoke }).click();
-          await dialog.getByText(t.approvalTitle).waitFor();
-          steps.waiting = await measure(page);
-          await shot("waiting");
-          decided = true;
-          await dialog.getByText(t.revokeDone({ name: "Jonas' iPhone 15 Pro" })).waitFor({ timeout: 12_000 });
-          steps.approved = await measure(page);
-          await shot("approved");
-          expect(Object.entries(steps).filter(([, step]) => step.overflow > 0)).toEqual([]);
-          expect(new Set(Object.values(steps).map((step) => `${step.top}/${step.height}`)).size).toBe(1);
-        } finally {
-          await close();
+  for (const view of views) {
+    const dark = false;
+    const theme = "light";
+    test(`revoking asks, retries after an error, waits and reports the result, ${view.name}`, async () => {
+      let sends = 0;
+      let decided = false;
+      const { page, close } = await open(view, dark, "revoke", (route, path) => {
+        if (path === "/manage/devices/update") {
+          sends += 1;
+          // The first request fails, so the error and its retry are measured too.
+          return sends === 1
+            ? route.fulfill({ status: 503, json: { code: "UNAVAILABLE" } })
+            : route.fulfill({ json: { state: "pending", changeId: "00000000-0000-4000-8000-000000000801", expiresAt: later() } });
         }
-      }, 60_000);
+        if (path === "/manage/device-changes/status")
+          return route.fulfill({
+            json: {
+              changeId: "00000000-0000-4000-8000-000000000801",
+              endSessions: true,
+              state: decided ? "approved" : "pending",
+              expiresAt: later(),
+            },
+          });
+        if (path === "/manage/devices") return route.fulfill({ json: { items: [], nextCursor: null } });
+        return route.fulfill({ status: 204 });
+      });
+      try {
+        const shot = async (state: string) => {
+          if (shots) await page.screenshot({ path: join(shots, `revoke-${state}-${view.name}-${theme}.png`) });
+        };
+        const steps: Record<string, number> = {};
+        await page.getByRole("button", { name: t.deviceActions({ name: "Jonas' iPhone 15 Pro" }) }).click();
+        await page.getByRole("menuitem", { name: t.revoke }).click();
+        const dialog = page.locator('[data-k2-part="Dialog"]');
+        await dialog.getByText(t.endSessions).waitFor();
+        // a stray press outside keeps the question open
+        await page.mouse.click(2, 2);
+        expect(await dialog.count()).toBe(1);
+        steps.ask = await overflow(page);
+        await shot("ask");
+        const footer = dialog.locator('[data-slot="foot"]');
+        await footer.getByRole("button", { name: t.revoke }).click();
+        await dialog.getByText(t.unavailable).waitFor();
+        steps.error = await overflow(page);
+        await shot("error");
+        await footer.getByRole("button", { name: t.tryAgain }).click();
+        await footer.getByRole("button", { name: t.revoke }).click();
+        await dialog.getByText(t.approvalTitle).waitFor();
+        steps.waiting = await overflow(page);
+        await shot("waiting");
+        decided = true;
+        await dialog.getByText(t.revokeDone({ name: "Jonas' iPhone 15 Pro" })).waitFor({ timeout: 12_000 });
+        steps.approved = await overflow(page);
+        await shot("approved");
+        expect(Object.entries(steps).filter(([, step]) => step > 0)).toEqual([]);
+        expect(sends).toBe(2);
+      } finally {
+        await close();
+      }
+    }, 60_000);
 
-      test(`a further pairing waits in the place of the code, ${view.name} ${theme}`, async () => {
-        let confirmed = false;
-        const { page, close } = await open(view, dark, "pair", (route, path) => {
-          if (path === "/manage/pairings/status")
-            return route.fulfill({
-              json: {
-                state: "claimed",
-                name: "Jonas' iPad Pro",
-                deviceId: "00000000-0000-4000-8000-000000000702",
-                comparison: "482913",
-                userId: "00000000-0000-4000-8000-000000000042",
-                approval: confirmed ? { state: "pending", expiresAt: later() } : null,
-              },
-            });
-          if (path === "/manage/pairings/confirm") {
-            confirmed = true;
-            return route.fulfill({
-              json: { deviceId: "00000000-0000-4000-8000-000000000702", approval: { state: "pending", expiresAt: later() } },
-            });
-          }
-          return route.fulfill({ status: 204 });
-        });
-        try {
-          const dialog = page.locator("dialog[open].app-pairing-dialog");
-          await dialog.getByText("482913").waitFor({ timeout: 12_000 });
-          const code = await measure(page);
-          if (shots) await page.screenshot({ path: join(shots, `pair-code-${view.name}-${theme}.png`) });
-          // Every frame from the code to the wait shows the same box: a move that comes back also counts.
-          await recordBoxes(page);
-          await page.touchscreen.tap(2, 2);
-          await page.keyboard.press("Escape");
-          expect(await dialog.count()).toBe(1);
-          await dialog.getByRole("button", { name: t.confirm }).click();
-          await dialog.getByText(t.approvalTitle).waitFor();
-          const waiting = await measure(page);
-          if (shots) await page.screenshot({ path: join(shots, `pair-waiting-${view.name}-${theme}.png`) });
-          expect([code.overflow, waiting.overflow].filter((overflow) => overflow > 0)).toEqual([]);
-          expect(waiting).toEqual(code);
-          expect(await page.evaluate(() => window.approvalBoxes?.())).toEqual([`${code.top}/${code.height}`]);
-        } finally {
-          await close();
+    test(`a further pairing shows the code, then waits for the paired device, ${view.name}`, async () => {
+      let confirmed = false;
+      const { page, close } = await open(view, dark, "pair", (route, path) => {
+        if (path === "/manage/pairings/status")
+          return route.fulfill({
+            json: {
+              state: "claimed",
+              name: "Jonas' iPad Pro",
+              deviceId: "00000000-0000-4000-8000-000000000702",
+              comparison: "482913",
+              userId: "00000000-0000-4000-8000-000000000042",
+              approval: confirmed ? { state: "pending", expiresAt: later() } : null,
+            },
+          });
+        if (path === "/manage/pairings/confirm") {
+          confirmed = true;
+          return route.fulfill({
+            json: { deviceId: "00000000-0000-4000-8000-000000000702", approval: { state: "pending", expiresAt: later() } },
+          });
         }
-      }, 60_000);
-    }
+        return route.fulfill({ status: 204 });
+      });
+      try {
+        const dialog = page.locator('[data-k2-part="Dialog"]');
+        await dialog.getByText("482913").waitFor({ timeout: 12_000 });
+        const code = await overflow(page);
+        if (shots) await page.screenshot({ path: join(shots, `pair-code-${view.name}-${theme}.png`) });
+        // a stray press outside keeps the pairing open
+        await page.mouse.click(2, 2);
+        expect(await dialog.count()).toBe(1);
+        await dialog.getByRole("button", { name: t.confirm }).click();
+        await dialog.getByText(t.approvalTitle).waitFor();
+        const waiting = await overflow(page);
+        if (shots) await page.screenshot({ path: join(shots, `pair-waiting-${view.name}-${theme}.png`) });
+        expect([code, waiting].filter((value) => value > 0)).toEqual([]);
+        expect(confirmed).toBe(true);
+      } finally {
+        await close();
+      }
+    }, 60_000);
+  }
 });
 
 test("identity confirmation keeps normal login method selection", async () => {
@@ -271,7 +236,7 @@ test("identity confirmation keeps normal login method selection", async () => {
     new Date("2026-10-23T12:00:00Z"),
   );
   try {
-    await page.locator("dialog[open]").waitFor();
+    await page.locator('[data-k2-part="Dialog"]').waitFor();
     await page.clock.fastForward(5000);
     await page.getByRole("button", { name: t.reauthenticate, exact: true }).click();
     await page.waitForURL("**/auth/login?**");

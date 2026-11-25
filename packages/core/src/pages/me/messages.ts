@@ -471,6 +471,10 @@ export const accountMessages = i18n.define({
       previous: "Newer",
       next: "Older",
       source: "App",
+      groupCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} group`, other: `${count} groups` }),
+      managedCount: ({ count }: { count: number }) => `${count} managed`,
+      apiKeyCount: ({ count }: { count: number }) => i18n.plural(count, "en", { one: `${count} API key`, other: `${count} API keys` }),
+      cliAndSsh: "CLI, MCP and SSH",
     },
     de: {
       start: "Start",
@@ -952,6 +956,10 @@ export const accountMessages = i18n.define({
       previous: "Neuere",
       next: "Ältere",
       source: "App",
+      groupCount: ({ count }) => i18n.plural(count, "de", { one: `${count} Gruppe`, other: `${count} Gruppen` }),
+      managedCount: ({ count }) => `${count} verwaltet`,
+      apiKeyCount: ({ count }) => i18n.plural(count, "de", { one: `${count} API-Schlüssel`, other: `${count} API-Schlüssel` }),
+      cliAndSsh: "CLI, MCP und SSH",
     },
   },
 });
