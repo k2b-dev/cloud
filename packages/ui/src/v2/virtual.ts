@@ -46,10 +46,7 @@ const scrollerOf = (element: HTMLElement): HTMLElement | null => {
   return null;
 };
 
-export const createVirtualWindow = <T>(options: {
-  items: Accessor<readonly T[]>;
-  key: (item: T) => string;
-}): VirtualWindow<T> => {
+export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>; key: (item: T) => string }): VirtualWindow<T> => {
   let keys: string[] = [];
   let sizes = new Float64Array(0);
   let offsets = new Float64Array(1);
@@ -238,6 +235,8 @@ export const createVirtualWindow = <T>(options: {
     before: () => placed().before,
     after: () => placed().after,
     mount,
-    observe: (node, item) => measureNode(node, item),
+    observe: (node, item) => {
+      if (!isServer) measureNode(node, item);
+    },
   };
 };
