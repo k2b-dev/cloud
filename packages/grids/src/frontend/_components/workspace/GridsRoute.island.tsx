@@ -1,4 +1,4 @@
-import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
+import { AppWorkspace } from "@k2b/ui";
 import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
@@ -9,8 +9,6 @@ import QueryWorkspace from "../query/QueryWorkspace";
 import RecordsView from "../records-view/RecordsView";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
-import BaseOverview from "./BaseOverview";
-import { workspaceMessages } from "./messages";
 import { workspaceMainClass } from "./workspace-layout";
 import type {
   PublicOkWorkspaceState,
@@ -23,10 +21,10 @@ type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
 export default function GridsRoute(props: { state: PublicOkWorkspaceState; userId?: string; now?: string }) {
-  const { t } = workspaceMessages.resolve([useLocale()()]);
   const state = props.state;
   const route = state.route;
-  if (route.kind === "overview") return <BaseOverview state={state} />;
+  // The base home (overview, empty) renders on v2 in frame/BaseHome; this island serves the remaining kinds.
+  if (route.kind === "overview" || route.kind === "empty") return null;
   const [selectedWorkflowRunId, setSelectedWorkflowRunId] = createSignal(route.kind === "workflows" ? route.selectedRunId : null);
   const [workflowRunUpdate, setWorkflowRunUpdate] = createSignal<GridsWorkflowRun | null>(null);
 
@@ -220,28 +218,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
                 />
               );
             })()}
-          </Match>
-          <Match when={route.kind === "empty"}>
-            <Placeholder
-              surface="paper"
-              description={
-                <>
-                  <Show
-                    when={state.catalog.sidebarForms.length > 0 || state.catalog.sidebarDocumentTemplates.length > 0}
-                    fallback={
-                      state.canCreateTables ? (state.adminModeRequested ? t.noTablesCreate : t.noTablesEditMode) : t.noTablesWriteAccess
-                    }
-                  >
-                    {state.catalog.sidebarDocumentTemplates.length > 0
-                      ? t.limitedAccess({
-                          forms: state.catalog.sidebarForms.length,
-                          documents: state.catalog.sidebarDocumentTemplates.length,
-                        })
-                      : t.formOnlyAccess({ count: state.catalog.sidebarForms.length })}
-                  </Show>
-                </>
-              }
-            />
           </Match>
         </Switch>
       </AppWorkspace.Main>

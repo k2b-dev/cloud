@@ -69,11 +69,11 @@ This order keeps mistakes cheap. A clear table and a few representative records 
 
 When you open Grids from the navigation, Grids returns to the base page that you looked at last in this browser, even in another tab. If you can no longer open that base, the overview opens instead.
 
-Use **New** in **Edit mode** to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, select a table. Grids preselects the current table when it fits. **View** opens the query editor, where you configure and save the view.
+In **Edit mode**, use **New** on the base overview, or the base's **…** menu at the top of the sidebar, to create a table, view, form, document template, workflow, or app. The menu offers only actions that you can use. For a resource that is based on a table, pick the table in its submenu. **View** opens the query editor, where you configure and save the view.
 
 You can always expand **Documents**. Open **All documents**, or select a template to see its generated documents. Workflow email templates are in **Settings → Email templates**. Viewing, creating, editing, and deleting them require **Manage** access to the base.
 
-In **Overview**, switch between **Groups** for shared shortcuts and **All resources** to search by name or type. The selected tab is part of the URL, so links, reloads, and browser history keep it. By default, a base with groups opens on **Groups**, and a base without groups opens on **All resources**. Opening a form still opens its form dialog.
+In **Overview**, switch between **Groups** for shared shortcuts and **All resources** for everything by kind. Search by name, and add the **Type** filter to narrow the list. The tab, the search, and the filter are part of the URL, so links, reloads, and browser history keep them. By default, a base with groups opens on **Groups**, and a base without groups opens on **All resources**. Opening a form still opens its form dialog; in **Edit mode**, its **…** menu also offers **Edit form**.
 
 ## Organize the navigation into groups {icon="layout-dashboard"}
 
@@ -89,7 +89,7 @@ You need **Manage** access to the base.
 
 Removing a shortcut or a group does not delete any resource. A resource can appear in several groups.
 
-Groups are shared, but each person sees only the resources that they can access. Grids hides empty groups. Without visible groups, the sidebar keeps its other resource lists open. With groups, those lists become expandable. They still contain all accessible resources, including grouped ones. This browser remembers which branches you expand. A direct link reveals the active resource.
+Groups are shared, but each person sees only the resources that they can access. Grids hides empty groups. Without visible groups, the sidebar keeps its other resource lists open. With groups, those lists move under **All resources** and become expandable. They still contain all accessible resources, including grouped ones. A branch opens by itself when it holds the page you are on.
 
 If another person saved first, Grids rejects your save and does not overwrite their changes. **Reload navigation** loads the current configuration. It asks before it discards your edits.
 

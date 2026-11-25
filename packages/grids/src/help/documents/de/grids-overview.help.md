@@ -69,11 +69,11 @@ In dieser Reihenfolge bleiben Fehler günstig. Eine klare Tabelle und einige rep
 
 Öffnest du Grids über die Navigation, kehrt Grids zur Base-Seite zurück, die du in diesem Browser zuletzt angesehen hast, auch in einem anderen Tab. Kannst du diese Base nicht mehr öffnen, erscheint stattdessen die Übersicht.
 
-Mit **Neu** im **Bearbeitungsmodus** erstellst du eine Tabelle, Ansicht, ein Formular, eine Dokumentvorlage, einen Workflow oder eine App. Das Menü zeigt nur Aktionen, die du ausführen darfst. Für eine Ressource, die auf einer Tabelle beruht, wählst du eine Tabelle aus. Grids wählt die aktuelle Tabelle vor, wenn sie passt. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
+Im **Bearbeitungsmodus** erstellst du mit **Neu** auf der Übersicht der Base oder im Menü **…** der Base oben in der Seitenleiste eine Tabelle, Ansicht, ein Formular, eine Dokumentvorlage, einen Workflow oder eine App. Das Menü zeigt nur Aktionen, die du ausführen darfst. Für eine Ressource, die auf einer Tabelle beruht, wählst du die Tabelle im Untermenü. **Ansicht** öffnet den Abfrageeditor, in dem du die Ansicht konfigurierst und speicherst.
 
 **Dokumente** kannst du immer aufklappen. Öffne **Alle Dokumente** oder wähle eine Vorlage aus, um ihre erzeugten Dokumente zu sehen. E-Mail-Vorlagen für Workflows findest du unter **Einstellungen → E-Mail-Vorlagen**. Ansehen, Erstellen, Bearbeiten und Löschen erfordern Zugriff **Verwalten** auf die Base.
 
-Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** für die Suche nach Name oder Typ. Der ausgewählte Tab steht in der URL. Links, Neuladen und der Browserverlauf behalten ihn deshalb. Standardmäßig öffnet eine Base mit Gruppen **Gruppen** und eine Base ohne Gruppen **Alle Ressourcen**. Ein Formular öffnet weiterhin seinen Dialog.
+Wechsle unter **Übersicht** zwischen **Gruppen** für gemeinsame Schnellzugriffe und **Alle Ressourcen** für alles nach Art. Suche nach Namen und grenze die Liste mit dem Filter **Art** ein. Tab, Suche und Filter stehen in der URL. Links, Neuladen und der Browserverlauf behalten sie deshalb. Standardmäßig öffnet eine Base mit Gruppen **Gruppen** und eine Base ohne Gruppen **Alle Ressourcen**. Ein Formular öffnet weiterhin seinen Dialog; im **Bearbeitungsmodus** bietet sein Menü **…** zusätzlich **Formular bearbeiten**.
 
 ## Die Navigation in Gruppen ordnen {icon="layout-dashboard"}
 
@@ -89,7 +89,7 @@ Du brauchst Zugriff **Verwalten** auf die Base.
 
 Das Entfernen eines Schnellzugriffs oder einer Gruppe löscht keine Ressource. Eine Ressource kann in mehreren Gruppen vorkommen.
 
-Gruppen gelten für alle, aber jede Person sieht nur die Ressourcen, auf die sie Zugriff hat. Grids blendet leere Gruppen aus. Ohne sichtbare Gruppen bleiben die übrigen Ressourcenlisten in der Seitenleiste offen. Mit Gruppen lassen sich diese Listen aufklappen. Sie enthalten weiterhin alle zugänglichen Ressourcen, auch die gruppierten. Dieser Browser merkt sich, welche Zweige du aufklappst. Ein direkter Link macht die aktive Ressource sichtbar.
+Gruppen gelten für alle, aber jede Person sieht nur die Ressourcen, auf die sie Zugriff hat. Grids blendet leere Gruppen aus. Ohne sichtbare Gruppen bleiben die übrigen Ressourcenlisten in der Seitenleiste offen. Mit Gruppen stehen diese Listen unter **Alle Ressourcen** und lassen sich aufklappen. Sie enthalten weiterhin alle zugänglichen Ressourcen, auch die gruppierten. Ein Zweig öffnet sich von selbst, wenn er die Seite enthält, auf der du bist.
 
 Hat eine andere Person zuerst gespeichert, lehnt Grids dein Speichern ab und überschreibt ihre Änderungen nicht. **Navigation neu laden** lädt den aktuellen Stand. Vor dem Verwerfen deiner Änderungen fragt Grids nach.
 

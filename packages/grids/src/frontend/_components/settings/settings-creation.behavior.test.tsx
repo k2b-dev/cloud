@@ -104,64 +104,6 @@ domTest("hold creation retains its reason and retries in the same dialog", async
   }
 });
 
-domTest("blank and template Base creation preserve the submitted name after a failed request", async () => {
-  const dom = createDomTestHarness();
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = Object.assign(async () => Response.json({ message: "Base creation unavailable" }, { status: 503 }), {
-    preconnect: originalFetch.preconnect,
-  });
-  const { dialogCore } = await import("@k2b/ui");
-  const { default: BasesOverview } = await import("../overview/BasesOverview.island");
-  let dispose = () => {};
-  try {
-    dispose = render(
-      () =>
-        createComponent(BasesOverview, {
-          bases: [],
-          total: 0,
-          limit: 25,
-          offset: 0,
-          initialQuery: "",
-          baseStats: {},
-          recentTables: [],
-          apps: { items: [], total: 0, page: null, pageSize: 8 },
-          dateConfig: { locale: "en", timeZone: "UTC", firstDayOfWeek: 1 },
-          templates: [
-            {
-              id: "inventory",
-              name: "Inventory",
-              description: "Equipment",
-              icon: "ti ti-package",
-              highlights: ["Tables", "Forms", "Apps"],
-            },
-          ],
-        }),
-      dom.root,
-    );
-    for (const fromTemplate of [false, true]) {
-      Array.from(dom.root.querySelectorAll("button"))
-        .find((button) =>
-          fromTemplate ? button.getAttribute("aria-label") === "Create Inventory base" : button.textContent?.includes("Blank base"),
-        )!
-        .click();
-      const input = dom.document.querySelector<HTMLInputElement>('dialog input[type="text"]')!;
-      input.value = "My inventory";
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      dom.document.querySelector("dialog form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      await settle();
-      expect(dom.document.querySelector<HTMLInputElement>('dialog input[type="text"]')!.value).toBe("My inventory");
-      expect(dom.document.querySelector("dialog")!.textContent).toContain("Base creation unavailable");
-      dialogCore.close();
-      await settle();
-    }
-  } finally {
-    dialogCore.close();
-    dispose();
-    globalThis.fetch = originalFetch;
-    dom.cleanup();
-  }
-});
-
 domTest("admin settings display a load error with retry instead of an empty form", async () => {
   const dom = createDomTestHarness();
   const originalFetch = globalThis.fetch;

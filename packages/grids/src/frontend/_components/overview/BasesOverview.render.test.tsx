@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import "../ssr-test-plugin";
 
 const { default: BasesOverview } = await import("./BasesOverview.island.tsx");
+const { basesQuery } = await import("./bases-query");
 const { LocaleProvider } = await import("@k2b/ui");
 
 const base = {
@@ -34,6 +34,8 @@ const app = (index: number) => ({
 
 type RenderOptions = {
   withBases?: boolean;
+  search?: string;
+  create?: string;
   locale?: string;
   apps?: { count: number; total: number; page?: number };
 };
@@ -49,9 +51,9 @@ const renderOverview = (options: RenderOptions = {}) => {
         return createComponent(BasesOverview, {
           bases: withBases ? [base] : [],
           total: withBases ? 1 : 0,
-          limit: 100,
-          offset: 0,
-          initialQuery: "",
+          state: basesQuery(locale).parse(options.search ? `q=${options.search}` : "").state,
+          page: 1,
+          create: options.create ?? null,
           templates: [template],
           baseStats: withBases ? { Base01: { tableCount: 3, lastActivityAt: "2026-08-20T10:00:00.000Z" } } : {},
           recentTables: withBases
@@ -70,7 +72,6 @@ const renderOverview = (options: RenderOptions = {}) => {
             items: Array.from({ length: apps.count }, (_, index) => app(index + 1)),
             total: apps.total,
             page: apps.page ?? null,
-            pageSize: apps.page ? 48 : 8,
           },
           dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
         });
@@ -79,116 +80,75 @@ const renderOverview = (options: RenderOptions = {}) => {
   );
 };
 
-describe("Grids bases overview", () => {
-  test("lists bases as sidebar objects and recent tables across all bases", () => {
+describe("Grids bases overview on v2", () => {
+  test("lists the bases as a table beside the apps and the recently changed tables", () => {
     const html = renderOverview();
-    expect(html).toContain('class="k2b-app-workspace grids-overview-workspace"');
-    expect(html).toMatch(/class="k2b-app-workspace grids-overview-workspace"[^>]*data-flat="true"/);
-    expect(html).toMatch(/<nav[^>]*aria-label="Bases"[^>]*data-mobile="stacked"/);
-    expect(html).toContain('class="k2b-app-workspace__sidebar-all" aria-haspopup="dialog" aria-expanded="false"');
-    expect(html).not.toContain("k2b-app-workspace__nav-tree");
-    expect(html).toContain("--k2b-workspace-sidebar-width:304px");
-    expect(html.match(/data-variant="object"/g)).toHaveLength(1);
+    expect(html).toContain('data-k2-part="Workspace"');
+    expect(html).toContain('data-k2-part="Table"');
     expect(html).toContain('href="/app/grids/Base01"');
-    expect(html).toContain("3 tables");
-    // Every base shares the default icon, so object rows carry none.
-    expect(html).not.toContain("k2b-app-workspace__sidebar-item-icon");
+    expect(html).toContain("Customers and deals");
+    expect(html).toContain("1 base");
     expect(html).toContain('aria-label="Search bases"');
-    expect(html).toMatch(/class="k2b-app-workspace__main[^"]*grids-overview-main ?"[^>]*data-width="content"/);
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Overview<\/h2>/);
-    expect(html).toContain("Recently changed");
-    // Without usable apps there is no apps section.
-    expect(html).not.toContain("grids-overview-apps");
-    expect(html).toContain("All bases");
     expect(html).toContain("New base");
+    expect(html).toContain('href="/app/grids?new=blank"');
+    expect(html).toContain("Recently changed");
     expect(html).toContain('href="/app/grids/Base01/table/Tabl01"');
     expect(html).toContain("Deals");
-    expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
-    // Templates move into the create menu once bases exist.
-    expect(html).not.toContain('aria-label="Create Inventory base"');
+    // Without usable apps there is no apps section and no tabs.
+    expect(html).not.toContain('data-k2-part="Tiles"');
+    expect(html).not.toContain('data-k2-part="Tabs"');
+    // Templates wait in the create dialog once bases exist; nothing loads on the first picture.
+    expect(html).not.toContain("Get started");
+    expect(html).not.toContain('data-k2-part="Loading"');
+    expect(html).not.toMatch(/\bclass="(?!k2-|ti )[^"]*"/);
   });
 
   test("shows the templates as the first screen before any base exists", () => {
     const html = renderOverview({ withBases: false });
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Get started<\/h2>/);
-    expect(html).toContain('aria-label="Create Inventory base"');
+    expect(html).toContain("Get started");
+    expect(html).toContain('href="/app/grids?new=inventory"');
     expect(html).toContain("Blank base");
-    expect(html).not.toContain("All bases");
     expect(html).not.toContain('aria-label="Search bases"');
+  });
+
+  test("says when a search finds nothing and offers the whole list", () => {
+    const html = renderOverview({ withBases: false, search: "zzz" });
+    expect(html).toContain("No matching bases");
+    expect(html).toContain("Show all bases");
+    expect(html).toContain('value="zzz"');
   });
 
   test("renders German copy for a regional request locale during SSR", () => {
     const html = renderOverview({ locale: "de-CH" });
     expect(html).toContain("Neue Base");
     expect(html).toContain("Zuletzt geändert");
-    expect(html).toContain("Übersicht");
-    expect(html).toContain("Alle Bases");
-    expect(html).toContain("3 Tabellen");
+    expect(html).toContain("Tabellen");
     expect(html).not.toContain("New base");
   });
 
-  test("shows usable apps as tiles above recent tables with a bounded link to all apps", () => {
+  test("shows usable apps as tiles with a bounded link to all apps", () => {
     const html = renderOverview({ apps: { count: 8, total: 11 } });
-    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(8);
+    expect(html).toContain('data-k2-part="Tabs"');
+    expect(html.match(/class="k2-tile"/g)).toHaveLength(8);
     expect(html).toContain('href="/apps/App001"');
-    expect(html).toContain("ti ti-scan");
-    expect(html).toContain("ti ti-app-window");
-    expect(html).toContain("Inventory");
-    expect(html.indexOf("grids-overview-apps")).toBeLessThan(html.indexOf("Recently changed"));
+    expect(html).toContain("ti-scan");
+    expect(html).toContain("ti-app-window");
     expect(html).toContain('href="/app/grids?apps=1"');
     expect(html).toContain("All apps (11)");
   });
 
   test("omits the all-apps link when every usable app fits", () => {
     const html = renderOverview({ apps: { count: 2, total: 2 } });
-    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(2);
+    expect(html.match(/class="k2-tile"/g)).toHaveLength(2);
     expect(html).not.toContain("All apps (");
-  });
-
-  test("shows only the apps section to a user without base access", () => {
-    const html = renderOverview({ withBases: false, apps: { count: 1, total: 1 } });
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">Overview<\/h2>/);
-    expect(html).toContain("Apps you can use");
-    expect(html).not.toContain('aria-label="Search bases"');
-    expect(html).toContain('href="/apps/App001"');
-    expect(html).not.toContain("Get started");
-    expect(html).not.toContain('aria-label="Create Inventory base"');
-    expect(html).not.toContain("Recently changed");
   });
 
   test("lists every usable app on its own paginated page", () => {
     const html = renderOverview({ apps: { count: 3, total: 51, page: 2 } });
-    expect(html).toMatch(/<h2 class="k2b-panel-header__title is-large">All apps<\/h2>/);
-    expect(html).toContain("51 apps you can use");
-    expect(html).toContain('href="/app/grids"');
+    expect(html).toContain("51 apps");
+    expect(html).toContain("Page 2 of 2");
     expect(html).toContain('href="/app/grids?apps=1"');
     expect(html).not.toContain("Recently changed");
-    expect(html.match(/class="k2b-paper k2b-link-card/g)).toHaveLength(3);
+    expect(html.match(/class="k2-tile"/g)).toHaveLength(3);
   });
-});
-
-test("recent table icons use shared tiles with app ink and platform row focus", () => {
-  const html = renderOverview();
-  const row = html.match(/<a\b[^>]*class="[^"]*\bgrids-overview-table\b[^"]*"[^>]*>/)?.[0];
-  const icons = [...html.matchAll(/<span\b[^>]*class="[^"]*\bgrids-overview-table-icon\b[^"]*"[^>]*>/g)];
-  expect(row).toBeDefined();
-  expect(row?.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/)).toContain("focus-ui");
-  expect(icons).toHaveLength(1);
-  for (const [icon] of icons) {
-    const classes = icon.match(/\bclass="([^"]*)"/)?.[1]?.split(/\s+/);
-    expect(classes).toContain("k2b-icon-tile");
-    expect(classes).toContain("app-accent-text");
-    expect(icon).not.toMatch(/\bstyle\s*=/);
-  }
-  expect(html).not.toMatch(/color-mix\([^;"}]*--app-accent/);
-  expect(html).not.toContain("bg-[var(--ui-selected)]");
-});
-
-test("recent table CSS leaves the chip and focus treatment to shared utilities", () => {
-  const css = readFileSync(new URL("../../../styles/app.css", import.meta.url), "utf8");
-  const rule = css.match(/(?:^|\n)\.grids-overview-table-icon\s*\{([^}]*)\}/)?.[1];
-  expect(rule).toBeDefined();
-  expect(rule).not.toMatch(/box-shadow|color-mix|border-radius|background/);
-  expect(css).not.toMatch(/\.dark\s+\.grids-overview-table-icon\b[^{}]*\{/);
-  expect(css).not.toMatch(/\.grids-overview-table:focus-visible\s*\{[^}]*--app-accent/);
 });

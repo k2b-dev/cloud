@@ -52,33 +52,6 @@ describe("Base navigation interactions", () => {
     return;
   }
 
-  test("overview tabs use the SSR URL, preserve other params and restore browser history", async () => {
-    const dom = createDomTestHarness();
-    const { default: Overview } = await import("./BaseOverview");
-    const current = state();
-    current.navigation = { revision: 1, groups: [{ id: "GROUP1", name: "Loan desk", entries: [] }] };
-    current.rememberPath = "/app/grids/BASE01?tab=resources";
-    window.history.replaceState(null, "", "/app/grids/BASE01?edit=true&tab=resources");
-    const dispose = render(() => createComponent(Overview, { state: current }), dom.root);
-    try {
-      const selected = () => dom.root.querySelector('[role="tab"][aria-selected="true"]')?.textContent;
-      expect(selected()).toBe("All resources");
-      const tabs = dom.root.querySelectorAll<HTMLButtonElement>('[role="tab"]');
-      tabs[0]!.click();
-      expect(selected()).toBe("Groups");
-      expect(window.location.search).toBe("?edit=true&tab=groups");
-      expect(dom.root.querySelector('[role="tabpanel"]')?.textContent).toContain("Loan desk");
-      expect(dom.root.querySelector("input")).toBeNull();
-      window.history.replaceState(null, "", "/app/grids/BASE01?edit=true&tab=resources");
-      window.dispatchEvent(new Event("popstate"));
-      expect(selected()).toBe("All resources");
-      expect(dom.root.querySelector("input")).not.toBeNull();
-    } finally {
-      dispose();
-      dom.cleanup();
-    }
-  });
-
   test("field option sections collapse through the header without remounting inputs", async () => {
     const dom = createDomTestHarness();
     const { Section } = await import("@k2b/ui");
@@ -366,36 +339,6 @@ describe("Base navigation interactions", () => {
     } finally {
       dispose();
       globalThis.fetch = originalFetch;
-      dom.cleanup();
-    }
-  });
-
-  test("overview groups compact resources and has no editor even for admins", async () => {
-    const dom = createDomTestHarness();
-    const { default: Overview } = await import("./BaseOverview");
-    const current = state();
-    current.catalog.customApps = [
-      {
-        id: "APP001",
-        baseId: "BASE01",
-        name: "Loan desk",
-        icon: null,
-        publishedAt: null,
-        updatedAt: "2026-09-09T00:00:00Z",
-        draftValid: true,
-        publishedValid: false,
-        hasUnpublishedChanges: true,
-      },
-    ];
-    const dispose = render(() => createComponent(Overview, { state: current }), dom.root);
-    try {
-      expect(dom.root.textContent).toContain("Team workspace");
-      expect(dom.root.textContent).not.toContain("Edit navigation");
-      expect(dom.root.textContent).toContain("App (draft)");
-      expect(dom.root.querySelector("h3")?.textContent).toContain("Apps");
-      expect(dom.root.querySelector("li a")?.textContent).toContain("Loan desk");
-    } finally {
-      dispose();
       dom.cleanup();
     }
   });

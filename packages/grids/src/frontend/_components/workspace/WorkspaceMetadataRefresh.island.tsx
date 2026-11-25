@@ -1,13 +1,9 @@
-import { liveConnection } from "@k2b/cloud/browser/live";
-import { retry } from "@k2b/sync/retry";
 import { Button, dialogCore, NoticeCard, prompts, type ToastHandle, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
-import { apiClient } from "../../../api/client";
-import { GridsMetadataLiveEventSchema } from "../../../live-events";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { workspaceMessages } from "./messages";
-import { setWorkspaceLiveStatus, workspaceLiveStatus, workspaceResourceAppliedEvent } from "./workspace-live-state";
-import { createWorkspaceRevisionController } from "./workspace-revision-controller";
+import { workspaceLiveStatus } from "./workspace-live-state";
+import { startWorkspaceMetadataRefresh } from "./workspace-metadata-refresh";
 
 export default function WorkspaceMetadataRefresh(props: {
   baseId: string;
@@ -27,99 +23,32 @@ export default function WorkspaceMetadataRefresh(props: {
   };
 
   onMount(() => {
-    let disposed = false;
-    let revoked = false;
-    // Once live updates stopped, a later successful check cannot mean they are back.
-    let liveEnded = false;
     // Live failures inform in a toast, so the workspace never moves; a later successful check dismisses it while the socket lives.
     let failure: ToastHandle | null = null;
-    const showFailure = () => {
-      if (disposed || revoked || failure) return;
-      failure = toast(t().liveUpdatesStoppedDetail, {
-        title: t().liveUpdatesStopped,
-        duration: 0,
-        action: { label: t().reload, onClick: () => void reload() },
-      });
-    };
-    const clearFailure = () => {
-      failure?.dismiss();
-      failure = null;
-    };
-    const revoke = () => {
-      if (disposed || revoked) return;
-      revoked = true;
-      clearFailure();
-      controller.dispose();
-      setWorkspaceLiveStatus({ revoked: true, message: t().accessRevoked });
-      dialogCore.close();
-      // Sidebar is SSR-owned: hide its resource labels along with island content.
-      const workspace = document.getElementById(`grids-workspace-${props.baseId}`);
-      if (workspace) workspace.style.display = "none";
-    };
-    const controller = createWorkspaceRevisionController({
-      initial: { ...(props.revision ?? { revision: "", resources: {} }), canWrite: props.canWrite, canAdmin: props.canAdmin },
-      activeKeys: props.activeKeys,
-      // A check that fails briefly (for example while the network returns with the tab) is retried before it counts as a failure.
-      load: (signal) =>
-        retry({
-          signal,
-          run: async () => {
-            const response = await apiClient.workspace.revision.$get({ query: { baseId: props.baseId } }, { init: { signal } });
-            if ([401, 403, 404].includes(response.status)) {
-              revoke();
-              throw new Error(t().accessRevoked);
-            }
-            if (!response.ok) throw new Error(t().liveMetadataFailed);
-            return response.json();
-          },
-          after: ({ ctx }) => {
-            if (ctx.error && !revoked && ctx.attempt < 3) ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 150, maxMs: 1_000 }) });
-          },
-        }),
-      apply: (state) => {
-        if (revoked) return;
-        if (!liveEnded) clearFailure();
-        if (state.revoked) return revoke();
-        setChanged(state.changed);
-      },
-      onError: showFailure,
-    });
-    // An update only says that the structure or access changed; the revision check decides what that means here.
-    // Each check compares the whole revision with the page's, so a later check covers every update acknowledged
-    // before it, and a check that keeps failing shows the reload toast.
-    const subscription = liveConnection("/api/grids/live").subscribe(
-      "metadata",
-      { base: props.baseId },
+    const stop = startWorkspaceMetadataRefresh(
+      { ...props, text: { accessRevoked: t().accessRevoked, liveMetadataFailed: t().liveMetadataFailed } },
       {
-        cursor: props.initialCursor,
-        parse: (data) => GridsMetadataLiveEventSchema.parse(data),
-        apply: async () => controller.check(),
-        resync: async () => controller.check(true),
-        revoked: revoke,
-        unavailable: () => {
-          liveEnded = true;
-          showFailure();
-          controller.check();
+        changed: setChanged,
+        showFailure: () => {
+          failure = toast(t().liveUpdatesStoppedDetail, {
+            title: t().liveUpdatesStopped,
+            duration: 0,
+            action: { label: t().reload, onClick: () => void reload() },
+          });
+        },
+        clearFailure: () => {
+          failure?.dismiss();
+          failure = null;
+        },
+        revoked: () => {
+          dialogCore.close();
+          // Sidebar is SSR-owned: hide its resource labels along with island content.
+          const workspace = document.getElementById(`grids-workspace-${props.baseId}`);
+          if (workspace) workspace.style.display = "none";
         },
       },
     );
-    // Without the page's cursor the subscription starts at the current position, so the revision is checked once.
-    if (props.initialCursor === null) controller.check();
-    // Short ids are unique across Bases, so no Base check is needed here.
-    const applied = (raw: Event) => {
-      const { key, revision } = (raw as CustomEvent<{ key: string; revision: string }>).detail;
-      controller.acknowledge(key, revision);
-      controller.check();
-    };
-    document.addEventListener(workspaceResourceAppliedEvent, applied);
-    onCleanup(() => {
-      disposed = true;
-      document.removeEventListener(workspaceResourceAppliedEvent, applied);
-      controller.dispose();
-      subscription.close();
-      clearFailure();
-      setWorkspaceLiveStatus({ revoked: false, message: "" });
-    });
+    onCleanup(stop);
   });
 
   return (
