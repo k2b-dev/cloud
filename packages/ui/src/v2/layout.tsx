@@ -5,6 +5,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -84,14 +85,19 @@ export const Workspace = (props: WorkspaceProps) => {
       </div>
       <Show when={props.primary}>
         {(action) => (
+          // a disabled link is an anchor without an address, as in `Button`
           <Dynamic
-            component={linkOr(action().href, "button")}
+            component={action().disabled && action().href !== undefined ? "a" : linkOr(action().href, "button")}
             type={action().href !== undefined ? undefined : "button"}
             class="k2-btn k2-fab"
             data-variant="primary"
-            href={action().href}
-            onNavigate={action().href !== undefined ? action().onNavigate : undefined}
-            onClick={() => action().onClick?.()}
+            href={action().disabled ? undefined : action().href}
+            onNavigate={action().href !== undefined && !action().disabled ? action().onNavigate : undefined}
+            disabled={action().href === undefined ? action().disabled : undefined}
+            aria-disabled={action().href !== undefined && action().disabled ? "true" : undefined}
+            onClick={() => {
+              if (!action().disabled) action().onClick?.();
+            }}
           >
             <Show when={action().icon}>{(name) => <Icon name={name()} />}</Show>
             {action().label}
@@ -100,6 +106,8 @@ export const Workspace = (props: WorkspaceProps) => {
       </Show>
       {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
       <ConfirmDialog />
+      {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
+      <Toasts />
     </div>
   );
 };

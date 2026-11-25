@@ -4,10 +4,12 @@
  * focus return and placement at the pointer are core's. Each level is one core instance; a submenu's instance names
  * its parent, so its trigger is an item of the parent menu. No ui-sdk type crosses this module's exports.
  */
+
+import type { SlotName } from "@ui-sdk/core";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { menuCheckable, menuContextTrigger } from "@ui-sdk/core/renderer";
 import { splitProps } from "solid-js";
-import { type Handle, keyed, part, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { type Handle, keyed, type Props, part, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 import { bindSlot } from "./bind";
 import { useBehaviorMessages } from "./messages";
 import type { OverlayOptions } from "./overlays";
@@ -23,6 +25,14 @@ export type MenuLevelParts = {
   LinkItem: SlotComponent;
   /** An item that toggles: `value`, `label`, `checked`, `onCheckedChange`. */
   CheckboxItem: SlotComponent;
+  /** One choice among its items: `name` (also what its `GroupLabel` names), `value`, `onValueChange`. */
+  RadioGroup: SlotComponent;
+  /** An item of a radio group: `group` (the group's name), `value`, `label`, `closeOnSelect`. */
+  RadioItem: SlotComponent;
+  /** Entries that belong together, labelled by a `GroupLabel` with the same `group` as this `id`. */
+  Group: SlotComponent;
+  /** The heading of a group or radio group: `group` is the group's `id` or the radio group's `name`. */
+  GroupLabel: SlotComponent;
   Separator: SlotComponent;
   /**
    * Makes an element that is already on the page the menu's context area: a right-click or a long press opens the
@@ -36,6 +46,21 @@ export type MenuLevelParts = {
 
 type MenuHandle = Handle<typeof menuPrimitive>;
 
+/**
+ * A slot a feature adds (`checkbox-item`, `radio-group`, `radio-item`): it is not in the primitive's own schema, so
+ * its props are named here instead of looked up (k2b-ui gap #4112). `key` gives the props that key the part.
+ */
+const featurePart =
+  (handle: MenuHandle, slot: string, names: readonly string[], key: (own: Props) => Props): SlotComponent =>
+  (props) => {
+    const [own, element] = splitProps(props, names);
+    const slotProps = () => {
+      const given = Object.fromEntries(names.map((name) => [name, own[name]]).filter(([, value]) => value !== undefined));
+      return { ...given, ...key(own) };
+    };
+    return part(handle, slot as SlotName<typeof menuPrimitive>, slotProps, element, "div");
+  };
+
 let contextAreas = 0;
 
 const levelParts = (handle: MenuHandle): MenuLevelParts => {
@@ -45,21 +70,19 @@ const levelParts = (handle: MenuHandle): MenuLevelParts => {
     Popup: popupComponent(handle, "content"),
     Item: slotComponent(handle, "item", "div"),
     LinkItem: slotComponent(handle, "item", "a"),
-    // A feature's slot is not in the primitive's own schema, so its props are named here instead of looked up.
-    CheckboxItem: (props) => {
-      const [own, element] = splitProps(props, ["value", "label", "checked", "disabled", "onCheckedChange", "closeOnSelect"]);
-      const slotProps = () => {
-        const given = {
-          label: own.label,
-          checked: own.checked,
-          disabled: own.disabled,
-          onCheckedChange: own.onCheckedChange,
-          closeOnSelect: own.closeOnSelect,
-        };
-        return keyed(handle, String(own.value), Object.fromEntries(Object.entries(given).filter(([, value]) => value !== undefined)));
-      };
-      return part(handle, "checkbox-item", slotProps, element, "div");
-    },
+    CheckboxItem: featurePart(
+      handle,
+      "checkbox-item",
+      ["value", "label", "checked", "disabled", "onCheckedChange", "closeOnSelect"],
+      (own) => keyed(handle, String(own.value)),
+    ),
+    // a radio group's key is its name, and an item's key holds its group, since two groups may share values
+    RadioGroup: featurePart(handle, "radio-group", ["name", "value", "onValueChange"], (own) => ({ id: own.name })),
+    RadioItem: featurePart(handle, "radio-item", ["group", "value", "label", "disabled", "closeOnSelect"], (own) => ({
+      id: `${String(own.group)}-${String(own.value)}`,
+    })),
+    Group: slotComponent(handle, "group", "div"),
+    GroupLabel: slotComponent(handle, "group-label", "div"),
     Separator: slotComponent(handle, "separator", "div"),
     bindContext: (element) => {
       handle.instance.use(menuContextTrigger);

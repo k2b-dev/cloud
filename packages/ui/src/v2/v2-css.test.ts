@@ -137,9 +137,10 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
   expect(namespaceProblems(".k2-ui :not(.k2-x) p")).toEqual(["p in .k2-ui :not(.k2-x) p"]);
 });
 
-// The positioning of the behaviour layer writes these on an open popup; the page or the platform sets the one colour
-// of its app, and the platform may set its readable ink. v2.css may read them, never define them.
-const foreignVariables = new Set(["--anchor-width", "--available-height", "--k2-app", "--k2-app-ink"]);
+// The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
+// on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
+// colour of its app, and the platform may set its readable ink. v2.css may read them, never define them.
+const foreignVariables = new Set(["--anchor-width", "--available-height", "--keyboard-inset", "--k2-app", "--k2-app-ink"]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];

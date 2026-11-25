@@ -1,5 +1,6 @@
 import { For, type JSX, Show } from "solid-js";
 import FormScreen from "./FormScreen.island";
+import KeysScreen from "./KeysScreen.island";
 import MailSelectScreen from "./MailSelectScreen.island";
 import MenusScreen from "./MenusScreen.island";
 import { MailScreen } from "./mail-screen";
@@ -76,16 +77,25 @@ export const v2Screens = {
   form: {
     title: "Bedienung · Neuer Auftrag",
     description:
-      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Als Vorlage speichern opens a dialog with a field, a sheet from the bottom on a phone; Abbrechen asks with Dialog.confirm before the order is discarded. The menu, the open list of a selection and the toast with Rückgängig after the main action follow.",
+      "A new order in Grids: fields in rows on one grid, the error at its field, a selection, a date, a choice, a check and a switch. Als Vorlage speichern opens a dialog with a field, a sheet from the bottom on a phone; Abbrechen asks with Dialog.confirm before the order is discarded. More deeds wait behind „…“, and a toast with Rückgängig answers the main action.",
     mockup: "index.html (Field, Button, Menu, Toast)",
     app: "#047857",
     phone: { back: "Aufträge" },
     render: () => <FormScreen />,
   },
+  keys: {
+    title: "Zustände · Schlüssel eines Agenten",
+    description:
+      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), disabled fields and a disabled deed of a notice, and facts with a token in monospace. On the phone the side column stands under the table, with one line between them.",
+    mockup: "tabelle.html (Sortiert), index.html (Button, Field)",
+    app: "#7c3aed",
+    phone: { back: "Agenten" },
+    render: () => <KeysScreen />,
+  },
   menus: {
     title: "Menü · Popover · Toast",
     description:
-      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view settings toggle in a menu, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
+      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
     mockup: "index.html (Menu · Popover · Toast), 07-formular-menue",
     app: "#047857",
     phone: { back: "Aufträge" },

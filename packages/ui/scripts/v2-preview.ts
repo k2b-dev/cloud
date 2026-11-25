@@ -162,7 +162,9 @@ const tablerCss = () => {
 };
 const page = (fonts: boolean) =>
   `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${fonts ? [400, 500, 600].map(fontFace).join("") + tablerCss() : ".ti{display:inline-block;width:1em;height:1em}"}</style>` +
-  `<style>${css}</style><style>html,body{margin:0;height:100%;background:#fff}body{color-scheme:light}.frame{position:fixed;inset:0;display:flex}</style></head>` +
+  `<style>${css}</style><style>html,body{margin:0;height:100%;background:#fff}body{color-scheme:light}.frame{position:fixed;inset:0;display:flex}` +
+  // the island wrappers of @k2b/ssr take no box, as its page template says, so a screen in an island fills the frame
+  `solid-island,solid-client{display:contents}</style></head>` +
   `<body class="k2-ui" data-theme="light"><div class="frame">${markup}</div></body></html>`;
 
 if (textOnly) {

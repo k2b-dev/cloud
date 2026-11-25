@@ -99,9 +99,20 @@ const differencesInPage = () => {
       found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
       return;
     }
-    const names = new Set([...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk"));
+    // Core puts the Workspace's toast region in the top layer (`popover`) and measures the viewport into custom
+    // properties once it binds; an empty region shows nothing either way (as in the reload contract of the behaviour
+    // layer), so only those two are left out there.
+    const region = b.getAttribute("data-slot") === "toast-region";
+    const custom = (element: Element) =>
+      style(element)
+        .split(";")
+        .filter((entry) => !(region && entry.startsWith("--")))
+        .join(";");
+    const names = new Set(
+      [...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk" && !(region && name === "popover")),
+    );
     for (const name of names) {
-      const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);
+      const same = name === "style" ? custom(a) === custom(b) : a.getAttribute(name) === b.getAttribute(name);
       if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
     }
     const [left, right] = [nodes(a), nodes(b)];
