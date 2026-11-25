@@ -3,11 +3,12 @@
  * active descendant, arrows, Home, End, typeahead, selection, expanding and collapsing, `aria-current` are core's.
  * Ours: the item context a tree needs (each item names its parent) and the announcements in the render locale.
  */
+
+import { Link } from "@k2b/ssr/nav";
 import { listbox as listboxPrimitive } from "@ui-sdk/core/listbox";
 import { createTreeController, type TreeController, tree as treePrimitive } from "@ui-sdk/core/tree";
 import { createContext, type JSX, splitProps, useContext, type ValidComponent } from "solid-js";
 import { type Handle, type PartProps, part, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
-import { Link } from "@k2b/ssr/nav";
 import { type BehaviorMessages, useBehaviorMessages } from "./messages";
 
 // ── Listbox ─────────────────────────────────────────────────────────────────────────────────────────────────────────
