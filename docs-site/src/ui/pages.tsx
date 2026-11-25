@@ -3,7 +3,7 @@ import { fibelHtml } from "../ssr";
 import { ChartDashboardPage, ChartKindPage, ChartsOverviewPage } from "./ChartsShowcase";
 import { uiCatalogEntries } from "./catalog";
 import focusMarkdown from "./context/focus.md" with { type: "text" };
-import gettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
+import v1GettingStartedMarkdown from "./context/getting-started.md" with { type: "text" };
 import inputModeMarkdown from "./context/input-mode.md" with { type: "text" };
 import motionMarkdown from "./context/motion.md" with { type: "text" };
 import v1OverviewMarkdown from "./context/overview.md" with { type: "text" };
@@ -11,6 +11,7 @@ import primaryScopeMarkdown from "./context/primary-scope.md" with { type: "text
 import { showcaseDashboards } from "./demo-sections/charts/dashboards";
 import { chartShowcaseKinds } from "./demo-sections/charts/examples";
 import PrimaryScopeDemo from "./PrimaryScopeDemo.island";
+import v2GettingStartedMarkdown from "./topics/getting-started.md" with { type: "text" };
 import { OverviewPage, overviewMarkdown } from "./topics/OverviewPage";
 import screensMarkdown from "./topics/screens.md" with { type: "text" };
 import { MarkdownArticle, TopicPage } from "./topics/TopicPage";
@@ -24,6 +25,7 @@ import { V2DemoScreens } from "./v2/V2DemoPage";
 /** The folded area of the v1 pages, until v1 is removed (concept F3). */
 export const v1Section = "v1 (existing)";
 const screens = parseTopic(screensMarkdown);
+const gettingStarted = parseTopic(v2GettingStartedMarkdown);
 
 export const uiPages = [
   solidPage({
@@ -56,14 +58,14 @@ export const uiPages = [
   solidPage({
     html: fibelHtml,
     collection: "ui",
-    path: "/getting-started",
-    title: "Getting started",
-    navTitle: "Getting started",
+    path: "/v1/getting-started",
+    title: "Getting started (v1)",
+    navTitle: "v1 getting started",
     description: "Install @k2b/ui, load its scoped styles, customize the theme, and use it in a Solid application.",
-    section: "Start",
-    order: 2,
+    section: v1Section,
+    order: 199,
     layout: "full",
-    content: gettingStartedMarkdown,
+    content: v1GettingStartedMarkdown,
     component: ({ content, page }) => (
       <article class="ui-showcase ui-reference-showcase">
         <header class="ui-reference-heading">
@@ -78,6 +80,19 @@ export const uiPages = [
         </section>
       </article>
     ),
+  }),
+  solidPage({
+    html: fibelHtml,
+    collection: "ui",
+    path: "/getting-started",
+    title: gettingStarted.title,
+    navTitle: "Getting started",
+    description: "Opt a page into @k2b/ui/v2, start a screen from a recipe, and check it with the preview script and the rules.",
+    section: "Start",
+    order: 2,
+    layout: "full",
+    content: v2GettingStartedMarkdown,
+    component: (context) => <MarkdownArticle parsed={gettingStarted} context={context} eyebrow={<>@k2b/ui/v2 · provisional</>} />,
   }),
   solidPage({
     html: fibelHtml,

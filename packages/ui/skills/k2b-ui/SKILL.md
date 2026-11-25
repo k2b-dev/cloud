@@ -215,6 +215,7 @@ Details, the outline format and use outside the monorepo:
 | Finding | Fix |
 | --- | --- |
 | `class on <div> in a v2 screen` | delete it; pick the primitive that owns that look |
+| a segmented control (or a row of pressed buttons or chips) that switches views or panels | `Tabs`; a segmented control only chooses a value, such as a state or a width |
 | own `URLSearchParams`, filter state beside the address, a row of filter `Chip`s or a filter `Popover` | declare the list with `defineListQuery`; show it with `FilterBar` and `ListOrder` (`filtered-table.tsx`) |
 | `plain <div> in Pane` | put the content in `Band`, `Section`, `Group`, `List`, `Table` or `Notice` |
 | `loose text in Pane` | wrap it in `<Text>` |

@@ -77,7 +77,7 @@ A `Popover` in the head has no `keep`: on the phone it leaves with the other hea
 - Put a second `primary` on a page, or confirm a dialog with `Workspace primary`.
 - Hide a deed only in `Menu.Context`; not everyone right-clicks.
 - Open with `onClick` what has an address; give the entry an `href`.
-- Draw your own menu or panel from a `Band` or a `Section`.
+- Build a menu or panel of your own from a `Band` or a `Section`, or switch views with a segmented control: views are `Tabs`, a segmented control only chooses a value.
 
 ## Next
 

@@ -68,17 +68,24 @@ describe("recipe route", () => {
 });
 
 describe("Example on Lists and tables", () => {
-  test("switches state, width and code, and its frame never moves the page", async () => {
+  test("switches state, code and width, and its view never moves the page", async () => {
     const { page, errors } = await open("/en/ui/v2/lists-and-tables");
     try {
       const example = page.locator("figure.ui-example#table");
       await page.locator("figure.ui-example#table[data-measured]").waitFor();
       await settled(page);
-      const stage = example.locator(".ui-example__stage");
-      const before = await stage.boundingBox();
+      const box = (selector: string) => example.locator(selector).boundingBox();
+      const view = await box(".ui-example__stage");
+      const bar = await box(".ui-example__bar");
       const below = await page.locator("figure.ui-example#list-detail").boundingBox();
 
-      // the state: the frame loads the recipe's state, and the stage keeps its size
+      // Preview and Code are v2 Tabs (they switch views), named as one group; the values are segmented controls
+      const tabs = example.getByRole("navigation", { name: /preview or code/ });
+      expect(await tabs.getByRole("button", { name: "Preview" }).getAttribute("aria-current")).toBe("page");
+      expect(await example.getByRole("radiogroup", { name: "State" }).count()).toBe(1);
+      expect(await example.getByRole("radiogroup", { name: "Width" }).count()).toBe(1);
+
+      // the state: the frame loads the recipe's state, and nothing moves
       await example.getByRole("radio", { name: "Empty" }).click();
       const frame = example.locator("iframe");
       expect(await frame.getAttribute("src")).toBe("/en/ui/v2/recipe/table?state=empty");
@@ -86,20 +93,26 @@ describe("Example on Lists and tables", () => {
       await inside.locator(".ui-v2-recipe[data-recipe='ready']").waitFor();
       await settled(page);
       expect(await inside.locator("[data-k2-part='Empty']").count()).toBe(1);
-      expect(await stage.boundingBox()).toEqual(before);
+      expect(await box(".ui-example__stage")).toEqual(view);
       expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
 
-      // the width: 390 stands 1:1 as a phone
+      // the code: the whole recipe in the same place and size as the screen; the toolbar keeps its height
+      await tabs.getByRole("button", { name: "Code" }).click();
+      await example.locator(".ui-example__code").waitFor();
+      await settled(page);
+      expect(await tabs.getByRole("button", { name: "Code" }).getAttribute("aria-current")).toBe("page");
+      expect(await example.locator(".ui-example__stage").isHidden()).toBe(true);
+      expect(await example.locator(".ui-example__code").innerText()).toContain("export const states");
+      expect(await box(".ui-example__code")).toEqual(view);
+      expect(await box(".ui-example__bar")).toEqual(bar);
+      expect(await page.locator("figure.ui-example#list-detail").boundingBox()).toEqual(below);
+
+      // back to the screen, then the width: 390 stands 1:1 as a phone
+      await tabs.getByRole("button", { name: "Preview" }).click();
       await example.getByRole("radio", { name: "390" }).click();
       await page.locator("figure.ui-example#table[data-phone]").waitFor();
       await settled(page);
-      const phone = await frame.boundingBox();
-      expect(Math.round(phone?.width ?? 0)).toBe(390);
-
-      // the code: the whole recipe with its states
-      await example.getByRole("radio", { name: "Code" }).click();
-      expect(await stage.isHidden()).toBe(true);
-      expect(await example.locator(".ui-example__code").innerText()).toContain("export const states");
+      expect(Math.round((await frame.boundingBox())?.width ?? 0)).toBe(390);
 
       expect(errors).toEqual([]);
     } finally {

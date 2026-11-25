@@ -192,15 +192,17 @@ div.ui-topic__part,
   color: var(--c-muted);
 }
 
-/* Example: one recipe live, its states and widths, its code. */
+/* Example: one recipe live, its states and widths, its code. No card around it: a toolbar line without a box, the view
+   with one thin square frame (the screen or the code, in the same place and size), and the path as plain meta text. */
 .ui-example {
   --w: 1440;
   --stage-h: var(--h);
   margin: 1rem 0 0;
-  border: 1px solid var(--c-line);
-  border-radius: var(--k2b-radius-surface);
   container-type: inline-size;
-  overflow: hidden;
+}
+/* the v1 scope (for the segmented controls) brings a surface of its own; the example stands on the page */
+.k2b-ui.ui-example {
+  background: transparent;
 }
 .ui-example[data-phone] {
   --stage-h: var(--phone-h);
@@ -214,23 +216,32 @@ div.ui-topic__part,
 .ui-example__bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
+  gap: 8px 16px;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.6rem;
-  border-bottom: 1px solid var(--c-line);
+  margin: 0 0 8px;
+}
+/* v2 Tabs draw their underline on the line below them; here that line is the top of the view's frame. */
+.ui-example__tabs {
+  display: flex;
+  align-self: stretch;
+  min-height: 40px;
+  background: transparent;
+}
+.ui-example__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.ui-example__tools[data-idle] {
+  visibility: hidden;
 }
 /* The switches keep their own width, as on the chart pages; v1 draws a segmented control full width. */
 .k2b-ui.ui-example .ui-example__bar .k2b-segmented-control {
   width: auto;
   max-width: 100%;
   overflow-x: auto;
-}
-.ui-example__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
 }
 .ui-example__open {
   display: inline-grid;
@@ -239,6 +250,14 @@ div.ui-topic__part,
   height: 2rem;
   border-radius: 999px;
   color: var(--c-muted);
+}
+.ui-example__open:hover {
+  background: var(--c-sunken);
+  color: var(--c-ink);
+}
+.ui-example__open:focus-visible {
+  outline: 2px solid var(--k2b-focus-ring);
+  outline-offset: 1px;
 }
 /* the link's name for assistive technology; the sign says it to the eye */
 .ui-example__name {
@@ -249,28 +268,25 @@ div.ui-topic__part,
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.ui-example__open:hover {
-  background: var(--c-sunken);
-  color: var(--c-ink);
-}
-.ui-example__open:focus-visible {
-  outline: 2px solid var(--k2b-focus-ring);
-  outline-offset: 1px;
-}
-/* The stage's height comes from the width and height alone, so nothing moves while the frame loads or scales. */
-.ui-example__stage {
+/* The view's height comes from the width and height alone, so nothing moves while the frame loads, scales or the tab
+   switches between the screen and its code. */
+.ui-example__view {
   position: relative;
-  height: min(calc(var(--stage-h) * 1px), calc(100cqw * var(--stage-h) / var(--w)));
+  box-sizing: border-box;
+  height: min(calc(var(--stage-h) * 1px + 2px), calc(100cqw * var(--stage-h) / var(--w) + 2px));
+  border: 1px solid var(--c-line);
   overflow: hidden;
-  background: var(--c-sunken);
 }
-.ui-example__stage[hidden] {
+.ui-example__view[hidden] {
   display: none;
+}
+.ui-example__stage {
+  background: var(--c-sunken);
 }
 .ui-example__stage iframe {
   position: absolute;
   top: 0;
-  left: max(0px, calc((100cqw - var(--w) * 1px) / 2));
+  left: max(0px, calc((100cqw - 2px - var(--w) * 1px) / 2));
   width: calc(var(--w) * 1px);
   height: calc(var(--stage-h) * 1px);
   border: 0;
@@ -282,8 +298,8 @@ div.ui-topic__part,
 }
 .ui-example__scale {
   position: absolute;
-  right: 0.5rem;
-  bottom: 0.4rem;
+  right: 8px;
+  bottom: 8px;
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
   background: var(--k2b-surface);
@@ -291,19 +307,32 @@ div.ui-topic__part,
   font-family: var(--c-mono);
   font-size: 0.7rem;
 }
+/* The code fills the view's frame: no frame or rounding of its own, its lines scroll inside. */
 .ui-example__code {
-  max-height: 36rem;
+  display: flex;
+  flex-direction: column;
+}
+.ui-example__code .k2b-content-doc-code {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
   margin: 0;
   border: 0;
   border-radius: 0;
+  box-shadow: none;
+}
+.ui-example__code .k2b-content-doc-code__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 .ui-example__foot {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
   align-items: center;
-  padding: 0.45rem 0.75rem;
-  border-top: 1px solid var(--c-line);
+  margin-top: 8px;
   color: var(--c-faint);
   font-size: 0.78rem;
 }
@@ -417,34 +446,29 @@ div.ui-topic__part,
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: 1rem;
 }
+/* A tile has no card: the thumbnail carries one thin square frame, the words stand below it without a box. */
 .ui-map__tile {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  padding: 0 0 0.75rem;
-  border: 1px solid var(--c-line);
-  border-radius: var(--k2b-radius-surface);
-  overflow: hidden;
   color: inherit;
   text-decoration: none;
 }
-.ui-map__tile:hover {
+.ui-map__tile:hover .ui-map__thumb {
   border-color: var(--c-line-2);
 }
 .ui-map__tile:focus-visible {
   outline: 2px solid var(--k2b-focus-ring);
   outline-offset: 2px;
 }
-.ui-map__tile > span {
-  padding: 0 0.85rem;
-}
+
 .ui-map__thumb {
   position: relative;
   display: grid;
   place-items: center;
   aspect-ratio: 16 / 10;
   margin-bottom: 0.4rem;
-  border-bottom: 1px solid var(--c-line);
+  border: 1px solid var(--c-line);
   background: var(--c-sunken);
   color: var(--c-faint);
   font-size: 2rem;

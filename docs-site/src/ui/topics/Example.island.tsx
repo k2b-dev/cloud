@@ -1,4 +1,5 @@
 import { DocCode, SegmentedControl } from "@k2b/ui";
+import { Tabs } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 
 /** The widths an Example offers: a desktop, a tablet and a phone. Below 768 px the screen stands 1:1 as a phone. */
@@ -23,15 +24,12 @@ export type ExampleProps = {
   width?: ExampleWidth;
 };
 
-const tabs = [
-  { value: "preview", label: "Preview" },
-  { value: "code", label: "Code" },
-] as const;
-
 /**
- * Fibel's frame of one recipe: the live screen in an iframe, scaled to the column, its states and widths, and the whole
- * file as code with a copy button. The stage's height comes from CSS (`--w`, `--h`), so the page never moves while the
- * frame loads or scales; light and dark follow the Fibel switch of the page.
+ * Fibel's view of one recipe: a toolbar line without a box (v2 `Tabs` Preview | Code at the start, since they switch
+ * views; segmented controls for the values state and width at the end), the live screen in an iframe with one thin frame,
+ * scaled to the column, or the whole file as code in the same place and size, and the path as plain meta text. The
+ * view's height comes from CSS (`--w`, `--h`), so the page never moves while the frame loads, scales or the tab
+ * switches; light and dark follow the Fibel switch of the page.
  */
 export default function Example(props: ExampleProps) {
   const [tab, setTab] = createSignal<"preview" | "code">("preview");
@@ -51,7 +49,8 @@ export default function Example(props: ExampleProps) {
 
   /** Reads the width CSS chose (or the one picked) and scales the frame into the stage. */
   const layout = () => {
-    if (!figure || !stage) return;
+    // a hidden stage (the code shows) has no width; it scales again when it shows
+    if (!figure || !stage || stage.clientWidth === 0) return;
     const chosen = Number(getComputedStyle(figure).getPropertyValue("--w")) as ExampleWidth;
     if (exampleWidths.includes(chosen)) setShown(chosen);
     setScale(Math.min(1, stage.clientWidth / shown()));
@@ -101,33 +100,34 @@ export default function Example(props: ExampleProps) {
       style={{ "--h": String(props.height), "--phone-h": String(phoneHeight()), ...(width() ? { "--w": String(width()) } : {}) }}
     >
       <div class="ui-example__bar">
-        <SegmentedControl
-          size="sm"
-          ariaLabel={`${props.title}: preview or code`}
-          options={tabs}
-          value={tab}
-          onValueChange={(value) => setTab(value)}
-        />
-        <div class="ui-example__tools">
-          <Show when={tab() === "preview"}>
-            <Show when={props.states.length > 1}>
-              <SegmentedControl size="sm" ariaLabel="State" options={props.states} value={state} onValueChange={setState} />
-            </Show>
-            <SegmentedControl
-              size="sm"
-              ariaLabel="Width"
-              options={exampleWidths.map((value) => ({ value: String(value), label: String(value) }))}
-              value={() => String(shown())}
-              onValueChange={pickWidth}
-            />
+        <div class="k2-ui ui-example__tabs">
+          <Tabs
+            label={`${props.title}: preview or code`}
+            items={[
+              { label: "Preview", icon: "eye", current: tab() === "preview", onClick: () => setTab("preview") },
+              { label: "Code", icon: "code", current: tab() === "code", onClick: () => setTab("code") },
+            ]}
+          />
+        </div>
+        {/* the switches of the preview keep their place while the code shows, so the line never changes its height */}
+        <div class="ui-example__tools" data-idle={tab() === "code" ? "" : undefined} inert={tab() === "code"}>
+          <Show when={props.states.length > 1}>
+            <SegmentedControl size="sm" ariaLabel="State" options={props.states} value={state} onValueChange={setState} />
           </Show>
+          <SegmentedControl
+            size="sm"
+            ariaLabel="Width"
+            options={exampleWidths.map((value) => ({ value: String(value), label: String(value) }))}
+            value={() => String(shown())}
+            onValueChange={pickWidth}
+          />
           <a class="ui-example__open" href={src()} target="_blank" rel="noopener" title="Open the screen on its own">
             <i class="ti ti-external-link" aria-hidden="true" />
             <span class="ui-example__name">Open the screen on its own</span>
           </a>
         </div>
       </div>
-      <div ref={stage} class="ui-example__stage" hidden={tab() !== "preview"}>
+      <div ref={stage} class="ui-example__view ui-example__stage" hidden={tab() !== "preview"}>
         <iframe
           ref={frame}
           src={src()}
@@ -139,7 +139,9 @@ export default function Example(props: ExampleProps) {
         <span class="ui-example__scale">{`${shown()} px${scale() < 1 ? ` · ${Math.round(scale() * 100)} %` : ""}`}</span>
       </div>
       <Show when={tab() === "code"}>
-        <DocCode class="ui-example__code" title={props.path} code={props.source} language="tsx" copy lineNumbers />
+        <div class="ui-example__view ui-example__code">
+          <DocCode title={props.path} code={props.source} language="tsx" copy lineNumbers />
+        </div>
       </Show>
       <figcaption class="ui-example__foot">
         <i class="ti ti-file-code" aria-hidden="true" />
