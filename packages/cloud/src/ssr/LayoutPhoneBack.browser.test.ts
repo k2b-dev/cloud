@@ -228,6 +228,20 @@ test("without an open detail the phone bar keeps its title and the card starts b
   }
 }, 30_000);
 
+// The list of a v2 page (nothing open) is the phone's first page: the bar names the app at the title's place and keeps
+// search, help and the app menu, as the mockup draws it ("Mail", search, menu); the workspace head follows below.
+test("a v2 list page shows the app's name, search, help and the app menu in the phone bar", async () => {
+  const page = await open({ open: false });
+  try {
+    const title = await page.locator(".layout-header-title").boundingBox();
+    expect(await page.locator(".layout-header-title").textContent()).toBe("Mail");
+    expect(title && title.y + title.height <= 46).toBe(true);
+    expect(await barRow(page)).toEqual(["Open global search at 278", "Open help at 314", "Open apps at 350"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("a banner between the bar and the content keeps the bar whole and the way back in its own row", async () => {
   const page = await open({ banner: true });
   try {

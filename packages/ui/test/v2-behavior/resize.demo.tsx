@@ -14,20 +14,20 @@ export function Demo() {
     label: (index) => `Breite: ${names[index]}`,
   });
   return (
-    <div class="columns" ref={resize.container}>
+    <resize.Root class="columns">
       <For each={names}>
         {(name, index) => (
           <>
-            <section class="column" data-column={index()} style={{ width: `${resize.widths()[index()]}px` }}>
+            <resize.Panel index={index()} class="column" data-column={index()}>
               {name}
-            </section>
-            <div class="grip" data-grip={index()} {...resize.grip(index())} />
+            </resize.Panel>
+            <resize.Grip index={index()} class="grip" />
           </>
         )}
       </For>
-      <section class="column" data-column="rest">
+      <resize.Panel index={names.length} class="column" data-column="rest">
         Leser
-      </section>
-    </div>
+      </resize.Panel>
+    </resize.Root>
   );
 }

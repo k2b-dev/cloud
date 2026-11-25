@@ -14,6 +14,7 @@ import {
   announce,
   bindDrag,
   bindDragPreview,
+  bindHold,
   createAutoScroll,
   createChange,
   createReorder,
@@ -28,7 +29,7 @@ import {
   type TransferMessage,
   transferMessage,
 } from "@ui-sdk/core";
-import { createSignal, For, type JSX, onCleanup } from "solid-js";
+import { createSignal, For, type JSX, onCleanup, onMount } from "solid-js";
 import { type PartProps, part, usePrimitive } from "./adapter";
 import { type BehaviorMessages, useBehaviorMessages } from "./messages";
 
@@ -318,15 +319,19 @@ export type DropTarget = { id: string; label: string };
 
 /** Touch: a hold of this long lifts the item; moving the finger first scrolls. Mouse and pen drag after a few pixels. */
 const TOUCH_HOLD_MS = 400;
-const TOUCH_SLOP_PX = 8;
+const TOUCH_TOLERANCE_PX = 8;
 const MOUSE_THRESHOLD_PX = 6;
 
 /**
- * Drag items onto target surfaces marked with `data-drop-target="<id>"`.
- * Pointer: press and move (touch: hold first). Keyboard on the item's grip: Space or Enter lifts, Up/Down choose the
- * target, Enter or Space drops, Escape or Tab cancel. Every step is announced; nothing changes before the drop.
+ * Drag items onto target surfaces marked with `data-drop-target="<id>"`. Spread `item(key)` on each item's element.
+ * Pointer: press and move (touch: hold first, through core's `bindHold`). Keys on the item, or on an element in it
+ * marked `data-k2-drag-handle` (a grip button): Space or Enter lifts, Up/Down choose the target, Enter or Space drops,
+ * Escape or Tab cancel. Every step is announced; nothing changes before the drop.
  *
- * Solid 1 reads a signal's new value right after the write, so the drag logic reads its signals directly.
+ * Core has the parts (`bindDrag`, `bindDragPreview`, `createAutoScroll`, `bindHold`, `announce`) but no drop targets,
+ * so choosing a target is ours. Its one-drag-at-a-time session (`createDragSession`) is not exported, so the small
+ * bookkeeping below is ours too. Solid 1 reads a signal's new value right after the write, so the logic reads its
+ * signals directly.
  */
 export function createDragOnto(options: {
   targets: () => DropTarget[];
@@ -340,12 +345,7 @@ export function createDragOnto(options: {
   const label = (target: string | null) => options.targets().find((entry) => entry.id === target)?.label ?? "";
   const accepted = (key: string, target: string) => options.accepts?.(key, target) ?? true;
   let stop: (() => void) | undefined;
-  // A touch hold still waiting when the owner goes would otherwise start a drag on a removed element.
-  let holding: (() => void) | undefined;
-  onCleanup(() => {
-    holding?.();
-    stop?.();
-  });
+  onCleanup(() => stop?.());
 
   const finish = (key: string, target: string | null, by: "drop" | "cancel") => {
     stop = undefined;
@@ -424,43 +424,16 @@ export function createDragOnto(options: {
     };
   };
 
-  /** Bind on the item's pointerdown. */
-  const pointerdown = (event: PointerEvent, el: HTMLElement, key: string) => {
-    if (event.button !== 0 || moving()) return;
-    if (event.pointerType !== "touch") return startPointerDrag(el, event, key, MOUSE_THRESHOLD_PX);
-    // Touch: the finger scrolls unless it holds still. After the hold, a non-passive touchmove stops the scroll.
-    const start = { x: event.clientX, y: event.clientY };
-    const blockScroll = (touch: TouchEvent) => touch.cancelable && touch.preventDefault();
-    const quit = () => {
-      holding = undefined;
-      clearTimeout(timer);
-      el.removeEventListener("pointermove", moved);
-      el.removeEventListener("pointerup", quit);
-      el.removeEventListener("pointercancel", quit);
-    };
-    const moved = (move: PointerEvent) => {
-      if (Math.hypot(move.clientX - start.x, move.clientY - start.y) > TOUCH_SLOP_PX) quit();
-    };
-    const timer = setTimeout(() => {
-      quit();
-      el.addEventListener("touchmove", blockScroll, { passive: false });
-      const release = () => el.removeEventListener("touchmove", blockScroll);
-      el.addEventListener("pointerup", release, { once: true });
-      el.addEventListener("pointercancel", release, { once: true });
-      startPointerDrag(el, event, key, 0);
-    }, TOUCH_HOLD_MS);
-    holding = quit;
-    el.addEventListener("pointermove", moved);
-    el.addEventListener("pointerup", quit);
-    el.addEventListener("pointercancel", quit);
-  };
-
-  /** Bind on the grip's keydown. */
-  const keydown = (event: KeyboardEvent, key: string) => {
+  const keydown = (event: KeyboardEvent, key: string, el: EventTarget | null) => {
     const current = moving();
     const choices = options.targets().filter((target) => accepted(key, target.id));
     if (!current) {
       if (event.key !== " " && event.key !== "Enter") return;
+      // Only the item itself or its grip lifts it; Enter on a link or button inside the item stays theirs.
+      const from = event.target;
+      const handle = from instanceof Element ? from.closest("[data-k2-drag-handle]") : null;
+      // The grip must be this item's own, not one of an item around it.
+      if (from !== el && !(handle && el instanceof Element && el.contains(handle))) return;
       event.preventDefault();
       setMoving(key);
       setOver(choices[0]?.id ?? null);
@@ -486,5 +459,58 @@ export function createDragOnto(options: {
     }
   };
 
-  return { moving, over, pointerdown, keydown, stop: () => stop?.() };
+  /**
+   * Props for one item's element (`ref` and `onKeyDown`). Call it where the item renders (inside its `For` row), so
+   * its bindings end with the item. Spread it after the item's own props; an item that needs its own `ref` or
+   * `onKeyDown` as well calls `item(key).ref(el)` and `item(key).onKeyDown(event)` from its own handlers.
+   */
+  const item = (key: string) => {
+    let release: (() => void) | undefined;
+    let element: HTMLElement | undefined;
+    onCleanup(() => release?.());
+    const bind = (el: HTMLElement) => {
+      release?.();
+      const press = (event: PointerEvent) => {
+        if (event.button !== 0 || moving() || event.pointerType === "touch") return;
+        startPointerDrag(el, event, key, MOUSE_THRESHOLD_PX);
+      };
+      // After the hold, a non-passive touchmove keeps the page from scrolling under the dragged finger.
+      const blockScroll = (touch: TouchEvent) => touch.cancelable && touch.preventDefault();
+      const unblock = () => el.removeEventListener("touchmove", blockScroll);
+      // Touch: core's hold lifts the item; a finger that moves first scrolls, and the long press opens neither iOS's
+      // callout nor a context menu.
+      const unhold = bindHold(el, {
+        delay: TOUCH_HOLD_MS,
+        tolerance: TOUCH_TOLERANCE_PX,
+        keys: [],
+        onPress: ({ input }) => input === "touch" && !moving(),
+        onHold: ({ event }) => {
+          if (!(event instanceof PointerEvent)) return false;
+          el.addEventListener("touchmove", blockScroll, { passive: false });
+          el.addEventListener("pointerup", unblock, { once: true });
+          el.addEventListener("pointercancel", unblock, { once: true });
+          startPointerDrag(el, event, key, 0);
+          return false;
+        },
+      });
+      el.addEventListener("pointerdown", press);
+      release = () => {
+        el.removeEventListener("pointerdown", press);
+        unblock();
+        unhold();
+      };
+    };
+    // Bound once the item is in the page, never in `ref`: Solid 1 calls `ref` on the node cloned from its template
+    // before it is inserted, while its `ownerDocument` is still the template's inert document, and core's `bindHold`
+    // listens for the press's moves and release on `el.ownerDocument`. Bound there, a press never ended.
+    onMount(() => element && bind(element));
+    return {
+      ref: (el: HTMLElement) => {
+        element = el;
+      },
+      onKeyDown: (event: KeyboardEvent) => keydown(event, key, event.currentTarget),
+    };
+  };
+
+  return { moving, over, item, stop: () => stop?.() };
 }
