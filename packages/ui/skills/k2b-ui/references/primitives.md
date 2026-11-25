@@ -71,14 +71,8 @@ grip where a pane has `width`. A `Pane.Split` may stand inside a `Pane`
 under that pane's `Tabs` head, after content that spans both columns (see
 `record.tsx`).
 
-Until v2 has a `Dialog`, a screen "with the dialog open" shows the dialog's
-form as one more `Pane detail` at the end of the split: a head `Bar` with
-its title and a close button, `Band`s of fields, a footer `Bar`. Mark it
-with a `k2b-ui gap` comment. `detail` makes it leave on the phone, where the
-form is its own route. Its confirm button is a default (framed) button: the
-page's one primary stays in the head, and `Workspace primary` must never
-confirm a dialog. When the list beside it is a table, give the dialog pane
-a `width` so the table keeps its columns.
+A short task above the page is a `Dialog` (see "Overlays"), not one more
+pane; `Workspace primary` never confirms a dialog.
 
 ### Bar
 
@@ -363,40 +357,22 @@ lines instead of cutting a thing.
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
 
-## Overlays: Menu, Popover, Toast
+## Overlays: Dialog, Menu, Popover, Toast
 
-- `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
-  `variant`, `disabled`; children are the words). Without words it is the
-  quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
-  head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
-  Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
-  (an entry that toggles; `onClick` flips it, the tick stands at the end),
-  `items` (a submenu to the side); or `"separator"` between groups; or a
-  section `{ title, items }` under a quiet heading. A section with
-  `choice` and `onChoose` is one choice (reply kind, sender, order): its
-  entries are options (`value`, else `label`), the chosen one carries the
-  tick, choosing closes the menu. Lines around sections and before the
-  first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
-- `Menu.Context`: `items`, and one element as child, such as a `Row`. A
-  right-click or a long press opens the menu at the pointer, Shift+F10 at
-  the element. It adds no wrapper, so a `Row` stays a child of its `List`.
-  Give the same entries to a "…" in the row's `end` for those who do not
-  right-click.
-- `Popover`: a panel behind a button: the button's look like `Menu`,
-  `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
-  child (a `Button`) after a moment on hover or focus.
-- `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
-  One sentence at the bottom in the middle, five seconds, "Rückgängig" with
-  `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
-  (`bad` is announced at once).
-  A toast reports a deed; it never replaces `Failed` or a `Notice` at the
-  place of a problem.
-
-## Overlays: Menu, Popover, Toast
+- `Dialog`: `title`, `open` and `onOpenChange` (the screen keeps the open
+  state), `foot` (the buttons, the main one last: the dialog's own one
+  primary), children (fields, a notice, text; they scroll). 480 px in the
+  middle; below 768 px a sheet from the bottom that a swipe down closes.
+  The first field takes the focus (on the sheet the first control that is
+  no text field), else the first action of the foot; focus stays inside,
+  Escape and the close button close it, focus returns to what opened it.
+  `dismissible={false}`: a press outside, a swipe and the back gesture do
+  not close it; Escape, the close button and the foot still do.
+- `Dialog.confirm({ title, confirm, description?, cancel? })`: resolves
+  `true` when the person agrees. An alert dialog without a close button,
+  never a sheet; focus starts on the other button, Escape answers no, a
+  press outside does nothing. Call it from a menu entry with `void`, so the
+  menu closes while it asks.
 
 - `Menu`: `items`, the button's look like `Button` (`label`, `icon`,
   `variant`, `disabled`; children are the words). Without words it is the

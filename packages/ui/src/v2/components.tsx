@@ -28,7 +28,9 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 // ── Nav ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 type NavEntryBase = {
+  /** The words of the entry. */
   label: string;
+  /** A count at the end, such as unread mails. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -46,10 +48,13 @@ type NavEntryBase = {
 export type NavItem = NavEntryBase &
   (
     | {
+        /** A Tabler icon before the words. */
         icon: string;
+        /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
         onNavigate?: OnNavigate;
+        /** A deed instead of a page, for what has no address. */
         onClick?: () => void;
         /**
          * The deeds of this entry, such as "Anheften" and "Ausblenden" of a mailbox: a "…" at its end that shows
@@ -70,19 +75,23 @@ export type NavItem = NavEntryBase &
   );
 
 export type NavGroup = {
+  /** A quiet heading over the group, such as "Postfächer". */
   label?: string;
   /**
    * The group's one deed as a quiet icon button, or, with `items`, a "…" with the group's deeds, such as "Neues
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
+  /** The entries of the group. */
   items: readonly NavItem[];
 };
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
+  /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
@@ -211,8 +220,11 @@ export const Nav = (props: NavProps) => (
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Tab = {
+  /** The name of the view. */
   label: string;
+  /** A Tabler icon before the name. */
   icon?: string;
+  /** A quiet count after the name. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -220,6 +232,7 @@ export type Tab = {
   onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
+  /** The view shown now. */
   current?: boolean;
   /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
@@ -229,7 +242,12 @@ export type Tab = {
   menu?: readonly MenuEntry[];
 };
 
-export type TabsProps = { items: readonly Tab[]; label: string };
+export type TabsProps = {
+  /** The tabs in their order; a tab with `menu` stands at the end. */
+  items: readonly Tab[];
+  /** The name of the tab list, such as "Ansichten", for assistive technology. */
+  label: string;
+};
 
 /** The words of a tab: its symbol, its name and its count. */
 const TabFace = (props: { tab: Tab }) => (
@@ -398,7 +416,14 @@ export const Path = (props: PathProps) => (
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A key figure: words before and after, the value itself in 600 (leave it out for words alone, such as "12 offen"). */
-export type StatusFact = { before?: string; value?: string | number; after?: string };
+export type StatusFact = {
+  /** Words before the value, such as "Summe". */
+  before?: string;
+  /** The value itself, in 600. */
+  value?: string | number;
+  /** Words after the value, such as "überfällig". */
+  after?: string;
+};
 
 export type StatusRowProps = {
   /** The one main statement, such as "7 unread". */
@@ -500,6 +525,7 @@ export type NoticeProps = {
   meta?: string;
   /** Text buttons at the end; at most two. */
   actions?: TwoActions;
+  /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
 
@@ -536,7 +562,9 @@ export const Notice = (props: NoticeProps) => (
 // ── Digest ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type DigestEntry = {
+  /** A Tabler icon for the kind of thing. */
   icon: string;
+  /** The data colour of its area. */
   color?: string;
   /** A short date, such as "17. Nov.". */
   date: string;
@@ -546,12 +574,25 @@ export type DigestEntry = {
   state: { icon: string; label: string; tone?: Status };
   /** One sentence about it; `<Text weight="strong">` stresses a word. */
   text: JSX.Element;
+  /** The page of the thing: its number becomes a link. */
   href?: string;
 };
 
 export type DigestProps =
-  | { items: readonly DigestEntry[]; children?: never; label?: string }
-  | { items?: never; children: JSX.Element; label?: string };
+  | {
+      /** The dated entries, newest first. */
+      items: readonly DigestEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
+      children: JSX.Element;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    };
 
 /**
  * The newest few on a first page, without lines (decided 22.11.): dated entries in a grid of date, number with state
@@ -601,6 +642,7 @@ export const Digest = (props: DigestProps) => {
 // ── Steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Step = {
+  /** The name of the step, such as "Angekommen". */
   label: string;
   /** A quiet line under the step, such as a date or "10 von 18". */
   meta?: string;
@@ -609,7 +651,12 @@ export type Step = {
 };
 
 /** A way of a few steps: done ones grey with a tick, the running one a blue ring, the coming ones empty. */
-export type StepsProps = { items: readonly Step[]; label: string };
+export type StepsProps = {
+  /** The steps in their order. */
+  items: readonly Step[];
+  /** The name of the way, such as "Weg der Einlieferung", for assistive technology. */
+  label: string;
+};
 
 export const Steps = (props: StepsProps) => (
   <ol
@@ -639,10 +686,21 @@ export const Steps = (props: StepsProps) => (
 
 // ── RecordHead ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RecordId = { label?: string; value: string; icon?: string; copy?: boolean };
+export type RecordId = {
+  /** A quiet word before the value, such as "Kunde". */
+  label?: string;
+  /** The identifier itself. */
+  value: string;
+  /** A Tabler icon instead of the label, such as `phone`. */
+  icon?: string;
+  /** Offers a copy button for the value. */
+  copy?: boolean;
+};
 
 export type RecordHeadProps = {
+  /** The name of the record, the page's heading. */
   name: string;
+  /** The picture or initials before the name. */
   avatar?: Person;
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];
