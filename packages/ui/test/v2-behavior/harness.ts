@@ -77,16 +77,18 @@ export type OpenOptions = {
   markup?: string;
   /** Runs in the page before the bundle, for measurements that must see the mount. */
   before?: string;
+  /** The page's `<html lang>`, which the island renders its texts in. */
+  lang?: "de" | "en";
 };
 
 /** A page with the contract CSS, the server markup and the mounted demo, settled. */
 export const openDemo = async (browser: Browser, bundle: string, css: string, options: OpenOptions = {}): Promise<Page> => {
-  const { width = 1440, height = 900, theme = "light", touch = false, markup = "", before = "" } = options;
+  const { width = 1440, height = 900, theme = "light", touch = false, markup = "", before = "", lang = "de" } = options;
   const page = await browser.newPage({ viewport: { width, height }, colorScheme: theme, hasTouch: touch });
   // A missed condition fails at its own step, inside the test's 5 s, instead of timing the whole test out.
   page.setDefaultTimeout(2000);
   await page.setContent(
-    `<!doctype html><html lang="de" data-theme="${theme}"><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root">${markup}</div></body></html>`,
+    `<!doctype html><html lang="${lang}" data-theme="${theme}"><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root">${markup}</div></body></html>`,
   );
   if (before) await page.addScriptTag({ content: before });
   await page.addScriptTag({ content: bundle });
