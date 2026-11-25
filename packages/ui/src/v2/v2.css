@@ -1015,8 +1015,10 @@
 }
 /* a list of items keeps only the rows in view in the page; its padding holds the place of the others */
 .k2-ui .k2-list[data-virtual] {
-  padding-top: var(--k2-before, 0px);
-  padding-bottom: var(--k2-after, 0px);
+  --k2-before: 0px;
+  --k2-after: 0px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
 }
 .k2-ui .k2-row {
   /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
@@ -1331,6 +1333,7 @@
 /* a table of any length keeps only the rows in view in the page; an empty row holds the place of the others */
 .k2-ui .k2-table tr[data-spacer] > td,
 .k2-ui .k2-table[data-grid] tr[data-spacer] > td {
+  --k2-space: 0px;
   height: var(--k2-space);
   padding: 0;
   border: 0;
