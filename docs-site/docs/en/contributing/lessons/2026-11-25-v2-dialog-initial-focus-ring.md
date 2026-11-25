@@ -1,0 +1,6 @@
+### A v2 dialog that opened with its page showed a focus ring on its first control
+
+- **What happened:** On the agent page the dialog "Neuer Schlüssel" opens from its address (`…/keys/new`). On the phone its sheet gave the first control that is no text field (a radio, else the first action) the focus, and that control showed a focus ring although nobody had used a key.
+- **Root cause:** The dialog moves the focus in with a script. A browser treats a script's focus as keyboard focus (`:focus-visible`) when the person has not pressed anything yet, as on a page that opens with the dialog. A click or a tap before the dialog showed no ring, so the earlier tests, which all opened the dialog with a press, missed it.
+- **Error class:** A focus a script gives shows the keyboard's ring without any key.
+- **Guard:** The dialog gives its first focus with `focus({ focusVisible: false })` unless a key opened it (core's `isFocusFromKeyboard`); a text field keeps its own ring. `packages/ui/src/v2/overlays.browser.test.ts` opens the dialog by a tap, a click, the keyboard and its address, on the phone and wide, in Chromium and WebKit, and checks that only the keyboard shows the ring and that the next key does.

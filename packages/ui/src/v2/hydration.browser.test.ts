@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { launchBrowser, launchHookMs, pageErrors, settled, waitInPage } from "../../test/browser";
+import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
@@ -56,11 +57,12 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
     });
     await page.addScriptTag({ content: client });
-    await page
-      .waitForFunction(() => window.__k2Hydrated === true)
-      .catch(() => {
-        throw new Error(`the page did not hydrate: ${[...errors, ...consoleErrors].join(" | ")}`);
-      });
+    await waitInPage(
+      page,
+      "the page did not hydrate",
+      () => window.__k2Hydrated === true,
+      () => [...errors, ...consoleErrors],
+    );
     await settled(page);
     await run(page);
     expect(errors).toEqual([]);
@@ -70,65 +72,9 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
   }
 };
 
-/**
- * Runs in the page: where the live page differs from what the server sent, in elements, texts and attributes. The
- * keys of hydration and comments do not count; a style counts by its declarations, not their spelling.
- */
-const differencesInPage = () => {
-  const sent = window.__k2Sent!;
-  const live = document.getElementById("root")!;
-  const found: string[] = [];
-  const style = (element: Element) => {
-    const probe = document.createElement("i");
-    probe.setAttribute("style", element.getAttribute("style") ?? "");
-    return Array.from(probe.style)
-      .map((name) => `${name}:${probe.style.getPropertyValue(name)}`)
-      .sort()
-      .join(";");
-  };
-  const nodes = (parent: Node) =>
-    Array.from(parent.childNodes).filter((node) => node.nodeType === 1 || (node.nodeType === 3 && node.textContent !== ""));
-  const walk = (a: Node, b: Node, path: string) => {
-    if (a.nodeType === 3 || b.nodeType === 3) {
-      if (a.nodeType !== b.nodeType || a.textContent !== b.textContent)
-        found.push(`${path}: text "${a.textContent}" became "${b.textContent}"`);
-      return;
-    }
-    if (!(a instanceof Element) || !(b instanceof Element)) return;
-    if (a.tagName !== b.tagName) {
-      found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
-      return;
-    }
-    // Core puts the Workspace's toast region in the top layer (`popover`) and measures the viewport into custom
-    // properties once it binds; an empty region shows nothing either way (as in the reload contract of the behaviour
-    // layer), so only those two are left out there.
-    const region = b.getAttribute("data-slot") === "toast-region";
-    const custom = (element: Element) =>
-      style(element)
-        .split(";")
-        .filter((entry) => !(region && entry.startsWith("--")))
-        .join(";");
-    const names = new Set(
-      [...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk" && !(region && name === "popover")),
-    );
-    for (const name of names) {
-      const same = name === "style" ? custom(a) === custom(b) : a.getAttribute(name) === b.getAttribute(name);
-      if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
-    }
-    const [left, right] = [nodes(a), nodes(b)];
-    if (left.length !== right.length) found.push(`${path} ${a.tagName.toLowerCase()}: ${left.length} children became ${right.length}`);
-    left.forEach((child, index) => {
-      const other = right[index];
-      if (other) walk(child, other, `${path} > ${index}`);
-    });
-  };
-  walk(sent, live, "root");
-  return found;
-};
-
 test("hydration: the live page is what the server sent, in elements, texts and attributes", async () => {
   await withPage(async (page) => {
-    expect(await page.evaluate(differencesInPage)).toEqual([]);
+    expect(await page.evaluate(sentVsLive)).toEqual([]);
   });
 });
 
@@ -158,7 +104,7 @@ test("the comparison of sent and live pages finds a changed attribute and a chan
       const title = document.querySelector(".k2-row-title")!.firstChild!;
       title.textContent = `${title.textContent} (neu)`;
     });
-    const found = await page.evaluate(differencesInPage);
+    const found = await page.evaluate(sentVsLive);
     expect(found.some((line) => line.includes("[data-probe]"))).toBe(true);
     expect(found.some((line) => line.includes("(neu)"))).toBe(true);
   });

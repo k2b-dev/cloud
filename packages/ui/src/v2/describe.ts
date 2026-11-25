@@ -111,7 +111,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const variant = element.getAttribute("data-variant");
       const busy = element.getAttribute("aria-busy") === "true";
       const disabled = element.hasAttribute("disabled") || element.getAttribute("aria-disabled") === "true";
-      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${busy ? " busy" : disabled ? " disabled" : ""}]`;
+      return `[${quote(label, 40)}${variant ? ` ${variant}` : ""}${element.hasAttribute("data-menu") ? " menu" : ""}${element.tagName === "A" ? " link" : ""}${busy ? " busy" : disabled ? " disabled" : ""}${element.getAttribute("aria-pressed") === "true" ? " pressed" : ""}]`;
     }
     if (name === "Chip") {
       const kind = element.getAttribute("data-status") ?? element.getAttribute("data-kind");

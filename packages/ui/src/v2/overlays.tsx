@@ -1,7 +1,7 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { createQuestion, type Question, useDialog } from "./behavior/overlays";
+import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
 
 // The overlays of v2: the behaviour (focus, Escape, placement, keys, the sheet on the phone) comes from the behaviour
@@ -78,7 +78,12 @@ export const Dialog = (props: DialogProps) => {
     );
   const first = (part: HTMLElement | undefined) =>
     [...(part?.querySelectorAll<HTMLElement>(focusable) ?? [])].find((element) => !phone() || !typed(element));
-  const firstFocus = () => first(body) ?? first(foot) ?? null;
+  const firstFocus = () => {
+    const target = first(body) ?? first(foot) ?? null;
+    // the first focus shows no ring unless a key opened the dialog; a text field keeps its own (the caret's place)
+    if (target && !typed(target)) quietFocus(target);
+    return target;
+  };
   const [more, setMore] = createSignal<"above" | "below" | "both">();
   const measure = (body: HTMLElement) => {
     const above = body.scrollTop > 0;

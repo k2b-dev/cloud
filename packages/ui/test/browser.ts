@@ -721,6 +721,21 @@ export const hoverInPlace = async (target: Locator, position?: { x: number; y: n
 export { settled };
 
 /**
+ * Waits until `condition` holds in the page. A miss fails with `what`, Playwright's own reason (a timeout, a closed
+ * page, a destroyed context; also kept as `cause`) and what the page reported by then, so a red run names its cause
+ * (#4121: a hydration wait failed after 362 ms with only empty page errors in its message).
+ */
+export const waitInPage = async (page: Page, what: string, condition: () => unknown, reported: () => readonly string[] = () => []) => {
+  try {
+    await page.waitForFunction(condition);
+  } catch (cause) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    const said = reported();
+    throw new Error(`${what}: ${reason}${said.length > 0 ? `\nthe page reported: ${said.join(" | ")}` : ""}`, { cause });
+  }
+};
+
+/**
  * Waits until no document view transition is active. Every enhanced link starts one. While it is active, WebKit
  * sends pointer input to `<html>`, so a click is lost, and it can stay active after its own animations ended, so
  * `settled()` may return before it. Await this after a navigation before the next click or Back.

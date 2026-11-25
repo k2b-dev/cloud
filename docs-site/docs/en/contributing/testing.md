@@ -540,6 +540,16 @@ for an expected rejection, capture the reason and assert on it.
 See the tray Undo test in
 `packages/spaces/src/frontend/[id]/_components/calendar/calendar-tray.browser-suite.ts`.
 
+When a Playwright test catches an error and throws its own, it keeps the
+caught one: pass it as `{ cause }`, put it in the message, or rethrow it.
+Otherwise a red run loses Playwright's own reason, such as a closed page or a
+destroyed context
+([#4121](https://github.com/k2b-dev/cloud/issues/4121)). To wait for a
+condition in the page, use `waitInPage(page, what, condition, reported)` from
+`packages/ui/test/browser.ts`. A miss then fails with `what`, Playwright's
+reason, and what `reported()` returns, such as the page's errors. The
+`test-error-causes` check enforces this rule.
+
 Every page from `launchBrowser()` answers Cloud's own capability catalog read
 (`GET /api/capabilities/v1/catalog`) with an empty catalog, in the page and
 without a request. Shared browser modules make this read by themselves, such as

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { sentVsLive } from "../../test/sent-vs-live";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-row-select.client";
 import { measureV2Layout } from "./testing";
@@ -54,28 +55,6 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, dark
   }
 };
 
-/** Runs in the page: elements and attributes where the live page differs from what the server sent. */
-const differencesInPage = () => {
-  const found: string[] = [];
-  const walk = (a: Element, b: Element, path: string) => {
-    if (a.tagName !== b.tagName) {
-      found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
-      return;
-    }
-    // core puts the workspace's toast region in the top layer and measures the viewport into it once it binds; an
-    // empty region shows nothing either way (as the reload contract treats it)
-    const toasts = a.getAttribute("data-slot") === "toast-region";
-    for (const name of new Set([...a.getAttributeNames(), ...b.getAttributeNames()]))
-      if (name !== "data-hk" && !(toasts && (name === "popover" || name === "style")) && a.getAttribute(name) !== b.getAttribute(name))
-        found.push(`${path}: ${name} "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
-    if (a.children.length !== b.children.length) found.push(`${path}: ${a.children.length} children became ${b.children.length}`);
-    for (let index = 0; index < Math.min(a.children.length, b.children.length); index++)
-      walk(a.children[index]!, b.children[index]!, `${path} > ${a.children[index]!.tagName.toLowerCase()}`);
-  };
-  walk(window.__k2Sent as Element, document.getElementById("root")!, "#root");
-  return found;
-};
-
 /** Each row of the list: its title, whether its box is set, its open state and its background. */
 const rowsInPage = () =>
   [...document.querySelectorAll<HTMLElement>('[aria-label="Nachrichten"] > .k2-row')].map((row) => {
@@ -104,7 +83,7 @@ const tints = (page: Page) =>
 
 test("hydration: the live list in a selection is what the server sent", async () => {
   await withPage(async (page) => {
-    expect(await page.evaluate(differencesInPage)).toEqual([]);
+    expect(await page.evaluate(sentVsLive)).toEqual([]);
   });
 });
 
