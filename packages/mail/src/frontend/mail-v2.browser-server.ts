@@ -181,7 +181,7 @@ document.documentElement.dataset.mailV2Ready='true';
           derivationKind: null,
           content: {
             senderIdentityId: input.senderIdentityId,
-            signatureTemplateId: null,
+            signatureTemplateId: MAIL_V2_SIGNATURE.id,
             quoteSource: input.quoteSource ?? null,
             to: [{ name: "Holzwerk Brandt", address: "einkauf@holzwerk-brandt.example" }],
             cc: [],
