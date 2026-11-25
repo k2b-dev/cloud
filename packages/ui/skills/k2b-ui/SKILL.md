@@ -90,20 +90,22 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | attachments, like things to press | `Tiles` | `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
-| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | – |
-| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | – |
+| a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
+| a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
 | a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
 | a free drawing (map, chart) | `Canvas` inside a primitive | `record.tsx` |
-| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | – |
-| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | – |
+| nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
+| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
-| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | – |
-| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | – |
-| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | – |
-| a short hint on a button | `Popover tip` around the `Button` | – |
-| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | – |
+| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
+| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
+| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | `actions.tsx` |
+| a short hint on a button | `Popover tip` around the `Button` | `actions.tsx` |
+| "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | `dialogs.tsx` |
+| a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | `dialogs.tsx` |
+| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | `dialogs.tsx` |
 
 ## The rules, and why
 
@@ -161,19 +163,15 @@ a `Notice` that names the deed.
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
-- **Overlays:** `Menu`, `Menu.Context`, `Popover` (panel or `tip`),
-  `useToast`.
+- **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
+  `Popover` (panel or `tip`), `useToast`.
 - **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
-`Dialog` (its behaviour exists inside `@k2b/ui`, the v2 component
-follows), the mail
-and chat composer (comes from `@k2b/editor`), and an assistant message or
-answer card.
-How to stand in until then: a dialog is a `Pane detail` (see
-[primitives](references/primitives.md), "Pane.Split").
+the mail and chat composer (comes from `@k2b/editor`), and an assistant
+message or answer card.
 
 Filters, sorts and groups have exactly one way: declare them once with
 `defineListQuery`, show them with `FilterBar` and `ListOrder`. The state

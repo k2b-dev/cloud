@@ -12,7 +12,10 @@ thing you can point at in the image.
 Most recipes also export `states`: the same screen empty, loading, failed
 or in another state that fits it (a form while it saves). Fibel's examples
 switch between them, and the browser test checks each one. A state stands
-where the data would stand; the head and the status row never move.
+where the data would stand; the head and the status row never move. A
+state that shows an open menu, panel, dialog or toast is `{ render, press }`:
+the screen, and the names of the buttons and menu entries a person presses,
+in order, to open it.
 
 ## frame.tsx: the frame of an app
 
@@ -59,8 +62,8 @@ with "Cancel" and the one primary "Save", disabled while the conflict lasts.
 
 - Validation and server answers live in the app's state; the primitives
   only show `error`.
-- A form that opens over the page is a `Dialog` (a sheet on the phone);
-  this one has a page of its own.
+- A long form stands in its own pane or route; a short task above the page
+  is a `Dialog` (see `dialogs.tsx`).
 - States: `fresh` (nothing sent yet), `errors` ("Pflichtfeld." and the
   server's errors at their fields), `saving` (`Button busy`).
 
@@ -163,3 +166,49 @@ shows what the server found for the address.
 - On the phone the bar is one line that scrolls; a tap opens the filter sheet.
 - Pass `views` only when the app stores views (see
   [list queries](list-queries.md)).
+
+## actions.tsx: where deeds stand
+
+![actions at 1440 px](../images/actions-1440.png)
+![actions at 390 px](../images/actions-390.png)
+
+The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
+`Popover` filter panel, a `Menu` with a choice section and toggles, and the
+one primary as a `Menu` with a submenu. Each `Row` stands in a
+`Menu.Context` and has a `Button pressed` star and a "…" `Menu` with the
+same entries in its `end`. The offer the address names opens in a
+`Pane detail` with its own deeds; `Button busy` while it sends, and a
+`Notice` with a `disabled` action that says why.
+
+- One list of entries feeds the row's "…" and its right-click.
+- Deleting answers with a toast and "Rückgängig".
+
+## dialogs.tsx: a dialog, a question, a toast
+
+![dialogs at 1440 px](../images/dialogs-1440.png)
+![dialogs at 390 px](../images/dialogs-390.png)
+
+Members of a space in `Section`s. "Einladen" opens a `Dialog` with
+`Field`s and its own primary in the foot (a sheet on the phone);
+`Workspace primary` opens the same dialog. Removing a member asks with
+`Dialog.confirm`, then a toast offers "Rückgängig"; "Erneut senden"
+answers with a toast with `status` `ok` or `bad`.
+
+- A menu entry that opens `Dialog.confirm` returns nothing (`void`), so
+  the menu closes while the question asks.
+- The open state of the dialog lives in the screen (`open`,
+  `onOpenChange`).
+
+## states.tsx: the states of a list
+
+![states at 1440 px](../images/states-1440.png)
+![states at 390 px](../images/states-390.png)
+
+A list with a `StatusRow` and its states in the place of the rows:
+`Empty` for nothing yet and another `Empty` for nothing behind a
+filter, `Loading` with the rows and lines that usually come, `Failed`
+with "Erneut versuchen". A `Notice tone="bad"` names the deed for a
+problem a person must fix; a connection that retries on its own says so in
+the `StatusRow` facts.
+
+- The head and the status row never move between the states.

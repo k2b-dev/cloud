@@ -1,4 +1,6 @@
 import { createComponent, type JSX } from "solid-js";
+import * as actions from "../../../../packages/ui/skills/k2b-ui/recipes/actions";
+import * as dialogs from "../../../../packages/ui/skills/k2b-ui/recipes/dialogs";
 import * as form from "../../../../packages/ui/skills/k2b-ui/recipes/form";
 import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-detail";
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
@@ -6,6 +8,7 @@ import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
+import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
 
 /**
@@ -36,6 +39,8 @@ const RECIPE_LOCALE = "de";
 
 /** Every recipe by its file name without `.tsx`. A new recipe file is one line here; a test fails on a missing one. */
 export const recipes = {
+  actions,
+  dialogs,
   form,
   "form-detail": formDetail,
   frame,
@@ -43,6 +48,7 @@ export const recipes = {
   mail,
   record,
   "record-groups": recordGroups,
+  states,
   table,
 } satisfies Record<string, RecipeModule>;
 
