@@ -11,6 +11,9 @@ declare global {
     __k2Mounted?: boolean;
     /** Shows or hides the loading mark of the status row. */
     __k2Loading?: (on: boolean) => void;
+    /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
+    __k2TakeEscape?: boolean;
+    __k2Escapes?: number;
   }
 }
 
@@ -78,7 +81,17 @@ render(
           }
           end={
             <>
-              <Input type="search" icon="search" placeholder="Durchsuchen" label="Durchsuchen" />
+              <Input
+                type="search"
+                icon="search"
+                placeholder="Durchsuchen"
+                label="Durchsuchen"
+                onKeyDown={(event) => {
+                  if (event.key !== "Escape" || !window.__k2TakeEscape) return;
+                  event.preventDefault();
+                  window.__k2Escapes = (window.__k2Escapes ?? 0) + 1;
+                }}
+              />
               <Button keep variant="ghost" icon="dots" label="Weitere Aktionen" />
             </>
           }

@@ -365,7 +365,7 @@ export const Tabs = (props: TabsProps) => {
 
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
- * On the phone the head with a path gives way to the phone bar of the shell, which names the page.
+ * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 

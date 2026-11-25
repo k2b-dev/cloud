@@ -58,7 +58,7 @@ const statusRow = () => {
   const lead = row.querySelector(".k2-status-lead")!.getBoundingClientRect();
   const controls = [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")];
   return {
-    width: Math.round(box.width),
+    width: Math.round(box.width * 64) / 64,
     facts: [...row.querySelectorAll(".k2-fact")].filter((fact) => fact.getClientRects().length > 0).length,
     controls: controls.map((button) => ({
       name: button.textContent?.trim(),
@@ -69,7 +69,7 @@ const statusRow = () => {
   };
 };
 
-for (const column of [1024, 760, 759, 600])
+for (const column of [1024, 760, 759.5, 759, 600])
   test(`a status row ${column} px wide: figures from 760 px on, below they give way and the controls keep their words`, async () => {
     await withPage(
       async (page) => {
@@ -187,6 +187,46 @@ test("390 px: the search of the head stays as its symbol, opens over the head wh
     },
     { width: 390 },
   );
+});
+
+test("390 px: Escape folds the open search of the head back and keeps its words, unless the app takes Escape", async () => {
+  await withPage(
+    async (page) => {
+      const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+      const width = () =>
+        page.evaluate(() => Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width));
+      await search.focus();
+      await page.keyboard.type("Zeitüberschreitung");
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+      expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      expect(await width()).toBe(36);
+      // an app that takes Escape itself (onKeyDown with preventDefault) decides alone: the field stays open
+      await page.evaluate(() => {
+        window.__k2TakeEscape = true;
+      });
+      await search.focus();
+      await page.keyboard.press("Escape");
+      await settled(page);
+      expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+      expect(await page.evaluate(() => window.__k2Escapes)).toBe(1);
+      expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      expect(await width()).toBeGreaterThan(300);
+    },
+    { width: 390 },
+  );
+});
+
+test("1440 px: Escape in the search of the head is the browser's and the app's, the field is not folded", async () => {
+  await withPage(async (page) => {
+    const search = page.getByRole("searchbox", { name: "Durchsuchen" });
+    await search.focus();
+    await page.keyboard.type("mail");
+    await page.keyboard.press("Escape");
+    await settled(page);
+    expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
+  });
 });
 
 test("1440 px: the search of the head is its field of 184 px", async () => {

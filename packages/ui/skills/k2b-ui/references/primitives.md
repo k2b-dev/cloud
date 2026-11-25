@@ -36,7 +36,8 @@ The working surface of an app: one per screen.
   at its minimum, it becomes a drawer with a button at the start of the head.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
-  goes into the field, which opens over the head while it has the focus.
+  goes into the field, which opens over the head while it has the focus
+  and folds back, its words kept, on blur or Escape.
 
 ### Pane
 
@@ -328,8 +329,8 @@ lines instead of cutting a thing.
   becomes the bar of what can be done with them).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
-  the phone a head with a path is hidden and the shell's phone bar names
-  the page.
+  the phone the path gives way and the shell's phone bar names the page; the
+  head itself is hidden unless it holds a search, which stays as its symbol.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
