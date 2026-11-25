@@ -67,15 +67,6 @@ export const v2Screens = {
     phone: { app: "Mail" },
     render: () => <MailSelectScreen />,
   },
-  "mail-tablet": {
-    title: "Mail · Tablet",
-    description:
-      "The inbox in a window of 1024 px: the sidebar does not fit beside the list and the reader, so it is a drawer from the start of the window, opened here by its button at the start of the head. The workspace keeps room for the reader also while no message is open, so opening a message never moves the sidebar. In a wider window the sidebar is a column.",
-    mockup: "mail.html (concept: Schublade am Tablet)",
-    app: "#0f766e",
-    phone: { app: "Mail" },
-    render: () => <MailTabletScreen />,
-  },
   record: {
     title: "Kundenakte · Überblick",
     description:

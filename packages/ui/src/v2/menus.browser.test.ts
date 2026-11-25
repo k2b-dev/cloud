@@ -537,3 +537,26 @@ test("a hidden tab with an address opens in place from the menu of further views
     { width: 390 },
   );
 });
+
+// The menu tab's count grows by the tabs that hide, and a count that gains a digit ("+8" to "+12") makes the tab
+// wider, so fewer tabs fit. Tabs measure again in the next frame, never inside the observer's own turn: no
+// "ResizeObserver loop" error (WebKit reported one at 390 px in Mail), and the hidden ones still lead the menu.
+test("tabs at 390 px whose menu count gains a digit measure again without a resize loop", async () => {
+  await withPage(
+    async (page) => {
+      // nine views of its own: "+9", and with a hidden tab "+1n"
+      for (let view = 0; view < 7; view++) await page.evaluate(() => window.__moreViews?.());
+      const more = page.getByRole("navigation", { name: "Ansichten" }).getByRole("button", { name: /Weitere/ });
+      await page.waitForFunction(() => /\+1\d/.test(document.querySelector('nav[aria-label="Ansichten"] [data-menu]')?.textContent ?? ""));
+      // wide, nothing hides ("+9"); narrow, the count grows to "+1n" inside the measurement of the new width
+      for (const width of [1440, 390, 1440, 390]) {
+        await page.setViewportSize({ width, height: 900 });
+        await settled(page);
+      }
+      const hidden = await page.locator('nav[aria-label="Ansichten"] .k2-tab[data-overflow]').count();
+      expect(hidden).toBeGreaterThan(0);
+      expect((await more.textContent())?.replace(/\s+/g, "")).toBe(`Weitere+${9 + hidden}`);
+    },
+    { width: 390 },
+  );
+});

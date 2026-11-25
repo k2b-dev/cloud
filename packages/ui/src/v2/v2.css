@@ -2293,6 +2293,10 @@
 .k2-ui .k2-bar-start > .k2-tabs-nav {
   flex: 0 1 auto;
 }
+/* the actions beside tabs keep their room; the tabs give way, whole tab by whole tab */
+.k2-ui .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) > .k2-bar-end {
+  flex: none;
+}
 .k2-ui .k2-tabs-nav {
   display: flex;
   gap: 24px;
