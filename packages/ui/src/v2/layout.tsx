@@ -62,8 +62,10 @@ export const Workspace = (props: WorkspaceProps) => {
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
   const head = resolveChildren(() => props.head);
+  let element: HTMLDivElement | undefined;
   return (
     <div
+      ref={element}
       class="k2-ws"
       data-k2-workspace=""
       data-k2-part="Workspace"
@@ -105,7 +107,7 @@ export const Workspace = (props: WorkspaceProps) => {
         )}
       </Show>
       {/* the alert dialog that answers `Dialog.confirm`, so every v2 page can ask; it renders only while it asks */}
-      <ConfirmDialog />
+      <ConfirmDialog host={() => element} />
       {/* the one toaster of the page: every `useToast` shows here, also one called above the Workspace */}
       <Toasts />
     </div>
