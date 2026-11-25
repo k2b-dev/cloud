@@ -299,10 +299,9 @@ test("LookupSelect multiple: each press ticks a box first and the list stays ope
     expect((await tickPlaces(page, ".k2-lpop .k2-opt")).slice(0, 2)).toEqual(["start", "start"]);
     await page.keyboard.press("Escape");
     expect(await people.textContent()).toBe("Haus Bergmann, Stadtwerke Auental");
-    expect(await page.locator('input[type="hidden"][name="people"]').evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value))).toEqual([
-      "k-44",
-      "k-31",
-    ]);
+    expect(
+      await page.locator('input[type="hidden"][name="people"]').evaluateAll((inputs) => inputs.map((i) => (i as HTMLInputElement).value)),
+    ).toEqual(["k-44", "k-31"]);
     // the one customer: its tick at the end
     await page.getByRole("combobox", { name: "Kunde" }).click();
     await page.waitForFunction(() => window.__picks?.calls.length === 2);

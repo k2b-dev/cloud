@@ -390,6 +390,8 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
     const text = encode(definition, value);
     const applied = apply((params) => (text === undefined ? params.delete(key) : params.set(key, text)));
     if (applied && text !== undefined && draft() === key) setDraft(undefined);
+    // emptying every bound in the open editor keeps that editor: the filter waits as a dashed draft that does not apply
+    if (applied && text === undefined && open() === key && definition.required === undefined) setDraft(key);
     return applied;
   };
   const removeField = (key: string) => apply((params) => params.delete(key));
@@ -641,7 +643,11 @@ const Statement = (props: {
 }) => {
   const t = useFilterMessages();
   const popover = usePopover(() => ({ open: props.open, onOpenChange: props.onOpenChange }));
-  const words = () => (props.draft ? `${props.definition.label} ${props.definition.op ?? t().is} …` : plain(props.parts));
+  let popup: HTMLElement | undefined;
+  // a draft says what it will be, in the grammar of its kind: "Lagerort ist …", but "Preis …" (a range brings its own words)
+  const draftWord = () => props.definition.op ?? (saysIs(props.definition) ? t().is : undefined);
+  const words = () =>
+    props.draft ? [props.definition.label, draftWord(), "…"].filter((word) => word !== undefined).join(" ") : plain(props.parts);
   const removable = () => !props.draft && (props.definition.required === undefined || !props.fixed);
   return (
     <span
@@ -674,7 +680,7 @@ const Statement = (props: {
           when={!props.draft}
           fallback={
             <>
-              {props.definition.label} <span class="k2-stmt-op">{props.definition.op ?? t().is} …</span>
+              {props.definition.label} <span class="k2-stmt-op">{draftWord() === undefined ? "…" : `${draftWord()} …`}</span>
             </>
           }
         >
@@ -716,12 +722,35 @@ const Statement = (props: {
           <Icon name="x" />
         </button>
       </Show>
-      <popover.Popup class="k2-pop k2-fpop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          popup = element;
+        }}
+        // the focus goes once, as the popover opens, to the first control of the values; nothing moves it later, so a
+        // field the person is typing in keeps it
+        initialFocus={() => firstValue(popup)}
+        class="k2-pop k2-fpop"
+        data-k2-part="Popover"
+        side="bottom"
+        align="start"
+        sideOffset={4}
+        collisionPadding={8}
+      >
         {props.children}
       </popover.Popup>
     </span>
   );
 };
+
+/**
+ * The first control of an editor's values, where its focus goes when it opens: the search of a lookup, the option that
+ * holds a list's tab stop, else the first field, option or bound ("Ab …"); never "Entfernen" in the head.
+ */
+const firstValue = (root: HTMLElement | undefined): HTMLElement | null =>
+  root?.querySelector<HTMLElement>(".k2-lookup-search input") ??
+  root?.querySelector<HTMLElement>('[role="option"][tabindex="0"]') ??
+  root?.querySelector<HTMLElement>('.k2-fed-field input, [role="option"], .k2-fed-bounds > .k2-mi') ??
+  null;
 
 // ── Editors ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -753,18 +782,8 @@ type EditorProps = {
 const Editor = (props: EditorProps) => {
   const t = useFilterMessages();
   const [refused, setRefused] = createSignal(false);
-  // The focus goes to the first control of the values, not to "Entfernen" in the head: the search of a lookup, the
-  // option that holds the list's tab stop, or the first field. Core moves it into the popup first; this follows.
-  const focusValues = (root: HTMLElement) =>
-    setTimeout(() => {
-      if (!root.isConnected || (!root.contains(document.activeElement) && document.activeElement !== document.body)) return;
-      const target = root.querySelector<HTMLElement>(
-        '.k2-lookup-search input, [role="option"][tabindex="0"], [role="option"], .k2-fed-field input, .k2-fed-bounds > .k2-mi',
-      );
-      target?.focus({ preventScroll: true });
-    });
   return (
-    <div class="k2-fed" data-k2-part="FilterEditor" ref={focusValues}>
+    <div class="k2-fed" data-k2-part="FilterEditor">
       <Show when={!props.bare}>
         <div class="k2-fed-h">
           <span class="k2-fed-t">{props.definition.label}</span>
@@ -1041,7 +1060,15 @@ const NumberEntry = (props: {
         <span class="k2-fed-label">{props.label}</span>
         <span class="k2-input" data-invalid={error() ? "" : undefined}>
           <input
-            ref={(input) => !props.sheet && setTimeout(() => input.isConnected && input.focus({ preventScroll: true }))}
+            // the field takes the focus as its popover opens, unless the person already went on to another field
+            ref={(input) =>
+              !props.sheet &&
+              setTimeout(() => {
+                const now = document.activeElement;
+                if (input.isConnected && !(now instanceof HTMLInputElement || now instanceof HTMLTextAreaElement))
+                  input.focus({ preventScroll: true });
+              })
+            }
             type="text"
             inputmode="decimal"
             autocomplete="off"
@@ -1082,7 +1109,11 @@ const NumberEntry = (props: {
 };
 
 /** The range after one bound was set (`undefined` takes it out), or why it cannot be. */
-const rangeWith = (value: NumberRange | undefined, bound: Bound, amount: number | undefined): { value?: NumberRange } | { error: "invalid" } => {
+const rangeWith = (
+  value: NumberRange | undefined,
+  bound: Bound,
+  amount: number | undefined,
+): { value?: NumberRange } | { error: "invalid" } => {
   const next = { min: bound === "from" ? amount : value?.min, max: bound === "to" ? amount : value?.max };
   if (next.min !== undefined && next.max !== undefined && next.min > next.max) return { error: "invalid" };
   return { value: next.min === undefined && next.max === undefined ? undefined : next };
@@ -1430,8 +1461,9 @@ const directionWords = (option: SortOption | undefined, direction: SortDirection
   }
 };
 
-const sortOptions = <F extends Fields, S extends string, G extends string>(query: ListQuery<F, S, G>): Readonly<Record<string, SortOption>> =>
-  query.sort.fixed ? {} : query.sort.options;
+const sortOptions = <F extends Fields, S extends string, G extends string>(
+  query: ListQuery<F, S, G>,
+): Readonly<Record<string, SortOption>> => (query.sort.fixed ? {} : query.sort.options);
 
 /** The sort and the grouping in words: "Preis · Höchster zuerst", "Lagerort"; a fixed sort says its own words. */
 const orderWords = <F extends Fields, S extends string, G extends string>(

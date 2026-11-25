@@ -159,6 +159,8 @@ declare global {
     __resolves?: string[][];
     /** While true, every write of a view store fails, as a server that refuses would. */
     __failStore?: boolean;
+    /** What took the focus, in order (a test records it). */
+    __focus?: string[];
   }
 }
 const pending: Pending[] = [];

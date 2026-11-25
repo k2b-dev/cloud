@@ -55,6 +55,13 @@ const withPage = async (
   }
 };
 
+/** Opens "Ab …" or "Bis …" of the open range editor beside it and gives its number field. */
+const boundField = async (page: Page, bound: RegExp) => {
+  await page.locator(".k2-fpop .k2-fed-bounds .k2-mi", { hasText: bound }).click();
+  const field = page.locator(".k2-dpop .k2-nentry input");
+  await field.waitFor();
+  return field;
+};
 const statements = (page: Page) => page.locator(".k2-fbar-flow .k2-stmt-b").allTextContents();
 const box = async (page: Page, selector: string) => {
   const found = await page.locator(selector).first().boundingBox();
@@ -311,14 +318,18 @@ test("“+ Filter” adds a dashed statement that applies once it has a value; a
     expect(new URL(page.url()).searchParams.get("location")).toBe("hall-b");
     expect(await page.locator(".k2-stmt[data-draft]").count()).toBe(0);
     await page.keyboard.press("Escape");
-    // the range: "Von" above "Bis" is refused with a sentence; Enter applies
+    // the range: "Bis …" opens a number entry beside the editor; below "Ab" is refused with a sentence; Enter applies
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const to = page.locator(".k2-fpop .k2-fed-field").nth(1).locator("input");
+    const to = await boundField(page, /^Bis/);
+    // no spinner: a text field with the decimal keyboard
+    expect(await to.getAttribute("type")).toBe("text");
+    expect(await to.getAttribute("inputmode")).toBe("decimal");
     await to.fill("300");
     await to.press("Enter");
     await page.getByText("„Von“ ist größer als „Bis“. Der Filter gilt so nicht.").waitFor();
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
-    await to.fill("2000");
+    // German marks: "2.000" is two thousand
+    await to.fill("2.000");
     await to.press("Enter");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..2000");
     expect(await statements(page)).toContain("Preis 500 € bis 2.000 €");
@@ -353,18 +364,19 @@ test("at the length limit of the address a change is refused and every filter st
 test("a value the address cannot hold is refused at its field; nothing is written and nothing throws", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
-    // 1e21 is a number, but the list query writes numbers without an exponent, so its URL cannot hold it
-    await from.fill("1e21");
+    const from = await boundField(page, /^Ab/);
+    // 10^21 is a number, but the list query writes numbers without an exponent, so its URL cannot hold it
+    await from.fill("1000000000000000000000");
     await from.press("Enter");
     await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
     expect(await from.getAttribute("aria-invalid")).toBe("true");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
     expect(await statements(page)).toContain("Preis ab 500 €");
-    // a value it can hold clears the error and applies
+    // a value it can hold applies and closes the entry
     await from.fill("800");
     await from.press("Enter");
     expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
+    await page.locator(".k2-dpop").waitFor({ state: "detached" });
     expect(await page.locator(".k2-fpop .k2-fed-error").count()).toBe(0);
   });
 });
@@ -439,13 +451,55 @@ test("a lookup code nobody can name is asked for once, and stays a code with a w
 test("a number the field cannot read keeps the active filter and says so at the field", async () => {
   await withPage(articles, async (page) => {
     await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
-    const from = page.locator(".k2-fpop .k2-fed-field").first().locator("input");
+    const from = await boundField(page, /^Ab/);
     await from.fill("");
     await from.pressSequentially("1e");
-    await from.press("Tab");
-    await page.getByText("Dieser Wert geht als Filter nicht. Die Liste bleibt, wie sie ist.").waitFor();
+    await from.press("Enter");
+    await page.getByText("Das ist keine Zahl.").waitFor();
+    expect(await from.getAttribute("aria-invalid")).toBe("true");
     expect(new URL(page.url()).searchParams.get("price")).toBe("500..");
     expect(await statements(page)).toContain("Preis ab 500 €");
+  });
+});
+
+// #4153: a focus move that came late took the focus from a field the person had already put it in; the emptied field
+// then applied "no range" on blur, the filter and its editor went away under the typing.
+test("an editor takes the focus once, in its values, and never moves it again", async () => {
+  await withPage(articles, async (page) => {
+    await page.evaluate(() => {
+      window.__focus = [];
+      document.addEventListener("focusin", (event) => {
+        const target = event.target;
+        if (target instanceof HTMLElement) window.__focus?.push(target.textContent?.trim() || target.tagName);
+      });
+    });
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    await page.locator(".k2-fpop").waitFor();
+    await page.waitForFunction(() => (window.__focus ?? []).length > 1);
+    // the statement's button, then straight the first control of the values (the first preset); never "Entfernen"
+    expect(await page.evaluate(() => window.__focus)).toEqual(["Preis ab 500 €", "bis 500 €"]);
+    const from = await boundField(page, /^Ab/);
+    await from.focus();
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => document.activeElement?.matches(".k2-dpop .k2-nentry input"))).toBe(true);
+  });
+});
+
+test("emptying every bound in an open editor keeps the editor: the filter waits as a dashed draft", async () => {
+  await withPage(articles, async (page) => {
+    await page.getByRole("button", { name: "Filter Preis ab 500 € bearbeiten" }).click();
+    const from = await boundField(page, /^Ab/);
+    await from.fill("");
+    await from.press("Enter");
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
+    expect(await page.locator(".k2-fpop").count()).toBe(1);
+    expect(await page.locator(".k2-stmt[data-draft] .k2-stmt-b").textContent()).toBe("Preis …");
+    // the editor is still open for the next bound
+    const again = await boundField(page, /^Ab/);
+    await again.fill("800");
+    await again.press("Enter");
+    expect(new URL(page.url()).searchParams.get("price")).toBe("800..");
+    expect(await statements(page)).toContain("Preis ab 800 €");
   });
 });
 
@@ -510,11 +564,15 @@ test("phone: a range editor follows a reset, so a new end never brings back the 
       await steady(page, '[role="dialog"]');
       await page.getByRole("button", { name: "Zurücksetzen" }).tap();
       await page.waitForFunction(() => !new URL(location.href).searchParams.has("price"));
-      const fields = page.locator(".k2-fsheet .k2-fed-field input");
-      expect(await fields.first().inputValue()).toBe("");
-      await fields.nth(1).fill("3000");
-      await fields.nth(1).press("Enter");
-      expect(new URL(page.url()).searchParams.get("price")).toBe("..3000");
+      // "Bis …" is the sheet's next step, with the way back in the sheet's head
+      await page.locator(".k2-fsheet .k2-fed-bounds .k2-mi", { hasText: /^Bis/ }).tap();
+      await page.getByRole("dialog", { name: "Preis · Bis" }).waitFor();
+      const field = page.locator(".k2-fsheet .k2-nentry input");
+      expect(await field.inputValue()).toBe("");
+      await field.fill("3000");
+      await page.getByRole("button", { name: "Anwenden" }).tap();
+      await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "..3000");
+      await page.getByRole("dialog", { name: "Preis" }).waitFor();
     },
     { width: 390, touch: true },
   );

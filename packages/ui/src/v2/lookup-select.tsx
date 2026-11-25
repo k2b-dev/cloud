@@ -112,12 +112,9 @@ export const LookupSelect = (props: LookupSelectProps) => {
       setOpen(next);
     },
   }));
-  // The search takes the focus when the panel opens; on the phone the sheet keeps the keyboard down until a tap.
-  const focusSearch = (root: HTMLElement) =>
-    setTimeout(() => {
-      if (!root.isConnected) return;
-      root.querySelector<HTMLElement>(".k2-lookup-search input")?.focus({ preventScroll: true });
-    });
+  // The search takes the focus once, as the panel opens (never later, so typing keeps it); the phone's sheet keeps the
+  // keyboard down until a tap.
+  let popup: HTMLElement | undefined;
 
   const panel = () => (
     <Lookup
@@ -210,10 +207,19 @@ export const LookupSelect = (props: LookupSelectProps) => {
           }}
         />
       </Show>
-      <popover.Popup class="k2-pop k2-lpop" data-k2-part="Popover" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <div class="k2-lpop-body" ref={focusSearch}>
-          {panel()}
-        </div>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          popup = element;
+        }}
+        initialFocus={() => popup?.querySelector<HTMLElement>(".k2-lookup-search input") ?? null}
+        class="k2-pop k2-lpop"
+        data-k2-part="Popover"
+        side="bottom"
+        align={align()}
+        sideOffset={4}
+        collisionPadding={8}
+      >
+        {panel()}
       </popover.Popup>
       <Dialog
         title={field?.text ?? props.label ?? ""}
