@@ -265,8 +265,14 @@ export type RowProps = {
   unread?: boolean;
   /** The title in 600. */
   strong?: boolean;
-  /** The open one, in the tint of the app. */
-  selected?: boolean;
+  /** The open one (its detail is shown), in the tint of the app; like `current` of `Nav`, `Tabs` and `Table`. */
+  current?: boolean;
+  /**
+   * The row stands in a selection, such as "10 ausgewählt" (pair it with `StatusRow selection`): a box in the lead,
+   * named by the title, and the blue tint while `selected`, as `Table select` draws it. The box takes the place of the
+   * lead's symbol, person or dot. Open and selected combine: a selected row stays blue, and stays the open one.
+   */
+  select?: { selected: boolean; onChange: (selected: boolean) => void };
   /** "You are next", in the blue tint. */
   yours?: boolean;
   /** Top right, quiet: a time or a date. */
@@ -326,10 +332,12 @@ export const Row = (props: RowProps) => {
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}
       data-strong={props.strong ? "" : undefined}
-      data-selected={props.selected ? "" : undefined}
-      aria-current={props.selected ? "true" : undefined}
+      data-current={props.current ? "" : undefined}
+      aria-current={props.current ? "true" : undefined}
+      data-selected={props.select?.selected ? "" : undefined}
       data-yours={props.yours ? "" : undefined}
-      data-avatar={props.avatar ? "" : undefined}
+      // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
+      data-avatar={props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
       data-action={props.action ? "" : undefined}
       style={custom({ "--k2-c": props.color })}
@@ -354,21 +362,28 @@ export const Row = (props: RowProps) => {
       </Show>
       <span class="k2-row-lead">
         <Show
-          when={props.avatar}
+          when={props.select}
           fallback={
             <Show
-              when={props.icon}
+              when={props.avatar}
               fallback={
-                <Show when={props.unread}>
-                  <Dot status="ok" />
+                <Show
+                  when={props.icon}
+                  fallback={
+                    <Show when={props.unread}>
+                      <Dot status="ok" />
+                    </Show>
+                  }
+                >
+                  {(name) => <Icon name={name()} />}
                 </Show>
               }
             >
-              {(name) => <Icon name={name()} />}
+              {(person) => <Avatar {...person()} />}
             </Show>
           }
         >
-          {(person) => <Avatar {...person()} />}
+          {(select) => <MarkCheck labelledBy={title} checked={select().selected} onChange={(on) => select().onChange(on)} />}
         </Show>
       </span>
       <span class="k2-row-l1">
@@ -769,7 +784,15 @@ export const Table = <T,>(props: TableProps<T>) => {
                             href={target?.href}
                             onNavigate={target?.onNavigate}
                             onOpen={target?.onOpen}
-                            selected={props.current !== undefined && props.current === key(item.row, item.index)}
+                            current={props.current !== undefined && props.current === key(item.row, item.index)}
+                            select={
+                              props.select
+                                ? {
+                                    selected: selected(item.row, item.index),
+                                    onChange: (on) => toggle(key(item.row, item.index), on),
+                                  }
+                                : undefined
+                            }
                           />
                         );
                       })()
