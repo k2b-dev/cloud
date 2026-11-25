@@ -114,6 +114,7 @@ describe("Spaces claim take-over", () => {
     // The v2 question checks focusable inputs by their class, which happy-dom keeps on its window.
     Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement });
     dom.root.className = "k2b-ui";
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement, HTMLSlotElement: dom.window.HTMLSlotElement });
     const { DetailPaneFixture } = await import("./detail-pane");
     const dispose = render(
       () => createComponent(DetailPaneFixture, { detail: () => detailOf(item), canWrite: true, currentUserId: writerId }),
@@ -152,6 +153,7 @@ describe("Spaces claim take-over", () => {
     calls.splice(0);
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement, HTMLSlotElement: dom.window.HTMLSlotElement });
     const { DetailPaneFixture } = await import("./detail-pane");
     const dispose = render(
       () => createComponent(DetailPaneFixture, { detail: () => detailOf(item), canWrite: true, currentUserId: writerId }),
@@ -159,9 +161,9 @@ describe("Spaces claim take-over", () => {
     );
     const completeButton = () =>
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Mark complete")!;
-    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="alertdialog"]');
     const dialogButton = (label: string) =>
-      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent?.trim() === label);
 
     completeButton().click();
     await waitFor(() => dialog() !== null);
@@ -191,6 +193,7 @@ describe("Spaces claim take-over", () => {
     calls.splice(0);
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement, HTMLSlotElement: dom.window.HTMLSlotElement });
     const { DetailPaneFixture } = await import("./detail-pane");
     const other: SpaceItem = { ...item, id: "Item02", title: "Venue", claim: null };
     const [shown, show] = createSignal(item);
@@ -200,9 +203,9 @@ describe("Spaces claim take-over", () => {
     );
     const completeButton = () =>
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Mark complete")!;
-    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="alertdialog"]');
     const dialogButton = (label: string) =>
-      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent?.trim() === label);
 
     completeButton().click();
     await waitFor(() => dialogButton("Take over and complete") !== undefined);
@@ -220,6 +223,7 @@ describe("Spaces claim take-over", () => {
   test("runs the shown claim action on click without reading the caller's prop expressions", async () => {
     const dom = createDomTestHarness();
     dom.root.className = "k2b-ui";
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement, HTMLSlotElement: dom.window.HTMLSlotElement });
     const { default: ClaimButton } = await import("../src/frontend/[id]/_components/shared/claim/ClaimButton");
     const handled: string[] = [];
     // Shaped like the getters Solid compiles for `canTakeOver={a && b}` or `claim={x ? y : null}`: every read creates a memo.

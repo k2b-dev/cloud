@@ -325,9 +325,10 @@ describe("Spaces Kanban drop indicator", () => {
     const { toast } = await import("@k2b/ui");
     const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-    const dialog = () => dom.document.querySelector<HTMLDialogElement>('dialog[aria-label="Take over task"]');
+    Object.assign(globalThis, { HTMLInputElement: dom.window.HTMLInputElement, HTMLSlotElement: dom.window.HTMLSlotElement });
+    const dialog = () => dom.document.querySelector<HTMLElement>('[role="alertdialog"]');
     const dialogButton = (label: string) =>
-      [...(dialog()?.querySelectorAll<HTMLButtonElement>("footer button") ?? [])].find((button) => button.textContent === label);
+      [...(dialog()?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((button) => button.textContent?.trim() === label);
     const settle = async (condition: () => boolean) => {
       for (let attempt = 0; attempt < 50 && !condition(); attempt++) await flush();
       expect(condition(), condition.toString()).toBe(true);
