@@ -114,6 +114,15 @@ describe("describeV2", () => {
     );
   });
 
+  test("names a toggle that is on", () => {
+    const text = outline(
+      `<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button" data-variant="ghost" aria-label="Favorit" aria-pressed="true"></button>` +
+        `<button class="k2-btn" data-k2-part="Button" data-variant="ghost" aria-label="Anheften" aria-pressed="false"></button></div></div>`,
+    );
+    expect(text).toContain('["Favorit" ghost pressed]');
+    expect(text).toContain('["Anheften" ghost]');
+  });
+
   test("tells a select's placeholder from a chosen value", () => {
     const text = outline(
       `<div class="k2-field" data-k2-part="Field"><label class="k2-field-label">Land</label>` +

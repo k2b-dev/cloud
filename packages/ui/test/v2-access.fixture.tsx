@@ -48,6 +48,9 @@ export const AccessScreen = (props: {
   /** The large table (a sticky first column), which keeps its own last line. */
   grid?: boolean;
   onPicture?: () => void;
+  /** The agent is a favourite: the star in the head is a toggle that is on. */
+  favourite?: boolean;
+  onFavourite?: () => void;
   onResume?: () => void;
 }) => {
   const rows = () => {
@@ -79,9 +82,18 @@ export const AccessScreen = (props: {
         <Bar
           start={<RecordHead name="Wochenbericht" avatar={{ name: "Wochenbericht", image: robot }} kinds={["Agent", "Pausiert"]} />}
           end={
-            <Button variant="primary" icon="plus">
-              Schlüssel erstellen
-            </Button>
+            <>
+              <Button
+                variant="ghost"
+                icon="star"
+                label="Favorit"
+                pressed={props.favourite ?? false}
+                onClick={() => props.onFavourite?.()}
+              />
+              <Button variant="primary" icon="plus">
+                Schlüssel erstellen
+              </Button>
+            </>
           }
         />
       }

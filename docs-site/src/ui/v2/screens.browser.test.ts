@@ -363,4 +363,18 @@ describe("v2 demo screens keep the mockup", () => {
         await page.close();
       }
     }, 30_000);
+
+  // akte.html: the record is a favourite, so the star in the head is a toggle that is on, in the orange of the mockup
+  test("record at 1440 px: the favourite star is on", async () => {
+    const page = await show("record", 1440);
+    try {
+      const star = await page.evaluate(() => {
+        const button = document.querySelector('[data-k2-part="Button"][aria-label="Favorit"]')!;
+        return [button.getAttribute("aria-pressed"), getComputedStyle(button.querySelector(".k2-icon")!).color];
+      });
+      expect(star).toEqual(["true", "rgb(180, 83, 9)"]);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

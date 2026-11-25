@@ -56,6 +56,8 @@
   /* the sign of a warning: a step lighter than its words */
   --k2-warn-ink: #b45309;
   --k2-warn-dot: #f59e0b;
+  /* a toggle that is on (a favourite): its symbol and words (akte.html, the star in the head) */
+  --k2-pressed: #b45309;
   --k2-bad-tint: #fef2f2;
   --k2-bad: #b91c1c;
   --k2-bad-dot: #ef4444;
@@ -167,6 +169,7 @@
   --k2-app-ink-mix: color-mix(in srgb, var(--k2-app) 55%, #ffffff);
   --k2-app-tint-mix: color-mix(in srgb, var(--k2-app) 28%, var(--k2-surface));
   --k2-warn-ink: #fbbf24;
+  --k2-pressed: #fbbf24;
   --k2-sticky-edge: rgb(0 0 0 / 0.45);
   --k2-card-edge: rgb(255 255 255 / 0.08);
   --k2-ink-mix: #ffffff;
@@ -1792,6 +1795,11 @@
 .k2-ui .k2-btn:disabled,
 .k2-ui .k2-btn[aria-disabled="true"]:not([aria-busy]) {
   opacity: 0.5;
+}
+/* A toggle that is on (`pressed`, such as a favourite): its symbol and words in the one colour of pressed, the frame
+   and the size as they are, so nothing moves when it turns on. The primary action is no toggle. */
+.k2-ui .k2-btn[aria-pressed="true"]:not([data-variant="primary"]) {
+  color: var(--k2-pressed);
 }
 /* Busy: the sign turns over the label, which keeps its place unseen, so the button keeps its width; the button keeps
    its look (it is not off, its deed is under way). */

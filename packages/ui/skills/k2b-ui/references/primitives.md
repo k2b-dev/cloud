@@ -242,7 +242,9 @@ lines instead of cutting a thing.
   `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
-  of the form do nothing), `type`, `keep` (stays
+  of the form do nothing), `pressed` (a toggle such as a favourite star:
+  `true` is on, its symbol and words in the one colour of pressed, `false`
+  is off; not for links or the primary action), `type`, `keep` (stays
   in a head on the phone), `title` (a hint under the pointer, for a button
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
