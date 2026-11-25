@@ -85,4 +85,33 @@ export const states = {
   empty: () => <OpenInvoices rows={[]} />,
   loading: () => <OpenInvoices loading />,
   failed: () => <OpenInvoices failed />,
+  worst: () => <OpenInvoices rows={worstInvoices} />,
+  one: () => <OpenInvoices rows={[invoices[0]!]} />,
+  huge: () => <OpenInvoices rows={hugeInvoices} />,
 };
+
+// The realistic worst case for Fibel's Example and the recipe test: customers at the length people write them, an address
+// that cannot wrap, amounts in the millions and below zero. `one` is a single invoice; `huge` an unpaginated long list.
+const worstInvoices: Invoice[] = [
+  {
+    number: "RE-2611-0042-NACHLASS-SONNENHALDE",
+    customer: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG",
+    due: "31. Dez. 2026",
+    overdue: true,
+    amount: "12.345.678,90 €",
+  },
+  { number: "RE-1", customer: "J", due: "1. Jan.", overdue: false, amount: "0,30 €" },
+  {
+    number: "RE-2611-0051",
+    customer: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+    due: "2. Dez.",
+    overdue: false,
+    amount: "−42,50 €",
+  },
+  { number: "RE-2611-0052", customer: "Đặng Thị Ngọc Hân", due: "3. Dez.", overdue: true, amount: "1.284,00 €" },
+  { number: "RE-2611-0053", customer: "王秀英", due: "4. Dez.", overdue: false, amount: "1.000.000,00 €" },
+];
+const hugeInvoices: Invoice[] = Array.from({ length: 1000 }, (_, index) => ({
+  ...invoices[index % 3]!,
+  number: `RE-2611-${String(index + 1).padStart(4, "0")}`,
+}));
