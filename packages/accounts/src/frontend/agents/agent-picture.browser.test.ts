@@ -79,7 +79,8 @@ beforeAll(async () => {
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
   const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss].join("\n");
+  const v2Css = await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text();
+  css = ["@layer properties, theme, base, components, utilities;", appCss, globalCss, v2Css].join("\n");
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, 60_000);
@@ -110,7 +111,7 @@ const open = async (view: View, lang: "en" | "de", api: Api) => {
         contentType: "text/html; charset=utf-8",
         body:
           `<!doctype html><html lang="${lang}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-          `<link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui"><div id="root" style="padding:24px"></div><script src="/harness.js"></script></body></html>`,
+          `<link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style></head><body class="k2b-ui k2-ui"><div id="root" style="padding:24px"></div><script src="/harness.js"></script></body></html>`,
       });
     if (pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
@@ -151,17 +152,13 @@ describe("changing an agent's picture in a browser", () => {
         const { context, tab } = await open(view, lang, api);
         try {
           const trigger = tab.getByRole("button", { name: accountsMessages.resolve([lang]).t.agentChangePicture });
-          // The page shows the agent's robot as a loaded picture in a square, never the fallback icon.
-          const picture = trigger.locator(`img[src="/api/accounts/users/${AGENT}/avatar"]`);
+          // The head shows the agent's robot as a loaded picture over its initials, never only the initials.
           await tab.waitForFunction(
             (selector) => (document.querySelector<HTMLImageElement>(selector)?.naturalWidth ?? 0) > 0,
-            `img[src="/api/accounts/users/${AGENT}/avatar"]`,
+            `[data-k2-part="Avatar"] img[src="/api/accounts/users/${AGENT}/avatar"]`,
           );
-          expect(await picture.getAttribute("data-shape")).toBe("square");
-          expect(await trigger.locator("i.ti-robot").count()).toBe(0);
+          await tab.locator(`[data-k2-part="Avatar"][data-image="shown"]`).waitFor();
           await settled(tab);
-          const pictureBox = await picture.boundingBox();
-          expect([pictureBox?.width, pictureBox?.height]).toEqual([64, 64]);
           await trigger.click();
           const dialog = tab.locator("dialog[open]");
           const ways = dialog.getByRole("radiogroup", { name: t.ways });
