@@ -280,7 +280,7 @@ test("the address is the state: one history entry per editor, back restores, a r
     expect((await statements(page))[0]).toBe("Status ist Eingeliefert, Fotografiert oder 2 weitere");
     // sort and group from the status row write the address too
     await page.getByRole("button", { name: /Eingang/ }).click();
-    await page.getByRole("menuitemradio", { name: "Preis ↓" }).click();
+    await page.getByRole("menuitemradio", { name: "Preis" }).click();
     expect(new URL(page.url()).searchParams.get("sort")).toBe("price.desc");
     await page.goBack();
     await page.waitForFunction(() => !new URL(location.href).searchParams.has("sort"));
@@ -296,7 +296,7 @@ test("the address is the state: one history entry per editor, back restores, a r
   // a reload of a written address shows the same statements
   await withPage("status=consigned,photographed,online,reserved&sort=price.desc", async (page) => {
     expect((await statements(page))[0]).toBe("Status ist Eingeliefert, Fotografiert oder 2 weitere");
-    expect(await page.locator(".k2-order .k2-btn").first().textContent()).toContain("Preis ↓");
+    expect(await page.locator(".k2-order .k2-btn").first().textContent()).toContain("Preis · Höchster zuerst");
   });
 });
 
@@ -341,8 +341,10 @@ test("at the length limit of the address a change is refused and every filter st
     await page.keyboard.press("Escape");
     // a sort that would not fit is locked in its menu; the current one stays chosen
     await page.locator(".k2-order .k2-btn").first().click();
-    expect(await page.getByRole("menuitemradio", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
-    expect(await page.getByRole("menuitemradio", { name: "Eingang ↓" }).getAttribute("aria-checked")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Preis" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Eingang" }).getAttribute("aria-checked")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Älteste zuerst" }).getAttribute("aria-disabled")).toBe("true");
+    expect(await page.getByRole("menuitemradio", { name: "Neueste zuerst" }).getAttribute("aria-checked")).toBe("true");
     await page.keyboard.press("Escape");
     expect(new URL(page.url()).search.length).toBe(search.length + 1);
   });
@@ -533,7 +535,8 @@ test("at the length limit, presets and sorts that would not fit are locked where
       await openSheet(page);
       await page.locator(".k2-fsheet-row", { hasText: "Sortierung" }).tap();
       await steady(page, '[role="dialog"]');
-      expect(await page.getByRole("option", { name: "Preis ↓" }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("option", { name: "Preis" }).getAttribute("aria-disabled")).toBe("true");
+      expect(await page.getByRole("option", { name: "Älteste zuerst" }).getAttribute("aria-disabled")).toBe("true");
     },
     { width: 390, touch: true },
   );

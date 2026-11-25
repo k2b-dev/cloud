@@ -23,11 +23,10 @@ export type LookupProps = {
   label: string;
   /** The chosen codes. */
   value: readonly string[];
-  /** Every tick applies at once; with one choice it holds the chosen code, or none when the ticked one was pressed. */
+  /** Every tick applies at once; with one choice it holds the chosen code. */
   onChange: (value: string[]) => void;
   /**
-   * `false`: one value, its tick at the end of the row (pressing it again takes it back); several by default, each
-   * with its box first.
+   * `false`: one value, its tick at the end of the row; several by default, each with its box first.
    */
   multiple?: boolean;
   load: LookupLoad;
@@ -163,6 +162,8 @@ export const Lookup = (props: LookupProps) => {
   const list = useListbox(() => ({
     multiple: several(),
     value: several() ? [...props.value] : (props.value[0] ?? null),
+    // the arrows only move; a press, Space or Enter chooses (one choice then closes the field that holds the list)
+    activation: "manual",
     loop: false,
     onValueChange: (value) => props.onChange(Array.isArray(value) ? value : value ? [value] : []),
   }));

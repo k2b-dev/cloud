@@ -235,7 +235,10 @@ export const articleQuery = defineListQuery({
   },
   search: { label: "Nummer oder Titel" },
   sort: {
-    options: { price: { label: "Preis", directions: ["desc", "asc"] }, received: { label: "Eingang", directions: ["desc", "asc"] } },
+    options: {
+      price: { label: "Preis", kind: "number", directions: ["desc", "asc"] },
+      received: { label: "Eingang", kind: "date", directions: ["desc", "asc"] },
+    },
     default: { field: "received", direction: "desc" },
   },
   group: { status: { label: "Status" }, location: { label: "Lagerort" } },

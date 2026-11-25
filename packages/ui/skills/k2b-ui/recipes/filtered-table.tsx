@@ -37,7 +37,11 @@ export const orderQuery = defineListQuery({
   },
   search: { label: "Auftrag oder Kunde" },
   sort: {
-    options: { due: { label: "Fällig", directions: ["asc", "desc"] }, amount: { label: "Betrag", directions: ["desc", "asc"] } },
+    // `kind` names the order in words ("Betrag · Höchster zuerst"); `labels` where those words do not fit a field
+    options: {
+      due: { label: "Fällig", kind: "date", labels: { asc: "Früheste zuerst", desc: "Späteste zuerst" }, directions: ["asc", "desc"] },
+      amount: { label: "Betrag", kind: "number", directions: ["desc", "asc"] },
+    },
     default: { field: "due", direction: "asc" },
   },
   group: { status: { label: "Status" } },

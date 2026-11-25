@@ -199,14 +199,16 @@ for (const width of [1440, 390]) {
         expect(await list.locator(".k2-mi").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))).toEqual([
           32, 32, 32,
         ]);
-        // the check stands only at the chosen option, at the end of its row
+        // the tick stands only at the chosen option, at the end of its row, where a menu puts it (one mark rule)
         const checks = await list.locator(".k2-mi").evaluateAll((items) =>
           items.map((item) => {
-            const mark = item.querySelector(".k2-mi-meta");
-            return !!mark && mark.getClientRects().length > 0;
+            const icon = item.querySelector(".k2-mi-tick .ti-check");
+            if (!icon || icon.getClientRects().length === 0) return "none";
+            const end = item.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(item).paddingRight);
+            return Math.abs(end - icon.getBoundingClientRect().right) <= 1 ? "end" : "elsewhere";
           }),
         );
-        expect(checks).toEqual([true, false, false]);
+        expect(checks).toEqual(["end", "none", "none"]);
         expect(await problems(page, "body")).toEqual([]);
         await page.keyboard.press("ArrowDown");
         await page.keyboard.press("Enter");

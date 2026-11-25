@@ -34,7 +34,7 @@ type LookupSelectCommon = {
 export type LookupSelectProps = LookupSelectCommon &
   (
     | {
-        /** One value (the default): choosing it closes the list; pressing the ticked one again clears the field. */
+        /** One value (the default): choosing it closes the list. */
         multiple?: false;
         value?: string;
         onChange: (value: string | undefined) => void;
@@ -203,7 +203,11 @@ export const LookupSelect = (props: LookupSelectProps) => {
           aria-hidden="true"
           required
           value=""
-          onInvalid={() => trigger?.focus()}
+          // the browser would point at this hidden input; the field itself takes the focus, its error says why
+          onInvalid={(event) => {
+            event.preventDefault();
+            trigger?.focus();
+          }}
         />
       </Show>
       <popover.Popup class="k2-pop k2-lpop" data-k2-part="Popover" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
