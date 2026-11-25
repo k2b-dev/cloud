@@ -254,20 +254,27 @@ export const legacyLogsHref = (params: URLSearchParams): string | null => {
   const sources = params.getAll("source");
   const legacy = params.has("window") || params.has("search") || sources.length > 1 || params.get("level") === "all";
   if (!legacy) return null;
+  // Every parameter is carried over; only the old names change. A v2 name that is already there wins over its old name.
   const next = new URLSearchParams();
+  for (const [name, value] of params) {
+    if (name === "window" || name === "search" || name === "source") continue;
+    if (name === "level" && value === "all") continue;
+    next.append(name, value);
+  }
   const window = params.get("window");
   const preset = window ? LEGACY_WINDOWS[window] : undefined;
-  if (preset && preset !== DEFAULT_LOG_PRESET) next.set("time", preset);
-  const level = params.get("level");
-  if (level && level !== "all") next.set("level", level);
-  const names = [...new Set(sources.map((source) => source.trim()).filter(Boolean))];
-  if (names.length > 0) next.set("source", names.join(","));
+  if (!params.has("time") && preset && preset !== DEFAULT_LOG_PRESET) next.set("time", preset);
   const search = params.get("search")?.trim();
-  if (search) next.set("q", search);
-  for (const name of ["page", "entry"]) {
-    const value = params.get(name);
-    if (value) next.set(name, value);
-  }
+  if (!params.has("q") && search) next.set("q", search);
+  const names = [
+    ...new Set(
+      sources
+        .flatMap((source) => source.split(","))
+        .map((source) => source.trim())
+        .filter(Boolean),
+    ),
+  ];
+  if (names.length > 0) next.set("source", names.join(","));
   const text = next.toString();
   return text ? `${LOGS_PAGE_PATH}?${text}` : LOGS_PAGE_PATH;
 };

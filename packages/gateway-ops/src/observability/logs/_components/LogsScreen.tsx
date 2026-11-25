@@ -37,9 +37,11 @@ import {
   type LogsState,
   logsHref,
   logsQuery,
+  parseLogsAddress,
 } from "../query";
 import { type LogRow, logRowFormatter } from "../rows";
 import LogEntryPane from "./LogEntryPane";
+import { startLivePoll } from "./live-poll";
 
 export type LogsData = { entries: LogEntry[]; total: number; levels: Record<LogLevel, number> };
 
@@ -61,8 +63,9 @@ export type LogsScreenProps = {
   selected: { entry: LogEntry | null; error: string | null } | null;
 };
 
-/** How often a live list asks for new entries while the page is visible. */
+/** How often a live list asks for new entries while the page is visible, and the longest wait after failures. */
 const LIVE_INTERVAL_MS = 5_000;
+const LIVE_MAX_DELAY_MS = 60_000;
 
 const levelStatus = { error: "bad", warn: "warn" } as const;
 
@@ -96,6 +99,7 @@ export default function LogsScreen(props: LogsScreenProps) {
   const [error, setError] = createSignal<string | null>(props.error);
   const [liveOff, setLiveOff] = createSignal(props.liveOff);
   const [liveFailed, setLiveFailed] = createSignal(false);
+  const [online, setOnline] = createSignal(true);
   const [ignored, setIgnored] = createSignal(props.ignored);
   const [cleanupOpen, setCleanupOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
@@ -108,12 +112,18 @@ export default function LogsScreen(props: LogsScreenProps) {
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
 
   let controller: AbortController | undefined;
-  /** Loads the list for a state through the API; the old rows stay until the new ones come. */
+  let loading = false;
+  /**
+   * Loads the list for a state through the API; the old rows stay until the new ones come. A newer load aborts an
+   * older one. A live refresh (`quiet`) never aborts a load the person started, and its failure only marks live.
+   */
   // k2b-ui gap: 4 – StatusRow has no reserved loading sign, so nothing shows that new rows are on their way.
-  const load = async (next: LogsState, quiet = false) => {
+  const load = async (next: LogsState, quiet = false): Promise<boolean> => {
+    if (quiet && loading) return true;
     controller?.abort();
     const current = new AbortController();
     controller = current;
+    loading = !quiet;
     const params = query().serialize(next);
     params.set("per_page", String(LOGS_PER_PAGE));
     if (page() > 1) params.set("page", String(page()));
@@ -124,36 +134,52 @@ export default function LogsScreen(props: LogsScreenProps) {
       );
       if (!response.ok) throw new Error(t().storeUnavailable);
       const body = await response.json();
-      if (current.signal.aborted) return;
+      if (current.signal.aborted) return true;
       setData({ entries: body.entries, total: body.pagination.total, levels: body.levels });
       setError(null);
       setLiveFailed(false);
+      return true;
     } catch (failure) {
-      if (current.signal.aborted) return;
-      // A live refresh that fails keeps the rows and says so in the status row; it tries again on its own.
+      if (current.signal.aborted) return true;
       if (quiet) setLiveFailed(true);
       else setError(failure instanceof Error ? failure.message : t().storeUnavailable);
+      return false;
+    } finally {
+      if (controller === current) loading = false;
     }
   };
 
-  /** A new state from the bar, the search or the order: page 1 again, and the address without the old page. */
+  /** The rows a state asks for: everything but the grouping, which only arranges the rows of the page. */
+  const rowsOf = (value: LogsState) =>
+    query()
+      .serialize({ ...value, group: undefined })
+      .toString();
+  /** The whole address after a history step (back or forward), read before the bar reports the step. */
+  let restoring: ReturnType<typeof parseLogsAddress> | undefined;
+
+  /**
+   * A new state from the bar, the search or the order. A history step restores the whole address, page and live
+   * included. A new filter starts at page 1; a pure group change keeps the page and its rows.
+   */
   const change = (next: LogsState) => {
     const before = state();
     setState(next);
+    const restored = restoring;
+    restoring = undefined;
+    if (restored) {
+      setPage(restored.page);
+      setLiveOff(restored.liveOff);
+      void load(next);
+      return;
+    }
+    if (rowsOf(next) === rowsOf(before)) return;
     if (page() !== 1 && !isServer) {
       setPage(1);
       const params = new URLSearchParams(location.search);
       params.delete("page");
       history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
     }
-    const sameRows =
-      query()
-        .serialize({ ...next, group: undefined })
-        .toString() ===
-      query()
-        .serialize({ ...before, group: undefined })
-        .toString();
-    if (!sameRows) void load(next);
+    void load(next);
   };
 
   const search = (text: string) => {
@@ -163,21 +189,46 @@ export default function LogsScreen(props: LogsScreenProps) {
     change(next);
   };
 
+  let poll: { stop: () => void; wake: () => void } | undefined;
   const setLive = (on: boolean) => {
     setLiveOff(!on);
     const params = new URLSearchParams(location.search);
     if (on) params.delete("live");
     else params.set("live", "off");
     history.replaceState(history.state, "", `${location.pathname}${params.size ? `?${params}` : ""}${location.hash}`);
+    if (on) poll?.wake();
   };
 
   onMount(() => {
-    const timer = setInterval(() => {
-      if (live() && document.visibilityState === "visible") void load(state(), true);
-    }, LIVE_INTERVAL_MS);
+    // capture: this runs before the bar's own listener reports the step through `change`
+    const step = () => {
+      restoring = parseLogsAddress(query(), new URLSearchParams(location.search));
+    };
+    const visible = () => {
+      if (document.visibilityState === "visible") poll?.wake();
+    };
+    const connection = () => {
+      setOnline(navigator.onLine);
+      if (navigator.onLine) poll?.wake();
+    };
+    addEventListener("popstate", step, { capture: true });
+    document.addEventListener("visibilitychange", visible);
+    addEventListener("online", connection);
+    addEventListener("offline", connection);
+    setOnline(navigator.onLine);
+    poll = startLivePoll({
+      interval: LIVE_INTERVAL_MS,
+      maxDelay: LIVE_MAX_DELAY_MS,
+      ready: () => live() && online() && document.visibilityState === "visible",
+      poll: () => load(state(), true),
+    });
     onCleanup(() => {
-      clearInterval(timer);
+      poll?.stop();
       controller?.abort();
+      removeEventListener("popstate", step, { capture: true });
+      document.removeEventListener("visibilitychange", visible);
+      removeEventListener("online", connection);
+      removeEventListener("offline", connection);
     });
   });
 
@@ -323,7 +374,7 @@ export default function LogsScreen(props: LogsScreenProps) {
                         { value: number(data()?.levels.warn ?? 0), after: t().warnings },
                       ]),
                   // Only a refresh that fails needs a sentence (it retries on its own).
-                  ...(live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
+                  ...(live() && !online() ? [{ after: t().liveOffline }] : live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
                 ]}
                 filters={
                   <>

@@ -90,14 +90,29 @@ describe("the log list address", () => {
 });
 
 describe("addresses from before v2", () => {
-  test("lead to the same list in the v2 address", () => {
-    const legacy = (search: string) => legacyLogsHref(new URLSearchParams(search));
-    expect(legacy("source=auth:ipa:sync&window=7d")).toBe("/admin/observability/logs?time=last-7d&source=auth%3Aipa%3Async");
-    expect(legacy("search=grids")).toBe("/admin/observability/logs?q=grids");
-    expect(legacy("window=1h")).toBe("/admin/observability/logs?time=last-1h");
-    expect(legacy("window=24h&level=all&page=3")).toBe("/admin/observability/logs?page=3");
-    expect(legacy("source=a&source=b&entry=12")).toBe("/admin/observability/logs?source=a%2Cb&entry=12");
-  });
+  // Old name → v2 name; every other parameter is carried over unchanged, and a v2 name already present wins.
+  const cases: [string, Record<string, string>][] = [
+    [
+      "time=last-7d&q=timeout&request=req123&group=source&live=off&source=mail&source=gateway",
+      { time: "last-7d", q: "timeout", request: "req123", group: "source", live: "off", source: "mail,gateway" },
+    ],
+    ["source=auth:ipa:sync&window=7d", { source: "auth:ipa:sync", time: "last-7d" }],
+    ["search=grids", { q: "grids" }],
+    ["window=1h", { time: "last-1h" }],
+    ["window=24h&level=all&page=3", { page: "3" }],
+    ["source=a&source=b&entry=12", { source: "a,b", entry: "12" }],
+    ["window=7d&time=last-1h&search=old&q=new", { time: "last-1h", q: "new" }],
+    ["level=all&view=errors&colour=red", { view: "errors", colour: "red" }],
+  ];
+  for (const [before, after] of cases) {
+    test(`${before} redirects to the same list`, () => {
+      const href = legacyLogsHref(new URLSearchParams(before));
+      expect(href?.startsWith("/admin/observability/logs")).toBe(true);
+      const params = new URL(href!, "https://cloud.test").searchParams;
+      expect(Object.fromEntries(params)).toEqual(after);
+      expect(params.size).toBe(Object.keys(after).length);
+    });
+  }
 
   test("v2 addresses and the old single-value links need no redirect", () => {
     for (const search of ["", "level=error", "level=warn", "source=ipa-hosts:sync", "entry=9000", "time=last-15m&q=x"]) {

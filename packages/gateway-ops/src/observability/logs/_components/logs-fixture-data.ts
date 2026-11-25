@@ -46,14 +46,27 @@ const ENTRIES: [string, LogLevel, string, string, Record<string, unknown> | null
   ["09:32:50.770", "info", "files", "Freigabe-Link erstellt · Ordner „Angebote 2026“", { requestId: "5d6e7f", durationMs: 41 }],
 ];
 
-export const fixtureEntries: LogEntry[] = ENTRIES.map(([time, level, source, message, metadata], index) => ({
-  id: String(9000 + index),
-  level,
-  source,
-  message,
-  metadata,
-  createdAt: `2026-11-24T${time}Z`,
+/** 110 quiet sync rounds earlier in the morning, one every 40 s from 08:00 UTC: with them the last 24 hours fill two pages. */
+const ROUNDS: LogEntry[] = Array.from({ length: 110 }, (_, index) => ({
+  id: String(8000 + index),
+  level: "debug",
+  source: "sync",
+  message: `Abgleich Runde ${110 - index} fertig`,
+  metadata: { round: 110 - index },
+  createdAt: new Date(Date.parse("2026-11-24T08:00:00.000Z") + (109 - index) * 40_000).toISOString(),
 }));
+
+export const fixtureEntries: LogEntry[] = [
+  ...ENTRIES.map(([time, level, source, message, metadata], index) => ({
+    id: String(9000 + index),
+    level,
+    source,
+    message,
+    metadata,
+    createdAt: `2026-11-24T${time}Z`,
+  })),
+  ...ROUNDS,
+];
 
 /** The service's filter over the invented entries: the same window, levels, sources and text matches. */
 export const fixtureSearch = (filter: LogSearch, page = 1): LogsData => {

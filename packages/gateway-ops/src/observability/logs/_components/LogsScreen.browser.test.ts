@@ -101,7 +101,10 @@ const answerList = (url: URL) => {
 type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 
-const open = async (view: View, address: string, options: { locale?: string; state?: string } = {}) => {
+/** How the list API answers one call: `delay` holds the answer back, `status` fails it. */
+type Answer = { delay?: number; status?: number };
+
+const open = async (view: View, address: string, options: { locale?: string; state?: string; answer?: (call: number) => Answer } = {}) => {
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -114,6 +117,7 @@ const open = async (view: View, address: string, options: { locale?: string; sta
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
   const calls: string[] = [];
+  const times: number[] = [];
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/admin/observability/logs")
@@ -125,6 +129,10 @@ const open = async (view: View, address: string, options: { locale?: string; sta
       return route.fulfill({ json: { sources: [...new Set(fixtureEntries.map((entry) => entry.source))].sort() } });
     if (url.pathname === "/api/logging" || url.pathname === "/api/logging/") {
       calls.push(url.search);
+      times.push(performance.now());
+      const how = options.answer?.(calls.length) ?? {};
+      if (how.delay) await new Promise((done) => setTimeout(done, how.delay));
+      if (how.status) return route.fulfill({ status: how.status, json: { message: "Unavailable" } });
       const answer = answerList(url);
       return route.fulfill({ status: answer.status, json: answer.json });
     }
@@ -134,15 +142,93 @@ const open = async (view: View, address: string, options: { locale?: string; sta
   await tab.waitForSelector('body[data-ready="true"]');
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
-  return { context, tab, errors, calls };
+  return { context, tab, errors, calls, times };
 };
 
+const listRequest = (request: { url(): string }) => new URL(request.url()).pathname.replace(/\/$/, "") === "/api/logging";
 const rowTexts = (tab: Page) => tab.locator('[data-k2-part="Table"] tbody tr, [data-k2-part="Table"] [role="row"]').allInnerTexts();
 const shoot = async (tab: Page, name: string) => {
   if (shots) await tab.screenshot({ path: join(shots, `${name}.png`) });
 };
 
 describe("the log list on v2", () => {
+  test("a pure group change on page 2 keeps the page and its rows", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/admin/observability/logs?page=2&live=off");
+    try {
+      expect(await tab.getByText("Page 2 of 2").isVisible()).toBe(true);
+      const before = await rowTexts(tab);
+      await tab.getByRole("button", { name: "No groups" }).click();
+      await tab.getByRole("menuitemradio", { name: "minute" }).click();
+      await tab.waitForURL(/group=minute/);
+      await settled(tab);
+      expect(new URL(tab.url()).searchParams.get("page")).toBe("2");
+      expect(await tab.getByText("Page 2 of 2").isVisible()).toBe(true);
+      expect((await rowTexts(tab)).filter((text) => text.includes("Abgleich"))).toEqual(before.filter((text) => text.includes("Abgleich")));
+      expect(calls).toEqual([]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a filter change starts at page 1, and Back restores page 2 with its rows", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/admin/observability/logs?page=2&live=off");
+    try {
+      await tab.getByRole("button", { name: "Filter", exact: true }).click();
+      await tab.getByRole("menuitem", { name: "Level" }).click();
+      await tab.getByRole("option", { name: "Error" }).click();
+      await tab.waitForURL(/level=error/);
+      await tab.keyboard.press("Escape");
+      await tab.waitForFunction(() => window.document.body.innerText.includes("6 of 6 entries"));
+      expect(new URL(tab.url()).searchParams.has("page")).toBe(false);
+      expect(new URLSearchParams(calls.at(-1)).has("page")).toBe(false);
+
+      await tab.goBack();
+      await tab.waitForFunction(() => !location.search.includes("level="));
+      await tab.waitForFunction(() => window.document.body.innerText.includes("25 of 125 entries"));
+      expect(new URL(tab.url()).searchParams.get("page")).toBe("2");
+      expect(new URLSearchParams(calls.at(-1)).get("page")).toBe("2");
+      expect(await tab.getByText("Page 2 of 2").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a slow live refresh lands before the next one starts", async () => {
+    // every live refresh takes 7 s, longer than the 5 s between refreshes
+    const { context, tab, errors, times } = await open(desktop, "/admin/observability/logs?time=last-15m", {
+      answer: () => ({ delay: 7_000 }),
+    });
+    try {
+      await tab.waitForResponse((response) => response.url().includes("/api/logging") && response.status() === 200, { timeout: 20_000 });
+      await tab.waitForRequest(listRequest, { timeout: 20_000 });
+      // the second refresh starts 5 s after the first answered (7 s), not 5 s after the first started
+      expect(performance.now() - times[0]!).toBeGreaterThanOrEqual(11_000);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a failing live refresh says so and waits longer before the next try", async () => {
+    const { context, tab, errors, times } = await open(desktop, "/admin/observability/logs?time=last-15m", {
+      answer: () => ({ status: 503 }),
+    });
+    try {
+      await tab.waitForFunction(() => window.document.body.innerText.includes("the log store does not answer"), undefined, {
+        timeout: 12_000,
+      });
+      await tab.waitForRequest(listRequest, { timeout: 20_000 });
+      // after one failure the next try waits 10 s instead of 5 s; the rows stay
+      expect(performance.now() - times[0]!).toBeGreaterThanOrEqual(9_500);
+      expect(await tab.getByRole("row", { name: /Upstream mail: Zeitüberschreitung nach 30 s/ }).isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("a filter writes the address, loads the list, and a reload shows the same entries", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/admin/observability/logs?time=last-15m");
     try {
