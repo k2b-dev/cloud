@@ -2963,6 +2963,10 @@
   max-width: calc(100vw - 32px);
   pointer-events: none;
 }
+/* closed while it shows no toast (see openWhileShowing in toast.tsx) */
+.k2-ui .k2-toasts[popover]:not(:popover-open) {
+  display: none;
+}
 .k2-ui .k2-toasts > ol {
   display: flex;
   flex-direction: column;

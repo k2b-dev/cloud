@@ -308,6 +308,9 @@ test("tip: hovering the button shows its hint above it after a moment; the butto
 
 test("toast: at the bottom in the middle with Undo; Undo runs and closes it", async () => {
   await withPage(async (page) => {
+    // an empty region is no open popover: a page that lets an open popover take Escape first still gets it
+    await page.waitForFunction(() => document.querySelector('[data-slot="toast-region"][popover]') !== null);
+    expect(await page.evaluate(() => document.querySelectorAll(":popover-open").length)).toBe(0);
     await page.getByRole("button", { name: "Speichern" }).click();
     const toast = page.locator(".k2-toast");
     await toast.waitFor();
@@ -330,6 +333,7 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
     await page.getByRole("button", { name: "Rückgängig" }).click();
     await closed(page, ".k2-toast");
     expect(await deeds(page)).toEqual(["save", "undo"]);
+    await page.waitForFunction(() => document.querySelectorAll(":popover-open").length === 0);
   });
 });
 
