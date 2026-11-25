@@ -26,9 +26,9 @@ type FieldIds = {
   group: () => void;
   /**
    * A control whose id the behaviour layer owns (Select) is named by the label line through `aria-labelledby`, so the
-   * label line points at no id with `for`.
+   * label line points at no id with `for`; a press on the label line calls `focus`, as a label does for its control.
    */
-  named: () => void;
+  named: (focus: () => void) => void;
 };
 const FieldContext = createContext<FieldIds>();
 
@@ -61,7 +61,7 @@ export const Field = (props: FieldProps) => {
   // The control is made first, so the field knows whether it labels one control or names a group of choices; the
   // order is the same on the server and in the browser.
   let grouped = false;
-  let named = false;
+  let named: (() => void) | undefined;
   const content = (
     <FieldContext.Provider
       value={{
@@ -82,8 +82,8 @@ export const Field = (props: FieldProps) => {
         group: () => {
           grouped = true;
         },
-        named: () => {
-          named = true;
+        named: (focus) => {
+          named = focus;
         },
       }}
     >
@@ -118,7 +118,8 @@ export const Field = (props: FieldProps) => {
     </div>
   ) : named ? (
     <div class="k2-field" data-k2-part="Field">
-      <span class="k2-field-label" id={label}>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
+      <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
       {content}
@@ -247,29 +248,36 @@ export type SelectProps = {
 /**
  * One value from a list: the round field shows it with a chevron, and the list opens below it with the keyboard,
  * typeahead and a check at the chosen option (the behaviour layer on the ui-sdk core). The list is at least as wide as
- * its field. The value reaches a form through a hidden input.
+ * its field. The value reaches a form through core's form input: sent under the field's name, validated when the
+ * field is required, put back by the form's reset, with a `change` event.
  */
 export const Select = (props: SelectProps) => {
   const field = useField();
-  // the behaviour layer owns the trigger's id, so the field names it through aria-labelledby
-  field?.named();
+  let trigger: HTMLElement | undefined;
+  // the behaviour layer owns the trigger's id, so the field names it through aria-labelledby; its label focuses it
+  field?.named(() => trigger?.focus());
   const items = (): ChoiceItem[] => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
+  // Without `onChange` core holds the choice (so a form's reset puts it back); the field only follows it.
   const [chosen, setChosen] = createSignal<string | null>(props.value ?? null);
   const value = () => (props.onChange ? (props.value ?? null) : chosen());
   const select = useSelect(() => ({
     items: items(),
-    value: value(),
+    ...(props.onChange ? { value: props.value ?? null } : { defaultValue: props.value ?? null }),
     onValueChange: (next: string | null) => {
-      if (next === null) return;
+      // a form's reset may put back "nothing chosen"; the caller hears only of a value
       setChosen(next);
-      props.onChange?.(next);
+      if (next !== null) props.onChange?.(next);
     },
     placeholder: props.placeholder,
     required: field?.required,
+    name: props.name ?? field?.name,
   }));
   return (
     <>
       <select.Trigger
+        ref={(element: HTMLElement) => {
+          trigger = element;
+        }}
         class="k2-input"
         data-k2-part="Select"
         data-select=""
@@ -284,7 +292,8 @@ export const Select = (props: SelectProps) => {
         </span>
         <Icon name="chevron-down" />
       </select.Trigger>
-      <Show when={props.name ?? field?.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
+      {/* core's form input: sent, validated (`required`), reset with the form, and it fires `change` */}
+      <select.FormInput />
       <select.Popup
         class="k2-menu"
         data-listbox=""

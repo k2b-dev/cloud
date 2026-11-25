@@ -2000,12 +2000,13 @@
   height: 20px;
   vertical-align: top;
 }
-/* the field of a selection is a button: the value on the left, the chevron at the end */
+/* the field of a selection is a button: the value on the left, the chevron at the end; its value in the type of an
+   input's value */
 .k2-ui .k2-input[data-select] {
   cursor: default;
   width: 100%;
   text-align: left;
-  font: var(--k2-t-body);
+  font: var(--k2-t-row);
   color: var(--k2-text);
 }
 .k2-ui .k2-input[data-select]:focus-visible {
