@@ -1,14 +1,11 @@
 import { buildGroupDetailUrl, GROUPS_CONTEXT_QUERY_KEYS, type GroupQueryKeys, type GroupsListState } from "../../lib/url-state";
 
-const GROUP_DETAIL_TABS = ["members", "managers", "member-of"] as const;
+const GROUP_DETAIL_TABS = ["members", "managers", "member-of", "relations"] as const;
 
-type GroupDetailTab = (typeof GROUP_DETAIL_TABS)[number];
+export type GroupDetailTab = (typeof GROUP_DETAIL_TABS)[number];
 
-export const GROUP_DETAIL_TAB_META: Record<GroupDetailTab, { label: string; icon: string }> = {
-  members: { label: "Members", icon: "ti ti-users-group" },
-  managers: { label: "Managers", icon: "ti ti-user-cog" },
-  "member-of": { label: "Member Of", icon: "ti ti-folders" },
-};
+/** Tabs only administrators see: the groups a group belongs to, and the relations of groups. */
+const ADMIN_TABS = new Set<GroupDetailTab>(["member-of", "relations"]);
 
 type DetailHrefOptions = {
   listState: GroupsListState;
@@ -18,15 +15,12 @@ type DetailHrefOptions = {
 
 type DetailQueryOverrides = Record<string, string | null | undefined>;
 
-export const getGroupsBackLabel = (scope: GroupsListState["scope"]): string =>
-  scope === "managed" ? "Managed Groups" : scope === "member" ? "My Groups" : "All Groups";
-
 export const getVisibleGroupDetailTabs = (isAdmin: boolean): GroupDetailTab[] =>
-  GROUP_DETAIL_TABS.filter((tab) => tab !== "member-of" || isAdmin);
+  GROUP_DETAIL_TABS.filter((tab) => isAdmin || !ADMIN_TABS.has(tab));
 
 export const parseGroupDetailTab = (requested: string | undefined, isAdmin: boolean): GroupDetailTab => {
-  const tab = GROUP_DETAIL_TABS.includes(requested as GroupDetailTab) ? (requested as GroupDetailTab) : "members";
-  return tab === "member-of" && !isAdmin ? "members" : tab;
+  const tab = GROUP_DETAIL_TABS.find((entry) => entry === requested) ?? "members";
+  return ADMIN_TABS.has(tab) && !isAdmin ? "members" : tab;
 };
 
 export const createGroupDetailHrefBuilder =

@@ -1,259 +1,82 @@
-import { isAgentServiceAccountKind, isLegacyLimitedApiKey, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
 import {
   accountsAppService as accountsService,
   coreSettings,
-  type ServiceAccountCredentialOverview,
   STANDALONE_SERVICE_ACCOUNT_KINDS,
   serviceAccountCredentials,
 } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone, Tag } from "@k2b/ui";
-import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../config";
-import AccountsWorkspace from "../AccountsWorkspace";
+import AccountsNavigation from "../AccountsNavigation.island";
+import { accountsNavigationItems } from "../accounts-nav";
+import { listMessages } from "../list-messages";
 import { accountsMessages } from "../messages";
-import CreateMachineKey from "./CreateMachineKey.island";
-import DirectoryShares from "./DirectoryShares.island";
-import ServiceAccountCredentialActions from "./ServiceAccountCredentialActions.island";
-import ServiceAccountsFilters from "./ServiceAccountsFilters.island";
+import ApiKeysScreen from "./ApiKeysScreen.island";
+import { toApiKeyRow } from "./api-key-row";
+import { API_KEYS_PER_PAGE, apiKeysHref, apiKeysQuery, legacyApiKeyListHref, parseApiKeysAddress } from "./query";
 
-const parsePage = (value: string | undefined): number => {
-  const parsed = Number.parseInt(value ?? "1", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-};
-
-const buildUrl = (params: { search?: string; kind?: string; status?: string; automatic?: boolean; page?: number }) => {
-  const query = new URLSearchParams();
-  if (params.search?.trim()) query.set("search", params.search.trim());
-  if (params.kind?.trim()) query.set("kind", params.kind.trim());
-  if (params.status?.trim() && params.status !== "active") query.set("status", params.status.trim());
-  if (params.automatic) query.set("automatic", "1");
-  if (params.page && params.page > 1) query.set("page", String(params.page));
-  const search = query.toString();
-  return search ? `/app/accounts/api-keys?${search}` : "/app/accounts/api-keys";
-};
-
-const statusTone = (status: ServiceAccountCredentialOverview["status"]): StatusTone => (status === "active" ? "ok" : "error");
-
+/** The API keys of this Cloud on v2. The address is the whole list state: the declaration in `query.ts` reads it. */
 export default ssr<AuthContext>(async (c) => {
-  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const serviceAccountKindLabel = (kind: ServiceAccountCredentialOverview["serviceAccount"]["kind"]) =>
-    kind === "user_delegated" ? t.userBound : kind === "standalone" || kind === "agent" ? t.agent : t.resourceBound;
-  const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
-  const user = expectUserBackedActor(c);
-  const modelsAvailable = await coreSettings.get<boolean>("ai.openai_api_enabled");
-  const page = parsePage(c.req.query("page"));
-  const perPage = 100;
-  const automatic = c.req.query("automatic") === "1";
-  const automaticParams = new URL(c.req.url).searchParams;
-  automaticParams.delete("page");
-  if (automatic) automaticParams.delete("automatic");
-  else automaticParams.set("automatic", "1");
-  const automaticUrl = `/app/accounts/api-keys?${automaticParams}`;
-  const search = (c.req.query("search") ?? "").trim();
-  const requestedKind = (c.req.query("kind") ?? "").trim();
-  // An older link names the standalone kind; the filter shows it as "Agent".
-  const kind = isAgentServiceAccountKind(requestedKind) ? "agent" : requestedKind;
-  const rawStatus = (c.req.query("status") ?? "active").trim();
-  const status = rawStatus === "revoked" ? "revoked" : "active";
+  const locale = getLocale(c);
+  const timeZone = getTimeZone(c);
+  const { t } = accountsMessages.resolve([locale]);
+  expectUserBackedActor(c);
+  const url = new URL(c.req.url);
+  // Addresses from before v2 (`search`, the standalone kind) lead to the same list in the v2 address.
+  const legacy = legacyApiKeyListHref(url.searchParams);
+  if (legacy) return c.redirect(legacy);
 
-  const [pendingRequests, credentialsPage] = await Promise.all([
+  const query = apiKeysQuery(locale);
+  const address = parseApiKeysAddress(query, url.searchParams);
+  const { kind, status, automatic } = address.state.filters;
+  const [modelsAvailable, pendingRequests, credentialsPage] = await Promise.all([
+    coreSettings.get<boolean>("ai.openai_api_enabled"),
     accountsService.accountRequest.countPending(),
     serviceAccountCredentials.listOverview({
-      pagination: { page, perPage },
+      pagination: { page: address.page, perPage: API_KEYS_PER_PAGE },
       filter: {
-        automatic: automatic ? "include" : "hide",
-        search: search || undefined,
+        automatic: automatic === "1" ? "include" : "hide",
+        search: address.state.search,
         // "Agent" covers both standalone kinds.
-        serviceAccountKind:
-          kind === "user_delegated" || kind === "resource_bound" ? kind : kind === "agent" ? STANDALONE_SERVICE_ACCOUNT_KINDS : undefined,
-        credentialStatus: status === "active" || status === "revoked" ? status : undefined,
+        serviceAccountKind: kind === "agent" ? STANDALONE_SERVICE_ACCOUNT_KINDS : kind,
+        credentialStatus: status,
       },
     }),
   ]);
+  const pages = Math.max(1, Math.ceil(credentialsPage.total / API_KEYS_PER_PAGE));
+  // A revoked key, or an old link, can leave the requested page past the end; open the last page instead.
+  if (address.page > pages) return c.redirect(apiKeysHref(query, address.state, pages));
 
-  const totalPages = Math.max(1, Math.ceil(credentialsPage.total / perPage));
-  const baseUrl = (() => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    if (kind) params.set("kind", kind);
-    if (automatic) params.set("automatic", "1");
-    if (status !== "active") params.set("status", status);
-    const query = params.toString();
-    return query ? `/app/accounts/api-keys?${query}&page=` : "/app/accounts/api-keys?page=";
-  })();
-
-  const columns: DataTableColumn<ServiceAccountCredentialOverview>[] = [
-    { id: "key", header: t.apiKey, value: (entry) => entry.name, cellClass: "min-w-[14rem]" },
-    { id: "owner", header: t.owner, value: (entry) => entry.owner.type, cellClass: "min-w-[14rem]" },
-    { id: "type", header: t.type, value: (entry) => serviceAccountKindLabel(entry.serviceAccount.kind) },
-    { id: "status", header: t.status, value: (entry) => entry.status },
-    { id: "expires", header: t.expires, value: (entry) => entry.expiresAt, cellClass: "whitespace-nowrap" },
-    { id: "lastUsed", header: t.lastUsed, value: (entry) => entry.lastUsedAt, cellClass: "whitespace-nowrap" },
-    { id: "created", header: t.created, value: (entry) => entry.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
-  ];
+  const now = new Date();
+  const words = listMessages.resolve([locale]).t;
+  const ignored =
+    address.issues.length > 0
+      ? words.ignoredPartsDetail({
+          params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
+        })
+      : null;
 
   return () => (
     <Layout
       c={c}
       fullWidth
+      ui="v2"
       title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.serviceAccounts }]}
     >
-      <AccountsWorkspace active="api-keys" isAdmin pendingRequests={pendingRequests} scrollPreserveKey="accounts-service-accounts">
-        <div class="flex flex-col gap-2">
-          <div class="flex flex-wrap items-start justify-between gap-3" style="view-transition-name: accounts-service-accounts-title">
-            <div class="min-w-0">
-              <h1 class="text-base font-semibold text-primary">{t.serviceAccounts}</h1>
-              <p class="mt-1 text-xs text-dimmed">{t.serviceAccountSummary({ count: credentialsPage.total })}</p>
-            </div>
-            <CreateMachineKey modelsAvailable={modelsAvailable} />
-          </div>
-
-          <div style="view-transition-name: accounts-service-accounts-search">
-            <SearchBar
-              action={buildUrl({ kind, status, automatic, page: 1 })}
-              value={search}
-              placeholder={t.searchServiceAccounts}
-              ariaLabel={t.searchServiceAccountsLabel}
-            />
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-service-accounts-filters">
-            <ServiceAccountsFilters search={search} kind={kind} status={status} automatic={automatic} />
-            <DirectoryShares />
-          </div>
-
-          {automatic || (credentialsPage.hiddenAutomaticCount ?? 0) > 0 ? (
-            <p class="text-xs text-dimmed">
-              {automatic ? t.automaticAppKeysShown : t.automaticAppKeysHidden({ count: credentialsPage.hiddenAutomaticCount ?? 0 })}{" "}
-              <a href={automaticUrl} class="font-medium text-primary hover:underline">
-                {automatic ? t.hideAutomatic : t.showAutomatic}
-              </a>
-            </p>
-          ) : null}
-
-          {credentialsPage.items.some(
-            (entry) => entry.owner.type === "standalone" && entry.serviceAccount.status === "active" && isLegacyLimitedApiKey(entry),
-          ) && (
-            <p class="text-xs text-dimmed">
-              <span class="font-medium text-secondary">{t.legacyLimitedKey}:</span> {t.legacyLimitedKeyHint}
-            </p>
-          )}
-
-          {credentialsPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>{t.noServiceAccounts}</>} />
-          ) : (
-            <Paper class="overflow-hidden" style="view-transition-name: accounts-service-accounts-table">
-              <DataTable
-                rows={credentialsPage.items}
-                columns={columns}
-                getRowId={(entry) => entry.id}
-                hoverRows
-                highlightColumns={false}
-                class="overflow-x-auto"
-                scrollPreserveKey="accounts-service-accounts-table"
-                renderCell={({ row: entry, col }) => {
-                  if (col.id === "key") {
-                    return (
-                      <div class="flex min-w-0 flex-col gap-1">
-                        <div class="flex min-w-0 items-center gap-2">
-                          <span class="truncate font-medium text-primary">{entry.name}</span>
-                          {isModelsOnlyApiKey(entry) && (
-                            <Tag icon="ti ti-sparkles" size="sm">
-                              {t.modelsOnlyKey}
-                            </Tag>
-                          )}
-                          {entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry) && (
-                            <Tag icon="ti ti-lock" size="sm">
-                              {t.legacyLimitedKey}
-                            </Tag>
-                          )}
-                        </div>
-                        <span class="truncate font-mono text-xs text-dimmed">cld_{entry.tokenPrefix}_...</span>
-                      </div>
-                    );
-                  }
-                  if (col.id === "owner") {
-                    if (entry.owner.type === "user") {
-                      return (
-                        <div class="flex min-w-0 items-center gap-2">
-                          <AccountAvatar
-                            name={entry.owner.displayName || entry.owner.uid}
-                            userId={entry.owner.userId}
-                            avatarHash={entry.owner.avatarHash}
-                            size="xs"
-                          />
-                          <div class="min-w-0 flex-1">
-                            <a
-                              href={`/app/accounts/users/${entry.owner.userId}`}
-                              class="block truncate font-medium text-primary hover:underline"
-                            >
-                              {entry.owner.displayName || entry.owner.uid}
-                            </a>
-                            <span class="block truncate text-xs text-dimmed">{entry.owner.mail ?? entry.owner.uid}</span>
-                          </div>
-                        </div>
-                      );
-                    }
-                    if (entry.owner.type === "standalone") {
-                      return (
-                        <div class="flex min-w-0 flex-col gap-1">
-                          <a
-                            href={`/app/accounts/agents/${entry.owner.serviceAccountId}`}
-                            class="truncate font-medium text-primary hover:underline"
-                          >
-                            {entry.owner.name}
-                          </a>
-                          <span class="truncate text-xs text-dimmed">{t.agentServiceAccount}</span>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div class="flex min-w-0 flex-col gap-1">
-                        <span class="truncate font-medium text-primary">{entry.owner.appId || t.resource}</span>
-                        <span class="truncate text-xs text-dimmed">
-                          {entry.owner.resourceType || "resource"} · {entry.owner.resourceId || "-"}
-                        </span>
-                      </div>
-                    );
-                  }
-                  if (col.id === "type") return <span class="text-dimmed">{serviceAccountKindLabel(entry.serviceAccount.kind)}</span>;
-                  if (col.id === "status")
-                    return (
-                      <StatusBadge tone={statusTone(entry.status)} label={<> {entry.status === "active" ? t.active : t.revoked} </>} />
-                    );
-                  if (col.id === "expires") return <span class="text-dimmed">{formatNullableDate(entry.expiresAt)}</span>;
-                  if (col.id === "lastUsed") return <span class="text-dimmed">{formatNullableDate(entry.lastUsedAt)}</span>;
-                  if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(entry.createdAt, { locale })}</span>;
-                  if (col.id === "actions")
-                    return (
-                      <ServiceAccountCredentialActions
-                        credentialId={entry.id}
-                        name={entry.name}
-                        disabled={entry.status !== "active"}
-                        replace={
-                          entry.owner.type === "standalone" && isLegacyLimitedApiKey(entry)
-                            ? { serviceAccountId: entry.owner.serviceAccountId }
-                            : undefined
-                        }
-                      />
-                    );
-                  return "";
-                }}
-              />
-            </Paper>
-          )}
-
-          <div class="pt-1">
-            <Pagination currentPage={page} totalPages={totalPages} baseUrl={baseUrl} />
-          </div>
-        </div>
-      </AccountsWorkspace>
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "api-keys", pendingRequests, isAdmin: true })} />
+      <ApiKeysScreen
+        state={address.state}
+        page={address.page}
+        pages={pages}
+        total={credentialsPage.total}
+        rows={credentialsPage.items.map((entry) => toApiKeyRow(entry, { locale, timeZone, now }))}
+        hiddenAutomatic={automatic === "1" ? null : (credentialsPage.hiddenAutomaticCount ?? 0)}
+        modelsAvailable={Boolean(modelsAvailable)}
+        timeZone={timeZone}
+        pendingRequests={pendingRequests}
+        ignored={ignored}
+      />
     </Layout>
   );
 });

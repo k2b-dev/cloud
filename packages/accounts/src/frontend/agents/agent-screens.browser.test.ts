@@ -145,7 +145,7 @@ const open = async (
         contentType: "text/html; charset=utf-8",
         body: page({ screen: "agents", ...options.list }, Boolean(options.dark)),
       });
-    if (url.pathname === `/app/accounts/agents/${AGENT_ID}`) {
+    if (url.pathname === `/app/accounts/users/${AGENT_ID}`) {
       answers.pages.push(`${url.pathname}${url.search}`);
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
@@ -196,12 +196,12 @@ describe("an agent's API keys on v2", () => {
       for (const [name, address, options] of [
         ["list", "/app/accounts/agents", {}],
         ["list-empty", "/app/accounts/agents", { list: { empty: true } }],
-        ["detail", `/app/accounts/agents/${AGENT_ID}`, {}],
-        ["detail-sorted", `/app/accounts/agents/${AGENT_ID}?sort=name`, {}],
-        ["detail-empty", `/app/accounts/agents/${AGENT_ID}`, { state: { keys: "empty" } }],
-        ["detail-failed", `/app/accounts/agents/${AGENT_ID}`, { state: { keys: "failed" } }],
-        ["detail-disabled", `/app/accounts/agents/${AGENT_ID}`, { state: { active: false } }],
-        ["detail-key", `/app/accounts/agents/${AGENT_ID}?key=${KEY_IDS[0]}`, {}],
+        ["detail", `/app/accounts/users/${AGENT_ID}`, {}],
+        ["detail-sorted", `/app/accounts/users/${AGENT_ID}?sort=name`, {}],
+        ["detail-empty", `/app/accounts/users/${AGENT_ID}`, { state: { keys: "empty" } }],
+        ["detail-failed", `/app/accounts/users/${AGENT_ID}`, { state: { keys: "failed" } }],
+        ["detail-disabled", `/app/accounts/users/${AGENT_ID}`, { state: { active: false } }],
+        ["detail-key", `/app/accounts/users/${AGENT_ID}?key=${KEY_IDS[0]}`, {}],
       ] as const) {
         const { context, tab, errors } = await open(view, address, api(), options);
         try {
@@ -215,10 +215,10 @@ describe("an agent's API keys on v2", () => {
           // a column head sorts and keeps the open key open; pressed again, it goes back to the newest first
           const nameHead = tab.locator("thead th", { hasText: t.name }).locator("a");
           if (name === "detail-key" && view === desktop)
-            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/agents/${AGENT_ID}?sort=name&key=${KEY_IDS[0]}`);
+            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/users/${AGENT_ID}?sort=name&key=${KEY_IDS[0]}`);
           if (name === "detail-sorted" && view === desktop) {
             expect(await tab.locator("thead th[aria-sort='ascending']").textContent()).toContain(t.name);
-            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/agents/${AGENT_ID}`);
+            expect(await nameHead.getAttribute("href")).toBe(`/app/accounts/users/${AGENT_ID}`);
             // the rows stand in the order the head names, as the server sorts them
             const names = await tab.locator("tbody tr td:first-child .k2-cell-line:not([data-second])").allTextContents();
             expect(names).toEqual(["Alter Export-Job", "Laptop Jana", "MCP-Server Team Ops"]);
@@ -265,11 +265,11 @@ describe("an agent's API keys on v2", () => {
   test("creating a key shows its token once, with a copy button, and closing drops it from the page", async () => {
     for (const view of [desktop, phone]) {
       const answers = api();
-      const { context, tab, errors, logged } = await open(view, `/app/accounts/agents/${AGENT_ID}`, answers);
+      const { context, tab, errors, logged } = await open(view, `/app/accounts/users/${AGENT_ID}`, answers);
       try {
         // the dialog opens from the page, so Back has a page to return to
         await tab.getByRole("link", { name: t.createKey }).filter({ visible: true }).first().click();
-        await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}?key=new`);
+        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?key=new`);
         const dialog = tab.locator("[data-k2-part='Dialog']");
         await dialog.getByRole("heading", { name: t.createKeyFor({ name: "Wochenbericht" }) }).waitFor();
         await settled(tab);
@@ -295,12 +295,12 @@ describe("an agent's API keys on v2", () => {
         expect(await dialog.getByText(TOKEN).isVisible()).toBe(true);
         await dialog.getByRole("button", { name: t.done }).click();
         // the address no longer names the dialog, and the token is nowhere on the page
-        await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}`);
+        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
         await tab.getByText(t.keysCount({ count: 3 })).waitFor();
         // closing replaced the dialog's entry: Back shows the page from before it, without the dialog
         await tab.goBack();
         await settled(tab);
-        expect(tab.url()).toBe(`${origin}/app/accounts/agents/${AGENT_ID}`);
+        expect(tab.url()).toBe(`${origin}/app/accounts/users/${AGENT_ID}`);
         expect(await dialog.count()).toBe(0);
         expect(await tab.content()).not.toContain(TOKEN);
         expect(logged.filter((line) => line.includes(TOKEN))).toEqual([]);
@@ -314,7 +314,7 @@ describe("an agent's API keys on v2", () => {
   test("a refused key says why; a lost answer forbids a second creation", async () => {
     for (const create of [400, 500, "lost"] as const) {
       const answers = api(create);
-      const { context, tab, errors } = await open(desktop, `/app/accounts/agents/${AGENT_ID}?key=new`, answers);
+      const { context, tab, errors } = await open(desktop, `/app/accounts/users/${AGENT_ID}?key=new`, answers);
       try {
         const dialog = tab.locator("[data-k2-part='Dialog']");
         await dialog.getByRole("textbox", { name: t.keyName }).fill("Neuer Bericht-Export");
@@ -325,7 +325,7 @@ describe("an agent's API keys on v2", () => {
           expect(await dialog.getByRole("button", { name: t.create }).isDisabled()).toBe(false);
           // without a token an outside press closes the form, so the token's guard in the create test is real
           await tab.mouse.click(4, 4);
-          await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}`);
+          await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
         } else {
           await dialog.getByText(t.createUncertain).waitFor();
           expect(await dialog.getByRole("button", { name: t.create }).isDisabled()).toBe(true);
@@ -341,7 +341,7 @@ describe("an agent's API keys on v2", () => {
   test("revoking asks first, says when it failed, and shows the list after it worked", async () => {
     for (const view of [desktop, phone]) {
       const answers = api("token", [500, 200]);
-      const { context, tab, errors } = await open(view, `/app/accounts/agents/${AGENT_ID}`, answers);
+      const { context, tab, errors } = await open(view, `/app/accounts/users/${AGENT_ID}`, answers);
       try {
         // the key opens from the list, so Back has the list to return to
         await tab
@@ -349,7 +349,7 @@ describe("an agent's API keys on v2", () => {
           .filter({ visible: true })
           .first()
           .click();
-        await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}?key=${KEY_IDS[0]}`);
+        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}?key=${KEY_IDS[0]}`);
         const pane = tab.locator("[data-k2-part='Pane'][aria-label='Laptop Jana']");
         const ask = async () => {
           await pane.getByRole("button", { name: t.revoke }).click();
@@ -373,12 +373,12 @@ describe("an agent's API keys on v2", () => {
         await shoot(tab, `revoke-failed-${view.name}`);
         question = await ask();
         await question.getByRole("button", { name: t.revoke }).click();
-        await tab.waitForURL(`${origin}/app/accounts/agents/${AGENT_ID}`);
+        await tab.waitForURL(`${origin}/app/accounts/users/${AGENT_ID}`);
         expect(answers.deletes).toEqual([`${keysPath}/${KEY_IDS[0]}`, `${keysPath}/${KEY_IDS[0]}`]);
         // the revoked key's entry was replaced: Back leads to the list from before, never to a key that is gone
         await tab.goBack();
         await settled(tab);
-        expect(tab.url()).toBe(`${origin}/app/accounts/agents/${AGENT_ID}`);
+        expect(tab.url()).toBe(`${origin}/app/accounts/users/${AGENT_ID}`);
         expect(errors).toEqual([]);
       } finally {
         await context.close();
@@ -387,7 +387,7 @@ describe("an agent's API keys on v2", () => {
   }, 120_000);
 
   test("the page and the dialog keep the rules in the dark", async () => {
-    for (const address of [`/app/accounts/agents/${AGENT_ID}`, `/app/accounts/agents/${AGENT_ID}?key=new`]) {
+    for (const address of [`/app/accounts/users/${AGENT_ID}`, `/app/accounts/users/${AGENT_ID}?key=new`]) {
       const { context, tab, errors } = await open(desktop, address, api(), { dark: true });
       try {
         await expectClean(tab);

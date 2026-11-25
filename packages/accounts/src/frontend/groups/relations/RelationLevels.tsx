@@ -1,14 +1,20 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
 import { For, Match, Show, Switch } from "solid-js";
 import type { RelationsText } from "./relations-messages";
-import { LEVELS, layoutLevels, type RelationsUrlState, relationsHref } from "./relations-view";
+import { LEVELS, layoutLevels, type RelationsUrlState } from "./relations-view";
 
-type Props = { relations: GroupRelations; state: RelationsUrlState; t: RelationsText };
+type Props = {
+  relations: GroupRelations;
+  state: RelationsUrlState;
+  t: RelationsText;
+  /** The address of this view with a change, such as another chosen group. */
+  href: (change: Partial<RelationsUrlState>) => string;
+};
 
 const card =
-  "box-border block w-full overflow-hidden rounded-[var(--ui-radius-control)] px-2 py-[7px] text-[13px] leading-[17px] outline-offset-1 hover:bg-[var(--ui-hover)] focus-visible:outline-2 focus-visible:outline-[var(--k2b-focus-ring)] md:w-[172px]";
+  "box-border block w-full overflow-hidden rounded-[var(--k2-r-control)] px-2 py-[7px] text-[13px] leading-[17px] outline-offset-1 hover:bg-[var(--k2-n100)] focus-visible:outline-2 focus-visible:outline-[var(--k2-blue)] md:w-[172px]";
 const line = "block truncate";
-const meta = "block truncate text-[11.5px] leading-[16px] text-dimmed";
+const meta = "block truncate text-[11.5px] leading-[16px] text-[var(--k2-subtle)]";
 
 /**
  * Levels around the focus: containing groups to the left, contained groups to the right, each group once.
@@ -37,7 +43,7 @@ export default function RelationLevels(props: Props) {
       >
         <defs>
           <marker id="relations-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto">
-            <path d="M0 0L8 4L0 8z" fill="var(--k2b-warning-text)" />
+            <path d="M0 0L8 4L0 8z" fill="var(--k2-warn-ink)" />
           </marker>
         </defs>
         <For each={layout().paths}>
@@ -45,7 +51,7 @@ export default function RelationLevels(props: Props) {
             <path
               d={path.d}
               fill="none"
-              stroke={path.cycle ? "var(--k2b-warning-text)" : "var(--ui-border-strong)"}
+              stroke={path.cycle ? "var(--k2-warn-ink)" : "var(--k2-n400)"}
               stroke-width="1.5"
               stroke-dasharray={path.cycle ? "5 4" : undefined}
               marker-end={path.arrow ? "url(#relations-arrow)" : undefined}
@@ -60,7 +66,7 @@ export default function RelationLevels(props: Props) {
         <For each={layout().columns}>
           {(column) => (
             <section class="flex w-full flex-col gap-[4px] md:w-[172px]" aria-label={title(column)}>
-              <h2 class="h-[20px] truncate text-xs font-semibold leading-[20px] text-dimmed">{title(column)}</h2>
+              <h2 class="h-[20px] truncate text-xs font-semibold leading-[20px] text-[var(--k2-subtle)]">{title(column)}</h2>
               <For each={column.entries}>
                 {(entry) => (
                   <Switch>
@@ -69,8 +75,8 @@ export default function RelationLevels(props: Props) {
                         const current = () => node(group().id);
                         return (
                           <a
-                            href={relationsHref(props.state, { sel: group().id })}
-                            class={`${card} ${group().focus ? "bg-[var(--ui-app-selected)] text-[var(--ui-app-accent-text)]" : "bg-[var(--ui-surface)] text-primary"} ${selected() === group().id ? "outline-2 outline-[var(--ui-app-accent-border)]" : ""}`}
+                            href={props.href({ sel: group().id })}
+                            class={`${card} ${group().focus ? "bg-[var(--k2-app-tint)] text-[var(--k2-app-text)]" : "bg-[var(--k2-surface)] text-[var(--k2-text)]"} ${selected() === group().id ? "outline-2 outline-[var(--k2-app-text)]" : ""}`}
                             style={{ height: `${group().height}px` }}
                             aria-current={selected() === group().id ? "true" : undefined}
                           >
@@ -83,7 +89,7 @@ export default function RelationLevels(props: Props) {
                               })}
                             </span>
                             <Show when={current()?.inCycle}>
-                              <span class={`${meta} font-medium text-[var(--k2b-warning-text)]`}>{props.t.inCycle}</span>
+                              <span class={`${meta} font-medium text-[var(--k2-warn-ink)]`}>{props.t.inCycle}</span>
                             </Show>
                           </a>
                         );
@@ -98,15 +104,17 @@ export default function RelationLevels(props: Props) {
                             : (up ? props.t.shownUp : props.t.shownDown)({ name: name(back().from) });
                         return (
                           <a
-                            href={relationsHref(props.state, { sel: back().to })}
-                            class={`${card} ${back().closesCycle ? "bg-[var(--k2b-warning-surface)] text-[var(--k2b-warning-text)]" : "bg-[var(--ui-surface)] text-secondary"} ${selected() === back().to ? "outline-2 outline-[var(--ui-app-accent-border)]" : ""}`}
+                            href={props.href({ sel: back().to })}
+                            class={`${card} ${back().closesCycle ? "bg-[var(--k2-warn-tint)] text-[var(--k2-warn-ink)]" : "bg-[var(--k2-surface)] text-[var(--k2-muted)]"} ${selected() === back().to ? "outline-2 outline-[var(--k2-app-text)]" : ""}`}
                             style={{ height: `${back().height}px` }}
                             aria-label={`${name(back().to)}: ${text()}`}
                           >
                             <span class={`${line} font-medium`}>
                               {back().closesCycle ? "↺" : "↪"} {name(back().to)}
                             </span>
-                            <span class={`${line} text-[11.5px] leading-[16px] ${back().closesCycle ? "" : "text-dimmed"}`}>{text()}</span>
+                            <span class={`${line} text-[11.5px] leading-[16px] ${back().closesCycle ? "" : "text-[var(--k2-subtle)]"}`}>
+                              {text()}
+                            </span>
                           </a>
                         );
                       }}
@@ -114,8 +122,8 @@ export default function RelationLevels(props: Props) {
                     <Match when={entry.kind === "more" && entry}>
                       {(more) => (
                         <a
-                          href={relationsHref(props.state, { expand: [...props.state.expand, more().key] })}
-                          class="flex items-center rounded-[var(--ui-radius-control)] px-2 text-[12.5px] text-[var(--k2b-action)] hover:bg-[var(--ui-hover)] focus-visible:outline-2 focus-visible:outline-[var(--k2b-focus-ring)]"
+                          href={props.href({ expand: [...props.state.expand, more().key] })}
+                          class="flex items-center rounded-[var(--k2-r-control)] px-2 text-[12.5px] text-[var(--k2-app-text)] hover:bg-[var(--k2-n100)] focus-visible:outline-2 focus-visible:outline-[var(--k2-blue)]"
                           style={{ height: `${more().height}px` }}
                         >
                           {props.t.more({ count: more().count })}
@@ -130,7 +138,7 @@ export default function RelationLevels(props: Props) {
         </For>
       </div>
       <Show when={props.relations.columns.length === 0}>
-        <p class="px-4 pb-4 text-xs text-dimmed">{props.t.noRelations}</p>
+        <p class="px-4 pb-4 text-xs text-[var(--k2-subtle)]">{props.t.noRelations}</p>
       </Show>
     </div>
   );

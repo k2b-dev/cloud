@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { type AgentKey, agentKeyOpenFrom, agentKeySortFrom, agentPageHref, isAgentKeyExpired, sortAgentKeys } from "./agent-keys";
+import {
+  type AgentKey,
+  agentKeyOpenFrom,
+  agentKeySortFrom,
+  agentPageHref,
+  isAgentKeyExpired,
+  legacyAgentHref,
+  sortAgentKeys,
+} from "./agent-keys";
 
 const key = (id: string, name: string, createdAt: string, lastUsedAt: string | null): AgentKey => ({
   id,
@@ -47,8 +55,16 @@ describe("the address of an agent's page", () => {
     expect(agentKeyOpenFrom("'; drop")).toEqual({ kind: "none" });
   });
   test("keeps the order when something opens and leaves out the default", () => {
-    expect(agentPageHref(agent, { sort: "created" })).toBe(`/app/accounts/agents/${agent}`);
-    expect(agentPageHref(agent, { sort: "used", open: "new" })).toBe(`/app/accounts/agents/${agent}?sort=used&key=new`);
+    expect(agentPageHref(agent, { sort: "created" })).toBe(`/app/accounts/users/${agent}`);
+    expect(agentPageHref(agent, { sort: "used", open: "new" })).toBe(`/app/accounts/users/${agent}?sort=used&key=new`);
+  });
+  test("an agent's page from before the one record leads to the record with its order and open key", () => {
+    const at = (query: string) => legacyAgentHref(agent, new URLSearchParams(query));
+    expect(at("")).toBe(`/app/accounts/users/${agent}`);
+    expect(at("sort=name&key=new")).toBe(`/app/accounts/users/${agent}?sort=name&key=new`);
+    expect(at(`key=${keyId}&sort=used`)).toBe(`/app/accounts/users/${agent}?sort=used&key=${keyId.toLowerCase()}`);
+    // what the record does not read falls away, and a broken key or order is the plain record
+    expect(at("sort=bogus&key='; drop&page=3")).toBe(`/app/accounts/users/${agent}`);
   });
   test("an expired key is one whose end has passed", () => {
     const now = new Date("2026-11-24T12:00:00.000Z");

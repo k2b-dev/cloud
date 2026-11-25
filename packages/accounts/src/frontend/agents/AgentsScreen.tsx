@@ -28,7 +28,7 @@ export default function AgentsScreen(props: Props) {
           label={t().agents}
           rows={props.agents}
           rowKey={(agent) => agent.id}
-          open={(agent) => ({ href: `/app/accounts/agents/${agent.id}` })}
+          open={(agent) => ({ href: `/app/accounts/users/${agent.id}` })}
           empty={{ icon: "robot", text: t().noAgents }}
           phone={(agent) => ({
             lines: [agent.name, `${agent.active ? t().active : t().disabled} · ${t().createdOn({ when: agent.created })}`],

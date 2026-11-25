@@ -51,11 +51,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const agentKeyOpenFrom = (value: string | undefined): AgentKeyOpen =>
   value === "new" ? { kind: "new" } : value && UUID.test(value) ? { kind: "key", id: value.toLowerCase() } : { kind: "none" };
 
-/** The address of an agent's page: the sort stays when something opens or closes; the newest first is left out. */
+/** The address of an agent's record (the one account record of every kind): the sort stays when something opens or
+ * closes; the newest first is left out. */
 export const agentPageHref = (agentId: string, state: { sort: AgentKeySort; open?: "new" | string }): string => {
   const params = new URLSearchParams();
   if (state.sort !== "created") params.set("sort", state.sort);
   if (state.open) params.set("key", state.open);
   const query = params.toString();
-  return `/app/accounts/agents/${agentId}${query ? `?${query}` : ""}`;
+  return `/app/accounts/users/${agentId}${query ? `?${query}` : ""}`;
+};
+
+/**
+ * Where an agent's page from before the one account record leads: `/app/accounts/agents/:id?…` becomes the record at
+ * `/app/accounts/users/:id` with the same sort and open key; parameters the record does not read are dropped.
+ */
+export const legacyAgentHref = (agentId: string, params: URLSearchParams): string => {
+  const open = params.get("key") ?? undefined;
+  const key = agentKeyOpenFrom(open);
+  return agentPageHref(agentId, {
+    sort: agentKeySortFrom(params.get("sort") ?? undefined),
+    open: key.kind === "new" ? "new" : key.kind === "key" ? key.id : undefined,
+  });
 };

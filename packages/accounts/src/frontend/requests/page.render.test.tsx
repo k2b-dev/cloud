@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
-import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import { Hono } from "hono";
@@ -35,6 +34,19 @@ const user = {
   managesGroupIds: [],
 } satisfies User;
 
+const request = (id: string, status: "pending" | "completed" | "denied", firstName: string, lastName: string) => ({
+  id,
+  email: `${firstName.toLowerCase()}@solberg-kramer.example`,
+  firstName,
+  lastName,
+  displayName: null,
+  phone: null,
+  comment: status === "pending" ? "Neu im Lager ab Dezember" : null,
+  status,
+  createdAt: "2026-11-20T08:00:00.000Z",
+  updatedAt: "2026-11-20T08:00:00.000Z",
+});
+
 const server = () => {
   const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
   app.use("*", async (c, next) => {
@@ -47,42 +59,66 @@ const server = () => {
   return app;
 };
 
-test("request status is URL navigation, with Pending as the default", async () => {
+const withRequests = async (freeIpa: boolean, run: (app: ReturnType<typeof server>, list: ReturnType<typeof spyOn>) => Promise<void>) => {
+  const list = spyOn(services.accountsAppService.accountRequest, "list").mockImplementation(async ({ filter }) => {
+    const items = [
+      request("aaaaaaaa-0000-4000-8000-000000000001", "pending", "Jonas", "Weber"),
+      request("aaaaaaaa-0000-4000-8000-000000000002", "denied", "Mira", "Kaya"),
+    ].filter((item) => !("status" in filter) || item.status === filter.status);
+    return { items, page: 1, perPage: 100, total: items.length, hasNext: false } as never;
+  });
   const spies = [
     stubRailSnapshot(),
-    spyOn(services.coreSettings, "get").mockResolvedValue(false),
-    spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
-    spyOn(services.accountsAppService.accountRequest, "list").mockResolvedValue({
-      items: [],
-      page: 1,
-      perPage: 100,
-      total: 0,
-      hasNext: false,
-    }),
-    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
+    spyOn(services.coreSettings, "get").mockResolvedValue(freeIpa),
+    list,
+    spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(1),
   ];
   try {
-    const app = server();
-    for (const [query, current] of [
-      ["?status=completed", "completed"],
-      ["", "pending"],
-    ]) {
-      const response = await app.request(`/app/accounts/requests${query}`, { headers: { "Accept-Language": "en" } });
-      const html = await response.text();
-      expect(response.status, html).toBe(200);
-      const nav = html.match(/<nav[^>]*aria-label="Request status"[^>]*>[\s\S]*?<\/nav>/)?.[0];
-      expect(nav).toContain("k2b-view-tabs");
-      const links = [...nav!.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)];
-      expect(links).toHaveLength(4);
-      for (const [index, status] of ["pending", "completed", "denied", "all"].entries()) {
-        const [_, attrs, content] = links[index]!;
-        expect(attrs).toContain(`href="/app/accounts/requests${status === "pending" ? "" : `?status=${status}`}"`);
-        expect(content).toContain(status[0]!.toUpperCase() + status.slice(1));
-        expect(attrs!.includes('aria-current="page"')).toBe(status === current);
-        expect(attrs).not.toContain('data-variant="primary"');
-      }
-    }
+    await run(server(), list);
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
+};
+
+test("request status is a view in the address, with Pending as the default, rendered on v2", async () => {
+  await withRequests(true, async (app) => {
+    for (const [query, current] of [
+      ["?status=completed", "completed"],
+      ["", "pending"],
+    ] as const) {
+      const response = await app.request(`/app/accounts/requests${query}`, { headers: { "Accept-Language": "en" } });
+      const html = await response.text();
+      expect(response.status, html).toBe(200);
+      expect(html).toContain('data-k2-part="Workspace"');
+      const tabs = html.match(/<[^>]*data-k2-part="Tabs"[^>]*aria-label="Request status"[\s\S]*?<\/nav>/)?.[0] ?? "";
+      const links = [...tabs.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/g)];
+      expect(links).toHaveLength(4);
+      for (const [index, status] of ["pending", "completed", "denied", "all"].entries()) {
+        const [, attrs, content] = links[index]!;
+        expect(attrs).toContain(`href="/app/accounts/requests${status === "pending" ? "" : `?status=${status}`}"`);
+        expect(content).toContain(status[0]!.toUpperCase() + status.slice(1));
+        expect(attrs!.includes('aria-current="page"')).toBe(status === current);
+      }
+    }
+  });
+});
+
+test("a pending request offers create (with FreeIPA) and deny; the head creates a user on its page; no loader on first render", async () => {
+  await withRequests(true, async (app, list) => {
+    const response = await app.request("/app/accounts/requests", { headers: { "Accept-Language": "en" } });
+    const html = await response.text();
+    expect(list.mock.calls[0]![0]).toMatchObject({ filter: { status: "pending" }, pagination: { page: 1, perPage: 100 } });
+    expect(html).toContain("Jonas Weber");
+    expect(html).toContain("Neu im Lager ab Dezember");
+    expect(html).toContain('href="/app/accounts/users/new?request=aaaaaaaa-0000-4000-8000-000000000001"');
+    expect(html).toContain(">Deny<");
+    expect(html).toContain('href="/app/accounts/users/new"');
+    expect(html).not.toContain('data-k2-part="Loading"');
+    console.info(`requests v2 DOM elements: ${html.match(/<[a-z][a-z0-9-]*/gi)?.length}`);
+  });
+  await withRequests(false, async (app) => {
+    const html = await (await app.request("/app/accounts/requests", { headers: { "Accept-Language": "en" } })).text();
+    expect(html).not.toContain("/app/accounts/users/new?request=");
+    expect(html).toContain(">Deny<");
+  });
 });

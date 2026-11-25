@@ -1,166 +1,60 @@
 import type { AuthContext } from "@k2b/cloud/server";
-import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { accountsAppService as accountsService, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
+import { expectUserBackedActor, getLocale, getTimeZone } from "@k2b/cloud/server";
+import { accountsAppService as accountsService, coreSettings } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, StatusBadge, type StatusTone, ViewTabs } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountsWorkspace from "../AccountsWorkspace";
+import AccountsNavigation from "../AccountsNavigation.island";
+import { accountsNavigationItems } from "../accounts-nav";
 import { accountsMessages } from "../messages";
-import DenyRequest from "../users/DenyRequest.island";
-import CreateUserForm from "../users/new/CreateUserForm.island";
+import RequestsScreen from "./RequestsScreen.island";
+import { parseRequestStatus, parseRequestsPage, REQUESTS_PER_PAGE } from "./requests-url";
 
-type StatusFilter = "pending" | "completed" | "denied" | "all";
-
-const parsePage = (value: string | undefined): number => {
-  const parsed = Number.parseInt(value ?? "1", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-};
-
-const parseStatus = (value: string | undefined): StatusFilter => {
-  if (value === "pending" || value === "completed" || value === "denied" || value === "all") return value;
-  return "pending";
-};
-
-const buildRequestsUrl = (status: StatusFilter, page: number): string => {
-  const params = new URLSearchParams();
-  if (status !== "pending") params.set("status", status);
-  if (page > 1) params.set("page", String(page));
-  const query = params.toString();
-  return query.length > 0 ? `/app/accounts/requests?${query}` : "/app/accounts/requests";
-};
-
-const STATUS_TONE: Record<Exclude<StatusFilter, "all">, StatusTone> = {
-  pending: "neutral",
-  completed: "ok",
-  denied: "error",
-};
-
+/** Account requests on v2: the status is a view in the address (`status`, pending by default), paged with `page`. */
 export default ssr<AuthContext>(async (c) => {
-  const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const statusLabel = (value: StatusFilter) =>
-    value === "all" ? t.all : value === "pending" ? t.pending : value === "completed" ? t.completed : t.denied;
+  const locale = getLocale(c);
+  const timeZone = getTimeZone(c);
+  const { t } = accountsMessages.resolve([locale]);
   const user = expectUserBackedActor(c);
   const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
-  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
-  const categoryPolicy = await readAccountCategoryPolicy();
-  const page = parsePage(c.req.query("page"));
-  const perPage = 100;
-  const status = parseStatus(c.req.query("status"));
+  const page = parseRequestsPage(c.req.query("page"));
+  const status = parseRequestStatus(c.req.query("status"));
 
   const [pendingRequests, requestsPage] = await Promise.all([
     accountsService.accountRequest.countPending(),
     accountsService.accountRequest.list({
       access: { userId: user.id, isAdmin: true },
-      pagination: { page, perPage },
+      pagination: { page, perPage: REQUESTS_PER_PAGE },
       filter: status === "all" ? { scope: "all" } : { status },
     }),
   ]);
-
-  const totalPages = Math.max(1, Math.ceil(requestsPage.total / perPage));
-  const paginationBaseUrl = buildRequestsUrl(status, 1).replace(/(?:\?|&)page=\d+$/, "");
-  const paginationUrl = paginationBaseUrl.includes("?") ? `${paginationBaseUrl}&page=` : `${paginationBaseUrl}?page=`;
-  type RequestRow = (typeof requestsPage.items)[number];
-  const columns: DataTableColumn<RequestRow>[] = [
-    { id: "request", header: t.request, value: (request) => request.displayName || `${request.firstName} ${request.lastName}` },
-    { id: "email", header: t.email, value: (request) => request.email },
-    { id: "status", header: t.status, value: (request) => request.status },
-    { id: "requested", header: t.requested, value: (request) => request.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "comment", header: t.comment, value: (request) => request.comment, cellClass: "max-w-[20rem]" },
-    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
-  ];
+  const requests = requestsPage.items.map((request) => ({
+    id: request.id,
+    name: request.displayName || `${request.firstName} ${request.lastName}`,
+    firstName: request.firstName,
+    email: request.email,
+    status: request.status,
+    requested: dates.formatDate(request.createdAt, { locale, timeZone }),
+    comment: request.comment || null,
+  }));
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.requests }]}>
-      <AccountsWorkspace active="requests" isAdmin={true} pendingRequests={pendingRequests} scrollPreserveKey="accounts-requests">
-        <div class="flex flex-col gap-2">
-          <div class="min-w-0" style="view-transition-name: accounts-requests-title">
-            <h1 class="text-base font-semibold text-primary">{t.requests}</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {t.requestCount({ count: requestsPage.total, status: status === "all" ? undefined : status })}
-            </p>
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2" style="view-transition-name: accounts-requests-filters">
-            <ViewTabs
-              label={t.requestStatus}
-              current={status}
-              items={(["pending", "completed", "denied", "all"] as const).map((value) => ({
-                id: value,
-                label: statusLabel(value),
-                href: buildRequestsUrl(value, 1),
-              }))}
-            />
-            <div class="ml-auto">
-              <CreateUserForm freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} categoryPolicy={categoryPolicy} />
-            </div>
-          </div>
-
-          {requestsPage.items.length === 0 ? (
-            <Placeholder surface="paper" description={<>{t.noRequests}</>} />
-          ) : (
-            <>
-              <Paper class="overflow-hidden" style="view-transition-name: accounts-requests-table">
-                <DataTable
-                  rows={requestsPage.items}
-                  columns={columns}
-                  getRowId={(request) => request.id}
-                  hoverRows
-                  class="overflow-x-auto"
-                  scrollPreserveKey="accounts-requests-table"
-                  renderCell={({ row: request, col }) => {
-                    if (col.id === "request")
-                      return (
-                        <span class="font-medium text-primary">{request.displayName || `${request.firstName} ${request.lastName}`}</span>
-                      );
-                    if (col.id === "email") return <span class="text-dimmed">{request.email}</span>;
-                    if (col.id === "status")
-                      return <StatusBadge tone={STATUS_TONE[request.status]} label={<> {statusLabel(request.status)} </>} />;
-                    if (col.id === "requested") return <span class="text-dimmed">{dates.formatDate(request.createdAt, { locale })}</span>;
-                    if (col.id === "comment")
-                      return (
-                        <span class="truncate text-dimmed" title={request.comment || "-"}>
-                          {request.comment || "-"}
-                        </span>
-                      );
-                    if (col.id === "actions") {
-                      return request.status === "pending" ? (
-                        <div class="flex justify-end gap-1">
-                          {freeIpaEnabled ? (
-                            <CreateUserForm
-                              categoryPolicy={categoryPolicy}
-                              buttonLabel={t.create}
-                              buttonIcon="ti ti-user-plus"
-                              freeIpaEnabled={freeIpaEnabled}
-                              localEmailOptional={localEmailOptional}
-                              prefill={{
-                                requestId: request.id,
-                                email: request.email,
-                                givenname: request.firstName,
-                                sn: request.lastName,
-                                displayName: request.displayName ?? undefined,
-                                firstName: request.firstName,
-                              }}
-                            />
-                          ) : null}
-                          <DenyRequest requestId={request.id} email={request.email} firstName={request.firstName} />
-                        </div>
-                      ) : (
-                        <span class="text-dimmed">-</span>
-                      );
-                    }
-                    return "";
-                  }}
-                />
-              </Paper>
-
-              <div class="pt-1">
-                <Pagination currentPage={requestsPage.page} totalPages={totalPages} baseUrl={paginationUrl} />
-              </div>
-            </>
-          )}
-        </div>
-      </AccountsWorkspace>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.requests }]}
+    >
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "requests", pendingRequests, isAdmin: true })} />
+      <RequestsScreen
+        status={status}
+        requests={requests}
+        total={requestsPage.total}
+        page={requestsPage.page}
+        pages={Math.max(1, Math.ceil(requestsPage.total / REQUESTS_PER_PAGE))}
+        freeIpaEnabled={freeIpaEnabled}
+        pendingRequests={pendingRequests}
+      />
     </Layout>
   );
 });

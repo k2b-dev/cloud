@@ -1,4 +1,5 @@
-import { type AppDeviceView, accountCategory, accountCategoryLabel, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
+import { cloudAvatarImage } from "@k2b/cloud/account/ui";
+import { accountCategory, accountCategoryLabel, isModelsOnlyApiKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import {
@@ -8,41 +9,27 @@ import {
   linuxIdentities,
   pwaDevices,
   readAccountCategoryPolicy,
-  type ServiceAccountCredentialOverview,
   serviceAccountCredentials,
+  serviceAccounts,
 } from "@k2b/cloud/services";
-import { groupDisplayName } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
-import {
-  ButtonLink,
-  CodeDisplay,
-  DataTable,
-  type DataTableColumn,
-  Disclosure,
-  FilterToggle,
-  Paper,
-  Placeholder,
-  StatusBadge,
-  Tag,
-} from "@k2b/ui";
-import type { JSX } from "solid-js/jsx-runtime";
 import { z } from "zod";
 import type { BaseGroup } from "@/contracts";
-import AccountAvatar from "@/frontend/AccountAvatar";
 import { ssr } from "../../../config";
-import AccountsFactGrid from "../../AccountsFactGrid";
-import AccountsWorkspace from "../../AccountsWorkspace";
-import RemoveMember from "../../groups/detail/RemoveMember.island";
+import AccountsNavigation from "../../AccountsNavigation.island";
+import { accountsNavigationItems } from "../../accounts-nav";
+import { isAgentRecordKind, renderAgentRecord } from "../../agents/agent-record";
 import { getSupplementalRoles } from "../../lib/account-badges";
 import { accountsMessages } from "../../messages";
-import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
-import { userDetailHref, usersListContext, usersListHref, usersQuery } from "../query";
-import AddToGroup from "./AddToGroup.island";
-import AppDevicesSection from "./AppDevicesSection";
-import LinuxIdentity from "./LinuxIdentity.island";
-import RevokeUserDevice from "./RevokeUserDevice.island";
-import UserActions from "./UserActions.island";
+import { usersListContext, usersListHref, usersQuery } from "../query";
+import UserScreen from "./UserScreen.island";
+import type { UserFact, UserGroupView, UserRecordView } from "./user-view";
+import { userTabFrom } from "./user-view";
+
+/** The most groups and keys one page lists: the services' page limits, as before. */
+const GROUPS_PER_PAGE = 1000;
+const KEYS_PER_PAGE = 100;
 
 const formatAddress = (a: {
   street: string | null;
@@ -59,477 +46,175 @@ const formatAddress = (a: {
   return parts.length > 0 ? parts.join(", ") : null;
 };
 
+/**
+ * The account record of every kind: a person here, an agent or standalone service account through the agent kind.
+ * A person's record. The address names the list it came from (`?list=`), the open tab (`?tab=`) and whether the
+ * memberships include inherited groups (`?recursive=true`), so reload, back and forward show the same page. Every
+ * area loads here, on the server, so the first picture has no loading state.
+ */
 export default ssr<AuthContext>(async (c) => {
   const { locale, t } = accountsMessages.resolve([getLocale(c)]);
-  const formatNullableDate = (value: string | null) => (value ? dates.formatDateTime(value, { locale }) : "-");
   const id = c.req.param("id")!;
   if (!z.uuid().safeParse(id).success) return ssr.error(c, 404);
   const recursive = c.req.query("recursive") === "true";
+  const tab = userTabFrom(c.req.query("tab"), recursive);
   const sessionUser = expectUserBackedActor(c);
-  const categoryPolicy = await readAccountCategoryPolicy();
-  const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
-  const localEmailOptional = Boolean(await coreSettings.get<boolean>("user.local_email_optional"));
-  const cloudName = (await coreSettings.get<string>("app.name")) || "Cloud";
-  const approvalConfig = await appApproval.config().catch(() => null);
-
+  const admin = sessionUser.roles.includes("admin");
   // The list this page was opened from, so its links lead back to the same filtered list.
-  const listContext = usersListContext(usersQuery(locale), new URL(c.req.url).searchParams);
-  const listHref = usersListHref(listContext);
+  const list = usersListContext(usersQuery(locale), new URL(c.req.url).searchParams);
+  const listHref = usersListHref(list);
 
   const user = await accountsService.user.get({ id });
-
-  if (!user) return ssr.error(c, 404, { action: { label: t.backToUsers, href: listHref } });
+  if (!user) {
+    // Not a person: the record opens the service accounts the agent page opened, through the same service; any other
+    // kind (code, resource-bound, a person's own keys) and an unknown id stay the 404 of before.
+    const account = await serviceAccounts.get({ id });
+    // Kind slot: lane C's service-account sections (ApiKeysSection, DirectoryAccessSection) join the agent kind here.
+    if (account && isAgentRecordKind(account)) return renderAgentRecord(c, account);
+    return ssr.error(c, 404, { action: { label: t.backToUsers, href: listHref } });
+  }
   const linux = await linuxIdentities.get(sessionUser, id);
-
-  const isIpaUser = user.provider === "ipa";
-  const isGuestProfile = user.profile === "guest";
+  const [categoryPolicy, freeIpaEnabled, localEmailOptional, cloudName, approvalConfig] = await Promise.all([
+    readAccountCategoryPolicy(),
+    coreSettings.get<boolean>("freeipa.enable"),
+    coreSettings.get<boolean>("user.local_email_optional"),
+    coreSettings.get<string>("app.name"),
+    appApproval.config().catch(() => null),
+  ]);
 
   const [pendingRequests, recursiveGroupsPage, managedGroupsPage, directGroupIds, apiKeysPage, devices, phones] = await Promise.all([
     accountsService.accountRequest.countPending(),
-    accountsService.group.list({
-      pagination: { page: 1, perPage: 1000 },
-      scope: { userId: id, mode: "member" },
-    }),
-    accountsService.group.list({
-      pagination: { page: 1, perPage: 1000 },
-      scope: { userId: id, mode: "managed" },
-    }),
-    accountsService.user.groupId.list({
-      userId: id,
-      recursive: false,
-    }),
+    accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "member" } }),
+    accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "managed" } }),
+    accountsService.user.groupId.list({ userId: id, recursive: false }),
     serviceAccountCredentials.listOverview({
-      pagination: { page: 1, perPage: 100 },
+      pagination: { page: 1, perPage: KEYS_PER_PAGE },
       filter: { userId: id, serviceAccountKind: "user_delegated", credentialStatus: "active" },
     }),
-    // Null renders an explicit error state instead of hiding a device an admin may need to revoke.
-    appApproval.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
-    // A failed load stays visible so an administrator can retry.
-    pwaDevices.listUserDevices({ userId: sessionUser.id, admin: sessionUser.roles.includes("admin") }, id).catch(() => null),
+    // Null shows "could not be loaded" instead of hiding a device an administrator may need to revoke.
+    appApproval.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
+    pwaDevices.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
   ]);
+  const directGroupsPage =
+    directGroupIds.length > 0
+      ? await accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { ids: directGroupIds } })
+      : { items: [] as BaseGroup[] };
 
-  const directGroupsPage = await (directGroupIds.length > 0
-    ? accountsService.group.list({
-        pagination: { page: 1, perPage: 1000 },
-        scope: { ids: directGroupIds },
-      })
-    : {
-        items: [] as BaseGroup[],
-        page: 1,
-        perPage: 0,
-        total: 0,
-        hasNext: false,
-      });
-
-  const allGroups = recursiveGroupsPage.items;
   const directGroups = directGroupsPage.items.filter((group) => group.personalOwner === null);
-  const directGroupSet = new Set(directGroups.map((group) => group.id));
-  const memberGroups = recursive ? allGroups : directGroups;
-  const managedGroups = managedGroupsPage.items;
+  const direct = new Set(directGroups.map((group) => group.id));
+  const allGroups = recursiveGroupsPage.items;
+  const groupView = (group: BaseGroup): UserGroupView => ({
+    id: group.id,
+    name: group.name,
+    description: group.description,
+    provider: group.provider,
+    direct: direct.has(group.id),
+  });
 
-  const isExpired = user.accountExpires ? new Date(user.accountExpires) < new Date() : false;
-
-  const displayTitle = user.displayName || user.mail || user.uid;
-
-  const supplementalRoles = getSupplementalRoles(user);
+  const now = new Date();
+  const isExpired = user.accountExpires ? new Date(user.accountExpires) < now : false;
+  const day = (value: string) => dates.formatDate(value, { locale });
+  const moment = (value: string) => dates.formatDateTime(value, { locale });
+  const title = user.displayName || user.mail || user.uid;
   const ipa = user.provider === "ipa" ? user.ipa : null;
-  const totalMemberGroups = recursive ? allGroups.length : directGroups.length;
+  const category = accountCategory(user);
+  const missing = (label: string, value: string | null | undefined, empty: string): UserFact =>
+    value ? { label, value } : { label, value: empty, missing: true };
+  const expiry: UserFact = user.accountExpires
+    ? {
+        label: user.profile === "guest" && !ipa ? t.guestExpires : t.accountExpires,
+        value: `${day(user.accountExpires)}${isExpired ? t.expiredSuffix : ""}`,
+        overdue: isExpired,
+      }
+    : { label: user.profile === "guest" && !ipa ? t.guestExpires : t.accountExpires, value: t.never, missing: true };
+  const address = ipa ? formatAddress(ipa.address) : null;
+  const facts: UserFact[] = [
+    { label: "UID", value: user.uid, mono: true, copy: true },
+    { label: t.databaseId, value: user.id, mono: true, copy: true },
+    { label: t.accountType, value: accountCategoryLabel(user, categoryPolicy.login.label) },
+    { label: t.access, value: user.profile === "user" ? t.fullAccount : t.guestAccount },
+    user.mail ? { label: t.email, value: user.mail, copy: true } : { label: t.email, value: t.notSet, missing: true },
+    ...(ipa ? [missing(t.passwordExpires, ipa.passwordExpires && day(ipa.passwordExpires), t.never)] : []),
+    expiry,
+    missing(t.lastWebLogin, user.lastLoginLocal && day(user.lastLoginLocal), t.never),
+    ...(ipa ? [missing(t.lastKerberosLogin, ipa.lastLoginIpa && day(ipa.lastLoginIpa), t.neverTracked)] : []),
+    ...(ipa?.employeeType ? [{ label: t.role, value: ipa.employeeType }] : []),
+    ...(ipa?.mobile && ipa.mobile !== ipa.phone ? [{ label: t.mobile, value: ipa.mobile }] : []),
+    ...(address ? [{ label: t.address, value: address }] : []),
+  ];
+  const blocked = isExpired || !categoryPolicy[category].enabled;
 
-  const facts: Array<{ label: string; value: JSX.Element }> = [
-    { label: "UID", value: <span class="font-mono">{user.uid}</span> },
-    { label: t.databaseId, value: <span class="truncate font-mono text-xs">{user.id}</span> },
-    { label: t.accountType, value: <span>{accountCategoryLabel(user, categoryPolicy.login.label)}</span> },
-    { label: t.access, value: <span>{user.profile === "user" ? t.fullAccount : t.guestAccount}</span> },
-    {
-      label: t.email,
-      value: user.mail ? <span>{user.mail}</span> : <span class="italic text-dimmed">{t.notSet}</span>,
+  const record: UserRecordView = {
+    user,
+    title,
+    image: cloudAvatarImage({ kind: "user", userId: user.id, avatarHash: user.avatarHash }),
+    kinds: [
+      accountCategoryLabel(user, categoryPolicy.login.label),
+      ...getSupplementalRoles(user).map((role) => (role === "group-manager" ? t.groupManager : t.admin)),
+    ],
+    expired: isExpired,
+    expires: user.accountExpires ? day(user.accountExpires) : null,
+    facts,
+    sshFingerprints: ipa?.sshFingerprints ?? [],
+    linux: linux.user.identity || linux.user.provider === "ipa" || (linux.config.enabled && linux.user.profile === "user") ? linux : null,
+    memberships: (recursive ? allGroups : directGroups).map(groupView),
+    directCount: directGroups.length,
+    allCount: allGroups.length,
+    managed: managedGroupsPage.items.map(groupView),
+    memberGroupIds: [...new Set([...allGroups.map((group) => group.id), ...direct])],
+    keys: apiKeysPage.items.map((key) => ({
+      id: key.id,
+      name: key.name,
+      tokenPrefix: key.tokenPrefix,
+      modelsOnly: isModelsOnlyApiKey(key),
+      created: moment(key.createdAt),
+      expires: key.expiresAt ? moment(key.expiresAt) : null,
+      lastUsed: key.lastUsedAt ? moment(key.lastUsedAt) : null,
+    })),
+    keysTotal: apiKeysPage.total,
+    keysHref: `/app/accounts/api-keys?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`,
+    signInDevices:
+      devices?.map((device) => ({
+        id: device.id,
+        name: device.name,
+        assisted: device.assisted,
+        paired: moment(device.createdAt),
+        lastUsed: device.lastUsedAt ? moment(device.lastUsedAt) : null,
+      })) ?? null,
+    appDevices:
+      phones?.map((phone) => ({
+        id: phone.id,
+        name: phone.name,
+        platform: phone.platform,
+        paired: moment(phone.createdAt),
+        lastUsed: moment(phone.lastUsedAt),
+      })) ?? null,
+    signInPairHref: approvalConfig?.enabled && approvalConfig.adminPairing && !blocked ? `/me/security/pair?userId=${user.id}` : null,
+    cloudApp: {
+      blocked,
+      administrator: sessionUser.displayName?.trim() || sessionUser.uid,
+      cloud: cloudName || "Cloud",
+      name: user.displayName?.trim() || user.uid,
     },
-    {
-      label: isIpaUser ? t.passwordExpires : t.accountExpires,
-      value: isIpaUser ? (
-        ipa?.passwordExpires ? (
-          <span>{dates.formatDate(ipa.passwordExpires, { locale })}</span>
-        ) : (
-          <span class="italic text-dimmed">{t.never}</span>
-        )
-      ) : user.accountExpires ? (
-        <StatusBadge
-          tone={isExpired ? "error" : "neutral"}
-          variant="text"
-          icon={null}
-          label={
-            <>
-              {dates.formatDate(user.accountExpires, { locale })}
-              {isExpired ? t.expiredSuffix : ""}
-            </>
-          }
-        />
-      ) : (
-        <span class="italic text-dimmed">{t.never}</span>
-      ),
-    },
-    {
-      label: isIpaUser ? t.accountExpires : isGuestProfile ? t.guestExpires : t.lastWebLogin,
-      value: isIpaUser ? (
-        user.accountExpires ? (
-          <StatusBadge
-            tone={isExpired ? "error" : "neutral"}
-            variant="text"
-            icon={null}
-            label={
-              <>
-                {dates.formatDate(user.accountExpires, { locale })}
-                {isExpired ? t.expiredSuffix : ""}
-              </>
-            }
-          />
-        ) : (
-          <span class="italic text-dimmed">{t.never}</span>
-        )
-      ) : user.lastLoginLocal ? (
-        <span>{dates.formatDate(user.lastLoginLocal, { locale })}</span>
-      ) : (
-        <span class="italic text-dimmed">{t.never}</span>
-      ),
-    },
-    {
-      label: isIpaUser ? t.lastKerberosLogin : t.directGroups,
-      value: isIpaUser ? (
-        ipa?.lastLoginIpa ? (
-          <span>{dates.formatDate(ipa.lastLoginIpa, { locale })}</span>
-        ) : (
-          <span class="italic text-dimmed">{t.neverTracked}</span>
-        )
-      ) : (
-        <span>{directGroups.length}</span>
-      ),
-    },
-    {
-      label: isIpaUser ? t.lastWebLogin : t.managedGroups,
-      value: isIpaUser ? (
-        user.lastLoginLocal ? (
-          <span>{dates.formatDate(user.lastLoginLocal, { locale })}</span>
-        ) : (
-          <span class="italic text-dimmed">{t.never}</span>
-        )
-      ) : (
-        <span>{managedGroups.length}</span>
-      ),
-    },
-    { label: t.apiKeys, value: <span>{apiKeysPage.total}</span> },
-  ];
-
-  if (isIpaUser && ipa?.employeeType) {
-    facts.push({ label: t.role, value: <span>{ipa.employeeType}</span> });
-  }
-  if (isIpaUser && ipa?.mobile && ipa.mobile !== ipa.phone) {
-    facts.push({ label: t.mobile, value: <span>{ipa.mobile}</span> });
-  }
-  if (isIpaUser && ipa?.address && formatAddress(ipa.address)) {
-    facts.push({ label: t.address, value: <span>{formatAddress(ipa.address)}</span> });
-  }
-
-  const detailHref = userDetailHref(id, listContext);
-  const toggleUrl = recursive ? detailHref : `${detailHref}${detailHref.includes("?") ? "&" : "?"}recursive=true`;
-  const memberGroupColumns: DataTableColumn<BaseGroup>[] = [
-    { id: "group", header: t.group, value: (group) => group.name },
-    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[24rem]" },
-    { id: "provider", header: t.provider, value: (group) => group.provider },
-    { id: "membership", header: t.membership, value: (group) => (directGroupSet.has(group.id) ? t.direct : t.inherited) },
-    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
-  ];
-  const managedGroupColumns: DataTableColumn<BaseGroup>[] = [
-    { id: "group", header: t.group, value: (group) => group.name },
-    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[24rem]" },
-    { id: "provider", header: t.provider, value: (group) => group.provider },
-  ];
-  const apiKeyColumns: DataTableColumn<ServiceAccountCredentialOverview>[] = [
-    { id: "key", header: t.apiKey, value: (key) => key.name, cellClass: "min-w-[14rem]" },
-    { id: "expires", header: t.expires, value: (key) => key.expiresAt, cellClass: "whitespace-nowrap" },
-    { id: "lastUsed", header: t.lastUsed, value: (key) => key.lastUsedAt, cellClass: "whitespace-nowrap" },
-    { id: "created", header: t.created, value: (key) => key.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
-  ];
-  const deviceColumns: DataTableColumn<AppDeviceView>[] = [
-    { id: "device", header: t.device, value: (device) => device.name, cellClass: "min-w-[14rem]" },
-    { id: "paired", header: t.pairedSince, value: (device) => device.createdAt, cellClass: "whitespace-nowrap" },
-    { id: "lastUsed", header: t.lastUsed, value: (device) => device.lastUsedAt, cellClass: "whitespace-nowrap" },
-    { id: "actions", header: t.actions, headerClass: "text-right", cellClass: "text-right whitespace-nowrap max-w-none" },
-  ];
+    freeIpaEnabled: freeIpaEnabled === true,
+    localEmailOptional: localEmailOptional === true,
+  };
 
   return () => (
     <Layout
       c={c}
       fullWidth
+      ui="v2"
       title={[
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
-        // The way up keeps the list's filters this detail was opened from.
+        // The way up keeps the list's filters this record was opened from.
         { title: t.users, href: listHref },
         { title: user.uid },
       ]}
     >
-      <AccountsWorkspace active="users" ancestor isAdmin={true} pendingRequests={pendingRequests} scrollPreserveKey="accounts-user-detail">
-        <div class="flex flex-col gap-3">
-          <div class="flex flex-wrap items-start justify-between gap-3 py-2" style="view-transition-name: accounts-user-title">
-            <div class="flex min-w-0 flex-1 items-start gap-3">
-              <AccountAvatar name={displayTitle} userId={user.id} avatarHash={user.avatarHash} size="md" />
-              <div class="min-w-0 flex-1">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <h1 class="text-xl font-semibold tracking-tight text-primary">{displayTitle}</h1>
-                  <Tag>{accountCategoryLabel(user, categoryPolicy.login.label)}</Tag>
-                  {supplementalRoles.map((role) => (
-                    <Tag>{role === "group-manager" ? t.groupManager : t.admin}</Tag>
-                  ))}
-                  {isExpired && <StatusBadge tone="error" label={t.expired} />}
-                </div>
-                <p class="mt-1 truncate text-xs text-dimmed">
-                  {user.uid}
-                  {user.mail ? ` · ${user.mail}` : ""}
-                  {user.givenname || user.sn ? ` · ${[user.givenname, user.sn].filter(Boolean).join(" ")}` : ""}
-                </p>
-              </div>
-            </div>
-            <div class="flex flex-wrap items-center justify-end gap-2">
-              <UserActions user={user} listHref={listHref} freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} />
-              {approvalConfig?.enabled && approvalConfig.adminPairing && !isExpired && categoryPolicy[accountCategory(user)].enabled && (
-                <ButtonLink href={`/me/security/pair?userId=${user.id}`} variant="secondary" size="sm">
-                  <i class="ti ti-device-mobile" />
-                  {t.pairAppDevice}
-                </ButtonLink>
-              )}
-            </div>
-          </div>
-
-          <AccountsFactGrid facts={facts} viewTransitionName="accounts-user-facts" />
-          {(linux.user.identity || linux.user.provider === "ipa" || (linux.config.enabled && linux.user.profile === "user")) && (
-            // The section draws no card of its own; Paper matches the framed blocks around it.
-            <Paper class="p-4">
-              <LinuxIdentity initial={linux} />
-            </Paper>
-          )}
-
-          {isIpaUser && (ipa?.sshFingerprints.length ?? 0) > 0 && (
-            <Paper style="view-transition-name: accounts-user-ssh">
-              <Disclosure summary={t.sshKeyCount({ count: ipa?.sshPublicKeys.length ?? 0 })} icon="ti ti-key">
-                <CodeDisplay code={ipa?.sshFingerprints.join("\n") ?? ""} lineNumbers={false} />
-              </Disclosure>
-            </Paper>
-          )}
-
-          <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-api-keys">
-            <div class="flex flex-wrap items-end justify-between gap-2">
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">{t.apiKeys}</h2>
-                <p class="mt-1 text-xs text-dimmed">{t.personalAutomationKeys({ count: apiKeysPage.total })}</p>
-              </div>
-              <ButtonLink
-                href={`/app/accounts/api-keys?kind=user_delegated&status=active&search=${encodeURIComponent(user.uid)}`}
-                size="sm"
-                variant="subtle"
-              >
-                <i class="ti ti-external-link" />
-                {t.viewAll}
-              </ButtonLink>
-            </div>
-
-            {apiKeysPage.items.length > 0 ? (
-              <Paper class="overflow-hidden">
-                <DataTable
-                  rows={apiKeysPage.items}
-                  columns={apiKeyColumns}
-                  getRowId={(key) => key.id}
-                  hoverRows
-                  highlightColumns={false}
-                  class="overflow-x-auto"
-                  scrollPreserveKey="accounts-user-api-keys"
-                  renderCell={({ row: key, col }) => {
-                    if (col.id === "key")
-                      return (
-                        <div class="flex min-w-0 flex-col gap-1">
-                          <div class="flex min-w-0 items-center gap-2">
-                            <span class="truncate font-medium text-primary">{key.name}</span>
-                            {isModelsOnlyApiKey(key) && (
-                              <Tag icon="ti ti-sparkles" size="sm">
-                                {t.modelsOnlyKey}
-                              </Tag>
-                            )}
-                          </div>
-                          <span class="truncate font-mono text-xs text-dimmed">cld_{key.tokenPrefix}_...</span>
-                        </div>
-                      );
-                    if (col.id === "expires") return <span class="text-dimmed">{formatNullableDate(key.expiresAt)}</span>;
-                    if (col.id === "lastUsed") return <span class="text-dimmed">{formatNullableDate(key.lastUsedAt)}</span>;
-                    if (col.id === "created") return <span class="text-dimmed">{dates.formatDateTime(key.createdAt, { locale })}</span>;
-                    if (col.id === "actions") return <ServiceAccountCredentialActions credentialId={key.id} name={key.name} />;
-                    return "";
-                  }}
-                />
-              </Paper>
-            ) : (
-              <Placeholder surface="paper" description={<>{t.noActiveApiKeys}</>} />
-            )}
-          </div>
-
-          <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-devices">
-            <div class="min-w-0">
-              <h2 class="text-base font-semibold text-primary">{t.cloudLogin}</h2>
-              <p class="mt-1 text-xs text-dimmed">{t.cloudLoginDescription}</p>
-            </div>
-
-            {devices === null ? (
-              <Placeholder surface="paper" state="error" description={<>{t.devicesUnavailable}</>} />
-            ) : devices.length > 0 ? (
-              <Paper class="overflow-hidden">
-                <DataTable
-                  rows={devices}
-                  columns={deviceColumns}
-                  getRowId={(device) => device.id}
-                  hoverRows
-                  highlightColumns={false}
-                  class="overflow-x-auto"
-                  scrollPreserveKey="accounts-user-devices"
-                  renderCell={({ row: device, col }) => {
-                    if (col.id === "device")
-                      return (
-                        <div class="flex min-w-0 flex-col gap-1">
-                          <span class="truncate font-medium text-primary">{device.name}</span>
-                          {device.assisted && <span class="truncate text-xs text-dimmed">{t.pairedWithAdmin}</span>}
-                        </div>
-                      );
-                    if (col.id === "paired") return <span class="text-dimmed">{dates.formatDateTime(device.createdAt, { locale })}</span>;
-                    if (col.id === "lastUsed")
-                      return (
-                        <span class="text-dimmed">
-                          {device.lastUsedAt ? dates.formatDateTime(device.lastUsedAt, { locale }) : t.notUsedYet}
-                        </span>
-                      );
-                    if (col.id === "actions") return <RevokeUserDevice userId={user.id} deviceId={device.id} name={device.name} />;
-                    return "";
-                  }}
-                />
-              </Paper>
-            ) : (
-              <Placeholder surface="paper" description={<>{t.noPairedDevices}</>} />
-            )}
-          </div>
-
-          <AppDevicesSection
-            userId={user.id}
-            name={user.displayName?.trim() || user.uid}
-            administrator={sessionUser.displayName?.trim() || sessionUser.uid}
-            cloud={cloudName}
-            blocked={isExpired || !categoryPolicy[accountCategory(user)].enabled}
-            devices={phones}
-            locale={locale}
-          />
-
-          <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-memberships">
-            <div class="flex flex-wrap items-end justify-between gap-2">
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">{t.groups}</h2>
-                <p class="mt-1 text-xs text-dimmed">
-                  {recursive
-                    ? t.membershipsIncludingInherited({ count: totalMemberGroups })
-                    : t.directMemberships({ count: totalMemberGroups })}
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <FilterToggle
-                  href={toggleUrl}
-                  icon="ti ti-git-branch"
-                  active={recursive}
-                  title={recursive ? t.showDirectOnly : t.showAllMemberships}
-                  label={recursive ? t.allGroups : t.directOnly}
-                />
-                <AddToGroup id={user.id} userProvider={user.provider} excludeGroups={allGroups.map((group) => group.id)} />
-              </div>
-            </div>
-
-            {memberGroups.length > 0 ? (
-              <Paper class="overflow-hidden">
-                <DataTable
-                  rows={memberGroups}
-                  columns={memberGroupColumns}
-                  getRowId={(group) => group.id}
-                  hoverRows
-                  class="overflow-x-auto"
-                  scrollPreserveKey="accounts-user-member-groups"
-                  renderCell={({ row: group, col }) => {
-                    const href = `/app/accounts/groups/${group.id}`;
-                    const isDirect = directGroupSet.has(group.id);
-
-                    if (col.id === "group")
-                      return (
-                        <a href={href} class="block truncate font-medium text-primary hover:underline">
-                          {groupDisplayName(group.name, locale)}
-                        </a>
-                      );
-                    if (col.id === "description") {
-                      return (
-                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || t.noDescription}>
-                          {group.description || <span class="italic">{t.noDescription}</span>}
-                        </a>
-                      );
-                    }
-                    if (col.id === "provider") return <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>;
-                    if (col.id === "membership") {
-                      return <Tag>{isDirect ? t.direct : t.inherited}</Tag>;
-                    }
-                    if (col.id === "actions")
-                      return isDirect ? (
-                        <RemoveMember groupId={group.id} membershipRole="members" type="user" id={user.id} label={user.uid} />
-                      ) : null;
-                    return "";
-                  }}
-                />
-              </Paper>
-            ) : (
-              <Placeholder surface="paper" description={<>{t.noGroupMemberships}</>} />
-            )}
-          </div>
-
-          {managedGroups.length > 0 && (
-            <div class="flex flex-col gap-2" style="view-transition-name: accounts-user-managed-groups">
-              <div class="min-w-0">
-                <h2 class="text-base font-semibold text-primary">{t.manages}</h2>
-                <p class="mt-1 text-xs text-dimmed">{t.manageableGroups({ count: managedGroups.length })}</p>
-              </div>
-
-              <Paper class="overflow-hidden">
-                <DataTable
-                  rows={managedGroups}
-                  columns={managedGroupColumns}
-                  getRowId={(group) => group.id}
-                  hoverRows
-                  class="overflow-x-auto"
-                  scrollPreserveKey="accounts-user-managed-groups"
-                  renderCell={({ row: group, col }) => {
-                    const href = `/app/accounts/groups/${group.id}`;
-                    if (col.id === "group")
-                      return (
-                        <a href={href} class="block truncate font-medium text-primary hover:underline">
-                          {groupDisplayName(group.name, locale)}
-                        </a>
-                      );
-                    if (col.id === "description") {
-                      return (
-                        <a href={href} class="block truncate text-dimmed" tabindex={-1} title={group.description || t.noDescription}>
-                          {group.description || <span class="italic">{t.noDescription}</span>}
-                        </a>
-                      );
-                    }
-                    if (col.id === "provider") {
-                      return <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>;
-                    }
-                    return "";
-                  }}
-                />
-              </Paper>
-            </div>
-          )}
-        </div>
-      </AccountsWorkspace>
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "users", pendingRequests, isAdmin: true })} />
+      <UserScreen record={record} tab={tab} recursive={recursive} list={list} listHref={listHref} pendingRequests={pendingRequests} />
     </Layout>
   );
 });

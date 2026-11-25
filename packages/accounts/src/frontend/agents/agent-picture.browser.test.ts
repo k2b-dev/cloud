@@ -106,7 +106,7 @@ const open = async (view: View, lang: "en" | "de", api: Api) => {
   await tab.route(`${origin}/**`, async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
-    if (pathname === `/app/accounts/agents/${AGENT}`)
+    if (pathname === `/app/accounts/users/${AGENT}`)
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
         body:
@@ -134,7 +134,7 @@ const open = async (view: View, lang: "en" | "de", api: Api) => {
       return route.fulfill({ contentType: "image/svg+xml", body: renderAvatarSvg(api.state.built) });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
-  await tab.goto(`${origin}/app/accounts/agents/${AGENT}`);
+  await tab.goto(`${origin}/app/accounts/users/${AGENT}`);
   await tab.evaluate(() => document.fonts.ready);
   return { context, tab };
 };

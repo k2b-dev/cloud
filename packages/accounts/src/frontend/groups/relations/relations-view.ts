@@ -1,6 +1,6 @@
 import type { GroupRelations } from "@k2b/cloud/contracts";
 
-/** What the relations page shows; every part lives in the URL, so a reload shows the same picture. */
+/** What the relations view shows; every part lives in the URL, so a reload shows the same picture. */
 export type RelationsUrlState = {
   focus?: string;
   sel?: string;
@@ -13,6 +13,7 @@ export type RelationsUrlState = {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const COLUMN = /^[ud][1-4]$/;
 
+/** The former relations page; it leads to a group record's relations view (`legacyRelationsHref`). */
 export const RELATIONS_PATH = "/app/accounts/groups/relations";
 
 export const parseRelationsUrl = (query: (name: string) => string | undefined): RelationsUrlState => {
@@ -28,18 +29,34 @@ export const parseRelationsUrl = (query: (name: string) => string | undefined): 
   };
 };
 
-/** The page URL for a state; defaults stay out of the URL. */
-export const relationsHref = (state: RelationsUrlState, change: Partial<RelationsUrlState> = {}): string => {
+/** A relations state seen from one group's record: that group is the focus. */
+export type RecordRelationsState = RelationsUrlState & { focus: string };
+
+/**
+ * The address of a group record's relations view: the focus is the record, the rest are its own parameters; defaults
+ * stay out of the address. `context` carries the parameters the record keeps for the way back (the list's `list_*`).
+ */
+export const relationsHref = (state: RecordRelationsState, change: Partial<RecordRelationsState> = {}, context = ""): string => {
   const next = { ...state, ...change };
-  const params = new URLSearchParams();
-  if (next.focus) params.set("focus", next.focus);
+  const params = new URLSearchParams(context);
+  params.set("tab", "relations");
   if (next.sel && next.sel !== next.focus) params.set("sel", next.sel);
   if (next.depth !== 2) params.set("depth", String(next.depth));
   if (next.view === "list") params.set("view", "list");
   if (next.managers) params.set("managers", "1");
   if (next.expand.length > 0 && next.view === "graph") params.set("expand", next.expand.join(","));
-  const search = params.toString();
-  return search ? `${RELATIONS_PATH}?${search}` : RELATIONS_PATH;
+  return `/app/accounts/groups/${encodeURIComponent(next.focus)}?${params}`;
+};
+
+/**
+ * Where an address of the former relations page (`/groups/relations?focus=…&depth=…`) leads now: the focus group's
+ * record with the relations view and every parameter it knew. Without a focus in the address the server names the
+ * group the relations page started from (`defaultRelationsFocus`); with none at all there is nothing to show (null).
+ */
+export const legacyRelationsHref = (params: URLSearchParams, focusFallback: string | null | undefined): string | null => {
+  const state = parseRelationsUrl((name) => params.get(name) ?? undefined);
+  const focus = state.focus ?? focusFallback ?? undefined;
+  return focus ? relationsHref({ ...state, focus }) : null;
 };
 
 /** Fixed sizes in CSS pixels. Server and browser place every card from them, so the edges need no measuring. */

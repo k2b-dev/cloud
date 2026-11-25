@@ -13,7 +13,6 @@ const root = mkdtempSync(join(tmpdir(), "accounts-automatic-rows-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: keysPage } = await import("./service-accounts/page");
-const { default: auditPage } = await import("./audit/page");
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "admin",
@@ -35,7 +34,8 @@ const user = {
 } satisfies User;
 const empty = { items: [], page: 1, perPage: 100, total: 0, hasNext: false };
 
-for (const surface of ["api-keys", "audit"] as const) {
+// The audit log moved to the activity page; its automatic entries are covered in audit/page.render.test.tsx.
+for (const surface of ["api-keys"] as const) {
   test(`${surface} renders translated counts and reload-safe toggles while preserving filters`, async () => {
     const list =
       surface === "api-keys"
@@ -54,7 +54,7 @@ for (const surface of ["api-keys", "audit"] as const) {
       c.set("runtime", { apps: [] });
       await next();
     });
-    app.get(`/app/accounts/${surface}`, ...(surface === "api-keys" ? keysPage : auditPage));
+    app.get(`/app/accounts/${surface}`, ...keysPage);
     const filters =
       surface === "api-keys"
         ? "search=Runtime&kind=agent&status=revoked&extra=keep"
