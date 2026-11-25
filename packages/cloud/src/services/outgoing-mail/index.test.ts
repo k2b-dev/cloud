@@ -5,7 +5,7 @@ import {
   getProcessApplicationId,
   getProcessPlatformPermissions,
 } from "../../_internal/process-identity";
-import { MailFilterSchema, MailProfileInputSchema, MailProfileKeySchema } from "../../contracts/outgoing-mail";
+import { MailFilterSchema, MailProfileInputSchema, MailProfileKeySchema, type PlatformPermission } from "../../contracts/outgoing-mail";
 import { mail } from "./index";
 import { outgoingMailStore, resolveMailCredentials } from "./store";
 
@@ -159,13 +159,11 @@ test("mail:read-only apps list their own log but cannot use sender services", as
   bindProcessApplicationId("reader", ["mail:read"]);
   const page = { items: [], page: 1, perPage: 50, total: 0, hasNext: false };
   const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
-  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["source"]);
   const { audit } = await import("../audit");
   const record = spyOn(audit, "record").mockResolvedValue();
   try {
     expect(await mail.list()).toEqual({ ok: true, data: page });
     expect(list).toHaveBeenCalledWith({ apps: ["reader"], recipientExact: undefined }, {}, false, "reader");
-    expect(grants).not.toHaveBeenCalled();
     expect(await mail.profiles()).toMatchObject({ ok: false, error: { code: "mail_not_declared", status: 403 } });
     const message = { to: ["a@example.org"], subject: "test", text: "body" };
     for (const result of [await mail.send(message), await mail.enqueue([message])])
@@ -174,62 +172,41 @@ test("mail:read-only apps list their own log but cannot use sender services", as
         error: { code: "mail_not_declared", message: 'Declare platformPermissions: ["mail:send"].', status: 403 },
       });
   } finally {
-    for (const mock of [list, grants, record]) mock.mockRestore();
+    for (const mock of [list, record]) mock.mockRestore();
   }
 });
-test("other app logs require a declaration and current grants on every call", async () => {
+test("an app lists only its own log", async () => {
   const { outgoingMailMessages } = await import("./messages");
   const page = { items: [], page: 1, perPage: 50, total: 0, hasNext: false };
   const list = spyOn(outgoingMailMessages, "list").mockResolvedValue(page);
-  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["source"]);
   try {
-    bindProcessApplicationId("reader", ["mail:send"]);
-    expect(await mail.list({ apps: ["source"] })).toMatchObject({
-      ok: false,
-      error: { code: "mail_not_declared", message: expect.stringContaining('"mail:read"'), status: 403 },
-    });
-    expect(grants).not.toHaveBeenCalled();
-    bindProcessApplicationId("reader", ["mail:read"]);
-    expect(await mail.list({ apps: ["source", "denied"] })).toMatchObject({
-      ok: false,
-      error: { code: "app_not_allowed", message: expect.stringContaining("denied"), status: 403 },
-    });
+    // Access model F2: an app reads only its own log. Naming any other app is refused before a lookup.
+    for (const permissions of [["mail:send"], ["mail:read"]] satisfies PlatformPermission[][]) {
+      bindProcessApplicationId("reader", permissions);
+      for (const apps of [["source"], ["reader", "source"], ["core"]])
+        expect(await mail.list({ apps })).toMatchObject({
+          ok: false,
+          error: { code: "app_not_allowed", message: expect.stringContaining(apps.find((id) => id !== "reader")!), status: 403 },
+        });
+    }
     expect(list).not.toHaveBeenCalled();
-    expect(await mail.list({ apps: ["reader", "source"], recipient: " USER@example.org " })).toEqual({ ok: true, data: page });
-    expect(list).toHaveBeenCalledWith({ apps: ["reader", "source"], recipientExact: "USER@example.org" }, {}, false, "reader");
-    grants.mockResolvedValue([]);
-    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "app_not_allowed" } });
-    expect(list).toHaveBeenCalledTimes(1);
-    grants.mockRejectedValue(new Error("private connection string"));
-    expect(await mail.list({ apps: ["source"] })).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+    expect(await mail.list({ apps: ["reader"], recipient: " USER@example.org " })).toEqual({ ok: true, data: page });
+    expect(list).toHaveBeenCalledWith({ apps: ["reader"], recipientExact: "USER@example.org" }, {}, false, "reader");
   } finally {
     list.mockRestore();
-    grants.mockRestore();
   }
 });
-test("readableApps puts own app first, sorts grants, and requires a reading identity", async () => {
-  const grants = spyOn(outgoingMailStore, "logAppsFor").mockResolvedValue(["zebra", "alpha"]);
-  try {
-    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
-    bindProcessApplicationId("reader");
-    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
-    bindProcessApplicationId("reader", ["mail:send"]);
+test("readableApps names only the calling app and requires a reading identity", async () => {
+  expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
+  bindProcessApplicationId("reader");
+  expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_not_declared" } });
+  for (const permissions of [["mail:send"], ["mail:read"]] satisfies PlatformPermission[][]) {
+    bindProcessApplicationId("reader", permissions);
     expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
-    expect(grants).not.toHaveBeenCalled();
-    bindProcessApplicationId("reader", ["mail:read"]);
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader", "alpha", "zebra"] });
-    grants.mockResolvedValue([]);
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["reader"] });
-    grants.mockRejectedValue(new Error("secret"));
-    expect(await mail.readableApps()).toMatchObject({ ok: false, error: { code: "mail_unavailable" } });
-    clearProcessApplicationId();
-    // Core reads its own mail like any app; no grant can name Core as a reader or a source.
-    bindProcessApplicationId("core", ["mail:read", "mail:send"]);
-    grants.mockResolvedValue([]);
-    expect(await mail.readableApps()).toEqual({ ok: true, data: ["core"] });
-  } finally {
-    grants.mockRestore();
   }
+  clearProcessApplicationId();
+  bindProcessApplicationId("core", ["mail:read", "mail:send"]);
+  expect(await mail.readableApps()).toEqual({ ok: true, data: ["core"] });
 });
 test("log filters bound and normalize search, app sets, recipients and timestamps", () => {
   expect(MailFilterSchema.parse({ q: "  AbC  ", recipient: " A@example.org " })).toEqual({ q: "AbC", recipient: "A@example.org" });
@@ -239,7 +216,7 @@ test("log filters bound and normalize search, app sets, recipients and timestamp
   for (const q of ["...", "%_%", "---", "___", "a.b.c", "x@y.de", "ab 12"]) expect(MailFilterSchema.safeParse({ q }).success).toBe(false);
   for (const q of ["abc", "Müller", "@example.org", "50%_off", "RE: 123", "发票通知"])
     expect(MailFilterSchema.safeParse({ q }).success).toBe(true);
-  // An app passes everything readableApps() returns: itself and up to 100 grants. App IDs are as registered.
+  // The schema still accepts as many app IDs as older servers allowed (101); the service then refuses all but the caller.
   for (const apps of [[], [""], ["reader", "reader"], Array.from({ length: 102 }, (_, i) => `app-${i}`)])
     expect(MailFilterSchema.safeParse({ apps }).success).toBe(false);
   expect(MailFilterSchema.safeParse({ apps: Array.from({ length: 101 }, (_, i) => `app-${i}`), q: "x".repeat(200) }).success).toBe(true);
@@ -283,7 +260,7 @@ test("content validates identity, UUID and authenticated context before any look
     }
     expect(read).not.toHaveBeenCalled();
     expect(await mail.content(id, context)).toMatchObject({ ok: true });
-    expect(read).toHaveBeenCalledWith(id, "reader", true, context);
+    expect(read).toHaveBeenCalledWith(id, "reader", context);
     read.mockRejectedValue(new Error("private SQL connection secret"));
     expect(await mail.content(id, context)).toEqual({
       ok: false,

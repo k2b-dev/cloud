@@ -170,13 +170,10 @@ export const createEmailRoutes = (mayReadSentMail: (userId: string) => Promise<b
     .use("*", auth.requireRole("authenticated"))
     .use("*", auth.requireUser())
     .get("/emails", async (c) => {
-      // Cloud decides whose mail this app may read; this app decides who sees it.
+      // An app reads only its own mail; this app decides who sees it.
       if (!(await mayReadSentMail(expectUserBackedActor(c).id))) return c.json({ code: "forbidden" }, 403);
-      const apps = await mail.readableApps();
-      if (!apps.ok) return c.json({ code: apps.error.code }, apps.error.status);
       const { q, recipient, since, until, cursor } = c.req.query();
       const filter: MailFilter = {
-        apps: apps.data,
         ...(q ? { q } : {}),
         ...(recipient ? { recipient } : {}),
         ...(since ? { since } : {}),
@@ -206,15 +203,13 @@ export const createInvoiceMailReader =
     const hidden = () => fail({ code: "message_unknown" as const, message: "Mail unavailable.", status: 404 as const });
     const { actor, accessSubject, credentialKind, scopes } = authority;
     if (credentialKind !== "session" && !scopes.some((scope) => ["read", "write", "admin"].includes(scope))) return hidden();
-    const apps = await mail.readableApps();
-    if (!apps.ok) return apps;
-    const page = await mail.list({ ids: [id], apps: apps.data }, { perPage: 1 });
+    const page = await mail.list({ ids: [id] }, { perPage: 1 });
     if (!page.ok) return page;
     const record = page.data.items[0];
-    if (!record || record.appId !== "invoices" || record.ref?.scope !== "invoice") return hidden();
+    if (!record || record.ref?.scope !== "invoice") return hidden();
     if (actor.kind === "service_account" && actor.serviceAccount.kind === "resource_bound") {
       const account = actor.serviceAccount;
-      if (account.appId !== "backoffice" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
+      if (account.appId !== "invoices" || account.resourceType !== "invoice" || account.resourceId !== record.ref.id) return hidden();
     }
     if (!(await mayReadInvoice(accessSubject, record.ref.id))) return hidden();
     return mail.content(record.id, { actor, requestId });

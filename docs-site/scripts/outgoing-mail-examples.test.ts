@@ -91,7 +91,6 @@ test("invoice content checks source, actual ref, scopes, resource binding and do
     createdAt: "2026-10-21T00:00:00Z",
     ref: { scope: "invoice", id: "42" },
   };
-  const readable = spyOn(mail, "readableApps").mockResolvedValue({ ok: true, data: ["backoffice", "invoices"] });
   const list = spyOn(mail, "list").mockResolvedValue({
     ok: true,
     data: { items: [record], page: 1, perPage: 1, total: 1, hasNext: false },
@@ -107,7 +106,6 @@ test("invoice content checks source, actual ref, scopes, resource binding and do
     expect(await read(record.id, authority, "request")).toEqual(hidden);
     visible = true;
     for (const invalid of [
-      { ...record, appId: "hr" },
       { ...record, ref: { scope: "hr", id: "42" } },
       { ...record, ref: undefined },
       { ...record, ref: { scope: "invoice", id: "unknown" } },
@@ -129,7 +127,7 @@ test("invoice content checks source, actual ref, scopes, resource binding and do
         kind: "resource_bound",
         status: "active",
         delegatedUserId: null,
-        appId: "backoffice",
+        appId: "invoices",
         resourceType: "invoice",
         resourceId: "other",
         createdAt: "2026-10-21T00:00:00Z",
@@ -142,7 +140,6 @@ test("invoice content checks source, actual ref, scopes, resource binding and do
     expect(content).toHaveBeenCalledWith(record.id, { actor: authority.actor, requestId: "request" });
     expect(mayRead).toHaveBeenLastCalledWith(authority.accessSubject, "42");
   } finally {
-    readable.mockRestore();
     list.mockRestore();
     content.mockRestore();
   }

@@ -229,29 +229,25 @@ databaseSuite()("outgoing mail migration", () => {
       >`SELECT imap_port, imap_uid_validity::text AS validity, imap_last_uid::text AS uid FROM outgoing_mail.profiles`,
     ).toEqual([{ imap_port: 993, validity: "4294967295", uid: "4294967295" }]);
   });
-  test("content levels upgrade old rows as metadata and survive repeated migration", async () => {
+  test("a table from before content levels still migrates, and every run empties the grants (access model F2)", async () => {
     await migrate(db);
     await db`ALTER TABLE outgoing_mail.app_log_access DROP COLUMN level`.simple();
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-source')`;
     await migrate(db);
-    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "metadata" }]);
-    await db`UPDATE outgoing_mail.app_log_access SET level = 'content'`;
-    await migrate(db);
-    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "content" }]);
-    await expect((async () => await db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`)()).rejects.toThrow();
+    expect(await db`SELECT app_id FROM outgoing_mail.app_log_access`).toHaveLength(0);
+    // An older Core still writes the table with a level; the next start empties it again.
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES ('reader', 'old-writer')`;
-    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access WHERE source_app_id = 'old-writer'`).toEqual([
-      { level: "metadata" },
-    ]);
+    expect(await db<{ level: string }[]>`SELECT level FROM outgoing_mail.app_log_access`).toEqual([{ level: "metadata" }]);
+    await expect((async () => await db`UPDATE outgoing_mail.app_log_access SET level = 'invalid'`)()).rejects.toThrow();
+    await migrate(db);
+    expect(await db`SELECT app_id FROM outgoing_mail.app_log_access`).toHaveLength(0);
   });
-  test("log grants and immutable search functions are additive and repeatable", async () => {
+  test("log grants are emptied and immutable search functions are additive and repeatable", async () => {
     await migrate(db);
     await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id, created_by)
       VALUES ('reader', 'source', 'admin')`;
     await Promise.all([migrate(db), migrate(db)]);
-    expect(await db<Record<string, unknown>[]>`SELECT app_id, source_app_id, created_by, level FROM outgoing_mail.app_log_access`).toEqual([
-      { app_id: "reader", source_app_id: "source", created_by: "admin", level: "metadata" },
-    ]);
+    expect(await db`SELECT app_id FROM outgoing_mail.app_log_access`).toHaveLength(0);
     // Setup leaves the search indexes to the background build, so Core starts without waiting for them.
     expect(await searchIndexes()).toEqual([]);
     expect(
@@ -276,7 +272,6 @@ databaseSuite()("outgoing mail migration", () => {
     for (const [reader, source] of [
       ["reader", "reader"],
       ["reader", "core"],
-      ["reader", "source"],
     ])
       await expect(
         (async () => await db`INSERT INTO outgoing_mail.app_log_access(app_id, source_app_id) VALUES (${reader}, ${source})`)(),

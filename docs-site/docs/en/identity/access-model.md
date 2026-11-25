@@ -20,7 +20,7 @@ Cloud uses five words and three rules to explain access.
 | **Group** | Many accounts together. |
 | **Permission** (German: **Recht**) | An account or group, a level, and an object. The levels are **View**, **Edit**, and **Manage** (German: **Ansehen**, **Bearbeiten**, **Verwalten**). |
 | **API key** | On an account, another sign-in that may do what that account may do. A new agent key acts exactly as its agent; an older key keeps the narrower scopes it was created with, and a models-only key reaches only AI models. For agents, an OAuth client ID and secret are the other form. On an object, a key may do one thing on that object and acts for no person or agent; Cloud stores it on a resource-bound account of that object. |
-| **Manifest** | The app's declaration (`defineApp`): what it offers and needs from the platform. Deploying the app grants its declared platform permissions; a few, such as reading other apps' mail, also need an operator's grant. |
+| **Manifest** | The app's declaration (`defineApp`): what it offers and needs from the platform. Deploying the app grants its declared platform permissions. |
 
 ## Three rules
 

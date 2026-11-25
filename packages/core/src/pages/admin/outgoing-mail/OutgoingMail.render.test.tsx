@@ -13,7 +13,7 @@ const root = mkdtempSync(join(tmpdir(), "cloud-outgoing-mail-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: OutgoingMail, LogAccessDialog } = await import("./OutgoingMail.island.tsx");
+const { default: OutgoingMail } = await import("./OutgoingMail.island.tsx");
 
 const profile = (overrides: Partial<AdminMailProfile>): AdminMailProfile => ({
   key: "noreply",
@@ -47,7 +47,7 @@ const state: OutgoingMailState = {
   apps: {
     defaultProfile: "noreply",
     items: [
-      { appId: "core", name: "Cloud", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      { appId: "core", name: "Cloud", registered: true, declared: true, mode: "default", profiles: [], readDeclared: false },
       {
         appId: "invoices",
         name: "Invoices",
@@ -56,9 +56,8 @@ const state: OutgoingMailState = {
         mode: "selected",
         profiles: ["billing"],
         readDeclared: true,
-        logApps: ["files"],
       },
-      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [], readDeclared: false, logApps: [] },
+      { appId: "files", name: "Files", registered: true, declared: false, mode: "default", profiles: [], readDeclared: false },
       {
         appId: "legacy",
         name: "legacy",
@@ -67,7 +66,6 @@ const state: OutgoingMailState = {
         mode: "selected",
         profiles: [],
         readDeclared: false,
-        logApps: [],
       },
     ],
   },
@@ -135,63 +133,12 @@ test("shows profiles, the default, and each app's effective access in English an
   expect(de).toContain("Systemmails, immer über das Standardprofil");
 });
 
-test("shows whose sent mail each app may read, on the page and in its dialog", () => {
-  const en = render("en", state);
-  expect(en).toContain("Own mail and Files (Metadata)");
-  expect(en).toContain("Requests send log access");
-  expect(en).toContain("Own mail only");
-  expect(en).toContain("Does not request send log access");
-  const de = render("de", state);
-  expect(de).toContain("Eigene Mails und Files (Metadaten)");
-  expect(de).toContain("Fordert keine Einsicht ins Sendeprotokoll an");
-
-  const dialog = (locale: string, appId: string, apps = state.apps.items) =>
-    renderToString(() =>
-      createComponent(LocaleProvider, {
-        locale,
-        get children() {
-          const app = state.apps.items.find((entry) => entry.appId === appId)!;
-          return createComponent(LogAccessDialog, { app, apps, close: () => {}, onSaved: () => {} });
-        },
-      }),
-    );
-  const invoices = dialog("en", "invoices");
-  // Core's system email is never offered, and an app does not need a grant for its own mail.
-  expect(invoices).not.toContain(">Cloud<");
-  expect(invoices).not.toContain(">Invoices<");
-  expect(invoices).toContain("Metadata");
-  expect(invoices).toContain("Content");
-  expect(invoices).toContain("No access");
-  expect(invoices).toContain(">Files<");
-  expect(invoices).toContain(">legacy<");
-  expect(invoices).toContain("Not registered");
-  expect(invoices).not.toContain("legacy ·");
-  expect(invoices).not.toContain("does not request send log access");
-  // Reach stays visible; the native disclosure makes field-level details available without a wall of text.
-  expect(invoices).toContain("past and future, while it is retained");
-  expect(invoices).toContain("What does each level allow?");
-  expect(invoices).toContain(
-    "recipients, subject, status, delivery errors, sender, record references, and attachment names. No message text.",
-  );
-  expect(dialog("de", "invoices")).toContain(
-    "Empfänger, Betreff, Status, Zustellfehler, Absender, Datensatzverweise und Anhangsnamen. Kein Nachrichtentext.",
-  );
-  expect(dialog("de", "files")).toContain("liest daher unabhängig von dieser Auswahl nur ihre eigenen Mails");
-  expect(invoices).not.toContain(">files<");
-  const files = state.apps.items.find((entry) => entry.appId === "files")!;
-  const duplicateNames = dialog("en", "invoices", [...state.apps.items, { ...files, appId: "files-archive" }]);
-  expect(duplicateNames).toContain(">files<");
-  expect(duplicateNames).toContain(">files-archive<");
-});
-
-test("content grants are labelled separately, while missing old-server fields remain metadata", () => {
-  const content = {
-    ...state,
-    apps: { ...state.apps, items: state.apps.items.map((app) => (app.appId === "invoices" ? { ...app, logContentApps: ["files"] } : app)) },
-  };
-  expect(render("en", content)).toContain("Own mail and Files (Content)");
-  expect(render("de", content)).toContain("Eigene Mails und Files (Inhalt)");
-  expect(render("en", state)).toContain("Own mail and Files (Metadata)");
+test("offers no access to other apps' sent mail: each app reads only its own", () => {
+  for (const locale of ["en", "de"]) {
+    const html = render(locale, state);
+    for (const gone of ["Send log access", "send log access", "Own mail", "Eigene Mails", "Sendeprotokoll an", "Change send log access"])
+      expect(html).not.toContain(gone);
+  }
 });
 
 test("lists apps that request mail before the others", () => {

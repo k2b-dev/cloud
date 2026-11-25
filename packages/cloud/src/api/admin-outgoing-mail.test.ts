@@ -70,7 +70,6 @@ test("every outgoing mail route requires administrator authentication", async ()
     ["/profiles/alerts/test", "POST"],
     ["/apps", "GET"],
     ["/apps/inventory", "PUT"],
-    ["/apps/inventory/log-access", "PUT"],
   ]) {
     expect((await request(app, path!, method!, {})).status).toBe(401);
   }
@@ -319,7 +318,6 @@ test("application access accepts default and empty selected policies, rejects un
     registered: true,
     declared: true,
     readDeclared: true,
-    logApps: [],
     mode: "selected" as const,
     profiles: [],
   };
@@ -367,7 +365,6 @@ test("authenticated non-admins cannot read or mutate outgoing mail", async () =>
       ["/profiles/alerts/test", "POST"],
       ["/apps", "GET"],
       ["/apps/inventory", "PUT"],
-      ["/apps/inventory/log-access", "PUT"],
     ]) {
       expect((await app.request(path!, { method, headers: { Cookie: "session_token=test", Accept: "application/json" } })).status).toBe(
         403,
@@ -494,65 +491,7 @@ test("IMAP profile API validates config, returns status and never returns passwo
   }
 });
 
-test("log-access PUT validates app IDs and bounded distinct grants and forwards admin context", async () => {
-  const item = {
-    appId: "reader",
-    name: "Reader",
-    registered: true,
-    declared: false,
-    readDeclared: true,
-    logApps: ["source"],
-    mode: "default" as const,
-    profiles: [],
-  };
-  const set = spyOn(outgoingMailStore, "setAppLogAccess").mockResolvedValue(item);
-  try {
-    // App IDs are taken as registered, like sender access.
-    for (const [appId, apps] of [
-      ["reader", ["source"]],
-      ["reader", []],
-      ["erp_v2", ["ERP", "1crm"]],
-    ] as const) {
-      const response = await request(authorized(), `/apps/${appId}/log-access`, "PUT", { apps });
-      expect(response.status).toBe(200);
-      expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
-      expect(await response.json()).toEqual(item);
-      expect(set).toHaveBeenLastCalledWith(
-        appId,
-        { apps },
-        expect.objectContaining({ actor: expect.objectContaining({ userId: user.id }) }),
-      );
-    }
-    for (const body of [
-      {},
-      { apps: "source" },
-      { apps: ["source"], contentApps: ["other"] },
-      { apps: ["source"], contentApps: ["source", "source"] },
-      { apps: ["source"], contentApps: "source" },
-      { apps: ["core"] },
-      { apps: ["a", "a"] },
-      { apps: [""] },
-      { apps: [], extra: true },
-      { apps: Array.from({ length: 101 }, (_, i) => `app-${i}`) },
-    ]) {
-      const response = await request(authorized(), "/apps/reader/log-access", "PUT", body);
-      expect(response.status).toBe(400);
-      expect(await response.json()).toMatchObject({ code: "bad_input" });
-    }
-    const response = await request(authorized(), "/apps/reader/log-access", "PUT", { apps: ["source"], contentApps: ["source"] });
-    expect(response.status).toBe(200);
-    expect(response.headers.get("Cache-Control")).toBe("no-store, no-transform");
-    expect(set).toHaveBeenLastCalledWith("reader", { apps: ["source"], contentApps: ["source"] }, expect.anything());
-    expect(set).toHaveBeenCalledTimes(4);
-  } finally {
-    set.mockRestore();
-  }
-  for (const [appId, apps] of [
-    ["core", []],
-    ["reader", ["reader"]],
-  ] as const) {
-    const response = await request(authorized(), `/apps/${appId}/log-access`, "PUT", { apps });
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({ code: "bad_input" });
-  }
+test("no route lets an app read another app's mail log (access model F2)", async () => {
+  const response = await request(authorized(), "/apps/reader/log-access", "PUT", { apps: ["source"] });
+  expect(response.status).toBe(404);
 });

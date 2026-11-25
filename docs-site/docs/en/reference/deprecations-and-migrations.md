@@ -5,13 +5,37 @@ section: Reference
 order: 1250
 description: Find removed or superseded APIs and the supported migration path.
 tags: [deprecations, migrations, compatibility]
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 # Deprecations and migrations
 
 Studio entries below describe older releases. Studio apps, their APIs and app data
 are now retired without transfer; follow [Studio retirement](/en/docs/operations/studio-retirement).
+
+## Applications read only their own sent mail
+
+Operator note: an application can no longer read another application's sent
+mail. The grants that let it do so are removed: the command
+`cld admin outgoing-mail apps set-log-access`, the **Change send log access**
+dialog and its **Send log** column in **Administration → Outgoing mail → Apps**,
+and `PUT /api/admin/core/outgoing-mail/apps/:appId/log-access`. Every start of
+Core empties the stored grants, so applications on an older `@k2b/cloud` read
+only their own mail too. Do not change grants while a rolling update still
+runs, because an old Core replica could store one again. The send log in the
+administration still shows the mail of all applications, and opening a text is
+audited.
+
+For application authors: `mail.readableApps()` returns only your application
+ID, `filter.apps` that names another application returns `app_not_allowed`,
+and `mail.content` answers `message_unknown` for another application's mail.
+`AdminMailApp` loses `logApps` and `logContentApps`, and the contracts export
+no `MailLogAccessSchema` or `MailLogAccess` any more. When another application
+needs to know whether your mail went out, offer it through a capability that
+checks the person's access to the record. Before the upgrade, list existing
+grants with `cld admin outgoing-mail apps list --json` (`logApps`). See
+[Your own mail only](/en/docs/platform/outgoing-mail#your-own-mail-only) and
+[Each app reads only its own mail](/en/docs/operations/outgoing-mail#each-app-reads-only-its-own-mail).
 
 ## The UI returns to the look of 0.83
 
@@ -1348,8 +1372,8 @@ Operators decide in **Administration → Outgoing mail → Apps** or with
 On upgrade, Core adds a grant table and builds two search indexes on the send
 log in the background, without delaying its start or new mail. Until they are
 built, a search on a large log can stop after five seconds with `bad_input`. See
-[Read other apps' mail](/en/docs/platform/outgoing-mail#read-other-apps-mail) and
-[Let an app read other apps' mail](/en/docs/operations/outgoing-mail#let-an-app-read-other-apps-mail).
+[Applications read only their own sent mail](#applications-read-only-their-own-sent-mail)
+for the later removal of these grants.
 
 ## Assistant notices when an offer fits
 
