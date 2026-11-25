@@ -11,6 +11,8 @@ import {
   Empty,
   Failed,
   FilterBar,
+  Icon,
+  Inline,
   Input,
   List,
   ListOrder,
@@ -258,9 +260,10 @@ export default function FilesScreen(props: {
   onMount(() => {
     const mark = () => {
       stepping = true;
-      queueMicrotask(() => {
+      // Microtasks run between the listeners of one event; the next task comes after all of them.
+      setTimeout(() => {
         stepping = false;
-      });
+      }, 0);
     };
     addEventListener("popstate", mark, { capture: true });
     onCleanup(() => removeEventListener("popstate", mark, { capture: true }));
@@ -484,6 +487,8 @@ export default function FilesScreen(props: {
   // ── Words and rows ──────────────────────────────────────────────────────────────────────────────────────────────
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const date = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "medium", timeStyle: "short", timeZone: timeZone() }));
+  // A phone row has room for the day alone.
+  const day = createMemo(() => new Intl.DateTimeFormat(locale(), { dateStyle: "short", timeZone: timeZone() }));
   const sizeText = (entry: FileEntry) => (entry.directory ? "" : formatFileViewSize(entry.size, locale()));
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
@@ -733,7 +738,8 @@ export default function FilesScreen(props: {
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         detail
         detailEmpty={{ icon: "file", text: b().v2NothingOpen }}
-        primary={uploadAction()}
+        // An open entry is a page of its own on the phone; the upload floats over the folder only.
+        primary={openPath() ? undefined : uploadAction()}
         head={
           <Bar
             start={<Path label={b().v2Where} items={pathItems()} />}
@@ -769,7 +775,7 @@ export default function FilesScreen(props: {
         <Pane.Split>
           <Pane
             label={t().files}
-            width={{ min: 360, default: 640 }}
+            width={{ min: 440, default: 640 }}
             scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
             status={
               <Show when={directory()}>
@@ -947,18 +953,26 @@ export default function FilesScreen(props: {
                           row.entry.name,
                           searching() ? placeOf(row.entry) : row.entry.directory ? b().kindFolder : sizeText(row.entry),
                         ],
-                        time: row.fresh ? b().justCreated : date().format(new Date(row.entry.modified)),
+                        time: row.fresh ? b().justCreated : day().format(new Date(row.entry.modified)),
                       })}
                       columns={[
                         {
                           title: t().name,
-                          width: { min: 200, default: 320 },
+                          width: { min: 160, default: 260 },
                           sort: sortTarget("name"),
-                          cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
+                          cell: (row) => {
+                            const name = (
+                              <Inline>
+                                <Icon name={entryIcon(row.entry)} />
+                                <Text>{row.entry.name}</Text>
+                              </Inline>
+                            );
+                            return searching() ? { lines: [name, placeOf(row.entry)] } : name;
+                          },
                         },
                         {
                           title: t().size,
-                          width: { min: 80, default: 100 },
+                          width: { min: 90, default: 110 },
                           align: "end",
                           drop: true,
                           sort: sortTarget("size"),
@@ -966,7 +980,7 @@ export default function FilesScreen(props: {
                         },
                         {
                           title: t().modified,
-                          width: { min: 130, default: 170 },
+                          width: { min: 130, default: 150 },
                           drop: true,
                           sort: sortTarget("modified"),
                           cell: (row) => (row.fresh ? b().justCreated : date().format(new Date(row.entry.modified))),

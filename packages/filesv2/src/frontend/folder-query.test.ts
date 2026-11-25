@@ -10,20 +10,35 @@ describe("folder addresses on v2", () => {
   test("a folder without list parameters takes the storage's remembered view", () => {
     const address = read("base=team&path=Projects", { ...defaultView, sort: "modified", direction: "desc", type: "files" });
     expect(address.mode).toBe("folder");
-    expect(address.mode === "folder" && browseOf(address.state)).toEqual({ sort: "modified", order: "desc", type: "files", groupFolders: true });
+    expect(address.mode === "folder" && browseOf(address.state)).toEqual({
+      sort: "modified",
+      order: "desc",
+      type: "files",
+      groupFolders: true,
+    });
   });
 
   test("the address wins over the remembered view, and the view it leaves is remembered", () => {
     const address = read("base=team&sort=size.desc&type=directories", { ...defaultView, groupFolders: false });
     if (address.mode !== "folder") throw new Error("expected a folder");
     expect(browseOf(address.state)).toEqual({ sort: "size", order: "desc", type: "directories", groupFolders: false });
-    expect(preferenceOf(address.state, defaultView)).toMatchObject({ sort: "size", direction: "desc", type: "directories", groupFolders: false });
+    expect(preferenceOf(address.state, defaultView)).toMatchObject({
+      sort: "size",
+      direction: "desc",
+      type: "directories",
+      groupFolders: false,
+    });
   });
 
   test("a search word makes a search ranked by best match; filters alone search below the folder in its order", () => {
     const words = read("base=team&path=Projects&q=budget&kind=sheet");
     expect(words.mode).toBe("search");
-    expect(searchOf(words, new URLSearchParams("q=budget"))).toMatchObject({ q: "budget", kind: "sheet", scope: "tree", sort: "relevance" });
+    expect(searchOf(words, new URLSearchParams("q=budget"))).toMatchObject({
+      q: "budget",
+      kind: "sheet",
+      scope: "tree",
+      sort: "relevance",
+    });
     const filters = read("base=team&path=Projects&kind=pdf&modified=week");
     expect(filters.mode).toBe("folder");
     expect(searchOf(filters, new URLSearchParams())).toMatchObject({ q: "", kind: "pdf", modified: "week", sort: "name", order: "asc" });

@@ -198,14 +198,8 @@ function Loaded(
     );
     return change?.actor.kind === "user" ? change.actor.name : null;
   };
-  const versionsText = () =>
-    versions.state() === "off"
-      ? t().versionsUnavailable
-      : versions.state() === "ready"
-        ? String((versions.items()?.length ?? 0) + 1)
-        : versions.state() === "error"
-          ? h().versionsFailed
-          : t().loadingDetails;
+  // The count of versions, once the list of this exact file state is known; the versions section says the rest.
+  const versionCount = () => (versions.state() === "ready" ? String((versions.items()?.length ?? 0) + 1) : null);
   const openInTab = async () => {
     if (previewKind(props.item) === "pdf") return void window.open(inlinePdfHref(props.base.id, props.item.path), "_blank", "noopener");
     const tab = window.open("about:blank", "_blank");
@@ -224,8 +218,15 @@ function Loaded(
     if (editable()) props.onEdit(props.item);
     else props.actions.preview(props.item);
   };
-  /** The rarer deeds of the entry; open, download, share and the favorite stand beside them. */
+  /** The favorite and the rarer deeds of the entry; open, download and share stand beside them. */
   const menu = (): MenuEntry[] => [
+    {
+      label: props.favorite ? t().removeFavorite : t().addFavorite,
+      icon: "star",
+      checked: props.favorite,
+      disabled: busy(),
+      onClick: () => props.onFavorite(!props.favorite),
+    },
     ...(!props.item.directory ? [{ label: t().openInTab, icon: "external-link", disabled: busy(), onClick: () => void openInTab() }] : []),
     {
       label: t().rename,
@@ -284,18 +285,8 @@ function Loaded(
               {f().download}
             </Button>
             <Show when={props.item.actions?.share !== false}>
-              <Button icon="share" variant="ghost" disabled={busy()} onClick={() => props.onShare([props.item.path])}>
-                {t().share}
-              </Button>
+              <Button icon="share" variant="ghost" label={t().share} disabled={busy()} onClick={() => props.onShare([props.item.path])} />
             </Show>
-            <Button
-              variant="ghost"
-              icon="star"
-              label={props.favorite ? t().removeFavorite : t().addFavorite}
-              pressed={props.favorite}
-              disabled={busy()}
-              onClick={() => props.onFavorite(!props.favorite)}
-            />
             <Menu label={t().moreActions} items={menu()} />
           </>
         }
@@ -307,16 +298,18 @@ function Loaded(
             <Show
               when={pictured()}
               fallback={
-                <FilePreview
-                  variant="plain"
-                  pdfFit="page"
-                  previewLines={5}
-                  onExpandPreview={() => props.actions.preview(props.item)}
-                  baseId={props.base.id}
-                  locationKey={props.base.locationKey}
-                  entry={props.item}
-                  onDownload={() => props.actions.startDownload([props.item])}
-                />
+                <div style={{ padding: "16px var(--k2-edge)" }}>
+                  <FilePreview
+                    variant="plain"
+                    pdfFit="page"
+                    previewLines={5}
+                    onExpandPreview={() => props.actions.preview(props.item)}
+                    baseId={props.base.id}
+                    locationKey={props.base.locationKey}
+                    entry={props.item}
+                    onDownload={() => props.actions.startDownload([props.item])}
+                  />
+                </div>
               }
             >
               <Show keyed when={JSON.stringify([props.base.id, props.base.locationKey, props.item.path, previewRevision(props.item)])}>
@@ -335,7 +328,7 @@ function Loaded(
             { label: t().storageArea, value: props.base.area === "cloud" ? t().cloudArea : t().freeipaArea },
             { label: f().modified, value: currentAuthor() ? `${modified()}, ${currentAuthor()}` : modified() },
             ...(!props.item.directory ? [{ label: f().size, value: formatFileViewSize(props.item.size, locale()) }] : []),
-            ...(!props.item.directory ? [{ label: t().versions, value: versionsText() }] : []),
+            ...(versionCount() ? [{ label: t().versions, value: versionCount()! }] : []),
           ]}
         />
       </Section>
@@ -346,21 +339,24 @@ function Loaded(
           rebuild comes with the history views (Files PR 2). Their behaviour stays the same meanwhile. */}
       <Band>
         <Canvas label={h().publicLink}>
-          <EntryHistory
-            base={props.base}
-            entry={props.item}
-            resourceId={props.result.resourceId}
-            busy={busy()}
-            onChanged={(path) => void props.onChanged(path)}
-            onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
-            locale={locale()}
-            history={props.history}
-            versions={versions}
-            currentAuthor={currentAuthor()}
-            versionsId={`filesv2-versions-${props.item.path}`}
-            versionsOpen
-            onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
-          />
+          {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
+          <div style={{ padding: "0 var(--k2-edge) 16px" }}>
+            <EntryHistory
+              base={props.base}
+              entry={props.item}
+              resourceId={props.result.resourceId}
+              busy={busy()}
+              onChanged={(path) => void props.onChanged(path)}
+              onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+              locale={locale()}
+              history={props.history}
+              versions={versions}
+              currentAuthor={currentAuthor()}
+              versionsId={`filesv2-versions-${props.item.path}`}
+              versionsOpen
+              onShowVersions={() => document.getElementById(`filesv2-versions-${props.item.path}`)?.scrollIntoView({ block: "nearest" })}
+            />
+          </div>
         </Canvas>
       </Band>
     </>

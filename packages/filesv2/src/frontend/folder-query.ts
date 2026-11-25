@@ -83,7 +83,7 @@ export const folderQueries = (t: Words) => ({
     fields: fields(t),
     search: { label: t.search },
     sort: { options: sorts(t), default: { field: "name", direction: "asc" } },
-    group: { kind: { label: t.v2FoldersFirst } },
+    group: { kind: { label: t.v2Kind } },
     pageParams: FOLDER_PAGE_PARAMS,
   }),
   search: defineListQuery({
