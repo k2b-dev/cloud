@@ -3,6 +3,8 @@
    other's source. */
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./reader.css";
+/* The composer frame of the v2 pilot; it draws only inside a v2 scope. */
+@import "@k2b/editor/composer.css";
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -2274,6 +2276,96 @@
 }
 .k2b-ui .mail-reply-box[hidden] {
   display: none;
+}
+/* The Mail v2 pilot draws the open draft in the composer frame of @k2b/editor (MailReplyFrameV2), which brings its
+   own place: 12 px above and below, 8 px from the column's edges. The reader keeps that place around the whole box
+   for its other states (note, scheduled, in a window), so the frame and the resting composer it stands in for take
+   it back and stand exactly where the resting composer stood. */
+.k2b-ui .mail-reply-box-frame[data-presentation="frame"] {
+  margin-block-end: 0;
+}
+.k2b-ui .mail-reply-box-frame[data-presentation="frame"] > :is(.mail-reply-frame, [data-mail-reply-box="pending"]:not(section)) {
+  margin: -0.75rem -0.5rem;
+}
+.k2b-ui .mail-reply-frame {
+  position: relative;
+}
+.k2b-ui .mail-reply-frame[hidden] {
+  display: none;
+}
+/* The recipients take the room the head's words leave, so "To", the sender, Cc and Bcc never wrap on a phone. */
+.k2b-ui .mail-reply-box-recipients.mail-reply-frame-to {
+  min-width: 4rem;
+  flex: 1 1 0;
+  /* The recipient's name starts where the resting composer writes it: the field's inner edge stands left of it, so
+     its edge on hover and focus has room (its padding and its edge) and the name does not move when the reply opens. */
+  margin-inline-start: calc(-0.5rem - var(--k2b-edge-width));
+}
+/* The chips read as the resting row: the head's type, the whole name while there is room (the field scrolls, it never
+   cuts a single name short). */
+.k2b-ui .mail-reply-frame-to :is(.mail-recipient-pill-shell, .mail-recipient-input input) {
+  max-width: none;
+  font: inherit;
+}
+/* The text and its placeholder take the composer's own type and quiet colour, so the empty reply reads as at rest;
+   only written lines take the text colour. */
+.k2b-ui
+  .mail-reply-frame-body
+  :is(
+    .mail-compose-content,
+    .mail-inline-draft-text,
+    .mail-inline-draft-write,
+    .mail-inline-text-editor,
+    .mail-inline-text-editor > div,
+    .k2b-text-editor,
+    .k2b-ste-host,
+    .k2b-ste,
+    .cm-editor,
+    .cm-scroller,
+    .cm-content,
+    .cm-placeholder
+  ) {
+  font: inherit;
+  color: inherit;
+}
+.k2b-ui .mail-reply-frame-body .cm-line {
+  font: inherit;
+  color: var(--k2b-text);
+}
+.k2b-ui .mail-reply-frame-body .cm-line:has(.cm-placeholder) {
+  color: inherit;
+}
+/* In the frame the text starts on the frame's own edge and as high as the resting composer's words: two lines to
+   write in above the signature, the same height as at rest. A long text scrolls inside, the head and foot stay. */
+.k2b-ui .mail-reply-frame .mail-compose-body.mail-reply-frame-body {
+  --mail-compose-inset: 0px;
+  /* the scroll area brings v1's family; the frame's text keeps the composer's */
+  font-family: inherit;
+  max-height: max(14rem, calc(100cqh - 18rem));
+  padding-block-start: 0;
+}
+.k2b-ui .mail-reply-frame-body .mail-inline-draft-text,
+.k2b-ui .mail-reply-frame-body .mail-inline-text-editor .k2b-ste-host {
+  min-height: 2.75rem;
+}
+.k2b-ui .mail-reply-frame-body > .mail-inline-draft-space {
+  min-height: 0;
+  flex-basis: 0;
+}
+/* The lines above the text take no room, and no gap of the frame, while there is nothing to say. */
+.k2b-ui .mail-reply-frame-top:not(:has(> *)) {
+  display: none;
+}
+/* The signature stays as the resting composer shows it: right under the text, with no box of its own (v1's block
+   brings 22 px of edges), 13/20 in the subtle text colour. It still stands before the quote, as the sent mail has it. */
+.k2b-ui .mail-reply-frame-body .mail-inline-draft-signature:not([data-signature-sent-html]) {
+  margin-block: 0.375rem 0;
+  padding-block: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  line-height: 1.25rem;
+  color: var(--k2b-text-subtle);
+  white-space: pre-line;
 }
 .k2b-ui .mail-reply-box-pending,
 .k2b-ui .mail-reply-box-note,

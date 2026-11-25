@@ -1,26 +1,23 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
-import { importOnDemand } from "@k2b/cloud/browser/reload";
 import { FeatCodeMark } from "@k2b/cloud/code/ui";
 // Its own entry: the mailbox island must not load the Code page.
 import { CodeNavStatus, codeNavAttentionLabel } from "@k2b/cloud/ssr/code-nav-status";
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, createNavigation, Dropdown, IconButton, type NavigationItem, prompts, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, getOwner, on, onCleanup, runWithOwner, Show, untrack } from "solid-js";
-import { apiClient } from "../../api/client";
+import { AppWorkspace, createNavigation, Dropdown, IconButton, type NavigationItem, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, untrack } from "solid-js";
 import { mailCommandMessages } from "../../command-messages";
 import type { ConversationView, Mailbox } from "../../contracts";
 import { mailFolderNames } from "../../folder-names";
 import type { MailFolderTreeNode } from "../../folder-tree";
 import type { ConversationViewCounts, MailFolderView } from "../../service/messages";
 import { mailOverviewMessages } from "../mail-overview-messages";
-import { readApiError } from "./api-response";
 import type { MailboxCreationContext } from "./create-mailbox-dialog";
 import { type MailboxMenu, MailboxMenuButton, type MailboxMenuSection } from "./MailboxMenu";
 import MailFocusNotice from "./MailFocusNotice";
 import { buildVisibleMailFolderTree, excludeMailFolderTreeRoles, flattenMailFolderTree, setsOnlyInFolder } from "./mail-folder-tree";
 import { mailboxHealthPresentation, mailboxOverviewSubtitle } from "./mail-health-presentation";
+import { createMailboxManagement } from "./mail-mailbox-management";
 import { type MailboxPreferences, orderMailboxes } from "./mail-mailbox-preferences";
 import { mailSidebarMessages } from "./mail-sidebar-messages";
 
@@ -230,33 +227,9 @@ export default function MailSidebar(
   };
 
   // New and deleted mailboxes -----------------------------------------------------------------------------------------
-  const owner = getOwner();
-  const [creating, setCreating] = createSignal(false);
-  let creation: ReturnType<typeof import("./create-mailbox-dialog").createMailboxCreation> | undefined;
-  const createMailbox = async () => {
-    if (!props.canCreate || creating()) return;
-    setCreating(true);
-    try {
-      // The dialog loads with the action that opens it, not with the page.
-      const dialog = await importOnDemand(() => import("./create-mailbox-dialog"));
-      if (!dialog) return;
-      creation ??= runWithOwner(owner, () => dialog.createMailboxCreation(props, overviewText));
-      await creation?.mutate();
-    } finally {
-      setCreating(false);
-    }
-  };
-  // The deleted mailboxes wait behind the Mailboxes menu; the dialog loads with the action that opens it.
-  // One restore at a time: a second one would drop the first one's result.
-  const openDeletedMailboxes = async () => {
-    if (restoreMailbox.loading()) return;
-    const dialog = await importOnDemand(() => import("./DeletedMailboxesDialog"));
-    const mailboxId = await dialog?.openDeletedMailboxesDialog();
-    if (!mailboxId) return;
-    // The closed list returns focus on the next frame; the confirmation opens after it, so Cancel returns focus there.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    restoreMailbox.mutate(mailboxId);
-  };
+  // The deleted mailboxes wait behind the Mailboxes menu.
+  const management = createMailboxManagement(props);
+  const { creating, createMailbox, openDeletedMailboxes } = management;
   const mailboxActions = () => [
     ...(props.canCreate
       ? [{ label: messages().newMailbox, icon: "ti ti-mail-plus", disabled: creating(), action: () => void createMailbox() }]
@@ -264,34 +237,10 @@ export default function MailSidebar(
     {
       label: overviewText().deletedMailboxes,
       icon: "ti ti-trash",
-      disabled: restoreMailbox.loading(),
+      disabled: management.restoring(),
       action: () => void openDeletedMailboxes(),
     },
   ];
-  type HealthDialog = typeof import("./MailboxHealthDialog");
-  const restoreMailbox = mutations.create<{ mailbox: Mailbox; health?: HealthDialog } | null, string>({
-    mutation: async (mailboxId, { abortSignal }) => {
-      const confirmed = await prompts.confirm(overviewText().restoreWarning, {
-        title: overviewText().restoreMailbox,
-        confirmText: overviewText().restoreMailbox,
-      });
-      if (!confirmed || abortSignal.aborted) return null;
-      // As for a new mailbox: the health dialog loads during the request, and without it the mailbox still opens.
-      const health = import("./MailboxHealthDialog").catch(() => undefined);
-      const response = await apiClient.mailboxes[":mailboxId"].restore.$post({ param: { mailboxId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, overviewText().failedRestoreMailbox));
-      return { mailbox: await response.json(), health: await health };
-    },
-    onSuccess: (restored) => {
-      if (!restored) return;
-      const { mailbox, health } = restored;
-      toast.success(overviewText().mailboxRestored);
-      if (!health) return navigateTo(`/app/mail/${mailbox.id}`);
-      void health.openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
-    },
-    onError: (error) => prompts.error(error.message),
-  });
-  onCleanup(() => restoreMailbox.abort());
 
   // The open mailbox's folders ---------------------------------------------------------------------------------------------
   const [dropFolderId, setDropFolderId] = createSignal<string | null>(null);
@@ -767,7 +716,7 @@ export default function MailSidebar(
         label: overviewText().deletedMailboxes,
         icon: "ti ti-trash",
         action: "deleted-mailboxes",
-        disabled: restoreMailbox.loading(),
+        disabled: management.restoring(),
       },
     ],
     onNavigate: (event) => {

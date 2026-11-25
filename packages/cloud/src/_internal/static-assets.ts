@@ -138,6 +138,9 @@ export function servePublicAsset(isDevelopment: boolean, sharedVersion?: string)
       ETag: etag,
       Vary: "Accept-Encoding",
     });
+    // The shared typeface's faces are public: a sandboxed document of a page (Mail's message frame, origin "null")
+    // loads them too, and a font always loads with CORS.
+    if (decodePathname(url.pathname)?.startsWith("/public/fonts/")) headers.set("Access-Control-Allow-Origin", "*");
 
     if (matchesEtag(c.req.header("If-None-Match") ?? null, etag)) return new Response(null, { status: 304, headers });
 

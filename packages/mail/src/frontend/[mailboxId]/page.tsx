@@ -14,7 +14,9 @@ import { loadMailboxPageData, resolveWorkspaceRequest } from "../../service/work
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
+import MailWorkspacePilot from "../MailWorkspaceV2.island";
 import { loadMailSidebarData } from "../mail-sidebar-data";
+import { readMailV2Pilot, showsMailV2 } from "../mail-v2-pilot";
 import { mailPageMessages } from "../pages-messages";
 import { pageReadStatus, projectMailboxPageData, resolveSsrMailboxId } from "../ssr-public-boundary";
 
@@ -54,12 +56,30 @@ export default ssr<AuthContext>(async (c) => {
       coreSettings.get<string>("app.url"),
       getLiveDictationStatus(c.get("accessSubject")),
     ]);
+    // Provisional: the pilot of @k2b/ui v2 shows the same mailbox, data and permissions in the new interface.
+    const ui = showsMailV2(readMailV2Pilot(c), user.mail) ? "v2" : undefined;
     if (!internalData.ok) return ssr.error(c, await pageReadStatus(context, mailboxId, internalData.error.status));
     const data = { ...(await projectMailboxPageData(internalData.data)), codeAttention: await codeAttention.settle() };
     const dateConfig = getDateConfig(c);
 
     const directory = await requestContactDirectory(c);
     const now = new Date().toISOString();
+    const workspace = {
+      data,
+      requestPath: requestPath(c),
+      cloudUrl: publicCloudOrigin(appUrl),
+      currentUserId: user.id,
+      currentUserEmail: user.mail,
+      contactDirectory: directory,
+      dateConfig,
+      now,
+      initialPreferences: workspacePreferences,
+      initialUserPreferences: userPreferences,
+      initialTheme: themePreference === "system" ? null : themePreference,
+      calendarIntegrationAvailable: spacesIntegration.invitations,
+      liveDictation: liveDictation.available,
+      sidebar,
+    };
     return () => (
       <Layout
         c={c}
@@ -67,25 +87,11 @@ export default ssr<AuthContext>(async (c) => {
         help={mailPageHelp.mailbox}
         printHint={t.printHint}
         fullPage
+        ui={ui}
         workspaceSidebarCollapsible={false}
         title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail, href: "/app/mail" }, { title: data.mailbox.name }]}
       >
-        <MailWorkspace
-          data={data}
-          requestPath={requestPath(c)}
-          cloudUrl={publicCloudOrigin(appUrl)}
-          currentUserId={user.id}
-          currentUserEmail={user.mail}
-          contactDirectory={directory}
-          dateConfig={dateConfig}
-          now={now}
-          initialPreferences={workspacePreferences}
-          initialUserPreferences={userPreferences}
-          initialTheme={themePreference === "system" ? null : themePreference}
-          calendarIntegrationAvailable={spacesIntegration.invitations}
-          liveDictation={liveDictation.available}
-          sidebar={sidebar}
-        />
+        {ui === "v2" ? <MailWorkspacePilot {...workspace} /> : <MailWorkspace {...workspace} />}
       </Layout>
     );
   } catch (error) {

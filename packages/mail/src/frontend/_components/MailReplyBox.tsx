@@ -36,6 +36,7 @@ import {
   writeMailReplyNote,
 } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
+import type { MailReplyFrame } from "./mail-reply-frame";
 
 type ComposerModule = typeof import("./MailComposer");
 type ComposerParts = { Composer: ComposerModule["default"]; signatures: MailComposerSignatures };
@@ -91,6 +92,9 @@ type PendingAction = { kind: "append" | "quote"; text: string } | { kind: "sendA
 
 class NoVerifiedSender extends Error {}
 
+/** The modes a frame offers as one choice, in the order of the v1 menu. */
+const frameModes = ["reply", "reply_all", "forward", "note"] as const satisfies readonly MailReplyMode[];
+
 /** What the reader asks of the box: Reply, Reply all, Forward, a quote, or a draft that must stand in it. */
 export type MailReplyBoxApi = {
   open: (mode: MailReplyMode, options?: { message?: MailWorkspaceMessage; quote?: string }) => void;
@@ -129,6 +133,8 @@ export default function MailReplyBox(props: {
   onReconcile: () => Promise<void>;
   onExplainSenderUnavailable: () => void;
   register: (api: MailReplyBoxApi) => void;
+  /** Another presentation of the open draft and its loading place (the Mail v2 pilot); every rule of the box stays. */
+  frame?: MailReplyFrame;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailReplyBoxMessages.resolve([locale()]).t);
@@ -886,6 +892,29 @@ export default function MailReplyBox(props: {
     box: {
       modeMenu: () => <ModeMenu />,
       banner: () => <Banner />,
+      frame: props.frame && {
+        ...props.frame,
+        mode: {
+          icon: () => modeIcon(mode()).replace(/^ti-/, ""),
+          label: () => t().changeMode({ mode: modeLabel(mode()) }),
+          value: mode,
+          // The same modes as the v1 menu: Reply all only when someone else was addressed, the note with its hint.
+          options: () =>
+            frameModes
+              .filter((value) => value !== "reply_all" || props.canReplyAll)
+              .map((value) => ({
+                label: modeLabel(value),
+                value,
+                icon: modeIcon(value).replace(/^ti-/, ""),
+                ...(value === "note" ? { meta: t().modeNoteHint } : {}),
+              })),
+          choose: (value) => {
+            const next = frameModes.find((candidate) => candidate === value);
+            if (next) chooseMode(next);
+          },
+          disabled: switching,
+        },
+      },
       suspended: () => mode() === "note",
       holdCreate: hold,
       autofocus: current.autofocus,
@@ -920,7 +949,13 @@ export default function MailReplyBox(props: {
   };
 
   return (
-    <div ref={frame} class="mail-reply-box-frame" data-mail-reply-box-frame data-mode={mode()}>
+    <div
+      ref={frame}
+      class="mail-reply-box-frame"
+      data-mail-reply-box-frame
+      data-mode={mode()}
+      data-presentation={props.frame ? "frame" : undefined}
+    >
       <Show when={scheduled() && detachedId() === null}>
         <section class="mail-reply-box mail-reply-box-state" data-mail-reply-box="scheduled" aria-label={t().boxLabel}>
           <i class="ti ti-clock" aria-hidden="true" />
@@ -952,32 +987,42 @@ export default function MailReplyBox(props: {
           keyed
           fallback={
             <Show when={mode() !== "note"}>
-              <section
-                class="mail-reply-box mail-reply-box-pending"
-                data-mail-reply-box="pending"
-                aria-label={t().boxLabel}
-                aria-busy={!loadError() && !noSender()}
+              <Show
+                // A frame keeps its resting composer while the draft loads, so the thread below never moves.
+                when={!props.frame?.pending || loadError() || noSender()}
+                fallback={
+                  <div data-mail-reply-box="pending" aria-busy="true">
+                    {props.frame?.pending?.()}
+                  </div>
+                }
               >
-                <Show
-                  when={loadError() || noSender()}
-                  fallback={
-                    <div class="mail-reply-box-skeleton" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  }
+                <section
+                  class="mail-reply-box mail-reply-box-pending"
+                  data-mail-reply-box="pending"
+                  aria-label={t().boxLabel}
+                  aria-busy={!loadError() && !noSender()}
                 >
-                  <Placeholder
-                    state="error"
-                    variant="compact"
-                    align="left"
-                    title={noSender() ? t().noSender : t().loadFailed}
-                    description={loadError() ?? undefined}
-                    onRetry={noSender() ? props.onExplainSenderUnavailable : () => settle()}
-                  />
-                </Show>
-              </section>
+                  <Show
+                    when={loadError() || noSender()}
+                    fallback={
+                      <div class="mail-reply-box-skeleton" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    }
+                  >
+                    <Placeholder
+                      state="error"
+                      variant="compact"
+                      align="left"
+                      title={noSender() ? t().noSender : t().loadFailed}
+                      description={loadError() ?? undefined}
+                      onRetry={noSender() ? props.onExplainSenderUnavailable : () => settle()}
+                    />
+                  </Show>
+                </section>
+              </Show>
             </Show>
           }
         >

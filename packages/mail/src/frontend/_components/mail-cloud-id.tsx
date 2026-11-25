@@ -35,6 +35,9 @@ const loadClipboard = () => import("@k2b/cloud/browser/resource-clipboard").then
 /** The canonical Cloud origin from `app.url`, which the page resolves on the server. */
 const MailCloudUrlContext = createContext<string | null>(null);
 
+/** The canonical Cloud origin, the same on the server and in the browser; null outside a provider. */
+export const useMailCloudUrl = (): string | null => useContext(MailCloudUrlContext);
+
 export function MailCloudIdProvider(props: ParentProps<{ cloudUrl: string }>) {
   onMount(() => {
     const warm = () => void loadClipboard().catch(() => undefined);

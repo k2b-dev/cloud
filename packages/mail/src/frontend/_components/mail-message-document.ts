@@ -47,7 +47,15 @@ export const buildMessageDocument = (
   initialMode: MessageAppearanceMode = "light",
   /** The host's own CSS after the document's rules, never message content: for a host that shows part of a message. */
   hostStyle = "",
+  /**
+   * The page's origin, to set the text in Cloud's shared typeface (v2 pilot): the frame then loads exactly
+   * `/public/fonts.css` and its faces from there, and nothing else. Without it the document loads no font at all.
+   */
+  sharedFontsOrigin?: string,
 ): string => {
+  const fontsOrigin = sharedFontsOrigin && URL.canParse(sharedFontsOrigin) ? new URL(sharedFontsOrigin).origin : null;
+  const fontPolicy = fontsOrigin ? ` ${fontsOrigin}/public/fonts.css; font-src ${fontsOrigin}/public/fonts/` : "";
+  const fontLink = fontsOrigin ? `\n  <link rel="stylesheet" href="${escapeHtmlAttribute(`${fontsOrigin}/public/fonts.css`)}">` : "";
   const initialModeLiteral = JSON.stringify(initialMode).replaceAll("<", "\\u003c");
   const channelLiteral = JSON.stringify(channel).replaceAll("<", "\\u003c");
   const quotedTextLabelsLiteral = JSON.stringify(quotedTextLabels).replaceAll("<", "\\u003c");
@@ -59,8 +67,8 @@ export const buildMessageDocument = (
 <html lang="${escapeHtmlAttribute(locale)}">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action 'none'; base-uri 'none'; object-src 'none'">
-  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'${fontPolicy}; script-src 'nonce-${scriptNonce}'; form-action 'none'; base-uri 'none'; object-src 'none'">
+  <meta name="referrer" content="no-referrer">${fontLink}
   <style>
     html:not(.mail-dark) { color-scheme: only light; }
     * { box-sizing: border-box; }

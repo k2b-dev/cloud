@@ -112,6 +112,17 @@ describe("public assets", () => {
     }
   });
 
+  // Mail's message frame is a sandboxed document (origin "null") that sets its text in the shared typeface.
+  test("the shared typeface's faces load across origins; other public files do not say so", async () => {
+    mkdirSync(join(root, "public/fonts"), { recursive: true });
+    writeFileSync(join(root, "public/fonts", "ibm-plex-sans-latin-400-normal-0123.woff2"), "face");
+    writeFileSync(join(root, "public", "logo.svg"), "<svg/>");
+    const face = await serve(false).request("/public/fonts/ibm-plex-sans-latin-400-normal-0123.woff2");
+    expect(face.headers.get("Access-Control-Allow-Origin")).toBe("*");
+    const logo = await serve(false).request("/public/logo.svg");
+    expect(logo.headers.get("Access-Control-Allow-Origin")).toBeNull();
+  });
+
   test("other public files stay immutable without a version query", async () => {
     writeFileSync(join(root, "public", "logo.svg"), "<svg/>");
     const response = await serve(false).request("/public/logo.svg");
