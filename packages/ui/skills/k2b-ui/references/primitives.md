@@ -262,7 +262,10 @@ lines instead of cutting a thing.
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
-  problem there).
+  problem there). An item with `items` instead of `icon` and a link folds
+  them away ("Mehr" with archive, bin and spam): a chevron in the symbol's
+  place, its entries one level further in, open while one of them is the
+  open one. It remembers nothing; keep what is folded the same on each page.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:

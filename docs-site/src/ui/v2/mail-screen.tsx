@@ -176,7 +176,15 @@ export const MailScreen = (props: { open?: boolean }) => (
               { label: "Entwürfe", icon: "file-pencil", nested: true, count: 2 },
               { label: "Postausgang", icon: "calendar-time", nested: true, count: 1 },
               { label: "Gesendet", icon: "send", nested: true },
-              { label: "Mehr", icon: "chevron-right", nested: true },
+              {
+                label: "Mehr",
+                nested: true,
+                items: [
+                  { label: "Archiv", icon: "archive" },
+                  { label: "Papierkorb", icon: "trash" },
+                  { label: "Spam", icon: "alert-octagon" },
+                ],
+              },
               { label: "Lieferanten", icon: "folder", nested: true },
               { label: "Reklamationen", icon: "folder", nested: true },
               { label: "Rechnungen", icon: "mail", dot: "ok", count: 3 },

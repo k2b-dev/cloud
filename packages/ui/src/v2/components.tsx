@@ -1,4 +1,14 @@
-import { createMemo, For, type JSX, children as resolveChildren, Show } from "solid-js";
+import {
+  createComputed,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -12,13 +22,8 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // ── Nav ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NavItem = {
+type NavEntryBase = {
   label: string;
-  icon: string;
-  href?: string;
-  /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
-  onNavigate?: OnNavigate;
-  onClick?: () => void;
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -27,6 +32,31 @@ export type NavItem = {
   /** Something new here. */
   dot?: Status;
 };
+
+/**
+ * An entry of the sidebar: a place to go (`icon`, `href` or `onClick`), or, with `items`, entries tucked away under
+ * one entry that folds open, such as "Mehr" with the archive, the bin and spam. A folding entry has a chevron in the
+ * place of the symbol, starts open while one of its entries is the open one, and remembers nothing.
+ */
+export type NavItem = NavEntryBase &
+  (
+    | {
+        icon: string;
+        href?: string;
+        /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
+        onNavigate?: OnNavigate;
+        onClick?: () => void;
+        items?: undefined;
+      }
+    | {
+        /** The entries it folds away; they stand one level further in. */
+        items: readonly NavItem[];
+        icon?: undefined;
+        href?: undefined;
+        onNavigate?: undefined;
+        onClick?: undefined;
+      }
+  );
 
 export type NavGroup = { label?: string; action?: Action; items: readonly NavItem[] };
 
@@ -39,7 +69,26 @@ export type NavProps = {
   foot?: readonly NavItem[];
 };
 
-const NavEntry = (props: { item: NavItem }) => (
+/** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
+const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
+
+const NavEnd = (props: { item: NavItem }) => (
+  <>
+    <span class="k2-ni-name">{props.item.label}</span>
+    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+    <Show when={props.item.count !== undefined}>
+      <span class="k2-ni-count">{props.item.count}</span>
+    </Show>
+  </>
+);
+
+const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
+  <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
+    {(items) => <NavFold item={props.item} items={items()} level={levelOf(props.item, props.level)} />}
+  </Show>
+);
+
+const NavPlace = (props: { item: NavItem; level: number }) => (
   <Dynamic
     component={linkOr(props.item.href, "button")}
     type={props.item.href !== undefined ? undefined : "button"}
@@ -49,16 +98,46 @@ const NavEntry = (props: { item: NavItem }) => (
     class="k2-ni"
     data-k2-part="Nav.Item"
     aria-current={props.item.current ? "page" : undefined}
-    data-level={props.item.nested ? "2" : undefined}
+    data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon} />
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
+    <Icon name={props.item.icon ?? "point"} />
+    <NavEnd item={props.item} />
   </Dynamic>
 );
+
+/** A folding entry: a button that shows or hides its entries below it, one level further in. */
+const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: number }) => {
+  const id = createUniqueId();
+  const holdsCurrent = () => props.items.some((item) => item.current);
+  const [open, setOpen] = createSignal(untrack(holdsCurrent));
+  // an entry inside that becomes the open one shows itself
+  createComputed(() => {
+    if (holdsCurrent()) setOpen(true);
+  });
+  return (
+    <>
+      <button
+        type="button"
+        id={`${id}-fold`}
+        class="k2-ni"
+        data-k2-part="Nav.Item"
+        data-fold=""
+        aria-expanded={open() ? "true" : "false"}
+        aria-controls={id}
+        data-level={props.level > 1 ? String(props.level) : undefined}
+        onClick={() => setOpen(!open())}
+      >
+        <Icon name={open() ? "chevron-down" : "chevron-right"} />
+        <NavEnd item={props.item} />
+      </button>
+      <Show when={open()}>
+        <div class="k2-nav-fold" id={id} role="group" aria-labelledby={`${id}-fold`}>
+          <For each={props.items}>{(item) => <NavEntry item={item} level={props.level + 1} />}</For>
+        </div>
+      </Show>
+    </>
+  );
+};
 
 /** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
 export const Nav = (props: NavProps) => (

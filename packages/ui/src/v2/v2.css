@@ -2154,6 +2154,13 @@
 .k2-ui .k2-ni[data-level="2"] {
   padding-left: 32px;
 }
+.k2-ui .k2-ni[data-level="3"] {
+  padding-left: 56px;
+}
+/* the entries of a folding entry stand in the nav's column as if they had no box of their own */
+.k2-ui .k2-nav-fold {
+  display: contents;
+}
 .k2-ui .k2-ni:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--k2-blue-ring);

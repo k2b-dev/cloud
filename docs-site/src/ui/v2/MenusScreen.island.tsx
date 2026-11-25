@@ -56,6 +56,13 @@ export default function MenusScreen() {
                 { label: "Aufträge", icon: "table", count: orders().length, current: true },
                 { label: "Material", icon: "table", count: 128 },
                 { label: "Kunden", icon: "table", count: 412 },
+                {
+                  label: "Weitere Tabellen",
+                  items: [
+                    { label: "Lieferanten", icon: "table", count: 37 },
+                    { label: "Vorlagen", icon: "table", count: 12 },
+                  ],
+                },
               ],
             },
           ]}
