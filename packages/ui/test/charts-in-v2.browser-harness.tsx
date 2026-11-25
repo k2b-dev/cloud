@@ -1,10 +1,11 @@
-import { createSignal, type JSX, Show } from "solid-js";
+import { createSignal, type JSX, Match, Switch } from "solid-js";
 import { render } from "solid-js/web";
 import Chart from "../src/content/Chart";
 import { Bar, Canvas, Cells, Failed, Loading, Pane, Section, Text, Workspace } from "../src/v2";
 
 // Charts of @k2b/ui inside a v2 screen, as an app builds one: each chart in a Canvas, the Canvas directly in a Section.
-// `setChartsState` switches every chart to its empty, loading or failed state in the place of the drawing.
+// `setChartsState` switches every chart to its empty, loading or failed state; the state stands inside the Canvas, in
+// the place of the drawing, and keeps its height.
 type State = "data" | "empty" | "loading" | "failed";
 const [state, setState] = createSignal<State>("data");
 Object.assign(window, { setChartsState: setState });
@@ -14,20 +15,16 @@ const intake = [42, 51, 47, 63, 58, 71];
 const returns = [8, 11, 9, 14, 12, 10];
 
 const place = (height: number, label: string, chart: () => JSX.Element) => (
-  <Show
-    when={state() === "data" || state() === "empty"}
-    fallback={
-      state() === "loading" ? (
-        <Loading rows={3} />
-      ) : (
+  <Canvas label={label} height={height}>
+    <Switch fallback={chart()}>
+      <Match when={state() === "loading"}>
+        <Loading />
+      </Match>
+      <Match when={state() === "failed"}>
         <Failed text={`${label} konnte nicht geladen werden.`} onRetry={() => setState("data")} />
-      )
-    }
-  >
-    <Canvas label={label} height={height}>
-      {chart()}
-    </Canvas>
-  </Show>
+      </Match>
+    </Switch>
+  </Canvas>
 );
 
 const empty = () => state() === "empty";

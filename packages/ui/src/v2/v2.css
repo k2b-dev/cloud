@@ -2245,6 +2245,23 @@
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
 }
+/* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
+   of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;
+   Loading is one square placeholder on the text edge, as wide as the drawing, since a drawing has no rows. */
+.k2-ui .k2-canvas[data-height] > .k2-state {
+  box-sizing: border-box;
+  height: 100%;
+  justify-content: center;
+}
+.k2-ui .k2-canvas[data-height] > .k2-loading {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 8px var(--k2-edge);
+  background: var(--k2-n100) content-box;
+}
+.k2-ui .k2-canvas[data-height] > .k2-loading > .k2-row {
+  display: none;
+}
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */
 
