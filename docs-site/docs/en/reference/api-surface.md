@@ -542,6 +542,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/approvals/frame` | Supported, SolidJS | `ApprovalFrame` and its types without the list or proposal renderer | [Action approvals](/en/docs/ai/tools-and-approvals) |
 | `@k2b/cloud/approvals/list` | Supported, SolidJS | Default `Approvals` and `ApprovalsProps` | [Action approvals](/en/docs/ai/tools-and-approvals) |
 | `@k2b/cloud/approvals/navigation` | Supported, SolidJS | Default `ApprovalsNavStatus` and `approvalNavCount` | [Action approvals](/en/docs/ai/tools-and-approvals) |
+| `@k2b/cloud/approvals/v2` | Provisional, SolidJS | `Approvals` and `ApprovalsProps` for pages built with `@k2b/ui/v2` | [Action approvals](/en/docs/identity/approvals#show-approvals-in-your-app) |
 | `@k2b/cloud/blocks` | Supported, browser and server | The block view contract of capability results, approval details and search previews: `BlockViewSchema`, `bindView`, `validateBlocks`, `blocksText`, `blocksSummary` and the bounded limits | [Capability views](/en/docs/platform/capability-views) |
 | `@k2b/cloud/blocks/ui` | Supported, SolidJS | `BlockTree`, the one renderer of capability views, approval details, search previews and Code pages | [Capability views](/en/docs/platform/capability-views) |
 | `@k2b/cloud/code/ui` | Supported, SolidJS | `FeatCodeMark` and `FEAT_CODE_NAME`, the feat/code brand for every place that shows Code | [Code page](/en/docs/platform/code-page#show-the-featcode-brand) |

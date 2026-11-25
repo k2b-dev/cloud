@@ -3,9 +3,10 @@ import { Bar, Button, confirm, Empty, Failed, List, Loading, Row, Section, Text 
 import { createMemo, For, Show } from "solid-js";
 import { APPROVALS_PAGE_PATH, type PendingApproval } from "../contracts/approvals";
 import { ApprovalFrameV2 } from "./ApprovalFrameV2";
+import type { ApprovalsProps } from "./Approvals";
 import { approvalCard } from "./approval-card";
 import { ApprovalEntry, type ApprovalEntryProps, approvalOrigin, useApprovalMessages } from "./approval-entry";
-import { type ApprovalListInput, approvalCardInput, createApprovalList, READER_TIME_ZONE } from "./approval-list";
+import { approvalCardInput, createApprovalList, READER_TIME_ZONE } from "./approval-list";
 import { type ApprovalPlace, ApprovalPlaceContext } from "./approval-place";
 
 /** A v2 icon name from a v1 icon class such as `ti ti-mail`. */
@@ -41,10 +42,11 @@ function Entry(props: ApprovalEntryProps) {
 }
 
 /**
- * `Approvals` in a v2 page: the content of the page's `Pane`. One `Section` per app (or one `List` for one app or one
+ * `Approvals` in a page built with `@k2b/ui/v2` (its layout has `ui: "v2"`), from `@k2b/cloud/approvals/v2`: the
+ * content of the page's `Pane`. One `Section` per app (or one `List` for one app or one
  * resource), each request a row that keeps its place as a receipt once decided. The same state as the v1 list.
  */
-export default function ApprovalsV2(props: ApprovalListInput) {
+export default function ApprovalsV2(props: ApprovalsProps) {
   const t = useApprovalMessages();
   const list = createApprovalList(props, (targets) =>
     confirm({

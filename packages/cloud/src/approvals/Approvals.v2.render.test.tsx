@@ -9,7 +9,7 @@ import type { ApprovalPage } from "../contracts/approvals";
 import { approvalsPage, worstCasePage } from "./approvals.v2.fixture";
 
 registerSsrTestPlugin({ dev: true, rootDir: mkdtempSync(join(tmpdir(), "approvals-v2-render-")) });
-const { default: Approvals } = await import("./Approvals");
+const { Approvals } = await import("./v2");
 const { LocaleProvider } = await import("@k2b/ui");
 
 const render = (props: { initial?: ApprovalPage; app?: string; link?: string }, locale = "en") => {
@@ -19,7 +19,7 @@ const render = (props: { initial?: ApprovalPage; app?: string; link?: string }, 
       createComponent(LocaleProvider, {
         locale,
         get children() {
-          return createComponent(Approvals, { ui: "v2", ...props });
+          return createComponent(Approvals, props);
         },
       }),
     );

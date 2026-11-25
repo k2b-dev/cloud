@@ -3,7 +3,6 @@ import { Button, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { FeatCodeMark } from "../code/FeatCodeMark";
 import { APPROVALS_PAGE_PATH, type ApprovalPage, type PendingApproval } from "../contracts/approvals";
-import ApprovalsV2 from "./ApprovalsV2";
 import { approvalCard } from "./approval-card";
 import { ApprovalEntry, type ApprovalEntryProps, approvalOrigin, useApprovalMessages } from "./approval-entry";
 import { approvalCardInput, createApprovalList, READER_TIME_ZONE } from "./approval-list";
@@ -19,11 +18,6 @@ export type ApprovalsProps = {
   link?: string;
   /** The first page for the same query, loaded during SSR with `loadPendingApprovals`; without, the browser loads it. */
   initial?: ApprovalPage;
-  /**
-   * The page is built with `@k2b/ui/v2` (its layout has `ui: "v2"`): the list draws itself from v2 primitives as the
-   * content of the page's `Pane`, with the same requests, answers and outcomes.
-   */
-  ui?: "v2";
 };
 
 const useMessages = useApprovalMessages;
@@ -89,11 +83,6 @@ function Row(props: ApprovalEntryProps) {
  * in place, at their height, as a receipt; the list only changes when it loads again.
  */
 export default function Approvals(props: ApprovalsProps) {
-  if (props.ui === "v2") return <ApprovalsV2 app={props.app} link={props.link} initial={props.initial} />;
-  return <ApprovalsV1 {...props} />;
-}
-
-function ApprovalsV1(props: ApprovalsProps) {
   const t = useMessages();
   const list = createApprovalList(props, (targets) =>
     prompts.confirm(

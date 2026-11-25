@@ -128,6 +128,7 @@
     "./approvals/frame": "./src/approvals/ApprovalFrame.tsx",
     "./approvals/list": "./src/approvals/Approvals.tsx",
     "./approvals/navigation": "./src/approvals/ApprovalsNavStatus.tsx",
+    "./approvals/v2": "./src/approvals/v2.ts",
     "./ssr": "./src/ssr/index.ts",
     "./ssr/islands": "./src/ssr/islands/index.ts",
     "./ssr/code-page": "./src/ssr/code-page/CodePage.tsx",
