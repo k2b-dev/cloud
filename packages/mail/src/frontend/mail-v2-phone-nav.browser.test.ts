@@ -95,7 +95,7 @@ test("390 px: the shell's menu lists the mailboxes and folders, and a folder cho
 
     // The phone bar's title opens the real menu.
     await page.addScriptTag({ content: menu });
-    await page.getByRole("button", { name: "Menü öffnen" }).dispatchEvent("click");
+    await page.locator("[data-mail-v2-phone-menu]").dispatchEvent("click");
     const sheet = page.locator("dialog .k2b-navigation");
     await sheet.waitFor({ state: "visible" });
     await settled(page);
