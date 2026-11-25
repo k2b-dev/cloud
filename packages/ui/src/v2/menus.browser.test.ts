@@ -418,6 +418,8 @@ for (const width of [1440, 390])
         if (width < 768) {
           expect(await panel.getAttribute("data-presentation")).toBe("sheet");
           expect([p.x, p.width, Math.round(p.y + p.height)]).toEqual([0, 390, 900]);
+          // as high as its content (title and box), never squeezed to a sliver
+          expect(p.height).toBeGreaterThan(80);
         } else {
           expect(await panel.getAttribute("data-presentation")).not.toBe("sheet");
           expect(p.width).toBe(280);
