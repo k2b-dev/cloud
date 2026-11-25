@@ -2925,8 +2925,9 @@
   width: 480px;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 64px);
-  /* the height of its tallest step so far while open (overlays.tsx), never past the window */
-  min-height: min(var(--k2-dialog-kept, 0px), calc(100dvh - 64px));
+  /* the height of its tallest step so far while open (a stepwise dialog sets it, overlays.tsx), never past the window */
+  --k2-dialog-kept: 0px;
+  min-height: min(var(--k2-dialog-kept), calc(100dvh - 64px));
   background: var(--k2-surface);
   color: var(--k2-text);
   border-radius: var(--k2-r-overlay);

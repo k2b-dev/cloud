@@ -50,6 +50,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="content" height="560" default="Text" />
 
+## Pairing a device
+
+<Example recipe="pairing" height="640" />
+
 ## Mail
 
 <Example recipe="mail" height="720" />
