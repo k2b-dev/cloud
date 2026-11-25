@@ -17,10 +17,8 @@ const documents: HelpDocumentManifest[] = [
 }));
 
 export const helpReaderFixture: HelpReaderProps = {
-  surface: "panel",
   documents,
   app: { id: "spaces", name: "Spaces", icon: "ti ti-layout-kanban" },
-  view: ["share"],
   pageBase: "/help/apps/spaces",
   platform: "other",
   initialArticle: {
@@ -49,24 +47,6 @@ export const helpReaderFixture: HelpReaderProps = {
       steps: 2,
     },
   },
-  sections: [
-    {
-      id: "code",
-      icon: "code",
-      title: "Use in Code",
-      summary: "What your Code can do in Spaces.",
-      code: { label: "Import", value: 'import { spaces } from "@sdk";' },
-      groups: [
-        {
-          title: "Operations",
-          rows: [
-            { title: "spaces.items.list", text: "List the items of a space.", state: { label: "Automatic", tone: "ok" } },
-            { title: "spaces.items.delete", state: { label: "Never", tone: "bad" } },
-          ],
-        },
-      ],
-    },
-  ],
   shortcuts: {
     seed: [
       { id: "cloud.search", title: "Open global search", shortcut: "mod+k" },
@@ -92,7 +72,6 @@ export const worstCaseHelpReaderFixture: Partial<HelpReaderProps> = {
     searchUrl: "/api/help/v1/spaces/search",
     locale: "en",
   })),
-  view: ["topic-0", "topic-1", "topic-2"],
   app: { id: "spaces", name: "Kundenbeziehungsmanagementwerkzeugkasten", icon: "ti ti-layout-kanban" },
   initialArticle: undefined,
 };

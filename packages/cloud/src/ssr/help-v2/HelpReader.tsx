@@ -6,7 +6,6 @@ import {
   Empty,
   Facts,
   Failed,
-  Group,
   Input,
   Loading,
   Menu,
@@ -30,47 +29,18 @@ import { searchHelpTopics } from "../layout-help-search";
 import { type HelpShortcutCommand, type HelpShortcutScope, helpShortcutGroups, helpStart } from "../layout-help-start";
 import { helpLinkTarget, layoutHelpTopicHref } from "../layout-help-url";
 
-/**
- * A part of the start that the host adds after the articles, as data, so it renders in the same island: Core's
- * generated Code reference of the app, for example. Its groups fold, so the start stays short.
- */
-export type HelpStartSection = {
-  id: string;
-  /** A Tabler icon name without `ti-`. */
-  icon: string;
-  title: string;
-  summary?: string;
-  /** One line to read and copy, such as an import. */
-  code?: { label: string; value: string };
-  groups?: {
-    title: string;
-    rows: { title: string; text?: string; meta?: string; state?: { label: string; tone?: "ok" | "warn" | "bad" } }[];
-  }[];
-  /** Says why the section has nothing. */
-  empty?: string;
-  /** Reading the section failed; the action reloads it. */
-  failed?: { text: string; action: { label: string; href: string } };
-};
-
 export type HelpReaderProps = {
-  /** `panel`: the side panel's provider page; the open article lives in `?topic=`. `page`: the app's Help route. */
-  surface: "panel" | "page";
   documents: readonly HelpDocumentManifest[];
   app?: { id: string; name: string; icon?: string };
-  /** Ids of "For this view", filtered by the server. */
-  view?: readonly string[];
   initialTopic?: string;
   /** Authorized article and server-parsed parts for an identical first frame. */
   initialArticle?: LayoutHelpArticle;
-  /** The app's full-page Help route. */
-  pageBase?: string;
+  /** The app's full-page Help route: the open article's address. */
+  pageBase: string;
   platform?: KeyboardPlatform;
   state?: "failed" | "unavailable";
-  sections?: readonly HelpStartSection[];
   /** Shortcuts of the page beside this reader; without, the start shows none. */
   shortcuts?: { seed: HelpShortcutCommand[]; read: () => HelpShortcutCommand[]; subscribe: (update: () => void) => () => void };
-  /** Live "For this view" ids of the page beside the panel. */
-  viewSource?: { subscribe: (update: (ids: readonly string[]) => void) => () => void };
 };
 
 type Topic = HelpDocumentManifest;
@@ -79,7 +49,7 @@ const iconName = (icon?: string) => icon?.replace(/^ti\s+/, "").replace(/^ti-/, 
 const byOrder = (a: Topic, b: Topic) => (a.order ?? 100) - (b.order ?? 100) || a.title.localeCompare(b.title);
 
 /**
- * The Help reader on v2: the start (articles for this view, tasks, kinds, the host's sections, shortcuts) and search
+ * The Help reader on v2: the start (tasks, kinds, shortcuts) and search
  * results as the list, the open article as the detail beside it. The open article is in the address, so reload, back
  * and forward show the same article; links within the app's Help open in place.
  */
@@ -88,8 +58,7 @@ export function HelpReader(props: HelpReaderProps) {
   const t = () => helpMessages.resolve([locale()]).t;
   const toast = useToast();
   const topics = createMemo(() => [...props.documents].sort(byOrder));
-  const [viewIds, setViewIds] = createSignal<readonly string[]>(props.view ?? []);
-  const start = createMemo(() => helpStart(topics(), viewIds()));
+  const start = createMemo(() => helpStart(topics()));
   const initial = props.initialTopic && topics().some((topic) => topic.id === props.initialTopic) ? props.initialTopic : null;
   const [activeId, setActiveId] = createSignal<string | null>(initial);
   const [query, setQuery] = createSignal("");
@@ -113,7 +82,6 @@ export function HelpReader(props: HelpReaderProps) {
   const [loadError, setLoadError] = createSignal<string | null>(null);
   const [loadAttempt, setLoadAttempt] = createSignal(0);
   const [copyingAll, setCopyingAll] = createSignal(false);
-  const [openGroups, setOpenGroups] = createSignal<ReadonlySet<string>>(new Set());
   const [commands, setCommands] = createSignal<HelpShortcutCommand[]>(props.shortcuts?.seed ?? []);
   let articleBody: HTMLDivElement | undefined;
   let pendingHash = "";
@@ -133,16 +101,11 @@ export function HelpReader(props: HelpReaderProps) {
   const normalizedQuery = createMemo(() => query().trim().toLocaleLowerCase());
   const results = createMemo(() => (normalizedQuery() ? searchHelpTopics(topics(), normalizedQuery(), remoteIds()) : []));
 
-  // The address names the open article: `?topic=` in the panel, the app's Help route on the page.
-  const hubHref = () => (props.surface === "page" && props.pageBase ? layoutHelpTopicHref(props.pageBase, null) : "?");
-  const topicHref = (id: string) =>
-    props.surface === "page" && props.pageBase ? layoutHelpTopicHref(props.pageBase, id) : `?topic=${encodeURIComponent(id)}`;
+  // The address names the open article: the app's Help route.
+  const hubHref = () => layoutHelpTopicHref(props.pageBase, null);
+  const topicHref = (id: string) => layoutHelpTopicHref(props.pageBase, id);
   const readAddress = (): { id: string | null; hash: string } => {
     const hash = decodeURIComponent(location.hash.slice(1));
-    if (props.surface === "panel") {
-      const id = new URLSearchParams(location.search).get("topic");
-      return { id: id && topics().some((topic) => topic.id === id) ? id : null, hash };
-    }
     const target = helpLinkTarget(`${location.pathname}${location.hash}`, location.href, {
       appId: props.app?.id,
       pageBase: props.pageBase,
@@ -153,17 +116,8 @@ export function HelpReader(props: HelpReaderProps) {
   const open = (id: string | null, hash = "", push = true) => {
     if (push) {
       const url = new URL(id ? topicHref(id) : hubHref(), location.href);
-      // The panel keeps the rest of its address (its context), and only the open article changes.
-      if (props.surface === "panel") {
-        const next = new URL(location.href);
-        if (id) next.searchParams.set("topic", id);
-        else next.searchParams.delete("topic");
-        next.hash = hash ? encodeURIComponent(hash) : "";
-        history.pushState(history.state, "", next);
-      } else {
-        url.hash = hash ? encodeURIComponent(hash) : "";
-        history.pushState(history.state, "", url);
-      }
+      url.hash = hash ? encodeURIComponent(hash) : "";
+      history.pushState(history.state, "", url);
     }
     if (id === activeId() && id && hash) return void scrollToHash(hash);
     pendingHash = hash;
@@ -196,7 +150,6 @@ export function HelpReader(props: HelpReaderProps) {
       onCleanup(shortcuts.subscribe(update));
       update();
     }
-    if (props.viewSource) onCleanup(props.viewSource.subscribe(setViewIds));
   });
 
   // The open article's document: from the cache, else from the Help API.
@@ -303,9 +256,6 @@ export function HelpReader(props: HelpReaderProps) {
       disabled: copyingAll() || (activeTopic() ? !payload() : topics().length === 0),
       onClick: () => (activeTopic() ? copyArticle() : copyAll()),
     },
-    ...(props.surface === "panel" && props.pageBase
-      ? [{ label: t().openAsPage, icon: "app-window", href: layoutHelpTopicHref(props.pageBase, activeId()) }]
-      : []),
   ];
 
   /** Links in the article open Help targets of this app in place. */
@@ -350,13 +300,6 @@ export function HelpReader(props: HelpReaderProps) {
   const groupTitle = (kind: "start" | "reference" | "troubleshoot") =>
     ({ start: t().groupStart, reference: t().groupReference, troubleshoot: t().groupTroubleshoot })[kind];
   const groupIcon = { start: "rocket", reference: "book-2", troubleshoot: "lifebuoy" } as const;
-  const toggleGroup = (key: string) =>
-    setOpenGroups((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   const accessLabel = (level: NonNullable<HelpDocumentPayload["needs"]>) =>
     ({ view: t().accessView, edit: t().accessEdit, manage: t().accessManage })[level];
 
@@ -384,54 +327,6 @@ export function HelpReader(props: HelpReaderProps) {
           <Failed text={`${t().helpUnavailable}. ${t().helpUnavailableDetail}`} onRetry={() => location.reload()} />
         </Show>
       </Show>
-      <For each={props.sections ?? []}>
-        {(section) => (
-          <Section icon={section.icon} title={section.title} summary={section.summary}>
-            <Show when={section.failed}>
-              {(failed) => (
-                <Notice tone="bad" actions={[{ label: failed().action.label, href: failed().action.href }]}>
-                  {failed().text}
-                </Notice>
-              )}
-            </Show>
-            <Show when={section.empty}>{(empty) => <Text muted>{empty()}</Text>}</Show>
-            <Show when={section.code}>
-              {(code) => <Facts items={[{ label: code().label, value: code().value, mono: true, copy: code().value }]} />}
-            </Show>
-            <For each={section.groups ?? []}>
-              {(group) => {
-                const key = `${section.id}:${group.title}`;
-                const shown = () => openGroups().has(key);
-                // k2b-ui gap: a folded Group has no toggle of its own; its one action opens and closes it.
-                return (
-                  <Group
-                    title={group.title}
-                    count={group.rows.length}
-                    folded={!shown()}
-                    actions={[{ label: shown() ? t().hide : t().show, onClick: () => toggleGroup(key) }]}
-                  >
-                    <For each={group.rows}>
-                      {(row) => (
-                        <Row
-                          lines={row.text ? [row.title, row.text] : [row.title]}
-                          meta={row.meta}
-                          end={
-                            row.state ? (
-                              <Text type="meta" tone={row.state.tone}>
-                                {row.state.label}
-                              </Text>
-                            ) : undefined
-                          }
-                        />
-                      )}
-                    </For>
-                  </Group>
-                );
-              }}
-            </For>
-          </Section>
-        )}
-      </For>
       <For each={helpShortcutGroups(commands())}>
         {(group) => (
           <Section icon="keyboard" title={shortcutLabel(group.scope)}>

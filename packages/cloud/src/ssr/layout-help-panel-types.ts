@@ -3,7 +3,6 @@ import type { KeyboardPlatform } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { AppAppearance } from "../contracts/app";
 import type { LayoutHelpArticle } from "./help";
-import type { HelpStartSection } from "./help-v2/HelpReader";
 
 export type LayoutHelpPanelProps = {
   documents: readonly HelpDocumentManifest[];
@@ -23,10 +22,4 @@ export type LayoutHelpPanelProps = {
   state?: "failed" | "unavailable";
   /** A server-rendered section of the provider, placed in the start after the articles and before the shortcuts. */
   startSection?: JSX.Element;
-  /**
-   * The provider page is built with `@k2b/ui/v2` (its `PanelLayout` has `ui: "v2"`): the reader draws itself from v2
-   * primitives. It takes the provider's start part as data in `sections` instead of `startSection`.
-   */
-  ui?: "v2";
-  sections?: readonly HelpStartSection[];
 };

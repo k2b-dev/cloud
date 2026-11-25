@@ -24,12 +24,11 @@ const render = (props: Partial<HelpReaderProps>, locale = "en") =>
 const parts = (html: string, name: string) => html.match(new RegExp(`data-k2-part="${name}"`, "g"))?.length ?? 0;
 const section = (html: string, title: string) => html.includes(`aria-label="${title}"`);
 
-test("the start renders the articles for this view, the tasks, the kinds, the host's section and the shortcuts", () => {
+test("the start renders the tasks, the kinds and the shortcuts", () => {
   const html = render({});
   expect(parts(html, "Workspace")).toBe(1);
-  for (const title of ["For this view", "What do you want to do?", "Look up", "Use in Code", "Everywhere"])
-    expect(section(html, title)).toBe(true);
-  expect(html).toContain('href="?topic=share"');
+  for (const title of ["What do you want to do?", "Look up", "Get started", "Everywhere"]) expect(section(html, title)).toBe(true);
+  expect(html).toContain('href="/help/apps/spaces/share"');
   expect(html).toContain("Open global search");
   expect(parts(html, "Loading")).toBe(0);
   // No article is open: the place beside the list says how to open one.
@@ -47,32 +46,27 @@ test("an open article renders with the page, without a loading shape", () => {
   expect(html).toContain("Roles");
 });
 
-test("on the page the articles link to the app's Help route", () => {
-  const html = render({ surface: "page", pageBase: "/help/apps/spaces" });
-  expect(html).toContain('href="/help/apps/spaces/share"');
-});
-
 test("Help the reader may not see shows nothing of the app and nothing to search", () => {
-  const html = render({ state: "unavailable", documents: [], app: undefined, sections: undefined });
+  const html = render({ state: "unavailable", documents: [], app: undefined });
   expect(html).toContain("This Help is not available");
   expect(html).not.toContain('type="search"');
   expect(html).not.toContain("Share a Space");
 });
 
 test("an app without Help says so, a failed read offers to try again", () => {
-  expect(render({ documents: [], view: [] })).toContain("No Help articles here yet");
-  const failed = render({ documents: [], view: [], state: "failed" });
+  expect(render({ documents: [] })).toContain("No Help articles here yet");
+  const failed = render({ documents: [], state: "failed" });
   expect(parts(failed, "Failed")).toBe(1);
 });
 
 test("German readers read German words and their platform's keys", () => {
   const html = render({ platform: "apple" }, "de");
-  expect(html).toContain("Für diese Ansicht");
+  expect(html).toContain("Was möchtest du tun?");
   expect(html).toContain("⌘");
 });
 
 test("the worst case (long, unbreakable and many articles) renders every article once", () => {
   const html = render(worstCaseHelpReaderFixture);
-  expect(html.match(/\?topic=/g)?.length).toBeGreaterThanOrEqual(worstCaseHelpReaderFixture.documents!.length);
+  expect(html.match(/\/help\/apps\/spaces\/topic-/g)?.length).toBeGreaterThanOrEqual(worstCaseHelpReaderFixture.documents!.length);
   expect(parts(html, "Loading")).toBe(0);
 });

@@ -23,7 +23,7 @@ export default ssr<AuthContext>(async (c) => {
         documents={help.documents}
         initialTopic={initialTopic}
         initialArticle={initialArticle ?? undefined}
-        pageBase={help.pageBase}
+        pageBase={help.pageBase ?? `/help/apps/${encodeURIComponent(app.id)}`}
       />
     </Layout>
   );

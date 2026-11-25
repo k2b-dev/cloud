@@ -1,6 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { resolve } from "node:path";
-import { panelV2IslandEntries as panelIslandEntries } from "../../../../../scripts/fixtures/help-panel";
+import { panelIslandEntries } from "../../../../../scripts/fixtures/help-panel";
 import { islandBundleSize } from "../../../../../scripts/fixtures/island-bundle-size";
 import { islandIdFromFile } from "../../../../ssr/src/island-id";
 import { defaultRailPreferences, help, panelUrl, rail, server, settings, snapshot } from "./panel.test-fixture";
@@ -11,11 +11,7 @@ import { defaultRailPreferences, help, panelUrl, rail, server, settings, snapsho
 // because its shared chunks also carry code of other Core islands.
 // Measured 50,270 B on fbbe964a50 with the toast stack (#2979) and the sheet motion (#2981), plus about 10 %, rounded up
 // to the next KiB: 55 KiB (Valentin go 09.11.). This is above the quarter of the WebKit sheet limit named above.
-// The v2 reader (one island: workspace, list beside the open article, search, menu, toast) measured 115,749 B on
-// 28c09fd228 (25.11.); most of it is the v2 base itself (@ui-sdk/core foundation, menu, toast, dialog, drawer), the
-// reader is about 6.5 KB. Plus about 5 %, rounded up to the next KiB: 119 KiB. OPEN: needs the maintainer's go, as the
-// 55 KiB did; until then the coordinator holds this pull request.
-export const PANEL_HELP_EAGER_BROTLI_BUDGET = 119 * 1024;
+export const PANEL_HELP_EAGER_BROTLI_BUDGET = 55 * 1024;
 
 test("every island in the actual /panel HTML is inside the eager bundle budget", async () => {
   const spies = [
@@ -59,9 +55,19 @@ test("every island in the actual /panel HTML is inside the eager bundle budget",
     }
     const size = await islandBundleSize(panelIslandEntries);
     expect(size.eagerBrotliBytes).toBeLessThanOrEqual(PANEL_HELP_EAGER_BROTLI_BUDGET);
-    // The v2 reader draws the article's trusted HTML itself: no Markdown parser, no v1 menus or contents in the panel.
-    for (const heavy of [/\/marked\//, /\/MarkdownView\./, /\/TableOfContents\./, /\/Dropdown\./, /\/solid\/clipboard\./])
+    for (const heavy of [
+      /\/marked\//,
+      /\/MarkdownView\./,
+      /\/TableOfContents\./,
+      /\/Dropdown\./,
+      /\/toast\./,
+      /\/layout-help-markdown\./,
+      /\/layout-help-search\./,
+      /\/solid\/clipboard\./,
+    ]) {
+      expect(size.dynamicInputs.some((input) => heavy.test(input))).toBe(true);
       expect(size.eagerInputs.filter((input) => heavy.test(input))).toEqual([]);
+    }
   } finally {
     for (const spy of spies) spy.mockRestore();
   }

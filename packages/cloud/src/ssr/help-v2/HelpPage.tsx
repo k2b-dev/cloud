@@ -12,7 +12,7 @@ import { HelpReader } from "./HelpReader";
  * articles as a list and the open one beside it, its address the app's Help route. The same documents and first article
  * as `LayoutHelpPage`, with the page's shortcuts. A separate entry, so the shell does not load v2.
  */
-export default function LayoutHelpPageV2(props: Omit<LayoutHelpPageProps, "embedded" | "accent">) {
+export default function LayoutHelpPageV2(props: Omit<LayoutHelpPageProps, "embedded" | "accent" | "pageBase"> & { pageBase: string }) {
   const locale = useLocale();
   const shell = useShellData();
   const app = shell?.apps.find((candidate) => candidate.id === shell.appId);
@@ -23,7 +23,6 @@ export default function LayoutHelpPageV2(props: Omit<LayoutHelpPageProps, "embed
   };
   return (
     <HelpReader
-      surface="page"
       documents={props.documents}
       app={shell?.appId && app ? { id: shell.appId, name: app.label, icon: app.iconClass } : undefined}
       initialTopic={props.initialTopic}

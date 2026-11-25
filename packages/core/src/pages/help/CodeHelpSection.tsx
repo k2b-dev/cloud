@@ -1,4 +1,3 @@
-import type { HelpStartSection } from "@k2b/cloud/ssr";
 import { ButtonLink, Disclosure, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import type { CodeHelpReference } from "../../code/help-reference";
@@ -114,50 +113,4 @@ export function CodeHelpSection(props: { reference: CodeHelpReference | "failed"
       </Show>
     </section>
   );
-}
-
-const POLICY_STATUS = { automatic: "ok", admin: undefined, never: "bad" } as const;
-
-/** The same Code reference as data for the v2 Help reader, which draws it as a section of its start. */
-export function codeHelpStartSection(
-  reference: CodeHelpReference | "failed",
-  appName: string,
-  reloadHref: string,
-  locale: string,
-): HelpStartSection {
-  const t = codeHelpMessages.resolve([locale]).t;
-  const base = { id: "code", icon: "code", title: t.title };
-  if (reference === "failed") return { ...base, failed: { text: t.failed, action: { label: t.reload, href: reloadHref } } };
-  if (reference.operations.length === 0 && reference.events.length === 0) return { ...base, empty: t.empty({ app: appName }) };
-  return {
-    ...base,
-    summary: t.lead({ app: appName }),
-    ...(reference.export ? { code: { label: t.importLabel, value: `import { ${reference.export} } from "@sdk";` } } : {}),
-    groups: [
-      ...(reference.operations.length
-        ? [
-            {
-              title: t.operationsTitle,
-              rows: reference.operations.map((operation) => ({
-                title: operation.path,
-                text: operation.description || undefined,
-                state: { label: t.policy({ value: operation.policy }), tone: POLICY_STATUS[operation.policy] },
-              })),
-            },
-          ]
-        : []),
-      ...(reference.events.length
-        ? [
-            {
-              title: t.eventsTitle,
-              rows: reference.events.map((event) => ({
-                title: event.type,
-                text: event.description || undefined,
-                meta: `${t.subject} ${event.subject} · ${t.place} ${event.place ?? t.noPlace}`,
-              })),
-            },
-          ]
-        : []),
-    ],
-  };
 }

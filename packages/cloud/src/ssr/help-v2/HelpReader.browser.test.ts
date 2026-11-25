@@ -77,7 +77,7 @@ const articleHtml = (id: string) =>
     ? '<p>Who may do what.</p><h2 id="levels">Levels</h2><p>See <a href="/help/apps/spaces/share">Share a Space</a>.</p>'
     : '<p>Invite a person by name.</p><h2 id="invite">Invite</h2><div class="help-steps"><ol><li>Open the Space.</li><li>Choose Share.</li></ol></div>';
 
-const open = async (view: View, address = "/panel", options: { searchFails?: boolean } = {}) => {
+const open = async (view: View, address = "/help/apps/spaces", options: { searchFails?: boolean } = {}) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -93,7 +93,7 @@ const open = async (view: View, address = "/panel", options: { searchFails?: boo
   const reads: string[] = [];
   await tab.route(`${origin}/**`, async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/panel" || url.pathname.startsWith("/help/apps/spaces"))
+    if (url.pathname.startsWith("/help/apps/spaces"))
       return route.fulfill({
         contentType: "text/html; charset=utf-8",
         body:
@@ -149,7 +149,7 @@ describe("the Help reader on v2", () => {
     test(`${view.name} px: the start and an open article are clean`, async () => {
       const { context, tab, errors } = await open(view);
       try {
-        await tab.getByRole("region", { name: "For this view" }).waitFor();
+        await tab.getByRole("region", { name: "What do you want to do?" }).waitFor();
         await expectClean(tab);
         if (shots) await tab.screenshot({ path: join(shots, `01-help-v2-start-${view.name}.png`) });
         await tab
@@ -170,13 +170,13 @@ describe("the Help reader on v2", () => {
     try {
       await tab.getByRole("link", { name: /Plan tasks/ }).click();
       await detail(tab).getByText("Choose Share.").waitFor();
-      expect(new URL(tab.url()).searchParams.get("topic")).toBe("tasks");
+      expect(new URL(tab.url()).pathname).toBe("/help/apps/spaces/tasks");
       expect(reads).toEqual(["tasks"]);
       await tab.reload();
       await settled(tab);
       await detail(tab).waitFor();
       await tab.goBack();
-      await tab.getByRole("region", { name: "For this view" }).waitFor();
+      await tab.getByRole("region", { name: "What do you want to do?" }).waitFor();
       expect(await detail(tab).count()).toBe(0);
     } finally {
       await context.close();
@@ -184,13 +184,13 @@ describe("the Help reader on v2", () => {
   });
 
   test("the server's article shows at once, and a link to another article of the app opens in place", async () => {
-    const { context, tab, reads } = await open(wide, "/panel?topic=share");
+    const { context, tab, reads } = await open(wide, "/help/apps/spaces/share");
     try {
       await detail(tab).getByText("Choose Share.").waitFor();
       expect(reads).toEqual([]);
       await detail(tab).getByRole("link", { name: /Roles/ }).click();
       await detail(tab).getByText("Who may do what.").first().waitFor();
-      expect(new URL(tab.url()).searchParams.get("topic")).toBe("roles");
+      expect(new URL(tab.url()).pathname).toBe("/help/apps/spaces/roles");
       await detail(tab).getByRole("link", { name: "Share a Space" }).click();
       await detail(tab).getByText("Choose Share.").waitFor();
     } finally {
@@ -209,11 +209,11 @@ describe("the Help reader on v2", () => {
       await tab.getByRole("searchbox").fill("zzz");
       await tab.getByText("No help topic matches this search.").waitFor();
       await tab.getByRole("searchbox").press("Escape");
-      await tab.getByRole("region", { name: "For this view" }).waitFor();
+      await tab.getByRole("region", { name: "What do you want to do?" }).waitFor();
     } finally {
       await context.close();
     }
-    const failing = await open(wide, "/panel", { searchFails: true });
+    const failing = await open(wide, "/help/apps/spaces", { searchFails: true });
     try {
       await failing.tab.getByRole("searchbox").fill("share");
       await failing.tab.getByText("Titles only").waitFor();
@@ -226,11 +226,10 @@ describe("the Help reader on v2", () => {
     }
   });
 
-  test("the menu copies the open article as Markdown and offers the full page", async () => {
-    const { context, tab } = await open(wide, "/panel?topic=share");
+  test("the menu copies the open article as Markdown", async () => {
+    const { context, tab } = await open(wide, "/help/apps/spaces/share");
     try {
       await tab.getByRole("button", { name: "More Help actions" }).click();
-      expect(await tab.getByRole("menuitem", { name: "Open as page" }).getAttribute("href")).toBe("/help/apps/spaces/share");
       await tab.getByRole("menuitem", { name: "Copy as Markdown" }).click();
       await tab.getByText("Article copied as Markdown").waitFor();
       expect(await tab.evaluate(() => navigator.clipboard.readText())).toContain("Invite a person by name.");
@@ -239,22 +238,11 @@ describe("the Help reader on v2", () => {
     }
   });
 
-  test("on the app's Help route the article is in the path", async () => {
-    const { context, tab } = await open(wide, "/help/apps/spaces");
-    try {
-      await tab.getByRole("link", { name: /Roles/ }).first().click();
-      await detail(tab).getByText("Who may do what.").first().waitFor();
-      expect(new URL(tab.url()).pathname).toBe("/help/apps/spaces/roles");
-    } finally {
-      await context.close();
-    }
-  });
-
   for (const view of [wide, phone])
     test(`${view.name} px: the worst case stays readable and nothing overflows`, async () => {
-      const { context, tab, errors } = await open(view, "/panel?worst");
+      const { context, tab, errors } = await open(view, "/help/apps/spaces?worst");
       try {
-        await tab.getByRole("region", { name: "For this view" }).waitFor();
+        await tab.getByRole("region", { name: "What do you want to do?" }).waitFor();
         await expectClean(tab);
         if (shots) await tab.screenshot({ path: join(shots, `03-help-v2-worst-${view.name}.png`), fullPage: true });
         expect(errors).toEqual([]);

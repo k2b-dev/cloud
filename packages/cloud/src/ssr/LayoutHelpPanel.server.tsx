@@ -7,7 +7,6 @@ import HelpPanelSearch from "./HelpPanelSearch.island";
 import HelpPanelShortcuts from "./HelpPanelShortcuts.island";
 import HelpPanelView from "./HelpPanelView.island";
 import { helpMessages } from "./help-messages";
-import HelpReaderPanel from "./help-v2/HelpReaderPanel.island";
 import { HelpPanelSectionTrigger } from "./layout-help-panel-controls";
 import type { HelpPanelData } from "./layout-help-panel-state";
 import type { LayoutHelpPanelProps } from "./layout-help-panel-types";
@@ -18,31 +17,6 @@ export type { LayoutHelpPanelProps } from "./layout-help-panel-types";
 
 /** Static provider content survives island mounting; only the controls own browser state. */
 export function LayoutHelpPanel(props: LayoutHelpPanelProps) {
-  if (props.ui === "v2")
-    return (
-      <div
-        class="k2-ui app-accent-scope flex h-full min-h-0 flex-col"
-        data-surface="panel"
-        data-k2b-primary={props.primary === "ai" ? "ai" : undefined}
-        style={props.appearance}
-      >
-        <HelpReaderPanel
-          documents={props.documents}
-          app={props.app}
-          view={props.view}
-          initialTopic={props.initialTopic}
-          initialArticle={props.initialArticle}
-          pageBase={props.pageBase}
-          platform={props.platform}
-          state={props.state}
-          sections={props.sections}
-        />
-      </div>
-    );
-  return <LayoutHelpPanelV1 {...props} />;
-}
-
-function LayoutHelpPanelV1(props: LayoutHelpPanelProps) {
   const locale = useLocale();
   const t = () => helpMessages.resolve([locale()]).t;
   const topic = props.documents.find((topic) => topic.id === props.initialTopic);
