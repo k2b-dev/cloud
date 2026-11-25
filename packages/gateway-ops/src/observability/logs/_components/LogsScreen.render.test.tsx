@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
+import { createDomTestHarness } from "../../../../../ui/test/dom";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(resolve(tmpdir(), "gateway-ops-logs-screen-"));
@@ -11,16 +12,16 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { LogsScreenFixture } = await import("./logs-screen.fixture");
 
+const dom = createDomTestHarness();
+dom.cleanup();
+const parser = new dom.window.DOMParser();
+
+/** The text a person reads: the server HTML parsed as a document, each element followed by a space, as layout would. */
 const render = (search: string, state?: "loadfail") => {
   const html = renderToString(() => createComponent(LogsScreenFixture, { search, state }));
-  // the text a person reads, without markup
-  return {
-    html,
-    text: html
-      .replace(/<!--[^>]*-->/g, "")
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " "),
-  };
+  const body = parser.parseFromString(html, "text/html").body;
+  for (const element of body.querySelectorAll("*")) element.after(" ");
+  return { html, text: body.textContent?.replace(/\s+/g, " ") ?? "" };
 };
 
 describe("the log list on the server", () => {
