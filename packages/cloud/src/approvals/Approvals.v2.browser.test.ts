@@ -79,7 +79,10 @@ type Answer = {
   decision?: (id: string, body: Record<string, unknown>) => { status: number; json: unknown };
 };
 
-const open = async (view: View, options: { initial?: ApprovalPage | null; address?: string; locale?: string } & Answer = {}) => {
+const open = async (
+  view: View,
+  options: { initial?: ApprovalPage | null; address?: string; locale?: string; paused?: boolean } & Answer = {},
+) => {
   const context = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,
@@ -94,6 +97,8 @@ const open = async (view: View, options: { initial?: ApprovalPage | null; addres
   const decisions: { id: string; body: Record<string, unknown> }[] = [];
   const time = new Date("2026-10-11T09:00:00.000Z");
   await tab.clock.install({ time });
+  // Paused, the half second before the answers arm passes only when a test runs the clock.
+  if (options.paused) await tab.clock.pauseAt(time);
   const initial = options.initial === undefined ? approvalsPage : options.initial;
   let approvals = options.approvals ?? approvalsPage;
   await tab.route(`${origin}/**`, async (route) => {
@@ -130,7 +135,8 @@ const open = async (view: View, options: { initial?: ApprovalPage | null; addres
   });
   await tab.goto(`${origin}${options.address ?? "/me/approvals"}`);
   await tab.evaluate(() => document.fonts.ready);
-  await settled(tab);
+  if (options.paused) await tab.locator('[data-k2-part="Row"]').first().waitFor();
+  else await settled(tab);
   return { context, tab, errors, decisions };
 };
 
@@ -166,7 +172,7 @@ describe("approvals on v2", () => {
     });
 
   test("an answer before the row armed does nothing; after it, the row keeps its place as the receipt", async () => {
-    const { context, tab, decisions } = await open(views[0]!);
+    const { context, tab, decisions } = await open(views[0]!, { paused: true });
     try {
       const first = rows(tab).first();
       const before = await first.boundingBox();
@@ -215,7 +221,7 @@ describe("approvals on v2", () => {
       await dialog.getByRole("button", { name: "Send offer", exact: true }).click();
       await second.getByText("Approved.", { exact: true }).waitFor();
       expect(decisions).toEqual([{ id: approvalsPage.items[1]!.id, body: { approved: true, remember: "chat" } }]);
-      expect(await tab.getByRole("dialog").count()).toBe(0);
+      await tab.getByRole("dialog").waitFor({ state: "detached" });
     } finally {
       await context.close();
     }
@@ -254,7 +260,7 @@ describe("approvals on v2", () => {
     const { context, tab } = await open(views[0]!, { initial: null, approvals: "fail" });
     try {
       await tab.locator('[data-k2-part="Failed"]').waitFor();
-      await tab.getByRole("button", { name: "Try again" }).click();
+      await tab.getByRole("button", { name: "Retry" }).click();
       await rows(tab).first().waitFor();
       expect(await rows(tab).count()).toBe(3);
     } finally {
