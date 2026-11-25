@@ -118,6 +118,9 @@ export const authMessages = i18n.define({
       resetIntro: "Enter your account email address. If password reset is available, we will send a one-time reset link.",
       resetLinkDescription: "This link only changes your password. It does not sign you in until the change succeeds.",
       resetRequestDescription: "We will send a short-lived reset link if this email belongs to an eligible organization account.",
+      showPassword: "Show password",
+      restoreLoginConfirm: "Re-enable local Login accounts",
+      otherWays: "Other ways to sign in",
     },
     de: {
       consentTitle: "Bevor du startest",
@@ -239,6 +242,9 @@ export const authMessages = i18n.define({
       resetLinkDescription: "Dieser Link ändert nur dein Passwort. Du wirst erst angemeldet, wenn die Änderung erfolgreich war.",
       resetRequestDescription:
         "Wir senden einen kurzzeitig gültigen Link, wenn die E-Mail-Adresse zu einem berechtigten Organisationskonto gehört.",
+      showPassword: "Passwort zeigen",
+      restoreLoginConfirm: "Lokale Login-Konten wieder aktivieren",
+      otherWays: "Andere Wege zur Anmeldung",
     },
   },
 });

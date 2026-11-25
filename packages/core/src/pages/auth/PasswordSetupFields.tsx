@@ -74,9 +74,11 @@ export const passwordSetupMessages = i18n.define({
 export function PasswordInput(props: {
   value: string;
   onInput: (value: string) => void;
-  autocomplete: "current-password" | "new-password";
+  autocomplete: "current-password" | "new-password" | "off";
   placeholder?: string;
   label: string;
+  /** Enter in the field, such as sending its form. */
+  onEnter?: () => void;
   /** One more quiet deed at the field's end, such as "Generate". */
   end?: JSX.Element;
 }) {
@@ -88,6 +90,9 @@ export function PasswordInput(props: {
       onInput={props.onInput}
       placeholder={props.placeholder}
       ref={autocomplete(props.autocomplete)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" && !event.isComposing) props.onEnter?.();
+      }}
       end={
         <>
           <Button

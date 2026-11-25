@@ -1,15 +1,13 @@
 import { listLegalLinks } from "@k2b/cloud";
 import { auth, getLocale } from "@k2b/cloud/server";
-import { legalConsent } from "@k2b/cloud/services";
+import { coreSettings, legalConsent } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import AuthFooter from "./AuthFooter";
-import ConsentForm from "./ConsentForm.island";
-import { authMessages } from "./messages";
+import AuthPage from "./AuthPage";
+import ConsentScreen from "./ConsentScreen.island";
 
 export default ssr(async (c) => {
-  const t = authMessages.resolve([getLocale(c)]).t;
   const requested = normalizeRedirectTo(c.req.query("redirectTo")) ?? "/";
   const path = new URL(requested, c.req.url).pathname;
   const redirectTo = path === "/auth/continue" || path === "/auth/login" ? "/" : requested;
@@ -18,20 +16,12 @@ export default ssr(async (c) => {
   const pending = await legalConsent.pending(c);
   if (!pending) return c.redirect(`/auth/login?${new URLSearchParams({ redirectTo })}`, 302);
   const { version } = await legalConsent.documents();
-  const legalLinks = await listLegalLinks(getLocale(c));
+  const [legalLinks, appName] = await Promise.all([listLegalLinks(getLocale(c)), coreSettings.get<string>("app.name")]);
   return () => (
     <MinimalLayout c={c} preferences={false}>
-      <main class="flex min-h-svh flex-col items-center justify-center gap-6 bg-zinc-50 p-4 dark:bg-zinc-950">
-        <section
-          class="standalone-card w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900"
-          data-legal-version={version}
-        >
-          <h1 class="text-2xl font-semibold text-primary">{t.consentTitle}</h1>
-          <p class="mt-2 text-sm text-dimmed">{t.consentDescription}</p>
-          <ConsentForm userId={pending.user.id} version={version} redirectTo={redirectTo} />
-        </section>
-        <AuthFooter links={legalLinks} />
-      </main>
+      <AuthPage legalVersion={version}>
+        <ConsentScreen appName={appName || "Cloud"} legalLinks={legalLinks} userId={pending.user.id} version={version} redirectTo={redirectTo} />
+      </AuthPage>
     </MinimalLayout>
   );
 });

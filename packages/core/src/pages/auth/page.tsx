@@ -3,20 +3,14 @@ import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/co
 import { auth, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
-import { ButtonLink, LocaleProvider, NoticeCard } from "@k2b/ui";
+import { LocaleProvider } from "@k2b/ui";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
 import { appApprovalMessages } from "../app-approval/messages";
-import AccountCategorySwitch from "./AccountCategorySwitch.island";
-import AdminLoginForm from "./AdminLoginForm.island";
-import AppLoginForm from "./AppLoginForm.island";
-import AuthFooter from "./AuthFooter";
-import GuestLoginForm from "./GuestLoginForm.island";
-import IdleSignOutFinish from "./IdleSignOutFinish.island";
-import LoginForm from "./LoginForm.island";
+import AuthPage from "./AuthPage";
+import LoginScreen, { type LoginScreenProps } from "./LoginScreen.island";
 import { isReauthenticationRequest } from "./login-redirect";
 import { authMessages } from "./messages";
-import PasskeyLoginButton from "./PasskeyLoginButton.island";
 
 /** Login page. */
 export default ssr(async (c) => {
@@ -107,124 +101,60 @@ export default ssr(async (c) => {
             ? t.passwordLoginIntro
             : null;
 
+  const form: LoginScreenProps["form"] = isAdminLogin
+    ? { kind: "admin", requiresRecovery: !policy.login.enabled }
+    : useApproval && activeMethod
+      ? {
+          kind: "app",
+          category: activeMethod,
+          fallback: { href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead },
+          setupHint: activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail,
+        }
+      : isEmailLogin
+        ? {
+            kind: "email",
+            token,
+            category: activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined,
+            allowSelfRegistration: allowSelfRegistration && policy.guest.enabled && activeMethod !== "login",
+          }
+        : activeMethod === "freeipa"
+          ? { kind: "freeipa", showBanner: hasBanner === "true", defaultUsername: ipaUid }
+          : { kind: "none" };
+
   return () => (
     <LocaleProvider locale={locale}>
-      <div class="min-h-svh bg-zinc-50 text-zinc-950 dark:bg-zinc-950 dark:text-zinc-50">
-        <div class="flex min-h-svh flex-col items-center justify-center gap-5 p-4">
-          <div class="standalone-card grid w-full max-w-5xl overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-[var(--k2b-shadow-frame)] dark:border-zinc-800 dark:bg-zinc-950 md:grid-cols-[0.9fr_1.1fr]">
-            <aside class="hidden flex-col justify-between border-r border-zinc-200 bg-zinc-50 p-8 md:flex dark:border-zinc-800 dark:bg-zinc-900/60">
-              <div class="flex flex-1 items-center justify-center">
-                <div class="flex flex-col items-center gap-4 text-center">
-                  <img
-                    src="/branding/logo"
-                    alt={appName}
-                    width="112"
-                    height="112"
-                    class="max-h-28 max-w-28 object-contain"
-                    style={{ "view-transition-name": "logo" }}
-                  />
-                  <div>
-                    <p class="text-lg font-semibold text-primary">{appName}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div class="max-w-md">
-                <h1 class="text-3xl font-semibold tracking-tight text-primary" style={{ "view-transition-name": "page-title" }}>
-                  {t.welcomeBack}
-                </h1>
-                <p class="mt-4 text-sm leading-6 text-dimmed">{t.welcomeDescription}</p>
-              </div>
-            </aside>
-
-            <main class="flex justify-center md:p-10">
-              <div
-                class="auth-login-column flex min-h-[32rem] w-full max-w-md flex-col sm:min-h-[36rem]"
-                style={{ "view-transition-name": "login-card" }}
-              >
-                <div>
-                  <h1 class="sr-only">{t.signIn}</h1>
-                  <h2 class="text-3xl font-semibold tracking-tight text-primary">{confirmation?.reauthenticate ?? formTitle}</h2>
-                  {(confirmation?.recent || formSubtitle) && <p class="mt-1 text-sm text-dimmed">{confirmation?.recent ?? formSubtitle}</p>}
-                </div>
-
-                {!isAdminLogin && visibleCategories.length > 1 && !token && (
-                  <div class="mt-4 md:mt-6" style={{ "view-transition-name": "login-switch" }}>
-                    <AccountCategorySwitch
-                      options={visibleCategories.map((category) => ({
-                        value: category,
-                        label: categoryLabel(category),
-                        href: buildMethodUrl(category),
-                      }))}
-                      value={activeMethod}
-                      ariaLabel={t.fallbackMethod}
-                    />
-                  </div>
-                )}
-
-                <div class="flex flex-1 flex-col justify-center gap-4 pt-4 pb-3 md:py-7">
-                  {signedOutIdle && (
-                    <>
-                      <IdleSignOutFinish />
-                      <NoticeCard tone="info">{t.signedOutIdle}</NoticeCard>
-                    </>
-                  )}
-                  {isAdminLogin ? (
-                    <AdminLoginForm redirectTo={redirectTo} requiresRecovery={!policy.login.enabled} />
-                  ) : useApproval && activeMethod ? (
-                    <AppLoginForm
-                      category={activeMethod}
-                      redirectTo={redirectTo}
-                      fallback={{ href: credentialHref, label: activeMethod === "freeipa" ? t.usePasswordInstead : t.useEmailInstead }}
-                      setupHint={activeMethod === "freeipa" ? t.appSetupPassword : t.appSetupEmail}
-                      forget={sharedWorkstation}
-                    />
-                  ) : isEmailLogin ? (
-                    <GuestLoginForm
-                      redirectTo={redirectTo}
-                      token={token}
-                      category={activeMethod === "guest" || activeMethod === "login" ? activeMethod : undefined}
-                      allowSelfRegistration={allowSelfRegistration && policy.guest.enabled && activeMethod !== "login"}
-                      forget={sharedWorkstation}
-                    />
-                  ) : activeMethod === "freeipa" ? (
-                    <LoginForm
-                      redirectTo={redirectTo}
-                      showBanner={hasBanner === "true"}
-                      defaultUsername={ipaUid}
-                      appName={appName}
-                      forget={sharedWorkstation}
-                    />
-                  ) : (
-                    <NoticeCard tone="info">{t.noLoginAvailable}</NoticeCard>
-                  )}
-                  {approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email" && (
-                    <ButtonLink href={credentialHref} variant="ghost" class="auth-login-alternative w-full justify-center">
-                      {t.useAppInstead}
-                    </ButtonLink>
-                  )}
-                  {sharedWorkstation && !signedOutIdle && <p class="text-xs text-dimmed">{t.sharedWorkstationHint}</p>}
-                </div>
-
-                {!isAdminLogin && !token && (
-                  <div class="auth-secondary-actions flex flex-wrap items-center justify-between gap-2 text-xs text-dimmed">
-                    {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
-                    <ButtonLink href={supportHref} variant="secondary" size="sm">
-                      <i class="ti ti-lifebuoy" />
-                      {t.contactSupport}
-                    </ButtonLink>
-                    <ButtonLink href={adminHref} variant="secondary" size="sm">
-                      <i class="ti ti-shield" />
-                      {t.adminToken}
-                    </ButtonLink>
-                  </div>
-                )}
-              </div>
-            </main>
-          </div>
-          <AuthFooter links={legalLinks} />
-        </div>
-      </div>
+      <AuthPage>
+        <LoginScreen
+          appName={appName}
+          legalLinks={legalLinks}
+          title={confirmation?.reauthenticate ?? formTitle}
+          subtitle={confirmation?.recent ?? formSubtitle}
+          categories={
+            !isAdminLogin && visibleCategories.length > 1 && !token
+              ? visibleCategories.map((category) => ({
+                  value: category,
+                  label: categoryLabel(category),
+                  href: buildMethodUrl(category),
+                  current: category === activeMethod,
+                }))
+              : null
+          }
+          form={form}
+          redirectTo={redirectTo}
+          forget={sharedWorkstation}
+          signedOutIdle={signedOutIdle}
+          others={
+            !isAdminLogin && !token
+              ? {
+                  passkey: showPasskey,
+                  appInstead: approvalEnabled && !useApproval && activeMethod && activeMethod !== "email" ? credentialHref : null,
+                  supportHref,
+                  adminHref,
+                }
+              : null
+          }
+        />
+      </AuthPage>
     </LocaleProvider>
   );
 });
