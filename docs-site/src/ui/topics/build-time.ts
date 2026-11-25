@@ -97,8 +97,16 @@ const describeProps = (ts: TypeScript, type: ts.Type, checker: ts.TypeChecker, a
   const base = parts.filter((part) => part !== variantsPart).flatMap(propsOf);
   const allowed = (props: readonly ts.Symbol[]) => props.filter((prop) => !forbidden(propRow(ts, prop, checker, at)));
   const variants = variantsPart?.isUnion() ? variantsPart.types.map((variant) => allowed(propsOf(variant))) : [];
+  // A prop is shared only when every variant has it the same way (type and requiredness); `label` that a button with
+  // words may add but a button without words requires stands in each variant instead.
+  const same = (a: ts.Symbol, b: ts.Symbol) => {
+    const [left, right] = [propRow(ts, a, checker, at), propRow(ts, b, checker, at)];
+    return left.type === right.type && left.required === right.required;
+  };
   const sharedByVariants =
-    variants[0]?.filter((prop) => variants.every((variant) => variant.some((p) => p.getName() === prop.getName()))) ?? [];
+    variants[0]?.filter((prop) =>
+      variants.every((variant) => variant.some((other) => other.getName() === prop.getName() && same(prop, other))),
+    ) ?? [];
   const shared = [...base, ...sharedByVariants];
   const sharedNames = new Set(shared.map((prop) => prop.getName()));
   const rows = (props: readonly ts.Symbol[]) => byRequired(allowed(props).map((prop) => propRow(ts, prop, checker, at)));

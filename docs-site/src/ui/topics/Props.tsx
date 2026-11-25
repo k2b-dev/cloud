@@ -68,6 +68,8 @@ export const PropsTable = (props: { doc: PropsDoc }) => (
  */
 export const Props = (props: { of: readonly string[] }) => (
   <div class="ui-props-list">
-    <For each={props.of}>{(name) => <Show when={v2Props[name]}>{(doc) => <PropsTable doc={doc()} />}</Show>}</For>
+    <For each={props.of}>
+      {(name) => <Show when={Object.hasOwn(v2Props, name) && v2Props[name]}>{(doc) => <PropsTable doc={doc()} />}</Show>}
+    </For>
   </div>
 );

@@ -50,7 +50,7 @@ const exampleAttributes = (raw: Record<string, string>, line: string): ExampleAt
 
 const propsNames = (raw: Record<string, string>, line: string) => {
   const names = (raw.of ?? "").split(/\s+/).filter(Boolean);
-  const unknown = names.filter((name) => !v2Props[name]);
+  const unknown = names.filter((name) => !Object.hasOwn(v2Props, name));
   if (names.length === 0 || unknown.length > 0)
     throw new Error(
       `Topic placeholder ${line}: ${unknown.length ? `no part or type ${unknown.join(", ")} in @k2b/ui/v2` : "of names no part"}`,

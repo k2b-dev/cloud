@@ -79,7 +79,10 @@ export const recipeLocale = (name: RecipeName) => {
 export const resolveRecipeState = (name: RecipeName, state: string | undefined) => {
   const recipe: RecipeModule = recipes[name];
   if (!state) return { render: () => createComponent(recipe.default, {}), press: [] as readonly string[] };
-  const found = recipeStates(name)[state];
+  // only the recipe's own states: `__proto__`, `constructor` or `toString` come from every object and are none
+  const states = recipeStates(name);
+  if (!Object.hasOwn(states, state)) return undefined;
+  const found = states[state];
   if (!found) return undefined;
   if (typeof found === "function") return { render: found, press: [] as readonly string[] };
   return { render: found.render, press: typeof found.press === "string" ? [found.press] : found.press };

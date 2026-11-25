@@ -6,7 +6,7 @@ import { registerSsrTestPlugin } from "../../../../packages/ui/test/ssr-test-plu
 registerSsrTestPlugin(await import("../../ssr"));
 const { recipeSource, v2Props } = await import("./build-results");
 const { firstSentence } = await import("./build-time");
-const { recipeNames, recipeStates } = await import("./recipes");
+const { isRecipeName, recipeNames, recipeStates, resolveRecipeState } = await import("./recipes");
 const { parseTopic, propsMarkdown, topicMarkdown, topicShapeProblems } = await import("./topic-markdown");
 const { topics } = await import("./topics");
 const { uiCatalogEntries } = await import("../catalog");
@@ -27,6 +27,13 @@ describe("recipes", () => {
 
   test("every recipe names what it is in its first line", () => {
     for (const name of recipeNames) expect(recipeSource[name]).toMatch(/^\/\/ Recipe: /);
+  });
+
+  test("a name an object inherits is no recipe and no state", () => {
+    for (const name of ["__proto__", "constructor", "toString", "hasOwnProperty"]) {
+      expect(isRecipeName(name)).toBe(false);
+      expect(resolveRecipeState("table", name)).toBeUndefined();
+    }
   });
 
   test("the recipes of topic 2 offer their states", () => {
@@ -77,6 +84,10 @@ describe("topic pages", () => {
   test("a placeholder that names no recipe or no part fails the build", () => {
     expect(() => parseTopic('# T\n\n## A\n\n<Example recipe="nothing" />\n')).toThrow('no recipe "nothing"');
     expect(() => parseTopic('# T\n\n## Parts\n\n### X\n\nLine.\n\n<Props of="Tabel" />\n')).toThrow("no part or type Tabel");
+  });
+
+  test("a name every object has is no part", () => {
+    expect(() => parseTopic('# T\n\n## Parts\n\n### X\n\nLine.\n\n<Props of="toString" />\n')).toThrow("no part or type toString");
   });
 
   test("a placeholder inside a code block stays text", () => {
@@ -138,6 +149,37 @@ describe("generated props", () => {
     expect(twin).toContain("Or with `children`:");
     expect(twin).toContain("| `markdown` (required in this variant) |");
     expect(twin).not.toContain("(required) |");
+  });
+
+  test("a prop whose requiredness differs between variants stands in each variant", () => {
+    const rows = (name: string) => {
+      const doc = v2Props[name];
+      if (!doc) throw new Error(`${name} has no generated props`);
+      return {
+        shared: doc.rows.map((row) => row.name),
+        groups: doc.groups.map((group) => [group.title, group.rows.map((row) => `${row.name}${row.required ? "!" : ""}`)]),
+      };
+    };
+    // a button with words may add a label; without words its label is required
+    const button = rows("Button");
+    expect(button.shared).not.toContain("label");
+    expect(button.groups).toEqual([
+      ["With `children`", ["children!", "label"]],
+      ["Or with `label`", ["label!"]],
+    ]);
+    // a target with an address may also call onOpen; without one, onOpen is required
+    const target = rows("OpenTarget");
+    expect(target.shared).toEqual([]);
+    expect(target.groups).toEqual([
+      ["With `href`", ["href!", "onNavigate", "onOpen"]],
+      ["Or with `onOpen`", ["onOpen!"]],
+    ]);
+    // the Markdown twin says the same
+    const buttonDoc = v2Props.Button;
+    if (!buttonDoc) throw new Error("Button has no generated props");
+    const twin = propsMarkdown(buttonDoc);
+    expect(twin).toContain("Or with `label`:");
+    expect(twin).toContain("| `label` (required in this variant) |");
   });
 
   test("a tuple type has places, not props", () => {

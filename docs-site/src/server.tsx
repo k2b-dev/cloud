@@ -127,7 +127,8 @@ app.get("/en/ui/demo/workspace-host", (c) =>
 // The v2 demo screens on pages of their own, framed like the Cloud shell; the Fibel pages /en/ui/v2/<name> embed them.
 app.get("/en/ui/v2/screen/:name", (c) => {
   const name = c.req.param("name");
-  if (!(name in v2Screens)) return c.notFound();
+  // only the screens themselves: a name every object has (`toString`, `__proto__`) is none
+  if (!Object.hasOwn(v2Screens, name)) return c.notFound();
   const screen = v2Screens[name as V2ScreenName];
   return html(() => <V2ScreenPage name={name as V2ScreenName} search={new URL(c.req.url).search} />, {
     title: `${screen.title} — UI v2`,

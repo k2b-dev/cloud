@@ -78,6 +78,11 @@ describe("recipe route", () => {
   test("an unknown recipe or state is not found", async () => {
     expect((await fetch(`${origin}/en/ui/v2/recipe/nothing`)).status).toBe(404);
     expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=nothing`)).status).toBe(404);
+    for (const name of ["__proto__", "constructor", "toString"]) {
+      expect((await fetch(`${origin}/en/ui/v2/recipe/table?state=${name}`)).status).toBe(404);
+      expect((await fetch(`${origin}/en/ui/v2/recipe/${name}`)).status).toBe(404);
+      expect((await fetch(`${origin}/en/ui/v2/screen/${name}`)).status).toBe(404);
+    }
   });
 });
 
