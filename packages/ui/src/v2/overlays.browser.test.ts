@@ -413,11 +413,11 @@ for (const width of [1440, 390])
         const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
         await dialog.waitFor();
         await settled(page);
-        const [before, footBefore] = [await box(dialog), await box(dialog.locator('[data-slot="foot"]'))];
+        const [before, footBefore] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
         await dialog.getByRole("button", { name: "Weiter" }).click();
         await dialog.getByText("Gekoppelt.").waitFor();
         await settled(page);
-        const [after, footAfter] = [await box(dialog), await box(dialog.locator('[data-slot="foot"]'))];
+        const [after, footAfter] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
         expect(after.height).toBe(before.height);
         expect(footAfter.y).toBe(footBefore.y);
         expect(await problems(page, ".k2-dialog")).toEqual([]);
