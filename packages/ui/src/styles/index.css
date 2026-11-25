@@ -2359,6 +2359,82 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
   font-weight: 500;
 }
 
+/* A chart in a v2 screen (below `.k2-ui`, @k2b/ui/v2) speaks v2: its words take the v2 font and the meta role
+ * (12 px), its inks are the v2 inks instead of opacities, its lines the v2 hairline and control edge, a separator
+ * between marks is the v2 surface in both themes, and in a Canvas its words start at the v2 text edge. Only the
+ * mapping changes; the drawing and its geometry stay those of the chart core. */
+.k2b-ui .k2b-chart:is(.k2-ui *) {
+  color: var(--k2-muted);
+  font-family: var(--k2-font);
+}
+.k2b-ui .k2b-chart:is(.k2-canvas > *):not([data-chart-kind="map"]) {
+  margin-inline: var(--k2-edge);
+}
+.k2b-ui .k2b-chart:is(.k2-ui *) .stdlib-chart text {
+  font-family: var(--k2-font);
+}
+.k2b-ui .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-tick-label,
+    .stdlib-chart-axis-label,
+    .stdlib-chart-subtitle,
+    .stdlib-chart-reference-label,
+    .stdlib-chart-legend-label,
+    .stdlib-chart-empty-text,
+    .stdlib-chart-heatmap-label,
+    .stdlib-chart-state-label,
+    .stdlib-chart-map-empty
+  ) {
+  font-size: 12px;
+  fill: var(--k2-subtle);
+  opacity: 1;
+}
+.k2b-ui .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-category-label,
+    .stdlib-chart-bar-value,
+    .stdlib-chart-label,
+    .stdlib-chart-bar-gauge-label,
+    .stdlib-chart-bar-gauge-value,
+    .k2b-chart-group-heading,
+    .k2b-chart-segment-value
+  ) {
+  font-size: 12px;
+  fill: var(--k2-muted);
+  opacity: 1;
+}
+.k2b-ui .k2b-chart:is(.k2-ui *) .stdlib-chart-axis {
+  stroke: var(--k2-line-control);
+  opacity: 1;
+}
+.k2b-ui .k2b-chart:is(.k2-ui *) .stdlib-chart-grid {
+  stroke: var(--k2-line);
+  opacity: 1;
+}
+.k2b-ui .k2b-chart:is(.k2-ui *)
+  :is(
+    .stdlib-chart-slice,
+    .stdlib-chart-point,
+    .stdlib-chart-box-outlier,
+    .stdlib-chart-heatmap-cell,
+    .stdlib-chart-state-region
+  ) {
+  stroke: var(--k2-surface);
+}
+.k2b-ui .k2b-chart__empty:is(.k2-ui *) {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+/* The tooltip is a v2 overlay: the surface, hairline, radius and one shadow of a v2 popover, words in the meta role. */
+.k2b-ui [popover].k2b-tooltip.k2b-chart__tooltip:is(.k2-ui *) {
+  font: var(--k2-t-meta);
+  color: var(--k2-text);
+  background: var(--k2-surface);
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-overlay);
+  box-shadow: var(--k2-float);
+}
+
 .k2b-ui .k2b-chart .stdlib-chart a {
   @apply cursor-pointer;
 }
