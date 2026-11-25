@@ -452,7 +452,10 @@ export const Pane = (props: PaneProps) => {
  * Panes side by side inside content: a list beside its reader, a main column beside its info column. One hairline
  * between them; where a pane has a `width`, its line carries a grip.
  */
-Pane.Split = (props: { children: JSX.Element }) => {
+Pane.Split = (props: {
+  /** The panes side by side; a pane that is not there is `undefined`. */
+  children: JSX.Element;
+}) => {
   const [entries, setEntries] = createSignal<readonly SplitEntry[]>([]);
   const register = (entry: SplitEntry) => {
     setEntries((list) => [...list, entry]);
@@ -477,8 +480,8 @@ Pane.Split = (props: { children: JSX.Element }) => {
  */
 const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: string; text: string } | undefined; children: JSX.Element }) => {
   const resolved = resolveChildren(() => props.children);
-  // a pane hidden by `Show` stays in the list as nothing: it gets no seam
-  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && pane !== "");
+  // a pane hidden by `Show` or `{open && <Pane …/>}` stays in the list as what renders nothing: it gets no seam
+  const panes = () => resolved.toArray().filter((pane) => pane !== undefined && pane !== null && typeof pane !== "boolean" && pane !== "");
   const entryOf = (index: number) => {
     const pane = panes()[index];
     if (pane === undefined) return undefined;
@@ -553,7 +556,9 @@ export const Bar = (props: BarProps) => {
 export type BandProps = {
   /** A tone only by meaning: a note, AI, "yours", wrong, waiting. */
   tone?: "note" | "ai" | "yours" | "bad" | "warn";
+  /** A name for the band, for assistive technology. */
   label?: string;
+  /** `Text`, `Row`s, `Prose`, `Tiles` or fields. */
   children: JSX.Element;
 };
 
@@ -567,10 +572,13 @@ export const Band = (props: BandProps) => (
 // ── Cells ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type CellProps = {
+  /** A Tabler icon before the label. */
   icon: string;
   /** The data colour of the symbol, such as the colour of an area. */
   color?: string;
+  /** What the cell is about, such as "Geld heute". */
   label: string;
+  /** The key statement: words, a number or a `Chip`. */
   value: JSX.Element;
   /** A quiet line under the value. */
   meta?: JSX.Element;
@@ -585,7 +593,10 @@ export type CellProps = {
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
-export const Cells = (props: { children: JSX.Element }) => (
+export const Cells = (props: {
+  /** Two to four `Cells.Cell`. */
+  children: JSX.Element;
+}) => (
   <div class="k2-cells" data-k2-part="Cells">
     {props.children}
   </div>
@@ -627,10 +638,26 @@ Cells.Cell = (props: CellProps) => {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type Tile = { icon: string; title: string; meta?: string; href?: string };
+export type Tile = {
+  /** A Tabler icon for the kind of thing, such as `file-type-pdf`. */
+  icon: string;
+  /** The name, such as a file name. */
+  title: string;
+  /** A quiet line under the name, such as the size. */
+  meta?: string;
+  /** The tile opens this page or file. */
+  href?: string;
+};
 
 /** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
-export type TilesProps = { items: readonly Tile[]; more?: Action; label?: string };
+export type TilesProps = {
+  /** The tiles, in order. */
+  items: readonly Tile[];
+  /** One deed after the tiles, such as "Alle herunterladen". */
+  more?: Action;
+  /** A name for the tiles, for assistive technology. */
+  label?: string;
+};
 
 export const Tiles = (props: TilesProps) => (
   <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
@@ -660,12 +687,14 @@ export type CanvasProps = {
   label: string;
   /** The height of the drawing in px; the width comes from its place. */
   height?: number;
+  /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
 
 /**
  * The one way out: a surface with its own drawing, where an app may write its own CSS. Never measured by the rules.
  * It draws no line of its own; the structure around it separates it, and a drawing that needs an edge draws it.
+ * While the drawing loads, has no data or fails, `Loading`, `Empty` or `Failed` stand inside it and keep its height.
  */
 export const Canvas = (props: CanvasProps) => (
   <div

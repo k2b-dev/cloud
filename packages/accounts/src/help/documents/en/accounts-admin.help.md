@@ -33,7 +33,7 @@ Resolved addresses disappear from the list. You cannot delete your own account.
 ## Maintain users and groups {icon="user-cog"}
 
 :::reference
-- **Users:** Search accounts by uid, name, or email. Filter by provider and profile. Open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
+- **Users:** Search accounts by uid, name, or email. Filter by role, group, status (active, invited, expired), last sign-in, passkey, and provider; sort by name or last activity; group by group, where a person in several groups stands in each. The views **Without passkey**, **Invited**, **Expired**, and **Inactive admins** are ready-made filters. Open a user to edit profile fields, avatar, roles, provider, expiry, and group membership.
 - **Groups:** Open a group to review its facts, members, managers, and parent groups. Managers can add or remove users and groups where the page offers these changes.
 - **Linux identities:** While assignment is on in the Cloud administration under **Sign-in & security → Linux identities**, new local full accounts and promoted guests get Linux attributes automatically. Administrators can assign missing attributes to older accounts and override home and shell. FreeIPA values are read-only. Local groups can get a GID after the global setup. These actions do not enable computer sign-in or sudo.
 - **Deleted accounts:** Review accounts that were removed by a manual action, expiry cleanup, FreeIPA demotion, or a change of the sync scope. The row details keep their metadata available.

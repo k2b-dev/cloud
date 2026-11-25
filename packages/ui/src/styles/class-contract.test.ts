@@ -273,7 +273,9 @@ describe("@k2b/ui package class contract", () => {
           // A class inside `:is()` or `:has()` belongs to the compound around it.
           for (const compound of splitTopLevel(part, /[\s>~+]/).filter(Boolean)) {
             const classes = [...compound.matchAll(/\.([\w-]+)/g)].map((match) => match[1]!);
-            const unprefixed = classes.filter((name) => name !== "k2b-ui" && name !== "dark" && !name.startsWith("k2b-"));
+            const unprefixed = classes.filter(
+              (name) => name !== "k2b-ui" && name !== "k2-ui" && name !== "dark" && !name.startsWith("k2b-"),
+            );
             if (!unprefixed.length) continue;
             if (classes.some((name) => name.startsWith("k2b-") && name !== "k2b-ui")) continue;
             for (const name of unprefixed) if (!isForeignContract(name)) owned.add(`${file}: .${name}`);

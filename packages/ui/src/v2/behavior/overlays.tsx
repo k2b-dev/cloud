@@ -9,7 +9,7 @@ import { dialog as dialogPrimitive } from "@ui-sdk/core/dialog";
 import { drawer as drawerPrimitive } from "@ui-sdk/core/drawer";
 import { menu as menuPrimitive } from "@ui-sdk/core/menu";
 import { popover as popoverPrimitive } from "@ui-sdk/core/popover";
-import type { JSX } from "solid-js";
+import { type JSX, onCleanup } from "solid-js";
 import { type PartProps, popupComponent, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 import { useBehaviorMessages } from "./messages";
 
@@ -64,6 +64,42 @@ export type DialogOptions = OverlayOptions & {
   onDismissAttempt?: (reason: string) => void;
 };
 
+/**
+ * A sheet stands on the bottom of the screen. Core answers a change of its content's height with a spring that starts
+ * at the old height and moves the whole sheet: for a moment it stands off the bottom, and a tap there hits the backdrop
+ * and closes it (#4141). Core offers no way to leave that spring out, so it ends here, before the frame is drawn.
+ *
+ * Core starts the spring in its own ResizeObserver of the sheet, which may be made before or after this one (its sheet
+ * module loads on its own time). So this one only notes the change and observes a part inside the sheet: an
+ * observation deeper in the page answers in the next round of the same frame, after every observer of the sheet itself
+ * (the ResizeObserver specification's depth rule), and that round ends the spring. The sheet's first height is no change:
+ * its opening slides as before.
+ */
+const holdSheetBottom = (element: HTMLElement) => {
+  let height: number | undefined;
+  const after = new ResizeObserver(() => {
+    after.disconnect();
+    for (const animation of element.getAnimations()) animation.finish();
+  });
+  const sizes = new ResizeObserver(() => {
+    const now = element.offsetHeight;
+    // hidden (core shows a sheet once its module has loaded) or no sheet: the next height it shows is its first
+    if (now === 0 || element.getAttribute("data-presentation") !== "sheet") {
+      height = undefined;
+      return;
+    }
+    const changed = height !== undefined && now !== height;
+    height = now;
+    const inside = [...element.children].find((part) => part.getClientRects().length > 0);
+    if (changed && inside) after.observe(inside);
+  });
+  sizes.observe(element);
+  onCleanup(() => {
+    sizes.disconnect();
+    after.disconnect();
+  });
+};
+
 export function useDialog(options: () => DialogOptions = () => ({})): DialogParts {
   // An async action in the dialog announces that it is waiting; core's own text is English only.
   const t = useBehaviorMessages();
@@ -82,7 +118,14 @@ export function useDialog(options: () => DialogOptions = () => ({})): DialogPart
     Popup: (props) => (
       <>
         <Backdrop {...(props.backdrop ?? {})} />
-        <Content {...props} backdrop={undefined} />
+        <Content
+          {...props}
+          ref={(element: HTMLElement) => {
+            holdSheetBottom(element);
+            props.ref?.(element);
+          }}
+          backdrop={undefined}
+        />
       </>
     ),
     Title: slotComponent(handle, "title", "h2"),

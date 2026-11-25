@@ -209,6 +209,19 @@ test("fields: one control is labelled, a field of choices is a named group, a me
   });
 });
 
+test("a multi-line field shows its value in what the server sent, and keeps what is typed after hydration", async () => {
+  await withPage(async (page) => {
+    const note = page.getByRole("textbox", { name: "Notiz" });
+    // the text the browser parsed from the server's markup, before the client ran (#4148)
+    expect(
+      await page.evaluate(() => (window.__k2Sent instanceof Element ? window.__k2Sent.querySelector("textarea")?.value : undefined)),
+    ).toBe("\nZwei Zeilen\nzum Aufbau");
+    expect(await note.inputValue()).toBe("\nZwei Zeilen\nzum Aufbau");
+    await note.fill("Neu");
+    expect(await note.inputValue()).toBe("Neu");
+  });
+});
+
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');
@@ -317,6 +330,13 @@ for (const width of [1440, 390]) {
       const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
       expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
       expect(rowBox.height).toBe(heights.row2 + line);
+      // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
+      const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {
+        const l3 = element.querySelector<HTMLElement>(".k2-row-l3")!;
+        const end = element.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(element).paddingRight);
+        return { end: Math.round(end - l3.getBoundingClientRect().right), cut: getComputedStyle(l3).textOverflow };
+      });
+      expect(third).toEqual({ end: 0, cut: "ellipsis" });
       const button = (await page.getByRole("button", { name: "Für sich" }).boundingBox())!;
       const pane = (await page.locator('.k2-pane[aria-label="Mitte"]').boundingBox())!;
       expect(button.width).toBeLessThan(160);

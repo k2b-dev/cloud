@@ -30,8 +30,8 @@ export const Empty = (props: EmptyProps) => (
 
 export type FailedProps = {
   /**
-   * What could not be loaded and what stays as it is, such as "Unterhaltungen konnten nicht geladen werden. Deine
-   * Ansicht und Auswahl bleiben erhalten."
+   * What could not be loaded and what stays as it is, in one or two sentences. Example: "Unterhaltungen konnten nicht
+   * geladen werden. Deine Ansicht und Auswahl bleiben erhalten."
    */
   text: string;
   /** Loads again; the button says "Erneut versuchen" in the language of the page. */
@@ -113,7 +113,9 @@ export type LoadingProps = {
 
 /**
  * Loading: square placeholders in the heights of the real rows, so nothing moves when the data arrives. It stands
- * where the `List` will stand; a `Table` takes `loading` itself and keeps its head. Assistive technology hears
+ * where the `List` will stand; a `Table` takes `loading` itself and keeps its head. For a drawing, such as a chart,
+ * it stands inside the drawing's `Canvas` (with a `height`) and is one placeholder as high as it, like `Empty` and
+ * `Failed` there. Assistive technology hears
  * "Wird geladen…" (in the language of the page) from a status line; the placeholders themselves are hidden from it.
  */
 export const Loading = (props: LoadingProps) => (
