@@ -31,6 +31,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { TextEditorController } from "@k2b/ui/text-editor";
+import type { MenuEntry } from "@k2b/ui/v2";
 import {
   type Accessor,
   createEffect,
@@ -101,10 +102,10 @@ import { mailDraftJournalKey, serializeMailDraftContent } from "./mail-draft-jou
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
 import { createMailDraftSession } from "./mail-draft-session";
 import { quoteOriginalOf } from "./mail-quote-original";
-import type { MailReplyFrame, MailReplyFrameMenu, MailReplyFrameParts } from "./mail-reply-frame";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
 import { mailSendLaterPresets } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
+import { frameMenuEntries, type MailReplyFrame, type MailReplyFrameParts } from "./mail-reply-frame";
 import { writeMailSenderPreference } from "./mail-sender-preference";
 import type { MailReplyPosition } from "./mail-workspace-preferences";
 
@@ -2592,12 +2593,27 @@ export default function MailComposer(props: {
       ];
       if (box.frame) {
         const frame = box.frame;
-        // One menu for the frame's buttons: each opens its entries beside itself, and the focus returns to it.
-        const [frameMenu, setFrameMenu] = createSignal<{ menu: MailReplyFrameMenu; place: "head" | "foot" } | null>(null);
-        let openFrameMenuAt: ((anchor: HTMLElement, focus: HTMLElement) => void) | undefined;
-        const openMenu = (menu: MailReplyFrameMenu, anchor: HTMLElement, place: "head" | "foot") => {
-          setFrameMenu({ menu, place });
-          openFrameMenuAt?.(anchor, anchor);
+        // Send later in the frame's "More": the same presets as v1's split button, the time as each entry's hint.
+        const sendLaterEntries = (): MenuEntry[] => {
+          const timeZone = props.dateConfig.timeZone ?? "UTC";
+          const shown = mailSendLaterPresets(new Date(), timeZone);
+          // The time is taken at the click, so a menu left open across midnight still means the next morning.
+          const at = (preset: "tomorrow" | "monday") => mailSendLaterPresets(new Date(), timeZone)[preset];
+          return [
+            {
+              label: r().sendLaterTomorrow,
+              icon: "sunrise",
+              meta: dates.formatDateTime(shown.tomorrow, props.dateConfig),
+              onClick: () => void sendOrSayWhy({ scheduledAt: at("tomorrow") }),
+            },
+            {
+              label: r().sendLaterMonday,
+              icon: "calendar-week",
+              meta: dates.formatDateTime(shown.monday, props.dateConfig),
+              onClick: () => void sendOrSayWhy({ scheduledAt: at("monday") }),
+            },
+            { label: r().sendLaterCustom, icon: "clock", onClick: () => void schedule() },
+          ];
         };
         return (
           <section
@@ -2619,19 +2635,8 @@ export default function MailComposer(props: {
                 if (files.length > 0 && !disposed) void attachments.addFiles(files);
               }}
             />
-            <div class="mail-reply-frame-menus">
-              <Dropdown.Root
-                items={frameMenu()?.menu.items() ?? []}
-                label={frameMenu()?.menu.label()}
-                position={() => (frameMenu()?.place === "head" ? "bottom-left" : "top-left")}
-                openAt={(open) => {
-                  openFrameMenuAt = open;
-                }}
-              />
-            </div>
             {frame.render({
               label: () => t().inlineDraftLabel({ intent: inlineIntentLabel() }),
-              openMenu,
               editable,
               mode: frame.mode,
               to: (
@@ -2657,7 +2662,7 @@ export default function MailComposer(props: {
                     verifiedIdentities().length > 1
                       ? {
                           label: () => t().changeSender({ label: identity.label, address: identity.fromAddress }),
-                          items: identityMenuItems,
+                          items: () => frameMenuEntries(identityMenuItems()),
                           disabled: () => !editable(),
                         }
                       : null,
@@ -2698,7 +2703,7 @@ export default function MailComposer(props: {
                   </Show>
                   {box.banner?.()}
                   <Show when={showCc()}>
-                    <div class="mail-inline-draft-rows mail-inline-draft-recipients">
+                    <div class="mail-inline-draft-rows">
                       <span class="mail-inline-draft-field-label">Cc</span>
                       <MailRecipientInput
                         register={registerRecipientField}
@@ -2837,10 +2842,9 @@ export default function MailComposer(props: {
                         unavailable: t().unavailableSignature,
                       }).map((option) => ({
                         label: option.label,
-                        description: option.description,
-                        choice: "radio" as const,
-                        checked: () => option.value === (signatureTemplateId() ?? ""),
-                        action: () => setSignatureTemplateId(option.value || null),
+                        meta: option.description,
+                        checked: option.value === (signatureTemplateId() ?? ""),
+                        onClick: () => setSignatureTemplateId(option.value || null),
                       })),
                   };
                 },
@@ -2856,37 +2860,52 @@ export default function MailComposer(props: {
                   label: () => r().moreTools,
                   // Send later, then v1's tools: on a frame every tool beyond the mockup's four waits here.
                   items: () => [
-                    ...sendLaterItems(),
-                    {
-                      items: [
-                        { label: r().insertLink, icon: "ti ti-link", disabled: !editable(), action: () => void insertLink() },
-                        {
-                          label: r().emoji,
-                          icon: "ti ti-mood-smile",
-                          disabled: !editable(),
-                          action: () => setEmojiAnchor(composeBody() ?? null),
-                        },
-                        { label: r().image, icon: "ti ti-photo", disabled: !editable(), action: () => void chooseAttachments() },
-                        {
-                          label: r().writeLarge,
-                          icon: "ti ti-arrows-maximize",
-                          disabled: !editable() || uploadsInProgress(),
-                          action: () => void detachDraft(true),
-                        },
-                      ],
-                    },
-                    ...moreItems().map((section) =>
-                      "items" in section
-                        ? { ...section, items: section.items.filter((item) => !item.class?.includes("mail-reply-box-phone-only")) }
-                        : section,
-                    ),
+                    ...sendLaterEntries(),
+                    ...frameMenuEntries([
+                      {
+                        items: [
+                          { label: r().insertLink, icon: "ti ti-link", disabled: !editable(), action: () => void insertLink() },
+                          {
+                            label: r().emoji,
+                            icon: "ti ti-mood-smile",
+                            disabled: !editable(),
+                            action: () => setEmojiAnchor(composeBody() ?? null),
+                          },
+                          { label: r().image, icon: "ti ti-photo", disabled: !editable(), action: () => void chooseAttachments() },
+                          {
+                            label: r().writeLarge,
+                            icon: "ti ti-arrows-maximize",
+                            disabled: !editable() || uploadsInProgress(),
+                            action: () => void detachDraft(true),
+                          },
+                        ],
+                      },
+                      ...moreItems().map((section) =>
+                        "items" in section
+                          ? { ...section, items: section.items.filter((item) => !item.class?.includes("mail-reply-box-phone-only")) }
+                          : section,
+                      ),
+                    ]),
                   ],
                 },
               },
-              status: () => {
-                const current = boxStatus();
-                return current ? { icon: current.icon.replace(/^ti-/, ""), text: current.text, busy: current.tone === "busy" } : null;
-              },
+              status: (
+                <span
+                  class="mail-inline-draft-status mail-reply-box-status"
+                  data-mail-save-status={saveStatus()}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <Show when={boxStatus()}>
+                    {(current) => (
+                      <>
+                        <i class={`ti ${current().icon}${current().icon === "ti-loader-2" ? " animate-spin" : ""}`} aria-hidden="true" />
+                        <span class="mail-reply-box-status-text">{current().text}</span>
+                      </>
+                    )}
+                  </Show>
+                </span>
+              ),
               discard: {
                 label: () => r().discardReply,
                 disabled: () => !editable() || discard.loading() || (!draft() && !changedHere()),

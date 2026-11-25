@@ -1,7 +1,7 @@
 import { Composer } from "@k2b/editor/composer";
-import { Button, Icon, Text } from "@k2b/ui/v2";
+import { Button, Menu, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
-import type { MailReplyFrameMenu, MailReplyFrameParts } from "../mail-reply-frame";
+import type { MailReplyFrameParts } from "../mail-reply-frame";
 import type { MailV2Text } from "./mail-v2-messages";
 
 /**
@@ -9,27 +9,23 @@ import type { MailV2Text } from "./mail-v2-messages";
  * sender, with Cc and Bcc; the text is Mail's editor; the foot holds the four tools, "More", the status, Discard and
  * Send. Every deed is the composer's own (`MailComposer`): the frame places it and decides nothing.
  *
- * k2b-ui gaps, until v2 has them: no recipient field (Mail's chips stand in the head), no menu (#4109; the composer
- * opens v1's menu beside the v2 button), no split button (Send later waits under "More"), no pressed or pending
- * state of a button (Formatting and a running Send show only through the text they change and the status).
+ * k2b-ui gaps, until v2 has them: no recipient field (Mail's chips stand in the head), no split button (Send later
+ * waits under "More"), no pressed or pending state of a button (Formatting and a running Send show only through the
+ * text they change and the status), no section heading in a menu (sections stand between lines).
  */
 export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: MailV2Text }) {
   const parts = () => props.parts;
-  const menuButton = (menu: MailReplyFrameMenu, place: "head" | "foot") => (event: MouseEvent) => {
-    if (event.currentTarget instanceof HTMLElement) parts().openMenu(menu, event.currentTarget, place);
-  };
   return (
     <Composer
       label={parts().label()}
       head={
         <>
-          <Button
+          <Menu
             variant="ghost"
             icon={parts().mode.icon()}
             label={parts().mode.label()}
-            menu
             disabled={parts().mode.disabled?.()}
-            onClick={menuButton(parts().mode, "head")}
+            items={parts().mode.items()}
           />
           <Text type="meta">{props.text.to}</Text>
           {parts().to}
@@ -42,9 +38,9 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
             {(sender) => (
               <Show when={sender().menu} fallback={<Text type="meta">{props.text.from({ name: sender().text })}</Text>}>
                 {(menu) => (
-                  <Button variant="text" menu disabled={menu().disabled?.()} onClick={menuButton(menu(), "head")}>
+                  <Menu variant="text" label={menu().label()} disabled={menu().disabled?.()} items={menu().items()}>
                     {props.text.from({ name: sender().text })}
-                  </Button>
+                  </Menu>
                 )}
               </Show>
             )}
@@ -75,12 +71,12 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
           <Button variant="ghost" icon="paperclip" label={parts().tools.attach.label()} onClick={() => parts().tools.attach.run()} />
           <Show when={parts().tools.signature()}>
             {(signature) => (
-              <Button
+              <Menu
                 variant="ghost"
                 icon="signature"
                 label={signature().label()}
                 disabled={signature().disabled?.()}
-                onClick={menuButton(signature(), "foot")}
+                items={signature().items()}
               />
             )}
           </Show>
@@ -91,21 +87,12 @@ export function MailReplyFrameV2(props: { parts: MailReplyFrameParts; text: Mail
             disabled={parts().tools.assistant.disabled()}
             onClick={() => parts().tools.assistant.run()}
           />
-          <Button variant="ghost" icon="dots" label={parts().tools.more.label()} onClick={menuButton(parts().tools.more, "foot")} />
+          <Menu variant="ghost" icon="dots" label={parts().tools.more.label()} items={parts().tools.more.items()} />
         </>
       }
       actions={
         <>
-          <span role="status" aria-live="polite">
-            <Show when={parts().status()}>
-              {(status) => (
-                <>
-                  <Icon name={status().icon} tone="muted" />
-                  <Text type="meta">{status().text}</Text>
-                </>
-              )}
-            </Show>
-          </span>
+          {parts().status}
           <Button
             variant="ghost"
             icon="trash"

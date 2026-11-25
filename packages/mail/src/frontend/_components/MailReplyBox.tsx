@@ -36,7 +36,7 @@ import {
   writeMailReplyNote,
 } from "./mail-reply-box";
 import { mailReplyBoxMessages } from "./mail-reply-box-messages";
-import type { MailReplyFrame } from "./mail-reply-frame";
+import { frameMenuEntries, type MailReplyFrame } from "./mail-reply-frame";
 
 type ComposerModule = typeof import("./MailComposer");
 type ComposerParts = { Composer: ComposerModule["default"]; signatures: MailComposerSignatures };
@@ -894,7 +894,7 @@ export default function MailReplyBox(props: {
         mode: {
           icon: () => modeIcon(mode()).replace(/^ti-/, ""),
           label: () => t().changeMode({ mode: modeLabel(mode()) }),
-          items: modeItems,
+          items: () => frameMenuEntries(modeItems()),
           disabled: switching,
         },
       },

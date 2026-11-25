@@ -1,4 +1,5 @@
 import type { DropdownItem } from "@k2b/ui";
+import type { MenuEntry, MenuItem } from "@k2b/ui/v2";
 import type { Accessor, JSX } from "solid-js";
 
 /**
@@ -16,16 +17,29 @@ export type MailReplyFrame = {
 };
 
 /** A menu the frame opens from its own button; the entries are the composer's or the box's. */
-export type MailReplyFrameMenu = { label: () => string; items: () => DropdownItem[]; disabled?: () => boolean };
+export type MailReplyFrameMenu = { label: () => string; items: () => MenuEntry[]; disabled?: () => boolean };
+
+const menuItem = (item: Exclude<DropdownItem, { items: unknown }>): MenuItem => ({
+  label: item.label,
+  icon: item.icon?.replace(/^ti\s+/, "").replace(/^ti-/, ""),
+  disabled: item.disabled,
+  danger: item.variant === "danger",
+  meta: item.description,
+  ...("choice" in item ? { checked: typeof item.checked === "function" ? item.checked() : item.checked } : {}),
+  ...(item.action ? { onClick: item.action } : {}),
+  ...(item.href ? { href: item.href } : {}),
+});
+
+/**
+ * The composer's and the box's menus, which v1 draws as `Dropdown` entries, as entries of a v2 `Menu`: each section
+ * stands between lines, a radio or checkbox choice is an entry with a tick, a description its quiet hint.
+ */
+export const frameMenuEntries = (items: readonly DropdownItem[]): MenuEntry[] =>
+  items.flatMap((item): MenuEntry[] => ("items" in item ? ["separator", ...item.items.map(menuItem), "separator"] : [menuItem(item)]));
 
 export type MailReplyFrameParts = {
   /** What is being written, for assistive technology, such as "Reply". */
   label: () => string;
-  /**
-   * Opens one of the menus below beside `anchor`, the button that asked, and returns the focus to it. The composer
-   * draws the menu (v1's; v2 has no menu of its own yet), so a frame only places its buttons.
-   */
-  openMenu: (menu: MailReplyFrameMenu, anchor: HTMLElement, place: "head" | "foot") => void;
   editable: Accessor<boolean>;
   /** Reply, Reply all, Forward or the internal note: the arrow at the start of the head. */
   mode: MailReplyFrameMenu & { icon: () => string };
@@ -52,8 +66,8 @@ export type MailReplyFrameParts = {
     /** Link, emoji, image, preview, quote, calendar, delivery options, plain text, subject, write large, window, later. */
     more: MailReplyFrameMenu;
   };
-  /** What happens to the text right now: saving, saved, offline, uploading. */
-  status: () => { icon: string; text: string; busy: boolean } | null;
+  /** What happens to the text right now (saving, saved, offline, uploading), at its fixed place; a phone shows the symbol. */
+  status: JSX.Element;
   discard: { label: () => string; disabled: () => boolean; run: () => void };
   send: {
     label: () => string;

@@ -2293,12 +2293,10 @@
 .k2b-ui .mail-reply-frame[hidden] {
   display: none;
 }
-/* The frame's one menu has no trigger of its own; it opens beside the frame's buttons and takes no room. */
-.k2b-ui .mail-reply-frame-menus {
-  position: absolute;
-  width: 0;
-  height: 0;
-  overflow: visible;
+/* The recipients take the room the head's words leave, so "To", the sender, Cc and Bcc never wrap on a phone. */
+.k2b-ui .mail-reply-box-recipients.mail-reply-frame-to {
+  min-width: 4rem;
+  flex: 1 1 0;
 }
 /* In the frame the text starts on the frame's own edge and as high as the resting composer's words: two lines to
    write in above the signature, the same height as at rest. A long text scrolls inside, the head and foot stay. */

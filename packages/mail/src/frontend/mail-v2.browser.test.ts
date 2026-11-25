@@ -270,7 +270,9 @@ describe("Mail on the v2 pilot", () => {
         }
         if (rest === "" && method === "GET") return route.fulfill({ json: draft });
         if (rest === "/safety-review")
-          return route.fulfill({ json: { revision: draft.revision, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) } });
+          return route.fulfill({
+            json: { revision: draft.revision, fingerprint: "f".repeat(64), warnings: [], contentHash: "a".repeat(64) },
+          });
       }
       return route.fallback();
     });
@@ -412,10 +414,11 @@ describe("Mail on the v2 pilot in its live states", () => {
       await page.locator('[data-k2-part="Canvas"] [contenteditable="true"]').first().waitFor();
       await settled(page);
       const open = await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').boundingBox();
-      // 8 px from the column's edges and 12 px below the summary, like the resting frame, and as high: opening moves
-      // the thread below by no more than the editor's own line.
+      // 8 px from the column's edges and 12 px below the summary, like the resting frame. Head and foot keep their
+      // height; the text grows only by the quote of the answered message, which shows what goes along, and one line.
       expect({ left: open?.x, top: open?.y, width: open?.width }).toEqual({ left: resting?.x, top: resting?.y, width: resting?.width });
-      expect(Math.abs((open?.height ?? 0) - (resting?.height ?? 0))).toBeLessThanOrEqual(24);
+      const quote = (await page.locator('[data-k2-part="Canvas"] .mail-quote-card').boundingBox())?.height ?? 0;
+      expect((open?.height ?? 0) - (resting?.height ?? 0) - quote).toBeLessThanOrEqual(24);
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await linesInsideMessages(page)).toEqual([]);
     } finally {
