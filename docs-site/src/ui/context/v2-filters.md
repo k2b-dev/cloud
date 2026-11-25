@@ -82,6 +82,13 @@ const [state, setState] = createSignal(props.state); // what the server parsed
 - Points in time (`timeRange`) are shown and entered in `timeZone`, "UTC" by
   default. Pass the person's zone from the same setting on the server and in
   the island, so the first picture and the island show the same minutes.
+  Around a change of the clocks, a bound that was not changed keeps its
+  instant; a typed time that occurs twice means its first occurrence, and a
+  typed time that does not exist (the hour skipped in spring) is refused at
+  its field.
+- Values that would make the address longer than 2,000 characters are
+  offered locked, with one hint under the list (linked to them through
+  `aria-describedby`): remove a filter or shorten the search.
 - A lookup code nobody can name (deleted) is asked for once and stays a code
   with a warning; opening its editor asks again.
 - Field and value labels come from the app's catalog through the

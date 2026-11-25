@@ -53,6 +53,8 @@ no × at its default; changed, it is tinted and × returns it to the default.
   code for different things.
 - `timeZone` (default "UTC") is the zone points in time are read and entered
   in. Give the person's zone, the same on the server and in the island.
+  Around a change of the clocks an unchanged bound keeps its instant, a typed
+  time that occurs twice means its first occurrence, a skipped one is refused.
 - `views.current` carries the query the view holds: renaming keeps it,
   updating replaces it with the state shown.
 - `@k2b/ui` filters nothing and stores nothing. The server filters; saved

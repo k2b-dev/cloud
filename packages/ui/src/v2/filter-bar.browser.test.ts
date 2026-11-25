@@ -597,3 +597,59 @@ test("lookup: Arrow up from the second entry goes to the first, and from the fir
     expect(await page.evaluate(() => document.activeElement?.getAttribute("type"))).toBe("search");
   });
 });
+
+// ── Delta review of #4136 (a400358): each test failed before its fix ───────────────────────────────────────────
+
+test("daylight saving: an unchanged bound keeps its instant, a time that does not exist is refused", async () => {
+  // 00:30Z is 02:30 summer time in Berlin; 02:30 comes twice that night. 03:00Z is 04:00 winter time.
+  const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
+  await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
+    await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
+    const fields = page.locator(".k2-fpop .k2-fed-field input");
+    await fields.nth(1).press("Enter");
+    await page.waitForTimeout(100);
+    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    // 02:30 on 29 March does not exist in Berlin: the clocks jump from 02:00 to 03:00
+    await fields.first().fill("2026-03-29T02:30");
+    await fields.first().press("Enter");
+    await page.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
+    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+  });
+});
+
+test("retrying a failed view update writes exactly what failed, not what the list shows by then", async () => {
+  await withPage("view=person-1&status=consigned&category=furniture&price=2000..", async (page) => {
+    await page.evaluate(() => {
+      window.__failStore = true;
+    });
+    await page.getByRole("button", { name: "Ansicht" }).click();
+    await page.getByRole("menuitem", { name: /„Teure Möbel“ aktualisieren/ }).click();
+    await page.getByText("„Teure Möbel“ konnte nicht gespeichert werden. Die Ansicht bleibt, wie sie war.").waitFor();
+    // the list moves on before the retry
+    await page.getByRole("button", { name: "Filter Status entfernen" }).click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has("status"));
+    await page.evaluate(() => {
+      window.__failStore = false;
+    });
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.waitForFunction(() => (window.__changes ?? []).some((change) => change.startsWith("saved")));
+    expect(await page.evaluate(() => window.__changes?.filter((change) => change.startsWith("saved")))).toEqual([
+      "saved person Teure Möbel status=consigned&category=furniture&price=2000..",
+    ]);
+  });
+});
+
+test("options locked by the full address say why and what to do, visibly and to assistive technology", async () => {
+  const base = "status=consigned&q=";
+  const search = `${base}${"x".repeat(1995 - base.length)}`;
+  await withPage(search, async (page) => {
+    await page.locator(".k2-stmt-b").first().click();
+    const hint = page.getByText("Die Adresse ist voll. Entferne einen Filter oder kürze die Suche, um mehr zu wählen.");
+    await hint.waitFor();
+    const id = (await hint.getAttribute("id")) ?? "";
+    expect(id).toBeTruthy();
+    const option = page.getByRole("option", { name: /Fotografiert/ });
+    expect(await option.getAttribute("aria-disabled")).toBe("true");
+    expect((await option.getAttribute("aria-describedby"))?.split(" ")).toContain(id);
+  });
+});

@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
@@ -95,10 +95,21 @@ const wallTime = (moment: number, timeZone: string): string => {
   );
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
 };
-const fromWallTime = (wall: string, timeZone: string): number => {
+/**
+ * The moment of a wall time in a zone, or `undefined` when the wall time does not exist there (the clocks jump over
+ * it in spring). A wall time that exists twice (the clocks go back in autumn) means its first occurrence; an editor
+ * keeps the instant of a bound that was not changed, so this rule only applies to a time that was typed.
+ */
+const fromWallTime = (wall: string, timeZone: string): number | undefined => {
   const guess = Date.parse(`${wall}:00Z`);
+  if (Number.isNaN(guess)) return undefined;
   const offset = (moment: number) => Date.parse(`${wallTime(moment, timeZone)}:00Z`) - moment;
-  return guess - offset(guess - offset(guess));
+  const halfDay = 12 * 60 * 60 * 1000;
+  // the zone's offsets half a day before and after: around a change of the clocks they differ
+  const candidates = [guess - offset(guess - halfDay), guess - offset(guess + halfDay)]
+    .filter((moment) => wallTime(moment, timeZone) === wall)
+    .sort((a, b) => a - b);
+  return candidates[0];
 };
 
 const useFormats = (timeZone: () => string): (() => Formats) => {
@@ -540,8 +551,9 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
               changed={changed()}
               onSave={() => setSaving({ mode: "new" })}
               onRename={(view) => setSaving({ mode: "rename", view })}
-              onUpdate={async (view) => {
-                const saved = await view.store.save({ key: view.key, label: view.label, query: stateText(props.query, props.state) });
+              query={stateText(props.query, props.state)}
+              onUpdate={async (view, query) => {
+                const saved = await view.store.save({ key: view.key, label: view.label, query });
                 views().onSaved?.(saved, view.store);
                 return saved;
               }}
@@ -860,6 +872,9 @@ const Options = (props: {
   onChange: (value: string[]) => void;
 }) => {
   const t = useFilterMessages();
+  const hint = createUniqueId();
+  const locked = (value: string) => props.possible !== undefined && !props.value.includes(value) && !props.possible(value);
+  const anyLocked = () => props.options.some((option) => locked(option.value));
   const list = useListbox(() => ({
     multiple: props.multiple,
     value: props.multiple ? [...props.value] : (props.value[0] ?? null),
@@ -868,7 +883,7 @@ const Options = (props: {
   }));
   return (
     <>
-      <list.Root class="k2-opts" aria-label={props.label}>
+      <list.Root class="k2-opts" aria-label={props.label} aria-describedby={anyLocked() ? hint : undefined}>
         <For each={props.options}>
           {(option) => {
             const on = () => props.value.includes(option.value);
@@ -877,7 +892,8 @@ const Options = (props: {
                 class="k2-opt"
                 value={option.value}
                 label={option.label}
-                disabled={props.possible ? !props.value.includes(option.value) && !props.possible(option.value) : false}
+                disabled={locked(option.value)}
+                aria-describedby={locked(option.value) ? hint : undefined}
                 data-zero={props.counts?.[option.value] === 0 ? "" : undefined}
               >
                 <Show
@@ -905,6 +921,12 @@ const Options = (props: {
           }}
         </For>
       </list.Root>
+      {/* why some values are locked, and what frees them; the locked options point here */}
+      <Show when={anyLocked()}>
+        <p class="k2-fed-hint" id={hint}>
+          {t().addressFull}
+        </p>
+      </Show>
       <Show when={props.counts}>
         <p class="k2-fed-hint">{t().countsHint}</p>
       </Show>
@@ -1065,16 +1087,22 @@ const PeriodEditor = (props: {
     const moment = Date.parse(text.replace(/Z$/, ":00Z"));
     return Number.isNaN(moment) ? "" : wallTime(moment, props.timeZone);
   };
-  const fromField = (text: string) => {
-    if (!text) return undefined;
-    if (day) return text;
+  /**
+   * A field's text as a bound of the address. A bound whose field was not changed keeps its instant, also when its wall
+   * time exists twice; a wall time that does not exist is `missing` and refused at the field.
+   */
+  const bound = (text: string, original: string | undefined): { value?: string; missing?: true } => {
+    if (!text) return {};
+    if (day) return { value: text };
+    if (original !== undefined && text === toField(original)) return { value: original };
     const moment = fromWallTime(text, props.timeZone);
-    return Number.isNaN(moment) ? undefined : `${new Date(moment).toISOString().slice(0, 16)}Z`;
+    return moment === undefined ? { missing: true } : { value: `${new Date(moment).toISOString().slice(0, 16)}Z` };
   };
   const range = () => (props.value?.kind === "range" ? props.value : undefined);
   const [from, setFrom] = createSignal(toField(range()?.from));
   const [to, setTo] = createSignal(toField(range()?.to));
   const [rejected, setRejected] = createSignal(false);
+  const [missing, setMissing] = createSignal(false);
   // the fields follow the filter when it changes elsewhere; what is typed and not yet applied stays until then
   createEffect(
     on(
@@ -1083,21 +1111,25 @@ const PeriodEditor = (props: {
         setFrom(toField(range()?.from));
         setTo(toField(range()?.to));
         setRejected(false);
+        setMissing(false);
       },
       { defer: true },
     ),
   );
   const invalid = () => {
-    const low = fromField(from());
-    const high = fromField(to());
+    const low = bound(from(), range()?.from).value;
+    const high = bound(to(), range()?.to).value;
     return low !== undefined && high !== undefined && low > high;
   };
   const commit = () => {
     setRejected(false);
-    if (invalid()) return;
-    const low = fromField(from());
-    const high = fromField(to());
-    setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { kind: "range", from: low, to: high }));
+    const low = bound(from(), range()?.from);
+    const high = bound(to(), range()?.to);
+    setMissing(Boolean(low.missing || high.missing));
+    if (missing() || invalid()) return;
+    setRejected(
+      !props.onChange(low.value === undefined && high.value === undefined ? undefined : { kind: "range", from: low.value, to: high.value }),
+    );
   };
   return (
     <div class="k2-fed-body" data-flush="">
@@ -1119,7 +1151,7 @@ const PeriodEditor = (props: {
             label={t().from_}
             type={day ? "date" : "datetime-local"}
             value={from()}
-            invalid={invalid() || rejected()}
+            invalid={invalid() || rejected() || missing()}
             onCommit={(text, unreadable) => {
               if (unreadable) return setRejected(true);
               setFrom(text);
@@ -1133,7 +1165,7 @@ const PeriodEditor = (props: {
             label={t().to}
             type={day ? "date" : "datetime-local"}
             value={to()}
-            invalid={invalid() || rejected()}
+            invalid={invalid() || rejected() || missing()}
             onCommit={(text, unreadable) => {
               if (unreadable) return setRejected(true);
               setTo(text);
@@ -1143,9 +1175,9 @@ const PeriodEditor = (props: {
         </div>
       </Show>
       {/* also without a custom range: a preset the address cannot hold says so here */}
-      <Show when={invalid() || rejected()}>
+      <Show when={invalid() || rejected() || missing()}>
         <p class="k2-fed-error" role="alert">
-          {invalid() ? t().rangeInvalid : t().valueRejected}
+          {missing() ? t().timeMissing : invalid() ? t().rangeInvalid : t().valueRejected}
         </p>
       </Show>
     </div>
@@ -1332,7 +1364,10 @@ const ViewMenu = (props: {
   changed: boolean;
   onSave: () => void;
   onRename: (view: { key: string; label: string; query: string; store: ViewStore }) => void;
-  onUpdate: (view: { key: string; label: string; query: string; store: ViewStore }) => Promise<SavedListView>;
+  /** The state shown, as the query an update writes. */
+  query: string;
+  /** Writes `query` into the view; a retry writes the same view and query again. */
+  onUpdate: (view: { key: string; label: string; query: string; store: ViewStore }, query: string) => Promise<SavedListView>;
 }) => {
   const t = useFilterMessages();
   const toast = useToast();
@@ -1369,7 +1404,11 @@ const ViewMenu = (props: {
         icon: "device-floppy",
         disabled: !props.changed || !mine.store.writable,
         meta: !mine.store.writable ? t().notAllowed : props.changed ? undefined : t().nothingChanged,
-        onClick: () => attempt(() => props.onUpdate(mine), t().updateFailed({ name: mine.label })),
+        onClick: () => {
+          // the write is fixed when it is asked for: a retry writes this view and this query, whatever the list shows then
+          const query = props.query;
+          return attempt(() => props.onUpdate(mine, query), t().updateFailed({ name: mine.label }));
+        },
       });
     }
     deeds.push({
