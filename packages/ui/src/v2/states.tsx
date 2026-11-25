@@ -133,6 +133,20 @@ export const LoadingStatus = () => {
   );
 };
 
+/**
+ * A value still on its way (internal: a loading `Facts` and `Cells.Cell`): a quiet bar exactly one line of the value
+ * high, so nothing moves when the value comes; assistive technology hears "loading" at its place.
+ */
+export const PlaceholderValue = () => {
+  const t = useUiMessages();
+  return (
+    <>
+      <span class="k2-skel" aria-hidden="true" />
+      <span class="k2-hidden-text">{t().loading}</span>
+    </>
+  );
+};
+
 /** Rows of placeholders in the shape of `Row` (internal: `Loading` and the phone list of a loading `Table`). */
 export const PlaceholderRows = (props: { rows: number; lines: 1 | 2 | 3 }) => (
   <Index each={Array.from({ length: Math.max(0, props.rows) })}>

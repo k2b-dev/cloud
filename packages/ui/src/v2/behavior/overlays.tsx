@@ -157,8 +157,11 @@ export type PopoverParts = {
   Close: SlotComponent;
 };
 
-/** A non-modal popover next to its trigger; Escape and an outside press close it. */
-export function usePopover(options: () => OverlayOptions = () => ({})): PopoverParts {
+/**
+ * A non-modal popover next to its trigger; Escape and an outside press close it. `presentation: "sheet"` slides it up
+ * from the bottom of the screen instead, modal, and a swipe down closes it too.
+ */
+export function usePopover(options: () => OverlayOptions & { presentation?: "popover" | "sheet" } = () => ({})): PopoverParts {
   const handle = usePrimitive(popoverPrimitive, options);
   return {
     Trigger: slotComponent(handle, "trigger", "button"),

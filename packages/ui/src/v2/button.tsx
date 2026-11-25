@@ -149,14 +149,15 @@ export const ActionButton = (props: { action: Action; variant?: ButtonProps["var
   </Show>
 );
 
-/** The copy button beside a value (internal to Facts). */
-export const CopyButton = (props: { label: string; value: string }) => {
+/** The copy button beside a value (internal to Facts); `disabled` while the value is on its way. */
+export const CopyButton = (props: { label: string; value: string; disabled?: boolean }) => {
   const t = useUiMessages();
   return (
     <Button
       variant="ghost"
       icon="copy"
       label={`${t().copy}: ${props.label}`}
+      disabled={props.disabled}
       onClick={() => {
         void navigator.clipboard?.writeText(props.value);
       }}

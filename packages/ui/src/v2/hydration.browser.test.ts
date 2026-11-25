@@ -225,6 +225,49 @@ test("controls without a handler keep their own state, and the shape shows it", 
   });
 });
 
+// Facts and cells whose values are on their way keep the shape of the loaded ones: labels and hints stay, each value
+// is a bar of its line's height, and nothing moves when the values come (#4152).
+for (const width of [1440, 390])
+  test(`at ${width}: loading facts and cells stand in the shape of the loaded ones`, async () => {
+    await withPage(async (page) => {
+      const shape = () =>
+        page.evaluate(() =>
+          [...document.querySelectorAll(".k2-facts, .k2-fact-pair > *, .k2-cells, .k2-cell, .k2-cell > *")].map((element) => {
+            const box = element.getBoundingClientRect();
+            return [element.className || element.tagName, Math.round(box.top), Math.round(box.left), Math.round(box.height)].join(" ");
+          }),
+        );
+      const loaded = await shape();
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(true));
+      await settled(page);
+      // places and heights, not widths: an inline value's bar is shorter than its words, the line keeps its height
+      expect(await shape()).toEqual(loaded);
+      const said = await page.evaluate(() => ({
+        busy: [...document.querySelectorAll('[aria-busy="true"]')].map((element) => element.className),
+        values: [...document.querySelectorAll(".k2-fact-value, .k2-cell-value")].map((value) => value.textContent?.trim()),
+        labels: [...document.querySelectorAll(".k2-fact-pair > dt, .k2-cell-label")].map((label) => label.textContent?.trim()),
+      }));
+      expect(said.busy).toEqual(["k2-facts", "k2-facts", "k2-cell", "k2-cell"]);
+      expect(said.values).toEqual([
+        "Wird geladen...",
+        "Wird geladen...Lager Nord",
+        "Wird geladen...",
+        "Wird geladen...",
+        "Wird geladen...",
+      ]);
+      expect(said.labels).toEqual(["Kundennr.", "Ort", "Stand", "Offen", "Erledigt"]);
+      // the copy button keeps its place, not yet usable
+      const copy = page.locator(".k2-fact-pair > dd > .k2-btn");
+      expect(await copy.count()).toBe(1);
+      expect(
+        await copy.evaluate((button) => [button.getAttribute("aria-label")?.endsWith("Kundennr."), button.matches(":disabled")]),
+      ).toEqual([true, true]);
+      await page.evaluate(() => globalThis.__k2FactsLoading?.(false));
+      await settled(page);
+      expect(await shape()).toEqual(loaded);
+    }, width);
+  });
+
 test("facts are pairs of term and value, Markdown in prose runs nothing", async () => {
   await withPage(async (page) => {
     const facts = await page.evaluate(() => {
