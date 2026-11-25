@@ -19,3 +19,7 @@ export const StoreChip = (props: { store: BaseStoreStatus; t: StoreWords }) => {
   const state = () => storeState(props.store, props.t);
   return <Chip status={state().status ?? "ok"}>{state().label}</Chip>;
 };
+
+/** The data colour of a base, from its colour setting, for its symbol in lists. */
+export const baseColor = (color: string): string =>
+  ({ zinc: "#52525b", blue: "#2563eb", emerald: "#059669", amber: "#d97706", red: "#dc2626" })[color] ?? "#2563eb";

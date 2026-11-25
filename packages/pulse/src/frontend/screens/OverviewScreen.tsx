@@ -1,22 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Dialog,
-  Empty,
-  Field,
-  Input,
-  List,
-  Pane,
-  Row,
-  Section,
-  StatusRow,
-  Table,
-  Text,
-  useToast,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Bar, Button, Dialog, Empty, Field, Input, List, Pane, Row, Section, StatusRow, Text, useToast, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { PulseBase } from "../../contracts";
@@ -24,8 +8,9 @@ import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
 import { baseStoreMessages } from "../workspace/base-store-messages";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
+import { iconName } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { StoreChip } from "./store-state";
+import { baseColor, StoreChip } from "./store-state";
 
 export type OverviewScreenProps = {
   bases: PulseBase[];
@@ -119,37 +104,29 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             />
           }
         >
-          {/* k2b-ui gap: v2 Table does not virtualize yet (lane MW); bases per person stay in the low hundreds. */}
-          <Table
-            label={t().yourBases}
-            rows={shown().slice(0, visible())}
-            rowKey={(base) => base.id}
-            open={(base) => ({ href: baseHref(base) })}
-            empty={{ icon: "search", text: t().noMatchingBases, action: { label: words().clearSearch, onClick: () => search("") } }}
-            phone={(base) => ({ lines: [base.name, base.description || words().retentionDays({ days: base.rawRetentionDays })] })}
-            columns={[
-              {
-                title: words().baseColumn,
-                width: { min: 220, default: 360 },
-                cell: (base) => ({ lines: [base.name, base.description || "—"] }),
-              },
-              {
-                title: words().membersColumn,
-                align: "end",
-                width: { min: 96, default: 110 },
-                drop: true,
-                cell: (base) => String(base.memberCount),
-              },
-              {
-                title: words().retentionColumn,
-                align: "end",
-                width: { min: 100, default: 120 },
-                drop: true,
-                cell: (base) => words().retentionDays({ days: base.rawRetentionDays }),
-              },
-              { title: words().storeColumn, cell: (base) => <StoreChip store={base.store} t={store()} /> },
-            ]}
-          />
+          {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); 100 rows show at a time. */}
+          <Show
+            when={shown().length > 0}
+            fallback={<Empty icon="search" text={t().noMatchingBases} action={{ label: words().clearSearch, onClick: () => search("") }} />}
+          >
+            <List label={t().yourBases}>
+              <For each={shown().slice(0, visible())}>
+                {(base) => (
+                  <Row
+                    icon={iconName(base.icon)}
+                    color={baseColor(base.color)}
+                    lines={[
+                      base.name,
+                      `${base.description ? `${base.description} · ` : ""}${words().retentionDays({ days: base.rawRetentionDays })}`,
+                    ]}
+                    meta={words().membersMeta({ count: base.memberCount })}
+                    end={<StoreChip store={base.store} t={store()} />}
+                    href={baseHref(base)}
+                  />
+                )}
+              </For>
+            </List>
+          </Show>
           <Show when={shown().length > visible()}>
             <Bar
               start={
