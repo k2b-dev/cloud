@@ -148,6 +148,11 @@ const useField = () => useContext(FieldContext);
 export type InputProps = {
   value?: string;
   placeholder?: string;
+  /**
+   * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
+   * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
+   * has the focus and folds back, its words kept, when the focus leaves.
+   */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
