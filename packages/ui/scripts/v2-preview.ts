@@ -168,10 +168,15 @@ const page = (fonts: boolean) =>
   `solid-island,solid-client{display:contents}</style></head>` +
   `<body class="k2-ui" data-theme="light"><div class="frame">${markup}</div></body></html>`;
 
+/** The markup without its <style> elements, which the outline does not read. */
+const withoutStyles = (html: string) => html.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+
 if (textOnly) {
   const { Window } = await import("happy-dom");
   const window = new Window();
-  window.document.body.innerHTML = `<div class="k2-ui">${markup}</div>`;
+  // happy-dom drops everything after a <style> inside an <svg> (a chart brings one), so the outline stopped at the first
+  // Canvas with a chart; the outline needs no styles, so they leave before the markup is parsed
+  window.document.body.innerHTML = `<div class="k2-ui">${withoutStyles(markup)}</div>`;
   const outline = describeV2(window.document.body.firstElementChild as unknown as Element);
   if (outline.includes("\nProblems (")) failed = true;
   section("outline (server markup)", outline.split("\n"));
