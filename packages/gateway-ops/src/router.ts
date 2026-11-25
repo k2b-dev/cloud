@@ -7,10 +7,8 @@ import { apiRoutes } from "./api";
 import { app, ssr } from "./config";
 import gatewayPage from "./frontend/page";
 import { gatewayOpsApiErrorMessage } from "./messages";
-import alertsPage from "./observability/alerts/page";
 import capabilitiesApiRoutes from "./observability/capabilities/api";
 import capabilitiesPage from "./observability/capabilities/page";
-import healthCheckPage from "./observability/health-check/page";
 import infrastructureApiRoutes from "./observability/infrastructure/api";
 import infrastructurePage from "./observability/infrastructure/page";
 import { runScheduleNowAction } from "./observability/jobs/actions";
@@ -29,7 +27,7 @@ import notificationsPage from "./observability/notifications/page";
 import observabilityOverviewPage from "./observability/page";
 import postgresPage from "./observability/postgres/page";
 import redisPage from "./observability/redis/page";
-import retentionPage from "./observability/retention/page";
+import { alertsPage, healthCheckPage, retentionPage } from "./observability/settings/page";
 import syncApiRoutes from "./observability/sync/api";
 import syncPage from "./observability/sync/page";
 import telemetryApiRoutes from "./observability/telemetry/api";
@@ -107,10 +105,14 @@ export const router = new Hono<AuthContext>()
   .get("/admin/observability/nats", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats"))
   .get("/admin/observability/nats/access", auth.requireRole("admin", ssr.access), moved("/admin/observability/infrastructure/nats-access"))
   .get("/admin/observability/nats/sync", auth.requireRole("admin", ssr.access), ...syncPage)
-  .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), ...alertsPage)
   .get("/admin/observability/deliveries", auth.requireRole("admin", ssr.access), ...notificationsPage)
-  .get("/admin/observability/health-check", auth.requireRole("admin", ssr.access), ...healthCheckPage)
-  .get("/admin/observability/retention", auth.requireRole("admin", ssr.access), ...retentionPage)
+  .get("/admin/observability/settings", auth.requireRole("admin", ssr.access), ...alertsPage)
+  .get("/admin/observability/settings/health-check", auth.requireRole("admin", ssr.access), ...healthCheckPage)
+  .get("/admin/observability/settings/retention", auth.requireRole("admin", ssr.access), ...retentionPage)
+  // Alerts, the health check and retention became areas of the settings record; old addresses keep their query.
+  .get("/admin/observability/alerts", auth.requireRole("admin", ssr.access), moved("/admin/observability/settings"))
+  .get("/admin/observability/health-check", auth.requireRole("admin", ssr.access), moved("/admin/observability/settings/health-check"))
+  .get("/admin/observability/retention", auth.requireRole("admin", ssr.access), moved("/admin/observability/settings/retention"))
   .get("/metrics", auth.requireRole("*"), metricsEndpoint)
   .use("/api/*", localizeApiError)
   .route("/api/gateway/widget", widgetRoutes)

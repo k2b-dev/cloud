@@ -42,9 +42,10 @@ export const settingsSaveAction = (locale: string) => ({
 
 /**
  * The end of a v2 head for a settings form: its state in words, Discard and Save. The form registers its draft with
- * `settingsSaveControls`; until it does, the head says "Saved" with both buttons disabled.
+ * `settingsSaveControls`; until it does, the head says "Saved" with both buttons disabled. A form beside a page that has
+ * its own primary action saves with a framed button (`primary={false}`).
  */
-export function SettingsSaveBar() {
+export function SettingsSaveBar(props: { primary?: boolean } = {}) {
   const locale = useLocale();
   const t = () => messages.resolve([locale()]).t;
   const controls = settingsSaveControls;
@@ -76,7 +77,7 @@ export function SettingsSaveBar() {
         {t().discard}
       </Button>
       <Button
-        variant="primary"
+        variant={props.primary === false ? undefined : "primary"}
         icon="device-floppy"
         keep
         busy={state() === "saving"}

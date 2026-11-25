@@ -110,6 +110,10 @@ const open = async (view: View, screen: string, address: string, options: { wors
 };
 
 const SCREENS = [
+  ["alerts", "/admin/observability/settings?webhook=hw_bereitschaft"],
+  ["alerts", "/admin/observability/settings?webhook=new"],
+  ["health", "/admin/observability/settings/health-check"],
+  ["retention", "/admin/observability/settings/retention?state=unreadable"],
   ["infrastructure", "/admin/observability/infrastructure"],
   ["infrastructure", "/admin/observability/infrastructure?failed"],
   ["nats", "/admin/observability/nats?state=problems&stream=MAIL_DLQ"],
