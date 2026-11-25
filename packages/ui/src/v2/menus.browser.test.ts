@@ -463,9 +463,25 @@ test("toast: at the bottom in the middle with Undo; Undo runs and closes it", as
   });
 });
 
-/** Waits until the sheet has slid in: its bottom stands on the bottom of the window. */
+/**
+ * Waits until the menu's sheet rests: slid in all the way, its bottom on the bottom of the window, its top still for
+ * five frames. A step changes the sheet's height and it glides to its new place; a tap while it moves scrolls the
+ * sheet, which takes that for a swipe down and closes (seen on slow CI runners).
+ */
 const sheetAtRest = (page: Page) =>
-  page.waitForFunction(() => Math.round(document.querySelector(".k2-menu")?.getBoundingClientRect().bottom ?? 0) === window.innerHeight);
+  page.waitForFunction(
+    () => {
+      const state = window as unknown as { sheetTop?: number; sheetStill?: number };
+      const sheet = document.querySelector<HTMLElement>('.k2-menu[data-presentation="sheet"]:not([data-nested])');
+      const box = sheet?.getBoundingClientRect();
+      const placed = !!box && sheet?.style.getPropertyValue("--drawer-progress") === "1" && Math.round(box.bottom) === window.innerHeight;
+      state.sheetStill = placed && box?.top === state.sheetTop ? (state.sheetStill ?? 0) + 1 : 0;
+      state.sheetTop = box?.top;
+      return (state.sheetStill ?? 0) >= 5;
+    },
+    undefined,
+    { polling: "raf", timeout: 5_000 },
+  );
 
 test("phone: the head keeps the '…', its menu is a sheet at the bottom; a submenu is its next step, with the way back", async () => {
   await withPage(
@@ -486,15 +502,18 @@ test("phone: the head keeps the '…', its menu is a sheet at the bottom; a subm
       // the submenu shows in the sheet's place under its entry, which leads back; the other entries give way
       await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
       await page.getByRole("menuitem", { name: "Werkstatt" }).waitFor();
-      await settled(page);
+      await sheetAtRest(page);
       const step = await box(page.locator(`${menu}[data-nested]`));
       expect(step.x).toBeGreaterThanOrEqual(0);
       expect(step.x + step.width).toBeLessThanOrEqual(390);
       expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(false);
       await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
       await page.waitForFunction(() => !document.querySelector(".k2-menu[data-nested]"));
+      await sheetAtRest(page);
       expect(await page.getByRole("menuitem", { name: "Als Vorlage speichern" }).isVisible()).toBe(true);
       await page.getByRole("menuitem", { name: "Verschieben nach" }).tap();
+      await page.getByRole("menuitem", { name: "Lager" }).waitFor();
+      await sheetAtRest(page);
       await page.getByRole("menuitem", { name: "Lager" }).tap();
       await closed(page, menu);
       expect(await deeds(page)).toEqual(["move:lager"]);

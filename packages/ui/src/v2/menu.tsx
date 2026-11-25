@@ -267,12 +267,27 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
+    let trigger: HTMLElement | undefined;
+    // a submenu of a submenu that opened to the left goes on to the left, so it never covers the way it came
+    const side = () => (trigger?.closest(".k2-menu")?.getAttribute("data-side") === "left" ? "left" : undefined);
     return (
       <>
-        <sub.Trigger {...shared}>
+        <sub.Trigger
+          {...shared}
+          ref={(element: HTMLElement) => {
+            trigger = element;
+          }}
+        >
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup class="k2-menu" data-k2-part="Menu" data-panel={props.item.panel ? "" : undefined} sideOffset={4} collisionPadding={8}>
+        <sub.Popup
+          class="k2-menu"
+          data-k2-part="Menu"
+          data-panel={props.item.panel ? "" : undefined}
+          side={side()}
+          sideOffset={4}
+          collisionPadding={8}
+        >
           <Show when={props.item.panel} fallback={<Entries level={sub} entries={props.item.items ?? []} />}>
             {(panel) => (
               // the panel's keys (arrows, digits, Space) are its own, not the menu's walk and typeahead

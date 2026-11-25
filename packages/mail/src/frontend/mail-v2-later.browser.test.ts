@@ -73,6 +73,8 @@ const open = async (width = 1440) => {
 };
 
 const head = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
+/** The open menus, outermost first (a submenu is a menu of its own). */
+const menus = (page: Page) => page.locator('[role="menu"]');
 /** How many menus are open (a submenu is a menu of its own). */
 const openMenus = (page: Page, count: number) =>
   page.waitForFunction((count) => document.querySelectorAll('[role="menu"]').length === count, count, { timeout: 5_000 });
@@ -87,6 +89,25 @@ const entries = (page: Page, level: number) =>
         [item.querySelector(".k2-mi-label")?.textContent, item.querySelector(".k2-mi-meta")?.textContent].filter(Boolean).join(" · "),
       ),
     );
+/**
+ * Waits until the menu's sheet rests: slid in all the way, its bottom on the bottom of the window, its top still for
+ * five frames. A step changes the sheet's height and it glides to its new place; a tap while it moves scrolls the
+ * sheet, which takes that for a swipe down and closes (seen on slow CI runners).
+ */
+const sheetAtRest = (page: Page) =>
+  page.waitForFunction(
+    () => {
+      const state = window as unknown as { sheetTop?: number; sheetStill?: number };
+      const sheet = document.querySelector<HTMLElement>('.k2-menu[data-presentation="sheet"]:not([data-nested])');
+      const box = sheet?.getBoundingClientRect();
+      const placed = !!box && sheet?.style.getPropertyValue("--drawer-progress") === "1" && Math.round(box.bottom) === window.innerHeight;
+      state.sheetStill = placed && box?.top === state.sheetTop ? (state.sheetStill ?? 0) + 1 : 0;
+      state.sheetTop = box?.top;
+      return (state.sheetStill ?? 0) >= 5;
+    },
+    undefined,
+    { polling: "raf", timeout: 5_000 },
+  );
 /** Waits until the fixture got `count` calls. */
 const calls = async (sent: Sent[], count: number) => {
   for (let tries = 0; sent.length < count && tries < 100; tries += 1) await Bun.sleep(50);
@@ -129,14 +150,36 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     }
   }, 60_000);
 
-  test("Erinnere mich: Datum und Uhrzeit … asks for any time, starting at the reminder set now", async () => {
-    const { page, errors } = await open();
+  test("Datum und Uhrzeit … opens the calendar beside the times; a past time is refused, a later one sets the reminder", async () => {
+    const { page, errors, sent } = await open();
     try {
       await head(page).getByRole("button", { name: "Später" }).click();
       await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
-      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
-      // k2b-ui gap: until the v2 date picker stands in the submenu, the time comes from Mail's form
-      await page.getByRole("dialog").getByText("Erinnere mich am").waitFor();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).hover();
+      const calendar = page.locator('[data-k2-part="DatePicker"]');
+      await calendar.waitFor();
+      // beside the times, as a submenu: the head's button stands on the right, so the times open to the left and the
+      // calendar goes on to the left, never back over the menu it came from
+      const [later, times, panel] = await Promise.all([0, 1, 2].map((level) => menus(page).nth(level).boundingBox()));
+      expect(!!later && !!times && times.x + times.width <= later.x + 1).toBe(true);
+      expect(!!times && !!panel && panel.x + panel.width <= times.x + 1).toBe(true);
+      // the days before today cannot be picked (Friday, 27 November, in the fixture's UTC)
+      expect(await calendar.locator('[data-value="2026-11-26"]').getAttribute("aria-disabled")).toBe("true");
+      // today at 8:00 has passed: refused under the calendar, the menu stays
+      await calendar.locator('[data-value="2026-11-27"]').click();
+      await calendar.getByRole("button", { name: "Übernehmen" }).click();
+      await calendar.getByRole("alert").getByText("Dieser Zeitpunkt ist schon vorbei.").waitFor();
+      expect(sent).toEqual([]);
+      // the digits of the time are the field's, not the menu's typeahead
+      await calendar.locator('[data-value="2026-12-02"]').click();
+      const time = calendar.getByRole("textbox", { name: "Uhrzeit" });
+      await time.fill("");
+      await time.pressSequentially("1430");
+      expect(await time.inputValue()).toBe("14:30");
+      await time.press("Enter");
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-12-02T14:30:00.000Z", expectedRevision: null } });
       expect(errors).toEqual([]);
     } finally {
       await page.close();
@@ -150,8 +193,10 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       const sheet = page.locator('[role="menu"]:not([data-nested])');
       await sheet.waitFor();
       expect(await sheet.getAttribute("data-presentation")).toBe("sheet");
+      await sheetAtRest(page);
       await page.getByRole("menuitem", { name: "Erinnere mich" }).tap();
       await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).waitFor();
+      await sheetAtRest(page);
       // the step stands on screen in the sheet's place; the entry it came from leads back
       const step = await page.locator('[role="menu"][data-nested]').boundingBox();
       expect(step && step.x >= 0 && step.x + step.width <= 390).toBe(true);
@@ -162,6 +207,16 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
         "Montag, 8:00 · 30. Nov.",
         "Datum und Uhrzeit …",
       ]);
+      // the calendar is the step after the times, on screen, with days a finger can hit
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).tap();
+      const day = page.locator('[data-k2-part="DatePicker"] [data-value="2026-12-02"]');
+      await day.waitFor();
+      await sheetAtRest(page);
+      const cell = await day.boundingBox();
+      expect(cell && cell.x >= 0 && cell.x + cell.width <= 390 && cell.height >= 44).toBe(true);
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).tap();
+      await day.waitFor({ state: "detached" });
+      await sheetAtRest(page);
       await page.getByRole("menuitem", { name: /^Montag, 8:00/ }).tap();
       await openMenus(page, 0);
       await calls(sent, 1);
@@ -169,6 +224,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       // the reminder is set: the menu offers to change and remove it
       await head(page).getByRole("button", { name: "Später" }).tap();
       await page.getByRole("menuitem", { name: "Erinnerung ändern" }).waitFor();
+      await sheetAtRest(page);
       await page.getByRole("menuitem", { name: "Erinnerung entfernen" }).waitFor();
       expect(errors).toEqual([]);
     } finally {
