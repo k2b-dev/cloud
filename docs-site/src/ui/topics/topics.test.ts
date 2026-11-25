@@ -18,6 +18,13 @@ describe("recipes", () => {
     expect(registered.sort()).toEqual(Object.keys(recipeSource).sort());
   });
 
+  test("every recipe stands on the page Whole screens", async () => {
+    const screens = await Bun.file(new URL("./screens.md", import.meta.url)).text();
+    const shown = [...screens.matchAll(/<Example recipe="([^"]+)"/g)].map((match) => match[1]);
+    const registered: string[] = [...recipeNames];
+    expect([...new Set(shown)].sort()).toEqual(registered.sort());
+  });
+
   test("every recipe names what it is in its first line", () => {
     for (const name of recipeNames) expect(recipeSource[name]).toMatch(/^\/\/ Recipe: /);
   });
