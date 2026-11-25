@@ -1,31 +1,17 @@
-import { listAppsDetailed } from "@k2b/cloud";
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import {
-  formatNumber as fmtCount,
-  formatDurationMs as fmtMs,
-  formatPercent as fmtPercent,
-  formatRatio as fmtRatio,
-} from "@k2b/cloud/shared";
-import { requestPath } from "@k2b/cloud/ssr";
-import { DataTable, type DataTableColumn, StatCell, StatGrid } from "@k2b/ui";
+import { formatDurationMs as fmtMs, formatDateTime, formatNumber, formatPercent, formatRatio } from "@k2b/cloud/shared";
+import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import OperationalCharts from "../../frontend/OperationalCharts.island";
-import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { listAppSloWindows } from "../../grids-operational-health";
-import { type GatewayOpsMessages, gatewayOpsMessages } from "../../messages";
-import { areaText, ObservabilityArea, ObservabilityPane, readAttention } from "../_components/ObservabilityArea";
-import RouteDetailPanel from "./_components/RouteDetailPanel";
-import TelemetryFilterBar, { type TelemetryAppFilterOption } from "./_components/TelemetryFilterBar.island";
-import {
-  buildTelemetryFilterUrl,
-  closeRouteUrl,
-  parseTelemetryFilterFromUrl,
-  selectRouteUrl,
-  type TelemetryFilter,
-} from "./_components/types";
-import ModeNav from "./browser/ModeNav";
+import { gatewayOpsMessages } from "../../messages";
+import type { KeyCell } from "../_components/KeyCells";
+import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
+import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { opsCharts } from "../_components/ops-chart";
+import TelemetryScreen from "./_components/TelemetryScreen.island";
 import { browserTelemetryPage } from "./browser/page";
-import { TELEMETRY_RANGES } from "./contracts";
+import { DEFAULT_TELEMETRY_ROUTE_SORT, TELEMETRY_RANGES, TELEMETRY_ROUTE_SORTS, type TelemetryRange } from "./contracts";
+import { browserHref, browserQuery, legacyTelemetryHref, telemetryHref, telemetryQuery } from "./query";
 import {
   getTelemetryOverview,
   getTelemetryTimeseries,
@@ -33,283 +19,193 @@ import {
   listTelemetryEvents,
   listTelemetryRoutes,
   SLOW_REQUEST_MS,
-  type TelemetryRouteRow,
-  type TelemetryRouteSort,
 } from "./service";
 
 /** Individual requests shown once a route is selected. */
 const DRILLDOWN_EVENT_LIMIT = 100;
 
-const legacyTelemetryAppIcons: Record<string, string> = {
-  gateway: "ti ti-route-scan",
-  logging: "ti ti-list-details",
-  notifications: "ti ti-bell-ringing",
-  settings: "ti ti-settings",
-};
-
-const normalizeIcon = (icon: string | undefined) => {
-  if (!icon) return "ti ti-app";
-  return icon.startsWith("ti ") ? icon : `ti ${icon}`;
-};
-
 /** Error rates only read as a problem above a floor; below it they are noise. */
 const isProblemRate = (errors: number, requests: number) => requests >= 20 && errors / requests >= 0.05;
 
-/**
- * DataTable has no sorting of its own, so sortable headers are plain links
- * that swap the `sort` param — server-side ordering, no client state.
- */
-const SortableHeader = (props: { filter: TelemetryFilter; sort: TelemetryRouteSort; label: string; t: GatewayOpsMessages }) => {
-  const active = props.filter.sort === props.sort;
-  return (
-    <a
-      href={buildTelemetryFilterUrl(props.filter, { sort: props.sort })}
-      class={`inline-flex items-center gap-1 hover:text-primary ${active ? "text-primary" : "text-dimmed"}`}
-      aria-label={props.t.sortBy({ label: props.label })}
-      title={props.t.sortBy({ label: props.label })}
-    >
-      {props.label}
-      {/* Inactive columns keep a dimmed marker so the whole row reads as sortable. */}
-      <i class={`ti ti-arrow-down text-[9px] ${active ? "" : "opacity-30"}`} aria-hidden="true" />
-    </a>
-  );
-};
-
+/** Server telemetry on v2. The address holds range, app, "only", the order and the open route. */
 export default ssr<AuthContext>(async (c) => {
-  if (new URL(c.req.url).searchParams.get("view") === "browser") return browserTelemetryPage(c);
+  const url = new URL(c.req.url);
+  if (url.searchParams.get("view") === "browser") return browserTelemetryPage(c);
+  const legacy = legacyTelemetryHref(url.searchParams);
+  if (legacy) return c.redirect(legacy);
   const locale = getLocale(c);
+  const dateConfig = getDateConfig(c);
   const { t } = gatewayOpsMessages.resolve([locale]);
-  const filter = parseTelemetryFilterFromUrl(new URL(c.req.url));
-  const sortLabel =
-    filter.sort === "errorRate"
-      ? t.errorRate
-      : filter.sort === "errors"
-        ? t.errors
-        : filter.sort === "requests"
-          ? t.requests
-          : filter.sort === "slow"
-            ? t.slow
-            : t.duration;
-  const query = { range: filter.range, appId: filter.appId || undefined, route: filter.route || undefined };
+  // The app the address names stays a value of its filter, so the address reads the same before the apps are known.
+  const selectedApp = url.searchParams.get("app") ?? undefined;
+  const address = telemetryQuery(locale, [], selectedApp).parse(url.searchParams);
+  const state = address.state;
+  const time = state.filters.range;
+  const range: TelemetryRange = time.kind === "preset" ? time.preset : "24h";
+  const appId = state.filters.app ?? "";
+  const route = url.searchParams.get("route")?.trim() ?? "";
+  const only = state.filters.only ?? [];
+  const sort = TELEMETRY_ROUTE_SORTS.find((option) => option === state.sort.field) ?? DEFAULT_TELEMETRY_ROUTE_SORT;
+  const filter = { range, appId: appId || undefined, route: route || undefined };
 
-  const [overview, timeseries, routes, telemetryApps, registryApps, events, sloWindows] = await Promise.all([
-    getTelemetryOverview(query),
-    getTelemetryTimeseries(query),
-    listTelemetryRoutes(query, filter.sort, { errorsOnly: filter.errorsOnly, slowOnly: filter.slowOnly }),
-    listTelemetryApps(filter.range),
-    listAppsDetailed(),
-    // Raw events are only worth reading once the user picked a route.
-    filter.route ? listTelemetryEvents(query, DRILLDOWN_EVENT_LIMIT) : Promise.resolve([]),
-    // Availability objectives are per app, so they only mean something once
-    // the view is narrowed to one.
-    filter.appId ? listAppSloWindows(filter.appId) : Promise.resolve([]),
+  const [overview, timeseries, routes, telemetryApps, events, sloWindows, attention] = await Promise.all([
+    getTelemetryOverview(filter),
+    getTelemetryTimeseries(filter),
+    listTelemetryRoutes(filter, sort, { errorsOnly: only.includes("errors"), slowOnly: only.includes("slow") }),
+    listTelemetryApps(range),
+    // Raw events are only worth reading once a route is open.
+    route ? listTelemetryEvents(filter, DRILLDOWN_EVENT_LIMIT) : Promise.resolve([]),
+    // Availability objectives are per app, so they only mean something once the view is narrowed to one.
+    appId ? listAppSloWindows(appId) : Promise.resolve([]),
+    readAttention(),
   ]);
-
-  const registryById = new Map(registryApps.map((app) => [app.id, app]));
-  const appOptions: TelemetryAppFilterOption[] = telemetryApps.map((id) => ({
-    id,
-    label: id,
-    icon: normalizeIcon(registryById.get(id)?.icon ?? legacyTelemetryAppIcons[id]),
-  }));
-
-  const requestSeries = timeseries.map((point) => ({ x: new Date(point.at).getTime(), y: point.requests }));
-
-  const routeColumns: DataTableColumn<TelemetryRouteRow>[] = [
-    { id: "route", header: t.route },
-    { id: "requests", header: <SortableHeader filter={filter} sort="requests" label={t.requests} t={t} />, align: "right" },
-    { id: "errors", header: <SortableHeader filter={filter} sort="errorRate" label={t.errorRate} t={t} />, align: "right" },
-    { id: "errorCount", header: <SortableHeader filter={filter} sort="errors" label={t.errors} t={t} />, align: "right" },
-    { id: "slow", header: <SortableHeader filter={filter} sort="slow" label={t.slow} t={t} />, align: "right" },
-    { id: "duration", header: <SortableHeader filter={filter} sort="duration" label={t.averageMaximum} t={t} />, align: "right" },
+  const apps = telemetryApps.map((id) => ({ id, label: id }));
+  const query = telemetryQuery(locale, apps, selectedApp);
+  const number = (value: number) => formatNumber(value, { locale });
+  const maxGap = TELEMETRY_RANGES[range].bucketSeconds * 1000;
+  const at = (point: { at: string }) => new Date(point.at).getTime();
+  const charts = opsCharts(
+    [
+      {
+        kind: "line",
+        title: t.requests,
+        description: t.trafficDescription,
+        maxGap,
+        series: [{ label: t.requests, data: timeseries.map((point) => ({ x: at(point), y: point.requests })) }],
+      },
+      {
+        kind: "line",
+        title: t.errorRate,
+        description: t.chartRateHelp,
+        unit: "percent",
+        maxGap,
+        series: [
+          {
+            label: t.errorRate,
+            data: timeseries
+              .filter((point) => point.requests > 0)
+              .map((point) => ({ x: at(point), y: (point.errors / point.requests) * 100 })),
+          },
+        ],
+      },
+      {
+        kind: "line",
+        title: t.latency,
+        description: t.chartLatencyHelp,
+        unit: "ms",
+        maxGap,
+        series: [
+          {
+            label: t.chartAverage,
+            data: timeseries.flatMap((point) => (point.avgDurationMs === null ? [] : [{ x: at(point), y: point.avgDurationMs }])),
+          },
+          {
+            label: t.chartMaximum,
+            data: timeseries.flatMap((point) => (point.maxDurationMs === null ? [] : [{ x: at(point), y: point.maxDurationMs }])),
+          },
+        ],
+      },
+    ],
+    locale,
+  );
+  const cells: KeyCell[] = [
+    { icon: "arrows-exchange", label: t.requests, value: number(overview.requests), meta: range },
+    {
+      icon: "alert-circle",
+      label: t.serverErrors,
+      value: number(overview.serverErrors),
+      meta: "5xx",
+      tone: overview.serverErrors > 0 ? "bad" : undefined,
+    },
+    {
+      icon: "hand-stop",
+      label: t.clientErrors,
+      value: number(overview.clientErrors),
+      meta: `${t.rateLimited} (429): ${number(overview.rateLimited)}`,
+      tone: overview.rateLimited > 0 ? "warn" : undefined,
+    },
+    {
+      icon: "clock-exclamation",
+      label: t.slow,
+      value: number(overview.slowRequests),
+      meta: `>= ${SLOW_REQUEST_MS}ms`,
+      tone: overview.slowRequests > 0 ? "warn" : undefined,
+    },
   ];
+  const slo: KeyCell[] = sloWindows.map((window) => {
+    const completeSeconds = window.window === "1h" ? 3600 : window.window === "6h" ? 21_600 : 2_592_000;
+    const collecting = window.observedSeconds < completeSeconds * 0.95;
+    const missed = !collecting && window.requestCount > 0 && window.availabilityRatio < 0.999;
+    return {
+      icon: missed ? "alert-circle" : "shield-check",
+      label: window.window,
+      value: window.requestCount === 0 ? t.noTraffic : formatPercent(window.availabilityRatio, { locale }),
+      meta: collecting
+        ? t.requestsCollecting({ count: number(window.requestCount) })
+        : t.requestCountLabel({ count: number(window.requestCount) }),
+      tone: missed ? "bad" : undefined,
+    };
+  });
+  const statusTone = (status: number) => (status >= 500 ? "bad" : status >= 400 ? "warn" : null);
+  const ignored = address.issues.length > 0 ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null;
+  const area = areaText(locale);
+  const groups = observabilityGroups(c, locale, attention);
+  const browser = browserQuery(locale, apps, selectedApp);
 
-  const attention = await readAttention();
   return () => (
-    <ObservabilityArea c={c} locale={locale} section="telemetry" attention={attention}>
-      <ObservabilityPane label={areaText(locale).telemetry} description={t.telemetryDescription}>
-        <ModeNav path={requestPath(c)} locale={locale} />
-        <TelemetryFilterBar filter={filter} apps={appOptions} />
-
-        <StatGrid columns={5}>
-          <StatCell value={fmtCount(overview.requests, { locale })} label={t.requests} sub={filter.range} />
-          <StatCell
-            value={fmtCount(overview.serverErrors, { locale })}
-            label={t.serverErrors}
-            sub="5xx"
-            valueClass={overview.serverErrors > 0 ? "text-red-500" : undefined}
-            accent={overview.serverErrors > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
-          />
-          <StatCell value={fmtCount(overview.clientErrors, { locale })} label={t.clientErrors} sub="4xx excl. 429" />
-          <StatCell
-            value={fmtCount(overview.rateLimited, { locale })}
-            label={t.rateLimited}
-            sub="429"
-            accent={overview.rateLimited > 0 ? { tone: "amber", icon: "ti ti-hand-stop" } : undefined}
-          />
-          <StatCell
-            value={fmtCount(overview.slowRequests, { locale })}
-            label={t.slow}
-            sub={`>= ${SLOW_REQUEST_MS}ms`}
-            accent={overview.slowRequests > 0 ? { tone: "amber", icon: "ti ti-clock-exclamation" } : undefined}
-          />
-        </StatGrid>
-
-        <OperationalCharts
-          columns={3}
-          charts={prepareOperationalCharts(
-            [
-              {
-                kind: "line",
-                title: t.requests,
-                description: t.trafficDescription,
-                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
-                series: [{ label: t.requests, data: requestSeries }],
-              },
-              {
-                kind: "line",
-                title: t.errorRate,
-                description: t.chartRateHelp,
-                unit: "percent",
-                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
-                series: [
-                  {
-                    label: t.errorRate,
-                    data: timeseries
-                      .filter((p) => p.requests > 0)
-                      .map((p) => ({ x: new Date(p.at).getTime(), y: (p.errors / p.requests) * 100 })),
-                  },
-                ],
-              },
-              {
-                kind: "line",
-                title: t.latency,
-                description: t.chartLatencyHelp,
-                unit: "ms",
-                maxGap: TELEMETRY_RANGES[filter.range].bucketSeconds * 1000,
-                series: [
-                  {
-                    label: t.chartAverage,
-                    data: timeseries.flatMap((p) =>
-                      p.avgDurationMs === null ? [] : [{ x: new Date(p.at).getTime(), y: p.avgDurationMs }],
-                    ),
-                  },
-                  {
-                    label: t.chartMaximum,
-                    data: timeseries.flatMap((p) =>
-                      p.maxDurationMs === null ? [] : [{ x: new Date(p.at).getTime(), y: p.maxDurationMs }],
-                    ),
-                  },
-                ],
-              },
-            ],
-            locale,
-          )}
-        />
-
-        {sloWindows.length > 0 ? (
-          <section class="flex flex-col gap-2" aria-labelledby="request-slo-title">
-            <h2 id="request-slo-title" class="text-xs font-semibold text-primary">
-              {t.requestAvailability}
-            </h2>
-            <p class="text-[10px] text-dimmed">{t.requestAvailabilityDescription}</p>
-            <StatGrid columns={3} size="sm">
-              {sloWindows.map((window) => {
-                const completeSeconds = window.window === "1h" ? 3600 : window.window === "6h" ? 21_600 : 2_592_000;
-                const collecting = window.observedSeconds < completeSeconds * 0.95;
-                const missed = !collecting && window.requestCount > 0 && window.availabilityRatio < 0.999;
-                return (
-                  <StatCell
-                    label={window.window}
-                    value={window.requestCount === 0 ? t.noTraffic : fmtPercent(window.availabilityRatio, { locale })}
-                    sub={
-                      collecting
-                        ? t.requestsCollecting({ count: fmtCount(window.requestCount, { locale }) })
-                        : t.requestCountLabel({ count: fmtCount(window.requestCount, { locale }) })
-                    }
-                    valueClass={missed ? "text-red-500" : "text-primary"}
-                    accent={missed ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
-                  />
-                );
-              })}
-            </StatGrid>
-          </section>
-        ) : null}
-
-        <div class={filter.route ? "grid min-h-0 gap-2 xl:grid-cols-[minmax(0,1fr)_24rem]" : "min-h-0"}>
-          <DataTable.Panel>
-            <DataTable.Header
-              title={t.gatewayRoutesTitle}
-              subtitle={t.sortedRoutesDescription({ sort: sortLabel.toLocaleLowerCase(locale) })}
-            />
-            <DataTable
-              rows={routes}
-              columns={routeColumns}
-              getRowId={(row) => `${row.appId} ${row.route}`}
-              selectedRowId={filter.route ? `${filter.appId} ${filter.route}` : null}
-              hoverRows
-              highlightColumns={false}
-              density="compact"
-              surface="plain"
-              empty={t.noTrafficRange}
-              renderCell={({ row, col }) => {
-                if (col.id === "route")
-                  return (
-                    <a href={selectRouteUrl(filter, row.appId, row.route)} class="flex min-w-0 flex-col hover:text-primary">
-                      <code class="truncate text-[10px] text-primary">{row.route}</code>
-                      <span class="text-[9px] text-dimmed">{row.appId}</span>
-                    </a>
-                  );
-                if (col.id === "requests")
-                  return <span class="text-[10px] tabular-nums text-dimmed">{fmtCount(row.requests, { locale })}</span>;
-                if (col.id === "errors")
-                  return (
-                    <span
-                      class={`text-[10px] tabular-nums ${isProblemRate(row.errors, row.requests) ? "text-red-500" : "text-dimmed"}`}
-                      title={t.errorsOfRequests({ errors: fmtCount(row.errors, { locale }), requests: fmtCount(row.requests, { locale }) })}
-                    >
-                      {row.errors === 0 ? "—" : fmtRatio(row.errors, row.requests, { locale, decimals: 1 })}
-                    </span>
-                  );
-                if (col.id === "errorCount")
-                  return (
-                    <span class="text-[10px] tabular-nums text-dimmed">{row.errors === 0 ? "—" : fmtCount(row.errors, { locale })}</span>
-                  );
-                if (col.id === "slow")
-                  return (
-                    <span class={`text-[10px] tabular-nums ${row.slowRequests > 0 ? "text-amber-600 dark:text-amber-400" : "text-dimmed"}`}>
-                      {row.slowRequests === 0 ? "—" : fmtCount(row.slowRequests, { locale })}
-                    </span>
-                  );
-                if (col.id === "duration")
-                  return (
-                    <span class="text-[10px] tabular-nums text-dimmed">
-                      {fmtMs(row.avgDurationMs, { locale })} <span class="text-dimmed/60">/</span>{" "}
-                      <span
-                        class={
-                          row.maxDurationMs !== null && row.maxDurationMs >= SLOW_REQUEST_MS ? "text-amber-600 dark:text-amber-400" : ""
-                        }
-                      >
-                        {fmtMs(row.maxDurationMs, { locale })}
-                      </span>
-                    </span>
-                  );
-                return "";
-              }}
-            />
-          </DataTable.Panel>
-
-          {filter.route ? (
-            <RouteDetailPanel
-              route={filter.route}
-              dateConfig={getDateConfig(c)}
-              events={events}
-              eventLimit={DRILLDOWN_EVENT_LIMIT}
-              slowRequestMs={SLOW_REQUEST_MS}
-              closeHref={closeRouteUrl(filter)}
-            />
-          ) : null}
-        </div>
-      </ObservabilityPane>
-    </ObservabilityArea>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: area.area, href: "/admin/observability" }, { title: area.telemetry }]}
+    >
+      <ObservabilityNavigation label={area.area} current="telemetry" groups={groups} />
+      <TelemetryScreen
+        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        apps={apps}
+        state={state}
+        ignored={ignored}
+        browserHref={browserHref(browser, {
+          ...browser.reset(),
+          filters: { ...browser.reset().filters, range: time, app: state.filters.app },
+        })}
+        cells={cells}
+        charts={charts}
+        slo={slo}
+        routes={routes.map((row) => ({
+          key: `${row.appId} ${row.route}`,
+          app: row.appId,
+          route: row.route,
+          requests: number(row.requests),
+          errorRate: row.errors === 0 ? "—" : formatRatio(row.errors, row.requests, { locale, decimals: 1 }),
+          problem: isProblemRate(row.errors, row.requests),
+          errors: row.errors === 0 ? "—" : number(row.errors),
+          slow: row.slowRequests === 0 ? "—" : number(row.slowRequests),
+          hasSlow: row.slowRequests > 0,
+          duration: `${fmtMs(row.avgDurationMs, { locale })} / ${fmtMs(row.maxDurationMs, { locale })}`,
+          slowMax: row.maxDurationMs !== null && row.maxDurationMs >= SLOW_REQUEST_MS,
+        }))}
+        route={
+          route
+            ? {
+                name: route,
+                app: appId,
+                summary: t.lastRequestsInRange({ count: DRILLDOWN_EVENT_LIMIT }),
+                closeHref: telemetryHref(query, state),
+                events: events.map((event) => ({
+                  key: String(event.id),
+                  time: formatDateTime(event.occurredAt, dateConfig),
+                  method: event.method,
+                  status: String(event.status),
+                  tone: statusTone(event.status),
+                  error: event.errorKind,
+                  duration: fmtMs(event.durationMs, { locale }),
+                  slow: event.durationMs >= SLOW_REQUEST_MS,
+                })),
+              }
+            : null
+        }
+      />
+    </Layout>
   );
 });

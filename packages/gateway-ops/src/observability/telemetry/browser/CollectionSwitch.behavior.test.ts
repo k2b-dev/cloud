@@ -24,11 +24,8 @@ browserTest("collection has no initial fetch, verifies writes and recovers from 
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
-  const { default: Controls } = await import("./Controls.island");
-  const dispose = render(
-    () => createComponent(Controls, { filter: { range: "24h", appId: "", route: "", page: 1 }, apps: [], enabled: false }),
-    dom.root,
-  );
+  const { default: CollectionSwitch } = await import("./CollectionSwitch");
+  const dispose = render(() => createComponent(CollectionSwitch, { enabled: false }), dom.root);
   const tick = async () => {
     for (let i = 0; i < 20; i++) await new Promise((resolve) => setTimeout(resolve, 0));
   };
@@ -36,12 +33,12 @@ browserTest("collection has no initial fetch, verifies writes and recovers from 
     expect(calls).toEqual([]);
     dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!.click();
     await tick();
-    expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
+    expect(dom.root.textContent).toContain("Could not verify the collection setting");
     fail = false;
     const retry = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.includes("Retry"))!;
     retry.click();
     await tick();
-    expect(dom.root.querySelector('[role="alert"]')?.textContent).toBeUndefined();
+    expect(dom.root.textContent).not.toContain("Could not verify the collection setting");
     expect(dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!.checked).toBe(true);
     expect(calls.filter((call) => call.startsWith("GET"))).toHaveLength(1);
     dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!.click();
@@ -68,11 +65,8 @@ browserTest("leaving the page aborts a pending save and prevents duplicate write
       { preconnect: globalThis.fetch.preconnect },
     ),
   );
-  const { default: Controls } = await import("./Controls.island");
-  const dispose = render(
-    () => createComponent(Controls, { filter: { range: "24h", appId: "", route: "", page: 1 }, apps: [], enabled: false }),
-    dom.root,
-  );
+  const { default: CollectionSwitch } = await import("./CollectionSwitch");
+  const dispose = render(() => createComponent(CollectionSwitch, { enabled: false }), dom.root);
   try {
     const control = dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
     control.click();

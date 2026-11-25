@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { prepareOperationalCharts } from "../../../frontend/operational-charts";
+import { opsCharts } from "../../_components/ops-chart";
 import { fixtureArea, LONG } from "../../_components/services-fixture-area";
 import { valkeyQuery } from "../query";
 import ValkeyScreen from "./ValkeyScreen";
@@ -16,7 +16,7 @@ export const ValkeyScreenFixture = (props: { search?: string; worst?: boolean; l
   const locale = props.locale ?? "de";
   const state = valkeyQuery(locale).parse(new URLSearchParams(props.search ?? "")).state;
   const rows: [string, number][] = props.worst ? [[LONG, 9_999_999_999], ...PREFIXES] : PREFIXES;
-  const chart = prepareOperationalCharts(
+  const chart = opsCharts(
     [
       {
         kind: "bar",

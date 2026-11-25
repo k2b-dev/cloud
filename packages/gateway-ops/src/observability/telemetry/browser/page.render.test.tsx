@@ -54,7 +54,7 @@ test("Browser SSR distinguishes retained, empty and failed reads and localizes t
     const retained = await (await server.request("/?view=browser")).text();
     expect(retained).toContain("Previously recorded measurements remain visible");
     expect(retained).toContain("CLS · p75");
-    expect(retained).toContain("k2b-chart-explorer");
+    expect(retained).toContain(`data-chart-kind="line"`);
   } finally {
     read.mockRestore();
     settings.mockRestore();

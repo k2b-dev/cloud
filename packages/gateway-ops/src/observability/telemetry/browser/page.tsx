@@ -1,131 +1,116 @@
 import { listAppsDetailed } from "@k2b/cloud";
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings, logging, type WebVitalName, type WebVitalsOverview } from "@k2b/cloud/services";
-import { AdminLayout, requestPath } from "@k2b/cloud/ssr";
-import { ButtonLink, DataTable, NoticeCard, StatCell, StatGrid } from "@k2b/ui";
+import { Layout } from "@k2b/cloud/ssr";
 import type { Context, Env } from "hono";
-import Controls from "./Controls.island";
-import { buildVitalCharts, vitalValue } from "./charts";
-import { browserUrl, parseBrowserFilter } from "./filter";
-import ModeNav from "./ModeNav";
+import { gatewayOpsMessages } from "../../../messages";
+import type { KeyCell } from "../../_components/KeyCells";
+import { areaText, observabilityGroups, readAttention } from "../../_components/ObservabilityArea";
+import ObservabilityNavigation from "../../_components/ObservabilityNavigation.island";
+import { browserHref, browserQuery, TELEMETRY_PATH, telemetryHref, telemetryQuery } from "../query";
+import BrowserScreen from "./BrowserScreen.island";
+import { buildVitalCharts, vitalOpsCharts, vitalValue } from "./charts";
 import { browserMessages } from "./messages";
-import VitalCharts from "./VitalCharts.island";
 
+const NAMES: WebVitalName[] = ["LCP", "INP", "CLS"];
+/** Pages the route list opens; deeper pages are an offset scan nobody reads. */
+const PAGE_MAX = 100_000;
+
+/** Browser telemetry (Web Vitals) on v2: `?view=browser` of the telemetry page. */
 export async function browserTelemetryPage<E extends Env>(c: Context<E>) {
   const locale = getLocale(c);
   const { t } = browserMessages.resolve([locale]);
-  const filter = parseBrowserFilter(new URL(c.req.url));
+  const g = gatewayOpsMessages.resolve([locale]).t;
+  const url = new URL(c.req.url);
+  const selectedApp = url.searchParams.get("app") ?? undefined;
+  const pageValue = Number(url.searchParams.get("page") ?? "1");
+  const page = Number.isInteger(pageValue) && pageValue > 0 && pageValue <= PAGE_MAX ? pageValue : 1;
+  const parsed = browserQuery(locale, [], selectedApp).parse(url.searchParams).state;
+  const time = parsed.filters.range;
+  const filter = {
+    range: time.kind === "preset" ? time.preset : ("24h" as const),
+    appId: (parsed.filters.app ?? "").slice(0, 64),
+    route: (parsed.filters.route ?? "").trim().slice(0, 200),
+    page,
+  };
   const until = new Date();
-  const [dataResult, enabledResult, appsResult] = await Promise.allSettled([
-    logging.webVitals(filter, until),
-    coreSettings.get<boolean>("observability.web_vitals.enabled"),
-    listAppsDetailed(),
+  const [dataResult, enabledResult, appsResult, attention] = await Promise.all([
+    logging.webVitals(filter, until).then(
+      (value) => ({ ok: true as const, value }),
+      () => ({ ok: false as const }),
+    ),
+    coreSettings.get<boolean>("observability.web_vitals.enabled").catch(() => null),
+    listAppsDetailed().catch(() => []),
+    readAttention(),
   ]);
-  const data: WebVitalsOverview | null = dataResult.status === "fulfilled" ? dataResult.value : null;
-  const enabled = enabledResult.status === "fulfilled" ? enabledResult.value : null;
-  const apps = appsResult.status === "fulfilled" ? appsResult.value.map((app) => ({ id: app.id, name: app.name })) : [];
-  const charts = data ? buildVitalCharts(data, locale, filter.range, until.getTime()) : [];
-  const names: WebVitalName[] = ["LCP", "INP", "CLS"];
+  const data: WebVitalsOverview | null = dataResult.ok ? dataResult.value : null;
+  const apps = appsResult.map((app) => ({ id: app.id, label: app.name }));
+  const query = browserQuery(locale, apps, selectedApp);
+  const state = { ...parsed, view: "browser" };
+  const area = areaText(locale);
+  const groups = observabilityGroups(c, locale, attention);
+  const server = telemetryQuery(locale, apps, selectedApp);
+  const serverHref = telemetryHref(server, {
+    ...server.reset(),
+    filters: { ...server.reset().filters, range: time, app: parsed.filters.app },
+  });
+
   const routes = data
     ? [...new Map(data.routes.map((row) => [`${row.appId}\0${row.route}`, { appId: row.appId, route: row.route }])).values()]
     : [];
-  const metric = (appId: string, route: string, name: WebVitalName) =>
-    data?.routes.find((row) => row.appId === appId && row.route === route && row.name === name);
+  const metric = (appId: string, route: string, name: WebVitalName) => {
+    const value = data?.routes.find((row) => row.appId === appId && row.route === route && row.name === name);
+    return `${vitalValue(name, value?.p75, locale)} / ${value?.count ?? 0}`;
+  };
+
   return () => (
-    <AdminLayout c={c} title={t.title}>
-      <div class="app-rows">
-        <div>
-          <h1 class="text-base font-semibold text-primary">{t.title}</h1>
-          <p class="mt-1 text-xs text-dimmed">{t.description}</p>
-        </div>
-        <ModeNav path={requestPath(c)} locale={locale} browser />
-        <Controls filter={filter} apps={apps} enabled={enabled} />
-        <NoticeCard tone="info" title={t.metricsTitle}>
-          <dl class="grid grid-cols-1 xl:grid-cols-3 gap-3">
-            {names.map((name) => (
-              <div>
-                <dt class="font-semibold">{name}</dt>
-                <dd>{name === "LCP" ? t.lcpHelp : name === "INP" ? t.inpHelp : t.clsHelp}</dd>
-              </div>
-            ))}
-          </dl>
-          <p class="mt-2">{t.guidance}</p>
-          <a class="underline" href="https://web.dev/articles/vitals" target="_blank" rel="noreferrer">
-            {t.learnMore}
-          </a>
-        </NoticeCard>
-        {data ? (
-          <>
-            <StatGrid columns={3}>
-              {names.map((name) => {
-                const value = data.summary.find((row) => row.name === name);
-                return (
-                  <StatCell
-                    label={`${name} · p75`}
-                    value={vitalValue(name, value?.p75, locale)}
-                    sub={`${(value?.count ?? 0).toLocaleString(locale)} ${t.samples}`}
-                  />
-                );
-              })}
-            </StatGrid>
-            <p class="text-xs text-dimmed">{t.note}</p>
-            {data.summary.length === 0 ? <p class="paper p-3 text-xs text-dimmed">{t.empty}</p> : <VitalCharts charts={charts} />}
-            <DataTable.Panel>
-              <DataTable.Header title={t.routes} subtitle={`${data.totalRoutes.toLocaleString(locale)} ${t.count}`} size="sm" />
-              <DataTable
-                surface="paper"
-                rows={routes}
-                renderCell={({ row, col, value }) =>
-                  col.id === "route" ? (
-                    <a class="hover:underline" href={browserUrl(filter, { appId: row.appId, route: row.route, page: 1 })}>
-                      {row.route}
-                    </a>
-                  ) : (
-                    String(value ?? "—")
-                  )
-                }
-                columns={[
-                  { id: "app", header: t.app, value: (row) => row.appId },
-                  { id: "route", header: t.route, value: (row) => row.route },
-                  ...names.map((name) => ({
-                    id: name,
-                    header: `${name} · p75 / n`,
-                    value: (row: { appId: string; route: string }) => {
-                      const value = metric(row.appId, row.route, name);
-                      return `${vitalValue(name, value?.p75, locale)} / ${value?.count ?? 0}`;
-                    },
-                  })),
-                ]}
-              />
-              {(filter.page > 1 || filter.page * data.perPage < data.totalRoutes) && (
-                <DataTable.Footer>
-                  <div class="flex gap-2">
-                    {filter.page > 1 && (
-                      <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page - 1 })}>
-                        {t.previous}
-                      </ButtonLink>
-                    )}
-                    {filter.page * data.perPage < data.totalRoutes && (
-                      <ButtonLink size="sm" variant="secondary" href={browserUrl(filter, { page: filter.page + 1 })}>
-                        {t.next}
-                      </ButtonLink>
-                    )}
-                  </div>
-                </DataTable.Footer>
-              )}
-            </DataTable.Panel>
-          </>
-        ) : (
-          <section class="paper p-3">
-            <p role="alert" class="text-xs text-red-600">
-              {t.error}
-            </p>
-            <ButtonLink size="sm" variant="secondary" href={browserUrl(filter)}>
-              {t.retry}
-            </ButtonLink>
-          </section>
-        )}
-      </div>
-    </AdminLayout>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[
+        { title: g.start, href: "/" },
+        { title: area.area, href: "/admin/observability" },
+        { title: area.telemetry, href: TELEMETRY_PATH },
+        { title: t.browser },
+      ]}
+    >
+      <ObservabilityNavigation label={area.area} current="telemetry" groups={groups} />
+      <BrowserScreen
+        area={{ title: area.area, groups, markLabel: area.needsAttention }}
+        apps={apps}
+        state={state}
+        serverHref={serverHref}
+        enabled={enabledResult}
+        data={
+          data
+            ? {
+                cells: NAMES.map((name): KeyCell => {
+                  const value = data.summary.find((row) => row.name === name);
+                  return {
+                    icon: name === "LCP" ? "photo" : name === "INP" ? "hand-click" : "layout-distribute-vertical",
+                    label: `${name} · p75`,
+                    value: vitalValue(name, value?.p75, locale),
+                    meta: `${(value?.count ?? 0).toLocaleString(locale)} ${t.samples}`,
+                  };
+                }),
+                charts: vitalOpsCharts(buildVitalCharts(data, locale, filter.range, until.getTime()), locale),
+                routes: routes.map((row) => ({
+                  key: `${row.appId} ${row.route}`,
+                  app: row.appId,
+                  route: row.route,
+                  lcp: metric(row.appId, row.route, "LCP"),
+                  inp: metric(row.appId, row.route, "INP"),
+                  cls: metric(row.appId, row.route, "CLS"),
+                  href: browserHref(query, { ...state, filters: { ...state.filters, app: row.appId, route: row.route } }),
+                })),
+                total: data.totalRoutes.toLocaleString(locale),
+                previousHref: page > 1 ? browserHref(query, state, page - 1) : null,
+                nextHref: page * data.perPage < data.totalRoutes ? browserHref(query, state, page + 1) : null,
+              }
+            : null
+        }
+      />
+    </Layout>
   );
 }

@@ -1,11 +1,11 @@
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, FilterBar, Input, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, For } from "solid-js";
-import type { OperationalChart } from "../../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
 import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
+import type { OpsChart } from "../../_components/ops-chart";
 import { type ValkeyState, valkeyHref, valkeyQuery } from "../query";
 
 /** `href` opens the next depth under this prefix; the deepest level has none. */
@@ -19,7 +19,7 @@ export type ValkeyScreenProps = {
   warnings: { tone: "warn" | "bad"; title: string; text: string }[];
   /** Why Valkey could not be read, when it could not. */
   error: string | null;
-  chart: OperationalChart;
+  chart: OpsChart;
   prefixes: ValkeyPrefixRow[];
   sampled: string;
 };
@@ -92,7 +92,7 @@ export default function ValkeyScreen(props: ValkeyScreenProps) {
             </Notice>
           )}
         </For>
-        <OpsChartSection chart={props.chart} icon="chart-bar" empty={t().noMatchingRedisPrefixes} />
+        <OpsChartSection chart={props.chart} icon="chart-bar" height={320} empty={t().noMatchingRedisPrefixes} />
         <Table
           label={t().prefixes}
           rows={props.prefixes}

@@ -1,11 +1,11 @@
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Chip, FilterBar, Input, ListOrder, Notice, Pane, Section, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, For, Show } from "solid-js";
-import type { OperationalChart } from "../../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../../messages";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
 import { type ObservabilityAreaNav, ObservabilityNav } from "../../_components/ObservabilityNav";
 import { OpsChartSection } from "../../_components/OpsChartSection";
+import type { OpsChart } from "../../_components/ops-chart";
 import { type PostgresState, postgresHref, postgresQuery } from "../query";
 
 export type Worded = { label: string; status: "ok" | "warn" | "bad" | null };
@@ -46,7 +46,7 @@ export type PostgresScreenProps = {
   warnings: { tone: "warn" | "bad"; title: string; text: string }[];
   tables: PostgresTableRow[];
   tablesTotal: string;
-  charts: { schemaSize: OperationalChart; largest: OperationalChart; schemaRows: OperationalChart };
+  charts: { schemaSize: OpsChart; largest: OpsChart; schemaRows: OpsChart };
   sessions: { rows: PostgresSessionRow[]; summary: string; error: string | null };
   indexes: { rows: PostgresIndexRow[]; summary: string; error: string | null };
   extensions: { rows: PostgresExtensionRow[]; summary: string };
@@ -162,9 +162,9 @@ export default function PostgresScreen(props: PostgresScreenProps) {
             ]}
           />
         </Section>
-        <OpsChartSection chart={props.charts.schemaSize} icon="chart-bar" empty={t().noMatchingTables} />
-        <OpsChartSection chart={props.charts.largest} icon="chart-bar" empty={t().noMatchingTables} />
-        <OpsChartSection chart={props.charts.schemaRows} icon="chart-bar" empty={t().noMatchingTables} />
+        <OpsChartSection chart={props.charts.schemaSize} icon="chart-bar" height={320} empty={t().noMatchingTables} />
+        <OpsChartSection chart={props.charts.largest} icon="chart-bar" height={320} empty={t().noMatchingTables} />
+        <OpsChartSection chart={props.charts.schemaRows} icon="chart-bar" height={320} empty={t().noMatchingTables} />
         <Section icon="plug-connected" title={t().sessions} count={props.sessions.rows.length} summary={props.sessions.summary}>
           <Show
             when={!props.sessions.error}

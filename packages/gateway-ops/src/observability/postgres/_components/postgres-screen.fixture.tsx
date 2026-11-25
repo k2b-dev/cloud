@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { prepareOperationalCharts } from "../../../frontend/operational-charts";
+import { opsCharts } from "../../_components/ops-chart";
 import { fixtureArea, LONG } from "../../_components/services-fixture-area";
 import { postgresQuery } from "../query";
 import PostgresScreen, { type PostgresTableRow } from "./PostgresScreen";
@@ -31,7 +31,7 @@ export const PostgresScreenFixture = (props: { search?: string; worst?: boolean;
     table("spaces", props.worst ? LONG : "events", { total: "1,2 GB" }),
     table("accounts", "users", { rows: "312", total: "1,1 MB", dead: "0" }),
   ];
-  const charts = prepareOperationalCharts(
+  const charts = opsCharts(
     [
       {
         kind: "bar",

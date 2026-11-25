@@ -2,11 +2,11 @@ import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatNumber, formatPercent } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../messages";
 import type { KeyCell } from "../_components/KeyCells";
 import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
 import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { opsCharts } from "../_components/ops-chart";
 import { getRedisDiagnostics } from "../data/service";
 import ValkeyScreen from "./_components/ValkeyScreen.island";
 import { legacyValkeyHref, valkeyHref, valkeyQuery } from "./query";
@@ -95,7 +95,7 @@ export default ssr<AuthContext>(async (c) => {
           text: warning.detail,
         }))}
         error={diagnostics.available ? null : diagnostics.error}
-        chart={prepareOperationalCharts([{ kind: "bar", title: t.prefixDistribution, description: sampled, data: chartData }], locale)[0]!}
+        chart={opsCharts([{ kind: "bar", title: t.prefixDistribution, description: sampled, data: chartData }], locale)[0]!}
         sampled={sampled}
         prefixes={prefixes.map((prefix) => ({
           key: `${prefix.depth}:${prefix.prefix}`,

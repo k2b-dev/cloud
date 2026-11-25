@@ -2,11 +2,11 @@ import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { formatBytes, formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
-import { prepareOperationalCharts } from "../../frontend/operational-charts";
 import { gatewayOpsMessages } from "../../messages";
 import type { KeyCell } from "../_components/KeyCells";
 import { areaText, observabilityGroups, readAttention } from "../_components/ObservabilityArea";
 import ObservabilityNavigation from "../_components/ObservabilityNavigation.island";
+import { opsCharts } from "../_components/ops-chart";
 import { getPostgresDiagnostics, listPostgresIndexes, listPostgresSessions, type PostgresTableDiagnostic } from "../data/service";
 import PostgresScreen from "./_components/PostgresScreen.island";
 import { legacyPostgresHref, type PostgresState, postgresQuery } from "./query";
@@ -96,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
       .sort((left, right) => value(right) - value(left) || label(left).localeCompare(label(right)))
       .slice(0, 10)
       .map((row) => ({ label: label(row), value: value(row) }));
-  const [schemaSize, largest, schemaRows] = prepareOperationalCharts(
+  const [schemaSize, largest, schemaRows] = opsCharts(
     [
       {
         kind: "bar",
