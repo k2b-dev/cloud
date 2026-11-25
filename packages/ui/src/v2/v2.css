@@ -1013,6 +1013,11 @@
   flex-direction: column;
   min-width: 0;
 }
+/* a list of items keeps only the rows in view in the page; its padding holds the place of the others */
+.k2-ui .k2-list[data-virtual] {
+  padding-top: var(--k2-before, 0px);
+  padding-bottom: var(--k2-after, 0px);
+}
 .k2-ui .k2-row {
   /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
   --k2-row-side: auto;
