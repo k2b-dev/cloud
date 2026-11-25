@@ -365,7 +365,7 @@ export const Tabs = (props: TabsProps) => {
 
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
- * On the phone the head with a path gives way to the phone bar of the shell, which names the page.
+ * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
@@ -403,7 +403,17 @@ export type StatusFact = { before?: string; value?: string | number; after?: str
 export type StatusRowProps = {
   /** The one main statement, such as "7 unread". */
   lead: string;
-  /** Key figures after it; they leave on the phone. */
+  /**
+   * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
+   * while the old entries stay, and assistive technology hears "Wird geladen…". Pass `false` while nothing loads, so
+   * the mark's place of 16 px stays and nothing moves when it comes and goes; leave it out where the row never
+   * refreshes.
+   */
+  loading?: boolean;
+  /**
+   * Key figures after the lead. They give way where the row itself is narrower than 760 px (it measures its own
+   * column, not the window) and on the phone, so the filters keep their words; put what must stay in `lead`.
+   */
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
@@ -416,8 +426,9 @@ export type StatusRowProps = {
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
-/** The status row of a pane (52 px): the one lead statement, key figures, filters on the right. */
+/** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
+  const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
@@ -430,6 +441,15 @@ export const StatusRow = (props: StatusRowProps) => {
                 {(select) => <MarkCheck label={select().label} checked={select().checked} onChange={select().onChange} />}
               </Show>
               <span class="k2-status-lead">{props.lead}</span>
+              {/* the place of the loading mark is there while the row can refresh, so the mark moves nothing */}
+              <Show when={props.loading !== undefined}>
+                <span class="k2-status-busy" role="status">
+                  <Show when={props.loading}>
+                    <Icon name="loader-2" />
+                    <span class="k2-hidden-text">{t().loading}</span>
+                  </Show>
+                </span>
+              </Show>
               <For each={props.facts}>
                 {(fact) => (
                   <span class="k2-fact">

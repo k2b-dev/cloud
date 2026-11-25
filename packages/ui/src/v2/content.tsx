@@ -486,8 +486,11 @@ type TableBase<T> = {
   sort?: { column: number; direction: "ascending" | "descending" };
   /** What a row opens, on the desktop and on the phone: its first cell is the link or button. */
   open?: (row: T) => OpenTarget;
-  /** On the phone each row becomes a row of two lines instead (rule 7). */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element };
+  /**
+   * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
+   * the second line, such as the state of the entry as a chip.
+   */
+  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -835,6 +838,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                             lines={form.lines}
                             avatar={form.avatar}
                             time={form.time}
+                            marks={form.marks}
                             strong
                             href={target?.href}
                             onNavigate={target?.onNavigate}
