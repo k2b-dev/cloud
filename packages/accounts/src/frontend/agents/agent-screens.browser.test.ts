@@ -278,11 +278,11 @@ describe("an agent's API keys on v2", () => {
         await dialog.getByRole("button", { name: t.create }).click();
         await dialog.getByText(t.keyNameRequired).waitFor();
         expect(answers.posts).toEqual([]);
-        await dialog.getByRole("textbox", { name: t.keyName }).fill("Laptop Jana");
+        await dialog.getByRole("textbox", { name: t.keyName }).fill("Neuer Bericht-Export");
         await dialog.getByRole("radio", { name: t.modelsOnly }).check();
         await dialog.getByRole("button", { name: t.create }).click();
         await dialog.getByText(TOKEN).waitFor();
-        expect(answers.posts).toEqual([{ name: "Laptop Jana", access: "models", expiresAt: null }]);
+        expect(answers.posts).toEqual([{ name: "Neuer Bericht-Export", access: "models", expiresAt: null }]);
         await dialog.getByText(t.oneTime).waitFor();
         // the title says what happened
         await dialog.getByRole("heading", { name: t.created_ }).waitFor();
@@ -317,7 +317,7 @@ describe("an agent's API keys on v2", () => {
       const { context, tab, errors } = await open(desktop, `/app/accounts/agents/${AGENT_ID}?key=new`, answers);
       try {
         const dialog = tab.locator("[data-k2-part='Dialog']");
-        await dialog.getByRole("textbox", { name: t.keyName }).fill("Laptop Jana");
+        await dialog.getByRole("textbox", { name: t.keyName }).fill("Neuer Bericht-Export");
         await dialog.getByRole("button", { name: t.create }).click();
         if (create === 400) {
           // the app's own sentence, not the server's text
