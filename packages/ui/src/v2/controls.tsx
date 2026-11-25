@@ -9,6 +9,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { Icon } from "./marks";
 import { textEdge } from "./tokens";
@@ -245,12 +246,17 @@ export const Input = (props: InputProps) => {
           />
         }
       >
+        {/* A textarea's value is its text: the server sends it there, so the first render already shows it; in the browser
+            the value property holds it. HTML drops one newline at the start of a textarea's text, so the server sends
+            one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
           ref={(element) => forwardRef(props.ref, element)}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
-        />
+        >
+          {isServer ? `\n${props.value ?? ""}` : undefined}
+        </textarea>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>
