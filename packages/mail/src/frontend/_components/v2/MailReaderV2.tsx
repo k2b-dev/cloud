@@ -8,27 +8,27 @@ import type { MailWorkspaceMessage } from "../../../service/workspace";
 import type { MailboxController } from "../../mail-workspace";
 import MailMessageBody from "../MailMessageBody";
 import { createMailMessageMenu } from "../MailSenderMessageActions";
+import { useMailCloudUrl } from "../mail-cloud-id";
 import { deriveReplyRecipients } from "../mail-compose-derivation";
 import { isOutgoingMessage } from "../mail-conversation-history";
 import { type MailRespondIntent, mailConversationMenuItems } from "../mail-conversation-menu";
 import { buildMailConversationTimeline } from "../mail-conversation-timeline";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
-import { deriveMailMessage } from "../mail-derive-message";
+import { createMailMessageDerive } from "../mail-derive-message";
 import { mailMessageMessages } from "../mail-message-messages";
 import { normalizeContentId, referencedContentIds, resolveMessageBodyFormat, resolveMessageColors } from "../mail-message-presentation";
 import { buildMailListHref, mailRouteUrl } from "../mail-navigation";
 import { mailReaderMessages } from "../mail-reader-messages";
-import { senderUnavailableDetail } from "../mail-sender-identity-status";
+import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "../mail-sender-identity-status";
 import { createMailV2Reply, type MailV2Session } from "./MailReplyV2";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import type { MailV2Text } from "./mail-v2-messages";
 import { createMailV2ReaderMenus } from "./mail-v2-reader-menus";
-import { editMailV2Summary } from "./mail-v2-summary";
 import { mailV2MessageTime } from "./mail-v2-time";
 
 /**
  * The message frame's defaults on v2 (mockup mail.html): reading text in IBM Plex Sans 14/22 (the frame loads Cloud's
- * shared faces, `sharedFonts`; system-ui stands in until they arrive) in the second text colour (n800), 8 px between
+ * shared faces, `sharedFontsOrigin`; system-ui stands in until they arrive) in the second text colour (n800), 8 px between
  * paragraphs and none above the first or after the last, so the attachments follow at the band's own gap. The frame
  * cannot read the page's tokens, so the values stand here; each selector weighs no more than a message's own, which
  * follow and win, so an HTML mail keeps its fonts and spacing.
@@ -61,8 +61,8 @@ function MessageV2(props: {
   onReply?: () => void;
   /** Answers this message in the conversation's reply: Reply, Reply all or Forward from the message's "…". */
   onRespond?: (intent: MailRespondIntent, message: MailWorkspaceMessage) => void;
-  /** "Use as new" of the message's "…": its draft belongs to this person (absent where they cannot write). */
-  currentUserId?: string;
+  /** "Use as new" of the message's "…" (absent where the person cannot write). */
+  onDerive?: (kind: DraftDerivationKind, message: MailWorkspaceMessage) => unknown;
 }) {
   const locale = useLocale();
   const t = createMemo(() => mailMessageMessages.resolve([locale()]).t);
@@ -79,6 +79,8 @@ function MessageV2(props: {
       : t().toRecipient({ recipients });
   };
   const when = () => mailV2MessageTime(props.message.sentAt ?? props.message.internalDate, props.dateConfig);
+  // Cloud's origin from the server: the frame's typeface loads from there, the same document in SSR and the browser.
+  const cloudUrl = useMailCloudUrl();
   // The message's "…" is v1's message menu (MailSenderMessageActions); "Use as new" joins with the rebuilt reply.
   const c = () => props.controller;
   const menu = createMailMessageMenu({
@@ -117,20 +119,7 @@ function MessageV2(props: {
     },
     onReassignMessage: (messageId) => c().reassignMessage(messageId),
     get onDeriveMessage() {
-      const userId = props.currentUserId;
-      if (!userId) return undefined;
-      return (kind: DraftDerivationKind, message: MailWorkspaceMessage) =>
-        void deriveMailMessage({
-          kind,
-          message,
-          mailboxId: props.mailboxId,
-          identities: props.identities,
-          currentUserId: userId,
-          returnHref: c().requestPath(),
-          t: mailConversationUiMessages.resolve([locale()]).t,
-          explainSenderUnavailable: () => prompts.error(senderUnavailableDetail(props.identities, locale())),
-          stillCurrent: () => c().data.detailMessages.some((shown) => shown.id === message.id),
-        });
+      return props.onDerive;
     },
     onSplitMessage: (messageId) => c().splitMessage(messageId),
     // Reply, Reply all and Forward lead, as in v1's message menu (MailMessageCard's response actions).
@@ -208,7 +197,7 @@ function MessageV2(props: {
                 remoteContent={props.message.remoteContent}
                 linksDisabled={props.message.security?.linksDisabled ?? false}
                 frameStyle={MAIL_V2_FRAME_STYLE}
-                sharedFonts
+                sharedFontsOrigin={cloudUrl ?? undefined}
                 onSelectionChange={() => undefined}
               />
             </div>
@@ -248,6 +237,25 @@ export default function MailReaderV2(props: {
   const item = () => c().selectedListItem();
   const listHref = () => buildMailListHref(mailRouteUrl(c().requestPath()));
   const [replyRequest, setReplyRequest] = createSignal(0);
+  /** Names why no verified sender can send, and lets a mailbox admin open the setting that fixes it (v1's reader). */
+  const explainSenderUnavailable = async () => {
+    const mailboxId = data().mailbox.id;
+    const status = mailSenderIdentityStatusMessages.resolve([locale()]).t;
+    const detail = senderUnavailableDetail(data().identities, locale());
+    if (!c().canAdmin()) return void (await prompts.error(`${detail} ${status.askAdmin}`, { title: status.cannotSend }));
+    const open = await prompts.confirm(detail, { title: status.cannotSend, confirmText: status.openSenderSettings });
+    if (open && mailboxId === data().mailbox.id) void c().openSettings("delivery");
+  };
+  // "Use as new" of a message: one draft seed at a time, a failure says why (v1's, shared).
+  const derive = createMailMessageDerive({
+    mailboxId: () => data().mailbox.id,
+    identities: () => data().identities,
+    currentUserId: () => props.session.currentUserId,
+    returnHref: () => c().requestPath(),
+    selection: () => data().selectedConversationId,
+    shows: (messageId) => data().detailMessages.some((shown) => shown.id === messageId),
+    explainSenderUnavailable,
+  });
   // One reply per conversation: another conversation, or another mailbox, starts at rest again.
   const reply = createMemo(
     on(
@@ -408,7 +416,11 @@ export default function MailReaderV2(props: {
           <Notice
             tone="ai"
             title={props.text.shortly}
-            actions={c().canWrite() ? [{ label: props.text.edit, onClick: () => void editMailV2Summary(c(), locale()) }] : undefined}
+            actions={
+              c().canWrite()
+                ? [{ label: props.text.edit, disabled: menus.summary.saving(), onClick: () => void menus.summary.edit() }]
+                : undefined
+            }
           >
             {summary()}
           </Notice>
@@ -437,7 +449,7 @@ export default function MailReaderV2(props: {
               text={props.text}
               onReply={c().canWrite() ? () => setReplyRequest((count) => count + 1) : undefined}
               onRespond={reply()?.shown() ? (intent, message) => reply()?.respond(intent, message) : undefined}
-              currentUserId={c().canWrite() ? props.session.currentUserId : undefined}
+              onDerive={c().canWrite() && props.session.currentUserId ? derive.derive : undefined}
             />
           ) : (
             <Notice

@@ -59,7 +59,6 @@ export const mailV2Messages = i18n.define({
       assistant: "Assistant",
       send: "Send",
       edit: "Edit",
-      summaryNotSaved: "Summary not saved",
     },
     de: {
       mailboxes: "Postfächer",
@@ -116,7 +115,6 @@ export const mailV2Messages = i18n.define({
       assistant: "Assistent",
       send: "Senden",
       edit: "Bearbeiten",
-      summaryNotSaved: "Nicht gespeichert",
     },
   },
 });

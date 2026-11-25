@@ -1,13 +1,11 @@
 import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { CloudTheme } from "@k2b/cloud/shared";
-import { documentNavigate, type LinkNavigateEvent } from "@k2b/ssr/nav";
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
-  announce,
   Button,
-  CheckboxCard,
   ContextMenu,
   type DropdownAction,
   type DropdownItem,
@@ -16,23 +14,13 @@ import {
   prefersReducedMotion,
   prompts,
   ScrollArea,
-  Select,
   toast,
   useLocale,
 } from "@k2b/ui";
 import { batch, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { apiClient } from "../../api/client";
 import { mailCommandMessages } from "../../command-messages";
-import type {
-  ConversationDraftSummary,
-  ConversationWorkStatus,
-  DeriveDraftFromMessageInput,
-  DraftDerivationKind,
-  DraftIntent,
-  MailDraftSeed,
-  SenderIdentity,
-} from "../../contracts";
-import { openMailUserDraftStorage } from "../../lib/mail-user-draft-storage";
+import type { ConversationDraftSummary, ConversationWorkStatus, DraftIntent, SenderIdentity } from "../../contracts";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
 import type { ConversationKeep } from "../../service/conversation-keeps";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
@@ -50,7 +38,6 @@ import MailReplyBox, { type MailReplyBoxApi } from "./MailReplyBox";
 import type { MailActionId } from "./mail-actions";
 import { useMailCloudId } from "./mail-cloud-id";
 import { deriveReplyRecipients, quoteReplyBody } from "./mail-compose-derivation";
-import { mailDraftSeedHref } from "./mail-compose-route";
 import { initialConversationMessageId, isNearConversationEnd, isNearConversationStart } from "./mail-conversation-history";
 import { createMailConversationLinks } from "./mail-conversation-links";
 import { type MailRespondIntent, type MailRespondRequest, mailConversationMenuItems } from "./mail-conversation-menu";
@@ -58,6 +45,7 @@ import { createMailConversationNotes } from "./mail-conversation-notes";
 import { createMailConversationState } from "./mail-conversation-state";
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
+import { createMailMessageDerive } from "./mail-derive-message";
 import { describeUnavailableMailDetails } from "./mail-detail-availability";
 import { createRetryToasts } from "./mail-feedback";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
@@ -65,6 +53,7 @@ import { buildMailListHref, mailRouteUrl } from "./mail-navigation";
 import { quoteOriginalOf } from "./mail-quote-original";
 import { mailReaderMessages } from "./mail-reader-messages";
 import { mailSenderIdentityStatusMessages, senderUnavailableDetail } from "./mail-sender-identity-status";
+import { createMailSummaryEdit } from "./mail-summary-edit";
 import { mailSummaryMessages } from "./mail-summary-messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 import type { MailReplyPosition } from "./mail-workspace-preferences";
@@ -169,16 +158,6 @@ export default function MailConversationReader(props: {
   onReplyPositionChange?: (position: MailReplyPosition) => void;
 }) {
   const locale = useLocale();
-  let seedStorage: Storage | undefined;
-  onMount(() => {
-    if (props.currentUserId) {
-      try {
-        seedStorage = openMailUserDraftStorage(localStorage, props.currentUserId);
-      } catch {
-        /* Starting a draft reports storage failure. */
-      }
-    }
-  });
   const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const retryToasts = createMemo(
     on(
@@ -302,47 +281,13 @@ export default function MailConversationReader(props: {
   };
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
   const [pendingNewMessages, setPendingNewMessages] = createSignal(0);
-  type SummaryEdit = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; summary: string };
-  const summarySave = createMemo(
-    on(
-      () => props.mailboxId,
-      () => {
-        let active = true;
-        const current = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
-          onBefore: (edit) => ({ edit }),
-          mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
-            if (!active) throw new DOMException("Mailbox changed", "AbortError");
-            const onSummarySaved = props.onSummarySaved;
-            const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
-              {
-                param: { mailboxId, conversationId },
-                json: { expectedSummaryRevision, summary },
-              },
-              { init: { signal: abortSignal } },
-            );
-            if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
-            const updated = await response.json();
-            abortSignal.throwIfAborted();
-            const refresh = () => onSummarySaved(conversationId, updated);
-            return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
-          },
-          // The summary card shows the saved text; focus is back on the button that opened the form, which does not say so.
-          onSuccess: ({ refreshError, refresh }) => {
-            if (refreshError) reportSummaryRefreshFailure(refreshError, refresh);
-            else announce(t().summarySaved);
-          },
-          // The form has closed, so Retry sends the captured text again instead of losing it.
-          onError: (error, context) =>
-            retryToasts()(error.message, { retryLabel: t().retry, retry: () => context && current.mutate(context.edit) }),
-        });
-        onCleanup(() => {
-          active = false;
-          current.abort();
-        });
-        return current;
-      },
-    ),
-  );
+  const summaryEdit = createMailSummaryEdit({
+    mailboxId: () => props.mailboxId,
+    conversationId: () => props.selectedConversationId,
+    summary: () => props.conversationSummary,
+    onSaved: () => props.onSummarySaved,
+  });
+  const summarySaving = summaryEdit.saving;
   /** The summary was saved, only the view is stale, so Retry repeats the refresh, not the save. */
   const reportSummaryRefreshFailure = (error: Error, refresh: () => Promise<void>): void => {
     const generation = readerMailboxGeneration;
@@ -355,7 +300,6 @@ export default function MailConversationReader(props: {
       },
     });
   };
-  const summarySaving = () => summarySave().loading();
   type SummaryGenerate = { mailboxId: string; conversationId: string; expectedSummaryRevision: number; mode: MailSummaryGenerateMode };
   /** A person asks the AI for this conversation's summary; the card shows "being written" until the live update arrives. */
   const summaryGenerate = createMemo(
@@ -480,37 +424,7 @@ export default function MailConversationReader(props: {
     scheduleReaderScroll({ selectionKey: props.selectionKey, messageId: newest.id, behavior: prefersReducedMotion() ? "auto" : "smooth" });
   };
 
-  const editConversationSummary = async () => {
-    const generation = readerMailboxGeneration;
-    const conversationId = props.selectedConversationId;
-    const current = props.conversationSummary;
-    if (!conversationId || !current || summarySaving()) return;
-    const values = await prompts.form({
-      title: current.summary ? t().editSummary : t().createSummary,
-      icon: "ti ti-notes",
-      size: "large",
-      fields: {
-        summary: {
-          type: "text",
-          label: t().summary,
-          description: t().summaryDescription,
-          default: current.summary ?? "",
-          multiline: true,
-          lines: 8,
-          maxLength: 50_000,
-          markdown: true,
-        },
-      },
-      confirmText: current.summary ? t().saveSummary : t().createSummary,
-    });
-    if (!values || disposed || generation !== readerMailboxGeneration || conversationId !== props.selectedConversationId) return;
-    await summarySave().mutate({
-      mailboxId: props.mailboxId,
-      conversationId,
-      expectedSummaryRevision: current.summaryRevision,
-      summary: String(values.summary ?? ""),
-    });
-  };
+  const editConversationSummary = summaryEdit.edit;
 
   const toggleMessage = (messageId: string) =>
     setExpandedMessages((current) => {
@@ -521,21 +435,6 @@ export default function MailConversationReader(props: {
     });
 
   /** Opens a new message from a local seed on its compose page. */
-  const openDraftSeed = async (seed: MailDraftSeed, stillCurrent: () => boolean) => {
-    const store = await importOnDemand(() => import("./mail-draft-seed-store"));
-    if (!store || disposed || !stillCurrent()) return;
-    try {
-      if (!seedStorage) throw new Error(t().localDraftFailed);
-      store.storeMailDraftSeed(seedStorage, seed);
-    } catch {
-      void prompts.error(t().localDraftFailed, {
-        title: t().startMessageFailed,
-      });
-      return;
-    }
-    documentNavigate(mailDraftSeedHref(props.mailboxId, seed.id, props.requestUrl, { popout: false }));
-  };
-
   /** Names why no verified sender can send, and lets a mailbox admin open the setting that fixes it. */
   const explainSenderUnavailable = async () => {
     const generation = readerMailboxGeneration;
@@ -546,61 +445,16 @@ export default function MailConversationReader(props: {
     if (open && !disposed && generation === readerMailboxGeneration) props.onOpenDeliverySettings();
   };
 
-  const derivedDraft = createMemo(
-    on(
-      () => props.mailboxId,
-      () => {
-        let active = true;
-        const current = mutations.create<
-          MailDraftSeed,
-          {
-            message: MailWorkspaceMessage;
-            input: Omit<DeriveDraftFromMessageInput, "idempotencyKey">;
-          },
-          { message: MailWorkspaceMessage }
-        >({
-          onBefore: ({ message }) => ({ message }),
-          mutation: async ({ message, input }, { abortSignal }) => {
-            if (!active) throw new DOMException("Mailbox changed", "AbortError");
-            const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
-              {
-                param: { mailboxId: props.mailboxId },
-                json: {
-                  origin: {
-                    kind: "derive",
-                    messageId: message.id,
-                    input: {
-                      kind: input.kind,
-                      senderIdentityId: input.senderIdentityId,
-                      includeAttachments: input.includeAttachments,
-                    },
-                  },
-                },
-              },
-              { init: { signal: abortSignal } },
-            );
-            if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
-            return response.json();
-          },
-          onSuccess: (seed, context) => {
-            const generation = readerMailboxGeneration;
-            if (context && props.messages.some((message) => message.id === context.message.id)) {
-              void openDraftSeed(
-                seed,
-                () => generation === readerMailboxGeneration && props.messages.some((message) => message.id === context.message.id),
-              );
-            }
-          },
-          onError: (error) => prompts.error(error.message),
-        });
-        onCleanup(() => {
-          active = false;
-          current.abort();
-        });
-        return current;
-      },
-    ),
-  );
+  // "Use as new" of a message: one draft seed at a time, a failure says why (shared with the v2 pilot).
+  const messageDerive = createMailMessageDerive({
+    mailboxId: () => props.mailboxId,
+    identities: () => props.identities,
+    currentUserId: () => props.currentUserId ?? null,
+    returnHref: () => props.requestUrl,
+    selection: () => props.selectionKey,
+    shows: (messageId) => props.messages.some((message) => message.id === messageId),
+    explainSenderUnavailable: () => explainSenderUnavailable(),
+  });
   // The reply box under the conversation (Mail v5): Reply, Reply all, Forward, a quote, a returned draft, and the
   // internal note all land in it. It replaces the reply pill, the "Continue draft?" dialog, and the draft rows.
   let replyBox: MailReplyBoxApi | null = null;
@@ -610,7 +464,7 @@ export default function MailConversationReader(props: {
         ?.querySelector("[data-mail-reply-box-frame]")
         ?.scrollIntoView({ block: "nearest", behavior: prefersReducedMotion() ? "auto" : "smooth" }),
     );
-  const composerBusy = () => derivedDraft().loading();
+  const composerBusy = messageDerive.busy;
 
   const startComposer = (intent: DraftIntent, message: MailWorkspaceMessage, quotedBody?: string) => {
     if (!props.selectedConversationId || intent === "new" || !replyBox) return;
@@ -618,70 +472,7 @@ export default function MailConversationReader(props: {
     scrollToReplyBox();
   };
 
-  const deriveMessage = async (kind: DraftDerivationKind, message: MailWorkspaceMessage) => {
-    if (composerBusy() || derivedDraft().loading()) return;
-    const selectionKey = props.selectionKey;
-    const generation = readerMailboxGeneration;
-    const identities = props.identities.filter((identity) => identity.status === "verified");
-    const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
-    if (!defaultIdentity) return explainSenderUnavailable();
-    const choice = await prompts.dialog<Omit<DeriveDraftFromMessageInput, "idempotencyKey">>(
-      (close) => {
-        const [senderIdentityId, setSenderIdentityId] = createSignal(defaultIdentity.id);
-        const [includeAttachments, setIncludeAttachments] = createSignal(message.attachments.length > 0);
-        return (
-          <div class="flex flex-col gap-3">
-            <p class="text-sm text-secondary">{t().deriveDescription}</p>
-            <Select
-              label={t().sendFrom}
-              value={senderIdentityId}
-              onValueChange={setSenderIdentityId}
-              options={identities.map((identity) => ({ id: identity.id, label: identity.label }))}
-            />
-            <Show when={message.attachments.length > 0}>
-              <CheckboxCard
-                label={t().includeAttachments({ count: message.attachments.length })}
-                value={includeAttachments}
-                onValueChange={setIncludeAttachments}
-              />
-            </Show>
-            <div class="flex items-center justify-end gap-2">
-              <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-                {t().cancel}
-              </Button>
-              <Button
-                size="sm"
-                type="button"
-                onClick={() =>
-                  close({
-                    kind,
-                    senderIdentityId: senderIdentityId(),
-                    includeAttachments: includeAttachments(),
-                  })
-                }
-              >
-                <i class="ti ti-file-pencil" aria-hidden="true" /> {t().continue}
-              </Button>
-            </div>
-          </div>
-        );
-      },
-      {
-        title: t().useAsNew,
-        icon: "ti ti-copy",
-        size: "small",
-      },
-    );
-    if (
-      choice &&
-      !disposed &&
-      generation === readerMailboxGeneration &&
-      selectionKey === props.selectionKey &&
-      props.messages.some((current) => current.id === message.id)
-    ) {
-      derivedDraft().mutate({ message, input: choice });
-    }
-  };
+  const deriveMessage = messageDerive.derive;
 
   let currentSelection = props.selectionKey;
   let currentMessageIds = new Set(props.messages.map((message) => message.id));
@@ -766,8 +557,8 @@ export default function MailConversationReader(props: {
     cleanupPrint?.();
     if (readerScrollFrame !== null) cancelAnimationFrame(readerScrollFrame);
     readerScrollFrame = null;
-    summarySave().abort();
-    derivedDraft().abort();
+    summaryEdit.abort();
+    messageDerive.abort();
   };
   onCleanup(() => {
     disposed = true;

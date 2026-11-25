@@ -10,9 +10,9 @@ import { type MailRespondIntent, mailActionLabel, mailConversationMenuItems } fr
 import { createMailConversationState } from "../mail-conversation-state";
 import { mailConversationUiMessages } from "../mail-conversation-ui-messages";
 import { mailReaderMessages } from "../mail-reader-messages";
+import { createMailSummaryEdit } from "../mail-summary-edit";
 import { mailV2MenuEntries } from "./mail-v2-menu";
 import { mailV2Messages } from "./mail-v2-messages";
-import { editMailV2Summary } from "./mail-v2-summary";
 
 /**
  * The menus of the open conversation in Mail's v2 pilot: "Later" and "…" of the reader's head. They are v1's menus,
@@ -36,6 +36,14 @@ export function createMailV2ReaderMenus(props: {
   let disposed = false;
   onCleanup(() => {
     disposed = true;
+  });
+
+  // The summary's "Bearbeiten" and the entry of "…" write it through v1's form, save and Retry.
+  const summary = createMailSummaryEdit({
+    mailboxId: () => data().mailbox.id,
+    conversationId: () => data().selectedConversationId,
+    summary: () => data().conversationSummary,
+    onSaved: () => c().applySavedConversationSummary,
   });
 
   const conversationState = createMailConversationState({
@@ -233,7 +241,8 @@ export function createMailV2ReaderMenus(props: {
                     {
                       label: data().conversationSummary?.summary ? t().editSummary : t().createSummary,
                       icon: "ti ti-notes",
-                      action: () => void editMailV2Summary(c(), locale()),
+                      disabled: summary.saving(),
+                      action: () => void summary.edit(),
                     },
                   ]
                 : []),
@@ -284,5 +293,7 @@ export function createMailV2ReaderMenus(props: {
     more: (): MenuEntry[] => mailV2MenuEntries(moreItems()),
     /** What other apps linked to the open conversation, for the head's "n verknüpft". */
     linked: () => links.items(),
+    /** Writing the open conversation's summary, also from the summary's own "Bearbeiten". */
+    summary,
   };
 }
