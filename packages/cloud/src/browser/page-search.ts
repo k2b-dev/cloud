@@ -5,6 +5,9 @@
 const field = () =>
   document.querySelector<HTMLInputElement>('[data-k2-host-search] [data-slot="head"] [data-k2-part="Input"][data-search] > input');
 
+/** The page shows such a field, so the phone bar's search button opens it (and the global search moves to the app menu). */
+export const pageOwnsSearch = (): boolean => (field()?.getClientRects().length ?? 0) > 0;
+
 /**
  * Opens the search of the page's head from the phone bar: the field takes the focus, so it opens over the head and
  * the phone's keyboard comes. Escape folds it away again (`@k2b/ui/v2`), and the focus returns to `trigger`. False
@@ -13,7 +16,7 @@ const field = () =>
  */
 export const openPageSearch = (trigger: HTMLElement): boolean => {
   const input = field();
-  if (!input || input.getClientRects().length === 0) return false;
+  if (!input || !pageOwnsSearch()) return false;
   input.focus();
   if (document.activeElement !== input) return false;
   const escape = (event: KeyboardEvent) => {

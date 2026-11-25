@@ -121,3 +121,48 @@ test("in the phone menu a row without a symbol starts its words on the edge of t
     await page.close();
   }
 }, 20_000);
+
+// On a v2 page whose head has its own search, the phone bar's search button opens that search; the global search
+// stays one tap away as the sheet's first entry, "Search everywhere". Other pages keep the bar's global search and
+// show no such entry.
+for (const own of [true, false])
+  test(`390 px: the app menu ${own ? "leads with Search everywhere, which opens the global search" : "has no Search everywhere"} ${own ? "on a page with its own search" : "on other pages"}`, async () => {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+    try {
+      // a signed-in v2 page's head search as Layout and @k2b/ui/v2 render it
+      const head = own
+        ? '<main data-k2-host-search><div data-slot="head"><div class="k2-bar"><div class="k2-bar-end"><span data-k2-part="Input" data-search><input type="search" aria-label="Suchen"></span></div></div></div></main>'
+        : "";
+      const html =
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style>` +
+        "<style>.ti { display: inline-block; width: 1em; height: 1em; }</style></head>" +
+        `<body class="k2b-ui">${head}<div id="workspace"></div></body></html>`;
+      await page.route("http://localhost/mobile-navigation", (route) => route.fulfill({ contentType: "text/html", body: html }));
+      await page.goto("http://localhost/mobile-navigation");
+      // the shell's search host: it takes the request and notes it
+      await page.evaluate(() =>
+        window.addEventListener("cloud.search.open", (event) => {
+          event.detail.accepted = true;
+          document.documentElement.dataset.searched = "";
+        }),
+      );
+      await page.addScriptTag({ content: harness });
+      await page.getByRole("button", { name: "Open menu", exact: true }).tap();
+      await page.locator("dialog .k2b-navigation").waitFor({ state: "visible" });
+      await settled(page);
+      const everywhere = page.getByRole("button", { name: "Search everywhere", exact: true });
+      expect(await everywhere.count()).toBe(own ? 1 : 0);
+      if (!own) return;
+      // the first entry of the sheet's body, above the app menu
+      const first = await page.evaluate(() => {
+        const body = document.querySelector("dialog .k2b-panel-dialog__body")!;
+        return body.querySelector("button, a[href]")?.textContent?.trim();
+      });
+      expect(first).toBe("Search everywhere");
+      await everywhere.tap();
+      await page.waitForFunction(() => document.documentElement.dataset.searched !== undefined);
+      expect(await page.locator("dialog .k2b-navigation").count()).toBe(0);
+    } finally {
+      await page.close();
+    }
+  }, 20_000);

@@ -304,9 +304,10 @@ On a signed-in phone the search of a v2 page's head sits in the phone bar, as
 in the approved Mail mockup: the bar's search button, named “Search”, opens the
 head's search field (`Input type="search"`), which opens over the head and
 brings the phone's keyboard; Escape folds it away with its words and returns
-the focus to the button. The head keeps its room for its views. Without such a
-field, or while an open detail hides the head, the button opens the global
-search. The app changes nothing for this: Layout marks the v2 content with
+the focus to the button. The head keeps its room for its views. The global
+search then leads the app menu (the ⠿ sheet) as its first entry, “Search
+everywhere”. Without such a field, or while an open detail hides the head, the
+button opens the global search, and the app menu has no such entry. The app changes nothing for this: Layout marks the v2 content with
 `data-k2-host-search`, and `@k2b/ui/v2` folds the head's search away there.
 
 Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
