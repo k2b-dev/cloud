@@ -2,8 +2,8 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../test/browser";
-import { textEdge, typeRoles } from "../v2/tokens";
 import { measureV2Layout } from "../v2/testing";
+import { textEdge, typeRoles } from "../v2/tokens";
 
 // A chart of @k2b/ui in a v2 screen of Cloud: the page carries the v1 sheet on `.k2b-ui` and the v2 sheet on the
 // `.k2-ui` content area. The chart must speak v2 there: the v2 font, the meta role, the v2 inks and lines, a separator
@@ -77,7 +77,12 @@ const look = (page: Page) =>
     probe.remove();
     const text = (selector: string) => {
       const style = getComputedStyle(document.querySelector(selector)!);
-      return { family: style.fontFamily.split(",")[0]!.replaceAll('"', ""), size: style.fontSize, fill: style.fill, opacity: style.opacity };
+      return {
+        family: style.fontFamily.split(",")[0]!.replaceAll('"', ""),
+        size: style.fontSize,
+        fill: style.fill,
+        opacity: style.opacity,
+      };
     };
     const canvas = document.querySelector(".charts-v2-line")!.closest(".k2-canvas")!.getBoundingClientRect();
     return {
