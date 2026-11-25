@@ -100,6 +100,8 @@ test("390 px: the shell's menu lists the mailboxes and folders, and a folder cho
     await sheet.waitFor({ state: "visible" });
     await settled(page);
     expect(await sheet.locator('[aria-current="page"]').textContent()).toContain("Kontakt");
+  // the mailbox and its folders never fold: no toggle shortens the mailbox's link
+  expect(await sheet.locator(".k2b-navigation__disclosure").count()).toBe(0);
     // a page that loads anew forgets this mark; one that opens in place keeps it
     await page.evaluate(() => document.documentElement.setAttribute("data-same-page", ""));
     await sheet.getByRole("link", { name: "Lieferanten" }).tap();

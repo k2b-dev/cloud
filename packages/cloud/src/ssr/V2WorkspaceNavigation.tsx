@@ -1,5 +1,5 @@
 import { createNavigation, type NavigationItem } from "@k2b/ui";
-import type { NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
+import type { MenuEntry, NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
 
@@ -12,22 +12,62 @@ type V2Navigation = {
 };
 
 /**
- * The entries of a v2 `Nav` as the shell's navigation: each group with a name becomes a section, an entry `nested`
- * stands under the entry before it, and symbols, counts, the open one and "something new" carry over. The action of a
- * group (its "…") stays in the sidebar.
+ * The entries of a v2 `Nav` as the shell's navigation:
+ * - each group with a name becomes a section; the deeds of its "…" follow its entries;
+ * - an entry `nested` stands under the entry before it, always open and without a toggle, as the sidebar shows it;
+ * - a folding entry (`items`) folds the same way, open while it holds the open entry;
+ * - an entry's own "…" (`menu`) becomes its row's menu;
+ * - symbols, counts, the open one and "something new" carry over.
+ * Deeds are found by id (`click`), links by their address as written (`navigate`).
  */
+const holdsCurrent = (item: NavigationItem): boolean => !!item.active || (item.children ?? []).some(holdsCurrent);
+
 const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navigation => {
   const navigate = new Map<string, OnNavigate>();
   const click = new Map<string, () => void>();
+  // a menu's entries as deeds of a row or a section: links stay links, the rest run their onClick (a choice its
+  // onChoose); a submenu is left out, the sidebar keeps it
+  const deeds = (entries: readonly MenuEntry[], prefix: string): NavigationItem[] =>
+    entries.flatMap((entry, index): NavigationItem[] => {
+      if (entry === "separator") return [];
+      if ("title" in entry) {
+        const section = entry;
+        return deeds(
+          section.items.map((item) => ({
+            ...item,
+            onClick: section.onChoose ? () => section.onChoose?.(item.value ?? item.label) : item.onClick,
+          })),
+          `${prefix}:${index}`,
+        );
+      }
+      if (entry.items) return [];
+      const id = `${prefix}:${index}`;
+      const common = {
+        id,
+        label: entry.label,
+        ...(entry.icon ? { icon: `ti ti-${entry.icon}` } : {}),
+        ...(entry.disabled || (entry.href === undefined && !entry.onClick) ? { disabled: true } : {}),
+      };
+      if (entry.href !== undefined) return [{ ...common, href: entry.href }];
+      const run = entry.onClick;
+      if (run) click.set(id, () => void run());
+      return [{ ...common, action: id }];
+    });
   const entry = (item: NavItem, id: string): NavigationItem => {
     const common = {
       id,
       label: item.label,
-      icon: `ti ti-${item.icon}`,
+      ...(item.icon ? { icon: `ti ti-${item.icon}` } : {}),
       ...(item.count !== undefined ? { badge: item.count } : {}),
       ...(item.current ? { active: true } : {}),
       ...(item.dot ? { unread: true } : {}),
+      ...(item.menu ? { actions: deeds(item.menu, `${id}:menu`) } : {}),
     };
+    if (item.items) {
+      // a fold: its entries one level in, behind a toggle, open while it holds the open entry
+      const children = rows(item.items, id);
+      return { ...common, children, defaultExpanded: children.some(holdsCurrent) };
+    }
     if (item.href !== undefined) {
       if (item.onNavigate) navigate.set(item.href, item.onNavigate);
       return { ...common, href: item.href, ...(item.onNavigate ? { navigation: "enhanced" as const } : {}) };
@@ -43,14 +83,14 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
       if (item.nested && parent) parent.children.push(row);
       else top.push({ item: row, children: [] });
     });
-    // nested entries stay open, as the sidebar always shows them
-    return top.map(({ item, children }) => (children.length === 0 ? item : { ...item, children }));
+    // nested entries stay open and have no toggle, as the sidebar always shows them
+    return top.map(({ item, children }) => (children.length === 0 ? item : { ...item, children, disclosure: false as const }));
   };
-  const items = groups.flatMap((group, index): NavigationItem[] =>
-    group.label
-      ? [{ id: `group:${index}`, label: group.label, section: true, children: rows(group.items, `${index}`) }]
-      : rows(group.items, `${index}`),
-  );
+  const items = groups.flatMap((group, index): NavigationItem[] => {
+    const own = group.action && "items" in group.action ? deeds(group.action.items, `group:${index}:menu`) : [];
+    const children = [...rows(group.items, `${index}`), ...own];
+    return group.label ? [{ id: `group:${index}`, label: group.label, section: true, children }] : children;
+  });
   return { items: [...items, ...rows(foot, "foot")], navigate, click };
 };
 

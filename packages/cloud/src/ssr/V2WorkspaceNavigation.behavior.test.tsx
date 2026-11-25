@@ -10,8 +10,20 @@ const fixture = (opened: string[], clicked: string[]) => {
   const groups: NavGroup[] = [
     {
       label: "Postfächer",
+      // the group's "…": its deeds follow the group's entries in the menu
+      action: {
+        label: "Postfächer verwalten",
+        items: [{ label: "Neues Postfach", icon: "mail-plus", onClick: () => void clicked.push("new") }],
+      },
       items: [
-        { label: "Kontakt", icon: "mail", href: "/app/demo/box", onNavigate: (nav) => void opened.push(`box ${nav.href}`) },
+        {
+          label: "Kontakt",
+          icon: "mail",
+          href: "/app/demo/box",
+          onNavigate: (nav) => void opened.push(`box ${nav.href}`),
+          // the entry's "…": its row's menu
+          menu: [{ label: "Ausblenden", icon: "eye-off", onClick: () => void clicked.push("hide") }, "separator"],
+        },
         // a link relative to the page, as a view or a folder of the open mailbox can be
         {
           label: "Gesendet",
@@ -24,6 +36,8 @@ const fixture = (opened: string[], clicked: string[]) => {
         },
         // a link without a way to open in place: the menu loads it as a page
         { label: "Archiv", icon: "archive", href: "/app/demo/archive", nested: true, dot: "ok" },
+        // a fold: closed while none of its entries is the open one
+        { label: "Mehr", nested: true, items: [{ label: "Spam", icon: "alert-octagon", href: "/app/demo/spam" }] },
       ],
     },
     {
@@ -82,7 +96,9 @@ test("the menu's tree: named groups are sections, nested entries stand under the
             icon: "ti ti-mail",
             href: "/app/demo/box",
             navigation: "enhanced",
-            // nested entries stay open, also while none of them is the open one
+            actions: [{ id: "/app/demo/box:menu:0", label: "Ausblenden", icon: "ti ti-eye-off", action: "/app/demo/box:menu:0" }],
+            // nested entries stay open, without a toggle, also while none of them is the open one
+            disclosure: false,
             children: [
               {
                 id: "?folder=sent",
@@ -94,8 +110,15 @@ test("the menu's tree: named groups are sections, nested entries stand under the
                 navigation: "enhanced",
               },
               { id: "/app/demo/archive", label: "Archiv", icon: "ti ti-archive", unread: true, href: "/app/demo/archive" },
+              {
+                id: "0:3",
+                label: "Mehr",
+                defaultExpanded: false,
+                children: [{ id: "/app/demo/spam", label: "Spam", icon: "ti ti-alert-octagon", href: "/app/demo/spam" }],
+              },
             ],
           },
+          { id: "group:0:menu:0", label: "Neues Postfach", icon: "ti ti-mail-plus", action: "group:0:menu:0" },
         ],
       },
       { id: "1:0", label: "Planen", icon: "ti ti-calendar", action: "1:0" },
@@ -123,6 +146,35 @@ test("a tap opens an entry in place through its own onNavigate, a relative link 
     planen.click();
     await Bun.sleep(0);
     expect(view.clicked).toEqual(["planen"]);
+  } finally {
+    view.cleanup();
+  }
+});
+
+test("in the sheet the mailbox row keeps its whole link, a fold opens and closes, the deeds of a row and a group run", async () => {
+  const view = await mount();
+  try {
+    const rowOf = (name: string) =>
+      [...view.host.querySelectorAll(".k2b-navigation__row")].find((row) => row.textContent?.startsWith(name))!;
+    // the mailbox and its folders never fold: no toggle beside its link
+    expect(rowOf("Kontakt").querySelector(".k2b-navigation__disclosure")).toBeNull();
+    // the fold is a toggle, closed while none of its entries is open
+    const more = rowOf("Mehr").querySelector<HTMLButtonElement>("button")!;
+    expect(more.getAttribute("aria-expanded")).toBe("false");
+    more.click();
+    await Bun.sleep(0);
+    expect(more.getAttribute("aria-expanded")).toBe("true");
+    // the group's deed runs from its entry
+    const create = [...view.host.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.includes("Neues Postfach"),
+    )!;
+    create.click();
+    await Bun.sleep(0);
+    expect(view.clicked).toEqual(["new"]);
+    // the row's deed runs through the navigation's activation, as its menu does
+    await view.registered.navigation.activate("/app/demo/box:menu:0");
+    expect(view.clicked).toEqual(["new", "hide"]);
+    expect(rowOf("Kontakt").querySelector(".k2b-dropdown__trigger, [aria-haspopup='menu']")).not.toBeNull();
   } finally {
     view.cleanup();
   }

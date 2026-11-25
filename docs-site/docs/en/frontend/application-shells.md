@@ -227,10 +227,13 @@ import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 ```
 
 A group with a name becomes a section, a `nested` entry stands under the entry
-before it, and `current`, `count` and `dot` carry over; a group's own
-`action` stays in the sidebar. A tap opens an entry the way the sidebar does:
-in place through its `onNavigate`, otherwise as a page; an entry without a
-link runs its `onClick`.
+before it, always open and without a toggle, and `current`, `count` and
+`dot` carry over. A folding entry (`items`) folds in the menu too, open while
+it holds the open entry. An entry's `menu` becomes its row's menu, and the
+deeds of a group's "…" (`action` with `items`) follow the group's entries; a
+group's single icon button and a submenu stay in the sidebar. A tap opens an
+entry the way the sidebar does: in place through its `onNavigate`, otherwise
+as a page; an entry without a link runs its `onClick`.
 
 Keep permission filtering, labels, counts, URLs, and actions application-owned.
 The provider emits an SSR snapshot, binds handlers on mount, and unregisters on
