@@ -103,3 +103,15 @@ const logs = defineListQuery({
 });
 const logState = logs.reset();
 export type FixedTypes = [Expect<Equal<(typeof logState)["sort"]["field"], "time">>, Expect<Equal<(typeof logState)["group"], undefined>>];
+
+// Explicit type parameters must match the properties, so the type never claims what the runtime does not do.
+// @ts-expect-error: a single choice needs multiple: false
+field.choice<"a", false>({ label: "A", options: [{ value: "a", label: "A" }] });
+field.choice<"a", false>({ label: "A", multiple: false, options: [{ value: "a", label: "A" }] });
+// @ts-expect-error: a single lookup needs multiple: false
+field.lookup<false>({ label: "Who", load: async () => ({ items: [] }), resolve: noItems });
+// @ts-expect-error: a mandatory type needs its required value
+field.bool<true>({ label: "2FA", labels: { yes: "on", no: "off" } });
+field.bool<true>({ label: "2FA", labels: { yes: "on", no: "off" }, required: true });
+// @ts-expect-error: a mandatory type needs its required value
+field.text<"x">({ label: "Request" });

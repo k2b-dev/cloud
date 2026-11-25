@@ -277,6 +277,110 @@ describe("list query helpers", () => {
   });
 });
 
+describe("list query review guards", () => {
+  test("the sort whitelist reads only declared options, never inherited keys", () => {
+    for (const raw of ["__proto__.asc", "constructor.asc", "toString.desc", "hasOwnProperty.asc"]) {
+      const parsed = articles.parse(new URLSearchParams({ sort: raw }));
+      expect(parsed.state.sort).toEqual({ field: "received", direction: "desc" });
+      expect(parsed.issues).toEqual([{ code: "invalid", param: "sort", value: raw }]);
+    }
+    for (const raw of ["constructor", "toString", "__proto__"]) {
+      expect(articles.parse(new URLSearchParams({ group: raw })).issues).toEqual([{ code: "invalid", param: "group", value: raw }]);
+    }
+    expect(() =>
+      defineListQuery({
+        key: "x",
+        fields: {},
+        sort: { options: { name: { label: "Name" } }, default: { field: "constructor" as "name", direction: "asc" } },
+      }),
+    ).toThrow("default sort");
+    expect(() => articles.serialize({ ...articles.reset(), sort: { field: "constructor" as "price", direction: "asc" } })).toThrow(
+      RangeError,
+    );
+  });
+
+  test("field keys of Object.prototype are refused, so no filter reads an inherited value", () => {
+    const sort = { fixed: { field: "id", direction: "asc", label: "ID" } } as const;
+    for (const key of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
+      expect(() => defineListQuery({ key: "x", fields: { [key]: field.text({ label: "X" }) }, sort })).toThrow("field key");
+    }
+  });
+
+  test("numbers outside the one URL grammar are invalid in parse and refused by set and serialize", () => {
+    const tooLarge = "9".repeat(309);
+    for (const raw of ["0.0000001..", "1000000000000000000000..", `${tooLarge}..`, "1e3..", "+5.."]) {
+      const parsed = articles.parse(new URLSearchParams({ price: raw }));
+      expect(parsed.state.filters.price).toBeUndefined();
+      expect(parsed.issues).toEqual([{ code: "invalid", param: "price", value: raw }]);
+    }
+    const start = articles.reset();
+    for (const range of [{ min: 0.0000001 }, { min: 1e21 }, { max: Number.POSITIVE_INFINITY }, { min: Number.NaN }, { min: 5, max: 1 }]) {
+      expect(() => articles.set(start, "price", range)).toThrow(RangeError);
+      expect(() => articles.serialize({ ...start, filters: { price: range } })).toThrow(RangeError);
+    }
+    // What the grammar holds round-trips exactly, including the canonical form of zero.
+    const small = articles.set(start, "price", { min: 0.000001, max: 123456789012345 });
+    expect(articles.parse(articles.serialize(small)).state).toEqual(small);
+    expect(articles.serialize(articles.set(start, "price", { min: -0 })).toString()).toBe("price=0..");
+  });
+
+  test("a mandatory value is checked as a whole and stored in its canonical form", () => {
+    const sort = { fixed: { field: "id", direction: "asc", label: "ID" } } as const;
+    const options = [
+      { value: "a", label: "A" },
+      { value: "b", label: "B" },
+    ];
+    expect(() =>
+      defineListQuery({
+        key: "x",
+        fields: { tag: field.choice({ label: "Tag", options, required: ["a", "unknown" as "a"] }) },
+        sort,
+      }),
+    ).toThrow("required value");
+    const ordered = defineListQuery({
+      key: "x",
+      fields: { tag: field.choice({ label: "Tag", options, required: ["b", "a", "b"] }) },
+      sort,
+    });
+    expect(ordered.reset().filters.tag).toEqual(["a", "b"]);
+    expect(ordered.parse("").state.filters.tag).toEqual(["a", "b"]);
+    expect(ordered.clear(ordered.parse("tag=a").state, "tag").filters.tag).toEqual(["a", "b"]);
+    expect(ordered.serialize(ordered.reset()).toString()).toBe("");
+  });
+
+  test("values the URL cannot hold are refused instead of changing on the way", () => {
+    const start = articles.reset();
+    expect(() => articles.set(start, "consignor", ["a,b"])).toThrow(RangeError);
+    expect(() => articles.set(start, "status", ["consigned", "gone" as "sold"])).toThrow(RangeError);
+    expect(() => articles.set(start, "received", { kind: "range", from: "2026-11-30", to: "2026-11-01" })).toThrow(RangeError);
+    expect(() => articles.set(start, "received", { kind: "preset", preset: "last-7d" as "last-30d" })).toThrow(RangeError);
+  });
+
+  test("serialize and set never produce a query that parse rejects as too long", () => {
+    const fits = "x".repeat(LIST_QUERY_MAX_LENGTH - "request=".length);
+    const atLimit = articles.set(articles.reset(), "request", fits);
+    const params = articles.serialize(atLimit);
+    expect(params.toString().length).toBe(LIST_QUERY_MAX_LENGTH);
+    expect(articles.parse(params)).toEqual({ state: atLimit, issues: [] });
+
+    expect(() => articles.set(articles.reset(), "request", `${fits}x`)).toThrow(RangeError);
+    expect(() => articles.set(atLimit, "twofa", true)).toThrow(RangeError);
+    expect(() => articles.serialize({ ...articles.reset(), filters: { request: `${fits}x` } })).toThrow(RangeError);
+    // Page parameters do not count.
+    expect(articles.serialize(atLimit, new URLSearchParams({ selected: "y".repeat(500) })).get("request")).toBe(fits);
+  });
+
+  test("calendar days include the years 0000 to 0099", () => {
+    for (const day of ["0000-01-01", "0001-02-28", "0099-12-31"]) {
+      const parsed = articles.parse(new URLSearchParams({ received: `${day}..` }));
+      expect(parsed.issues).toEqual([]);
+      expect(parsed.state.filters.received).toEqual({ kind: "range", from: day });
+    }
+    expect(articles.parse("received=0099-02-29..").issues).toEqual([{ code: "invalid", param: "received", value: "0099-02-29.." }]);
+    expect(articles.parse("received=0096-02-29..").issues).toEqual([]);
+  });
+});
+
 test("the module imports nothing, so server routes load it without Solid or a DOM", async () => {
   const source = await Bun.file(new URL("./list-query.ts", import.meta.url)).text();
   const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
