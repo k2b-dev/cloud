@@ -19,17 +19,24 @@ const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
 const recipes = readdirSync(recipesDir)
   .filter((name) => name.endsWith(".tsx"))
   .sort();
-// Each recipe renders as it is and in every state it exports for Fibel's Example (`states`: empty, loading, failed or
-// what fits the screen), so a state an agent copies keeps the rules as well.
-type Recipe = { default: Parameters<typeof createComponent>[0]; states?: Record<string, () => JSX.Element> };
+// Each recipe once as its default screen, and once per state it exports in `states` (empty, loading, failed …), which
+// Fibel's Example offers beside it. A state of the form `{ render, press }` opens an overlay after hydration; its
+// server markup is the screen before the press, so it is rendered from `render` here.
+type RecipeState = (() => JSX.Element) | { render: () => JSX.Element; press: string | readonly string[] };
 const markup = new Map<string, string>();
 for (const name of recipes) {
-  const recipe = (await import(resolve(recipesDir, name))) as Recipe;
+  const screen = (await import(resolve(recipesDir, name))) as {
+    default: Parameters<typeof createComponent>[0];
+    states?: Record<string, RecipeState>;
+  };
   markup.set(
     name,
-    renderToString(() => createComponent(recipe.default, {})),
+    renderToString(() => createComponent(screen.default, {})),
   );
-  for (const [state, render] of Object.entries(recipe.states ?? {})) markup.set(`${name} (${state})`, renderToString(render));
+  for (const [state, value] of Object.entries(screen.states ?? {})) {
+    const render = typeof value === "function" ? value : value.render;
+    markup.set(`${name} · ${state}`, renderToString(render));
+  }
 }
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -60,7 +67,8 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
           expect(outline).not.toContain("Problems");
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
           expect(layout.problems).toEqual([]);
-          expect(layout.measured.texts).toBeGreaterThan(5);
+          // a state such as empty or failed shows less than the full screen, but still its frame and its sentence
+          expect(layout.measured.texts).toBeGreaterThan(name.includes(" · ") ? 2 : 5);
         } finally {
           await page.close();
         }

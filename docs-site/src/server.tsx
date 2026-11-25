@@ -9,6 +9,8 @@ import HomePage from "./home/HomePage";
 import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
+import RecipeScreen from "./ui/topics/RecipeScreen.island";
+import { isRecipeName, resolveRecipeState } from "./ui/topics/recipes";
 import { type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
@@ -131,6 +133,19 @@ app.get("/en/ui/v2/screen/:name", (c) => {
     title: `${screen.title} — UI v2`,
     description: screen.description,
     path: `/en/ui/v2/screen/${name}`,
+    theme: themeFromRequest(c.req.raw),
+    styles: ["/assets/generated/cloud-ui.css"],
+  });
+});
+// A recipe of the skill k2b-ui on a page of its own, live; Fibel's Example frames it. `?state=` picks one of its states.
+app.get("/en/ui/v2/recipe/:name", (c) => {
+  const name = c.req.param("name");
+  const state = c.req.query("state") || undefined;
+  if (!isRecipeName(name) || !resolveRecipeState(name, state)) return c.notFound();
+  return html(() => <RecipeScreen name={name} state={state} />, {
+    title: `Recipe ${name}${state ? ` · ${state}` : ""} — UI v2`,
+    description: `The recipe ${name} of the skill k2b-ui, built with @k2b/ui/v2.`,
+    path: `/en/ui/v2/recipe/${name}`,
     theme: themeFromRequest(c.req.raw),
     styles: ["/assets/generated/cloud-ui.css"],
   });
