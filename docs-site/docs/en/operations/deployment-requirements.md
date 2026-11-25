@@ -39,7 +39,9 @@ docker compose -f compose.prod.yml rm -f app-capabilities
 ```
 
 Use your normal environment and infrastructure overlays for both commands.
-Then deploy the new release. For Kubernetes or a custom deployment, remove the
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or a custom deployment, remove the
 Capabilities workload and its service from your manifests. Remove its app-key
 mount and secret from deployment configuration once the old service is gone.
 The new release no longer publishes a Capabilities application image.
@@ -51,15 +53,18 @@ heartbeat lease expires within three minutes. Until expiry, an old route can
 point to the stopped service and return a gateway error. Other applications
 remain available.
 
-The application had no owned database schema or migrations, so there is no
-application data to export. The database schema
-named `capabilities` belongs to the platform and must be kept. This upgrade does
-not delete existing data: shared execution history, grants, enrolled app keys,
-application package assignments, and remembered application metadata remain.
-The stopped app can therefore remain visible in **Administration → Apps**;
-use its existing removal action to hide the listing after it stops. That action
-does not revoke keys or delete application data. Revoke unused Capabilities app
-keys separately through the normal app-key administration.
+**Upgrading permanently deletes the removed application's platform records.**
+Core runs the cleanup even when the application is absent: its remembered
+registration, package assignment, app keys, grants, settings, rail entries,
+notifications, approvals, audit references and indexed Help are removed.
+Explicit grants to this app are removed from other workloads' mandates, and
+those workloads are paused for review. Other applications' data stays.
+Back up the database before upgrading if you need to preserve this history.
+
+The application had no owned database schema or authored content, so there is
+no application content to export and no separate export command. The database
+schema named `capabilities` belongs to the platform and is kept; only records
+identifying the removed application are deleted from it.
 
 The platform capability API, mandates, `cld capabilities`, Assistant and provider
 applications continue to work. Use `cld capabilities catalog` for discovery and
