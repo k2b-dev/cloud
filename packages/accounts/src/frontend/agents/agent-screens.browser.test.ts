@@ -250,6 +250,8 @@ describe("an agent's API keys on v2", () => {
         await dialog.getByText(TOKEN).waitFor();
         expect(answers.posts).toEqual([{ name: "Laptop Jana", access: "models", expiresAt: null }]);
         await dialog.getByText(t.oneTime).waitFor();
+        // the title says what happened
+        await dialog.getByRole("heading", { name: t.created_ }).waitFor();
         expect(await dialog.getByRole("button", { name: /kopieren|copy/i }).count()).toBe(1);
         await settled(tab);
         await shoot(tab, `created-${view.name}`);
