@@ -139,13 +139,14 @@ for (const own of [true, false])
         `<body class="k2b-ui">${head}<div id="workspace"></div></body></html>`;
       await page.route("http://localhost/mobile-navigation", (route) => route.fulfill({ contentType: "text/html", body: html }));
       await page.goto("http://localhost/mobile-navigation");
-      // the shell's search host: it takes the request and notes it
-      await page.evaluate(() =>
-        window.addEventListener("cloud.search.open", (event) => {
-          event.detail.accepted = true;
-          document.documentElement.dataset.searched = "";
-        }),
-      );
+      // the phone bar's search button offers the global search to the shell (`window.cloud.openGlobalSearch`)
+      await page.evaluate(() => {
+        window.cloud = {
+          openGlobalSearch: () => {
+            document.documentElement.dataset.searched = "";
+          },
+        };
+      });
       await page.addScriptTag({ content: harness });
       await page.getByRole("button", { name: "Open menu", exact: true }).tap();
       await page.locator("dialog .k2b-navigation").waitFor({ state: "visible" });

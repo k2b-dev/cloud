@@ -14,6 +14,8 @@ declare global {
     __cloudAppLaunchpad?: AppLaunchpadContext;
     cloud?: {
       openAppLaunchpad?: () => void;
+      /** The global search, as the phone bar's search button opens it (set while that button is on the page). */
+      openGlobalSearch?: () => void;
     };
   }
 }

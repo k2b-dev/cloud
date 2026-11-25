@@ -49,10 +49,16 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     );
   }
 
-  // on a v2 page, Escape in the head's search brings the focus back to this button
+  // on a v2 page, Escape in the head's search brings the focus back to this button; the app menu (the phone's sheet)
+  // opens the global search through this button's deed
   let button: HTMLButtonElement | undefined;
   onMount(() => {
     if (props.page) onCleanup(returnPageSearchFocus(() => button));
+    window.cloud ??= {};
+    window.cloud.openGlobalSearch = open;
+    onCleanup(() => {
+      if (window.cloud?.openGlobalSearch === open) delete window.cloud.openGlobalSearch;
+    });
   });
   return (
     <IconButton

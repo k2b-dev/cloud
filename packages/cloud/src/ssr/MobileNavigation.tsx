@@ -1,8 +1,6 @@
 import { BottomSheet, Button, Navigation, SegmentedControl, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { pageOwnsSearch } from "../browser/page-search";
-import { importOnDemand } from "../browser/reload";
-import { openGlobalSearch } from "../browser/search";
 import { type AppLaunchpadContext, AppLaunchpadPanel } from "./AppLaunchpadPanel";
 import { appAccentStyle } from "./app-appearance";
 import { anyAppBadge } from "./app-badges";
@@ -45,10 +43,12 @@ function MobileNavigation(props: {
   const [workspace, setWorkspace] = createSignal(readWorkspaceNavigation());
   const [tab, setTab] = createSignal<"app" | "apps">("app");
   // A page whose head has its own search takes the phone bar's search button; the global search waits here instead.
-  const ownSearch = pageOwnsSearch();
+  // The shell's global search, as the phone bar's button offers it (`window.cloud.openGlobalSearch`); the sheet keeps
+  // no search code of its own, so every island that can open the sheet stays as small as before.
+  const openSearch = window.cloud?.openGlobalSearch;
+  const ownSearch = pageOwnsSearch() && openSearch !== undefined;
   const searchEverywhere = async () => {
-    if (!(await props.beforeSelect())) return;
-    if (await importOnDemand(() => import("./GlobalSearchDialog"))) openGlobalSearch();
+    if (await props.beforeSelect()) openSearch?.();
   };
   // A new wrapper signal version propagates in-place updates of the owner snapshot.
   onCleanup(
