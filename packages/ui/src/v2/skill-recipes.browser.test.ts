@@ -69,6 +69,10 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
           expect(layout.problems).toEqual([]);
           // a state such as empty or failed shows less than the full screen, but still its frame and its sentence
           expect(layout.measured.texts).toBeGreaterThan(name.includes(" · ") ? 2 : 5);
+          // Every button and link keeps a name at every width, also where its words give way to its symbol (a section
+          // head on the phone): the accessibility tree lists a nameless one without a quoted name.
+          const tree = await page.locator(".frame").ariaSnapshot();
+          expect(tree.split("\n").filter((line) => /^\s*- (button|link)( \[[^\]]*\])*:?$/.test(line))).toEqual([]);
         } finally {
           await page.close();
         }
