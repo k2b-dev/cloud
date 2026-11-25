@@ -6,6 +6,7 @@ import { Button, Choice, confirm, Dialog, Empty, Facts, Field, Input, Notice, Ro
 import { createSignal, For, type JSX, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
+import { useConnectSetup } from "./connect-setup";
 
 const CREATE_INTENT = { key: "create", value: "api-key" };
 
@@ -29,16 +30,23 @@ const readApiKeyDraft = (value: unknown): { name: string; access?: ApiKeyAccess;
 };
 
 /**
- * Developer › API keys: the person's delegated keys, a new key (its token shown once in the dialog) and revoking one.
+ * Security & devices › API keys: the person's delegated keys, a new key (its token shown once in the dialog) and revoking one.
  * Creating needs a recent sign-in; after it the dialog opens again with what was entered. `primary` opens the dialog
  * from the page's head; `dialogs` must stand once in the screen.
  */
-export const useApiKeys = (props: { initialKeys: ServiceAccountCredential[]; openAiBaseUrl: string | null; now: string }) => {
+export const useApiKeys = (props: {
+  initialKeys: ServiceAccountCredential[];
+  openAiBaseUrl: string | null;
+  now: string;
+  /** Where the CLI and agents connect, for the set-up behind the section deed. */
+  connect: { mcpEndpoint: string; cloudUrl: string };
+}) => {
   const t = useAccountMessages();
   const locale = useLocale();
   const toast = useToast();
   const base = new Date(props.now);
   const modelsAvailable = props.openAiBaseUrl !== null;
+  const connect = useConnectSetup(props.connect);
   const [keys, setKeys] = createSignal<ServiceAccountCredential[]>(props.initialKeys);
   const [open, setOpen] = createSignal(false);
   const [name, setName] = createSignal("");
@@ -128,7 +136,10 @@ export const useApiKeys = (props: { initialKeys: ServiceAccountCredential[]; ope
       title={t().apiKeys}
       count={keys().length}
       summary={t().apiKeysDescription}
-      actions={[{ label: t().add, icon: "plus", onClick: () => openCreate() }]}
+      actions={[
+        { label: t().createApiKey, icon: "plus", onClick: () => openCreate() },
+        { label: t().connectAction, icon: "plug-connected", onClick: connect.open },
+      ]}
     >
       <Show
         when={keys().length > 0}
@@ -156,6 +167,8 @@ export const useApiKeys = (props: { initialKeys: ServiceAccountCredential[]; ope
   );
 
   const dialogs = (): JSX.Element => (
+    <>
+    {connect.dialog()}
     <Dialog
       title={created() ? t().apiKeyCreated : t().createApiKey}
       open={open()}
@@ -254,6 +267,7 @@ export const useApiKeys = (props: { initialKeys: ServiceAccountCredential[]; ope
         )}
       </Show>
     </Dialog>
+    </>
   );
 
   return { section, dialogs, create: () => openCreate() };

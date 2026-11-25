@@ -1,7 +1,7 @@
 import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { type Action, Button, Dialog, Empty, Field, Input, Menu, Row, Section, type TwoActions, useToast } from "@k2b/ui/v2";
+import { Button, Dialog, Empty, Field, Input, Menu, Row, Section, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import ApprovalNotice from "./ApprovalNotice";
@@ -15,12 +15,6 @@ import RevokeDevice, { findRemoval, type RevokeRequest, revokeStorageKey, SavedR
 
 // Mirrors the server's readable minute after a device change expires.
 const removalResultGraceMs = 60_000;
-
-/** At most two deeds for a section head. */
-const two = (list: readonly Action[]): TwoActions | undefined => {
-  const [first, second] = list;
-  return first ? (second ? [first, second] : [first]) : undefined;
-};
 
 /** The paired sign-in app devices of the signed-in person, as a section of the security page. */
 export default function DevicesSection(props: {
@@ -161,13 +155,19 @@ export default function DevicesSection(props: {
         title={t().devices}
         count={page() ? activeDevices().length : undefined}
         summary={t().description}
-        actions={two([
-          ...(props.pairing?.appOrigin ? [{ label: t().install, icon: "download", onClick: install.start }] : []),
-          ...(props.availability === "configured"
+        actions={
+          props.availability === "configured"
             ? [{ label: t().pair, icon: "plus", disabled: !props.pairing, onClick: () => setPairingOpen(true) }]
-            : []),
-        ])}
-        more={page()?.nextCursor ? { label: t().more, disabled: busy(), onClick: () => void load(true) } : undefined}
+            : undefined
+        }
+        // The next page of devices when there is one; otherwise the way to the sign-in app.
+        more={
+          page()?.nextCursor
+            ? { label: t().more, disabled: busy(), onClick: () => void load(true) }
+            : props.pairing?.appOrigin
+              ? { label: t().install, onClick: install.start, forward: true }
+              : undefined
+        }
       >
         <Show when={props.availability !== "configured"}>
           <ApprovalNotice state={props.availability} admin={props.admin} settingsLink={props.admin} />

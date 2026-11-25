@@ -6,7 +6,6 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import AccessScreen from "./AccessScreen.island";
 import { accountUserView } from "./account-view";
-import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 import { profileActionsUser } from "./profile-actions-user";
 
@@ -34,7 +33,6 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
       <AccessScreen
         user={accountUserView(user, categoryPolicy.login.label, t)}
-        appTab={pwaAvailable(c)}
         actionsUser={profileActionsUser(user)}
         appName={rawAppName || "Cloud"}
         freeIpaEnabled={freeIpaEnabled}

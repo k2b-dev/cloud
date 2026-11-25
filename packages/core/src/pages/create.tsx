@@ -39,11 +39,8 @@ import registeredHelpPage from "./help/registered.page";
 import { makeLegalPage } from "./legal/page-handler";
 import accessPage from "./me/access.page";
 import activityPage from "./me/activity.page";
-import appPage from "./me/app.page";
-import approvalsPage from "./me/approvals.page";
-import developerPage from "./me/developer.page";
-import notificationHistoryPage from "./me/notification-history.page";
 import notificationsPage from "./me/notifications.page";
+import { oldAccountAddresses } from "./me/old-addresses";
 import profilePage from "./me/page";
 import securityPage from "./me/security.page";
 import notFoundPage from "./NotFound";
@@ -59,6 +56,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .use("/me/notifications/history/*", middleware.noTransform())
     .use("/admin/outgoing-mail", middleware.noTransform())
     .use("/admin/outgoing-mail/*", middleware.noTransform())
+    // The account activity serializes notification titles and approvals next to each other, as the pages before it.
+    .use("/me/activity", middleware.noTransform())
     .use("/me/approvals", middleware.noTransform())
     .use("/me/approvals/*", middleware.noTransform())
     // Several settings tabs serialize text users write (feedback, conversation titles) next to other users' records.
@@ -102,19 +101,10 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .get("/me", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...profilePage)
     .get("/me/profile", (c) => c.redirect("/me", 302))
     .get("/me/security", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...securityPage)
-    .get("/me/security/activity", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...activityPage)
+    .get("/me/activity", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...activityPage)
     .get("/me/security/pair", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...pairDevicePage)
     .get("/me/access", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...accessPage)
     .get("/me/notifications", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...notificationsPage)
-    .get(
-      "/me/notifications/history",
-      auth.requireRole("authenticated", ssr.access),
-      auth.requireUser(ssr.access),
-      ...notificationHistoryPage,
-    )
-    .get("/me/approvals", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...approvalsPage)
-    .get("/me/developer", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...developerPage)
-    .get("/me/app", auth.requireRole("authenticated", ssr.access), auth.requireUser(ssr.access), ...appPage)
     // Admin pages (admin only)
     .get("/admin", auth.requireRole("admin", ssr.access), ...adminPage)
     .get("/admin/rail", auth.requireRole("admin", ssr.access), ...railAdminPage)
@@ -190,6 +180,8 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
 
   // 404 catch-all (must be after all mounted routes)
   pages.get("/*", auth.requireRole("*"), ...notFoundPage);
+  // The account pages before v2: each old address leads to its new place with every parameter.
+  for (const [path, redirect] of oldAccountAddresses) pages.get(path, redirect);
   return pages;
 };
 

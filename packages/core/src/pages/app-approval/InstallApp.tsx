@@ -1,6 +1,6 @@
 import { qr } from "@k2b/stdlib/qr";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Dialog, Facts, Text, useToast } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Dialog, Facts, Text, useToast } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { appApprovalMessages } from "./messages";
 
@@ -20,6 +20,7 @@ export function InstallLink(props: { origin: string }) {
   return (
     <>
       {/* k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas. */}
+      <Band>
       <Canvas label={t().installQr} height={256}>
         <img
           alt={t().installQr}
@@ -29,6 +30,7 @@ export function InstallLink(props: { origin: string }) {
           src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(props.origin))}`}
         />
       </Canvas>
+      </Band>
       <Facts items={[{ label: t().install, value: props.origin, mono: true }]} />
       <Bar
         end={

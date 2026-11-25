@@ -3,7 +3,6 @@ import { notifications, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
 import { accountUserView } from "./account-view";
-import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
 import NotificationsScreen from "./NotificationsScreen.island";
 
@@ -22,7 +21,6 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.notifications }]}>
       <NotificationsScreen
         user={accountUserView(user, categoryPolicy.login.label, t)}
-        appTab={pwaAvailable(c)}
         preferences={preferences}
         apps={apps}
         quiet={quiet}

@@ -68,3 +68,10 @@ test("ignores other calls, tests, and the component itself", () => {
   );
   expect(checkToastCopySource("packages/ui/src/feedback/toast.ts", `toast("A whole sentence that explains a lot");`, catalogs)).toEqual([]);
 });
+
+test("leaves the one-sentence toast of @k2b/ui/v2 alone, but not v1's toast beside a v2 import", () => {
+  const v2 = `import { useToast } from "@k2b/ui/v2";\nconst Example = () => {\n  const toast = useToast();\n  toast("The pairing could not be cancelled. Choose Pair a device again to cancel it.", { status: "bad" });\n};`;
+  expect(checkToastCopySource(file, v2, catalogs)).toEqual([]);
+  const v1 = `import { Button } from "@k2b/ui/v2";\nimport { toast } from "@k2b/ui";\ntoast.error("The pairing could not be cancelled. Choose Pair a device again to cancel it.");`;
+  expect(checkToastCopySource(file, v1, catalogs)).toHaveLength(1);
+});

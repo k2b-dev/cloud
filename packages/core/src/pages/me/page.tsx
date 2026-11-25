@@ -16,7 +16,6 @@ import { dates } from "@k2b/stdlib";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
 import { accountUserView } from "./account-view";
-import { pwaAvailable } from "./app-availability";
 import { type AccountMessages, accountMessages } from "./messages";
 import ProfileScreen from "./ProfileScreen.island";
 import { profileActionsUser } from "./profile-actions-user";
@@ -80,7 +79,6 @@ export default ssr<AuthContext>(async (c) => {
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <ProfileScreen
         user={accountUserView(user, categoryPolicy.login.label, t, now)}
-        appTab={pwaAvailable(c)}
         actionsUser={profileActionsUser(user)}
         appName={appName}
         freeIpaEnabled={freeIpaEnabled}

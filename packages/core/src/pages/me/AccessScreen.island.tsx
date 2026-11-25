@@ -1,6 +1,6 @@
 import { Button, Empty, Notice, Pane, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import AccountWorkspace, { useAccountMessages } from "./AccountWorkspace";
+import AccountWorkspace, { AccountTabs, sideWidth, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { useFreeIpaRequest } from "./freeipa-request";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
@@ -9,7 +9,6 @@ type Group = { name: string; label: string; inherited: boolean };
 
 export type AccessScreenProps = {
   user: AccountUserView;
-  appTab: boolean;
   actionsUser: ProfileActionsUser;
   appName: string;
   freeIpaEnabled: boolean;
@@ -42,8 +41,7 @@ export default function AccessScreen(props: AccessScreenProps) {
   return (
     <AccountWorkspace
       user={props.user}
-      active="access"
-      appTab={props.appTab}
+      place="account"
       actions={
         <>
           <Show when={props.accountsUi}>
@@ -61,7 +59,47 @@ export default function AccessScreen(props: AccessScreenProps) {
         </>
       }
     >
-      <Pane label={t().accessAndGroups}>
+      <Pane label={t().accessAndGroups} head={<AccountTabs active="access" />}>
+        <Pane.Split>
+          <Pane label={t().groupMemberships}>
+        <Section
+          icon="users-group"
+          title={t().groupMemberships}
+          count={props.groups.length}
+          summary={t().groupMembershipsDescription}
+          actions={[
+            {
+              label: props.showInherited ? t().directOnly : t().showInherited,
+              icon: "git-branch",
+              href: props.showInherited ? "/me/access" : "/me/access?groups=all",
+            },
+          ]}
+        >
+          <Show when={props.groups.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
+            <For each={props.groups}>
+              {(group) => (
+                <Row
+                  icon={group.inherited ? "git-branch" : "users"}
+                  lines={[group.label]}
+                  meta={group.inherited ? t().inheritedMembership : undefined}
+                  href={groupHref("member", group.name)}
+                />
+              )}
+            </For>
+          </Show>
+        </Section>
+          </Pane>
+          <Pane side label={t().delegatedManagement} width={sideWidth}>
+        <Section
+          icon="user-shield"
+          title={t().delegatedManagement}
+          count={props.managed.length}
+          summary={t().delegatedManagementDescription}
+        >
+          <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
+            <For each={props.managed}>{(group) => <Row icon="users" lines={[group.label]} href={groupHref("managed", group.name)} />}</For>
+          </Show>
+        </Section>
         <Show when={props.freeIpa}>
           {(freeIpa) => (
             <Section icon="building-fortress" title={t().freeIpaAccount} summary={t().freeIpaAccountDescription}>
@@ -95,42 +133,8 @@ export default function AccessScreen(props: AccessScreenProps) {
             </Section>
           )}
         </Show>
-        <Section
-          icon="users-group"
-          title={t().groupMemberships}
-          count={props.groups.length}
-          summary={t().groupMembershipsDescription}
-          actions={[
-            {
-              label: props.showInherited ? t().directOnly : t().showInherited,
-              icon: "git-branch",
-              href: props.showInherited ? "/me/access" : "/me/access?groups=all",
-            },
-          ]}
-        >
-          <Show when={props.groups.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
-            <For each={props.groups}>
-              {(group) => (
-                <Row
-                  icon={group.inherited ? "git-branch" : "users"}
-                  lines={[group.label]}
-                  meta={group.inherited ? t().inheritedMembership : undefined}
-                  href={groupHref("member", group.name)}
-                />
-              )}
-            </For>
-          </Show>
-        </Section>
-        <Section
-          icon="user-shield"
-          title={t().delegatedManagement}
-          count={props.managed.length}
-          summary={t().delegatedManagementDescription}
-        >
-          <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
-            <For each={props.managed}>{(group) => <Row icon="users" lines={[group.label]} href={groupHref("managed", group.name)} />}</For>
-          </Show>
-        </Section>
+          </Pane>
+        </Pane.Split>
       </Pane>
       {actions.dialogs()}
       {request.dialogs()}

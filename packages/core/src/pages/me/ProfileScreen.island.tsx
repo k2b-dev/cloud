@@ -2,7 +2,8 @@ import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import type { KeyboardPlatform } from "@k2b/ui";
 import { Button, Cells, Empty, Facts, Notice, Pane, Row, Section } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import AccountWorkspace, { twoActions, useAccountMessages } from "./AccountWorkspace";
+import AccountWorkspace, { AccountTabs, sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
+import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
 import type { AccountUserView } from "./account-view";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 import ScreenSection from "./ScreenSection";
@@ -11,7 +12,6 @@ type Fact = { label: string; value: string };
 
 export type ProfileScreenProps = {
   user: AccountUserView;
-  appTab: boolean;
   actionsUser: ProfileActionsUser;
   appName: string;
   freeIpaEnabled: boolean;
@@ -57,15 +57,14 @@ export default function ProfileScreen(props: ProfileScreenProps) {
   return (
     <AccountWorkspace
       user={props.user}
-      active="profile"
-      appTab={props.appTab}
+      place="account"
       actions={
         <Button icon="camera" onClick={actions.changeAvatar}>
           {t().changeAvatar}
         </Button>
       }
     >
-      <Pane label={t().profile}>
+      <Pane label={t().profile} head={<AccountTabs active="profile" />}>
         <Show when={props.extendHint}>
           <Notice tone="note" icon="info-circle">
             {t().extendHint}
@@ -97,15 +96,15 @@ export default function ProfileScreen(props: ProfileScreenProps) {
         </Show>
         <Cells>
           <Cells.Cell
-            icon="shield-lock"
-            label={t().security}
+            icon="fingerprint"
+            label={t().passkeys}
             value={props.summaries.security.value}
             meta={props.summaries.security.meta}
             href="/me/security"
           />
           <Cells.Cell
             icon="users-group"
-            label={t().accessAndGroups}
+            label={t().groups}
             value={props.summaries.access.value}
             meta={props.summaries.access.meta}
             href="/me/access"
@@ -118,34 +117,40 @@ export default function ProfileScreen(props: ProfileScreenProps) {
             href="/me/notifications"
           />
           <Cells.Cell
-            icon="terminal-2"
-            label={t().developer}
+            icon="key"
+            label={t().apiKeys}
             value={props.summaries.developer.value}
             meta={props.summaries.developer.meta}
-            href="/me/developer"
+            href="/me/security"
           />
         </Cells>
+        <Pane.Split>
+          <Pane label={t().profileTitle}>
         <Section icon="user" title={t().profileTitle} summary={t().profileDescription} actions={profileActions()}>
           <Facts items={props.profileFacts} />
-        </Section>
-        <Section icon="id" title={t().accountFacts} summary={t().accountFactsDescription}>
-          <Facts items={props.accountFacts} />
         </Section>
         <ScreenSection
           timerSeconds={props.screen.timerSeconds}
           platform={props.screen.platform}
           sharedWorkstation={props.screen.sharedWorkstation}
         />
+          </Pane>
+          <Pane side label={t().accountFacts} width={sideWidth}>
+        <Section icon="id" title={t().accountFacts}>
+          <Facts items={props.accountFacts} />
+        </Section>
         <Section
           icon="activity"
           title={t().recentSecurityActivity}
           summary={t().recentSecurityActivityDescription}
-          more={{ label: t().viewAll, href: "/me/security", forward: true }}
+          more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
         >
           <Show when={props.activity.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
             <For each={props.activity}>{(entry) => <Row icon="shield-check" lines={[entry.label, entry.context]} time={entry.when} />}</For>
           </Show>
         </Section>
+          </Pane>
+        </Pane.Split>
       </Pane>
       {actions.dialogs()}
     </AccountWorkspace>

@@ -2,8 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import ConsentScreen from "../auth/ConsentScreen.island";
 import LoginScreen from "../auth/LoginScreen.island";
-import { developerProps, securityProps } from "./account-screens.fixture";
-import DeveloperScreen from "./DeveloperScreen.island";
+import { securityProps } from "./account-screens.fixture";
 import SecurityScreen from "./SecurityScreen.island";
 
 /** Account and sign-in screens for a browser test: `<html data-screen>` names the screen; the test answers the API. */
@@ -15,8 +14,6 @@ render(
     <LocaleProvider locale="en">
       {screen === "security" ? (
         <SecurityScreen {...securityProps()} />
-      ) : screen === "developer" ? (
-        <DeveloperScreen {...developerProps()} />
       ) : screen === "consent" ? (
         <ConsentScreen
           appName="Cloud"

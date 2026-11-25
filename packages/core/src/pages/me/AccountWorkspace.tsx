@@ -1,12 +1,16 @@
-import { APPROVALS_PAGE_PATH } from "@k2b/cloud/contracts/approvals";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Nav, type NavItem, RecordHead, type TwoActions, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Nav, type NavItem, RecordHead, Tabs, type TwoActions, Text, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 import type { AccountUserView } from "./account-view";
+import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
 import { accountMessages } from "./messages";
 
-export type AccountSection = "profile" | "security" | "access" | "notifications" | "approvals" | "developer" | "app";
+/** The areas of the account record, each with its own address. */
+export type AccountTab = "profile" | "security" | "access" | "notifications";
+
+/** The side column of the account record keeps one width on every tab. */
+export const sideWidth = { min: 300, default: 360 };
 
 /** The account's messages in the page's locale. */
 export const useAccountMessages = () => {
@@ -20,15 +24,31 @@ export const twoActions = (list: readonly Action[]): TwoActions | undefined => {
   return first ? (second ? [first, second] : [first]) : undefined;
 };
 
+/** The areas of the account record as the head of its pane. */
+export function AccountTabs(props: { active: AccountTab }) {
+  const t = useAccountMessages();
+  return (
+    <Tabs
+      label={t().accountSections}
+      items={(
+        [
+          { id: "profile", href: "/me", label: t().profile, icon: "user" },
+          { id: "security", href: "/me/security", label: t().securityAndDevices, icon: "shield-lock" },
+          { id: "access", href: "/me/access", label: t().accessAndGroups, icon: "users-group" },
+          { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "bell" },
+        ] satisfies { id: AccountTab; href: string; label: string; icon: string }[]
+      ).map((tab) => ({ label: tab.label, icon: tab.icon, href: tab.href, current: tab.id === props.active }))}
+    />
+  );
+}
+
 /**
- * The frame of every account page on v2: the account's sections in the sidebar (the phone menu lists the same), the
- * person in the head, and the page's one column below. The head's end holds the page's deed, if it has one.
+ * The frame of the account pages on v2: the account and its activity in the sidebar (the phone menu lists the same).
+ * The account record names the person in the head; the activity names itself. The head's end holds the page's deeds.
  */
 export default function AccountWorkspace(props: {
   user: AccountUserView;
-  active: AccountSection;
-  /** Shows the App section while the installation offers the mobile app. */
-  appTab?: boolean;
+  place: "account" | "activity";
   /** The page's deeds at the end of the head. */
   actions?: JSX.Element;
   /** The page's main deed, floating on the phone; the same deed stands as the primary button in `actions`. */
@@ -36,24 +56,14 @@ export default function AccountWorkspace(props: {
   children: JSX.Element;
 }) {
   const t = useAccountMessages();
-  const items = (): NavItem[] =>
-    (
-      [
-        { id: "profile", href: "/me", label: t().profile, icon: "user" },
-        { id: "security", href: "/me/security", label: t().security, icon: "shield-lock" },
-        { id: "access", href: "/me/access", label: t().access, icon: "users-group" },
-        { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "bell" },
-        { id: "approvals", href: APPROVALS_PAGE_PATH, label: t().approvals, icon: "shield-check" },
-        { id: "developer", href: "/me/developer", label: t().developer, icon: "terminal-2" },
-        ...(props.appTab ? [{ id: "app" as const, href: "/me/app", label: t().pwaTab, icon: "device-mobile" }] : []),
-      ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
-    ).map((section) => ({
-      label: section.label,
-      icon: section.icon,
-      href: section.href,
-      current: section.id === props.active,
-    }));
-  const groups = () => [{ items: items() }];
+  const groups = (): { items: NavItem[] }[] => [
+    {
+      items: [
+        { label: t().account, icon: "user-circle", href: "/me", current: props.place === "account" },
+        { label: t().activity, icon: "activity", href: ACCOUNT_ACTIVITY_PATH, current: props.place === "activity" },
+      ],
+    },
+  ];
   return (
     <>
       <V2WorkspaceNavigation label={t().account} groups={groups()} />
@@ -63,12 +73,18 @@ export default function AccountWorkspace(props: {
         head={
           <Bar
             start={
-              <RecordHead
-                name={props.user.name}
-                avatar={{ name: props.user.name, image: props.user.image }}
-                kinds={props.user.kinds}
-                ids={[{ label: t().username, value: props.user.uid, copy: true }]}
-              />
+              props.place === "account" ? (
+                <RecordHead
+                  name={props.user.name}
+                  avatar={{ name: props.user.name, image: props.user.image }}
+                  kinds={props.user.kinds}
+                  ids={[{ label: t().username, value: props.user.uid, copy: true }]}
+                />
+              ) : (
+                <Text type="body" weight="strong">
+                  {t().activity}
+                </Text>
+              )
             }
             end={props.actions}
           />

@@ -1,9 +1,8 @@
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { type JSX, onMount, Show } from "solid-js";
-import AccountWorkspace from "../me/AccountWorkspace";
+import AccountWorkspace, { AccountTabs } from "../me/AccountWorkspace";
 import type { AccountUserView } from "../me/account-view";
-import SecurityTabs from "../me/SecurityTabs";
 import ApprovalNotice from "./ApprovalNotice";
 import type { ApprovalAvailability } from "./availability";
 import { appApprovalMessages } from "./messages";
@@ -11,7 +10,7 @@ import Pairing from "./Pairing";
 
 export type PairScreenProps = {
   /** The signed-in person pairs their own device: the account frame stands around it. Absent for an administrator. */
-  self: { user: AccountUserView; appTab: boolean } | null;
+  self: { user: AccountUserView } | null;
   userId: string;
   actorId: string;
   name: string;
@@ -72,8 +71,8 @@ export default function PairScreen(props: PairScreenProps) {
       }
     >
       {(self) => (
-        <AccountWorkspace user={self().user} active="security" appTab={self().appTab}>
-          <Pane label={t().pair} head={<SecurityTabs active="sign-in" />}>
+        <AccountWorkspace user={self().user} place="account">
+          <Pane label={t().pair} head={<AccountTabs active="security" />}>
             {content()}
           </Pane>
         </AccountWorkspace>

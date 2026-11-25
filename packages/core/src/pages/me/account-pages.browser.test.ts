@@ -13,7 +13,6 @@ import { railPreferences } from "@k2b/cloud/services/rail-preferences";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import * as sharedWorkstation from "@k2b/cloud/services/session/shared-workstation";
 import { appAppearanceStyle } from "@k2b/cloud/ssr/app-appearance";
-import type { derivePageTrail } from "@k2b/cloud/ssr/page-trail";
 import { LocaleProvider } from "@k2b/ui";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
@@ -43,11 +42,9 @@ const pages = {
   "/me/security": (await import("./security.page")).default,
   "/me/access": (await import("./access.page")).default,
   "/me/notifications": (await import("./notifications.page")).default,
-  "/me/notifications/history": (await import("./notification-history.page")).default,
-  "/me/developer": (await import("./developer.page")).default,
-  "/me/security/activity": (await import("./activity.page")).default,
-  "/me/approvals": (await import("./approvals.page")).default,
+  "/me/activity": (await import("./activity.page")).default,
 } as const;
+const { oldAccountAddresses } = await import("./old-addresses");
 type Path = keyof typeof pages;
 const { buildFontAssets } = await import("../../../scripts/font-assets");
 const { buildTablerIconAssets } = await import("../../../scripts/tabler-assets");
@@ -102,8 +99,6 @@ let freeIpaEnabled = false;
 let requestsEnabled = false;
 
 const spies: Array<{ mockRestore(): void }> = [];
-/** The title array the page last gave the shell's layout. */
-let layoutTitle: Parameters<typeof derivePageTrail>[0];
 beforeEach(() => {
   setSystemTime(new Date(now));
   user = localUser;
@@ -112,10 +107,8 @@ beforeEach(() => {
   spies.push(
     spyOn(cloudSsr, "Layout").mockImplementation(((props: {
       c: Parameters<typeof server.getLocale>[0];
-      title?: Parameters<typeof derivePageTrail>[0];
       children: JSX.Element;
     }) => {
-      layoutTitle = props.title;
       return createComponent(LocaleProvider, {
         locale: server.getLocale(props.c),
         get children() {
@@ -296,7 +289,7 @@ const request = (path: Path, locale: "en" | "de", query = "") =>
       c.set("runtime" as never, { apps: [] } as never);
       await next();
     })
-    .get(path, ...pages[path])
+    .get(path, ...(pages[path] as (typeof pages)["/me"]))
     .request(`${origin}${path}${query}`, { headers: { Cookie: `cloud.locale=${locale}` } });
 
 type View = { width: number; height: number; touch: boolean; name: string };
@@ -331,12 +324,11 @@ const open = async (view: View, path: Path, locale: "en" | "de", query = "") => 
 const screens: { path: Path; query?: string; name: string }[] = [
   { path: "/me", name: "profile" },
   { path: "/me/security", name: "security" },
-  { path: "/me/security/activity", name: "activity" },
   { path: "/me/access", name: "access" },
   { path: "/me/notifications", name: "notifications" },
-  { path: "/me/notifications/history", name: "history" },
-  { path: "/me/developer", name: "developer" },
-  { path: "/me/approvals", name: "approvals" },
+  { path: "/me/activity", name: "activity-open" },
+  { path: "/me/activity", query: "?kind=deliveries", name: "activity-deliveries" },
+  { path: "/me/activity", query: "?kind=sign-ins", name: "activity-sign-ins" },
 ];
 
 describe("account pages on v2", () => {
@@ -386,24 +378,41 @@ describe("account pages on v2", () => {
     expect(inherited).toContain('href="/me/access"');
   });
 
-  test("an old link to the activity range opens the activity view with every parameter", async () => {
-    const response = await request("/me/security", "en", "?activityDays=7&from=mail");
+  test("every old address of the account leads to its new place with every parameter", async () => {
+    const app = new Hono();
+    for (const [path, redirect] of oldAccountAddresses) app.get(path, redirect);
+    const target = async (address: string) => {
+      const response = await app.request(`${origin}${address}`);
+      expect(response.status).toBe(302);
+      return response.headers.get("Location");
+    };
+    expect(await target("/me/developer?create=api-key&reauthenticate=1")).toBe("/me/security?create=api-key&reauthenticate=1");
+    expect(await target("/me/app?pair=1")).toBe("/me/security?pair=1");
+    expect(await target("/me/approvals?app=mail")).toBe("/me/activity?app=mail");
+    expect(await target("/me/notifications/history?status=failed&page=2")).toBe("/me/activity?status=failed&page=2&kind=deliveries");
+    expect(await target("/me/security/activity?activityDays=7")).toBe("/me/activity?activityDays=7&kind=sign-ins");
+    // the security page itself still takes the old range of its activity
+    const response = await request("/me/security", "en", "?activityDays=90&from=mail");
     expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toBe("/me/security/activity?activityDays=7&from=mail");
+    expect(response.headers.get("Location")).toBe("/me/activity?activityDays=90&from=mail&kind=sign-ins");
   });
 
-  test("the activity view reads its range from the address, 30 days without one", async () => {
-    await content("/me/security/activity", "en", "?activityDays=90");
+  test("the activity reads only the kind the address names, open approvals by default", async () => {
+    await content("/me/activity", "en");
+    expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
+    expect(services.notifications.user.history.list).not.toHaveBeenCalled();
+    await content("/me/activity", "en", "?kind=sign-ins&activityDays=90");
     expect(services.audit.listSelfServiceActivity).toHaveBeenLastCalledWith(expect.objectContaining({ days: 90 }));
-    await content("/me/security/activity", "en");
-    expect(services.audit.listSelfServiceActivity).toHaveBeenLastCalledWith(expect.objectContaining({ days: 30 }));
+    await content("/me/activity", "en", "?kind=deliveries&status=failed&page=2");
+    expect(services.notifications.user.history.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", page: 2 }));
+    expect(server.loadPendingApprovals).toHaveBeenCalledTimes(1);
   });
 
-  test("the delivery history and the activity are tabs of their area, and the history keeps its filter in the address", async () => {
-    const html = await content("/me/notifications/history", "en", "?status=failed&page=2");
-    expect(services.notifications.user.history.list).toHaveBeenLastCalledWith(expect.objectContaining({ status: "failed", page: 2 }));
-    expect(html).toMatch(/<a [^>]*href="\/me\/notifications"/);
-    expect(await content("/me/security", "en")).toMatch(/<a [^>]*href="\/me\/security\/activity"/);
+  test("the account's areas are tabs with their own addresses, and the sidebar leads to the record and the activity", async () => {
+    const html = await content("/me/security", "en");
+    for (const href of ["/me", "/me/access", "/me/notifications", "/me/activity"]) expect(html).toContain(`href="${href}"`);
+    // the phones of the mobile app stand there only while the installation offers the app
+    expect(html).not.toContain("Phones with the app");
   });
 
   test("warn about the account expiry only when it is close", async () => {

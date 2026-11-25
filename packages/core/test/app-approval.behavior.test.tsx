@@ -443,7 +443,7 @@ describe("Cloud app approval UI", () => {
       dialog = openDialog(dom)!;
       footer = dialog.querySelector<HTMLElement>('[data-slot="foot"]')!;
       expect(button(footer, "Revoke").disabled).toBe(true);
-      expect(dialog.querySelector('[role="status"]')?.textContent).toContain("You are offline.");
+      expect(shown(dialog)).toContain("You are offline.");
     } finally {
       Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     }
@@ -1106,7 +1106,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     await flush();
-    expect(dom.root.textContent).toContain("123456");
+    expect(dom.root.textContent).toContain("123 456");
     expect(start).not.toHaveBeenCalled();
     await Bun.sleep(5100);
     await flush();
@@ -1116,7 +1116,7 @@ describe("Cloud app approval UI", () => {
     dispose();
     dispose = render(() => createComponent(Login, { category: "freeipa" }), dom.root);
     await flush();
-    expect(dom.root.textContent).not.toContain("123456");
+    expect(dom.root.textContent).not.toContain("123 456");
     expect(complete).toHaveBeenCalledTimes(1);
   }, 15000);
   test("an uncertain pairing confirmation is reconciled by reading, without a second confirmation write", async () => {
@@ -1572,7 +1572,8 @@ describe("Cloud app approval UI", () => {
     const observer = new dom.window.MutationObserver((records) => {
       for (const record of records)
         for (const node of record.addedNodes)
-          if (node.nodeName === "FORM" || (node as unknown as Element).querySelector?.("form")) forms.push(node as unknown as Node);
+          // the sign-in form is its field of the identifier (v2 has no form element)
+          if ((node as unknown as Element).querySelector?.('input[name="identifier"]')) forms.push(node as unknown as Node);
     });
     const { default: Login } = await import("../src/pages/auth/AppLoginForm");
     const dispose = render(
@@ -1591,7 +1592,7 @@ describe("Cloud app approval UI", () => {
       jest.useRealTimers();
     };
     await flush();
-    expect(dom.root.textContent).toContain("123456");
+    expect(dom.root.textContent).toContain("123 456");
     observer.observe(dom.root, { childList: true, subtree: true });
     jest.advanceTimersByTime(1);
     expect(status).toHaveBeenCalledTimes(1);
@@ -1606,7 +1607,7 @@ describe("Cloud app approval UI", () => {
     // Navigation takes its time; the page keeps the confirmed state meanwhile.
     jest.advanceTimersByTime(30_000);
     await flush();
-    expect(dom.root.querySelector("form")).toBeNull();
+    expect(dom.root.querySelector('input[name="identifier"]')).toBeNull();
     expect(forms).toEqual([]);
     expect(dom.root.textContent).toContain("Signed in – continuing…");
     expect(dom.root.textContent).not.toContain("Email recovery");
@@ -1680,7 +1681,7 @@ describe("Cloud app approval UI", () => {
   test("a FreeIPA password sign-in returns the browser to the password; a rejected one changes nothing", async () => {
     const dom = createDomTestHarness();
     const { FREEIPA_APP_SIGN_IN_COOKIE, useAppSignIn } = await import("../src/pages/app-approval/availability");
-    const { default: PasswordLogin } = await import("../src/pages/auth/LoginForm.island");
+    const { FreeIpaForm: PasswordLogin } = await import("../src/pages/auth/login-forms");
     const opensWithApp = () => useAppSignIn({ configured: true, category: "freeipa", cookieHeader: dom.document.cookie });
     dom.document.cookie = `${FREEIPA_APP_SIGN_IN_COOKIE}=1; path=/`;
     expect(opensWithApp()).toBe(true);
@@ -1692,9 +1693,7 @@ describe("Cloud app approval UI", () => {
       dom.cleanup();
     };
     const submit = async () => {
-      dom.root
-        .querySelector("form")!
-        .dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }) as unknown as Event);
+      button(dom.root, "Sign in with FreeIPA").click();
       await flush();
     };
     passwordLogin.mockImplementationOnce(async () => Response.json({ message: "Invalid credentials" }, { status: 401 }));

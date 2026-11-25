@@ -1,7 +1,5 @@
 import type { ServiceAccountCredential, WebAuthnPasskey } from "@k2b/cloud/contracts";
 import type { AccountUserView } from "./account-view";
-import type { DeveloperScreenProps } from "./DeveloperScreen.island";
-import type { ProfileActionsUser } from "./profile-actions";
 import type { SecurityScreenProps } from "./SecurityScreen.island";
 
 // Frozen, invented sample data for the account screens: dates are fixed, ids are fixed, nobody real.
@@ -13,15 +11,6 @@ export const userView: AccountUserView = {
   uid: "jbeispiel",
   image: undefined,
   kinds: ["FreeIPA", "Admin"],
-};
-
-export const actionsUser: ProfileActionsUser = {
-  provider: "ipa",
-  uid: "jbeispiel",
-  givenname: "Jonas",
-  sn: "Beispiel",
-  displayName: "Jonas Beispiel",
-  ipa: { phone: "+49 30 1234567", address: { street: "Musterweg 1", postalCode: "10115", city: "Berlin", state: null }, sshPublicKeys: [] },
 };
 
 export const passkeys: WebAuthnPasskey[] = [
@@ -57,25 +46,18 @@ export const apiKeys: ServiceAccountCredential[] = [
 
 export const securityProps = (): SecurityScreenProps => ({
   user: userView,
-  appTab: false,
   userId: USER_ID,
   provider: "ipa",
   profile: "user",
   freeIpaEnabled: true,
   passkeys,
   devices: null,
-  now: NOW,
-});
-
-export const developerProps = (): DeveloperScreenProps => ({
-  user: userView,
-  appTab: false,
-  actionsUser,
-  appName: "Cloud",
-  freeIpaEnabled: true,
-  apiKeys,
-  openAiBaseUrl: "https://cloud.example.test/api/ai/openai/v1",
-  mcpEndpoint: "https://cloud.example.test/api/mcp/v1",
-  cloudUrl: "https://cloud.example.test",
+  phones: null,
+  apiKeys: {
+    keys: apiKeys,
+    openAiBaseUrl: "https://cloud.example.test/api/ai/openai/v1",
+    mcpEndpoint: "https://cloud.example.test/api/mcp/v1",
+    cloudUrl: "https://cloud.example.test",
+  },
   now: NOW,
 });

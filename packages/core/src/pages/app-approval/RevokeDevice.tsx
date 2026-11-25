@@ -266,11 +266,11 @@ export default function RevokeDevice(props: {
     window.removeEventListener("online", connection);
     window.removeEventListener("offline", connection);
   });
+  // The request is settled before the dialog closes, so a failing close never leaves it waiting.
   const close = () => {
     if (dismissed) return;
-    setOpen(false);
     dismissed = true;
-    if (disposed) return;
+    if (disposed) return setOpen(false);
     stop();
     // Closing while the request waits withdraws it, so nothing is revoked after the person left.
     const waiting = phase() === "waiting" ? request() : undefined;
@@ -279,6 +279,7 @@ export default function RevokeDevice(props: {
     // A send still on its way keeps its record: its answer, or a reload, reconciles it.
     else if (!busy()) remember(undefined);
     props.onClose(phase() === "approved");
+    setOpen(false);
   };
   const name = () => device.name;
   // k2b-ui gap: no polite live status in v2 (Notice speaks only when "bad"); the phase texts change without being

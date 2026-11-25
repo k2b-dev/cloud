@@ -9,6 +9,9 @@ import type { Finding, Rule } from "./rule";
  * description, and the icon comes from the tone. 32 characters is what one semibold line holds beside the icon tile in
  * the narrowest toast (a 390 px phone: about 260 px of text at 14 px). A toast may skip its title only when the whole
  * message is that short; it then takes the title's type.
+ *
+ * The toast of `@k2b/ui/v2` (`const toast = useToast()` from `@k2b/ui/v2`) is one sentence by design, with its sign
+ * from `status`; it has no title, so its calls are not this contract's.
  */
 export const TITLE_MAX_WORDS = 3;
 export const TITLE_MAX_CHARACTERS = 32;
@@ -133,9 +136,40 @@ const option = (call: ts.CallExpression, name: string): ts.Expression | null => 
 
 const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
 
+/** Whether `toast` in this file is v2's: a binding of `useToast()` imported from `@k2b/ui/v2`. */
+const v2Toast = (sourceFile: ts.SourceFile): boolean => {
+  const imported = sourceFile.statements.some(
+    (statement) =>
+      ts.isImportDeclaration(statement) &&
+      ts.isStringLiteral(statement.moduleSpecifier) &&
+      statement.moduleSpecifier.text === "@k2b/ui/v2" &&
+      !!statement.importClause?.namedBindings &&
+      ts.isNamedImports(statement.importClause.namedBindings) &&
+      statement.importClause.namedBindings.elements.some((element) => element.name.text === "useToast"),
+  );
+  if (!imported) return false;
+  let bound = false;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === "toast" &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isIdentifier(node.initializer.expression) &&
+      node.initializer.expression.text === "useToast"
+    )
+      bound = true;
+    if (!bound) ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return bound;
+};
+
 export const checkToastCopySource = (file: string, source: string, catalogs: Catalogs): ToastCopyFinding[] => {
   if (!inScope(file) || !/\btoast\b/.test(source)) return [];
   const { sourceFile, findings: unparsed } = parseSource(file, source);
+  if (v2Toast(sourceFile)) return unparsed.map(({ line = 1, message }) => ({ file, line, key: `${file} | parse | ${message}`, message }));
   const findings: ToastCopyFinding[] = unparsed.map(({ line = 1, message }) => ({
     file,
     line,

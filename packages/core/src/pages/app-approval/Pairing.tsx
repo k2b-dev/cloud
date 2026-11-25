@@ -2,7 +2,7 @@ import { appApproval } from "@k2b/cloud/browser/app-approval";
 import { AppPairingConfirmResultSchema, AppPairingInspectionSchema, AppPairingPayloadSchema } from "@k2b/cloud/contracts";
 import { qr } from "@k2b/stdlib/qr";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Dialog, Notice, Text, useToast } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Dialog, Notice, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
@@ -176,14 +176,15 @@ export default function Pairing(props: {
   const close = () => {
     if (closed) return;
     closed = true;
-    setOpen(false);
-    if (disposed) return;
+    // The pairing is settled before the dialog closes, so a failing close never leaves it claimable.
+    if (disposed) return setOpen(false);
     stop();
     const pending = reference();
     // The saved reference stays until Cloud confirms the cancellation, so reopening the dialog can retry it.
     if (pending) void cancelPending(pending.pairingId, true);
     else forget();
     props.onClose();
+    setOpen(false);
   };
   const start = async () => {
     if (busy()) return;
@@ -296,6 +297,7 @@ export default function Pairing(props: {
   };
   const qrImage = (value: string) => (
     // k2b-ui gap: no primitive shows a QR code; it is a drawing in a Canvas.
+    <Band>
     <Canvas label={t().qr} height={256}>
       <img
         alt={t().qr}
@@ -305,6 +307,7 @@ export default function Pairing(props: {
         src={`data:image/svg+xml,${encodeURIComponent(qr.toSvg(value))}`}
       />
     </Canvas>
+    </Band>
   );
   // k2b-ui gap: no polite live status in v2 (Notice speaks only when "bad"), and a dialog takes the height of each step.
   return (
@@ -426,6 +429,7 @@ export default function Pairing(props: {
               <Text>{t().confirmHint({ name: inspection()?.name ?? "" })}</Text>
               <Text muted>{t().comparison}</Text>
               {/* k2b-ui gap: no primitive shows a short code to compare at a glance; it is drawn in a Canvas. */}
+              <Band>
               <Canvas label={t().comparison} height={72}>
                 <span
                   style={{
@@ -441,6 +445,7 @@ export default function Pairing(props: {
                   {inspection()?.comparison}
                 </span>
               </Canvas>
+              </Band>
             </Show>
             <Show when={awaitingApproval()}>
               <Text weight="strong">{t().approvalTitle}</Text>

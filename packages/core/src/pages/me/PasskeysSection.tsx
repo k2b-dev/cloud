@@ -154,7 +154,7 @@ export default function PasskeysSection(props: {
         title={t().passkeys}
         count={passkeys().length}
         summary={t().passkeysDescription}
-        actions={[{ label: t().add, icon: "plus", disabled: busy(), onClick: () => openCreate() }]}
+        actions={[{ label: t().addPasskey, icon: "plus", disabled: busy(), onClick: () => openCreate() }]}
       >
         <Show
           when={passkeys().length > 0}

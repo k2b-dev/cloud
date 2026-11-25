@@ -1,7 +1,7 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
@@ -193,6 +193,7 @@ export default function AppLoginForm(props: {
             <>
               <Text muted>{t().waiting}</Text>
               {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
+              <Band>
               <Canvas label={`${t().comparison} ${request().comparison}`} height={96}>
                 <span
                   style={{
@@ -210,6 +211,7 @@ export default function AppLoginForm(props: {
                   {(request().comparison.match(/.{1,3}/g) ?? [request().comparison]).join(" ")}
                 </span>
               </Canvas>
+              </Band>
               <Bar
                 start={
                   <Show when={!busy() ? props.fallback : undefined}>

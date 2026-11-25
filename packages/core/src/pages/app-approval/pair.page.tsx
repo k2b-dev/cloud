@@ -4,7 +4,6 @@ import { Layout } from "@k2b/cloud/ssr";
 import { z } from "zod";
 import { ssr } from "../../config";
 import { accountUserView } from "../me/account-view";
-import { pwaAvailable } from "../me/app-availability";
 import { accountMessages } from "../me/messages";
 import { approvalAvailability } from "./availability";
 import { appApprovalMessages } from "./messages";
@@ -32,7 +31,7 @@ export default ssr<AuthContext>(async (c) => {
       <PairScreen
         self={
           id === actor.id
-            ? { user: accountUserView(actor, policy.login.label, accountMessages.resolve([locale]).t), appTab: pwaAvailable(c) }
+            ? { user: accountUserView(actor, policy.login.label, accountMessages.resolve([locale]).t) }
             : null
         }
         userId={id}

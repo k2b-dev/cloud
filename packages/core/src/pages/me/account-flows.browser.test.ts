@@ -88,12 +88,15 @@ const open = async (screen: string, address: string, api: Api) => {
     if (request.isNavigationRequest()) return route.fulfill({ contentType: "text/html; charset=utf-8", body: page(screen) });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     const key = `${request.method()} ${url.pathname}`;
-    seen.push({ method: request.method(), path: url.pathname, body: request.postData() ? request.postDataJSON() : null });
+    // the requests of the API; pictures such as the logo are not
+    if (url.pathname.startsWith("/api/")) seen.push({ method: request.method(), path: url.pathname, body: request.postData() ? request.postDataJSON() : null });
     const answer = api[key]?.shift();
     if (answer === "abort") return route.abort("connectionreset");
     if (answer) return route.fulfill({ status: answer.status ?? 200, json: answer.json });
     return route.fulfill({ status: 404, json: { message: "Not found" } });
   });
+  // a fixed clock, so dates the page computes are the same on every day the test runs
+  await tab.clock.setFixedTime(new Date("2026-11-24T10:00:00.000Z"));
   await tab.goto(`${origin}${address}`);
   await settled(tab);
   return { context, tab, errors, seen, navigations };
@@ -116,7 +119,7 @@ describe("account deeds on v2", () => {
       "POST /api/me/passkeys/registration/start": [{ status: 403, json: { code: "REAUTHENTICATE", message: "Sign in again." } }],
     });
     try {
-      await tab.getByRole("button", { name: "Add", exact: true }).first().click();
+      await tab.getByRole("button", { name: "Add passkey" }).first().click();
       await dialog(tab).getByRole("textbox").fill("Laptop");
       await dialog(tab).getByRole("button", { name: "Add passkey" }).click();
       // the v2 question replaces the dialog; agreeing signs in again with the way back
@@ -161,7 +164,7 @@ describe("account deeds on v2", () => {
 
   test("a new API key shows its token once with a copy button, and the dialog does not close on a stray press", async () => {
     const token = "cld_test_4f7c1e0b9a2d4c6e8f00112233445566";
-    const { context, tab, errors, seen } = await open("developer", "/me/developer", {
+    const { context, tab, errors, seen } = await open("security", "/me/security", {
       "POST /api/me/api-keys": [
         {
           status: 201,
@@ -195,10 +198,10 @@ describe("account deeds on v2", () => {
       expect(outline).not.toContain("Problems (");
       const body = seen.find((entry) => entry.path === "/api/me/api-keys")?.body as { name: string; access: string; expiresAt: string };
       expect([body.name, body.access]).toEqual(["CI", "full"]);
-      // 90 days ahead by default
-      expect(Math.round((Date.parse(body.expiresAt) - Date.now()) / 86_400_000)).toBe(90);
+      // 90 days ahead by default, from the page's fixed clock
+      expect(body.expiresAt).toBe("2027-02-22T10:00:00.000Z");
       await tab.mouse.click(5, 5);
-      await expect(dialog(tab).getByText(token).isVisible()).resolves.toBe(true);
+      expect(await dialog(tab).getByText(token).isVisible()).toBe(true);
       await dialog(tab).getByRole("button", { name: "Done" }).click();
       await dialog(tab).waitFor({ state: "detached" });
       // the token lived only in the dialog
@@ -225,7 +228,8 @@ describe("sign-in deeds on v2", () => {
       await tab.locator('input[autocomplete="current-password"]').press("Enter");
       await eventually(() => navigations.length === 1);
       expect(seen[0]).toEqual({ method: "POST", path: "/api/auth/login", body: { username: "jbeispiel", password: "secret-1" } });
-      expect(navigations[0]).toBe("/app/files");
+      // as before v2, a sign-in goes on through the terms check to the page it came for
+      expect(navigations[0]).toBe("/auth/continue?redirectTo=%2Fapp%2Ffiles");
       expect(errors).toEqual([]);
     } finally {
       await context.close();
