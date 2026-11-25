@@ -119,7 +119,7 @@ export default function IncomingGoods(props: Props) {
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
   empty: () => <IncomingGoods rows={[]} />,
-  filteredEmpty: () => <IncomingGoods rows={deliveries.filter((row) => row.place.startsWith("Tor 1"))} filtered />,
+  filtered: () => <IncomingGoods rows={deliveries.filter((row) => row.place.startsWith("Tor 1"))} filtered />,
   loading: () => <IncomingGoods loading />,
   failed: () => <IncomingGoods failed />,
   problem: () => <IncomingGoods problem />,

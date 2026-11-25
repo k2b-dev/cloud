@@ -5,8 +5,8 @@ import * as dialogs from "../skills/k2b-ui/recipes/dialogs";
 import * as form from "../skills/k2b-ui/recipes/form";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
-import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as record from "../skills/k2b-ui/recipes/record";
+import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
 

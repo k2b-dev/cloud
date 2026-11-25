@@ -480,6 +480,7 @@ export type NoticeProps = {
   meta?: string;
   /** Text buttons at the end; at most two. */
   actions?: TwoActions;
+  /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
 

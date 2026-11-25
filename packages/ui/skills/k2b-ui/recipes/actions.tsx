@@ -226,6 +226,6 @@ export default function OfferActions(props: Props) {
 export const states = {
   open: () => <OfferActions open="AN-2611-015" />,
   sending: () => <OfferActions open="AN-2611-015" sending />,
-  rowMenu: { render: () => <OfferActions />, press: "Aktionen für Regal Archiv" },
-  viewMenu: { render: () => <OfferActions />, press: "Ansicht" },
+  menu: { render: () => <OfferActions />, press: "Aktionen für Regal Archiv" },
+  view: { render: () => <OfferActions />, press: "Ansicht" },
 };

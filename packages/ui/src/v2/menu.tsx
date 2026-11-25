@@ -11,15 +11,19 @@ import type { OnNavigate } from "./types";
  * `items` opens a submenu to the side. `danger` is red and stands after a line.
  */
 export type MenuItem = {
+  /** The words of the entry. */
   label: string;
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
+  /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
   onClick?: () => unknown;
+  /** The page the entry opens, as a link. */
   href?: string;
   /** With `href`: opens the page in place on a plain click or Enter, as a tab or a row does (see `OnNavigate`). */
   onNavigate?: OnNavigate;
   /** Red, for a deed that destroys; the menu puts a line before the first one. */
   danger?: boolean;
+  /** The entry cannot be chosen now: dimmed, and focus passes over it. */
   disabled?: boolean;
   /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
   meta?: string;
@@ -37,9 +41,13 @@ export type MenuItem = {
  * `onChoose` with its value. The menu draws a line between a section and what stands around it.
  */
 export type MenuSection = {
+  /** The quiet heading over the entries, such as "Sortieren nach". */
   title: string;
+  /** The entries under the heading. */
   items: readonly MenuItem[];
+  /** Makes the section one choice: the value of the chosen entry, which carries the tick. */
   choice?: string;
+  /** Called with the value of the entry chosen in a section with `choice`; choosing closes the menu. */
   onChoose?: (value: string) => void;
 };
 
@@ -56,11 +64,13 @@ export type TriggerProps = {
   variant?: Variant;
   /** A Tabler icon name; a button without words shows `dots`. */
   icon?: string;
+  /** The button cannot open now: dimmed, and pressed no time. */
   disabled?: boolean;
 } & (
   | {
       /** The words on the button; a chevron follows them. */
       children: JSX.Element;
+      /** Another name for assistive technology, only where the words alone do not say enough. */
       label?: string;
     }
   | {
@@ -70,7 +80,10 @@ export type TriggerProps = {
     }
 );
 
-export type MenuProps = TriggerProps & { items: readonly MenuEntry[] };
+export type MenuProps = TriggerProps & {
+  /** The entries: items, sections under a heading, and `"separator"` between groups. */
+  items: readonly MenuEntry[];
+};
 
 /**
  * Lines between groups: before the first dangerous entry after others, and around a section; no line at the start,
@@ -385,9 +398,11 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
 };
 
 export type MenuContextProps = {
+  /** The entries, the same as those of the "…" beside the element. */
   items: readonly MenuEntry[];
   /** The one element the menu belongs to, such as a `Row`; it gets no wrapper. */
   children: JSX.Element;
+  /** No menu opens on a right-click or a long press; the browser's own menu shows instead. */
   disabled?: boolean;
 };
 
