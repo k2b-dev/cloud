@@ -209,6 +209,19 @@ test("fields: one control is labelled, a field of choices is a named group, a me
   });
 });
 
+test("a multi-line field shows its value in what the server sent, and keeps what is typed after hydration", async () => {
+  await withPage(async (page) => {
+    const note = page.getByRole("textbox", { name: "Notiz" });
+    // the text the browser parsed from the server's markup, before the client ran (#4148)
+    expect(
+      await page.evaluate(() => (window.__k2Sent instanceof Element ? window.__k2Sent.querySelector("textarea")?.value : undefined)),
+    ).toBe("Zwei Zeilen\nzum Aufbau");
+    expect(await note.inputValue()).toBe("Zwei Zeilen\nzum Aufbau");
+    await note.fill("Neu");
+    expect(await note.inputValue()).toBe("Neu");
+  });
+});
+
 test("controls without a handler keep their own state, and the shape shows it", async () => {
   await withPage(async (page) => {
     const select = page.locator('[data-k2-part="Select"]');

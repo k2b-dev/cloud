@@ -179,6 +179,37 @@ for (const width of [767, 768])
     );
   });
 
+// The phone's sheet stands on the bottom of the window: when its content gets shorter it is lower in the very next
+// frame, never a frame at its old top (a tap there would hit the backdrop and close it, #4141).
+for (const touch of [false, true])
+  test(`sheet${touch ? " on a touch screen" : ""}: content that gets shorter moves its top down in the same frame`, async () => {
+    await withPage(
+      async (page) => {
+        await openDialog(page);
+        const before = await box(page.locator(".k2-dialog"));
+        expect(before.y + before.height).toBe(900);
+        const frames = await page.evaluate(async () => {
+          const dialog = document.querySelector(".k2-dialog") as HTMLElement;
+          // the place each frame is drawn at: read after the frame (a task after its animation frame)
+          const drawn = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+          window.__k2Shorten?.();
+          const tops: number[] = [];
+          for (let index = 0; index < 4; index++) {
+            await drawn();
+            const { top, bottom } = dialog.getBoundingClientRect();
+            tops.push(Math.round(top), Math.round(bottom));
+          }
+          return tops;
+        });
+        await settled(page);
+        const after = await box(page.locator(".k2-dialog"));
+        expect(after.height).toBeLessThan(before.height);
+        expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
+      },
+      { width: 390, long: true, touch },
+    );
+  });
+
 // The open list of a selection (Bausteine 09): exactly as wide as its field, an option per row of 32 px, a check at the
 // chosen option; the keyboard and the form work.
 for (const width of [1440, 390]) {

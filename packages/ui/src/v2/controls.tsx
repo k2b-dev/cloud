@@ -245,12 +245,15 @@ export const Input = (props: InputProps) => {
           />
         }
       >
+        {/* a textarea's value is its text: the server sends it there, so the first render already shows it */}
         <textarea
           {...shared()}
           ref={(element) => forwardRef(props.ref, element)}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
-        />
+        >
+          {props.value ?? ""}
+        </textarea>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>

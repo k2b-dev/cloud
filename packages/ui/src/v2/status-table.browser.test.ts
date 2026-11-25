@@ -83,6 +83,58 @@ for (const column of [1024, 760, 759.5, 759, 600])
     );
   });
 
+// More figures than fit before the controls: the later ones go first, whole; none is cut or runs under a control (#4149).
+for (const column of [1440, 1024, 900, 760, 400])
+  test(`a status row ${column} px wide with more figures than fit: whole figures from the first on, none under a control`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2MoreFacts?.());
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const end = row.querySelector(".k2-bar-end")!.getBoundingClientRect().left;
+          const parts = [...row.querySelectorAll<HTMLElement>(".k2-fact")].map((fact) => {
+            const box = fact.getBoundingClientRect();
+            // what of the figure is in sight: within every box between it and the row that clips what overflows it
+            let left = box.left;
+            let right = box.right;
+            let top = box.top;
+            let bottom = box.bottom;
+            for (let parent = fact.parentElement; parent && parent !== row.parentElement; parent = parent.parentElement) {
+              if (getComputedStyle(parent).overflow === "visible") continue;
+              const clip = parent.getBoundingClientRect();
+              [left, right, top, bottom] = [
+                Math.max(left, clip.left),
+                Math.min(right, clip.right),
+                Math.max(top, clip.top),
+                Math.min(bottom, clip.bottom),
+              ];
+            }
+            const seen = fact.getClientRects().length > 0 && right - left > 0.5 && bottom - top > 0.5;
+            return { seen, whole: right - left >= box.width - 0.5 && bottom - top >= box.height - 0.5, clear: box.right <= end };
+          });
+          const figures = [...row.querySelectorAll(".k2-fact")].map((fact) => fact.getBoundingClientRect());
+          const gaps = [row.querySelector(".k2-status-busy")!.getBoundingClientRect(), ...figures]
+            .slice(0, parts.filter((part) => part.seen).length + 1)
+            .flatMap((box, index, boxes) => (index === 0 ? [] : [Math.round(box.left - boxes[index - 1]!.right)]));
+          return {
+            shown: parts.map((part) => part.seen),
+            wrong: parts.filter((part) => part.seen && !(part.whole && part.clear)).length,
+            gaps,
+          };
+        });
+        expect(found.wrong).toBe(0);
+        // 16 px after the loading mark's place and between figures, as before they could give way
+        for (const gap of found.gaps) expect(gap).toBe(16);
+        // the figures that stay are the first ones
+        expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
+        if (column >= 1024) expect(found.shown.filter(Boolean).length).toBeGreaterThan(1);
+        if (column < 760) expect(found.shown.filter(Boolean).length).toBe(0);
+      },
+      { column },
+    );
+  });
+
 for (const width of [1440, 390])
   test(`at ${width}: the loading mark has its place of 16 px whether it shows or not, and nothing moves`, async () => {
     await withPage(

@@ -2543,10 +2543,27 @@
   color: var(--k2-text);
   font-weight: 600;
 }
-.k2-ui .k2-status-lead + .k2-fact,
-.k2-ui .k2-status-busy + .k2-fact,
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
+}
+/* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
+   out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item lets even
+   the first figure go whole instead of being cut; its gap and the row's make the 16 px after the lead. The filters
+   keep their room. */
+.k2-ui .k2-bar-start > .k2-status-facts {
+  display: flex;
+  flex-wrap: wrap;
+  flex: 0 1 auto;
+  column-gap: 8px;
+  min-width: 0;
+  height: 1lh;
+  overflow: hidden;
+}
+.k2-ui .k2-status-facts::before {
+  content: "";
+}
+.k2-ui .k2-bar[data-status-row] > .k2-bar-end {
+  flex: none;
 }
 /* The loading mark: 16 px after the lead, there while the row can refresh (`loading` given), turning only while it
    does, so it moves nothing when it comes and goes. */

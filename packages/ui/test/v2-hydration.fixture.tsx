@@ -137,6 +137,9 @@ export function Fixture() {
             <Field name="contact" label="Ansprechperson">
               <Input placeholder="Wer nimmt ab?" />
             </Field>
+            <Field name="note" label="Notiz">
+              <Input multiline value={"Zwei Zeilen\nzum Aufbau"} />
+            </Field>
           </Section>
           <Facts
             items={[

@@ -120,8 +120,29 @@ export const Dialog = (props: DialogProps) => {
     watching = { sizes, parts };
     queueMicrotask(() => measure(element));
   };
+  // Core re-places its sheet after the content's height changed with a spring that starts at the old height: for a
+  // moment the whole sheet stands higher, off the bottom, and a tap there hits the backdrop (#4141). The sheet stands on
+  // the bottom, so that move ends at once, before the frame is drawn. Core's observer must have answered first: this
+  // one is made a frame after the dialog appears, after core's, and observers answer in the order they were made.
+  const holdBottom = (element: HTMLElement) => {
+    let height: number | undefined;
+    let sizes: ResizeObserver | undefined;
+    const frame = requestAnimationFrame(() => {
+      sizes = new ResizeObserver(() => {
+        const changed = height !== undefined && element.offsetHeight !== height;
+        height = element.offsetHeight;
+        if (changed && element.dataset.presentation === "sheet") for (const animation of element.getAnimations()) animation.finish();
+      });
+      sizes.observe(element);
+    });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes?.disconnect();
+    });
+  };
   return (
     <dialog.Popup
+      ref={holdBottom}
       class="k2-dialog"
       data-k2-part="Dialog"
       data-more={more()}
