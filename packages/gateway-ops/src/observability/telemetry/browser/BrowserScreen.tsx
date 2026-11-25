@@ -96,7 +96,7 @@ export default function BrowserScreen(props: BrowserScreenProps) {
                   phone={(row) => ({ lines: [row.route, `${row.app} · LCP ${row.lcp} · INP ${row.inp} · CLS ${row.cls}`] })}
                   columns={[
                     { title: t().app, width: { min: 90, default: 110 }, cell: (row) => row.app, drop: true },
-                    { title: t().route, width: { min: 200, default: 300 }, cell: (row) => row.route },
+                    { title: t().route, width: { min: 180, default: 240 }, cell: (row) => row.route },
                     { title: "LCP · p75 / n", width: { min: 120, default: 140 }, align: "end", cell: (row) => row.lcp },
                     { title: "INP · p75 / n", width: { min: 120, default: 140 }, align: "end", cell: (row) => row.inp, drop: true },
                     { title: "CLS · p75 / n", align: "end", cell: (row) => row.cls, drop: true },

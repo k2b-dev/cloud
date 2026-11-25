@@ -190,9 +190,9 @@ export default function MetricsScreen(props: MetricsScreenProps) {
           }
           phone={(row) => ({ lines: [row.name, `${row.source} · ${row.type} · ${row.series}`] })}
           columns={[
-            { title: t().metric, width: { min: 200, default: 320 }, cell: (row) => row.name },
-            { title: t().source, width: { min: 100, default: 140 }, cell: (row) => row.source, drop: true },
-            { title: t().type, width: { min: 80, default: 100 }, cell: (row) => row.type, drop: true },
+            { title: t().metric, width: { min: 200, default: 240 }, cell: (row) => row.name },
+            { title: t().source, width: { min: 90, default: 110 }, cell: (row) => row.source, drop: true },
+            { title: t().type, width: { min: 70, default: 80 }, cell: (row) => row.type, drop: true },
             { title: t().series, width: { min: 70, default: 90 }, align: "end", cell: (row) => row.series, drop: true },
             {
               title: t().status,

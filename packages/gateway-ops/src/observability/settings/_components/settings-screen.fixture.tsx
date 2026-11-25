@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import type { HealthApp, HealthWebhook } from "../../../frontend/health-webhook-queries";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
-import SettingsScreen from "./SettingsScreen";
+import SettingsScreen from "./SettingsScreen.island";
 
 export const BEREITSCHAFT = "hw_bereitschaft";
 

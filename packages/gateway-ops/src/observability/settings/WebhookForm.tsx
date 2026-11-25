@@ -85,6 +85,13 @@ export default function WebhookForm(props: { webhook: HealthWebhook | null; apps
     },
   });
   const draft = () => form.draft();
+  // A field says what is missing once the person has been in it, not before the first word.
+  const [edited, setEdited] = createSignal<ReadonlySet<string>>(new Set());
+  const edit = (field: "name" | "url", value: string) => {
+    if (!edited().has(field)) setEdited(new Set([...edited(), field]));
+    form.update({ [field]: value });
+  };
+  const fieldError = (field: "name" | "url") => (edited().has(field) ? form.errors()[field] : undefined);
   const disabled = () => form.saving();
 
   const test = async () => {
@@ -128,11 +135,11 @@ export default function WebhookForm(props: { webhook: HealthWebhook | null; apps
           onChange={(enabled) => form.update({ enabled })}
           disabled={disabled()}
         />
-        <Field label={g().name} hint={g().webhookNameDescription} error={form.errors().name}>
-          <Input value={draft().name} onInput={(name) => form.update({ name })} disabled={disabled()} />
+        <Field label={g().name} hint={g().webhookNameDescription} error={fieldError("name")}>
+          <Input value={draft().name} onInput={(name) => edit("name", name)} disabled={disabled()} />
         </Field>
-        <Field label="URL" hint={g().urlDescription} error={form.errors().url}>
-          <Input type="url" value={draft().url} onInput={(url) => form.update({ url })} disabled={disabled()} />
+        <Field label="URL" hint={g().urlDescription} error={fieldError("url")}>
+          <Input type="url" value={draft().url} onInput={(url) => edit("url", url)} disabled={disabled()} />
         </Field>
         <Field label={g().method} hint={g().methodDescription}>
           <Choice

@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import type { InfraSectionResult } from "../sections";
-import InfrastructureScreen from "./InfrastructureScreen";
+import InfrastructureScreen from "./InfrastructureScreen.island";
 
 const postgres: InfraSectionResult = {
   state: "ready",

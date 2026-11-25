@@ -33,16 +33,9 @@ const messages = i18n.define({
 
 export const checkSettingsSaveBarMessages = () => messages.check();
 
-/** The words and the save of the form that registered with `settingsSaveControls`, for `Workspace primary`. */
-export const settingsSaveAction = (locale: string) => ({
-  label: messages.resolve([locale]).t.save,
-  icon: "device-floppy",
-  onClick: () => settingsSaveControls()?.save(),
-});
-
 /**
  * The end of a v2 head for a settings form: its state in words, Discard and Save. The form registers its draft with
- * `settingsSaveControls`; until it does, the head says "Saved" with both buttons disabled. A form beside a page that has
+ * `settingsSaveControls`; Save stays in the head on the phone too (no floating action), so a form has one Save. Until it registers, the head says "Saved" with both buttons disabled. A form beside a page that has
  * its own primary action saves with a framed button (`primary={false}`).
  */
 export function SettingsSaveBar(props: { primary?: boolean } = {}) {

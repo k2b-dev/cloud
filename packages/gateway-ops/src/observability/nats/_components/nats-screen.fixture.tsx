@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { natsQuery } from "../../_components/sync-nats-query";
-import NatsScreen, { type NatsScreenProps, type NatsStreamRow } from "./NatsScreen";
+import NatsScreen, { type NatsScreenProps, type NatsStreamRow } from "./NatsScreen.island";
 
 const facets = { apps: ["mail", "spaces", "notebooks"], namespaces: ["cloud", "cloud-demo"] };
 

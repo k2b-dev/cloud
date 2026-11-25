@@ -1,9 +1,9 @@
 import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
-import BrowserScreen from "../browser/BrowserScreen";
+import BrowserScreen from "../browser/BrowserScreen.island";
 import { browserQuery, telemetryQuery } from "../query";
-import TelemetryScreen, { type TelemetryRouteView } from "./TelemetryScreen";
+import TelemetryScreen, { type TelemetryRouteView } from "./TelemetryScreen.island";
 
 const apps = [
   { id: "mail", label: "mail" },

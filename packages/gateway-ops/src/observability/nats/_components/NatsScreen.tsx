@@ -82,6 +82,9 @@ export type NatsScreenProps = {
   } | null;
 };
 
+/** A worded number in a table cell: its tone on the words, no chip, so the column keeps its width. */
+const toned = (value: Worded) => (value.status && value.status !== "ok" ? <Text tone={value.status}>{value.label}</Text> : value.label);
+
 export const worded = (value: Worded | null) =>
   value === null ? <Text muted>—</Text> : value.status ? <Chip status={value.status}>{value.label}</Chip> : <Chip>{value.label}</Chip>;
 
@@ -215,12 +218,12 @@ export default function NatsScreen(props: NatsScreenProps) {
               columns={
                 props.stream
                   ? [
-                      { title: t().name, width: { min: 160, default: 240 }, cell: (row) => ({ lines: [row.name, row.kind] }) },
+                      { title: t().name, width: { min: 160, default: 200 }, cell: (row) => ({ lines: [row.name, row.kind] }) },
                       {
                         title: t().messages,
                         width: { min: 100, default: 130 },
                         align: "end",
-                        cell: (row) => (row.deadLetters ? worded(row.deadLetters) : row.messages),
+                        cell: (row) => (row.deadLetters ? toned(row.deadLetters) : row.messages),
                       },
                       { title: t().replicas, cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas) },
                     ]
@@ -234,13 +237,13 @@ export default function NatsScreen(props: NatsScreenProps) {
                         title: t().messages,
                         width: { min: 100, default: 130 },
                         align: "end",
-                        cell: (row) => (row.deadLetters ? worded(row.deadLetters) : row.messages),
+                        cell: (row) => (row.deadLetters ? toned(row.deadLetters) : row.messages),
                       },
                       { title: t().storage, width: { min: 140, default: 180 }, cell: (row) => row.storage, drop: true },
                       { title: t().retention, width: { min: 80, default: 90 }, cell: (row) => row.retention, drop: true },
                       {
                         title: t().replicas,
-                        width: { min: 130, default: 160 },
+                        width: { min: 170, default: 190 },
                         cell: (row) => (row.replicaState ? worded(row.replicaState) : row.replicas),
                         drop: true,
                       },

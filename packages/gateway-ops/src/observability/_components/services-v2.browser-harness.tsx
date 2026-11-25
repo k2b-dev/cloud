@@ -3,7 +3,7 @@ import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { InfrastructureScreenFixture } from "../infrastructure/_components/infrastructure-screen.fixture";
 import { MetricsScreenFixture } from "../metrics/_components/metrics-screen.fixture";
-import NatsAccessScreen from "../nats/_components/NatsAccessScreen";
+import NatsAccessScreen from "../nats/_components/NatsAccessScreen.island";
 import { NatsScreenFixture } from "../nats/_components/nats-screen.fixture";
 import { PostgresScreenFixture } from "../postgres/_components/postgres-screen.fixture";
 import { ValkeyScreenFixture } from "../redis/_components/valkey-screen.fixture";

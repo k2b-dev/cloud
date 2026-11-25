@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { findingsQuery, runsQuery } from "../query";
-import WorkflowsScreen, { type RunDetailView, type WorkflowsScreenProps } from "./WorkflowsScreen";
+import WorkflowsScreen, { type RunDetailView, type WorkflowsScreenProps } from "./WorkflowsScreen.island";
 
 const apps = ["mail", "spaces"];
 const base = "/admin/observability/workflows";

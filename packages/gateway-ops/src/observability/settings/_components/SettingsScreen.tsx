@@ -5,8 +5,9 @@ import { For, type JSX, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { type HealthApp, type HealthWebhook, responseErrorMessage } from "../../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../../messages";
+import { afterMenu } from "../../_components/after-menu";
 import { areaMessages } from "../../_components/area-messages";
-import { SettingsSaveBar, settingsSaveAction } from "../../_components/SettingsSaveBar";
+import { SettingsSaveBar } from "../../_components/SettingsSaveBar";
 import HealthCheckForm, { type HealthCheckValues } from "../HealthCheckForm";
 import RetentionForm, { type RetentionValues } from "../RetentionForm";
 import WebhookForm, { ALERTS_PATH, webhookHref } from "../WebhookForm";
@@ -37,8 +38,8 @@ export default function SettingsScreen(props: SettingsScreenProps) {
     <Tabs
       label={t().settings}
       items={[
-        { label: t().alerts, icon: "webhook", href: SETTINGS_HREF.alerts, current: props.area === "alerts" },
-        { label: t().healthCheck, icon: "heart-rate-monitor", href: SETTINGS_HREF.health, current: props.area === "health" },
+        { label: t().alertsShort, icon: "webhook", href: SETTINGS_HREF.alerts, current: props.area === "alerts" },
+        { label: t().healthCheckShort, icon: "heart-rate-monitor", href: SETTINGS_HREF.health, current: props.area === "health" },
         { label: t().retention, icon: "archive", href: SETTINGS_HREF.retention, current: props.area === "retention" },
       ]}
     />
@@ -53,7 +54,7 @@ function FormArea(props: Exclude<SettingsScreenProps, { area: "alerts" }> & { ta
   const locale = useLocale();
   const t = () => areaMessages.resolve([locale()]).t;
   return (
-    <AdminWorkspace nav={props.nav} primary={settingsSaveAction(locale())} head={<Bar start={props.tabs} end={<SettingsSaveBar />} />}>
+    <AdminWorkspace nav={props.nav} head={<Bar start={props.tabs} end={<SettingsSaveBar />} />}>
       <Pane label={props.area === "health" ? t().healthCheck : t().retention}>
         <Text type="body" muted>
           {props.area === "health" ? t().healthCheckDescription : t().retentionDescription}
@@ -103,12 +104,12 @@ function AlertsArea(props: Extract<SettingsScreenProps, { area: "alerts" }> & { 
     <AdminWorkspace
       nav={props.nav}
       detail={props.open ? 480 : undefined}
-      primary={add()}
+      primary={props.open ? undefined : add()}
       head={
         <Bar
           start={props.tabs}
           end={
-            <Button variant="primary" icon="plus" href={webhookHref("new")}>
+            <Button variant={props.open ? undefined : "primary"} icon="plus" href={webhookHref("new")}>
               {t().addWebhook}
             </Button>
           }
@@ -160,7 +161,7 @@ function AlertsArea(props: Extract<SettingsScreenProps, { area: "alerts" }> & { 
                       {(webhook) => (
                         <Menu
                           label={g().actions}
-                          items={[{ label: t().deleteAlert, icon: "trash", danger: true, onClick: () => void remove(webhook()) }]}
+                          items={[{ label: t().deleteAlert, icon: "trash", danger: true, onClick: afterMenu(() => remove(webhook())) }]}
                         />
                       )}
                     </Show>
