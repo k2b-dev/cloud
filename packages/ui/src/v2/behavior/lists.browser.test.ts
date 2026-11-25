@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors } from "../../../test/browser";
-import { contractCss, demoBundle, heard, openDemo, pattern, serverMarkup } from "../../../test/v2-behavior/harness";
+import { contractCss, demoBundle, heard, type OpenOptions, openDemo, pattern, serverMarkup } from "../../../test/v2-behavior/harness";
 
 let browser: Browser;
 let bundle: string;
@@ -17,8 +17,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>) => {
-  const page = await openDemo(browser, bundle, css, { markup });
+const withPage = async (run: (page: Page) => Promise<void>, options: OpenOptions = {}) => {
+  const page = await openDemo(browser, bundle, css, { markup, ...options });
   const errors = pageErrors(page);
   try {
     await run(page);
@@ -70,6 +70,49 @@ test("tree: a branch whose children fail to load says so in the page's language"
   await withPage(async (page) => {
     await page.locator('[data-nested="remote"]').click();
     expect(await heard(page, "Fernordner konnte nicht geladen werden.")).toBe(true);
+  });
+});
+
+// Core says "expanded" and "collapsed" only where VoiceOver does not (Apple platforms, which it reads from
+// `navigator.platform`); the page claims to be a Mac before the bundle loads, so the texts are ours to check here.
+const apple = `Object.defineProperty(Navigator.prototype, "platform", { get: () => "MacIntel" });`;
+
+test("tree: on Apple platforms, expanding and collapsing is said in the page's language (de, en)", async () => {
+  await withPage(
+    async (page) => {
+      await page.locator('[data-folder="projects"]').click();
+      expect(await heard(page, "Projekte aufgeklappt")).toBe(true);
+      await page.locator('[data-folder="projects"]').click();
+      expect(await heard(page, "Projekte zugeklappt")).toBe(true);
+    },
+    { before: apple },
+  );
+  await withPage(
+    async (page) => {
+      await page.locator('[data-folder="projects"]').click();
+      expect(await heard(page, "Projekte expanded")).toBe(true);
+      await page.locator('[data-folder="projects"]').click();
+      expect(await heard(page, "Projekte collapsed")).toBe(true);
+      await page.locator('[data-nested="remote"]').click();
+      expect(await heard(page, "Couldn't load Fernordner.")).toBe(true);
+    },
+    { before: apple, lang: "en" },
+  );
+});
+
+test("tree: an action that takes a while marks its item busy and says so after a second", async () => {
+  await withPage(async (page) => {
+    // playwright clock: core waits a second before it says an action is pending; the page's time runs only when the test says.
+    await page.clock.install();
+    await page.locator('[data-nested="archive"]').click();
+    expect(await nestedItem(page, "archive").getAttribute("aria-busy")).toBe("true");
+    const said = () => page.evaluate(() => [...document.querySelectorAll("[aria-live]")].map((region) => region.textContent).join("|"));
+    // playwright clock: just under core's one-second delay, nothing is said yet.
+    await page.clock.runFor(900);
+    expect(await said()).not.toContain("Wird geladen");
+    // playwright clock: past the delay and the announcer's 100 ms.
+    await page.clock.runFor(300);
+    expect(await said()).toContain("Wird geladen");
   });
 });
 

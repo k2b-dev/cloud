@@ -48,13 +48,14 @@ export function Demo() {
     onValueChange: (value) => setSelected(Array.isArray(value) ? value : value ? [value] : []),
   }));
   const nav = useTree(() => ({ mode: "none", current: "inbox", onAction: setOpened }));
-  // A second tree: its current page is nested (level 3), so its ancestors are expanded from the start, and one branch
-  // loads its children and fails.
+  // A second tree: its current page is nested (level 3), so its ancestors are expanded from the start, one branch
+  // loads its children and fails, and Archiv's action never settles, so the item stays pending.
   const nested = useTree(() => ({
     mode: "none",
     current: "spam",
     defaultExpanded: ["more", "hidden"],
     loadChildren: (value) => (value === "remote" ? Promise.reject(new Error("offline")) : undefined),
+    onAction: (value) => (value === "archive" ? new Promise<void>(() => {}) : undefined),
   }));
   const tree = (parts: TreeParts, attribute: string, entries: Folder[]): JSX.Element => (
     <For each={entries}>
