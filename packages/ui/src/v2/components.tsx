@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -447,7 +448,7 @@ export const Path = (props: PathProps) => (
 export type StatusFact = {
   /** Words before the value, such as "Summe". */
   before?: string;
-  /** The value itself, in 600. */
+  /** The value itself, in 600; a number is written in the language of the page (12.847). */
   value?: string | number;
   /** Words after the value, such as "überfällig". */
   after?: string;
@@ -483,6 +484,9 @@ export type StatusRowProps = {
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
+  // a count is said in the reader's language: 12.847 in German, 12,847 in English
+  const said = (value: string | number) => (typeof value === "number" ? value.toLocaleString(locale()) : value);
   const filters = resolveChildren(() => props.filters);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
@@ -512,7 +516,7 @@ export const StatusRow = (props: StatusRowProps) => {
                         {fact.before ?? ""}
                         {fact.before && fact.value !== undefined ? " " : ""}
                         <Show when={fact.value !== undefined}>
-                          <b>{fact.value}</b>
+                          <b>{said(fact.value!)}</b>
                         </Show>
                         {fact.after ? ` ${fact.after}` : ""}
                       </span>
