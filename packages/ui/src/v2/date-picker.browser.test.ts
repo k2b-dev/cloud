@@ -221,11 +221,63 @@ test("DateInput: a typed date applies on Enter, text that is no date marks the f
       expect(await input.getAttribute("aria-invalid")).toBe("true");
       expect(await page.locator('[data-k2-part="DateInput"]').getAttribute("data-invalid")).toBe("");
       expect(await page.getByTestId("date").textContent()).toBe("2027-01-03");
+      // the form is not valid while the field holds no date, so it never sends the old one
+      const valid = () => page.evaluate(() => document.querySelector("form")?.checkValidity());
+      expect(await valid()).toBe(false);
+      expect(await input.evaluate((element: HTMLInputElement) => element.validationMessage)).toBe(
+        "Kein Datum. Schreib es wie im Kalender, etwa 24.11.2026.",
+      );
       // the next readable date clears the mark
       await input.fill("heute");
       await input.press("Enter");
       expect(await page.getByTestId("date").textContent()).toBe("2026-11-25");
       expect(await input.getAttribute("aria-invalid")).toBeNull();
+      expect(await valid()).toBe(true);
+    },
+  );
+});
+
+test("DateInput: a date key must name a real day; 29 February only in a leap year", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const input = page.getByRole("textbox", { name: "Lieferdatum" });
+      for (const typed of ["2026-02-30", "2027-02-29", "2026-13-01", "29.02.2027"]) {
+        await input.fill(typed);
+        await input.press("Enter");
+        expect(await input.getAttribute("aria-invalid")).toBe("true");
+        expect(await input.inputValue()).toBe(typed);
+        expect(await page.getByTestId("date").textContent()).toBe("2026-12-15");
+      }
+      await input.fill("2028-02-29");
+      await input.press("Enter");
+      expect(await page.getByTestId("date").textContent()).toBe("2028-02-29");
+      expect(await input.inputValue()).toBe("29.02.2028");
+      expect(await input.getAttribute("aria-invalid")).toBeNull();
+    },
+  );
+});
+
+test("a day outside `min` and `max` is never picked, also when it is the value already", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      // with a time: the day before `min` stays shown, but "Übernehmen" and Enter in the time give nothing
+      const moment = page.getByTestId("locked-moment");
+      expect(await moment.locator('[data-value="2026-11-02"]').getAttribute("aria-selected")).toBe("true");
+      expect(await moment.getByRole("button", { name: "Übernehmen" }).isDisabled()).toBe(true);
+      await moment.getByRole("textbox", { name: "Uhrzeit" }).press("Enter");
+      // without a time: a press on the locked chosen day gives nothing either
+      const day = page.getByTestId("locked-day");
+      await day.locator('[data-value="2026-11-02"]').click({ force: true });
+      await day.locator('[data-value="2026-11-02"]').dispatchEvent("keydown", { key: "Enter" });
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
+      // a day inside the bounds is picked as usual
+      await day.locator('[data-value="2026-11-04"]').click();
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual(["2026-11-04"]);
     },
   );
 });

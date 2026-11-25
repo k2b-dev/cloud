@@ -88,14 +88,18 @@ export const DatePicker = (props: DatePickerProps) => {
     onValueChange: (next) => {
       if (!next) return;
       setChosen(next);
-      if (!props.time) props.onPick(next);
+      if (!props.time) pickDay(next);
     },
   }));
-  const ready = createMemo(() => Boolean(chosen()) && !unreadable());
+  /** Whether a day lies within `min` and `max`: a value the app still holds outside them is shown, never picked again. */
+  const pickable = (key: string | undefined): key is string =>
+    key !== undefined && !(props.min && key < props.min) && !(props.max && key > props.max);
+  const pickDay = (key: string) => pickable(key) && props.onPick(key);
+  const ready = createMemo(() => pickable(chosen()) && !unreadable());
   const apply = () => {
     const key = chosen();
     const hhmm = read();
-    if (!key || hhmm === undefined) return;
+    if (!pickable(key) || hhmm === undefined) return;
     props.onPick(`${key}T${hhmm}`);
   };
   onMount(() => {
@@ -136,9 +140,9 @@ export const DatePicker = (props: DatePickerProps) => {
                           value={date}
                           class="k2-cal-day"
                           // the chosen day again changes nothing in core, but it is a pick all the same: it closes
-                          onClick={() => !props.time && date === chosen() && props.onPick(date)}
+                          onClick={() => !props.time && date === chosen() && pickDay(date)}
                           onKeyDown={(event: KeyboardEvent) =>
-                            !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && props.onPick(date)
+                            !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && pickDay(date)
                           }
                         >
                           {(cell: { label?: string }) => cell.label}

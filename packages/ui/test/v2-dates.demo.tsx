@@ -58,6 +58,15 @@ export function Demo() {
           <output data-testid="moment-value">{moment()}</output>
         </section>
       </div>
+      {/* values on a day before `min`, as an app may still hold them: shown, never picked again */}
+      <div style={{ display: "flex", gap: "40px", "align-items": "flex-start", padding: "24px" }}>
+        <section data-testid="locked-moment">
+          <DatePicker time value="2026-11-02T09:00" label="Gesperrter Zeitpunkt" min="2026-11-03" onPick={record} />
+        </section>
+        <section data-testid="locked-day">
+          <DatePicker value="2026-11-02" label="Gesperrter Tag" min="2026-11-03" onPick={record} />
+        </section>
+      </div>
     </Band>
   );
 }

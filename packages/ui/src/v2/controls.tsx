@@ -10,7 +10,7 @@ import {
   useContext,
 } from "solid-js";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
-import { dateKey, isDateKey } from "../inputs/date-picker";
+import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
@@ -358,6 +358,11 @@ export type DateInputProps = {
   /** The name a form sends the date key under. */
   name?: string;
   label?: string;
+  /**
+   * The zone that says which day today is, for words such as "heute" or "+3" and the calendar's today; "UTC" by
+   * default. Give the person's zone, the same on the server and in the island, as for `FilterBar`.
+   */
+  timeZone?: string;
 };
 
 /**
@@ -368,18 +373,16 @@ export const DateInput = (props: DateInputProps) => {
   const field = useField();
   const locale = useLocale();
   const t = useDateMessages();
-  const today = () => dateKey(new Date());
-  /** A date key for a value, or `undefined` when it is no readable date. */
+  // today in one zone on the server and in the browser, so "heute" names the same day on both sides
+  const today = () => dateKey(new Date(), { timeZone: props.timeZone ?? "UTC" });
+  /** A date key for a value, or `undefined` when it is no readable date (also a key of a day that does not exist). */
   const keyOf = (value: string | undefined): string | undefined => {
     if (!value) return undefined;
-    if (isDateKey(value)) return value;
+    if (isDateKey(value)) return isCalendarDay(value) ? value : undefined;
     const read = parseDateInput(value, { today: today(), locale: locale() });
     return read.kind === "date" ? read.date : undefined;
   };
-  const shown = (value: string | undefined) => {
-    const key = isDateKey(value ?? "") ? value : undefined;
-    return key ? formatDateInput(key, locale()) : (value ?? "");
-  };
+  const shown = (value: string | undefined) => (value && isCalendarDay(value) ? formatDateInput(value, locale()) : (value ?? ""));
   // Without `onInput` the field keeps what was picked or typed itself, so it always shows the date it holds.
   const [own, setOwn] = createSignal(props.value);
   createRenderEffect(() => setOwn(props.value));
@@ -413,6 +416,12 @@ export const DateInput = (props: DateInputProps) => {
   };
   const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
   const invalid = () => field?.invalid || unreadable();
+  // text that is no date makes the form invalid too, so it never sends the date the field held before
+  // (the message is read before the element is there, so the effect follows it from the start)
+  createRenderEffect(() => {
+    const message = unreadable() ? t().unreadable : "";
+    input?.setCustomValidity(message);
+  });
   return (
     <span class="k2-input" data-k2-part="DateInput" data-invalid={invalid() ? "" : undefined}>
       <input
@@ -454,6 +463,7 @@ export const DateInput = (props: DateInputProps) => {
       <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="bottom" align="end" sideOffset={4} collisionPadding={8}>
         <DatePicker
           value={keyOf(own())}
+          timeZone={props.timeZone ?? "UTC"}
           label={props.label}
           autoFocus
           onPick={(key) => {
