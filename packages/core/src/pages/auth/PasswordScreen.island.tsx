@@ -1,7 +1,6 @@
 import { Button, Text } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
-import AuthFrame, { type LegalLinks } from "./AuthFrame";
-import { useAuthMessages } from "./login-forms";
+import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
 import { NewPasswordForm, PasswordResetCompleteForm, PasswordResetRequestForm } from "./password-forms";
 
 /** `/auth/new-password` and `/auth/password-reset` on v2: which form the address asks for, and the way back. */

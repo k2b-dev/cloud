@@ -9,6 +9,7 @@ import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/br
 import { createSignal, onMount, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { signInAgainHref } from "../sign-out-others";
+import { useAuthMessages } from "./AuthFrame";
 import { autocomplete } from "./autocomplete";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { authMessages } from "./messages";
@@ -16,11 +17,6 @@ import { PasswordInput } from "./PasswordSetupFields";
 
 // k2b-ui gap: v2 has no form primitive, so a sign-in form sends on Enter in its fields and on its button; the
 // browser's password manager still finds the fields by their `autocomplete`.
-
-export const useAuthMessages = () => {
-  const locale = useLocale();
-  return () => authMessages.resolve([locale()]).t;
-};
 
 const onEnter = (send: () => void) => (event: KeyboardEvent) => {
   if (event.key === "Enter" && !event.isComposing) send();

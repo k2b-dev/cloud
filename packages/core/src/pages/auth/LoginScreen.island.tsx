@@ -2,8 +2,8 @@ import type { AccountCategory } from "@k2b/cloud/contracts";
 import { Notice, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { Match, Show, Switch } from "solid-js";
 import AppLoginForm from "./AppLoginForm";
-import AuthFrame, { type LegalLinks } from "./AuthFrame";
-import { AdminForm, EmailForm, FreeIpaForm, IdleSignOutFinish, useAuthMessages, usePasskeySignIn } from "./login-forms";
+import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
+import { AdminForm, EmailForm, FreeIpaForm, IdleSignOutFinish, usePasskeySignIn } from "./login-forms";
 
 /** Everything the sign-in page decided on the server; the island only shows it and runs the chosen form. */
 export type LoginScreenProps = {

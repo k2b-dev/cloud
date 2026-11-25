@@ -4,7 +4,7 @@ import { Button, Cells, Empty, Facts, Notice, Pane, Row, Section } from "@k2b/ui
 import { For, Show } from "solid-js";
 import AccountWorkspace, { AccountTabs, sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
-import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
+import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 import ScreenSection from "./ScreenSection";
 

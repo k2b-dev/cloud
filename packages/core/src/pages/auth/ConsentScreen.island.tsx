@@ -2,8 +2,7 @@ import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { Bar, Button, Check, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import AuthFrame, { type LegalLinks } from "./AuthFrame";
-import { useAuthMessages } from "./login-forms";
+import AuthFrame, { type LegalLinks, useAuthMessages } from "./AuthFrame";
 
 /**
  * `/auth/continue` on v2: accept the terms once, or cancel and sign out. The request, its version and every answer's

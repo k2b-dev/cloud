@@ -1,11 +1,18 @@
 import type { listLegalLinks } from "@k2b/cloud";
-import { LOCALE_COOKIE } from "@k2b/cloud/shared";
+import { LOCALE_COOKIE } from "@k2b/cloud/shared/locale";
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
 import { Avatar, Bar, Inline, Menu, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { For, type JSX } from "solid-js";
+import { authMessages } from "./messages";
 
 export type LegalLinks = Awaited<ReturnType<typeof listLegalLinks>>;
+
+/** The sign-in pages' messages in the page's locale. */
+export const useAuthMessages = () => {
+  const locale = useLocale();
+  return () => authMessages.resolve([locale()]).t;
+};
 
 /** The page's language as a choice in the head; a new language reloads the page in it. */
 const LanguageMenu = () => {

@@ -3,8 +3,8 @@ import { useLocale } from "@k2b/ui";
 import { type Action, Bar, Nav, type NavItem, RecordHead, Tabs, Text, type TwoActions, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 import type { AccountUserView } from "./account-view";
-import { ACCOUNT_ACTIVITY_PATH } from "./activity-query";
 import { accountMessages } from "./messages";
+import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 
 /** The areas of the account record, each with its own address. */
 export type AccountTab = "profile" | "security" | "access" | "notifications";

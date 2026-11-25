@@ -3,8 +3,8 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Bar, Button, Field, Input, Notice } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
 import { retrySignOutOthers, signInAgainHref, signOutOthersRetryPath } from "../sign-out-others";
+import { useAuthMessages } from "./AuthFrame";
 import { autocomplete } from "./autocomplete";
-import { useAuthMessages } from "./login-forms";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { PasswordInput, PasswordSetupFields } from "./PasswordSetupFields";
 

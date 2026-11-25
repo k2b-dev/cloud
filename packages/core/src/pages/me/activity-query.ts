@@ -6,8 +6,10 @@
 import type { NotificationDeliveryStatus } from "@k2b/cloud/contracts";
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import type { AccountMessages } from "./messages";
+import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 
-export const ACCOUNT_ACTIVITY_PATH = "/me/activity";
+export { ACCOUNT_ACTIVITY_PATH };
+
 export type ActivityKind = "open" | "deliveries" | "sign-ins";
 export type ActivityDays = 7 | 30 | 90;
 
