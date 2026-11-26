@@ -1521,7 +1521,7 @@
   transform: rotate(90deg);
 }
 .k2-ui .k2-tree-chev[data-loading] > .k2-icon:nth-child(2),
-.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-loading] > .k2-icon {
+.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-loading] > .k2-icon:first-child {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
@@ -1531,6 +1531,12 @@
 }
 .k2-ui .k2-table tr[data-more] > td {
   color: var(--k2-subtle);
+}
+.k2-ui .k2-table tr[data-more][data-failed] > td {
+  color: var(--k2-bad);
+}
+.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-failed]:not([data-loading]) > .k2-icon:nth-child(2) {
+  display: inline-block;
 }
 @media (prefers-reduced-motion: reduce) {
   .k2-ui .k2-tree-chev > .k2-icon {
@@ -2592,7 +2598,7 @@
   transform: rotate(90deg);
 }
 .k2-ui .k2-nt-chev[data-loading] > .k2-icon:nth-child(2),
-.k2-ui .k2-nt-item[data-pending] > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon {
+.k2-ui .k2-nt-item[data-pending] > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon:first-child {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
@@ -2602,6 +2608,13 @@
 }
 .k2-ui .k2-nt-row[data-more] {
   color: var(--k2-subtle);
+}
+/* a page that did not load: the red mark and the words say so; the next press tries again */
+.k2-ui .k2-nt-item[data-failed-more] > .k2-nt-row[data-more] {
+  color: var(--k2-bad);
+}
+.k2-ui .k2-nt-item[data-failed-more]:not([data-pending]) > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon:nth-child(2) {
+  display: inline-block;
 }
 @media (prefers-reduced-motion: reduce) {
   .k2-ui :is(.k2-nt-chev > .k2-icon, .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon) {

@@ -98,6 +98,7 @@ const uiMessages = i18n.define({
       nothingSelected: "Nothing selected",
       loadMore: ({ count }: { count: number | undefined }) =>
         count === undefined ? "Load more" : `Load ${count.toLocaleString("en")} more`,
+      loadMoreFailed: "Couldn't load more. Try again",
       yes: "Yes",
     },
     de: {
@@ -192,6 +193,7 @@ const uiMessages = i18n.define({
       showSidebar: "Seitenleiste zeigen",
       nothingSelected: "Nichts ausgewählt",
       loadMore: ({ count }) => (count === undefined ? "Weitere laden" : `Weitere ${count.toLocaleString("de")} laden`),
+      loadMoreFailed: "Weitere konnten nicht geladen werden. Erneut versuchen",
       yes: "Ja",
     },
   },

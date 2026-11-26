@@ -1,6 +1,7 @@
-import { createComputed, createMemo, For, type JSX, on, onMount, Show, untrack } from "solid-js";
+import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
+import { announceText } from "./behavior/treegrid";
 import { Dot, Icon } from "./marks";
 import { Menu, type MenuEntry } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
@@ -123,6 +124,8 @@ export const NavTreeView = (props: NavTree) => {
   const way = () => (props.current === undefined ? [] : (treePath(props.items, props.current) ?? []));
   const childrenOf = (parent: string | null) => (parent === null ? props.items : (nodes().get(parent)?.children ?? []));
   let root: HTMLElement | undefined;
+  // the "Weitere laden" entries whose last page failed; they say so and try again on the next press
+  const [failedMore, setFailedMore] = createSignal<readonly string[]>([]);
   const parts: TreeParts = useTree(() => ({
     mode: "none",
     current: props.current ?? null,
@@ -137,11 +140,25 @@ export const NavTreeView = (props: NavTree) => {
       if (key.startsWith(MORE)) {
         const parent = key === moreOf(null) ? null : key.slice(MORE.length);
         const before = childrenOf(parent).length;
-        return props.loadMore?.(parent).then(() => {
-          // the focus goes on to the first place that came, where reading goes on
-          const next = childrenOf(parent)[before];
-          if (next) requestAnimationFrame(() => parts.controller.focus(next.key));
-        });
+        // Whether the person waits on this entry: only then does the focus follow the places that come.
+        const entry = event?.currentTarget instanceof HTMLElement ? event.currentTarget : document.activeElement;
+        const waiting = entry instanceof HTMLElement && entry.matches('[role="treeitem"]') && document.activeElement === entry;
+        const stillWaiting = () => {
+          const active = document.activeElement;
+          return active === entry || active === null || active === document.body;
+        };
+        setFailedMore(failedMore().filter((other) => other !== key));
+        return props.loadMore?.(parent).then(
+          () => {
+            // the focus goes on to the first place that came, where reading goes on
+            const next = childrenOf(parent)[before];
+            if (next && waiting) requestAnimationFrame(() => stillWaiting() && parts.controller.focus(next.key));
+          },
+          () => {
+            setFailedMore([...failedMore(), key]);
+            announceText(t().loadMoreFailed);
+          },
+        );
       }
       const node = nodes().get(key);
       // a place without an address folds open and shut on a press; its arrow does that itself
@@ -170,30 +187,84 @@ export const NavTreeView = (props: NavTree) => {
     }
   });
 
-  const More = (more: { parent: string | null; count: true | number }) => (
-    <parts.Item value={moreOf(more.parent)} label={t().loadMore({ count: undefined })} class="k2-nt-item">
-      <div class="k2-ni k2-nt-row" data-more="">
-        <span class="k2-nt-chev">
-          <Icon name="loader-2" />
-        </span>
-        <parts.Label class="k2-ni-name">{t().loadMore({ count: more.count === true ? undefined : more.count })}</parts.Label>
-      </div>
-    </parts.Item>
-  );
+  const More = (more: { parent: string | null; count: true | number; position: number; size: number }) => {
+    const failed = () => failedMore().includes(moreOf(more.parent));
+    return (
+      <parts.Item
+        value={moreOf(more.parent)}
+        label={t().loadMore({ count: undefined })}
+        class="k2-nt-item"
+        aria-posinset={more.position}
+        aria-setsize={more.size}
+        ref={(element: HTMLElement) => keepPlace(element, () => ({ position: more.position, size: more.size }))}
+        data-failed-more={failed() ? "" : undefined}
+      >
+        <div class="k2-ni k2-nt-row" data-more="">
+          <span class="k2-nt-chev">
+            <Icon name="loader-2" />
+            <Icon name="alert-circle" />
+          </span>
+          <parts.Label class="k2-ni-name">
+            {failed() ? t().loadMoreFailed : t().loadMore({ count: more.count === true ? undefined : more.count })}
+          </parts.Label>
+        </div>
+      </parts.Item>
+    );
+  };
 
-  const level = (list: readonly NavTreeNode[], parent: string | null, more: () => true | number | undefined): JSX.Element => (
-    <>
-      <For each={list}>{(node) => <Entry node={node} />}</For>
-      <Show when={props.loadMore && more()}>{(count) => <More parent={parent} count={count()} />}</Show>
-    </>
-  );
+  // A level that pages says its whole size (the loaded places and those still to come; -1 while nobody knows it), so
+  // its places say it too, and "Weitere laden" stands after the loaded ones.
+  // Places are made once per key: new data for the same place (a page that came, a count that changed) updates it in
+  // place, so its element and the focus in it stay.
+  const level = (list: () => readonly NavTreeNode[], parent: string | null, more: () => true | number | undefined): JSX.Element => {
+    const size = () => {
+      const count = props.loadMore ? more() : undefined;
+      return count === undefined ? undefined : count === true ? -1 : list().length + count;
+    };
+    const keys = createMemo(() => list().map((node) => node.key));
+    return (
+      <>
+        <For each={keys()}>
+          {(key, index) => (
+            <Show when={nodes().get(key)}>
+              {(node) => <Entry node={node()} position={size() === undefined ? undefined : index() + 1} size={size()} />}
+            </Show>
+          )}
+        </For>
+        <Show when={props.loadMore && more()}>
+          {(count) => <More parent={parent} count={count()} position={list().length + 1} size={size() ?? list().length + 1} />}
+        </Show>
+      </>
+    );
+  };
 
-  const Entry = (entry: { node: NavTreeNode }) => (
+  /**
+   * Core counts the places it has rendered for `aria-posinset` and `aria-setsize`; a level that pages knows more, so
+   * its numbers are kept on the element (the server's page has them from the attributes already).
+   */
+  const keepPlace = (element: HTMLElement, place: () => { position?: number; size?: number }) => {
+    const apply = () => {
+      const { position, size } = place();
+      if (size === undefined) return;
+      if (element.getAttribute("aria-setsize") !== String(size)) element.setAttribute("aria-setsize", String(size));
+      if (position !== undefined && element.getAttribute("aria-posinset") !== String(position))
+        element.setAttribute("aria-posinset", String(position));
+    };
+    const watch = new MutationObserver(apply);
+    watch.observe(element, { attributes: true, attributeFilter: ["aria-setsize", "aria-posinset"] });
+    createEffect(apply);
+    onCleanup(() => watch.disconnect());
+  };
+
+  const Entry = (entry: { node: NavTreeNode; position?: number; size?: number }) => (
     <parts.Item
       value={entry.node.key}
       label={entry.node.label}
       branch={isBranch(entry.node)}
       class="k2-nt-item"
+      aria-posinset={entry.position}
+      aria-setsize={entry.size}
+      ref={(element: HTMLElement) => keepPlace(element, () => ({ position: entry.position, size: entry.size }))}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
         event.preventDefault();
@@ -233,7 +304,15 @@ export const NavTreeView = (props: NavTree) => {
         <Show when={entry.node.menu}>{(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}</Show>
       </div>
       <Show when={isBranch(entry.node)}>
-        <parts.Group class="k2-nt-group">{level(entry.node.children ?? [], entry.node.key, () => entry.node.more)}</parts.Group>
+        <parts.Group class="k2-nt-group">
+          {untrack(() =>
+            level(
+              () => entry.node.children ?? [],
+              entry.node.key,
+              () => entry.node.more,
+            ),
+          )}
+        </parts.Group>
       </Show>
     </parts.Item>
   );
@@ -247,7 +326,13 @@ export const NavTreeView = (props: NavTree) => {
       data-k2-part="Nav.Tree"
       aria-label={props.label}
     >
-      {level(props.items, null, () => props.more)}
+      {untrack(() =>
+        level(
+          () => props.items,
+          null,
+          () => props.more,
+        ),
+      )}
     </parts.Root>
   );
 };

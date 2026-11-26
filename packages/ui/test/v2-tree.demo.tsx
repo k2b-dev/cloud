@@ -7,7 +7,11 @@ import { Nav, type NavTreeNode, Pane, Table, Workspace } from "../src/v2";
 // - "Fernablage" fails to load once, then loads;
 // - "Fotos" has 10 000 children, 50 at a time, behind "Weitere … laden";
 // - "Tief" is twelve levels deep with long names;
-// - a folder's "…" lands its deed in `window.__treeDeeds`.
+// - a folder's "…" lands its deed in `window.__treeDeeds`;
+// - `window.__holdMore` makes "Weitere laden" wait for `window.__releaseMore()`, `window.__failMore` makes it fail once,
+//   `window.__loadAll()` loads all 10 000 pictures at once;
+// - "Archiv", once loaded, has more children of an unknown number;
+// - the table selects rows (`window.__selected`).
 
 declare global {
   interface Window {
@@ -15,6 +19,11 @@ declare global {
     __treeDeeds?: string[];
     __loads?: string[];
     __open?: (key: string) => void;
+    __holdMore?: boolean;
+    __releaseMore?: () => void;
+    __failMore?: boolean;
+    __loadAll?: () => void;
+    __selected?: readonly string[];
   }
 }
 
@@ -66,12 +75,21 @@ export function Demo() {
   const [folders, setFolders] = createSignal(start());
   const [current, setCurrent] = createSignal("entwuerfe");
   const [tableCurrent, setTableCurrent] = createSignal<string>();
+  const [selected, setSelected] = createSignal<readonly string[]>([]);
   let failedOnce = false;
   const waiting: (() => void)[] = [];
   if (typeof window !== "undefined") {
     window.__release = () => waiting.splice(0).forEach((release) => release());
     window.__open = setCurrent;
+    window.__loadAll = () =>
+      setFolders(
+        update(folders(), "fotos", (folder) => ({ ...folder, children: Array.from({ length: PHOTOS }, (_, index) => photo(index)) })),
+      );
   }
+  const choose = (keys: readonly string[]) => {
+    setSelected(keys);
+    window.__selected = keys;
+  };
   const did = (deed: string) => () => {
     window.__treeDeeds = [...(window.__treeDeeds ?? []), deed];
   };
@@ -90,6 +108,11 @@ export function Demo() {
   };
   const loadMore = async (key: string | null) => {
     if (key !== "fotos") return;
+    if (window.__failMore) {
+      window.__failMore = false;
+      throw new Error("offline");
+    }
+    if (window.__holdMore) await new Promise<void>((release) => (window.__releaseMore = release));
     setFolders(
       update(folders(), "fotos", (folder) => {
         const have = folder.children?.length ?? 0;
@@ -106,7 +129,7 @@ export function Demo() {
     branch: folder.branch,
     // the sidebar shows folders; "Fotos" shows its pictures too, so its level of 10 000 pages
     children: folder.children?.filter((child) => folder.key === "fotos" || child.children !== undefined || child.branch).map(node),
-    more: folder.key === "fotos" && photosLeft() > 0 ? photosLeft() : undefined,
+    more: folder.key === "fotos" && photosLeft() > 0 ? photosLeft() : folder.key === "archiv" && folder.children ? true : undefined,
     menu: [
       { label: "Umbenennen", icon: "pencil", onClick: did(`rename:${folder.key}`) },
       { label: "Löschen", icon: "trash", danger: true, onClick: did(`delete:${folder.key}`) },
@@ -143,6 +166,7 @@ export function Demo() {
           ]}
           rows={folders()}
           rowKey={(folder) => folder.key}
+          select={{ selected: selected(), onChange: choose, all: "Alle Dateien", row: (folder) => folder.name }}
           current={tableCurrent()}
           open={(folder) => ({ onOpen: () => setTableCurrent(folder.key) })}
           phone={(folder) => ({ lines: [folder.name, folder.size ?? "Ordner"] })}
@@ -150,7 +174,8 @@ export function Demo() {
             children: (folder) => folder.children,
             branch: (folder) => folder.children !== undefined || folder.branch === true,
             load: (folder) => load(folder.key),
-            more: (folder) => (folder?.key === "fotos" && photosLeft() > 0 ? photosLeft() : undefined),
+            more: (folder) =>
+              folder?.key === "fotos" && photosLeft() > 0 ? photosLeft() : folder?.key === "archiv" && folder.children ? true : undefined,
             loadMore: (folder) => loadMore(folder?.key ?? null),
           }}
         />

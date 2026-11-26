@@ -215,8 +215,12 @@ again retries). `more(row | null)` says that more children (or top rows)
 exist (`true` or a count), and a last row "Weitere laden" calls
 `loadMore(row | null)`; the focus goes on to the first new row. The table
 is then a treegrid: one Tab stop, Up/Down/Home/End move, Right opens and
-enters, Left closes and goes to the parent, Enter opens the row, Space
-selects with `select`. `expanded` left out: the table keeps it, starting
+enters, Left closes (also a row that is still loading: its late answer
+opens nothing) and goes to the parent, Enter opens the row, Space selects
+with `select` (the boxes are no Tab stops). A level that pages says its
+whole size (`aria-setsize`, -1 while `more` is `true`); a page that
+fails says so on its "Weitere laden" row, and Enter tries again; the focus
+follows the new rows only while it waited on that row. `expanded` left out: the table keeps it, starting
 with the way to `current`. On the phone only the top level shows.
 
 `loading` (`true` or `{ rows?, lines? }`): the head stays and placeholder

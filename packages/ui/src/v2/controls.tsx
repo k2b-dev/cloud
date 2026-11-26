@@ -488,6 +488,8 @@ export const MarkCheck = (
   props: ({ label: string; labelledBy?: undefined } | { label?: undefined; labelledBy: string }) & {
     checked?: boolean | "mixed";
     onChange?: (checked: boolean) => void;
+    /** `false`: out of the tab order, where the thing around it takes the focus and Space (a tile of a grid). */
+    focusable?: false;
   },
 ) => (
   <span class="k2-mark">
@@ -496,6 +498,7 @@ export const MarkCheck = (
       type="checkbox"
       aria-label={props.label}
       aria-labelledby={props.labelledBy}
+      tabindex={props.focusable === false ? -1 : undefined}
       checked={props.checked === true}
       ref={(input) => mixed(input, () => props.checked === "mixed")}
       onChange={(event) => props.onChange?.(event.currentTarget.checked)}
