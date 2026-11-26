@@ -30,6 +30,11 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
+  /**
+   * A quiet second line under the words, such as the place of a chat: one line, cut with "…", and part of the
+   * entry's name for assistive technology. An entry with it is a little taller.
+   */
+  meta?: string;
   /** A count at the end, such as unread mails. */
   count?: number | string;
   /** The open one. */
@@ -115,6 +120,9 @@ const NavEnd = (props: { item: NavItem }) => {
       </Show>
       <Show when={props.item.count !== undefined}>
         <span class="k2-ni-count">{props.item.count}</span>
+      </Show>
+      <Show when={props.item.meta}>
+        <span class="k2-ni-meta">{props.item.meta}</span>
       </Show>
     </>
   );

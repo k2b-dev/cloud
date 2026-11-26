@@ -59,6 +59,8 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
       label: item.label,
       ...(item.icon ? { icon: `ti ti-${item.icon}` } : {}),
       ...(item.count !== undefined ? { badge: item.count } : {}),
+      // the quiet second line (a chat's place) is the entry's description there
+      ...(item.meta ? { description: item.meta } : {}),
       ...(item.current ? { active: true } : {}),
       // the old menu has no running state: work that runs is no unread mail, so it marks nothing there
       ...(item.dot && item.dot !== "running" ? { unread: true } : {}),

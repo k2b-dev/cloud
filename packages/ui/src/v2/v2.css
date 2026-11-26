@@ -2366,6 +2366,36 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
+/* An entry with a quiet second line (the place of a chat, W7 26.11.): the words and what ends the entry on the first
+   line, the second line under the words, each one line cut with "…"; the symbol stands beside the words. */
+.k2-ui .k2-ni:has(> .k2-ni-meta) {
+  display: grid;
+  /* the symbol and the words; a dot and a count take columns of their own only when they are there */
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-auto-columns: auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 0;
+  height: auto;
+  min-height: var(--k2-h-dense);
+  padding-block: 4px;
+}
+.k2-ui .k2-ni:has(> .k2-ni-meta) > :not(.k2-ni-meta) {
+  grid-row: 1;
+}
+.k2-ui .k2-ni:has(> .k2-ni-meta) > .k2-ni-meta {
+  grid-row: 2;
+  grid-column: 2 / -1;
+}
+.k2-ui .k2-ni-meta {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: var(--k2-t-meta);
+  font-weight: 400;
+  color: var(--k2-subtle);
+}
 /* a closed fold that holds the open entry carries its tint, so the open place never hides */
 .k2-ui .k2-ni[aria-current],
 .k2-ui .k2-ni[data-holds-current][aria-expanded="false"] {
