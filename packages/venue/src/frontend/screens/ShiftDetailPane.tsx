@@ -61,7 +61,8 @@ export default function ShiftDetailPane(props: {
       detail
       label={title()}
       scrollKey="venue-shift"
-      back={{ label: words().backToSchedule, href: props.closeHref }}
+      // the way back names the place it leads to, as the sidebar names it
+      back={{ label: t().schedule, href: props.closeHref }}
       head={
         <Bar
           start={<Text type="lead">{title()}</Text>}

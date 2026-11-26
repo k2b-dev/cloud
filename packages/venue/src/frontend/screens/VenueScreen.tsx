@@ -32,7 +32,7 @@ import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } fro
 import { isServer } from "solid-js/web";
 import type { ShiftAssignment, UpcomingSlot } from "../../contracts";
 import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueWeekdayTime, timeZoneName } from "../../time-format";
-import { feedbackCountTooltip, feedbackRatingTooltip, formatFeedbackRating } from "../_components/venue-workspace/feedback-chart-tooltips";
+import { feedbackRatingTooltip, formatFeedbackRating } from "../_components/venue-workspace/feedback-chart-tooltips";
 import { PublicPageEditor } from "../_components/venue-workspace/public-page-editor";
 import { slotStaffingLabel, slotState } from "../_components/venue-workspace/schedule";
 import { scheduleIsEmpty, setupSteps } from "../_components/venue-workspace/setup-checklist";
@@ -629,8 +629,9 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
           meta={t().ratingsWithComments}
         />
       </Cells>
+      {/* one chart: the rating over the days; how many came per day stands in its tooltip and the figures above */}
       <Section icon="chart-line" title={t().averageRating}>
-        <Canvas label={t().averageRating} height={220}>
+        <Canvas label={t().averageRating} height={180}>
           <Show when={ratingData().length > 0} fallback={<Empty icon="chart-line" text={t().noFeedbackInDays({ count: days() })} />}>
             <Chart
               kind={ratingData().length > 1 ? "line" : "scatter"}
@@ -642,18 +643,6 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
               tooltip={feedbackRatingTooltip({ dayLabels: labels(), label: t().averageRating, locale: locale() })}
             />
           </Show>
-        </Canvas>
-      </Section>
-      <Section icon="chart-bar" title={t().ratingsPerDay}>
-        <Canvas label={t().ratingsPerDay} height={160}>
-          <Chart
-            kind="bar"
-            style={{ height: "100%" }}
-            data={buckets().map((bucket, index) => ({ label: labels()[index] ?? bucket.date, value: bucket.count }))}
-            xAxis={{ ordered: true }}
-            yAxis={{ ticks: 3, format: (value: number) => (Number.isInteger(value) ? String(value) : "") }}
-            tooltip={feedbackCountTooltip({ label: t().ratings, locale: locale() })}
-          />
         </Canvas>
       </Section>
       <Table

@@ -285,7 +285,7 @@ describe("Venue on v2", () => {
     const { context, tab, errors } = await open(phone, `/app/venue/Cafe01/shifts?cv=mobile-month&cd=${SHIFT_DAY}&shift=${lunchId}`);
     try {
       await shoot(tab, "shift-open-390");
-      expect(await tab.getByRole("link", { name: "Dienstplan" }).first().isVisible()).toBe(true);
+      expect(await tab.getByRole("link", { name: "Schichtplan" }).first().isVisible()).toBe(true);
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       expect(errors).toEqual([]);
     } finally {

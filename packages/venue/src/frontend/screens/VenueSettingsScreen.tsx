@@ -263,7 +263,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
   };
   return (
     <>
-      <Section icon="id" title={t().identity} summary={t().identityDescription}>
+      <Section icon="id" title={t().identity}>
         <Setting name="name" label={t().name} hint={t().nameDescription} error={nameError()} was={was("name", (value) => value)}>
           <Input value={draft().name} onInput={(value) => set("name", value)} />
         </Setting>
@@ -279,7 +279,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
           <Input multiline value={draft().description} onInput={(value) => set("description", value)} />
         </Setting>
       </Section>
-      <Section icon="calendar-time" title={t().scheduleRules} summary={t().scheduleRulesDescription}>
+      <Section icon="calendar-time" title={t().scheduleRules}>
         <Setting
           name="openMode"
           label={t().publicOpeningLogic}
@@ -308,7 +308,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
           <Select options={zones()} value={draft().timezone} onChange={(value) => set("timezone", value)} />
         </Setting>
       </Section>
-      <Section icon="world" title={t().publicPage} summary={t().publicPageSettingDescription}>
+      <Section icon="world" title={t().publicPage}>
         <Setting name="publicEnabled" label={t().publicPageOn} hint={t().publicPageOnDescription} was={was("publicEnabled", onOff)}>
           <Check
             switch
@@ -331,7 +331,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
           />
         </Setting>
       </Section>
-      <Section icon="palette" title={t().publicBranding} summary={t().publicBrandingDescription}>
+      <Section icon="palette" title={t().publicBranding}>
         {/* k2b-ui gap: no icon picker in v2; a selection of the curated icons by name. */}
         <Setting name="icon" label={t().icon} hint={t().iconDescription} was={was("icon", iconLabel)}>
           <Select
@@ -733,7 +733,6 @@ function ScheduleArea(props: {
         icon="clock"
         title={t().regularHours}
         count={props.settings.openingRules.length}
-        summary={t().regularHoursDescription}
         actions={[{ label: t().newHours, icon: "plus", onClick: () => void addOpening() }]}
       >
         <Show when={props.settings.openingRules.length > 0} fallback={<Empty icon="clock" text={t().noRegularHours} />}>
@@ -785,7 +784,6 @@ function ScheduleArea(props: {
         icon="calendar-exclamation"
         title={t().exceptions}
         count={upcoming().length}
-        summary={t().exceptionsDescription}
         actions={[{ label: t().newException, icon: "plus", onClick: () => void addException() }]}
       >
         <Show when={upcoming().length > 0} fallback={<Empty icon="calendar-check" text={t().noUpcomingExceptions} />}>
@@ -805,7 +803,6 @@ function ScheduleArea(props: {
         icon="users"
         title={t().shifts}
         count={weekly().length}
-        summary={t().shiftsDescription}
         actions={[{ label: t().newShift, icon: "plus", onClick: () => void addShift() }]}
       >
         <Show when={weekly().length > 0} fallback={<Empty icon="calendar-off" text={t().noShifts} />}>
