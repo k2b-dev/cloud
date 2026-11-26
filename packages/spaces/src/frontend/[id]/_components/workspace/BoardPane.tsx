@@ -45,7 +45,7 @@ export default function BoardPane(props: Props) {
   });
   /** A view chosen in the address (`view=kanban`) stays the view of every change. */
   const chosenView = () => new URL(view.current().source, "http://spaces.local").searchParams.get("view") ?? undefined;
-  const state = () => boardStateOf(view.filter(), chosenView());
+  const state = () => boardStateOf(view.filter(), props.space, chosenView());
   const base = (): SpaceBoardState => ({ ...query().reset(), ...(chosenView() ? { view: chosenView() } : {}) });
   const change = (next: SpaceBoardState) => {
     const current = new URL(window.location.href);

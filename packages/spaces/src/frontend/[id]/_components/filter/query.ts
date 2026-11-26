@@ -141,26 +141,33 @@ export type SpaceListState = ListQueryStateOf<SpaceListQuery>;
 export type SpaceBoardQuery = ReturnType<typeof spaceBoardQuery>;
 export type SpaceBoardState = ListQueryStateOf<SpaceBoardQuery>;
 
-/** The list state of a filter, as the bar shows it. */
-export const listStateOf = (filter: FilterState, view?: string): SpaceListState => ({
-  ...(view ? { view } : {}),
-  filters: {
-    status: filter.status,
-    ...(filter.type !== "all" ? { type: filter.type } : {}),
-    ...(filter.columnIds.length ? { columns: filter.columnIds } : {}),
-    ...(filter.assignedTo !== "all" ? { assignedTo: filter.assignedTo } : {}),
-    ...(filter.priority.length ? { priority: filter.priority } : {}),
-    ...(filter.deadlineFilter !== "all" ? { deadline: filter.deadlineFilter } : {}),
-    ...(filter.tagIds.length ? { tags: filter.tagIds } : {}),
-    ...(filter.activity !== "all" ? { activity: filter.activity } : {}),
-  },
-  ...(filter.search ? { search: filter.search } : {}),
-  sort: { field: filter.sort, direction: filter.sortDesc ? "desc" : "asc" },
-});
+/**
+ * The list state of a filter, as the bar shows it. Tags and statuses the Space no longer has (an old link, a deleted
+ * tag) are left out: the address cannot hold them, and the list does not filter by them.
+ */
+export const listStateOf = (filter: FilterState, space: QuerySpace, view?: string): SpaceListState => {
+  const tagIds = filter.tagIds.filter((id) => space.tags.some((tag) => tag.id === id));
+  const columnIds = filter.columnIds.filter((id) => space.columns.some((column) => column.id === id));
+  return {
+    ...(view ? { view } : {}),
+    filters: {
+      status: filter.status,
+      ...(filter.type !== "all" ? { type: filter.type } : {}),
+      ...(columnIds.length ? { columns: columnIds } : {}),
+      ...(filter.assignedTo !== "all" ? { assignedTo: filter.assignedTo } : {}),
+      ...(filter.priority.length ? { priority: filter.priority } : {}),
+      ...(filter.deadlineFilter !== "all" ? { deadline: filter.deadlineFilter } : {}),
+      ...(tagIds.length ? { tags: tagIds } : {}),
+      ...(filter.activity !== "all" ? { activity: filter.activity } : {}),
+    },
+    ...(filter.search ? { search: filter.search } : {}),
+    sort: { field: filter.sort, direction: filter.sortDesc ? "desc" : "asc" },
+  };
+};
 
 /** The board state of a filter. */
-export const boardStateOf = (filter: FilterState, view?: string): SpaceBoardState => {
-  const list = listStateOf(filter);
+export const boardStateOf = (filter: FilterState, space: QuerySpace, view?: string): SpaceBoardState => {
+  const list = listStateOf(filter, space);
   const { assignedTo, priority, deadline, tags, activity } = list.filters;
   return {
     filters: {

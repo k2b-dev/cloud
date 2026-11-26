@@ -1509,13 +1509,46 @@ describePart("head", "Spaces Kanban board in a browser", () => {
     }
   }, 30_000);
 
+  /** Adds a filter from the bar's "+ Filter": the field, then its value; the bar writes the address and the board loads. */
+  const addFilter = async (page: Page, field: RegExp, value: string, touch = false) => {
+    if (touch) {
+      // On the phone the bar's first button opens its sheet: the field's row, then its value; Escape closes it again.
+      await page
+        .locator('[data-k2-part="FilterBar"] button:visible')
+        .filter({ hasText: /^\s*Filter\s*\d*\s*$/ })
+        .first()
+        .tap();
+      const sheet = page.getByRole("dialog", { name: "Filter" });
+      await sheet.waitFor();
+      // the sheet slides up; it takes a tap once it stands
+      let top = Number.NaN;
+      for (;;) {
+        const now = (await sheet.boundingBox())?.y ?? Number.NaN;
+        if (now === top) break;
+        top = now;
+        await page.waitForTimeout(100);
+      }
+      await sheet.getByRole("button", { name: field }).first().tap();
+      await page.getByRole("option", { name: value, exact: true }).tap();
+      return;
+    }
+    await page.locator('[data-k2-part="FilterBar"] .k2-fbar-add button').click();
+    await page.getByRole("menuitem", { name: field }).click();
+    await page.getByRole("option", { name: value, exact: true }).click();
+  };
+  const filterBar = (page: Page) => page.locator('[data-k2-part="FilterBar"]');
+
   test("a filter loads the narrowed board in place, keeps it in the URL, and counts what it hides", async () => {
     const page = await open(desktop, { locale: "en" });
     try {
-      await page.getByRole("button", { name: "Assignment" }).click();
-      await page.getByRole("menuitemradio", { name: "Assigned to me" }).click();
+      await addFilter(page, /Assigned to/, "Me");
       await page.waitForURL((url) => url.searchParams.get("assignedTo") === "me");
       await page.keyboard.press("Escape");
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[role="region"] header span[title] > [aria-hidden="true"]')].some(
+          (count) => count.textContent === "1/3",
+        ),
+      );
       expect(await page.locator('[role="region"] header span[title] > [aria-hidden="true"]').allTextContents()).toEqual([
         "1/3",
         "1/2",
@@ -1523,33 +1556,32 @@ describePart("head", "Spaces Kanban board in a browser", () => {
         "0/1",
       ]);
       expect(await page.locator('[role="region"] section').nth(2).textContent()).toContain("No matching items");
-      expect(await page.locator("[data-spaces-kanban-card]").first().getAttribute("href")).toBe(
-        "/app/spaces/Space1?assignedTo=me&item=Item01",
-      );
+      // A card opens on the address the board shows now (the test's own `case` parameter rides along).
+      const card = new URL((await page.locator("[data-spaces-kanban-card]").first().getAttribute("href"))!, "http://spaces.local");
+      card.searchParams.delete("case");
+      expect(`${card.pathname}${card.search}`).toBe("/app/spaces/Space1?assignedTo=me&item=Item01");
     } finally {
       await page.context().close();
     }
   }, 30_000);
   const allFilters = "?assignedTo=assigned&priority=urgent,high,medium,low&deadline=overdue&activity=inactive&tags=Tag001&q=banners";
   for (const locale of ["de", "en"] as const) {
-    test(`${locale}: active head chips and Reset stay reachable at every width`, async () => {
+    test(`${locale}: every active filter and Reset stay reachable at every width, and the page never scrolls sideways`, async () => {
       for (const width of [390, 900, 960, 1040, 1120, 1280]) {
         const page = await open({ width, height: 800, touch: false }, { locale, query: allFilters });
         try {
-          const group = page.locator(".k2b-app-workspace__head-filters");
-          const head = page.locator("[data-spaces-head-filters]");
-          expect(await head.evaluate((element) => getComputedStyle(element).flexWrap)).toBe("nowrap");
-          const controls = head.locator("button:visible, a:visible, input:visible");
+          const bar = filterBar(page);
+          const clip = (await bar.boundingBox())!;
+          const controls = bar.locator("button:visible");
           expect(await controls.count()).toBeGreaterThan(0);
           for (const control of await controls.all()) {
-            // Chips share one row and the head group scrolls to every control, including Reset.
+            // From 768 px the statements wrap; on the phone the bar is one line that scrolls to every control.
             await control.scrollIntoViewIfNeeded();
             const box = (await control.boundingBox())!;
-            const clip = (await group.boundingBox())!;
             expect(box.x).toBeGreaterThanOrEqual(clip.x - 0.5);
             expect(box.x + box.width).toBeLessThanOrEqual(clip.x + clip.width + 0.5);
           }
-          const reset = page.getByRole("link", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
+          const reset = bar.getByRole("button", { name: locale === "de" ? "Zurücksetzen" : "Reset", exact: true });
           await reset.focus();
           expect(await reset.evaluate((element) => document.activeElement === element)).toBe(true);
           expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
@@ -1561,37 +1593,33 @@ describePart("head", "Spaces Kanban board in a browser", () => {
   }
 
   for (const view of [desktop, phone]) {
-    test(`${view.width}px: a head chip applies its filter and moves neither the search, its own start, the menu, nor the board`, async () => {
+    test(`${view.width}px: a filter applies and moves neither the head's search, the menu, nor the board's start`, async () => {
       const page = await open(view, { locale: "de" });
       try {
-        // The active chip names its value and Reset appears after the chips; nothing before them and nothing below may move.
+        // The statement and Reset appear in the bar; the head above it and the board's columns keep their places.
         const positions = () =>
           page.evaluate(() => {
             const box = (element: Element | null) => {
               const rect = element!.getBoundingClientRect();
-              return { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width) };
+              return { left: Math.round(rect.left), width: Math.round(rect.width) };
             };
-            const chip = Array.from(window.document.querySelectorAll("[data-spaces-head-filters] button")).find((button) =>
-              button.textContent?.includes("Zuständigkeit"),
-            )!;
-            const start = box(chip);
             return {
-              search: box(window.document.querySelector("[data-spaces-head-filters] input")),
-              chip: { left: start.left, top: start.top },
-              menu: box(window.document.querySelector("[data-spaces-menu]")),
+              head: box(window.document.querySelector('[data-k2-workspace] > .k2-ws-main > [data-slot="head"]')),
               board: box(window.document.querySelector('[role="region"]')),
             };
           });
         const before = await positions();
-        const chip = page.getByRole("button", { name: "Zuständigkeit" });
-        if (view.touch) await chip.tap();
-        else await chip.click();
-        const option = page.getByRole("menuitemradio", { name: "Mir zugewiesen" });
-        if (view.touch) await option.tap();
-        else await option.click();
+        await addFilter(page, /Zuständig/, "Mir", view.touch);
         await page.waitForURL((url) => url.searchParams.get("assignedTo") === "me");
-        await page.getByRole("link", { name: "Zurücksetzen", exact: true }).waitFor();
-        expect(await page.locator("[data-spaces-head-filters] [data-active]").count()).toBeGreaterThan(0);
+        await page.keyboard.press("Escape");
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+        // The statement stands in the bar; on the phone its button counts the filter, from 768 px Reset follows it.
+        await filterBar(page).locator(".k2-stmt").first().waitFor();
+        if (view.touch)
+          await filterBar(page)
+            .getByRole("button", { name: /^Filter\s*1$/ })
+            .waitFor();
+        else await filterBar(page).getByRole("button", { name: "Zurücksetzen", exact: true }).waitFor();
         expect(await positions()).toEqual(before);
       } finally {
         await page.context().close();
@@ -1635,7 +1663,7 @@ describePart("head", "Spaces Kanban board in a browser", () => {
         filterRequests.some((request) => (request as { tagIds?: string[] }).tagIds || (request as { priority?: string[] }).priority),
       ).toBe(false);
       expect(await page.locator('[role="region"] button.text-red-600').count()).toBe(0);
-      expect(await page.locator("[data-spaces-head-filters] [data-active]").count()).toBe(0);
+      expect(await filterBar(page).locator(".k2-stmt").count()).toBe(0);
     } finally {
       remaining.resolve();
       await page.unrouteAll({ behavior: "wait" });
@@ -1644,19 +1672,19 @@ describePart("head", "Spaces Kanban board in a browser", () => {
   }, 30_000);
 
   for (const canWrite of [true, false]) {
-    test(`the head menu opens the shortcut list on a tap and names ${canWrite ? "the edit shortcuts" : "no edit shortcuts for a reader"}`, async () => {
+    test(`the Space menu opens the shortcut list on a tap and names ${canWrite ? "the edit shortcuts" : "no edit shortcuts for a reader"}`, async () => {
       const page = await open(phone, { locale: "en", canWrite });
       try {
-        await page.locator("[data-spaces-menu]").tap();
-        await page.getByRole("menuitem", { name: "Keyboard shortcuts" }).tap();
+        await page.getByRole("button", { name: "Space menu" }).tap();
+        await page.getByRole("menuitem", { name: /Keyboard shortcuts/ }).tap();
         const dialog = page.getByRole("dialog", { name: "Keyboard shortcuts" });
         await dialog.waitFor();
         expect(await dialog.textContent()).toContain("Open the card");
         expect((await dialog.textContent())?.includes("Assign it to you")).toBe(canWrite);
         expect((await dialog.textContent())?.includes("On its grip: pick up, move, and drop or cancel")).toBe(canWrite);
-        // Each Kbd holds one visible cap per key next to its spoken name, so read the caps.
-        expect(await dialog.locator(".k2b-kbd__key").allTextContents()).toEqual(
-          canWrite ? ["←", "↑", "→", "↓", "↵", "M", "D", "Space", "←", "↑", "→", "↓", "Esc"] : ["←", "↑", "→", "↓", "↵"],
+        // Each key stands as its sign beside what it does (v2 has no key caps yet).
+        expect(await dialog.locator("dt").allTextContents()).toEqual(
+          canWrite ? ["← ↑ → ↓", "Enter", "M", "D", "Space, ← ↑ → ↓, Esc"] : ["← ↑ → ↓", "Enter"],
         );
         // The board's own description for screen readers names the same shortcuts.
         expect((await page.locator("#spaces-kanban-shortcuts-Space1").textContent())?.includes("M assigns")).toBe(canWrite);

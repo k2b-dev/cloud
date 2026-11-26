@@ -50,7 +50,7 @@ export default function ItemsPane(props: Props) {
   const filter = () => view.filter();
   /** A view chosen in the address (`view=table`) stays the view of every change. */
   const chosenView = () => new URL(view.current().source, "http://spaces.local").searchParams.get("view") ?? undefined;
-  const state = () => listStateOf(filter(), chosenView());
+  const state = () => listStateOf(filter(), props.space, chosenView());
   const base = (): SpaceListState => ({ ...query().reset(), ...(chosenView() ? { view: chosenView() } : {}) });
   const result = () => view.current().itemsResult;
   const [selectedItemId, setSelectedItemId] = createSignal(props.selectedItemId);
