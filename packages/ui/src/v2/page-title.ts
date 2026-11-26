@@ -7,15 +7,19 @@ import { createContext } from "solid-js";
 export const NavCurrentContext = createContext<(label: string | undefined) => void>();
 
 /**
- * The page's name for the Bar in the Workspace's head. The first Bar made there takes it (`take`), so a Bar made inside
- * the head's parts does not show the page's name a second time; it gives it back when it goes. A part that names the
- * page itself (a `RecordHead`, whose name is the page's heading) says so (`nameItself`): then the page has that one
- * heading and no other (`namedItself`).
+ * The page's name for the Bar in the Workspace's head. Every Bar made there claims it (`claim`), and the first claim
+ * that still stands holds it: a Bar made inside the head's parts does not show the page's name a second time, and when
+ * a Bar goes, the next one shows it, in whatever order the two come and go. A part that names the page itself (a
+ * `RecordHead`, whose name is the page's heading) says so (`nameItself`) as long as it stands: then the page has that
+ * one heading and no other (`namedItself`). Both count each part, so a part that comes before another has gone (two
+ * `Show`s that never stand at once) changes nothing when the other goes.
  */
 export type PageTitle = {
   title: () => string | undefined;
-  take: () => boolean;
-  giveBack: () => void;
+  /** Claims the page's name while the calling part stands; the result tells whether this claim holds it now. */
+  claim: () => () => boolean;
+  /** Whether any part in the head claims the page's name. */
+  claimed: () => boolean;
   nameItself: () => void;
   namedItself: () => boolean;
 };

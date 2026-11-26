@@ -193,25 +193,24 @@ export const Workspace = (props: WorkspaceProps) => {
   const [navCurrent, setNavCurrent] = createSignal<string>();
   const sidebar = resolveChildren(() => <NavCurrentContext.Provider value={setNavCurrent}>{props.sidebar}</NavCurrentContext.Provider>);
   const title = () => props.title ?? navCurrent();
-  // the first Bar made in the head shows the page's name; a title alone makes that Bar
-  let taken = false;
+  // the first Bar in the head that still stands shows the page's name; a title alone makes that Bar
+  const [claims, setClaims] = createSignal<readonly object[]>([]);
   // a RecordHead in the head is the page's one heading: then neither the Bar nor the Workspace adds another
-  const [namedItself, setNamedItself] = createSignal(false);
+  const [named, setNamed] = createSignal(0);
   const page = {
     title,
-    take: () => {
-      if (taken) return false;
-      taken = true;
-      return true;
+    claim: () => {
+      const claim = {};
+      setClaims((list) => [...list, claim]);
+      onCleanup(() => setClaims((list) => list.filter((other) => other !== claim)));
+      return () => claims()[0] === claim;
     },
-    giveBack: () => {
-      taken = false;
-    },
+    claimed: () => claims().length > 0,
     nameItself: () => {
-      setNamedItself(true);
-      onCleanup(() => setNamedItself(false));
+      setNamed((count) => count + 1);
+      onCleanup(() => setNamed((count) => count - 1));
     },
-    namedItself,
+    namedItself: () => named() > 0,
   };
   const head = resolveChildren(() => (
     <PageTitleContext.Provider value={page}>{props.head ?? (props.title !== undefined ? <Bar /> : undefined)}</PageTitleContext.Provider>
@@ -317,7 +316,7 @@ export const Workspace = (props: WorkspaceProps) => {
           <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
             <Show when={sidebar()}>{toggleButton()}</Show>
             {/* a head made before the Workspace (kept in a variable) cannot show the page's name: it is still heard */}
-            <Show when={!taken && !namedItself() && title()}>{(name) => <h1 class="k2-hidden-text">{name()}</h1>}</Show>
+            <Show when={!page.claimed() && !page.namedItself() && title()}>{(name) => <h1 class="k2-hidden-text">{name()}</h1>}</Show>
             {head()}
           </div>
         </Show>
@@ -584,13 +583,12 @@ export type BarProps = {
  * it shows the page's name (the Workspace's `title`) as the page's one heading, before what its start holds.
  */
 export const Bar = (props: BarProps) => {
-  // in the Workspace's head the bar shows the page's name, before what its start holds (taken before the parts are made)
+  // in the Workspace's head the bar shows the page's name, before what its start holds (claimed before the parts are made)
   const page = useContext(PageTitleContext);
-  const head = page?.take() ?? false;
-  if (head) onCleanup(() => page?.giveBack());
+  const holds = page?.claim();
   const start = resolveChildren(() => props.start);
   // read after the start is made: a RecordHead in it names the page itself
-  const title = () => (head && !page?.namedItself() ? page?.title() : undefined);
+  const title = () => (holds?.() && !page?.namedItself() ? page?.title() : undefined);
   const end = resolveChildren(() => props.end);
   return (
     <div class="k2-bar" data-k2-part="Bar">
