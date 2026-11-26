@@ -194,6 +194,34 @@ test("the open file shows a large preview 4:3 from edge to edge, and the list le
   });
 });
 
+test("a group head is text with its count, not a band, and no line stands under the last row", async () => {
+  await withPage("list", async (page) => {
+    const found = await page.evaluate(() => {
+      const heads = [...document.querySelectorAll(".k2-table tr[data-group] > td")];
+      const rows = [...document.querySelectorAll(".k2-table tbody tr:not([data-group])")];
+      const last = rows.at(-1)!.querySelector("td")!;
+      const before = heads[1]!.parentElement!.previousElementSibling!.querySelector("td")!;
+      return {
+        heads: heads.map((td) => td.querySelector(".k2-group-row")?.textContent),
+        band: heads.map((td) => getComputedStyle(td).backgroundColor),
+        under: heads.map((td) => getComputedStyle(td).borderBottomWidth),
+        weight: getComputedStyle(heads[0]!.querySelector(".k2-group-row")!).fontWeight,
+        // the groups are separated by the line under the row before the next head
+        between: getComputedStyle(before).borderBottomWidth,
+        end: getComputedStyle(last).borderBottomWidth,
+      };
+    });
+    expect(found).toEqual({
+      heads: ["Ordner2", "Dateien11"],
+      band: ["rgba(0, 0, 0, 0)", "rgba(0, 0, 0, 0)"],
+      under: ["0px", "0px"],
+      weight: "600",
+      between: "1px",
+      end: "0px",
+    });
+  });
+});
+
 test("in rows of two lines a file keeps its thumbnail beside its box", async () => {
   await withPage(
     "list",

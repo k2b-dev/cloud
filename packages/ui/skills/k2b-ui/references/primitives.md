@@ -219,7 +219,8 @@ A large table (Grids, a work list) adds, all optional: `rowKey(row)` (needed
 for the next three), `select: { selected, onChange, all, row }` (a box
 column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
-=> { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
+=> { key, head: () => JSX, meta?, count? }` (a group head as text in 600 with
+its count, no band; no line under it, none under the last row), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
 `aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
 }` (on the phone each row becomes a two-line row instead: `time` top right,

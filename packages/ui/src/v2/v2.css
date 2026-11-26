@@ -1218,6 +1218,10 @@
   min-width: 0;
   color: inherit;
 }
+/* no line under the last row of a list: the space under it ends the list (look rule 4) */
+.k2-ui .k2-list > .k2-row:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-row > * {
   min-width: 0;
 }
@@ -1598,8 +1602,10 @@
   white-space: nowrap;
   background: var(--k2-surface);
 }
+/* no line under the last row: the space under a list ends it (look rule 4, 25.11. "die horizontale Border sollte weg
+   sein"), in a large table as in any other */
 .k2-ui .k2-table[data-grid] tr:last-child td {
-  border-bottom: var(--k2-table-end, var(--k2-hairline));
+  border-bottom: var(--k2-table-end, 0);
 }
 .k2-ui .k2-table[data-grid] :is(th, td)[data-sticky] {
   position: sticky;
@@ -1681,19 +1687,27 @@
   outline-offset: 2px;
   border-radius: 2px;
 }
-.k2-ui .k2-table[data-grid] tr[data-group] > td {
+/* A group head is text, not a band (look rule 4): its name in 600 and its count, standing on the rows it heads. The
+   line under the row before it separates the groups; none stands under the head itself. */
+.k2-ui .k2-table tr[data-group] > td {
   height: var(--k2-h-columns);
-  background: var(--k2-n50);
+  background: transparent;
   padding: 0;
+  vertical-align: bottom;
+  border-bottom: 0;
 }
-.k2-ui .k2-table[data-grid] tr[data-group] > td > .k2-group-row {
+.k2-ui .k2-table tr[data-group] > td > .k2-group-row {
   position: sticky;
   left: 0;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 var(--k2-edge);
+  padding: 0 var(--k2-edge) 4px;
   font-weight: 600;
+}
+.k2-ui .k2-group-row > .k2-group-row-count {
+  font-weight: 400;
+  color: var(--k2-subtle);
 }
 .k2-ui .k2-group-row > .k2-group-row-meta {
   font-weight: 400;

@@ -553,7 +553,10 @@ type KeyedTable<T> = {
   };
   /** The key of the open row, in the tint of the app. */
   current?: string;
-  /** Rows of a group follow one another under a tinted group row of 36 px (no frame: it would cut the columns). */
+  /**
+   * Rows of a group follow one another under its head: text in 600 with its count, no band and no line under it; the
+   * line under the row before it separates the groups (no frame: it would cut the columns).
+   */
   group?: (row: T) => TableGroup;
 };
 
@@ -575,7 +578,8 @@ const isPair = (value: CellValue): value is CellLines =>
   "lines" in value;
 
 /**
- * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
+ * A group of rows: its key, its head (such as a state chip), quiet figures after it, and its count, quiet after the
+ * head on the desktop and on the phone.
  * The head is made where it stands (the table and the phone list each make their own), so it is a function.
  */
 export type TableGroup = { key: string; head: () => JSX.Element; meta?: string; count?: string };
@@ -813,6 +817,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                     <td colSpan={span()}>
                       <span class="k2-group-row">
                         {item.group.head()}
+                        <Show when={item.group.count}>
+                          <span class="k2-group-row-count">{item.group.count}</span>
+                        </Show>
                         <Show when={item.group.meta}>
                           <span class="k2-group-row-meta">{item.group.meta}</span>
                         </Show>
