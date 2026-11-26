@@ -1533,12 +1533,12 @@
 .k2-ui .k2-tree-chev[data-expanded] > .k2-icon:first-child {
   transform: rotate(90deg);
 }
-.k2-ui .k2-tree-chev[data-loading] > .k2-icon:nth-child(2),
+.k2-ui .k2-tree-chev[data-loading] > .k2-icon[data-name="loader-2"],
 .k2-ui .k2-table tr[data-more] .k2-tree-chev[data-loading] > .k2-icon:first-child {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
-.k2-ui .k2-tree-chev[data-failed] > .k2-icon:nth-child(3) {
+.k2-ui .k2-tree-chev[data-failed] > .k2-icon[data-name="chevron-right"] ~ .k2-icon[data-name="alert-circle"] {
   display: inline-block;
   color: var(--k2-bad);
 }
@@ -1548,7 +1548,7 @@
 .k2-ui .k2-table tr[data-more][data-failed] > td {
   color: var(--k2-bad);
 }
-.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-failed]:not([data-loading]) > .k2-icon:nth-child(2) {
+.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-failed]:not([data-loading]) > .k2-icon[data-name="alert-circle"] {
   display: inline-block;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -2995,12 +2995,12 @@
 .k2-ui .k2-nt-chev[data-expanded] > .k2-icon:first-child {
   transform: rotate(90deg);
 }
-.k2-ui .k2-nt-chev[data-loading] > .k2-icon:nth-child(2),
+.k2-ui .k2-nt-chev[data-loading] > .k2-icon[data-name="loader-2"],
 .k2-ui .k2-nt-item[data-pending] > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon:first-child {
   display: inline-block;
   animation: k2-spin 900ms linear infinite;
 }
-.k2-ui .k2-nt-chev[data-failed]:not([data-loading]) > .k2-icon:nth-child(3) {
+.k2-ui .k2-nt-chev[data-failed]:not([data-loading]) > .k2-icon[data-name="chevron-right"] ~ .k2-icon[data-name="alert-circle"] {
   display: inline-block;
   color: var(--k2-bad);
 }
@@ -3011,7 +3011,7 @@
 .k2-ui .k2-nt-item[data-failed-more] > .k2-nt-row[data-more] {
   color: var(--k2-bad);
 }
-.k2-ui .k2-nt-item[data-failed-more]:not([data-pending]) > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon:nth-child(2) {
+.k2-ui .k2-nt-item[data-failed-more]:not([data-pending]) > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon[data-name="alert-circle"] {
   display: inline-block;
 }
 @media (prefers-reduced-motion: reduce) {
