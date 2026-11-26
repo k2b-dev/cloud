@@ -16,6 +16,8 @@ export type WebhookTesterData = {
   logs: WebhookLog[];
   /** Reading the endpoints or the requests failed; the island offers to try again. */
   failed: boolean;
+  /** No person acts (a service account without one): the tester has nothing of its own to show and reads nothing. */
+  needsPerson?: true;
   /** The public Cloud origin, so a receive URL reads the same on the server and in the browser. */
   origin: string;
   timeZone: string;
@@ -31,7 +33,7 @@ export const loadWebhookTester = async <T extends AuthContext>(c: Context<T>, ur
     .catch(() => url.origin);
   const base = { mode, address: url.search, origin, timeZone: getTimeZone(c), now: new Date().toISOString() };
   const user = getUserBackedActor(c);
-  if (!user) return { ...base, endpoints: [], logs: [], failed: true };
+  if (!user) return { ...base, endpoints: [], logs: [], failed: false, needsPerson: true };
   try {
     const endpoints = (await webhookTesterService.listEndpoints(user.id)).map(normalizeEndpoint);
     const filters = logFilters(

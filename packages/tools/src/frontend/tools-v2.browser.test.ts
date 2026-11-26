@@ -156,7 +156,8 @@ test("encoding shows its error at the field and the hash of the text", async () 
 // ── Webhook tester: the main paths on the invented fixture ──
 
 const webhooks = (page: Page, address: string) => page.goto(new URL(address, server.url).href);
-const status = (page: Page) => page.locator('[data-k2-part="StatusRow"]').first().textContent();
+// the head of the requests: their count and the statement of what matters now
+const status = (page: Page) => page.locator('[data-k2-part="Section"][aria-label="Anfragen"]').first().textContent();
 const FIRST_REQUEST = "10000000-0000-4000-8000-000000000001";
 
 test("a request opens beside the list in place, stays in the address through back and reload, and closes", async () => {
@@ -202,11 +203,46 @@ test("a filter from the address and the search narrow the requests, and an empty
     expect(new URL(page.url()).searchParams.get("method")).toBe("GET");
     await page.getByRole("link", { name: "Filter zurücksetzen" }).click();
     await page.waitForURL((url) => !url.searchParams.has("q") && !url.searchParams.has("method"));
-    await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"]')?.textContent?.includes("24 Anfragen"));
+    await page.waitForFunction(() =>
+      document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes("24 Anfragen"),
+    );
     // a press on an endpoint shows its requests, in the address
     await page.getByRole("link", { name: "Shopify Bestellungen" }).first().click();
     await page.waitForURL((url) => url.searchParams.get("endpoint") === "00000000-0000-4000-8000-000000000002");
-    await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"]')?.textContent?.includes("7 Anfragen"));
+    await page.waitForFunction(() =>
+      document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes("7 Anfragen"),
+    );
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("back and forward undo a search and an endpoint press, and the list follows the address", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const shows = (count: string) =>
+    page.waitForFunction(
+      (text) => document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes(text),
+      count,
+    );
+  try {
+    await webhooks(page, "/tools/webhooks?fixture=normal");
+    await shows("24 Anfragen");
+    const search = page.getByRole("searchbox", { name: "Anfragen durchsuchen" });
+    await search.fill("deploy");
+    await search.press("Enter");
+    await page.waitForURL((url) => url.searchParams.get("q") === "deploy");
+    await page.getByRole("link", { name: "Shopify Bestellungen" }).first().click();
+    await page.waitForURL((url) => url.searchParams.get("endpoint") === "00000000-0000-4000-8000-000000000002");
+    await page.goBack();
+    await page.waitForURL((url) => !url.searchParams.has("endpoint") && url.searchParams.get("q") === "deploy");
+    await page.goBack();
+    await page.waitForURL((url) => !url.searchParams.has("q"));
+    await shows("24 Anfragen");
+    expect(await search.inputValue()).toBe("");
+    await page.goForward();
+    await page.waitForURL((url) => url.searchParams.get("q") === "deploy");
+    expect(await search.inputValue()).toBe("deploy");
+    expect(await status(page)).not.toContain("24 Anfragen");
   } finally {
     await page.close();
   }
@@ -269,8 +305,11 @@ test("a list that cannot be read says so in place and offers to try again", asyn
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await webhooks(page, "/tools/webhooks?fixture=error");
+    // the endpoints and the requests each say they failed; neither offers to create a first endpoint
+    await page.getByText("Die Endpunkte konnten nicht geladen werden.", { exact: false }).waitFor();
     await page.getByText("Die Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
-    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    expect(await page.getByText("Noch kein Endpunkt.", { exact: false }).count()).toBe(0);
+    await page.getByRole("button", { name: "Erneut versuchen" }).last().click();
     await page.getByText("Die Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
   } finally {
     await page.close();

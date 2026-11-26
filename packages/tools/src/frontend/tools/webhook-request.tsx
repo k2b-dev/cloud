@@ -1,9 +1,9 @@
 import type { Column, OnNavigate } from "@k2b/ui/v2";
 import { Bar, Button, Chip, Empty, Facts, Pane, Prose, Section, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
+import { methodColors } from "../tools-colors";
 import type { WebhookMessages } from "./webhook-messages";
 import type { WebhookLog } from "./webhook-queries";
-import { methodColor } from "./webhook-query";
 
 /** How a time reads in this list: "heute, 09:42" today, else the date and the time, in the person's zone. */
 export const timeReader = (locale: string, timeZone: string, now: string, t: WebhookMessages) => {
@@ -19,7 +19,7 @@ export const timeReader = (locale: string, timeZone: string, now: string, t: Web
 };
 
 export const MethodChip = (props: { method: string }) => (
-  <Chip tag color={methodColor[props.method]}>
+  <Chip tag color={methodColors[props.method]}>
     {props.method}
   </Chip>
 );

@@ -29,7 +29,11 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
   speedtest: () => <SpeedTest server="https://speedtest.example.test" enabled />,
-  webhooks: () => <WebhookTester data={webhookHarness()} />,
+  // once per page: a prop getter would build a fresh fixture store (and fetch stand-in) on every read of `data`
+  webhooks: () => {
+    const data = webhookHarness();
+    return <WebhookTester data={data} />;
+  },
 };
 
 const params = new URL(location.href).searchParams;

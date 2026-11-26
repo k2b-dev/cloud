@@ -6,15 +6,6 @@ export const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"] as const;
 export type Method = (typeof METHODS)[number];
 export type WebhookMode = "receive" | "send";
 
-/** The data colour of each method, the same in the list, the detail and the send form. */
-export const methodColor: Record<string, string> = {
-  GET: "#1d4ed8",
-  POST: "#15803d",
-  PUT: "#b45309",
-  PATCH: "#7c3aed",
-  DELETE: "#be123c",
-};
-
 // The view (`mode`) and the open request (`request`) belong to the page, beside the list's own parameters.
 const pageParams = ["mode", "request"];
 const methodField = (t: WebhookMessages) =>

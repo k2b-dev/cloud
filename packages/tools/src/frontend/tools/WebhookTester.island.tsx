@@ -19,7 +19,6 @@ import {
   Row,
   Section,
   Select,
-  StatusRow,
   Tabs,
   Text,
   useToast,
@@ -27,7 +26,9 @@ import {
 import type { ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { WEBHOOK_LOG_LIMIT } from "@/api/webhook-limit";
 import ToolsScreen from "../ToolsScreen";
+import { toolColors } from "../tools-colors";
 import { type WebhookMessages, webhookMessages } from "./webhook-messages";
 import type { WebhookTesterData } from "./webhook-page-data";
 import { assertOk, createWebhookQueries, type Endpoint, type WebhookLog, type WebhookQuerySource } from "./webhook-queries";
@@ -36,8 +37,6 @@ import { RequestPane, RequestTable, timeReader } from "./webhook-request";
 
 const BASE = "/tools/webhooks";
 const DETAIL_WIDTH = 400;
-/** The data colour of an endpoint, where requests arrive. */
-const ENDPOINT_COLOR = "#0f766e";
 
 const isEndpoint = (value: unknown): value is Endpoint =>
   Boolean(value && typeof value === "object" && "id" in value && "urlPath" in value && typeof value.id === "string");
@@ -116,9 +115,24 @@ const SearchInput = (props: { t: WebhookMessages; value: string; onSearch: (text
  */
 export default function WebhookTester(props: { data: WebhookTesterData }) {
   return (
-    <Show when={props.data.mode === "send"} fallback={<Received data={props.data} />}>
-      <Sent data={props.data} />
+    <Show when={!props.data.needsPerson} fallback={<NeedsPerson />}>
+      <Show when={props.data.mode === "send"} fallback={<Received data={props.data} />}>
+        <Sent data={props.data} />
+      </Show>
     </Show>
+  );
+}
+
+/** A service account has no endpoints and no requests of its own: the page says so and reads nothing (it would fail). */
+function NeedsPerson() {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
+  return (
+    <ToolsScreen tool="webhooks">
+      <Pane label={t().requests}>
+        <Empty icon="user" text={t().needsPerson} />
+      </Pane>
+    </ToolsScreen>
   );
 }
 
@@ -143,7 +157,9 @@ function Received(props: { data: WebhookTesterData }) {
   const endpoints = () => queries.endpoints.data() ?? [];
   const query = createMemo(() => declared(endpoints()));
   const logs = () => queries.logs.data() ?? [];
-  const failed = () => Boolean(queries.logs.error() || queries.endpoints.error()) || (props.data.failed && !queries.logs.data());
+  const failed = () => Boolean(queries.logs.error()) || (props.data.failed && !queries.logs.data());
+  // endpoints that could not be read are not "none yet": the section says it failed and offers to read again
+  const endpointsFailed = () => Boolean(queries.endpoints.error()) || (props.data.failed && !queries.endpoints.data());
   const listAddress = () => query().serialize(state());
   const href = (id: string | null) => addressOf("receive", listAddress(), id);
   const urlOf = (endpoint: Endpoint) => `${props.data.origin}${endpoint.urlPath}`;
@@ -266,63 +282,67 @@ function Received(props: { data: WebhookTesterData }) {
           label={t().requests}
           scrollKey="tools-webhooks"
           status={
-            <>
-              <FilterBar
-                query={query()}
-                state={state()}
-                onChange={setState}
-                icons={{ endpoint: "webhook", method: "code" }}
-                results={t().requestCount({ count: logs().length })}
-              />
-              <RequestStatus
-                t={t()}
-                logs={logs()}
-                direction="incoming"
-                when={when()}
-                loading={queries.logs.loading() || queries.logs.refreshing()}
-                onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
-                facts={[{ value: t().endpointCount({ count: endpoints().length }) }]}
-              />
-            </>
+            <FilterBar
+              query={query()}
+              state={state()}
+              onChange={setState}
+              icons={{ endpoint: "webhook", method: "code" }}
+              results={countOf(t(), logs().length)}
+            />
           }
         >
-          <Section icon="webhook" title={t().endpoints} count={endpoints().length} summary={t().endpointsSummary}>
+          <Section
+            icon="webhook"
+            color={toolColors.endpoint}
+            title={t().endpoints}
+            count={endpointsFailed() ? undefined : endpoints().length}
+            summary={t().endpointsSummary}
+          >
             <Show
-              when={endpoints().length > 0}
-              fallback={
-                <Empty icon="webhook" text={t().noEndpoints} action={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }} />
-              }
+              when={!endpointsFailed()}
+              fallback={<Failed text={t().endpointsLoadFailed} onRetry={() => void queries.endpoints.refresh().catch(() => undefined)} />}
             >
-              <List label={t().endpoints}>
-                <For each={endpoints()}>
-                  {(endpoint) => (
-                    <Menu.Context items={deeds(endpoint)}>
-                      <Row
-                        icon="webhook"
-                        color={ENDPOINT_COLOR}
-                        lines={[endpoint.name, urlOf(endpoint)]}
-                        meta={t().requestCount({ count: endpoint.requestCount })}
-                        time={endpoint.lastRequestAt ? t().lastRequest({ time: when()(endpoint.lastRequestAt) }) : t().noRequestYet}
-                        current={state().filters.endpoint === endpoint.id}
-                        href={filterTo(endpoint) ? addressOf("receive", query().serialize(filterTo(endpoint)!), null) : undefined}
-                        onNavigate={filterTo(endpoint) ? applyFilter(filterTo(endpoint)!) : undefined}
-                        action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint)) }}
-                        end={<Menu label={t().endpointActions({ name: endpoint.name })} items={deeds(endpoint)} />}
-                      />
-                    </Menu.Context>
-                  )}
-                </For>
-              </List>
+              <Show
+                when={endpoints().length > 0}
+                fallback={
+                  <Empty icon="webhook" text={t().noEndpoints} action={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }} />
+                }
+              >
+                <List label={t().endpoints}>
+                  <For each={endpoints()}>
+                    {(endpoint) => (
+                      <Menu.Context items={deeds(endpoint)}>
+                        <Row
+                          icon="webhook"
+                          color={toolColors.endpoint}
+                          lines={[endpoint.name, urlOf(endpoint)]}
+                          meta={t().requestCount({ count: endpoint.requestCount })}
+                          time={endpoint.lastRequestAt ? t().lastRequest({ time: when()(endpoint.lastRequestAt) }) : t().noRequestYet}
+                          current={state().filters.endpoint === endpoint.id}
+                          href={filterTo(endpoint) ? addressOf("receive", query().serialize(filterTo(endpoint)!), null) : undefined}
+                          onNavigate={filterTo(endpoint) ? applyFilter(filterTo(endpoint)!) : undefined}
+                          action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint)) }}
+                          end={<Menu label={t().endpointActions({ name: endpoint.name })} items={deeds(endpoint)} />}
+                        />
+                      </Menu.Context>
+                    )}
+                  </For>
+                </List>
+              </Show>
             </Show>
           </Section>
+          <RequestStatus
+            t={t()}
+            logs={logs()}
+            failed={failed()}
+            direction="incoming"
+            when={when()}
+            loading={queries.logs.loading() || queries.logs.refreshing()}
+            onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
+          />
           <Show
             when={!failed()}
-            fallback={
-              <Failed
-                text={t().loadFailed}
-                onRetry={() => void Promise.all([queries.endpoints.refresh(), queries.logs.refresh()]).catch(() => undefined)}
-              />
-            }
+            fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}
           >
             <RequestTable
               label={t().requests}
@@ -397,39 +417,43 @@ function Received(props: { data: WebhookTesterData }) {
   );
 }
 
-/** The one statement of the list: how many requests, how many of them failed, and the way to look again. */
+/** "24 Anfragen", or for a full list "Die neuesten 100 Anfragen": the service returns only the newest. */
+const countOf = (t: WebhookMessages, count: number) =>
+  count >= WEBHOOK_LOG_LIMIT ? t.newestRequests({ count }) : t.requestCount({ count });
+
+/**
+ * The head of the requests: how many (the newest when the list is full), the one statement of what matters now (when
+ * the last one came in, or how many answers failed), and the way to look again. It stands in the list, so the page
+ * keeps two rows above it: the head and the filters.
+ */
 const RequestStatus = (props: {
   t: WebhookMessages;
   logs: WebhookLog[];
+  failed: boolean;
   direction: "incoming" | "outgoing";
   when: (value: string) => string;
   loading: boolean;
   onRefresh: () => void;
-  facts?: { value: string }[];
 }) => {
   const errors = () => props.logs.filter((log) => log.error || (log.responseStatus ?? 0) >= 400).length;
   const newest = () => props.logs[0];
-  // what matters now: when the last request came in, or how many answers failed; the counts are quiet facts
   const lead = () => {
     const last = newest();
     if (!last) return props.direction === "incoming" ? props.t.nothingArrived : props.t.nothingSent;
-    if (props.direction === "outgoing") return errors() > 0 ? props.t.answersFailed({ count: errors() }) : props.t.answersOk;
+    if (props.direction === "outgoing")
+      return [
+        errors() > 0 ? props.t.answersFailed({ count: errors() }) : props.t.answersOk,
+        props.t.lastRequest({ time: props.when(last.createdAt) }),
+      ].join(" · ");
     return props.t.lastArrived({ time: props.when(last.createdAt) });
   };
   return (
-    <StatusRow
-      lead={lead()}
-      loading={props.loading}
-      facts={[
-        { value: props.t.requestCount({ count: props.logs.length }) },
-        ...(props.direction === "outgoing" && newest() ? [{ value: props.t.lastRequest({ time: props.when(newest()!.createdAt) }) }] : []),
-        ...(props.facts ?? []),
-      ]}
-      filters={
-        <Button variant="ghost" icon="refresh" onClick={props.onRefresh}>
-          {props.t.refresh}
-        </Button>
-      }
+    <Section
+      icon={props.direction === "incoming" ? "inbox" : "send"}
+      title={props.t.requests}
+      count={props.failed ? undefined : countOf(props.t, props.logs.length)}
+      summary={props.failed ? undefined : props.loading ? `${lead()} · ${props.t.refreshing}` : lead()}
+      actions={[{ label: props.t.refresh, icon: "refresh", onClick: props.onRefresh }]}
     />
   );
 };
@@ -541,25 +565,24 @@ function Sent(props: { data: WebhookTesterData }) {
           label={t().requests}
           scrollKey="tools-webhooks-sent"
           status={
-            <>
-              <FilterBar
-                query={query()}
-                state={state()}
-                onChange={setState}
-                icons={{ method: "code" }}
-                results={t().requestCount({ count: logs().length })}
-              />
-              <RequestStatus
-                t={t()}
-                logs={logs()}
-                direction="outgoing"
-                when={when()}
-                loading={queries.logs.loading() || queries.logs.refreshing()}
-                onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
-              />
-            </>
+            <FilterBar
+              query={query()}
+              state={state()}
+              onChange={setState}
+              icons={{ method: "code" }}
+              results={countOf(t(), logs().length)}
+            />
           }
         >
+          <RequestStatus
+            t={t()}
+            logs={logs()}
+            failed={failed()}
+            direction="outgoing"
+            when={when()}
+            loading={queries.logs.loading() || queries.logs.refreshing()}
+            onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
+          />
           <Show
             when={!failed()}
             fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}
