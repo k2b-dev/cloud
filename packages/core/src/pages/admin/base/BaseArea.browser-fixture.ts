@@ -13,7 +13,7 @@ import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 
 /** States the captures and tests switch with `?state=`. */
-export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail" | "legacy" | "testfail";
+export type BaseFixtureState = "normal" | "conflict" | "conflictgone" | "unreadable" | "savefail" | "legacy" | "testfail" | "worst";
 
 /** Stored settings no app declares any more, worded as the server sends them. */
 const legacyRows = [
@@ -249,7 +249,21 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
     c.set("user", user);
     c.set("settings", { app: { name: "Cloud", locale } });
     c.set("page", { title: "Base settings", theme: "light" });
-    const entries = (state === "normal" ? stored : fixtureEntries(state)).filter((item) => groups.includes(item.group));
+    // break-ui: the longest realistic values of an installation, an unbreakable address and a person with a long name
+    const worstValues: Record<string, unknown> = {
+      "app.name": "Cloud der Werkstatt Nord-Ost GmbH & Co. KG – Verwaltung und Betrieb",
+      "app.url": "https://cloud.werkstatt-nord-ost.northwind-industries-holdings.example.com",
+      "app.contact_email": "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+      "app.copyright": "© 2019–2026 Werkstatt Nord-Ost GmbH & Co. KG, Λογιστήριο, 東京支社",
+      "app.documentation_url": "https://docs.werkstatt-nord-ost.northwind-industries-holdings.example.com/cloud/handbuch",
+    };
+    const entries = (state === "normal" ? stored : fixtureEntries(state === "worst" ? "normal" : state))
+      .map((item) =>
+        state === "worst" && item.key in worstValues
+          ? { ...item, value: worstValues[item.key], updatedBy: { id: "u-a", name: "Aleksandra Wiśniewska-Kowalczyk" } }
+          : item,
+      )
+      .filter((item) => groups.includes(item.group));
     const sections = section === "general" ? generalSections(locale) : section === "cli" ? cliSections(locale) : pdfSections(locale);
     const nav = adminNavFixture("/admin/base", [
       { label: "Allgemein", icon: "adjustments", href: "/admin/base", nested: true, current: section === "general" },
