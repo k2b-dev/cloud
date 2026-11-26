@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Icon, List, Row, Section, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Facts, type FactsProps, Icon, Row, Section, Text } from "@k2b/ui/v2";
 import { For } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -22,45 +22,35 @@ const scopeIcons: Record<string, string> = {
 };
 
 /** Every requested scope in words, and the reminder that Cloud permissions still apply. */
-export function RequestedAccess(props: { scopes: readonly string[] }) {
+export function RequestedAccess(props: { scopes: readonly string[]; limitNote?: boolean }) {
   const t = useMessages();
   return (
-    <Section icon="key" title={t().requestedAccess}>
+    <Section icon="key" title={t().requestedAccess} summary={props.limitNote ? t().permissionLimit : undefined}>
       <For each={props.scopes}>{(scope) => <Row icon={scopeIcons[scope] ?? "check"} lines={[consentScopeLabel(scope, t())]} />}</For>
-      <Text type="meta" muted>
-        {t().permissionLimit}
-      </Text>
+    </Section>
+  );
+}
+
+/** Who is signed in here: the account the decision is for, with its picture. */
+export function SignedIn(props: { person: string }) {
+  const t = useMessages();
+  return (
+    <Section icon="user" title={t().forAccount}>
+      <Row avatar={{ name: props.person }} lines={[props.person, t().signedInHere]} />
     </Section>
   );
 }
 
 /**
- * The one caution the person reads right before deciding; when the browser sign-in is too old for access that stays
- * signed in, why they sign in again follows in the same notice.
+ * The technical facts of a request, quiet, after the decision's content: the person rarely needs them, an
+ * administrator finds them. They stand open, since a decision page works without script.
  */
-export function CautionNote(props: { text: string; reauthenticate?: boolean }) {
-  const t = useMessages();
-  // a quiet line with its sign, right before the buttons
-  return (
-    <Band>
-      <Text>
-        <Icon name="alert-triangle" tone="warn" /> {props.reauthenticate ? `${props.text} ${t().confirmIdentityHint}` : props.text}
-      </Text>
-    </Band>
-  );
-}
-
-/** Who asks: the requesting application with the sign of its kind and where it returns to. */
-export function Parties(props: { app: string; kind: "first_party" | "dynamic" | "managed"; detail: string }) {
+export function TechnicalFacts(props: { items: FactsProps["items"] }) {
   const t = useMessages();
   return (
-    <List label={t().parties}>
-      <Row
-        icon={props.kind === "first_party" ? "cloud" : props.kind === "dynamic" ? "world" : "key"}
-        color={props.kind === "first_party" ? "var(--k2-app, var(--k2-blue))" : props.kind === "dynamic" ? "var(--k2-warn)" : "var(--k2-ok)"}
-        lines={[props.app, props.detail]}
-      />
-    </List>
+    <Section icon="code" title={t().technicalDetails} summary={t().permissionLimit}>
+      <Facts items={props.items} />
+    </Section>
   );
 }
 
@@ -73,14 +63,25 @@ const DECISION_FORM = "oauth-decision";
  * pressed button's `decision`. When the browser sign-in is too old for access that stays signed in, "Confirm identity"
  * takes Allow's place and opens the sign-in that leads back to this page; Deny keeps working.
  */
-export function DecisionForm(props: { action: string; request: string; userCode?: string; reauthenticateHref?: string | null }) {
+export function DecisionForm(props: {
+  action: string;
+  request: string;
+  userCode?: string;
+  reauthenticateHref?: string | null;
+  /** The one caution read right before deciding; a too old sign-in adds why the person signs in again. */
+  caution: string;
+}) {
   const t = useMessages();
   return (
-    <>
+    <Band>
       <form id={DECISION_FORM} method="post" action={props.action} hidden>
         <input type="hidden" name="request" value={props.request} />
         {props.userCode ? <input type="hidden" name="user_code" value={props.userCode} /> : null}
       </form>
+      <Text>
+        <Icon name="alert-triangle" tone="warn" />{" "}
+        {props.reauthenticateHref ? `${props.caution} ${t().confirmIdentityHint}` : props.caution}
+      </Text>
       <Bar
         end={
           <>
@@ -99,7 +100,7 @@ export function DecisionForm(props: { action: string; request: string; userCode?
           </>
         }
       />
-    </>
+    </Band>
   );
 }
 

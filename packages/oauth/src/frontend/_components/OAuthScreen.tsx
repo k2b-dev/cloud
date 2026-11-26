@@ -2,8 +2,10 @@ import { formatDate, groupDisplayName } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
+  Cells,
   Check,
   Chip,
   Choice,
@@ -13,12 +15,15 @@ import {
   Facts,
   Field,
   Icon,
+  Inline,
   Input,
   Lookup,
+  Mark,
   Menu,
   type NavProps,
   Notice,
   Pane,
+  Row,
   Section,
   StatusRow,
   Table,
@@ -32,6 +37,7 @@ import { apiClient } from "@/api/client";
 import type { OAuthClient, OAuthScope } from "@/contracts";
 import { CLIENTS_PER_PAGE } from "../clients-page";
 import { oauthMessages } from "../messages";
+import { GROUP_MARK, KIND_MARKS } from "./kind-marks";
 import { clientEditorUpdate, clientEditorValues, type ProfileChoice, profileChoice, profilesForChoice } from "./client-editor";
 
 /** One client as the list shows it: the stored client and its date in the person's words. */
@@ -55,8 +61,6 @@ export type OAuthScreenProps = {
 
 const PATH = "/admin/oauth";
 
-/** What every sign-in asks for: a row does not repeat them. */
-const USUAL_SCOPES: ReadonlySet<OAuthScope> = new Set(["openid", "profile", "email"]);
 
 /** Every scope a managed client may request, in the order the editor offers them, with its sign. */
 const SCOPES = [
@@ -144,66 +148,65 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       admin: t().admin,
     })[scope];
 
-  /** A client's sign in the colour of its kind: brought by Cloud, set up here, or registered by itself. */
-  const ClientName = (mark: { client: OAuthClient }) => (
-    <>
-      <Icon
-        name={mark.client.registrationKind === "first_party" ? "cloud" : mark.client.registrationKind === "dynamic" ? "world" : "key"}
-        tone={mark.client.registrationKind === "first_party" ? "app" : mark.client.registrationKind === "dynamic" ? "warn" : "ok"}
-      />{" "}
-      {mark.client.name}
-    </>
-  );
-  /** The kind as words; only a client that registered itself is the exception with a chip. */
-  const kindWords = (client: OAuthClient) =>
-    client.registrationKind === "dynamic" ? (
-      <Chip status="warn" icon="world">
-        {kind(client)}
-      </Chip>
-    ) : (
-      [client.registrationKind === "first_party" ? kind(client) : undefined, client.isPublic ? t().public : t().confidential]
-        .filter(Boolean)
-        .join(" · ")
-    );
-  /** Who may sign in as words; access for chosen people only, or for nobody, is the exception with a chip. */
-  const accessWords = (client: OAuthClient) => {
-    const chip = accessChip(client);
-    if (client.accessMode === "specific" || profileChoice(client.allowedProfiles) === "none") return chip;
-    return ({ user: t().profileUsers, everybody: t().profileEverybody, guest: t().profileGuests, none: t().profileNobody } as const)[
-      profileChoice(client.allowedProfiles)
-    ];
+  /** The mark of a client's kind, the same in the list, the open client and every dialog. */
+  const markOf = (client: OAuthClient) => KIND_MARKS[client.registrationKind];
+  /** The host a client sends people back to, for a second line that says where it lives. */
+  const redirectHost = (client: OAuthClient) => {
+    const first = client.redirectUris[0];
+    if (!first) return "";
+    try {
+      return new URL(first).host;
+    } catch {
+      return first;
+    }
   };
-  /** Who may sign in, where it is not the usual full users: only chosen people and groups, or other profiles. */
-  const accessChip = (client: OAuthClient) =>
-    client.accessMode !== "specific" && profileChoice(client.allowedProfiles) === "user" ? undefined : client.accessMode === "specific" ? (
-      <Chip status="warn" icon="user-check">
-        {t().selected({ count: client.accessUsers.length + client.accessGroups.length })}
-      </Chip>
+  /** A client's kind in words: brought by Cloud, or how it signs in. */
+  const kindLine = (client: OAuthClient) =>
+    client.registrationKind === "first_party"
+      ? t().firstParty
+      : client.registrationKind === "dynamic"
+        ? t().dynamic
+        : client.isPublic
+          ? t().public
+          : t().confidential;
+  /** The second line of every row: the kind, then what the client is for or where it lives. */
+  const secondLine = (client: OAuthClient) =>
+    [kindLine(client), client.description || redirectHost(client) || t().withoutRedirect].join(" · ");
+  /** The people and groups a client is limited to, as faces. */
+  const accessPeople = (client: OAuthClient) => [
+    ...client.accessUsers.map((user) => ({ name: user.displayName || user.uid })),
+    ...client.accessGroups.map((group) => ({ name: groupDisplayName(group.name, locale()) })),
+  ];
+  /** A state that needs a look, as dot and word: a client nobody checked, or one nobody may use. */
+  const stateChip = (client: OAuthClient) =>
+    client.registrationKind === "dynamic" ? (
+      <Chip status="warn">{t().unverified}</Chip>
+    ) : profileChoice(client.allowedProfiles) === "none" ? (
+      <Chip status="bad">{t().profileNobody}</Chip>
+    ) : undefined;
+  /** Who may sign in, in a table cell: the profile as a word, or the faces of the chosen people and groups. */
+  const accessCell = (client: OAuthClient) =>
+    client.accessMode === "specific" ? (
+      <Avatar.Stack people={accessPeople(client)} max={3} label={t().selected({ count: accessPeople(client).length })} />
+    ) : profileChoice(client.allowedProfiles) === "none" ? (
+      "–"
     ) : (
-      (() => {
-        const choice = profileChoice(client.allowedProfiles);
-        const [icon, words] = {
-          user: ["user", t().profileUsers],
-          everybody: ["users", t().profileEverybody],
-          guest: ["user-question", t().profileGuests],
-          none: ["user-off", t().profileNobody],
-        }[choice];
-        return <Chip icon={icon}>{words}</Chip>;
-      })()
+      ({ user: t().profileUsers, everybody: t().profileEverybody, guest: t().profileGuests, none: t().profileNobody } as const)[
+        profileChoice(client.allowedProfiles)
+      ]
     );
-  /** The scopes as chips; in a row only two and "+n", which the open client lists whole. */
-  const scopeChips = (client: OAuthClient, row = false) => {
-    // a row marks only what a sign-in does not usually ask for; the open client lists every scope
-    const listed = row ? client.scopes.filter((scope) => !USUAL_SCOPES.has(scope)) : client.scopes;
-    const shown = row ? listed.slice(0, 2) : listed;
-    return (
-      <>
-        <For each={shown}>{(scope) => <Chip>{scope}</Chip>}</For>
-        <Show when={listed.length > shown.length}>
-          <Chip>{`+${number(listed.length - shown.length)}`}</Chip>
-        </Show>
-      </>
-    );
+  /** Who may sign in, as words: the profile, or the chosen people and groups. */
+  const accessValue = (client: OAuthClient) =>
+    client.accessMode === "specific"
+      ? number(accessPeople(client).length)
+      : ({ user: t().profileUsers, everybody: t().profileEverybody, guest: t().profileGuests, none: t().profileNobody } as const)[
+          profileChoice(client.allowedProfiles)
+        ];
+  /** A long ID shortened in the middle, whole when copied. */
+  const shortId = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id);
+  const copy = (value: string) => {
+    void navigator.clipboard?.writeText(value);
+    toast(t().copied, { status: "ok" });
   };
 
   // ── Directory: people and groups for "only these" ─────────────────────────────────────────────────────────────
@@ -367,6 +370,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   };
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
+  /** The open client: who it is, what needs attention, three figures, its facts, where it sends people, who may use it. */
   const record = (client: ClientRow) => (
     <Pane
       detail
@@ -374,16 +378,14 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       back={{ label: t().backToClients, href: list() }}
       head={
         <Bar
-          start={<Text weight="strong">{client.name}</Text>}
+          start={
+            <Inline>
+              <Mark {...markOf(client)} />
+              <Text type="lead">{client.name}</Text>
+            </Inline>
+          }
           end={
             <>
-              {/* a self-registered client has one deed, revoking; a managed one keeps the rarer ones in "…", which the
-                  phone shows as well */}
-              <Show when={client.registrationKind === "dynamic"}>
-                <Button icon="trash" keep onClick={() => void remove(client)}>
-                  {t().revokeAction}
-                </Button>
-              </Show>
               <Show when={client.registrationKind === "managed"}>
                 <Menu
                   label={t().moreActions}
@@ -392,8 +394,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                     { label: t().deleteAction, icon: "trash", danger: true, onClick: () => void remove(client) },
                   ]}
                 />
-              </Show>
-              <Show when={client.registrationKind === "managed"}>
                 <Button icon="pencil" keep onClick={() => start(client)}>
                   {t().edit}
                 </Button>
@@ -404,59 +404,77 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         />
       }
     >
-      {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
-      <Facts
-        items={[
-          ...(client.registrationKind === "managed"
-            ? []
-            : [
-                {
-                  label: t().origin,
-                  value: (
-                    <>
-                      <Icon
-                        name={client.registrationKind === "first_party" ? "cloud" : "world"}
-                        tone={client.registrationKind === "first_party" ? "app" : "warn"}
-                      />{" "}
-                      {client.registrationKind === "first_party" ? t().firstPartyNote : t().dynamicNote}
-                    </>
-                  ),
-                },
-              ]),
-          { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
-          ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          // one address per row, each to copy on its own; the label names the first
-          ...(client.redirectUris.length === 0
-            ? [{ label: t().redirectUri, value: t().noRedirect }]
-            : client.redirectUris.map((uri, index) => ({
-                label: index === 0 ? t().redirectUri : "",
-                value: uri,
-                mono: true,
-                copy: uri,
-              }))),
-          ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
-          { label: t().scopes, value: <>{scopeChips(client)}</> },
-          { label: t().whoCanUse, value: profileLabel(client) },
-          ...(client.accessMode === "specific"
-            ? [
-                {
-                  label: t().access,
-                  value: (
-                    <>
-                      <For each={client.accessUsers}>{(user) => <Chip icon="user">{user.displayName || user.uid}</Chip>}</For>
-                      <For each={client.accessGroups}>
-                        {(group) => <Chip icon="users-group">{groupDisplayName(group.name, locale())}</Chip>}
-                      </For>
-                    </>
-                  ),
-                },
-              ]
-            : []),
-          ...(client.isPublic ? [{ label: t().deviceGrant, value: client.allowDeviceGrant ? t().allowed : t().off }] : []),
-          { label: t().created, value: client.created },
-        ]}
-      />
+      {/* what needs attention stands first, with its one deed */}
+      <Show when={client.registrationKind === "dynamic"}>
+        <Notice tone="warn" title={t().unverifiedTitle} actions={[{ label: t().revokeAction, icon: "trash", onClick: () => void remove(client) }]}>
+          {t().dynamicNote}
+        </Notice>
+      </Show>
+      <Show when={client.registrationKind === "managed" && profileChoice(client.allowedProfiles) === "none"}>
+        <Notice tone="warn" title={t().nobodyTitle} actions={[{ label: t().edit, icon: "pencil", onClick: () => start(client) }]}>
+          {t().nobodyText}
+        </Notice>
+      </Show>
+      <Cells>
+        <Cells.Cell
+          icon="users"
+          label={t().access}
+          value={accessValue(client)}
+          meta={client.accessMode === "specific" ? t().chosenMeta : t().everyoneOfProfile}
+        />
+        <Cells.Cell
+          icon="arrow-back-up"
+          label={t().redirects}
+          value={number(client.redirectUris.length)}
+          meta={redirectHost(client) || t().noRedirect}
+        />
+        <Cells.Cell icon="key" label={t().scopes} value={number(client.scopes.length)} meta={client.scopes.join(", ")} />
+      </Cells>
+      <Section icon="settings" title={t().details}>
+        <Facts
+          items={[
+            { label: t().clientId, value: shortId(client.clientId), mono: true, copy: client.clientId },
+            {
+              label: t().type,
+              value:
+                client.registrationKind === "first_party"
+                  ? `${t().firstParty} · ${t().firstPartyNote}`
+                  : client.registrationKind === "managed"
+                    ? `${t().managed} · ${kindLine(client)}`
+                    : `${t().dynamic} · ${client.isPublic ? t().public : t().confidential}`,
+            },
+            ...(client.isPublic ? [{ label: t().deviceGrant, value: client.allowDeviceGrant ? t().allowed : t().off }] : []),
+            ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
+            { label: t().created, value: client.created },
+          ]}
+        />
+      </Section>
+      <Section icon="arrow-back-up" title={t().redirectUri} count={number(client.redirectUris.length)}>
+        <Show when={client.redirectUris.length > 0} fallback={<Text muted>{t().noRedirectText}</Text>}>
+          <For each={client.redirectUris}>
+            {(uri) => (
+              <Row
+                icon="link"
+                lines={[uri]}
+                end={<Button variant="ghost" icon="copy" label={t().copyUri} onClick={() => copy(uri)} />}
+              />
+            )}
+          </For>
+        </Show>
+      </Section>
+      <Section icon="users" title={t().access} count={client.accessMode === "specific" ? number(accessPeople(client).length) : undefined}>
+        <Show
+          when={client.accessMode === "specific"}
+          fallback={<Row icon="users" lines={[profileLabel(client), t().everyoneOfProfile]} />}
+        >
+          <For each={client.accessUsers}>
+            {(user) => <Row avatar={{ name: user.displayName || user.uid }} lines={[user.displayName || user.uid, t().user]} />}
+          </For>
+          <For each={client.accessGroups}>
+            {(group) => <Row mark={GROUP_MARK} lines={[groupDisplayName(group.name, locale()), t().group]} />}
+          </For>
+        </Show>
+      </Section>
     </Pane>
   );
 
@@ -474,14 +492,19 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 ? t().dynamicLead({ count: props.figures.dynamic })
                 : t().managedLead
           }
-          facts={[
-            ...(props.search ? [{ before: t().searchFact, after: props.search }] : []),
-            // the count is quiet meta beside the statement
-            ...(total() > 0 ? [{ before: t().clientCount({ count: total() }) }] : []),
-          ]}
+          facts={props.search ? [{ before: t().searchFact, after: props.search }] : []}
+          // the count stands at the end of the row, as in a console's toolbar
+          filters={
+            total() > 0 ? (
+              <Text type="meta" muted>
+                {t().clientCount({ count: total() })}
+              </Text>
+            ) : undefined
+          }
         />
       }
     >
+      {/* a dense table: one line per client, a neutral badge for its kind, colour only for a state that needs a look */}
       <Table
         label={t().clients}
         rows={rows()}
@@ -491,38 +514,31 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         open={(client) => ({ href: href({ client: client.id }) })}
         empty={
           props.search
-            ? {
-                icon: "search-off",
-                text: t().noMatch({ query: props.search }),
-                action: { label: t().resetSearch, href: href({ search: "" }) },
-              }
+            ? { icon: "search-off", text: t().noMatch({ query: props.search }), action: { label: t().resetSearch, href: href({ search: "" }) } }
             : { icon: "key", text: t().noClients, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
         }
-        phone={(client) => ({
-          lines: [<ClientName client={client} />, client.description || client.clientId],
-          time: client.created,
-          marks:
-            client.registrationKind === "dynamic" ? (
-              <Chip status="warn" icon="world">
-                {kind(client)}
-              </Chip>
-            ) : (
-              accessChip(client)
-            ),
-        })}
+        phone={(client) => ({ lines: [client.name, secondLine(client)], time: client.created, marks: stateChip(client) })}
         columns={[
           {
             title: t().client,
-            width: { min: 180, default: 220 },
-            cell: (client) =>
-              client.description ? { lines: [<ClientName client={client} />, client.description] } : <ClientName client={client} />,
+            width: { min: 180, default: 240 },
+            // the kind stands in its own column; the name alone here
+            cell: (client) => client.name,
           },
-          // words, with a chip only for what is not the usual: registered by itself, or access for chosen people only;
-          // beside an open client the list keeps who may sign in (the name's sign says the kind), so no column is cut
+          // a state that needs a look has its own column, so a long name never cuts it
+          { title: t().state, width: { min: 130, default: 130 }, cell: (client: ClientRow) => stateChip(client) ?? "" },
+          { title: t().type, width: { min: 110, default: 120 }, cell: (client: ClientRow) => kindLine(client), drop: true },
           ...(props.open
             ? []
-            : [{ title: t().type, width: { min: 130, default: 150 }, cell: (client: ClientRow) => <>{kindWords(client)}</>, drop: true }]),
-          { title: t().access, width: { min: 150, default: 150 }, cell: (client) => accessWords(client), drop: true },
+            : [
+                {
+                  title: t().redirectTarget,
+                  width: { min: 160, default: 220 },
+                  cell: (client: ClientRow) => redirectHost(client) || t().withoutRedirect,
+                  drop: true,
+                },
+              ]),
+          { title: t().access, width: { min: 120, default: 140 }, cell: (client) => accessCell(client), drop: true },
           ...(props.open
             ? []
             : [{ title: t().created, width: { min: 110, default: 110 }, cell: (client: ClientRow) => client.created, drop: true }]),
@@ -589,6 +605,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
+      // the table takes the whole width until a client opens beside it
       detail={props.tab === "clients" && props.open ? 460 : undefined}
       // the main action on the list, floating at the bottom right on the phone; never over an open client
       primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}

@@ -99,8 +99,8 @@ describe("OAuth authorization pages", () => {
     const html = await renderAuthorizationState("confirm", "en");
     const body = text(html);
     expect(html).toContain("<title>Connect a device");
-    expect(heading(html)).toBe("Allow access to your account?");
-    // the requesting application stands once, in its row with the sign of its kind, before the code
+    // the head names the asking application with its mark, once, before the code
+    expect(heading(html)).toBe(sample.cli.name);
     expect(body.split(sample.cli.name)).toHaveLength(2);
     expect(body.indexOf(sample.cli.name)).toBeLessThan(body.indexOf("Check that this code matches"));
     // the code stands large in a block of its own, where it is compared with the terminal
@@ -132,7 +132,10 @@ describe("OAuth authorization pages", () => {
 
   test("the device confirmation and the consent page read naturally in German", async () => {
     const confirm = text(await renderAuthorizationState("confirm", "de"));
-    expect(confirm).toMatch(/^ Zugriff auf dein Konto erlauben\? AR Angemeldet als Ada Renz Cloud CLI Intern Prüfe/);
+    // one rhythm: the application, the code to compare, what it asks for, for which account, the decision
+    expect(confirm).toMatch(/^ Cloud CLI Zeigt dein Gerät denselben Code\? Prüfe/);
+    expect(confirm.indexOf("Für dein Konto AR Ada Renz")).toBeGreaterThan(confirm.indexOf("Angeforderter Zugriff"));
+    expect(confirm.indexOf("Für dein Konto AR Ada Renz")).toBeLessThan(confirm.indexOf("Ablehnen"));
     expect(confirm).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
     expect(confirm).not.toContain("Client-ID");
     expect(confirm).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
@@ -141,11 +144,13 @@ describe("OAuth authorization pages", () => {
     const html = await renderAuthorizationState("consent", "de");
     const consent = text(html);
     expect(html).toContain("<title>Anwendung autorisieren");
-    // the heading names the task; the application stands once, in its own row with the sign of its kind
-    expect(heading(html)).toBe("Anwendung autorisieren");
+    // the head names the asking application once, with its mark and that nobody checked it
+    expect(heading(html)).toBe(sample.dynamic.name);
     expect(consent.split(sample.dynamic.name)).toHaveLength(2);
-    // who asks comes before the technical facts
-    expect(consent.indexOf(sample.dynamic.name)).toBeLessThan(consent.indexOf("Rückkehr zu"));
+    expect(consent).toMatch(new RegExp(`^ ${sample.dynamic.name} Nicht geprüft Angeforderter Zugriff`));
+    // the technical facts stand quiet after who decides, before the decision
+    expect(consent.indexOf("Technische Angaben")).toBeGreaterThan(consent.indexOf("Für dein Konto"));
+    expect(consent.indexOf("Technische Angaben")).toBeLessThan(consent.indexOf("Ablehnen"));
     expect(consent).toContain("Rückkehr zu notizen.werkstatt.example");
     expect(consent).toContain("Ressource https://cloud.werkstatt.example/api/mcp/v1");
     expect(consent).toContain(`Client-ID ${sample.dynamic.clientId}`);

@@ -24,6 +24,7 @@ const { ssr } = await import("../config");
 const { AuthorizationPage } = await import("./_components/AuthorizationPage");
 const { ConsentDecision } = await import("./_components/ConsentDecision");
 const { DeviceApproval } = await import("./_components/DeviceApproval");
+const { KIND_MARKS } = await import("./_components/kind-marks");
 const { default: devicePage } = await import("./device");
 const { default: errorPage } = await import("./error");
 const { default: logoutPage } = await import("./logout");
@@ -131,13 +132,15 @@ const reauthenticateHref = (path: string) => `/auth/login?${new URLSearchParams(
 const confirmPage = (reauthenticate: boolean) =>
   ssr<AuthContext>(
     async (c) => () =>
+      // as device.tsx builds it: the asking application with its mark in the head, the account before the buttons
       createComponent(AuthorizationPage, {
-        person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
-        heading: oauthMessages.resolve([getLocale(c)]).t.deviceConfirmTitle,
+        heading: sample.cli.name,
+        mark: KIND_MARKS.first_party,
         get children() {
           return createComponent(DeviceApproval, {
+            person: "Ada Renz",
             view: {
               kind: "confirm",
               reauthenticateHref: reauthenticate ? reauthenticateHref(`/oauth/device?user_code=${sample.code}`) : null,
@@ -154,13 +157,16 @@ const confirmPage = (reauthenticate: boolean) =>
 const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
   ssr<AuthContext>(
     async (c) => () =>
+      // as consent.tsx builds it
       createComponent(AuthorizationPage, {
-        person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
-        heading: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
+        heading: sample[client].name,
+        mark: KIND_MARKS[client === "cli" ? "first_party" : "dynamic"],
+        kinds: client === "cli" ? undefined : [oauthMessages.resolve([getLocale(c)]).t.unverified],
         get children() {
           return createComponent(ConsentDecision, {
+            person: "Ada Renz",
             view: {
               request: sample.request,
               firstParty: client === "cli",

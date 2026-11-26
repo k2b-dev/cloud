@@ -87,7 +87,8 @@ test("an open client is read on its own, so it stays open beyond the page; one t
   const open = read(await render(`?page=2&search=archiv&client=${beyond.id}`));
   expect(get).toHaveBeenCalledWith({ id: beyond.id });
   expect(open).toContain("Archiv-Portal");
-  expect(open).toContain(beyond.clientId);
+  // the ID stands shortened, whole in its copy button
+  expect(open).toContain(beyond.clientId.slice(0, 8));
   expect(open).toContain("https://grafana.werkstatt.example/login/generic_oauth");
 
   const gone = read(await render("?client=00000000-0000-4000-8000-000000000999"));
