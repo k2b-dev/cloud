@@ -78,6 +78,7 @@ Under the head while the column scrolls: the one statement, key figures and filt
 
 - A `false` child of `Pane.Split` still gets a line of its own. Render a pane that is not there as `undefined` (`open && <Pane … />` with `open` undefined), never `false` ([#4147](https://github.com/k2b-dev/cloud/issues/4147)).
 - In a `StatusRow` of a 400 px column, a second fact runs into the filter button. Keep one fact there; the lead says the main thing ([#4149](https://github.com/k2b-dev/cloud/issues/4149)).
+- Known: while the on-screen keyboard of an iPhone is open, a `Pane foot` that stays lies under the keyboard. The field that has the focus stays in sight above it; the foot shows again when the keyboard closes.
 
 Until they are fixed, use the nearest part and write `// k2b-ui gap: …` at that place.
 
