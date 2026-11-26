@@ -30,7 +30,7 @@ export const overviewSpaces: SidebarSpace[] = [
 
 export const overviewWork: OverviewWork = {
   view: "mine",
-  counts: { mine: 3, today: 1, upcoming: 4 },
+  counts: { mine: 3, today: 4, upcoming: 4 },
   items: [
     task({ shortId: "Item01", title: "Clear out shelf B", deadline: "2026-10-16", deadlineAllDay: true }),
     task({
@@ -82,6 +82,23 @@ export const overviewWork: OverviewWork = {
     done: [2, 0, 3, 1, 4, 0, 0, 2, 5, 3, 1, 0, 0, 2],
   },
 };
+
+/** Open tasks that do not start today, by due day: the Upcoming view of the same morning. */
+const upcomingItems: WorkItem[] = [
+  task({ shortId: "Item03", title: "Agree on the route plan for week 43", priority: "high", deadline: "2026-10-13", deadlineAllDay: true }),
+  task({ shortId: "Item07", title: "Count stock on shelf B", deadline: "2026-10-15T16:00:00+02:00" }),
+  task({ shortId: "Item01", title: "Clear out shelf B", deadline: "2026-10-16", deadlineAllDay: true }),
+  task({
+    shortId: "Item12",
+    spaceShortId: "Space3",
+    spaceName: "Trade fair 2026",
+    spaceColor: "#f97316",
+    title: "Book the stand lighting",
+    priority: "medium",
+    deadline: "2026-10-22",
+    deadlineAllDay: true,
+  }),
+];
 
 type Actor = { kind: "user" | "service_account" | "system"; id: string | null; displayName: string; avatarHash: string | null };
 const entry = (id: string, action: string, at: string, actor: Actor, title: string, count = 1) => ({
@@ -205,3 +222,15 @@ export const overviewWorstActivity = [
     "Old task",
   ),
 ];
+
+/**
+ * The work the server answers for one view, as `loadOverviewWork` builds it: For me lists the assigned tasks, Today
+ * the entries of today (the agenda), Upcoming the open tasks that do not start today. The usual counts match the rows;
+ * the worst case keeps counts far above one page.
+ */
+export const overviewWorkFor = (view: OverviewWork["view"], worst = false): OverviewWork => {
+  const work = worst ? overviewWorstWork : overviewWork;
+  // None of the worst-case tasks starts today, so all of them are upcoming as well.
+  const items = view === "today" ? (work.day?.agenda ?? []) : view === "upcoming" && !worst ? upcomingItems : work.items;
+  return { ...work, view, items };
+};

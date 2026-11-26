@@ -247,6 +247,12 @@ body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
   .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
 }
 
+/* In the v2 screens the calendar is the content of its pane: the grid lies flat in the drawing, without an edge or
+   rounded corners of its own, so the pane's lines stand once.
+   k2b-ui gap: the calendar always draws itself as a card (packages/ui/src/styles/content-parity.css,
+   `.k2b-ui .k2b-content-calendar` border and border-radius) and has no flat form for a `Canvas height="fill"`; once it
+   has one (lane K), this rule goes. */
+.k2b-ui [data-k2-canvas] .k2b-content-calendar { border: 0; border-radius: 0; }
 
 /* The status keeps one line of its own height after the chips, so loading, a failure, and quiet never move them. */
 .spaces-calendar-status { display: flex; min-width: 0; flex: 1 1 12rem; align-items: center; gap: .4375rem; height: 2rem; overflow: hidden; color: var(--ui-text-dimmed); font-size: .75rem; white-space: nowrap; }

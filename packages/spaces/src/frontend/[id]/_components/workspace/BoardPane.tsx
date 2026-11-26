@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Canvas, Failed, FilterBar, ListOrder, Pane } from "@k2b/ui/v2";
+import { Canvas, FilterBar, ListOrder, Notice, Pane } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { SpaceDetail, SpaceWormhole } from "@/contracts";
 import type { SpacePulse as SpacePulseData } from "@/overview-contracts";
@@ -86,17 +86,24 @@ export default function BoardPane(props: Props) {
           onChange={change}
           base={base()}
           icons={{ assignedTo: "user", priority: "flag", deadline: "calendar-due", tags: "tag", activity: "activity" }}
-          results={t.itemCount({ count: total() })}
+          results={view.failedElsewhere() ? undefined : t.itemCount({ count: total() })}
           end={<ListOrder query={query()} state={state()} onChange={change} />}
         />
       }
     >
       <SpacePulse pulse={props.pulse} color={props.space.color} />
-      <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
+      {/* A failed load stands once, red, at the head of the board; columns of another address leave instead of passing for its result. */}
+      <Show when={view.error()}>
+        {(error) => (
+          <Notice tone="bad" actions={[{ label: t.retry, icon: "refresh", onClick: () => void view.refresh() }]}>
+            {error().message}
+          </Notice>
+        )}
+      </Show>
       {/* The board is the rest of the pane and scrolls inside its own columns. k2b-ui gap: columns page with "Load
           more" and are not virtualized yet. */}
       <Canvas label={t.kanban} height="fill">
-        <Show when={view.current()} keyed>
+        <Show when={!view.failedElsewhere() && view.current()} keyed>
           {(current) => (
             <KanbanBoard
               spaceId={props.space.id}

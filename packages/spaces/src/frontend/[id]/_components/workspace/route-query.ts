@@ -157,6 +157,8 @@ export const useSpacesRouteQuery = <T extends object>(props: {
     source,
     open,
     error: view.error,
+    /** The load of the address failed and the data shown still belongs to another address: hide it, do not pass it off as the result. */
+    failedElsewhere: () => !!view.error() && current().source !== source(),
     refresh: view.refresh,
     busy: () => view.loading() || view.refreshing(),
     searchReset,
