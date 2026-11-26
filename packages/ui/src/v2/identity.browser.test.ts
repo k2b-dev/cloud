@@ -90,11 +90,14 @@ test("a thumbnail lies over the symbol in the same place, and the symbol stays w
     expect(await look("Ansicht Front Eiche.jpg")).toEqual({ state: "shown", box: "32x32", image: "0,0 32x32", symbol: true, alt: "" });
     expect(await look("Bestand Küche vorher.jpg")).toEqual({ state: "failed", box: "32x32", image: null, symbol: true, alt: null });
     // the type stands on the corner, inside the mark
-    const kind = await page.locator(".k2-row", { hasText: "Angebot" }).locator(".k2-mk-kind").evaluate((element) => {
-      const mark = element.parentElement!.getBoundingClientRect();
-      const rect = element.getBoundingClientRect();
-      return { text: element.textContent, inside: rect.left >= mark.left && rect.bottom <= mark.bottom && rect.right <= mark.right };
-    });
+    const kind = await page
+      .locator(".k2-row", { hasText: "Angebot" })
+      .locator(".k2-mk-kind")
+      .evaluate((element) => {
+        const mark = element.parentElement!.getBoundingClientRect();
+        const rect = element.getBoundingClientRect();
+        return { text: element.textContent, inside: rect.left >= mark.left && rect.bottom <= mark.bottom && rect.right <= mark.right };
+      });
     expect(kind).toEqual({ text: "PDF", inside: true });
   });
 });
