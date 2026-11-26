@@ -110,8 +110,7 @@ status | icon, count, word, who }`, one line of "● number word who").
 `ObjectHead` as the `head` of an open thing: `mark` (40 px), `name` (18),
 `meta`, `actions` (in the phone's bar there), up to three `facts` and a
 `problem` (`{ title, text }`, red in place), on the owner's tint. `Ticks`
-(`slots` of `ok`, `bad`, `none`, `label`, `color`, `stretch`): one picture
-of a row's data over time. `Dot` (`status`): a good state is a neutral dot and word. Rows of
+(below) draws a hero's history as `trend` `ticks`. `Dot` (`status`): a good state is a neutral dot and word. Rows of
 a table or list part by a very quiet line; the strong hairline parts two
 things (head from content, list from detail, groups).
 
@@ -346,7 +345,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -389,6 +388,15 @@ lines instead of cutting a thing.
 - `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
   the open thing at the top of its detail, 4:3 from text edge to text edge;
   the symbol stands while it loads, fails or is missing.
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 

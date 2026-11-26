@@ -2145,6 +2145,8 @@ for (const which of ["oauth-b", "pulse-b"] as const)
                 Math.round(drawing.getBoundingClientRect().width) > 100,
               ],
               // the exceptions stand in one line (or wrap as one), under the figure, never as rows of their own
+              // Pulse draws its day as Ticks of 48 half hours (W5)
+              slots: hero.querySelectorAll(".k2-ticks > i").length,
               exceptions: ex.length,
               under: ex.every((item) => item.getBoundingClientRect().top >= figure.getBoundingClientRect().bottom),
             };
@@ -2156,6 +2158,7 @@ for (const which of ["oauth-b", "pulse-b"] as const)
           expect(found.ink).not.toBe("rgb(2, 132, 199)");
           // a drawing of the real history, named in a sentence, as wide as its place gives
           expect({ which, width, drawn: found.drawn.slice(1) }).toEqual({ which, width, drawn: [true, true] });
+          expect(found.slots).toBe(which === "oauth-b" ? 0 : 48);
           expect(found.exceptions).toBe(which === "oauth-b" ? 2 : 3);
           expect(found.under).toBe(true);
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });

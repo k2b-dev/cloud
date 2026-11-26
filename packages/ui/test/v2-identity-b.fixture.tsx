@@ -419,7 +419,12 @@ const stateChip = (source: Source) =>
   );
 
 // fetches of today, one tick per 15 minutes from 00:00 to 10:42 (65 of them): the last one failed
-const today: TickState[] = [...Array.from({ length: 64 }, (): TickState => "ok"), "bad"];
+// today in 48 half hours: 21 went well, the one from 10:30 failed, the rest of the day has no data yet
+const today: TickState[] = [
+  ...Array.from({ length: 21 }, (): TickState => "ok"),
+  "bad",
+  ...Array.from({ length: 26 }, (): TickState => "none"),
+];
 
 export const PulseScreen = (props: { list?: boolean }) => (
   <Workspace>
@@ -450,10 +455,10 @@ export const PulseScreen = (props: { list?: boolean }) => (
           trend={{
             kind: "ticks",
             values: today,
-            label: "Abrufe heute: 5.766 erfolgreich, 3 fehlgeschlagen, der letzte um 10:42 fehlgeschlagen",
+            label: "Abrufe heute je halbe Stunde: bis 10:30 ohne Fehler, ab 10:30 fehlgeschlagen",
             start: "00:00",
-            caption: "Abrufe heute · 5.766 erfolgreich, 3 fehlgeschlagen",
-            end: "10:42",
+            caption: "Abrufe je halbe Stunde · 5.766 erfolgreich, 3 fehlgeschlagen",
+            end: "24:00",
           }}
           exceptions={[
             // good is neutral: a quiet dot and the words (look rule: state neutral when good)
