@@ -1,6 +1,7 @@
-import { createSignal } from "solid-js";
+import { createSignal, For } from "solid-js";
 import {
   Band,
+  Chip,
   CodeInput,
   ColorInput,
   Disclosure,
@@ -40,6 +41,7 @@ export function Demo() {
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
+  const [people, setPeople] = createSignal(["Anna Berg", "Jonas Wolf"]);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -108,10 +110,35 @@ export function Demo() {
           </Field>
         </Band>
         {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
+        {/* people as chips with their remove button */}
+        <Band>
+          <Text type="body">
+            <For each={people()}>
+              {(name) => (
+                <Chip
+                  tag
+                  remove={{
+                    name,
+                    onClick: () => {
+                      setPeople((list) => list.filter((each) => each !== name));
+                      did(`unassign:${name}`);
+                    },
+                  }}
+                >
+                  {name}
+                </Chip>
+              )}
+            </For>
+          </Text>
+        </Band>
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
             <Field name="hosts" label="Server">
               <TagsInput value={["mx1.example"]} />
+            </Field>
+            {/* addresses as chips: typed, pasted several at once, "Name <address>" too */}
+            <Field name="to" label="An">
+              <TagsInput type="email" value={["anna.berg@werkstatt.example"]} />
             </Field>
             <Field name="locked" label="Gesperrte Server">
               <TagsInput value={["mx9.example"]} disabled />

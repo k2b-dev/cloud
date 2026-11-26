@@ -70,7 +70,7 @@ One choice from many options, in a list that opens.
 
 ### TagsInput
 
-Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
+Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick. With `type="email"` it takes e-mail addresses: a comma, a semicolon or a paste of several turns them into chips, `Name <address>` as well, and a text that is no address stays in the field, marked. Each chip's button is named for what it removes; Backspace in the empty field takes the last one back.
 
 <Props of="TagsInput" />
 

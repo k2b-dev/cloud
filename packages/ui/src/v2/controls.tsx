@@ -5,6 +5,8 @@ import {
   createUniqueId,
   For,
   type JSX,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
@@ -510,6 +512,26 @@ export type TagsInputProps = {
   /** A name when the field stands without a Field. */
   label?: string;
   disabled?: boolean;
+  /**
+   * `email`: e-mail addresses, as the To of a message. A comma, a semicolon or a new line ends an address too, a
+   * paste of several becomes several chips (`Name <address>` as well), and a text that is no address stays in the
+   * field, marked, to be fixed. The phone shows its keyboard for addresses.
+   */
+  type?: "email";
+};
+
+/** The addresses in a text: `a@b.example` or `Name <a@b.example>`, split at commas, semicolons, new lines and spaces. */
+const splitAddresses = (text: string) => {
+  const parts = text.match(/[^,;\n<>]*<[^<>]*>|[^\s,;<>]+/g) ?? [];
+  const valid: string[] = [];
+  const rest: string[] = [];
+  for (const raw of parts) {
+    const part = raw.trim();
+    if (!part) continue;
+    const address = part.match(/<([^<>]*)>$/)?.[1] ?? part;
+    (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(address.trim()) ? valid : rest).push(part);
+  }
+  return { valid, rest: rest.join(", ") };
 };
 
 /**
@@ -522,21 +544,53 @@ export const TagsInput = (props: TagsInputProps) => {
   const t = useControlMessages();
   const [own, setOwn] = createSignal<string[]>([...(props.value ?? [])]);
   const values = () => (props.onChange ? [...(props.value ?? [])] : own());
+  const email = () => props.type === "email";
+  // the text being typed; with `email` it is held here, so a separator or a paste can turn it into chips
+  const [query, setQuery] = createSignal("");
+  const [rejected, setRejected] = createSignal(false);
+  const commit = (next: string[]) => {
+    const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
+    setOwn(clean);
+    props.onChange?.(clean);
+  };
+  // the addresses in a text become chips; what is no address stays in the field, marked
+  const take = (text: string) => {
+    const { valid, rest } = splitAddresses(text);
+    if (valid.length) commit([...values(), ...valid]);
+    setQuery(rest);
+    setRejected(rest.length > 0);
+  };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
   // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
   let input: HTMLInputElement | undefined;
   field?.named(() => input?.focus());
   // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
+  // Addresses are held here, so their field puts them back itself.
   const initial = [...(props.value ?? [])];
+  let chips: HTMLElement | undefined;
+  const onReset = (event: Event) => {
+    if (!email() || props.onChange || !(event.target instanceof HTMLFormElement) || !chips || !event.target.contains(chips)) return;
+    setOwn(initial);
+    setQuery("");
+    setRejected(false);
+  };
+  onMount(() => {
+    document.addEventListener("reset", onReset);
+    onCleanup(() => document.removeEventListener("reset", onReset));
+  });
   const combo = useCombobox(() => ({
     items: items(),
     multiple: true as const,
     allowCustomValue: true,
-    ...(props.onChange ? { value: values() } : { defaultValue: initial }),
+    // addresses are held here (a paste adds several at once); other values may be held by core, so a reset is its own
+    ...(props.onChange || email() ? { value: values() } : { defaultValue: initial }),
+    ...(email() ? { query: query(), onQueryChange: (next: string) => (/[,;\n]/.test(next) ? take(next) : setQuery(next)) } : {}),
     onValueChange: (next: string[]) => {
-      const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
-      setOwn(clean);
-      props.onChange?.(clean);
+      if (!email()) return commit(next);
+      // Enter commits the typed text: as addresses, the rest stays in the field
+      const added = next.filter((value) => !values().includes(value));
+      if (next.length < values().length || !added.length) return commit(next);
+      take(added.join(", "));
     },
     disabled: props.disabled,
     required: field?.required,
@@ -545,6 +599,9 @@ export const TagsInput = (props: TagsInputProps) => {
   return (
     <>
       <combo.Chips
+        ref={(element: HTMLElement) => {
+          chips = element;
+        }}
         class="k2-input"
         data-k2-part="TagsInput"
         data-tags=""
@@ -569,8 +626,16 @@ export const TagsInput = (props: TagsInputProps) => {
           placeholder={values().length ? undefined : props.placeholder}
           aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
-          aria-invalid={field?.invalid ? "true" : undefined}
+          aria-invalid={field?.invalid || rejected() ? "true" : undefined}
           aria-describedby={field?.described}
+          inputMode={email() ? "email" : undefined}
+          autocomplete={email() ? "email" : undefined}
+          onPaste={(event: ClipboardEvent) => {
+            const text = event.clipboardData?.getData("text/plain") ?? "";
+            if (!email() || !/[,;\s]/.test(text.trim())) return;
+            event.preventDefault();
+            take(`${query()} ${text}`);
+          }}
         />
       </combo.Chips>
       {/* core's form input validates and resets the field; the values are sent one entry each under the name */}

@@ -1,6 +1,7 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
+import { useControlMessages } from "./control-messages";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -108,6 +109,11 @@ export type ChipProps = {
   onNavigate?: OnNavigate;
   /** A pressable chip that is on, such as an active filter: in the tint of the app. */
   pressed?: boolean;
+  /**
+   * A remove button after the words, named for what it removes ("Anna Berg entfernen"), for a chip that stands for
+   * something that can be taken away, such as a person or a filter. Not on a chip that is pressed itself.
+   */
+  remove?: { name: string; onClick: () => void };
 } & (
   | {
       /** A state with a dot and a word: ok, waiting or wrong. */
@@ -149,6 +155,7 @@ export type ChipProps = {
 
 /** A round mark that shows a state, a tag, an amount or a count. Never a colour without a word. */
 export const Chip = (props: ChipProps) => {
+  const t = useControlMessages();
   const pressable = () => props.href !== undefined || props.onClick !== undefined;
   const kind = () =>
     props.yours
@@ -186,6 +193,19 @@ export const Chip = (props: ChipProps) => {
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
       {props.children}
+      <Show when={props.remove}>
+        {(remove) => (
+          <button
+            type="button"
+            class="k2-chip-x"
+            aria-label={t().removeValue({ label: remove().name })}
+            title={t().removeValue({ label: remove().name })}
+            onClick={() => remove().onClick()}
+          >
+            <Icon name="x" />
+          </button>
+        )}
+      </Show>
     </Dynamic>
   );
 };

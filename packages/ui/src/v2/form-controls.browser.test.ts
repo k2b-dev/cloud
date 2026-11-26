@@ -108,7 +108,7 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
         .locator('input[type="hidden"][name="domains"]')
         .evaluateAll((inputs) => inputs.map((input) => (input instanceof HTMLInputElement ? input.value : ""))),
     ).toEqual(["werkstatt.example"]);
-    await page.getByRole("button", { name: "werkstatt.example entfernen" }).click();
+    await page.getByRole("button", { name: "werkstatt.example entfernen", exact: true }).click();
     await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 0);
     expect((await deeds(page)).at(-1)).toBe("tags:");
   });
@@ -247,6 +247,58 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
   });
 });
 
+test("addresses: Enter, a comma or a paste turn addresses into chips, also several and with a name; a wrong one stays to be fixed", async () => {
+  await withPage(async (page) => {
+    const to = field(page, "An");
+    const input = to.getByRole("combobox");
+    const chips = () => to.locator(".k2-chip").evaluateAll((list) => list.map((chip) => chip.firstChild?.textContent ?? ""));
+    expect(await input.getAttribute("inputmode")).toBe("email");
+    // a comma ends an address
+    await input.fill("");
+    await input.pressSequentially("jonas@werkstatt.example,");
+    await to.locator(".k2-chip").nth(1).waitFor();
+    expect(await chips()).toEqual(["anna.berg@werkstatt.example", "jonas@werkstatt.example"]);
+    expect(await input.inputValue()).toBe("");
+    // a paste of several, one with a name and one wrong: the right ones become chips, the wrong one stays in the field
+    await input.evaluate((element) => {
+      const data = new DataTransfer();
+      data.setData("text/plain", "Mia Lindqvist <mia@lindqvist.example>; buero@werkstatt.example\nkein-at-zeichen");
+      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    await page.waitForFunction(() => [...document.querySelectorAll(".k2-chip")].some((chip) => chip.textContent?.includes("buero@")));
+    expect(await chips()).toEqual([
+      "anna.berg@werkstatt.example",
+      "jonas@werkstatt.example",
+      "Mia Lindqvist <mia@lindqvist.example>",
+      "buero@werkstatt.example",
+    ]);
+    expect(await input.inputValue()).toBe("kein-at-zeichen");
+    expect(await input.getAttribute("aria-invalid")).toBe("true");
+    // each chip is sent, and taken away with its named button or with Backspace in the empty field
+    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(4);
+    await to.getByRole("button", { name: "jonas@werkstatt.example entfernen" }).click();
+    await input.fill("");
+    await input.press("Backspace");
+    await page.waitForFunction(() => !document.querySelector('.k2-chip-x[aria-label="buero@werkstatt.example entfernen"]'));
+    expect(entriesOf((await sent(page)).entries, "to")).toEqual(["anna.berg@werkstatt.example", "Mia Lindqvist <mia@lindqvist.example>"]);
+    // the form's reset puts the first address back
+    await reset(page);
+    await page.waitForFunction(() => document.querySelectorAll('input[type="hidden"][name="to"]').length === 1);
+  });
+});
+
+test("chip: its remove button is named for what it removes and takes it away, also from the keyboard", async () => {
+  await withPage(async (page) => {
+    const remove = page.getByRole("button", { name: "Anna Berg entfernen" });
+    expect(await remove.count()).toBe(1);
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => (window.__deeds ?? []).includes("unassign:Anna Berg"));
+    expect(await page.getByRole("button", { name: "Anna Berg entfernen" }).count()).toBe(0);
+    expect(await page.getByRole("button", { name: "Jonas Wolf entfernen" }).count()).toBe(1);
+  });
+});
+
 test("tags: named by their field's label; a form's reset puts the uncontrolled list back", async () => {
   await withPage(async (page) => {
     const input = page.getByRole("combobox", { name: "Server", exact: true });
@@ -254,10 +306,14 @@ test("tags: named by their field's label; a form's reset puts the uncontrolled l
     await input.click();
     await page.keyboard.type("mx2.example");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 3);
+    await page.waitForFunction(
+      () => document.querySelectorAll('#sent [data-tags]:has(.k2-chip-x[aria-label^="mx"]) > .k2-chip').length === 3,
+    );
     expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
     await reset(page);
-    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 2);
+    await page.waitForFunction(
+      () => document.querySelectorAll('#sent [data-tags]:has(.k2-chip-x[aria-label^="mx"]) > .k2-chip').length === 2,
+    );
     expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
   });
 });
