@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, StatusRow, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemGroupBy, ItemListResult, SpaceDetail, SpaceItem } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -103,57 +103,50 @@ export default function ItemsPane(props: Props) {
     <Pane
       label={props.currentView === "table" ? t.table : t.list}
       scrollKey={`spaces-${props.currentView}-${props.space.id}`}
-      // k2b-ui gap: rule 9 puts filters, count and sort in one row under the head; until the head rows of lane DP land,
-      // the FilterBar and the StatusRow are two (a FilterBar cannot stand in the StatusRow: its filter place leaves on
-      // the phone, where the bar must stay).
+      // The one row under the head (rule 9): the filters, then the count, the order and the grouping at its end.
+      // k2b-ui gap: the bar has no loading mark yet; while a change loads, the rows stay until the new ones arrive.
       status={
-        <>
-          <FilterBar
-            query={query()}
-            state={state()}
-            onChange={change}
-            base={base()}
-            icons={{
-              type: "category",
-              status: "circle-check",
-              columns: "layout-kanban",
-              assignedTo: "user",
-              priority: "flag",
-              deadline: "calendar-due",
-              tags: "tag",
-              activity: "activity",
-            }}
-            results={t.itemCount({ count: total() })}
-          />
-          <StatusRow
-            lead={t.itemCount({ count: total() })}
-            loading={view.busy()}
-            filters={
-              <>
-                <ListOrder query={query()} state={state()} onChange={change} />
-                <Show when={props.currentView === "list"}>
-                  {/* k2b-ui gap: a list query has no default grouping; the Space groups by day unless the address says otherwise. */}
-                  {/* A symbol beside the order, so both fit beside an open item; its name says the grouping. */}
-                  <Menu
-                    icon="stack-2"
-                    label={`${t.groupBy}: ${groupLabel(filter().groupBy)}`}
-                    items={[
-                      {
-                        title: t.groupBy,
-                        choice: filter().groupBy,
-                        onChoose: (value) => {
-                          const group = GROUPS.find((entry) => entry === value);
-                          if (group) view.open(hrefWith({ group }));
-                        },
-                        items: GROUPS.map((group) => ({ label: groupLabel(group), value: group })),
+        <FilterBar
+          query={query()}
+          state={state()}
+          onChange={change}
+          base={base()}
+          icons={{
+            type: "category",
+            status: "circle-check",
+            columns: "layout-kanban",
+            assignedTo: "user",
+            priority: "flag",
+            deadline: "calendar-due",
+            tags: "tag",
+            activity: "activity",
+          }}
+          results={t.itemCount({ count: total() })}
+          end={
+            <>
+              <ListOrder query={query()} state={state()} onChange={change} />
+              <Show when={props.currentView === "list"}>
+                {/* k2b-ui gap: a list query has no default grouping; the Space groups by day unless the address says
+                    otherwise, so its own menu stands here (and, with the bar's end, leaves on the phone). */}
+                <Menu
+                  icon="stack-2"
+                  label={`${t.groupBy}: ${groupLabel(filter().groupBy)}`}
+                  items={[
+                    {
+                      title: t.groupBy,
+                      choice: filter().groupBy,
+                      onChoose: (value) => {
+                        const group = GROUPS.find((entry) => entry === value);
+                        if (group) view.open(hrefWith({ group }));
                       },
-                    ]}
-                  />
-                </Show>
-              </>
-            }
-          />
-        </>
+                      items: GROUPS.map((group) => ({ label: groupLabel(group), value: group })),
+                    },
+                  ]}
+                />
+              </Show>
+            </>
+          }
+        />
       }
     >
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>

@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Canvas, Failed, FilterBar, Menu, Pane, StatusRow } from "@k2b/ui/v2";
+import { Canvas, Failed, FilterBar, Menu, Pane } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show, untrack } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -236,45 +236,39 @@ export default function SpacesCalendarRoute(props: Props) {
   return (
     <Pane
       label={t.calendar}
-      // k2b-ui gap: rule 9 puts filters, count and sort in one row under the head; until the head rows of lane DP land,
-      // the FilterBar and the StatusRow are two (a FilterBar cannot stand in the StatusRow: its filter place leaves on
-      // the phone, where the bar must stay).
+      // The one row under the head (rule 9): the filters, then the count and the colour choice at its end.
+      // k2b-ui gap: the bar has no loading mark yet; while days load, the calendar keeps what it shows. The colour
+      // choice leaves with the bar's end on the phone (the sheet knows only sort and group).
       status={
-        <>
-          <FilterBar
-            query={query()}
-            state={barState()}
-            base={base()}
-            onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
-            icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
-            results={t.shownCount({ count: shownCount() })}
-          />
-          <StatusRow
-            lead={t.shownCount({ count: shownCount() })}
-            loading={navigation.pending() || loadingBlocks() > 0}
-            filters={
-              <Menu
-                variant="ghost"
-                items={[
-                  {
-                    title: t.colorBy,
-                    choice: state().filter.colorBy,
-                    onChoose: (value) => {
-                      const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
-                      if (colorBy) controls()?.setColorBy(colorBy);
-                    },
-                    items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
-                      label: colorLabel(colorBy),
-                      value: colorBy,
-                    })),
+        <FilterBar
+          query={query()}
+          state={barState()}
+          base={base()}
+          onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
+          icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
+          results={t.shownCount({ count: shownCount() })}
+          end={
+            <Menu
+              variant="ghost"
+              items={[
+                {
+                  title: t.colorBy,
+                  choice: state().filter.colorBy,
+                  onChoose: (value) => {
+                    const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
+                    if (colorBy) controls()?.setColorBy(colorBy);
                   },
-                ]}
-              >
-                {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
-              </Menu>
-            }
-          />
-        </>
+                  items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
+                    label: colorLabel(colorBy),
+                    value: colorBy,
+                  })),
+                },
+              ]}
+            >
+              {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
+            </Menu>
+          }
+        />
       }
     >
       <Show when={navigation.error()}>{(error) => <Failed text={error().message} onRetry={() => void navigation.refresh()} />}</Show>
