@@ -7,6 +7,7 @@ import {
   CanvasFillScreen,
   CellsScreen,
   DeepPathScreen,
+  DialogInlineScreen,
   EmptyWaysScreen,
   FactsScreen,
   GroupsScreen,
@@ -48,7 +49,8 @@ declare global {
       | "empty-ways"
       | "view-statement"
       | "section-foot"
-      | "facts";
+      | "facts"
+      | "dialog-inline";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -77,6 +79,8 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which === "dialog-inline" ? (
+        <DialogInlineScreen />
       ) : which === "facts" ? (
         <FactsScreen />
       ) : which === "section-foot" ? (

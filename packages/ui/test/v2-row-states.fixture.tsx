@@ -5,6 +5,7 @@ import {
   Canvas,
   Cells,
   Chip,
+  Dialog,
   Digest,
   Empty,
   Facts,
@@ -529,5 +530,21 @@ export const FactsScreen = () => (
         />
       </Section>
     </Pane>
+  </Workspace>
+);
+
+// A dialog that names who sees a space: more people than one line holds (Spaces, W3 #4197).
+export const DialogInlineScreen = () => (
+  <Workspace>
+    <Pane label="Space">
+      <Text>Werkstatt</Text>
+    </Pane>
+    <Dialog title="Wer diesen Space sieht" open onOpenChange={() => {}} foot={<Button variant="primary">Fertig</Button>}>
+      <Inline>
+        {["Felix Thal", "Mira Solberg", "Jonas Kern", "Ada Renz", "Tom Oswald", "Lea Brandt"].map((name) => (
+          <Chip icon="user">{name}</Chip>
+        ))}
+      </Inline>
+    </Dialog>
   </Workspace>
 );

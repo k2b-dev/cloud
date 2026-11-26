@@ -39,7 +39,8 @@ type Case =
   | "empty-ways"
   | "view-statement"
   | "section-foot"
-  | "facts";
+  | "facts"
+  | "dialog-inline";
 
 let browser: Browser;
 let client: string;
@@ -1395,4 +1396,29 @@ test("on the phone a fact is one line, its label left and a short value at the e
     },
     390,
   );
+});
+
+test("in a dialog a line of things longer than its room wraps: every chip whole, inside the dialog", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "dialog-inline",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const line = document.querySelector<HTMLElement>(".k2-dialog-body > .k2-inline")!;
+          const room = line.getBoundingClientRect();
+          const chips = [...line.querySelectorAll<HTMLElement>(":scope > .k2-chip")];
+          return {
+            wraps: getComputedStyle(line).flexWrap,
+            lines: new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top))).size,
+            whole: chips.every(
+              (chip) => chip.getBoundingClientRect().right <= room.right + 0.5 && chip.scrollWidth <= chip.clientWidth + 1,
+            ),
+          };
+        });
+        expect({ wraps: found.wraps, whole: found.whole }).toEqual({ wraps: "wrap", whole: true });
+        // six people do not fit on one line of a dialog on the phone
+        if (width === 390) expect(found.lines).toBeGreaterThan(1);
+      },
+      width,
+    );
 });

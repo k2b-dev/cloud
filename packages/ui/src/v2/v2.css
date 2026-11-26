@@ -2182,9 +2182,9 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   padding: 0 var(--k2-edge);
 }
-/* A line of things that has no room wraps, in a column of any width, so no chip or action is cut in half (or lost);
-   a line that fits stays one line. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > .k2-inline {
+/* A line of things that has no room wraps, in a column of any width and in a dialog or panel, so no chip or action is
+   cut in half (or lost); a line that fits stays one line. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-inline {
   flex-wrap: wrap;
   row-gap: 8px;
 }
