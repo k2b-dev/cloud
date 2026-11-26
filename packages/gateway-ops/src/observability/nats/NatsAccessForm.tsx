@@ -138,13 +138,12 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
           hint={serversChanged(form.draft()) || accessRequired() ? t().accessEndpointHelp : t().accessSecretHelp}
           error={form.errors().access}
         >
-          {/* k2b-ui gap: Input has no spellcheck/autocomplete; a secret must never reach a spellchecker or autofill */}
+          {/* a secret never reaches a spellchecker, autofill or autocorrection */}
           <Input
             multiline
-            ref={(element) => {
-              element.spellcheck = false;
-              element.autocomplete = "off";
-            }}
+            spellcheck={false}
+            autocomplete="off"
+            autocapitalize="off"
             value={form.draft().access}
             onInput={(access) => form.update({ access, clear: false })}
             disabled={disabled("access") || form.draft().clear}
