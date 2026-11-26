@@ -25,7 +25,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>, short = false) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, title?: string) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -33,7 +33,7 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>, short
     await page.setContent(
       `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
-    if (short) await page.evaluate(() => Reflect.set(window, "__k2ShortTitle", true));
+    if (title) await page.evaluate((words) => Reflect.set(window, "__k2Title", words), title);
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await settled(page);
@@ -72,6 +72,9 @@ for (const width of [1440, 390])
       expect(found.inside).toBe(true);
       // on the phone the words run on beyond the second line: they end in "…"
       if (width === 390) expect(found.cut).toBe(true);
+      // two lines of 24, the head's 8 px above and below and its line: 65 px. The head no longer meets the 52 px of
+      // the status row beside it (K1 holds for one line only).
+      expect(found.height).toBe(2 * 24 + 2 * 8 + 1);
     });
   });
 
@@ -84,6 +87,21 @@ test("at 1440: a short title stays one line, and the head beside the list keeps 
       expect(found.cut).toBe(false);
       expect(found.height).toBe(heights.status);
     },
-    true,
+    "Rechnungen prüfen",
+  );
+});
+
+test("at 1440: a title longer than two lines ends in “…” after the second, the head stays 65 px", async () => {
+  const longer = `${longTitle}; danach die Lieferscheine der Werkstatt Nord nachtragen, die Mahnungen an Hofmann und Söhne stoppen und den Abschluss für November vorbereiten`;
+  await withPage(
+    1440,
+    async (page) => {
+      const found = await head(page);
+      expect(found.lines).toBe(2);
+      expect(found.cut).toBe(true);
+      expect(found.tooltip).toBe(longer);
+      expect(found.height).toBe(2 * 24 + 2 * 8 + 1);
+    },
+    longer,
   );
 });

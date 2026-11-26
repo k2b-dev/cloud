@@ -675,7 +675,8 @@
   padding-block: 8px;
 }
 /* a reader beside a list: its head is 52 px while its title is one line, so its line meets the status row next to it
-   (K1) */
+   (K1). K1 holds for one line only: two lines make the head 65 px, and its line stands 13 px below the status
+   row's. */
 .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
   min-height: var(--k2-h-status);
 }

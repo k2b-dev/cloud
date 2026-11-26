@@ -1,18 +1,19 @@
 import { render } from "solid-js/web";
 import { Bar, Button, List, Pane, Row, StatusRow, Text, Workspace } from "../src/v2";
 
-// An open task beside its list, with the title it has at its worst (Spaces, 96 signs), or a short one
-// (`window.__k2ShortTitle`): the detail's head shows a long title on two lines at most, the full words as its tooltip.
+// An open task beside its list, with the title it has at its worst (Spaces, 96 signs), or another one set before the
+// screen starts (`window.__k2Title`): the detail's head shows a long title on two lines at most, the full words as its
+// tooltip.
 
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2ShortTitle?: boolean;
+    __k2Title?: string;
   }
 }
 
 const longTitle = "Lieferantenrechnungen aus dem Oktober prüfen, mit dem Lager abgleichen und an die Buchhaltung geben";
-const title = window.__k2ShortTitle ? "Rechnungen prüfen" : longTitle;
+const title = window.__k2Title ?? longTitle;
 
 const root = document.getElementById("root");
 if (!root) throw new Error("detail-title: #root is missing");

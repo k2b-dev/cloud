@@ -229,6 +229,8 @@ out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 Without `type`, text takes the role of its place.
 `title` gives text its full words as a tooltip where its place may cut it:
 the title of an open entry in its detail's head takes two lines, then "…".
+Two lines make that head 65 px: beside a list, its line then no longer meets
+the status row (K1 holds for a one-line title).
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
