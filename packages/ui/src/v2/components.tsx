@@ -18,7 +18,7 @@ import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -50,6 +50,11 @@ export type NavItem = NavEntryBase &
     | {
         /** A Tabler icon before the words. */
         icon: string;
+        /**
+         * The data colour of the place, such as a base, a storage or a mailbox: the symbol then stands on a tint of it,
+         * as the place's mark (`Mark`), so the same thing looks the same in the sidebar, a list and a tile.
+         */
+        color?: string;
         /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
@@ -67,6 +72,7 @@ export type NavItem = NavEntryBase &
         /** The entries it folds away; they stand one level further in. */
         items: readonly NavItem[];
         icon?: undefined;
+        color?: undefined;
         href?: undefined;
         onNavigate?: undefined;
         onClick?: undefined;
@@ -95,6 +101,11 @@ export type NavProps = {
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
+  /**
+   * What the open place uses of what it may, above the foot: a storage of 100 GB, seats of a plan. Its name and the
+   * words ("38,2 von 100 GB") on one line, a bar under them in the app colour, amber from 75 % and red from 90 %.
+   */
+  quota?: { label: string; value: number; of: number; text: string };
 };
 
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
@@ -145,7 +156,9 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
-    <Icon name={props.item.icon ?? "point"} />
+    <Show when={props.item.color} fallback={<Icon name={props.item.icon ?? "point"} />}>
+      {(color) => <Mark icon={props.item.icon ?? "point"} color={color()} />}
+    </Show>
     <NavEnd item={props.item} />
   </Dynamic>
 );
@@ -209,6 +222,32 @@ export const Nav = (props: NavProps) => (
         </>
       )}
     </Index>
+    <Show when={props.quota}>
+      {(quota) => {
+        const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
+        return (
+          <div
+            class="k2-nav-quota"
+            data-k2-part="Nav.Quota"
+            data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
+            role="meter"
+            aria-label={quota().label}
+            aria-valuemin={0}
+            aria-valuemax={quota().of}
+            aria-valuenow={quota().value}
+            aria-valuetext={quota().text}
+          >
+            <span class="k2-nav-quota-line">
+              <span>{quota().label}</span>
+              <span>{quota().text}</span>
+            </span>
+            <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+              <i />
+            </span>
+          </div>
+        );
+      }}
+    </Show>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
         <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
@@ -507,8 +546,11 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
+                On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
+            <span class="k2-status-actions">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            </span>
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
@@ -583,16 +625,45 @@ export type DigestEntry = {
   href?: string;
 };
 
+/** One thing a person (or a form, a workflow) did: who, a sentence, where and when. */
+export type ActivityEntry = {
+  /** Who did it: a person, or a form or workflow shown as one (`{ name: "Webformular" }`). */
+  person: Person;
+  /**
+   * What they did, as one sentence: `<Text weight="strong">` for names, and the thing itself as
+   * `<Mark icon color />` followed by its name, so it looks the same as in its list.
+   */
+  text: JSX.Element;
+  /** When, such as "09:42" or "gestern, 16:40". */
+  time: string;
+  /** Where, quiet before the time, such as the base "Werkstatt". */
+  place?: string;
+  /** The page of the thing that changed: the sentence becomes the link … */
+  href?: string;
+  /** … which opens in place on a plain click, while it still opens in a new tab (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+};
+
 export type DigestProps =
   | {
       /** The dated entries, newest first. */
       items: readonly DigestEntry[];
+      activity?: never;
       children?: never;
       /** The name of the list, for assistive technology. */
       label?: string;
     }
   | {
       items?: never;
+      /** What people did, newest first: an avatar, a sentence that may wrap, then place and time. */
+      activity: readonly ActivityEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      activity?: never;
       /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
       children: JSX.Element;
       /** The name of the list, for assistive technology. */
@@ -606,9 +677,36 @@ export type DigestProps =
 export const Digest = (props: DigestProps) => {
   // the entries hold JSX (their sentence): made once, here
   const items = createMemo(() => props.items);
+  const activity = createMemo(() => props.activity);
   return (
     <div class="k2-list k2-digest" data-k2-part="Digest" role="list" aria-label={props.label}>
-      <Show when={items()} fallback={props.children}>
+      <Show when={activity()}>
+        {(list) => (
+          <For each={list()}>
+            {(entry) => (
+              <div
+                class="k2-row"
+                data-k2-part="Digest.Entry"
+                data-activity=""
+                data-lines="2"
+                data-open={entry.href !== undefined ? "" : undefined}
+                role="listitem"
+              >
+                <span class="k2-row-lead">
+                  <Avatar {...entry.person} />
+                </span>
+                <span class="k2-row-l1">
+                  <RowOpen href={entry.href} onNavigate={entry.onNavigate}>
+                    {entry.text}
+                  </RowOpen>
+                </span>
+                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
+              </div>
+            )}
+          </For>
+        )}
+      </Show>
+      <Show when={items()} fallback={activity() ? undefined : props.children}>
         {(list) => (
           <For each={list()}>
             {(entry) => (

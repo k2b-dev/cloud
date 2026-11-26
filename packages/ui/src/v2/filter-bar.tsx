@@ -1,4 +1,16 @@
-import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  on,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+} from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useListbox } from "./behavior/lists";
@@ -284,6 +296,13 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
   views?: FilterBarViews;
   /** What the list shows, such as "9 Artikel": the phone sheet's button reads "9 Artikel zeigen". */
   results?: string;
+  /**
+   * At the end of the bar, after `results` in quiet words: how the list shows, such as its `ListOrder` and a choice
+   * of list or grid. With it the bar is the one status row of its list (52 px), so the page head keeps at most two
+   * rows (head, then this bar); while entries are selected a `StatusRow selection` takes its place at the same
+   * height. On the phone it leaves; the sheet holds sort and group there.
+   */
+  end?: JSX.Element;
 };
 
 /**
@@ -466,9 +485,11 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   });
 
   const fieldCount = () => active().filter(([key, definition]) => !isDefault(key, definition)).length;
+  // the end of the bar is made once and read from here: reading the prop again would make its JSX again
+  const tail = resolveChildren(() => props.end);
 
   return (
-    <div class="k2-fbar" data-k2-part="FilterBar" role="group" aria-label={t().filters}>
+    <div class="k2-fbar" data-k2-part="FilterBar" data-tail={tail() !== undefined ? "" : undefined} role="group" aria-label={t().filters}>
       <Button variant="secondary" icon="adjustments-horizontal" onClick={() => openSheet({})}>
         {t().filterCount}
         <Show when={fieldCount() > 0}>
@@ -545,6 +566,14 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
         </Show>
       </div>
       <OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />
+      <Show when={tail() !== undefined}>
+        <div class="k2-fbar-tail">
+          <Show when={props.results}>
+            <span class="k2-fbar-results">{props.results}</span>
+          </Show>
+          {tail()}
+        </div>
+      </Show>
       <Show when={props.views && props.views.stores.length > 0 ? props.views : undefined}>
         {(views) => (
           <div class="k2-fbar-end">

@@ -13,6 +13,7 @@
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
+  type ActivityEntry,
   Digest,
   type DigestEntry,
   type DigestProps,
@@ -73,6 +74,8 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
 } from "./controls";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
@@ -90,13 +93,31 @@ export {
   Pane,
   type PaneProps,
   type Tile,
+  type TileCreate,
+  type TileStat,
   Tiles,
   type TilesProps,
   Workspace,
   type WorkspaceProps,
 } from "./layout";
 export { Lookup, type LookupLoad, type LookupProps, type LookupResolve } from "./lookup";
-export { Avatar, type AvatarProps, Chip, type ChipProps, Icon, type IconProps, Progress, type ProgressProps } from "./marks";
+export {
+  Avatar,
+  type AvatarProps,
+  type AvatarStackProps,
+  Chip,
+  type ChipProps,
+  Icon,
+  type IconProps,
+  Mark,
+  type MarkProps,
+  Preview,
+  type PreviewProps,
+  Progress,
+  type ProgressProps,
+  Spark,
+  type SparkProps,
+} from "./marks";
 // Overlays: a menu, a popover (panel or tip) and toasts; their behaviour comes from the behaviour layer.
 export { Menu, type MenuContextProps, type MenuEntry, type MenuItem, type MenuProps, type MenuSection, type TriggerProps } from "./menu";
 // The overlays: v2 shapes on the behaviour layer.
