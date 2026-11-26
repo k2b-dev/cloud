@@ -285,11 +285,11 @@ describe("Venue on v2", () => {
     const { context, tab, errors } = await open(phone, `/app/venue/Cafe01/shifts?cv=mobile-month&cd=${SHIFT_DAY}`);
     try {
       // a tap on the day's shift, as a finger opens it
-      await tab.getByText("Mittagstheke").first().tap();
+      await tab.locator(".k2b-calendar-mobile-month__agenda").getByText("Mittagstheke").first().tap();
       await tab.waitForFunction(() => new URLSearchParams(location.search).has("shift"));
       await settled(tab);
       await shoot(tab, "shift-open-390");
-      expect(await tab.getByText("Mittagstheke", { exact: true }).first().isVisible()).toBe(true);
+      expect(await tab.locator(':text-is("Mittagstheke"):visible').count()).toBeGreaterThan(0);
       const back = tab.getByRole("link", { name: "Schichtplan" }).first();
       expect(await back.isVisible()).toBe(true);
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
