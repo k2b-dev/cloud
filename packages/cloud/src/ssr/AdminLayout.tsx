@@ -56,7 +56,8 @@ export default function AdminLayout(props: Props) {
   const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
   if (props.ui === "v2")
     return (
-      <Layout c={c} fullWidth fullPage ui="v2" title={breadcrumbs}>
+      // one phone head for every v2 page: an admin page names itself and leads back to the admin overview
+      <Layout c={c} fullWidth fullPage ui="v2" title={breadcrumbs} up={overview ? undefined : { title: t.admin, href: "/admin" }}>
         {props.children}
       </Layout>
     );
