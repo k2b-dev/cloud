@@ -486,8 +486,9 @@ export type Column<T> = {
    */
   numeric?: boolean;
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px. In a small table it is its default
+   * wide where the row has room and shares the room left with the other columns that can give way; where the row has
+   * less, it gives way down to its minimum. Cut text never widens it.
    */
   width?: { min: number; default: number };
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
@@ -661,22 +662,27 @@ export const Table = <T,>(props: TableProps<T>) => {
   // place (`100cqw`, the table's container), so together they fill it: at the sum of the defaults each has its default,
   // at the sum of the minimums each its minimum. The stylesheet decides, on the server's page too.
   // The sums are over the columns shown: after `drop` columns left, the others share the room among themselves.
+  // Above the sum of the defaults the room left is shared among the columns with a width that can give way (minimum
+  // below default), in the measure they give way: no column takes all of it, and an action column at the end leaves
+  // no air on the right. A column without a width (a deed, a note) keeps its 160 px.
+  const round = (value: number) => Math.round(value * 10000) / 10000;
   const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
     const shown = need().filter((_, at) => !gone.has(at));
     const { lo, hi } = need()[index]!;
     const least = shown.reduce((sum, each) => sum + each.lo, box);
     const most = shown.reduce((sum, each) => sum + each.hi, box);
     if (hi === lo || most <= least) return `${lo}px`;
-    const share = Math.round(((hi - lo) / (most - least)) * 10000) / 10000;
-    return `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share}), ${hi}px)`;
+    const below = `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
+    const range = (at: number) => (props.columns[at]!.width ? need()[at]!.hi - need()[at]!.lo : 0);
+    const ranges = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + range(at)), 0);
+    if (range(index) === 0 || ranges === 0) return below;
+    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(range(index) / ranges)}))`;
   };
   const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
-    const last = index === props.columns.length - 1;
-    // in a small table with widths the last column takes the rest of the row, which holds its value
-    if (sized() && !grid() && last) return undefined;
     const count = signs()[index] ?? 0;
     const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
-    const base = !column.width ? undefined : grid() ? `${column.width.default}px` : shrink(index, gone);
+    // a small table with widths sizes every column, also one without a width of its own; a large table keeps defaults
+    const base = grid() ? (column.width ? `${column.width.default}px` : undefined) : sized() ? shrink(index, gone) : undefined;
     return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
   const measured = () => signs().some((count) => count > 0);
@@ -690,7 +696,8 @@ export const Table = <T,>(props: TableProps<T>) => {
   // numbers), so the stylesheet decides on the server's page too; it is one container query per table.
   const steps = createMemo(() => {
     if (!sized()) return [] as { column: number; below: number }[];
-    const widths = need().map((width) => width.lo);
+    // a large table keeps its columns at their default (it never shrinks them), so its steps reckon with the defaults
+    const widths = need().map((width) => (grid() ? width.hi : width.lo));
     let room = widths.reduce((sum, width) => sum + width, box);
     const out: { column: number; below: number }[] = [];
     for (let index = props.columns.length - 1; index >= 0; index--) {
@@ -831,8 +838,8 @@ export const Table = <T,>(props: TableProps<T>) => {
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide, a numeric one at least as wide as its longest value; in a small table
-                  the last one takes the rest of the row. A column that drops leaves with its cells. */}
+              {/* every column between its minimum and default (a large table: its default), sharing the room left in a small
+                  table; a numeric one at least as wide as its longest value. A column that drops leaves with its cells. */}
               <For each={props.columns}>
                 {(column, index) => (
                   <col

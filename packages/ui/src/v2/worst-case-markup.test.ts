@@ -73,10 +73,10 @@ test("drop columns leave one by one from the last, by a container query on the t
   // each step shares the room anew among the columns still shown (delta review r4): without the date the customer
   // gives way between 160 and 240 px over 558 to 722 px, without the number too over 438 to 582 px
   expect(markup).toContain(
-    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: clamp(160px, calc(160px + (100cqw - 558px) * 0.4878), 240px); }`,
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 558px) * 0.4878), 240px), calc(240px + (100cqw - 722px) * 0.8)); }`,
   );
   expect(markup).toContain(
-    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: clamp(160px, calc(160px + (100cqw - 438px) * 0.5556), 240px); }`,
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 438px) * 0.5556), 240px), calc(240px + (100cqw - 582px) * 1)); }`,
   );
   // the column leaves with its cells, so the remaining columns keep their widths
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);

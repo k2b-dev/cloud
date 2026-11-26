@@ -217,14 +217,15 @@ returning one value, `{ lines: [line, quietLine] }`, or a person with lines
 `Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
 `numeric` for a time or date column at the start (both: tabular figures,
 never cut, the column at least as wide as its longest text value),
-`width={{ min, default }}` (exactly that wide, cut
-text never widens it, grip in the head), `wrap` (one text column may take 3
+`width={{ min, default }}` (its default where the row has room, sharing the
+room left with the other columns that can give way; down to its minimum
+where it has less; cut text never widens it; grip in the head), `wrap` (one text column may take 3
 lines), `drop` (leaves when the table has no room for it: one by one from
 the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
-page itself if it needs one. The last column takes the rest. Chips,
+page itself if it needs one. A column without a width counts with 160 px. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry.
 
