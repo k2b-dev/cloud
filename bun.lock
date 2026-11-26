@@ -686,6 +686,8 @@
       "devDependencies": {
         "@k2b/ssr": "workspace:*",
         "@types/bun": "catalog:",
+        "bun-plugin-tailwind": "catalog:",
+        "playwright": "catalog:",
         "typescript": "catalog:",
       },
     },

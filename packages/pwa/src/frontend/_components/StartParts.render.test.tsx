@@ -10,7 +10,7 @@ const root = mkdtempSync(join(tmpdir(), "pwa-start-summary-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { default: StartParts } = await import("./StartParts.island");
+const { default: StartParts } = await import("./StartParts");
 
 test("Start SSR reserves the same summary line as the first browser render", () => {
   const html = renderToString(() =>
@@ -30,7 +30,11 @@ test("Start SSR reserves the same summary line as the first browser render", () 
       ],
     }),
   );
+  // each part is a row that leads to it; a part with a live summary keeps a blank second line until it answers
+  const rows = html.split('data-k2-part="Row"').slice(1);
+  const row = (href: string) => rows.find((candidate) => candidate.includes(`href="${href}"`)) ?? "";
   expect(html).not.toContain("Count the shelves");
-  expect(html).toContain("<small>\u00a0</small>");
-  expect(html).toContain("<small>Your notes</small>");
+  expect(row("/pwa/inventory")).toContain("Inventory");
+  expect(row("/pwa/inventory")).toContain("\u00a0");
+  expect(row("/pwa/notes")).toContain("Your notes");
 });

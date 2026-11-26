@@ -351,11 +351,6 @@ packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().refr
 packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().sourceAddedScrapeFailed({ detail: error instanceof Error ? error.message : undefined })
 packages/pulse/src/frontend/workspace/source-controller.ts | untitled | t().sourceAddedScraped({ counts: t().ingestCounts(counts) })
 packages/pulse/src/frontend/workspace/source-controller.ts | untitled | validationError
-packages/pwa/src/frontend/_components/PairingNotice.island.tsx | tone-icon | "ti ti-info-circle"
-packages/pwa/src/frontend/_components/PairingNotice.island.tsx | untitled | text
-packages/pwa/src/frontend/_components/PhoneSettings.island.tsx | untitled | answer.status === 0 ? t().offline : t().failed
-packages/pwa/src/frontend/_components/PhoneSettings.island.tsx | untitled | t().draftUnavailable
-packages/pwa/src/frontend/_components/SignOutButton.tsx | untitled | answer.status === 0 ? t().offline : t().failed
 packages/spaces/src/frontend/[id]/_components/calendar/TaskTray.tsx | untitled | error instanceof Error ? error.message : t.updateFailed
 packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : t.eventTimeUpdateFailed

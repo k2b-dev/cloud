@@ -1,5 +1,6 @@
 import { PWA_LIMITS, PWA_SCOPE, PwaRenewResultSchema } from "@k2b/cloud/contracts";
-import { Button, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Empty } from "@k2b/ui/v2";
 import { onCleanup, onMount } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
@@ -30,11 +31,11 @@ const renew = async (): Promise<boolean | undefined> => {
 };
 
 /**
- * "Try again" for the unavailable state. On load it renews with a request of its own: some platforms drop cookies
+ * The unavailable state with "Try again". On load it renews with a request of its own: some platforms drop cookies
  * set on a redirect, and the launch bounce is one. Such a phone still presents the key the bounce has just replaced,
  * which only renews once the rotation grace has passed, so a renewal that sets no cookies is tried once more after it.
  */
-export default function Unavailable() {
+export default function Unavailable(props: { cloud: string }) {
   const locale = useLocale();
   const t = () => shellMessages.resolve([locale()]).t;
   onMount(() => {
@@ -52,9 +53,10 @@ export default function Unavailable() {
     })();
   });
   return (
-    <Button onClick={() => location.replace(LAUNCH)}>
-      <i class="ti ti-refresh" aria-hidden="true" />
-      {t().tryAgain}
-    </Button>
+    <Empty
+      icon="cloud-off"
+      text={t().unreachable({ cloud: props.cloud })}
+      action={{ label: t().tryAgain, icon: "refresh", onClick: () => location.replace(LAUNCH) }}
+    />
   );
 }
