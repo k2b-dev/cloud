@@ -12,7 +12,6 @@ import {
   Empty,
   Facts,
   Icon,
-  Inline,
   Input,
   List,
   Menu,
@@ -429,19 +428,18 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               },
               {
                 title: words().sourceStatusColumn,
-                width: { min: 150, default: 220 },
+                width: { min: 200, default: 270 },
                 // a healthy source says so once in a quiet word; only a failing or paused one tells since when data are missing
                 cell: (source) =>
-                  sourceStatus(source, t()).tone === "ok" ? (
-                    statusChip(source, t())
-                  ) : (
-                    <Inline>
-                      {statusChip(source, t())}
-                      <Text type="meta" muted>
-                        {source.status.newestDataAt ? words().lastData({ time: when(source.status.newestDataAt) }) : t().noDataYet}
-                      </Text>
-                    </Inline>
-                  ),
+                  sourceStatus(source, t()).tone === "ok"
+                    ? statusChip(source, t())
+                    : // the state, and under it since when data are missing, so neither is cut
+                      {
+                        lines: [
+                          statusChip(source, t()),
+                          source.status.newestDataAt ? words().lastData({ time: when(source.status.newestDataAt) }) : t().noDataYet,
+                        ],
+                      },
               },
               {
                 title: words().dataColumn,

@@ -218,6 +218,8 @@ export const fixtureSources: PulseSource[] = [
     endpointUrl: "http://10.0.0.12:9100/metrics",
     status: status({ newestDataAt: "2026-11-24T17:20:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
     lastError: TIMEOUT,
+    // no answer since yesterday evening, so nothing came today
+    todayCount: 0,
   }),
   fixtureSource({
     id: "s0Gg1Hh2",
