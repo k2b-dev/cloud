@@ -1,15 +1,18 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Failed, Loading, Pane } from "@k2b/ui/v2";
-import { Show } from "solid-js";
+import { createSignal, lazy, Show, Suspense } from "solid-js";
+import { AssistantLiveProvider } from "../assistant-live";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
-import { AssistantAppsV2 } from "../code-deferred-views";
+import { AssistantAppsV2, AssistantPrefsV2 } from "../code-deferred-views";
 import { lazyAction } from "../lazy-action";
-import { openAssistantPrefsModal } from "../rare-dialogs";
 import AssistantFrameV2 from "./AssistantFrameV2";
+import AssistantProjectV2 from "./AssistantProjectV2";
 import AssistantWaitingV2 from "./AssistantWaitingV2";
 import { createAssistantChatDeeds } from "./assistant-chat-deeds";
 
+/** Loaded when someone opens All chats. */
+const AllChats = lazy(() => import("./AssistantAllChatsDialogV2"));
 /** Loaded when someone creates a project: the form stays out of the page's bundle. */
 const createProjectForm = lazyAction(() => import("../AssistantProjectsDialog"));
 
@@ -44,9 +47,12 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
     onUpdated: w.updateConversation,
     onArchived: w.archiveConversation,
   });
+  // All chats is a v2 dialog of this page, loaded when someone opens it.
+  const [allChats, setAllChats] = createSignal(false);
   const headPath = () => {
     if (w.mainView() === "approvals") return [{ label: w.t().waitingForYou }];
     if (w.mainView() === "code") return [{ label: w.t().myCode, href: w.codeHref }];
+    if (w.mainView() === "prefs") return [{ label: w.t().personalize }];
     const project = w.activeProject();
     if (project) return [{ label: project.name }];
     const open = w.activeConversation();
@@ -56,111 +62,145 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
     return [...(own ? [{ label: own.name, href: assistantProjectHref(w.basePath, own.id) }] : []), { label: open.title }];
   };
   return (
-    <AssistantFrameV2
-      nav={{
-        basePath: w.basePath,
-        conversations: w.conversations,
-        doneCount: () => w.sidebar.data()?.doneCount ?? w.props.initialDoneCount,
-        timeZone: w.props.timeZone,
-        renderedAt: w.props.renderedAt,
-        activeConversationId: w.chat.activeConversationId,
-        activeView: () => w.mainView() ?? "chat",
-        activeProjectId: () => w.activeProject()?.id ?? null,
-        projects: w.projects,
-        waitingCount: () => w.waiting().total,
-        hasPersonalCode: () => Boolean(w.props.code?.has),
-        placeChats: () => w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats ?? null,
-        anyChats: () => {
-          const counts = w.sidebar.data()?.counts ?? w.props.initialCounts;
-          const places = w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats;
-          return (
-            w.conversations().length > 0 ||
-            (w.sidebar.data()?.doneCount ?? w.props.initialDoneCount) > 0 ||
-            (places?.total ?? 0) > 0 ||
-            Boolean(counts?.hasArchived)
-          );
-        },
-        moreConversations: () => w.sidebar.data()?.moreConversations ?? w.props.initialMoreConversations ?? false,
-        openConversation: w.openAndFocusConversation,
-        openProject: w.openProject,
-        openApprovals: w.openApprovals,
-        openCode: w.openCode,
-        createProject: async () => {
-          // Loaded when someone creates a project: the form stays out of the workspace bundle.
-          const project = await createProjectForm(w.locale(), (module) => module.openAssistantCreateProjectDialog());
-          if (project) navigateTo(assistantProjectHref(w.basePath, project.id));
-        },
-        editConversation: deeds.edit,
-        archiveConversation: deeds.archive,
-        archiveBlocker: w.archiveBlocker,
-        openAllChats: deeds.openAll,
-        openPreferences: () => void openAssistantPrefsModal(),
-        onConversationUpdated: w.updateConversation,
-      }}
-      openContext={(title) => w.openChatContext(title)}
-      openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
-      path={headPath}
-      newChat={() => ({
-        label: w.t().newChat,
-        icon: "plus",
-        disabled: w.newConversation.loading() || w.composerPicking() > 0,
-        onClick: () => void w.createAndFocusConversation(),
-      })}
-      main={<w.MainContent />}
-      view={() =>
-        w.mainView() === "approvals"
-          ? () => (
-              <AssistantWaitingV2
-                initial={w.approvalsRendered() ? w.props.approvals.page : undefined}
-                questions={() => w.waiting().entries}
-                questionsPage={w.openQuestions}
-                onJump={(question) => void w.jumpToQuestion(question)}
-                initialAutomations={w.approvalsRendered() ? w.props.initialAutomations : undefined}
-                timeZone={w.props.timeZone}
-                total={() => w.waiting().total}
-              />
-            )
-          : w.mainView() === "code" && !w.codeDetailShown()
+    <>
+      <AssistantFrameV2
+        nav={{
+          basePath: w.basePath,
+          conversations: w.conversations,
+          doneCount: () => w.sidebar.data()?.doneCount ?? w.props.initialDoneCount,
+          timeZone: w.props.timeZone,
+          renderedAt: w.props.renderedAt,
+          activeConversationId: w.chat.activeConversationId,
+          activeView: () => w.mainView() ?? "chat",
+          activeProjectId: () => w.activeProject()?.id ?? null,
+          projects: w.projects,
+          waitingCount: () => w.waiting().total,
+          hasPersonalCode: () => Boolean(w.props.code?.has),
+          placeChats: () => w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats ?? null,
+          anyChats: () => {
+            const counts = w.sidebar.data()?.counts ?? w.props.initialCounts;
+            const places = w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats;
+            return (
+              w.conversations().length > 0 ||
+              (w.sidebar.data()?.doneCount ?? w.props.initialDoneCount) > 0 ||
+              (places?.total ?? 0) > 0 ||
+              Boolean(counts?.hasArchived)
+            );
+          },
+          moreConversations: () => w.sidebar.data()?.moreConversations ?? w.props.initialMoreConversations ?? false,
+          openConversation: w.openAndFocusConversation,
+          openProject: w.openProject,
+          openApprovals: w.openApprovals,
+          openCode: w.openCode,
+          createProject: async () => {
+            // Loaded when someone creates a project: the form stays out of the workspace bundle.
+            const project = await createProjectForm(w.locale(), (module) => module.openAssistantCreateProjectDialog());
+            if (project) navigateTo(assistantProjectHref(w.basePath, project.id));
+          },
+          editConversation: deeds.edit,
+          archiveConversation: deeds.archive,
+          archiveBlocker: w.archiveBlocker,
+          openAllChats: () => setAllChats(true),
+          openPreferences: () => w.openPrefs("personalization"),
+          onConversationUpdated: w.updateConversation,
+        }}
+        openContext={(title) => w.openChatContext(title)}
+        openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
+        path={headPath}
+        newChat={() => ({
+          label: w.t().newChat,
+          icon: "plus",
+          disabled: w.newConversation.loading() || w.composerPicking() > 0,
+          onClick: () => void w.createAndFocusConversation(),
+        })}
+        main={<w.MainContent />}
+        view={() =>
+          w.mainView() === "approvals"
             ? () => (
-                <AssistantAppsV2
-                  userId={w.props.userId}
+                <AssistantWaitingV2
+                  initial={w.approvalsRendered() ? w.props.approvals.page : undefined}
+                  questions={() => w.waiting().entries}
+                  questionsPage={w.openQuestions}
+                  onJump={(question) => void w.jumpToQuestion(question)}
+                  initialAutomations={w.approvalsRendered() ? w.props.initialAutomations : undefined}
                   timeZone={w.props.timeZone}
-                  initial={w.codeRendered() ? w.props.code?.page : undefined}
-                  onCreateInChat={w.createFromCodeView}
-                  // The pane stands while the view's code loads, so nothing moves when it comes.
-                  waiting={(state) => (
-                    <Pane label={w.t().myCode}>
-                      <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
-                        <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
-                      </Show>
-                    </Pane>
-                  )}
+                  total={() => w.waiting().total}
                 />
               )
-            : w.projectView()
+            : w.mainView() === "code" && !w.codeDetailShown()
               ? () => (
-                  // The open Project as its own panes: its chats and composer, its context beside them.
-                  <Show when={w.projectView()} keyed>
-                    {(view) => <w.ProjectContent view={view} frame="v2" />}
-                  </Show>
+                  <AssistantAppsV2
+                    userId={w.props.userId}
+                    timeZone={w.props.timeZone}
+                    initial={w.codeRendered() ? w.props.code?.page : undefined}
+                    onCreateInChat={w.createFromCodeView}
+                    // The pane stands while the view's code loads, so nothing moves when it comes.
+                    waiting={(state) => (
+                      <Pane label={w.t().myCode}>
+                        <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
+                          <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
+                        </Show>
+                      </Pane>
+                    )}
+                  />
                 )
-              : null
-      }
-      tabs={{
-        open: () => w.artifactWorkspace.state().tabs.length > 0,
-        // The tabs are the open thing (the detail, the page on the phone) only while the controller shows them; the
-        // server and the first render read the same state, so nothing jumps.
-        focused: () => w.artifactWorkspace.mobile() === "workspace",
-        back: () => ({
-          label: w.activeConversation()?.title ?? w.artifactCopy().chat,
-          // Back to the chat, and the focus with it: into the composer, never left on the page's body.
-          onClick: () => {
-            w.artifactWorkspace.setMobile("chat");
-            w.focusComposer();
-          },
-        }),
-        content: <w.TabsContent />,
-      }}
-    />
+              : w.mainView() === "prefs"
+                ? () => (
+                    <AssistantPrefsV2
+                      basePath={w.basePath}
+                      tab={w.prefsTab()}
+                      onTab={w.openPrefs}
+                      // The pane stands while the view's code loads, so nothing moves when it comes.
+                      waiting={(state) => (
+                        <Pane label={w.t().personalize}>
+                          <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
+                            <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
+                          </Show>
+                        </Pane>
+                      )}
+                    />
+                  )
+                : w.projectView()
+                  ? () => (
+                      // The open Project as its own panes: its chats and composer, its context beside them.
+                      <Show when={w.projectView()} keyed>
+                        {(view) => <w.ProjectContent view={view} v2={(parts) => <AssistantProjectV2 {...parts} />} />}
+                      </Show>
+                    )
+                  : null
+        }
+        tabs={{
+          open: () => w.artifactWorkspace.state().tabs.length > 0,
+          // The tabs are the open thing (the detail, the page on the phone) only while the controller shows them; the
+          // server and the first render read the same state, so nothing jumps.
+          focused: () => w.artifactWorkspace.mobile() === "workspace",
+          back: () => ({
+            label: w.activeConversation()?.title ?? w.artifactCopy().chat,
+            // Back to the chat, and the focus with it: into the composer, never left on the page's body.
+            onClick: () => {
+              w.artifactWorkspace.setMobile("chat");
+              w.focusComposer();
+            },
+          }),
+          content: <w.TabsContent />,
+        }}
+      />
+      <Show when={allChats()}>
+        <Suspense>
+          <AssistantLiveProvider value={w.liveHub}>
+            <AllChats
+              basePath={w.basePath}
+              initialView="all"
+              projects={w.projects}
+              openConversation={async (conversation) => {
+                if (conversation.id === w.chat.activeConversationId()) return "unchanged";
+                return (await w.openAndFocusConversation(conversation.id)) ? "opened" : "stale";
+              }}
+              onClose={() => setAllChats(false)}
+            />
+          </AssistantLiveProvider>
+        </Suspense>
+      </Show>
+    </>
   );
 }

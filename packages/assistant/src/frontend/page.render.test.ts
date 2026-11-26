@@ -42,6 +42,12 @@ const parser = (() => {
   return new dom.window.DOMParser();
 })();
 /** The Code seed the workspace island carries to the browser. */
+const islandProps = (html: string): ComponentProps<typeof AssistantWorkspace> => {
+  const island = parser
+    .parseFromString(html, "text/html")
+    .querySelector('solid-island:is([data-file="AssistantWorkspace.island.tsx"], [data-file="AssistantPanel.island.tsx"])');
+  return fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
+};
 const codeSeed = (html: string) => {
   const island = parser
     .parseFromString(html, "text/html")
@@ -409,6 +415,28 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
   expect(list).toContain("Your Code runs as you, with your rights and no more.");
   expect(list).toContain("Weekly sales report");
   expect(view).toMatch(/href="\/app\/assistant\?code=1"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/app\/assistant\?code=1"/);
+});
+
+test("Gustav's settings at ?prefs=<tab> render as the page's own view, so a reload keeps the tab and opens no chat", async () => {
+  spies.push(
+    spyOn(sidebar, "loadAssistantSidebarSnapshot").mockResolvedValue({
+      counts: { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 }, hasArchived: false },
+      projects: [],
+      doneCount: 0,
+      questions: { items: [], count: 0 },
+      conversations: [chat],
+    }),
+  );
+  spies.push(spyOn(ai.aiConversations, "getConversationByShortId").mockResolvedValue(null));
+  mockCodeQueries([]);
+  const html = await (await request("https://cloud.example.test/app/assistant?prefs=chat")).text();
+  // The settings' pane stands from the first picture, loading; no chat opens behind it.
+  expect(html).toMatch(/data-k2-part="Pane"[^>]*aria-label="Personalize"[\s\S]*?data-k2-part="Loading"/);
+  expect(islandProps(html).initialPrefsTab).toBe("chat");
+  expect(islandProps(html).initialConversationId).toBeNull();
+  // An unknown tab is no settings view.
+  const unknown = await (await request("https://cloud.example.test/app/assistant?prefs=nothing")).text();
+  expect(islandProps(unknown).initialPrefsTab).toBeNull();
 });
 
 test("an unknown Code answer keeps the entry, and the list shows its error with a way to retry", async () => {

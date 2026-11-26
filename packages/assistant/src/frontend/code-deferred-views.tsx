@@ -15,6 +15,13 @@ export const AssistantAppsV2 = (
     waiting: (state: { failed: boolean; retry: () => void }) => JSX.Element;
   },
 ) => <DeferredCodeContent load={loadAssistantAppsV2} contentProps={props} waiting={props.waiting} />;
+// v2's settings page: rare, so its code (and v1's settings parts it still draws) loads when it opens.
+const loadAssistantPrefsV2 = () => import("./v2/AssistantPrefsV2").then((module) => module.default);
+export const AssistantPrefsV2 = (
+  props: ComponentProps<typeof import("./v2/AssistantPrefsV2").default> & {
+    waiting: (state: { failed: boolean; retry: () => void }) => JSX.Element;
+  },
+) => <DeferredCodeContent load={loadAssistantPrefsV2} contentProps={props} waiting={props.waiting} />;
 const loadAssistantCodeDetail = () => import("./AssistantCodeDetail").then((module) => module.default);
 export const AssistantCodeDetail = (props: ComponentProps<typeof import("./AssistantCodeDetail").default>) => (
   <DeferredCodeContent load={loadAssistantCodeDetail} contentProps={props} />

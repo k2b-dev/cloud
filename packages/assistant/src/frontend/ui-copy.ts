@@ -361,6 +361,7 @@ const germanText: Record<string, string> = {
   Previous: "Zurück",
   Next: "Weiter",
   "Restore chat": "Chat wiederherstellen",
+  "Could not restore chat": "Der Chat konnte nicht wiederhergestellt werden.",
   "Edit chat": "Chat bearbeiten",
   "No chats left on this page.": "Auf dieser Seite sind keine Chats mehr vorhanden.",
   When: "Zeitpunkt",

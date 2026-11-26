@@ -100,6 +100,22 @@ export const ASSISTANT_APPROVALS_HREF = "/app/assistant?approvals=1";
 
 export const assistantApprovalsOpenFromHref = (href: string): boolean => new URL(href, URL_BASE).searchParams.get("approvals") === "1";
 
+/** The tabs of Gustav's settings, in their order. */
+export const ASSISTANT_PREFS_TABS = ["personalization", "chat", "skills", "system-prompt", "approvals", "api-access"] as const;
+export type AssistantPrefsTab = (typeof ASSISTANT_PREFS_TABS)[number];
+export const assistantPrefsHref = (basePath: string, tab: AssistantPrefsTab) => `${basePath}?prefs=${tab}`;
+
+/**
+ * Gustav's settings on v2's page: `?prefs=<tab>`, so reload and Back keep the tab. Same precedence as the server: a
+ * chat, a Project, the approvals or the Code view wins; an unknown tab is no settings view.
+ */
+export const assistantPrefsTabFromHref = (href: string): AssistantPrefsTab | null => {
+  const params = new URL(href, URL_BASE).searchParams;
+  if (params.has("conversation") || params.has("project") || params.get("approvals") === "1" || params.get("code") === "1") return null;
+  const tab = params.get("prefs");
+  return ASSISTANT_PREFS_TABS.find((entry) => entry === tab) ?? null;
+};
+
 /** The person's own Code: `?code=1`, without a chat or project, so reload and Back keep it. */
 export const ASSISTANT_CODE_HREF = "/app/assistant?code=1";
 

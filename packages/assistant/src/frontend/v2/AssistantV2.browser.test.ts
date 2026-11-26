@@ -332,6 +332,39 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     calls.push(`${method} ${url.pathname}${url.search}`);
     const conversations = fixtureConversations(scene.state ?? "usual");
     if (method !== "GET") posted.push({ path: url.pathname, body: route.request().postDataJSON() });
+    // Gustav's settings: the person's preferences and their personalization, as the server keeps them.
+    if (url.pathname === "/api/ai/prefs" && method === "GET")
+      return route.fulfill({
+        json: {
+          userId: "user-mira",
+          memoryEnabled: true,
+          memoryLearningEnabled: true,
+          suggestNextMessage: true,
+          selection: null,
+          updatedAt: FIXTURE_NOW,
+        },
+      });
+    if (url.pathname === "/api/ai/memories" && method === "GET") return route.fulfill({ json: [] });
+    if (url.pathname === "/api/ai/prefs/system-prompt" && method === "GET")
+      return route.fulfill({ json: { prompt: "Du bist Gustav, der Assistent von Mira.", renderedAt: FIXTURE_NOW } });
+    if (url.pathname === "/api/ai/approval-preferences" && method === "GET") return route.fulfill({ json: { approvals: [] } });
+    if (url.pathname.endsWith("/skills") && method === "GET") return route.fulfill({ json: { skills: [] } });
+    // The operator offers no OpenAI-compatible API here, so the settings show no API tab.
+    if (url.pathname === "/api/ai/status" && method === "GET")
+      return route.fulfill({ json: { openaiApi: { enabled: false }, options: [] } });
+    // All chats: one page of the person's history, searched and filtered as the server does it.
+    if (url.pathname.endsWith("/conversations/page") && method === "GET") {
+      const q = url.searchParams.get("q")?.toLocaleLowerCase();
+      const archivedView = url.searchParams.get("archived") === "true";
+      const items = (archivedView ? conversations.slice(0, 2).map((chat) => ({ ...chat, archivedAt: FIXTURE_NOW })) : conversations).filter(
+        (chat) => !q || chat.title.toLocaleLowerCase().includes(q),
+      );
+      return route.fulfill({ json: { items: items.slice(0, 20), total: items.length, page: 1, perPage: 20, hasNext: items.length > 20 } });
+    }
+    if (url.pathname.endsWith("/restore") && method === "POST") {
+      const id = url.pathname.split("/").at(-2);
+      return route.fulfill({ json: conversations.find((chat) => chat.id === id) ?? conversations[0] });
+    }
     if (url.pathname === "/api/ai/conversations" && method === "POST") {
       created++;
       return route.fulfill({
@@ -786,6 +819,78 @@ describe("Assistant on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  for (const view of [wide, narrow])
+    test(`${view.name}: All chats opens as a v2 dialog, searches, and restores an archived chat`, async () => {
+      const { context, page, errors, unanswered, posted } = await open(view, "/app/assistant");
+      try {
+        await page.locator('[data-k2-part="Nav"]').getByText("Alle Chats", { exact: true }).click();
+        const dialog = page.getByRole("dialog", { name: "Alle Chats" });
+        await dialog.locator('[data-k2-part="Row"]').first().waitFor();
+        await settled(page);
+        await shoot(page, `${view.name}-all-chats`);
+        expect(await dialog.locator('[data-k2-part="Row"]').count()).toBe(20);
+        // The search narrows the page as the server does.
+        await dialog.getByRole("searchbox").fill("Rechnung");
+        await dialog.locator('[data-k2-part="Row"]').nth(1).waitFor({ state: "detached" });
+        expect(await dialog.locator('[data-k2-part="Row"]').first().textContent()).toContain("Rechnung 2026-118 prüfen");
+        // Archived chats are restored from their row.
+        await dialog.getByRole("searchbox").fill("");
+        await dialog.getByRole("button", { name: "Alle Chats" }).click();
+        await page
+          .getByRole("menuitemcheckbox", { name: "Archiviert" })
+          .or(page.getByRole("menuitem", { name: "Archiviert" }))
+          .first()
+          .click();
+        await dialog.getByRole("button", { name: "Chat wiederherstellen" }).first().waitFor({ state: "attached" });
+        await settled(page);
+        await shoot(page, `${view.name}-all-chats-archived`);
+        await dialog.getByRole("button", { name: "Chat wiederherstellen" }).first().click();
+        await until(() => posted.some((entry) => entry.path.endsWith("/restore")));
+        expect(posted.some((entry) => entry.path.endsWith("/restore"))).toBe(true);
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+  for (const view of [wide, narrow])
+    test(`${view.name}: Personalize opens Gustav's settings as a page whose tabs live in the address`, async () => {
+      const { context, page, errors, unanswered } = await open(view, "/app/assistant");
+      try {
+        await page.locator('[data-k2-part="Nav"]').getByText("Personalisieren", { exact: true }).click();
+        const pane = page.locator('[data-k2-part="Pane"][aria-label="Personalisieren"]');
+        await pane.locator('[data-k2-part="Tabs"]').waitFor();
+        await until(() => page.url().includes("?prefs=personalization"));
+        expect(new URL(page.url()).search).toBe("?prefs=personalization");
+        await settled(page);
+        await shoot(page, `${view.name}-prefs`);
+        await pane.getByRole("link", { name: "Chat" }).click();
+        await until(() => page.url().includes("?prefs=chat"));
+        expect(new URL(page.url()).search).toBe("?prefs=chat");
+        await pane.getByText("Nächste Nachricht vorschlagen").waitFor();
+        // Every tab draws its parts on the page, none of them only a dialog could hold.
+        for (const tab of ["Skills", "System-Prompt", "Freigaben", "Personalisierung"]) {
+          await pane.getByRole("link", { name: tab }).click();
+          await settled(page);
+          await shoot(page, `${view.name}-prefs-${tab.toLowerCase()}`);
+          expect(await pane.textContent()).not.toContain("[object Object]");
+        }
+        await pane.getByRole("link", { name: "Chat" }).click();
+        await until(() => page.url().includes("?prefs=chat"));
+        await pane.getByRole("link", { name: "Personalisierung" }).click();
+        await until(() => page.url().includes("?prefs=personalization"));
+        // Back returns to the tab before.
+        await page.goBack();
+        await until(() => page.url().includes("?prefs=chat"));
+        expect(new URL(page.url()).search).toBe("?prefs=chat");
+        expect(errors).toEqual([]);
+        expect(unanswered).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   test("a person with only archived chats keeps All chats in the sidebar; a person without any chat does not get it", async () => {
     for (const archived of [true, false]) {
