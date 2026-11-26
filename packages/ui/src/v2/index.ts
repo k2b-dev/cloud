@@ -70,6 +70,7 @@ export {
   type FieldProps,
   Input,
   type InputProps,
+  type InputSend,
   Select,
   type SelectOption,
   type SelectProps,

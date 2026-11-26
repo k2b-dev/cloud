@@ -158,7 +158,7 @@ Field.Row = (props: {
 
 const useField = () => useContext(FieldContext);
 
-export type InputProps = {
+type InputBase = {
   /** The text in the field. */
   value?: string;
   /** A quiet example while the field is empty. */
@@ -212,21 +212,34 @@ export type InputProps = {
   spellcheck?: boolean;
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
-  /**
-   * A search that reaches the server also without JavaScript (only with `type="search"` and `name`): the field is
-   * its own GET form, and Enter loads `action` with `params` (the rest of the address, such as a list's filters) and
-   * the text under `name`. Where JavaScript runs, `onSearch` takes Enter instead and the page searches in place. The
-   * field keeps its place and look, also in a head and folded on the phone.
-   */
-  send?: {
-    /** The page the search loads, such as `/app/accounts/groups`. */
-    action: string;
-    /** The rest of the address that the search keeps, as name and value; the field's own name is left out. */
-    params?: Iterable<readonly [string, string]>;
-    /** Searches in place with the text, where JavaScript runs; without it the page loads. */
-    onSearch?: (text: string) => void;
-  };
 };
+
+/** Where a search sends its text (see `InputProps.send`). */
+export type InputSend = {
+  /** The page the search loads, such as `/app/accounts/groups`. */
+  action: string;
+  /** The rest of the address that the search keeps, as name and value; the field's own name is left out. */
+  params?: Iterable<readonly [string, string]>;
+  /** Searches in place with the text, where JavaScript runs; without it the page loads. */
+  onSearch?: (text: string) => void;
+};
+
+export type InputProps = InputBase &
+  (
+    | { send?: undefined }
+    | {
+        /**
+         * A search that reaches the server also without JavaScript (with `type="search"`): the field is its own GET
+         * form, named by `label`, and Enter loads `action` with `params` (the rest of the address, such as a list's
+         * filters) and the text under `name`, which it needs. Where JavaScript runs, `onSearch` takes Enter instead and
+         * the page searches in place. The field keeps its place and look, also in a head and folded on the phone. Never
+         * put it inside another `<form>`: forms do not nest, and the browser drops the inner one.
+         */
+        send: InputSend;
+        /** The name the search text is sent under, such as `q`. */
+        name: string;
+      }
+  );
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
 const forwardRef = (ref: InputProps["ref"], element: HTMLInputElement | HTMLTextAreaElement) => {
@@ -282,6 +295,8 @@ export const Input = (props: InputProps) => {
       method={send() ? "get" : undefined}
       action={send()?.action}
       role={send() ? "search" : undefined}
+      // two searches on a page are two landmarks; each is named by its field's label
+      aria-label={send() ? props.label : undefined}
       onSubmit={(event: SubmitEvent) => {
         const search = send()?.onSearch;
         if (!search) return;

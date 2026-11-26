@@ -1,9 +1,10 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
-import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
+import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-head-search.demo";
 
 // The search of a v2 head with `send` (test/v2-head-search.demo.tsx): without JavaScript the server's markup alone is a
@@ -17,25 +18,33 @@ const testCss =
 const origin = "http://search.test";
 
 let browser: Browser;
-let bundle: string;
+let client: string;
 let markup: string;
+let script: string;
+const temp = mkdtempSync(resolve(tmpdir(), "k2-v2-head-search-"));
 beforeAll(async () => {
-  [bundle, markup, browser] = await Promise.all([demoBundle("../v2-head-search"), serverMarkup("../v2-head-search"), launchBrowser()]);
+  // the server's markup, which the island hydrates where JavaScript runs and which works alone where it does not
+  const serverFile = resolve(temp, "server.js");
+  await Bun.write(serverFile, await bundleV2Entry("v2-head-search.server.tsx", "ssr"));
+  const { render }: { render: () => { html: string; script: string } } = await import(serverFile);
+  ({ html: markup, script } = render());
+  [client, browser] = await Promise.all([bundleV2Entry("v2-head-search.client.tsx", "dom"), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
+  rmSync(temp, { recursive: true, force: true });
 });
 
-const page = (root: string) =>
-  `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${root}</div></body></html>`;
+const page = (scripted: boolean) =>
+  `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${scripted ? script : ""}<style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${markup}</div></body></html>`;
 
-/** Opens the list at `search`, with JavaScript (the island mounts) or without (the server's markup only). */
+/** Opens the list at `search` from the server's markup, with JavaScript (the island hydrates it) or without. */
 const withPage = async (
   search: string,
   run: (page: Page, loaded: string[]) => Promise<void>,
-  { script = true, width = 1440 }: { script?: boolean; width?: number } = {},
+  { scripted = true, width = 1440 }: { scripted?: boolean; width?: number } = {},
 ) => {
-  const context = await browser.newContext({ javaScriptEnabled: script, viewport: { width, height: 800 }, hasTouch: width < 768 });
+  const context = await browser.newContext({ javaScriptEnabled: scripted, viewport: { width, height: 800 }, hasTouch: width < 768 });
   const tab = await context.newPage();
   tab.setDefaultTimeout(3000);
   const errors = pageErrors(tab);
@@ -44,13 +53,13 @@ const withPage = async (
   await tab.route(`${origin}/**`, (route) => {
     const url = new URL(route.request().url());
     loaded.push(`${url.pathname}${url.search}`);
-    return route.fulfill({ contentType: "text/html", body: page(script ? "" : markup) });
+    return route.fulfill({ contentType: "text/html", body: page(scripted) });
   });
   try {
     await tab.goto(`${origin}/gruppen${search}`);
     // without JavaScript nothing runs in the page, so there is nothing to wait for
-    if (script) {
-      await tab.addScriptTag({ content: bundle });
+    if (scripted) {
+      await tab.addScriptTag({ content: client });
       await tab.waitForFunction(() => window.__mounted === true);
       await settled(tab);
     }
@@ -67,6 +76,8 @@ test("the server's markup is a GET search form with the field's classes, the res
   const form = markup.match(/<form[^>]*role="search"[^>]*>/)?.[0] ?? "";
   expect(form).toContain('method="get"');
   expect(form).toContain('action="/gruppen"');
+  // a search landmark named by the field's label, so two searches on a page are told apart
+  expect(form).toContain('aria-label="Gruppen durchsuchen"');
   expect(form).toMatch(/class="k2-input\s*"/);
   expect(form).toContain("data-search");
   const kept = markup.match(/<input[^>]*type="hidden"[^>]*>/g) ?? [];
@@ -87,7 +98,7 @@ test("without JavaScript, Enter loads the list's page with the text and the rest
       await tab.waitForURL(`${origin}/gruppen?level=error&q=Vase`);
       expect(loaded).toEqual(["/gruppen?level=error&q=Lager", "/gruppen?level=error&q=Vase"]);
     },
-    { script: false },
+    { scripted: false },
   );
 });
 
