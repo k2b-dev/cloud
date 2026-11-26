@@ -257,6 +257,9 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
   overlay. It needs the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor, which
   every Cloud page has; with `v2.css` alone a chart has no size (gap), so
   this recipe draws its plan itself.
+- A state timeline over instants (runs of a day, jobs of a week) takes
+  `timeAxis={{ timeZone }}`: round wall-time ticks and durations with their
+  unit. A tick format of your own is not needed.
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).
