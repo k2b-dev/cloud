@@ -23,7 +23,7 @@ import {
   Text,
   Workspace,
 } from "@k2b/ui/v2";
-import { For, Show } from "solid-js";
+import { Show } from "solid-js";
 
 const brand = { name: "Kulturhaus Lindenhof", color: "#9a3412" };
 const kinds = {
@@ -131,9 +131,6 @@ const week: Event[] = [
   },
 ];
 
-/** What the wall screen shows after what runs now. */
-const next = [...today.slice(1), ...week.slice(0, 2)];
-
 /** A range of numbers (1920–1960) stays on one line when a title wraps: a word joiner after its dash. */
 const keepRanges = (text: string) => text.replace(/(\d)–(\d)/g, "$1–\u2060$2");
 
@@ -159,8 +156,6 @@ const listed = (events: Event[], day: Listed["day"]): Listed[] => events.map((ev
 const taken = (seats: Seats) => seats.of - seats.free;
 /** The state of a meter of seats, as its chip says it: almost full, booked out. */
 const load = (seats: Seats) => (seats.free === 0 ? ("bad" as const) : few(seats) ? ("warn" as const) : undefined);
-/** Today's rooms in the order of the day, each with what runs there and its seats. */
-const halls = (events: Event[]) => events.map((event) => ({ room: event.room, title: event.title, seats: event.seats }));
 
 /**
  * The programme as one table grouped by day: the event with when and where, its type as a tag in its colour, who
@@ -186,7 +181,7 @@ const programme = (events: Listed[]) => (
       },
       {
         title: "Leitung",
-        width: { min: 64, default: 72, fixed: true },
+        width: { fixed: 72 },
         drop: true,
         cell: (event) => <Avatar name={event.host.name} color={event.host.color} />,
       },
@@ -276,7 +271,7 @@ export default function VenueProgramme(props: Props) {
             {programme([...listed(events(), "Heute"), ...listed(week, "Diese Woche")])}
           </Show>
         </Pane>
-        <Pane side label="Ihr Besuch" width={{ min: 280, default: 360, fixed: true }}>
+        <Pane side label="Ihr Besuch" width={{ fixed: 360 }}>
           <Section icon="armchair" color={brand.color} title="Plätze heute">
             <Row
               lines={[`${free()} von ${seats()} frei`, "über alle Veranstaltungen"]}
@@ -292,36 +287,9 @@ export default function VenueProgramme(props: Props) {
               ]}
             />
           </Section>
-          {/* the side column keeps one text edge: its section heads carry the marks, its rows and facts start alike */}
-          <Section icon="building" color={brand.color} title="Säle">
-            <For each={halls(events())}>
-              {(hall) => (
-                <Row
-                  lines={[hall.room, `${hall.title} · ${hall.seats.of} Plätze`]}
-                  end={
-                    <Progress
-                      value={taken(hall.seats)}
-                      of={hall.seats.of}
-                      label={`${taken(hall.seats)}/${hall.seats.of}`}
-                      status={load(hall.seats)}
-                    />
-                  }
-                />
-              )}
-            </For>
+          <Section icon="wheelchair" color="#15803d" title="Barrierefrei">
+            <Text>Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.</Text>
           </Section>
-          <Show when={props.kiosk}>
-            <Section icon="clock" color={brand.color} title="Als Nächstes">
-              <For each={next}>
-                {(event) => <Row lines={[event.title, `${event.time} · ${event.room}`]} end={seatsChip(event.seats)} />}
-              </For>
-            </Section>
-          </Show>
-          <Show when={!props.kiosk}>
-            <Section icon="wheelchair" color="#15803d" title="Barrierefrei">
-              <Text>Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.</Text>
-            </Section>
-          </Show>
         </Pane>
       </Pane.Split>
     </Workspace>
