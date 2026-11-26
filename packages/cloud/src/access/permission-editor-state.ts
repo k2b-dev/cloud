@@ -5,7 +5,8 @@ import { createStore, reconcile } from "solid-js/store";
 import type { AccessEntry, Principal, ServiceAccountKind } from "../contracts/shared";
 import { isManagerEntry } from "./managers";
 import { accessMessages } from "./messages";
-import { type GrantableLevel, type PermissionEditorProps, type ResolvedLevel, resolveAllowedLevels } from "./PermissionEditor";
+import type { PermissionEditorProps } from "./PermissionEditor";
+import { type GrantableLevel, type ResolvedLevel, resolveAllowedLevels } from "./permission-levels";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 
