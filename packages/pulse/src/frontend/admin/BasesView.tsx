@@ -10,6 +10,7 @@ import {
   Facts,
   Failed,
   Field,
+  Icon,
   Input,
   List,
   Loading,
@@ -391,7 +392,6 @@ function Orphans(props: { t: PulseAdminMessages; signal: AbortSignal }) {
                     <Row
                       icon="database-off"
                       lines={[item.database]}
-                      end={<Chip status="warn">{props.t.orphanBadge}</Chip>}
                       action={{
                         label: props.t.delete,
                         icon: "trash",
@@ -547,7 +547,14 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
   };
   const stateCell = (row: AdminBaseRow) => {
     const value = badge(row);
-    if (!value) return row.rollupLag ? <Chip status="warn">{t().rollupLag}</Chip> : <Chip status="ok">{t().stateActive}</Chip>;
+    if (!value && row.rollupLag) return <Chip status="warn">{t().rollupLag}</Chip>;
+    // an active store says so quietly; only what needs a look gets a chip
+    if (!value)
+      return (
+        <Text tone="ok" weight="medium">
+          <Icon name="circle-check" /> {t().stateActive}
+        </Text>
+      );
     return "status" in value && value.status ? <Chip status={value.status}>{value.label}</Chip> : <Chip>{value.label}</Chip>;
   };
   const admins = (row: AdminBaseRow) =>

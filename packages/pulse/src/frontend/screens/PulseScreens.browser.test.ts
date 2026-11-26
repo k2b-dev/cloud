@@ -152,6 +152,8 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
       json: { ...fixtureSources.find((source) => call.path.endsWith(source.id)), ...(call.body as object), revision: 2 },
     });
   if (call.path.startsWith(`${base}/sources/`) && call.method === "DELETE") return route.fulfill({ status: 204, body: "" });
+  if (call.path === "/api/pulse/admin/orphans")
+    return route.fulfill({ json: { items: [{ database: "pulse_base_k3m8q2" }], nextCursor: null } });
   if (call.path === `${base}/sql/limits`) return route.fulfill({ json: sqlTestLimits });
   if (call.path === `${base}/sql` && call.method === "POST")
     return route.fulfill({
