@@ -87,21 +87,16 @@ const openMenuOf = (item: Element) => item.querySelector<HTMLElement>(":scope > 
 
 /** The "…" of a place: out of the tab order (the tree is one stop; Shift+F10 opens it); its keys and presses stay its own. */
 const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
-  let span: HTMLSpanElement | undefined;
-  // A shortcut for the pointer only: out of the tab order and hidden from assistive technology, which opens the same
-  // menu with Shift+F10 on the tree item. The focus a closing menu gives back to it goes to the tree item instead.
-  onMount(() => {
-    const button = span?.querySelector("button");
-    button?.setAttribute("tabindex", "-1");
-    button?.setAttribute("aria-hidden", "true");
-  });
+  // A shortcut for the pointer only (`pointerOnly`: out of the tab order and hidden from assistive technology from the
+  // first markup on), which opens the same menu as Shift+F10 on the tree item. The focus a closing menu gives back to
+  // it goes to the tree item instead.
   const back = (event: FocusEvent) => {
     if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
       event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
   };
   return (
-    <span ref={span} class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
-      <Menu label={props.label} items={props.items} />
+    <span class="k2-nt-menu" on:keydown={stop} on:click={stop} on:pointerdown={stop} on:focusin={back}>
+      <Menu label={props.label} items={props.items} pointerOnly />
     </span>
   );
 };
