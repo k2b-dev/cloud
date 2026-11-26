@@ -212,7 +212,8 @@ const start = () =>
     },
   });
 
-const status = () => createComponent(StatusRow, { lead: "Heute: 15 ungelesen · 5 fällig", facts: [{ value: 3, after: "Termine" }] });
+// the first line says what counts today, as the rows below show it
+const status = () => createComponent(StatusRow, { lead: "Heute: 15 ungelesen · 1 fällig" });
 
 // This device first: its sign-out is the one deed a phone must reach without scrolling.
 const settingsMain = () => [
@@ -225,7 +226,7 @@ const settingsMain = () => [
     }),
   ]),
   section({ icon: "user", color: "#be185d", title: "Konto" }, () => [
-    row({ icon: "user", color: "#be185d", lines: ["Mia Muster", "mia.muster@example.org"] }),
+    row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Mia Muster", "mia.muster@example.org"] }),
   ]),
   section({ icon: "palette", color: "#7c3aed", title: "Darstellung" }, () => [
     row({
