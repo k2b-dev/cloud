@@ -29,6 +29,7 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
+| `@k2b/cloud/shared/*` | Supported, portable | One module of the shared helpers, such as `@k2b/cloud/shared/format` or `@k2b/cloud/shared/principal-label`: an island that imports one carries only it, while the barrel brings every helper and its libraries |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts, including [`AssistantPlaceSchema`](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
@@ -608,7 +609,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/contracts/code-runs` | Supported, browser and server | Browser-safe run-entry input and snapshot schemas | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
-| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
+| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel on the server, and the named module in an island, which then carries only its own schemas | — |
 | `@k2b/cloud/config/*` | Advanced | Named configuration modules; prefer the barrel | — |
 
 Every app-facing specialized row has a guide. `Platform-owned` and `Advanced`
