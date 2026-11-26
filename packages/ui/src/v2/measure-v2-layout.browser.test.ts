@@ -718,6 +718,37 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // gateway-ops (gate of #4210): the key figures of a StatusRow give way whole: they wrap out of sight below a line
+  // that hides what wraps, even where that line is pressed to 0 px. A figure out of sight is no finding.
+  test(
+    "green: figures that wrapped out of sight below a line that hides them",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="display:flex">' +
+            '<span style="display:flex;flex-wrap:wrap;flex:0 1 auto;min-width:0;height:1lh;overflow:hidden">' +
+            '<span style="height:1lh"></span><span data-probe="fact" style="white-space:nowrap">6 Fehler</span></span>' +
+            '<span style="flex:none;white-space:nowrap">' +
+            "Wartet · Reklamation · bis Mo · Vorschlag · ".repeat(6) +
+            "</span></div>",
+        ),
+        { width: 900 },
+      );
+      try {
+        // the line that hides the figures is pressed to 0 px, and the figure stands below it
+        const where = await page.locator('[data-probe="fact"]').evaluate((fact) => {
+          const line = fact.parentElement!.getBoundingClientRect();
+          return { line: Math.round(line.width), below: fact.getBoundingClientRect().top >= line.bottom - 0.5 };
+        });
+        expect(where).toEqual({ line: 0, below: true });
+        expect((await measureV2Layout(page)).squeezed.filter((line) => line.includes('"fact"'))).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   // Files 26.11.: a column of min 440 px on a 390 px phone carried its rows (and their dates) past the screen.
   test(
     "red: a row past its column and a row's date past the row; green: a row that fits",
