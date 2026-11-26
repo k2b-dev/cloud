@@ -53,7 +53,9 @@ background:linear-gradient(135deg,color-mix(in srgb,var(--k2-app,var(--k2-blue))
  * is a picture and hidden from assistive technology; the screen keeps its own names.
  */
 export const ScreenFrame = (props: ScreenFrameProps) => (
-  <div class="k2-sf" data-k2-frame="" style={props.app ? { "--k2-app": props.app.color } : undefined}>
+  // a host whose bar on the phone holds the search says so (`data-k2-host-search`): the page's head then leaves its own
+  // search folded behind the host's magnifier, as Cloud's shell does
+  <div class="k2-sf" data-k2-frame="" data-k2-host-search="" style={props.app ? { "--k2-app": props.app.color } : undefined}>
     <style>{css}</style>
     <div class="k2-sf-rail" aria-hidden="true">
       <span class="k2-sf-logo" data-k2-glyph="">
@@ -84,7 +86,7 @@ export const ScreenFrame = (props: ScreenFrameProps) => (
       </span>
       <i class="ti ti-chevron-down" />
       <span class="k2-sf-bar-fill" />
-      <span class="k2-sf-app">
+      <span class="k2-sf-app" data-k2-host-search-button="">
         <i class="ti ti-search" />
       </span>
       <span class="k2-sf-me" data-k2-glyph="">
