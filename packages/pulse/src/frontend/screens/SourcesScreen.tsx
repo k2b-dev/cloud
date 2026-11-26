@@ -85,7 +85,10 @@ const dataCount = (source: PulseSource, t: Words) =>
       ? "—"
       : t.sqlTodayCount({ count: source.todayCount });
 
-/** Rows a table shows at a time: a source row draws its mark, state and figures, so 50 keep WebKit inside the 1.5 s budget. */
+/**
+ * Rows the sources table shows at a time. Measured with 1,000 sources in WebKit on the test VM (6 runs each, 26.11.2026):
+ * 100 rows were ready in 1534–1583 ms, over the 1.5 s budget of the scale test; 50 rows in 1242–1275 ms.
+ */
 const PAGE = 50;
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
