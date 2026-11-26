@@ -270,6 +270,12 @@
    reader falls back to its own default until the primitive sets one. */
 .k2-ui {
   --k2-c: initial;
+  --k2-c-fg: initial;
+  --k2-c-fg-dark: initial;
+  --k2-c-soft: initial;
+  --k2-c-soft-dark: initial;
+  --k2-c-ink: initial;
+  --k2-c-ink-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -281,6 +287,7 @@
   --k2-whole: initial;
   --k2-col-w: initial;
   --k2-v: initial;
+  --k2-avs-w: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
@@ -864,6 +871,8 @@
   align-items: stretch;
   gap: 10px;
   padding: 12px;
+  /* a card fills its track of the grid: no cap of a small tile holds it narrower */
+  max-width: none;
 }
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
   background: var(--k2-n50);
@@ -974,6 +983,8 @@
   gap: 6px;
   padding: 6px 6px 8px;
   border: 0;
+  /* a media tile fills its track of the grid, as a card does */
+  max-width: none;
 }
 .k2-ui .k2-tiles[data-variant="media"] > .k2-tile[data-open]:hover {
   background: var(--k2-n100);
@@ -1018,7 +1029,10 @@
   background: var(--k2-surface);
   opacity: 0;
 }
-.k2-ui .k2-tile:is(:hover, :focus-within, [data-selected]) .k2-tile-check,
+/* `:focus-visible` on the tile, never `:focus-within`: a `:focus-within` rule makes WebKit check the ancestors of every
+   focus change on the page (a table of 10 000 rows took 600 ms per key). The box itself shows while it has the focus. */
+.k2-ui .k2-tiles > .k2-tile:is(:hover, :focus-visible, [data-selected]) > .k2-tile-media > .k2-tile-check,
+.k2-ui .k2-tile-check:has(> .k2-mark > .k2-mark-input:focus-visible),
 .k2-ui .k2-tiles[data-selecting] .k2-tile-check {
   opacity: 1;
 }
@@ -1027,13 +1041,12 @@
     opacity: 1;
   }
 }
+/* a name that does not fit ends in "…"; its whole name shows on hover */
 .k2-ui .k2-tiles[data-variant="media"] .k2-tile-title {
   padding: 0 2px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: clip;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-tile > .k2-tile-line {
   display: flex;
@@ -1396,6 +1409,26 @@
 }
 .k2-ui .k2-row-marks > * {
   margin-block: -4px;
+}
+/* The states of an entry under its lines, on the text edge of the title: chips that wrap instead of being cut. They
+   take a row of the grid of their own, so a row without them keeps its 40, 52 or 72 px. */
+.k2-ui .k2-row-states {
+  grid-column: l1-start / -1;
+  grid-row: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  padding-top: 6px;
+  min-width: 0;
+}
+/* a chip longer than the row breaks its own words onto a second line rather than leaving the row */
+.k2-ui .k2-row-states > .k2-chip {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .k2-ui .k2-row-marks .k2-icon {
   font-size: 14px;
@@ -1852,7 +1885,6 @@
 .k2-ui .k2-table[data-grid] td .k2-mark {
   vertical-align: middle;
 }
-/* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
 /* Rows in levels (Table tree): the first cell starts 20 px further in per level, at most eight levels, so deep rows
    keep their names; the arrow stands before the name. The row takes the focus (one Tab stop), with the ring inside. */
 .k2-ui .k2-table[data-tree] {
@@ -1925,12 +1957,22 @@
     transition: none;
   }
 }
+/* the phone form of a large table: rows of two lines, group heads as text as in the table; the table itself leaves */
 .k2-ui .k2-table-phone {
   display: none;
 }
-.k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
+.k2-ui .k2-table-phone-group {
+  display: flex;
+  align-items: flex-end;
   height: var(--k2-h-columns);
+  padding: 0 var(--k2-edge) 4px;
+}
+.k2-ui .k2-table-phone-group > .k2-group-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
 /* A row of a table on the phone keeps its shape whatever the data: the title takes at most two lines, the line under
@@ -2393,7 +2435,7 @@
   border-radius: 6px;
   overflow: hidden;
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 13%, var(--k2-surface));
-  color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix));
+  color: var(--k2-c-fg, color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix)));
   vertical-align: middle;
 }
 .k2-ui .k2-mk > .k2-icon {
@@ -2422,7 +2464,7 @@
   z-index: 1;
   padding: 1px 3px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--k2-c, var(--k2-n600)) 90%, var(--k2-ink-mix));
+  background: var(--k2-c-ink, color-mix(in srgb, var(--k2-c, var(--k2-n600)) 90%, var(--k2-ink-mix)));
   color: var(--k2-white);
   font: 600 7px/8px var(--k2-font);
   letter-spacing: 0.02em;
@@ -2476,24 +2518,89 @@
 .k2-ui .k2-avs {
   display: inline-flex;
   align-items: center;
-  flex: none;
   vertical-align: middle;
+  /* its own room, never more than its place: the faces it can hold whole decide how many stand (below) */
+  container: k2-avs / inline-size;
+  width: var(--k2-avs-w);
+  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .k2-ui .k2-avs > .k2-av {
   box-shadow: 0 0 0 2px var(--k2-surface);
 }
+/* each face lies over the one before only as far as its initials stay whole: 4 px of 24, 2 px of 20 */
 .k2-ui .k2-avs > .k2-av + .k2-av {
-  margin-left: -6px;
+  margin-left: -4px;
 }
 .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av {
   width: 20px;
   height: 20px;
   font-size: 9px;
 }
+.k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av + .k2-av {
+  margin-left: -2px;
+}
+/* A stack shows as many faces as its width holds whole, beside a count of up to three signs; the count that stands
+   belongs to the faces that stand, so it is always right and never cut. */
 .k2-ui .k2-avs-rest {
   margin-left: 6px;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
+  white-space: nowrap;
+  flex: none;
+  display: none;
+}
+.k2-ui .k2-avs[data-k="1"] > .k2-avs-rest[data-visible="1"],
+.k2-ui .k2-avs[data-k="2"] > .k2-avs-rest[data-visible="2"],
+.k2-ui .k2-avs[data-k="3"] > .k2-avs-rest[data-visible="3"],
+.k2-ui .k2-avs[data-k="4"] > .k2-avs-rest[data-visible="4"],
+.k2-ui .k2-avs[data-k="5"] > .k2-avs-rest[data-visible="5"] {
+  display: inline;
+}
+@container k2-avs (max-width: 133.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 5) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible="4"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 113.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 93.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 73.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
 }
 
 /* ── Spark: a few bars of a short history, the last in full colour; 20 px high ─────────────────────────────── */
@@ -2509,10 +2616,26 @@
   width: 4px;
   height: var(--k2-v);
   border-radius: 1px;
-  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) 45%, var(--k2-surface));
+  background: var(--k2-c-soft, var(--k2-app-text));
 }
 .k2-ui .k2-spark > i:last-child {
-  background: var(--k2-c, var(--k2-app, var(--k2-blue)));
+  background: var(--k2-c-ink, var(--k2-app-text));
+}
+/* dark: the same foregrounds, worked out against the dark surface */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mk,
+.k2-ui.dark .k2-mk,
+.k2-ui[data-theme="dark"] .k2-mk {
+  color: var(--k2-c-fg-dark, color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix)));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i,
+.k2-ui.dark .k2-spark > i,
+.k2-ui[data-theme="dark"] .k2-spark > i {
+  background: var(--k2-c-soft-dark, var(--k2-app-text));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i:last-child,
+.k2-ui.dark .k2-spark > i:last-child,
+.k2-ui[data-theme="dark"] .k2-spark > i:last-child {
+  background: var(--k2-c-ink-dark, var(--k2-app-text));
 }
 
 /* ── Preview: the large picture of the open thing at the top of its detail, 4:3 from text edge to text edge ──── */
@@ -2930,7 +3053,7 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
-  /* the name and its hint stand together, beside the middle of the control */
+  /* the name and its hint stand together, beside the middle of the value */
   align-self: end;
   font: var(--k2-t-row);
   font-weight: 500;
@@ -2941,7 +3064,7 @@
   grid-area: message;
   align-self: start;
 }
-.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
+.k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
   grid-area: control;
   min-width: 0;
 }
@@ -2949,16 +3072,62 @@
   grid-area: was;
   padding-top: 4px;
 }
+/* a deed of the setting (such as "Auf Standard zurücksetzen") at the end of the name's line, as in a field: the value's
+   column keeps its 300 px, so the deed coming or going moves nothing */
+.k2-ui .k2-field[data-setting][data-action] {
+  grid-template-columns: minmax(0, 1fr) auto 300px;
+  grid-template-areas: "label action control" "message message control" ". . was";
+}
+.k2-ui .k2-field[data-setting] > .k2-field-action {
+  grid-area: action;
+  align-self: end;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn {
+  position: relative;
+  height: 20px;
+  padding: 0 6px;
+  gap: 4px;
+  font: var(--k2-t-meta);
+  font-weight: 500;
+}
+.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn > .k2-icon {
+  font-size: 14px;
+}
+/* the press area reaches the grip of a control while the button draws 20 px */
+.k2-ui .k2-field[data-setting] > .k2-field-action > .k2-btn::after {
+  content: "";
+  position: absolute;
+  inset: -12px -4px;
+}
 .k2-ui .k2-sec > .k2-field[data-setting] + .k2-field[data-setting] {
   margin-top: 0;
 }
-@media not all and (min-width: 768px) {
+/* By the width of its pane, not of the window: below 600 px of pane the name would get less than its room beside the
+   300 px column (a settings pane beside a sidebar and a side column at 800 px of window), so the value goes under it. */
+@container k2-pane (max-width: 599px) {
   .k2-ui .k2-field[data-setting] {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
     grid-template-areas: "label" "message" "control" "was";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > .k2-field-label {
+  .k2-ui .k2-field[data-setting] > :is(.k2-field-label, .k2-field-action) {
+    align-self: start;
+  }
+}
+/* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
+   name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
+@container k2-pane (max-width: 799px) {
+  .k2-ui .k2-field[data-setting][data-action] {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: none;
+    grid-template-areas: "label action" "message message" "control control" "was was";
+    row-gap: 4px;
+  }
+  .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
   }
 }
@@ -3357,6 +3526,13 @@
 }
 .k2-ui .k2-canvas[data-height] {
   height: var(--k2-canvas-h);
+}
+/* A drawing that is the whole pane takes what the pane's column has left, by layout alone: nothing is measured, so the
+   first render already has its final height. Below 240 px the pane scrolls instead of squeezing the drawing. */
+.k2-ui .k2-canvas[data-fill] {
+  height: auto;
+  flex: 1 1 auto;
+  min-height: 240px;
 }
 /* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
    of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;
@@ -3811,9 +3987,35 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.k2-ui .k2-path > .k2-icon,
+.k2-ui .k2-path > .k2-btn {
+  flex: none;
+}
 .k2-ui .k2-path > .k2-icon {
   font-size: 14px;
   color: var(--k2-n400);
+}
+/* where the room runs out, the place before the page shortens first, then the page; the first place stays whole */
+.k2-ui .k2-bar-start > .k2-path {
+  flex: 0 1 auto;
+}
+/* a path gives way before the deeds at the end: they keep their words while the path can still shorten */
+.k2-ui .k2-bar-start:has(> .k2-path) {
+  flex-shrink: 1000;
+}
+.k2-ui .k2-path > .k2-path-step,
+.k2-ui .k2-path > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+.k2-ui .k2-path > .k2-path-step[data-near] {
+  flex: 0 1000 auto;
+  min-width: 48px;
+}
+.k2-ui .k2-path > b {
+  flex-shrink: 1;
+  min-width: 48px;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
@@ -4417,6 +4619,23 @@
   width: 16px;
   color: var(--k2-subtle);
 }
+/* an entry in its data colour: the symbol or a dot of 8 px, in the step of the colour that keeps 3:1 on the menu */
+.k2-ui .k2-mi-lead[data-color] {
+  align-items: center;
+  justify-content: center;
+  color: var(--k2-c-soft, var(--k2-c, var(--k2-subtle)));
+}
+.k2-ui .k2-mi-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--k2-r-round);
+  background: currentColor;
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mi-lead[data-color],
+.k2-ui.dark .k2-mi-lead[data-color],
+.k2-ui[data-theme="dark"] .k2-mi-lead[data-color] {
+  color: var(--k2-c-soft-dark, var(--k2-c, var(--k2-subtle)));
+}
 .k2-ui .k2-mi-label {
   flex: 1;
   min-width: 0;
@@ -4803,6 +5022,16 @@
   .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
     overflow-y: auto;
   }
+  /* a pane whose drawing is the whole pane (a board, a calendar) is the page too: it takes the height that is left, so
+     the drawing fills it as it does beside other panes (W3 #4197) */
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
+    overflow-y: auto;
+  }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
   }
@@ -5020,6 +5249,11 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-fab {
     display: none;
   }
+  /* the floating actions cover nothing of a list: each column ends above them (their height 56, their distance 16, a
+     gap of 8 and the safe area), at rest and at its end alike; the content does not move, only its window ends higher */
+  .k2-ui:has(.k2-bar[data-selecting]) .k2-pane > .k2-scroll {
+    margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
@@ -5111,12 +5345,41 @@
   .k2-ui .k2-cgrip {
     display: none;
   }
+  /* Key numbers stand two by two in a narrow column and on the phone, as dense as the mockup: four cells in two rows,
+     three as two and one across, two side by side. A line between the two of a row, one between the rows. */
   .k2-ui .k2-cells {
     grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .k2-ui .k2-cell + .k2-cell {
     border-left: 0;
+  }
+  .k2-ui .k2-cell:nth-child(even) {
+    border-left: var(--k2-hairline);
+  }
+  .k2-ui .k2-cell:nth-child(n + 3) {
     border-top: var(--k2-hairline);
+  }
+  .k2-ui .k2-cell:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
+  /* in a cell half as wide the value and its line take the cell's whole width, under the label with its symbol, so a
+     big number or an amount stays whole */
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
+    grid-column: 1 / -1;
+  }
+  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; in half a phone a
+     statement of 18 px leaves no room for a big number ("12.345.678"), so it stands in 14 px, still in 600 */
+  .k2-ui .k2-cell > .k2-cell-value {
+    white-space: normal;
+    font: var(--k2-t-body);
+    font-weight: 600;
+  }
+  .k2-ui .k2-cell-value > .k2-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    white-space: normal;
   }
   .k2-ui .k2-frow {
     grid-auto-flow: row;
@@ -5411,7 +5674,8 @@
 }
 /* the filter button and the sort and group of the line are the phone's; from 768 px they live in the status row */
 .k2-ui .k2-fbar > .k2-btn,
-.k2-ui .k2-fbar-order {
+.k2-ui .k2-fbar-order,
+.k2-ui .k2-fbar-view {
   display: none;
 }
 .k2-ui .k2-fbar-n {
@@ -6012,6 +6276,31 @@
     gap: 8px;
     flex: none;
     padding-right: 48px;
+  }
+  /* the one menu of how the list shows stays at the end of the strip, also while the statements scroll under it */
+  .k2-ui .k2-fbar-view {
+    display: inline-flex;
+    flex: none;
+    position: sticky;
+    right: 0;
+    margin-left: auto;
+    padding-left: 8px;
+    background: var(--k2-surface);
+  }
+  /* with it the strip fades before the menu, not under it: the menu stays whole and the statements run out beside it */
+  .k2-ui .k2-fbar[data-view] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .k2-ui .k2-fbar-view::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    right: 100%;
+    width: 24px;
+    background: linear-gradient(90deg, transparent, var(--k2-surface));
+    pointer-events: none;
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;

@@ -22,3 +22,5 @@ export const useSettingMessages = (): (() => SettingMessages) => {
 };
 
 export const checkSettingMessages = () => settingMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveSettingMessages = (locale: string): SettingMessages => settingMessages.resolve([locale]).t;

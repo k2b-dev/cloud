@@ -2,12 +2,18 @@ import { createSignal, For, type JSX, children as resolveChildren, Show } from "
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
+import { colorStyle, safeValue } from "./colors";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
 /** Inline custom properties are the primitive's own business: data colours and measured widths, never layout. */
 export const custom = (values: Record<string, string | undefined>): JSX.CSSProperties | undefined => {
-  const entries = Object.entries(values).filter((entry): entry is [string, string] => entry[1] !== undefined);
+  const entries = Object.entries(values).flatMap(([key, value]): [string, string][] => {
+    if (value === undefined) return [];
+    // a data colour is validated and brings its readable foregrounds; anything else is the primitive's own number
+    if (key === "--k2-c") return Object.entries(colorStyle(value) ?? {});
+    return safeValue(value) ? [[key, value]] : [];
+  });
   return entries.length ? Object.fromEntries(entries) : undefined;
 };
 
@@ -121,21 +127,34 @@ export type AvatarStackProps = {
  * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
  */
 Avatar.Stack = (props: AvatarStackProps) => {
-  const shown = () => props.people.slice(0, Math.max(1, props.max ?? 3));
-  const rest = () => props.people.length - shown().length;
+  // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
+  const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
+  // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
+  // is always right and always whole, from the server's first render on
+  const counts = () =>
+    shown()
+      .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
+      .filter((count) => count.rest > 0);
+  // The stack's room when nothing is narrow: its faces (24 px, each over the one before by 4 px) and a count of up to
+  // three signs, the measure the stylesheet hides faces by; one face alone needs no room for a count.
+  const room = () => (shown().length === 1 ? 24 + (props.people.length > 1 ? 30 : 0) : 54 + 20 * (shown().length - 1));
   return (
     <span
       class="k2-avs"
       data-k2-part="Avatar.Stack"
+      data-k={String(shown().length)}
       role="img"
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
+      style={custom({ "--k2-avs-w": `${room()}px` })}
     >
       <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
-      <Show when={rest() > 0}>
-        <span class="k2-avs-rest" aria-hidden="true">
-          +{rest()}
-        </span>
-      </Show>
+      <For each={counts()}>
+        {(count) => (
+          <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">
+            {`+${count.rest}`}
+          </span>
+        )}
+      </For>
     </span>
   );
 };
@@ -233,7 +252,11 @@ export const Preview = (props: PreviewProps) => {
 export type SparkProps = {
   /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
   values: readonly number[];
-  /** What the bars show, such as "Änderungen der letzten 7 Tage". It names the drawing; the values are not read out. */
+  /**
+   * What the bars say, in one sentence a person who cannot see them gets the same from: the thing, the direction and
+   * the numbers that matter, such as "Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen". Not only the title
+   * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
+   */
   label: string;
 };
 

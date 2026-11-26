@@ -90,13 +90,61 @@ test("a thumbnail lies over the symbol in the same place, and the symbol stays w
     expect(await look("Ansicht Front Eiche.jpg")).toEqual({ state: "shown", box: "32x32", image: "0,0 32x32", symbol: true, alt: "" });
     expect(await look("Bestand Küche vorher.jpg")).toEqual({ state: "failed", box: "32x32", image: null, symbol: true, alt: null });
     // the type stands on the corner, inside the mark
-    const kind = await page.locator(".k2-mk-kind").evaluate((element) => {
-      const mark = element.parentElement!.getBoundingClientRect();
-      const rect = element.getBoundingClientRect();
-      return { text: element.textContent, inside: rect.left >= mark.left && rect.bottom <= mark.bottom && rect.right <= mark.right };
-    });
+    const kind = await page
+      .locator(".k2-row", { hasText: "Angebot" })
+      .locator(".k2-mk-kind")
+      .evaluate((element) => {
+        const mark = element.parentElement!.getBoundingClientRect();
+        const rect = element.getBoundingClientRect();
+        return { text: element.textContent, inside: rect.left >= mark.left && rect.bottom <= mark.bottom && rect.right <= mark.right };
+      });
     expect(kind).toEqual({ text: "PDF", inside: true });
   });
+});
+
+test("marks and sparks stay readable whatever the data colour is, light and dark", async () => {
+  for (const theme of ["light", "dark"] as const)
+    await withPage(async (page) => {
+      if (theme === "dark") await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
+      const found = await page.evaluate(() => {
+        const rgb = (value: string) =>
+          value
+            .match(/[\d.]+/g)!
+            .slice(0, 3)
+            .map(Number);
+        const lum = (value: string) => {
+          const [r, g, b] = rgb(value).map((channel) => {
+            const c = channel / 255;
+            return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+          }) as [number, number, number];
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const ratio = (a: string, b: string) => {
+          const [light, dark] = [lum(a), lum(b)].sort((x, y) => y - x) as [number, number];
+          return Math.round(((light + 0.05) / (dark + 0.05)) * 100) / 100;
+        };
+        // the surface of the theme, read from its token in the scope
+        const probe = document.createElement("span");
+        probe.style.background = "var(--k2-surface)";
+        document.body.append(probe);
+        const surface = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const pale = [...document.querySelectorAll(".k2-row")].find((row) => row.textContent?.includes("Sommerfest"))!;
+        const mark = pale.querySelector<HTMLElement>(".k2-mk")!;
+        const kind = mark.querySelector<HTMLElement>(".k2-mk-kind")!;
+        const bars = [...document.querySelectorAll<HTMLElement>(".k2-tile .k2-spark > i")];
+        return {
+          symbol: ratio(getComputedStyle(mark).color, getComputedStyle(mark).backgroundColor),
+          type: ratio(getComputedStyle(kind).color, getComputedStyle(kind).backgroundColor),
+          bars: Math.min(...bars.map((bar) => ratio(getComputedStyle(bar).backgroundColor, surface))),
+          surface,
+        };
+      });
+      // a symbol and the bars of a history 3:1 (information in a drawing), the type on a mark 4.5:1
+      expect(found.symbol).toBeGreaterThanOrEqual(3);
+      expect(found.bars).toBeGreaterThanOrEqual(3);
+      expect(found.type).toBeGreaterThanOrEqual(4.5);
+    });
 });
 
 test("people stack with a ring and '+n' for the rest, as one picture with every name", async () => {
@@ -104,12 +152,55 @@ test("people stack with a ring and '+n' for the rest, as one picture with every 
     const stack = page.locator(".k2-avs").first();
     expect(await stack.getAttribute("aria-label")).toBe("Felix Thal, Jonas Kern, Mira Solberg, Tom Oswald, Sami Yilmaz");
     expect(await stack.locator(".k2-av").count()).toBe(3);
-    expect(await stack.locator(".k2-avs-rest").textContent()).toBe("+2");
+    expect(await stack.locator(".k2-avs-rest:visible").textContent()).toBe("+2");
     expect(await stack.locator(".k2-av[aria-hidden='true']").count()).toBe(3);
     const lefts = await stack.locator(".k2-av").evaluateAll((avatars) => avatars.map((avatar) => avatar.getBoundingClientRect().left));
-    // each avatar lies 6 px over the one before it (20 px wide on a card)
-    expect(lefts.slice(1).map((left, index) => Math.round(left - lefts[index]!))).toEqual([14, 14]);
+    // each avatar lies 2 px over the one before it (20 px wide on a card)
+    expect(lefts.slice(1).map((left, index) => Math.round(left - lefts[index]!))).toEqual([18, 18]);
+    // and its ring never reaches the initials of the one before: every letter stays whole (review: "LI", "AI")
+    const cut = await stack.locator(".k2-av").evaluateAll(
+      (avatars) =>
+        avatars.slice(0, -1).filter((avatar, index) => {
+          const range = document.createRange();
+          range.selectNodeContents(avatar.firstChild!);
+          const letters = range.getBoundingClientRect();
+          const next = avatars[index + 1]!.getBoundingClientRect();
+          return letters.right > next.left - 2;
+        }).length,
+    );
+    expect(cut).toBe(0);
   });
+});
+
+test("a stack in a narrow column shows the faces it holds whole and counts the rest, never cutting the count", async () => {
+  for (const width of [1440, 390])
+    await withPage(async (page) => {
+      const found = await page.locator(".k2-table td .k2-avs").evaluateAll((stacks) =>
+        stacks.map((stack) => {
+          const cell = stack.closest("td")!;
+          const style = getComputedStyle(cell);
+          const right = cell.getBoundingClientRect().right - Number.parseFloat(style.paddingRight);
+          const faces = [...stack.querySelectorAll(".k2-av")].filter((face) => getComputedStyle(face).display !== "none");
+          const counts = [...stack.querySelectorAll(".k2-avs-rest")].filter((count) => getComputedStyle(count).display !== "none");
+          const count = counts[0];
+          return {
+            faces: faces.length,
+            counts: counts.length,
+            text: count?.textContent,
+            whole: count ? count.getBoundingClientRect().right <= right + 0.5 && count.scrollWidth <= count.clientWidth + 1 : true,
+            inside: faces.every((face) => face.getBoundingClientRect().right <= right + 0.5),
+          };
+        }),
+      );
+      // 4, 8 and 30 people: the count belongs to the faces that stand, one count each, whole and inside the cell
+      expect(found.map((stack) => stack.counts)).toEqual([1, 1, 1]);
+      expect(found.map((stack) => Number(stack.text?.slice(1)) + stack.faces)).toEqual([4, 8, 30]);
+      for (const stack of found) {
+        expect(stack.faces).toBeGreaterThanOrEqual(1);
+        expect(stack.whole).toBe(true);
+        expect(stack.inside).toBe(true);
+      }
+    }, width);
 });
 
 test("a spark draws its last value in full colour and names the drawing, not each bar", async () => {
@@ -126,7 +217,7 @@ test("a spark draws its last value in full colour and names the drawing, not eac
       };
     });
     expect(spark.role).toBe("img");
-    expect(spark.label).toBe("Änderungen der letzten 7 Tage");
+    expect(spark.label).toBe("Werkstatt: in 7 Tagen von 0 auf 10 Änderungen gestiegen");
     expect(spark.height).toBe(20);
     // the highest value fills the height; a value of 0 keeps a sliver, so the day still shows
     expect(spark.bars.at(-1)).toBe(20);
@@ -213,6 +304,34 @@ test("an activity is a sentence beside its person that may wrap, with place and 
   }, 390);
 });
 
+test("an activity opens its thing in place: a plain click reaches onNavigate and the page stays", async () => {
+  await withPage(async (page) => {
+    const before = await page.evaluate(() => location.href);
+    await page.locator(".k2-row[data-activity] .k2-row-l1 a").first().click();
+    await settled(page);
+    expect(await page.evaluate(() => window.__k2Pressed)).toEqual(["open #auftraege"]);
+    expect(await page.evaluate(() => location.href)).toBe(before);
+  });
+});
+
+test("cards fill the tracks of their grid, however wide: no cap of a small tile holds them narrower", async () => {
+  // the cap of a plain tile (a long file name is cut, never as wide as the row) must not reach a card
+  for (const width of [1440, 1024])
+    await withPage(async (page) => {
+      const found = await page.locator(".k2-tiles[data-variant='card']").evaluate((grid) => {
+        const tracks = getComputedStyle(grid)
+          .gridTemplateColumns.split(" ")
+          .map((track) => Number.parseFloat(track));
+        const cards = [...grid.querySelectorAll(":scope > .k2-tile")].map((card) => card.getBoundingClientRect().width);
+        return {
+          maxWidth: getComputedStyle(grid.querySelector(":scope > .k2-tile")!).maxWidth,
+          fill: cards.every((card) => Math.abs(card - tracks[0]!) < 1),
+        };
+      });
+      expect(found).toEqual({ maxWidth: "none", fill: true });
+    }, width);
+});
+
 test("a key number shows its trend at the end of its value", async () => {
   await withPage(async (page) => {
     const found = await page
@@ -223,7 +342,7 @@ test("a key number shows its trend at the end of its value", async () => {
         const spark = cell.querySelector(".k2-spark")!.getBoundingClientRect();
         return { atEnd: Math.abs(value.right - spark.right) < 1, label: cell.querySelector(".k2-spark")!.getAttribute("aria-label") };
       });
-    expect(found).toEqual({ atEnd: true, label: "Offene Aufträge der letzten 7 Tage" });
+    expect(found).toEqual({ atEnd: true, label: "Offene Aufträge: in 7 Tagen von 22 auf 41 gestiegen" });
   });
 });
 

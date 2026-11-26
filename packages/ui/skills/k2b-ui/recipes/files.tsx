@@ -9,7 +9,6 @@ import {
   Icon,
   Input,
   ListOrder,
-  Menu,
   Nav,
   Pane,
   Path,
@@ -24,9 +23,6 @@ import {
 } from "@k2b/ui/v2";
 import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
 import { createSignal } from "solid-js";
-
-// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Dateien", color: "#2563eb", icon: "files" };
 
 // Small drawings stand in for the thumbnails the server would send.
 const picture = (body: string) =>
@@ -234,12 +230,14 @@ export const fileQuery = defineListQuery({
   },
 });
 
-// `grid`: the photos and pages as media tiles; `selecting`: three photos chosen in the grid.
-type Props = { grid?: boolean; selected?: readonly string[] };
+// `closed`: the folder without an open file (what is open belongs in the address); `grid`: the photos and pages as
+// media tiles; `selecting`: three photos chosen in the grid.
+type Props = { closed?: boolean; grid?: boolean; selected?: readonly string[] };
 
 export default function Folder(props: Props) {
   const [state, setState] = createSignal<ListQueryStateOf<typeof fileQuery>>(fileQuery.parse("owner=felix,mira").state);
   const [selected, setSelected] = createSignal<readonly string[]>(props.selected ?? []);
+  const [grid, setGrid] = createSignal(props.grid ?? false);
   const toggle = (key: string, on: boolean) => setSelected((now) => (on ? [...now, key] : now.filter((each) => each !== key)));
   const files = entries.filter((entry) => !entry.folder);
   return (
@@ -318,25 +316,24 @@ export default function Folder(props: Props) {
               onChange={setState}
               icons={{ kind: "file", owner: "user" }}
               results="13 Einträge · 186 MB"
-              end={
-                <>
-                  <ListOrder query={fileQuery} state={state()} onChange={setState} />
-                  <Menu
-                    icon={props.grid ? "layout-grid" : "list"}
-                    items={[
-                      { label: "Liste", icon: "list", checked: !props.grid },
-                      { label: "Raster", icon: "layout-grid", checked: props.grid === true },
-                    ]}
-                  >
-                    {props.grid ? "Raster" : "Liste"}
-                  </Menu>
-                </>
-              }
+              end={<ListOrder query={fileQuery} state={state()} onChange={setState} />}
+              // list or grid: a menu beside the order on the desktop, in the one menu "Ansicht" on the phone
+              display={[
+                {
+                  title: "Darstellung",
+                  choice: grid() ? "grid" : "list",
+                  onChoose: (value) => setGrid(value === "grid"),
+                  items: [
+                    { label: "Liste", icon: "list", value: "list" },
+                    { label: "Raster", icon: "layout-grid", value: "grid" },
+                  ],
+                },
+              ]}
             />
           )
         }
       >
-        {props.grid ? (
+        {grid() ? (
           <Pane label="Dateien">
             <Tiles
               variant="media"
@@ -363,7 +360,7 @@ export default function Folder(props: Props) {
                 rows={entries}
                 rowKey={(row) => row.key}
                 select={{ selected: selected(), onChange: (keys) => setSelected(keys), all: "Alle Einträge", row: (row) => row.name }}
-                current="front"
+                current={props.closed ? undefined : "front"}
                 open={(row) => ({ href: `#${row.key}` })}
                 group={(row) =>
                   row.folder ? { key: "ordner", head: () => "Ordner", count: "2" } : { key: "dateien", head: () => "Dateien", count: "11" }
@@ -401,58 +398,60 @@ export default function Folder(props: Props) {
                 ]}
               />
             </Pane>
-            <Pane
-              detail
-              label="Ansicht Front Eiche.jpg"
-              width={{ min: 320, default: 380 }}
-              back={{ label: "Küche Lindqvist", href: "#" }}
-              head={
+            {props.closed ? undefined : (
+              <Pane
+                detail
+                label="Ansicht Front Eiche.jpg"
+                width={{ min: 320, default: 380 }}
+                back={{ label: "Küche Lindqvist", href: "#" }}
+                head={
+                  <Bar
+                    start={
+                      <Text type="body" weight="strong">
+                        Ansicht Front Eiche.jpg
+                      </Text>
+                    }
+                    end={
+                      <>
+                        <Button variant="ghost" icon="star" label="Favorit" pressed={false} />
+                        <Button variant="ghost" icon="x" label="Schließen" href="#" />
+                      </>
+                    }
+                  />
+                }
+              >
+                <Preview label="Vorschau von Ansicht Front Eiche.jpg" {...type.photo} image={thumbs.oak} kind="JPG" />
                 <Bar
                   start={
-                    <Text type="body" weight="strong">
-                      Ansicht Front Eiche.jpg
-                    </Text>
-                  }
-                  end={
                     <>
-                      <Button variant="ghost" icon="star" label="Favorit" pressed={false} />
-                      <Button variant="ghost" icon="x" label="Schließen" href="#" />
+                      <Button icon="external-link">Öffnen</Button>
+                      <Button icon="share">Teilen</Button>
+                      <Button icon="download">Laden</Button>
                     </>
                   }
+                  end={<Text type="meta">JPG · 4,2 MB</Text>}
                 />
-              }
-            >
-              <Preview label="Vorschau von Ansicht Front Eiche.jpg" {...type.photo} image={thumbs.oak} kind="JPG" />
-              <Bar
-                start={
-                  <>
-                    <Button icon="external-link">Öffnen</Button>
-                    <Button icon="share">Teilen</Button>
-                    <Button icon="download">Laden</Button>
-                  </>
-                }
-              />
-              <Facts
-                items={[
-                  { label: "Datei", value: "JPG · 4,2 MB" },
-                  { label: "Geändert", value: "Felix Thal · heute, 09:42" },
-                  { label: "Aufgenommen", value: "24.11.2026 · 4032 × 3024" },
-                  { label: "Ort", value: "Werkstatt › Projekte › Küche Lindqvist" },
-                ]}
-              />
-              <Section icon="share" title="Freigabe" count={2} actions={[{ label: "Verwalten" }]}>
-                <Row mark={{ icon: "users", color: "#c2410c" }} lines={["Team Werkstatt"]} time="Bearbeiten" />
-                <Row
-                  avatar={{ name: "Petra Lindqvist" }}
-                  lines={["Petra Lindqvist · Link", "Ansehen · läuft ab 15.12. · 3× geöffnet"]}
-                  end={<Button variant="ghost" icon="copy" label="Link kopieren" />}
+                <Facts
+                  items={[
+                    { label: "Geändert", value: "Felix Thal · heute, 09:42" },
+                    { label: "Aufgenommen", value: "24.11.2026 · 4032 × 3024" },
+                    { label: "Ort", value: "Werkstatt › Projekte › Küche Lindqvist" },
+                  ]}
                 />
-              </Section>
-              <Section icon="history" title="Versionen" count={3} more={{ label: "Alle Versionen", forward: true }}>
-                <Row avatar={people.felix} lines={["heute, 09:42"]} meta="aktuell" time="4,2 MB" />
-                <Row avatar={people.felix} lines={["gestern, 17:12"]} time="4,0 MB" />
-              </Section>
-            </Pane>
+                <Section icon="share" title="Freigabe" count={2} actions={[{ label: "Verwalten" }]}>
+                  <Row mark={{ icon: "users", color: "#c2410c" }} lines={["Team Werkstatt"]} time="Bearbeiten" />
+                  <Row
+                    avatar={{ name: "Petra Lindqvist" }}
+                    lines={["Petra Lindqvist · Link", "Ansehen · läuft ab 15.12. · 3× geöffnet"]}
+                    end={<Button variant="ghost" icon="copy" label="Link kopieren" />}
+                  />
+                </Section>
+                <Section icon="history" title="Versionen" count={3} more={{ label: "Alle Versionen", forward: true }}>
+                  <Row avatar={people.felix} lines={["heute, 09:42"]} meta="aktuell" time="4,2 MB" />
+                  <Row avatar={people.felix} lines={["gestern, 17:12"]} time="4,0 MB" />
+                </Section>
+              </Pane>
+            )}
           </Pane.Split>
         )}
       </Pane>
@@ -460,8 +459,12 @@ export default function Folder(props: Props) {
   );
 }
 
+// The app the screen belongs to (Dateien): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#1d4ed8", icon: "folders" };
+
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
+  closed: () => <Folder closed />,
   grid: () => <Folder grid />,
   selecting: () => <Folder grid selected={["front", "vorher", "granit"]} />,
 };

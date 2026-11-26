@@ -139,15 +139,18 @@ const { ScreenFrame } = await import("../src/v2/screen-frame");
 const { LocaleProvider } = await import("../src/intl/locale");
 
 let markup = "";
+// The screen renders in the language of its sample text, as Fibel shows a recipe: its own `locale` export, else German
+// (the recipes write German). Without it the library's own words ("Zurücksetzen") would stay English beside German data.
+let locale = "de";
 try {
   const screen = (await import(file)) as { default?: () => unknown; app?: { color: string; icon: string }; locale?: string };
   if (typeof screen.default !== "function") throw new Error("the file has no default export that is a component");
   const component = screen.default as Parameters<typeof createComponent>[0];
-  // the screen stands in the frame of a host (tinted page, rail), as a person sees it: never a bare white page. The
-  // library's own words follow the screen's `locale`, else German like the page and the recipes' sample text.
+  if (typeof screen.locale === "string") locale = screen.locale;
+  // the screen stands in the frame of a host (tinted page, rail), as a person sees it: never a bare white page
   markup = renderToString(() =>
     createComponent(LocaleProvider, {
-      locale: screen.locale ?? "de",
+      locale,
       get children() {
         return createComponent(ScreenFrame, {
           app: screen.app,
@@ -182,7 +185,7 @@ const tablerCss = () => {
   );
 };
 const page = (fonts: boolean) =>
-  `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${fonts ? [400, 500, 600].map(fontFace).join("") + tablerCss() : ".ti{display:inline-block;width:1em;height:1em}"}</style>` +
+  `<!doctype html><html lang="${locale}"><head><meta charset="utf-8"><style>${fonts ? [400, 500, 600].map(fontFace).join("") + tablerCss() : ".ti{display:inline-block;width:1em;height:1em}"}</style>` +
   `<style>${css}</style><style>html,body{margin:0;height:100%;background:#fff}body{color-scheme:light}.frame{position:fixed;inset:0;display:flex}` +
   // the island wrappers of @k2b/ssr take no box, as its page template says, so a screen in an island fills the frame
   `solid-island,solid-client{display:contents}</style></head>` +

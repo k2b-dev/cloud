@@ -316,6 +316,12 @@ export type RowProps = {
   time?: JSX.Element;
   /** Bottom right on the third line: chips, icons, people. */
   marks?: JSX.Element;
+  /**
+   * States that belong to the entry and must be read whole, such as the checks of a domain: `Chip`s with colour,
+   * symbol and word under the row's lines, on the text edge of its title. They wrap to further lines instead of being
+   * cut, on the phone too; the row grows only when they are there (40, 52 and 72 px stay as they are without them).
+   */
+  states?: JSX.Element;
   /** The one deed of this entry, a framed button at the end; on the phone it moves under the text. */
   action?: Action;
   /** At the end: a few icon buttons, such as "Reply" and "More". */
@@ -375,6 +381,7 @@ export const Row = (props: RowProps) => {
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
+  const states = resolveChildren(() => props.states);
   const title = createUniqueId();
   return (
     <div
@@ -395,6 +402,7 @@ export const Row = (props: RowProps) => {
       data-time={time() !== undefined ? "" : undefined}
       // a long deed (more than 24 signs, some 170 px) stands under the text in a narrow column, never beside a squeezed one
       data-action={props.action ? ([...props.action.label].length > longDeed ? "long" : "") : undefined}
+      data-states={states() !== undefined ? "" : undefined}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
           the title stays a link of its own (no link inside a link). */}
@@ -478,6 +486,9 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={marks() !== undefined}>
         <span class="k2-row-marks">{marks()}</span>
+      </Show>
+      <Show when={states() !== undefined}>
+        <span class="k2-row-states">{states()}</span>
       </Show>
     </div>
   );
@@ -1356,13 +1367,17 @@ export const Table = <T,>(props: TableProps<T>) => {
                 >
                   {(item) =>
                     "group" in item ? (
-                      <div class="k2-bar" role="presentation">
-                        <div class="k2-bar-start">
+                      // the same head as in the table: text in 600 with its count, no band and no line under it
+                      <div class="k2-table-phone-group" role="presentation">
+                        <span class="k2-group-row">
                           {item.group.head()}
-                          <Show when={item.group.count ?? item.group.meta}>
-                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                          <Show when={item.group.count}>
+                            <span class="k2-group-row-count">{item.group.count}</span>
                           </Show>
-                        </div>
+                          <Show when={item.group.meta}>
+                            <span class="k2-group-row-meta">{item.group.meta}</span>
+                          </Show>
+                        </span>
                       </div>
                     ) : "more" in item ? (
                       <div class="k2-bar" role="presentation">

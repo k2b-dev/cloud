@@ -267,7 +267,7 @@ export const Workspace = (props: WorkspaceProps) => {
         <aside ref={aside} class="k2-ws-side" data-k2-column="">
           {sidebar()}
         </aside>
-        <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
+        <Seam grip={{ label: props.sidebarLabel ?? t().sidebar, width: width() }} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
         <Show when={head() || sidebar()}>
@@ -589,9 +589,9 @@ export type CellProps = {
   trend?: SparkProps;
 };
 
-/** Two to four equal cells side by side with a line between them; one under the other on the phone. */
+/** Two to four equal cells side by side with a line between them; two by two on the phone. */
 export const Cells = (props: {
-  /** Two to four `Cells.Cell`. */
+  /** Two to four `Cells.Cell`; on the phone two by two, a third alone across the second row. */
   children: JSX.Element;
 }) => (
   <div class="k2-cells" data-k2-part="Cells">
@@ -630,12 +630,18 @@ Cells.Cell = (props: CellProps) => {
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A figure on a card, such as "6 Tabellen" or a state such as "8 knapp". */
+/** The symbol a state brings when a figure names none, so a state is always colour, symbol and word. */
+const statIcon: Record<Status, string> = { ok: "circle-check", warn: "alert-circle", bad: "alert-triangle" };
+
 export type TileStat = {
   /** A Tabler icon before the words. */
   icon?: string;
   /** The figure in words, such as "6 Tabellen". */
   label: string;
-  /** A state: its colour, with the words (never a colour alone). */
+  /**
+   * A state: its colour, its symbol and its words, never a colour alone. Without an `icon` the state brings its own:
+   * a check for ok, a circle with "!" for waiting, a triangle for wrong.
+   */
   status?: Status;
   /** "Waits for you", in the blue of selection, such as "3 Anträge". */
   yours?: boolean;
@@ -739,7 +745,7 @@ const TileCard = (props: { tile: Tile }) => (
         <For each={props.tile.stats}>
           {(stat) => (
             <span class="k2-tile-stat" data-status={stat.status} data-yours={stat.yours ? "" : undefined}>
-              <Show when={stat.icon}>{(name) => <Icon name={name()} />}</Show>
+              <Show when={stat.icon ?? (stat.status ? statIcon[stat.status] : undefined)}>{(name) => <Icon name={name()} />}</Show>
               {stat.label}
             </span>
           )}
@@ -815,7 +821,7 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
           )}
         </Show>
       </span>
-      <span class="k2-tile-title" id={title}>
+      <span class="k2-tile-title" id={title} title={props.tile.title}>
         <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
           {props.tile.title}
         </RowOpen>
@@ -870,8 +876,13 @@ export const Tiles = (props: TilesProps) => (
 export type CanvasProps = {
   /** What the drawing shows, for assistive technology. */
   label: string;
-  /** The height of the drawing in px; the width comes from its place. */
-  height?: number;
+  /**
+   * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
+   * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
+   * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
+   * it scrolls itself, and below 240 px the pane scrolls instead.
+   */
+  height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
@@ -889,7 +900,8 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
+    data-fill={props.height === "fill" ? "" : undefined}
+    style={custom({ "--k2-canvas-h": typeof props.height === "number" ? `${props.height}px` : undefined })}
   >
     {props.children}
   </div>

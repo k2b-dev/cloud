@@ -175,7 +175,7 @@ test("every cell and every field is made once, on the server and in the browser;
     expect(await page.evaluate(() => globalThis.__k2Made)).toEqual({ cells: 6, probe: 1 });
     // the head of each group is in the table and in the phone list, each its own
     expect(await page.locator(".k2-table tr[data-group] .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
-    expect(await page.locator(".k2-table-phone .k2-bar .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
+    expect(await page.locator(".k2-table-phone-group .k2-chip").allTextContents()).toEqual(["Offen", "Erledigt"]);
   });
 });
 

@@ -84,6 +84,12 @@ export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
    * its control, so a page that saves as a whole shows what will change.
    */
   was?: string;
+  /**
+   * One quiet deed for this setting, such as "Auf Standard zurücksetzen" while the value differs from its default: a
+   * text button at the end of the name's line, as `Field action` has it. The value's column keeps its place, so the
+   * deed coming or going moves nothing.
+   */
+  action?: Action;
 };
 
 /**
@@ -93,7 +99,7 @@ export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
  */
 export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
 
-const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boolean }) => {
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
   const props = frame.field;
   const t = useSettingMessages();
   const control = createUniqueId();
@@ -150,6 +156,16 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boo
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  const deed = (
+    <Show when={props.action}>
+      {(action) => (
+        <span class="k2-field-action">
+          <ActionButton action={action()} variant="text" />
+        </span>
+      )}
+    </Show>
+  );
   // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
   const was = (
     <Show when={props.was}>
@@ -177,6 +193,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boo
       data-k2-part={part}
       data-setting={setting}
       data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
       role="group"
       aria-labelledby={label}
     >
@@ -185,27 +202,42 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boo
       </span>
       {actionLine}
       {content}
+      {deed}
       {was}
       {messageLine}
     </div>
   ) : named ? (
-    <div class="k2-field" data-k2-part={part} data-setting={setting} data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
       {actionLine}
       {content}
+      {deed}
       {was}
       {messageLine}
     </div>
   ) : (
-    <div class="k2-field" data-k2-part={part} data-setting={setting} data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
       {actionLine}
       {content}
+      {deed}
       {was}
       {messageLine}
     </div>

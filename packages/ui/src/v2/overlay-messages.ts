@@ -7,12 +7,14 @@ const overlayMessages = i18n.define({
   messages: {
     en: {
       moreActions: "More actions",
+      levelsAbove: "Levels above",
       undo: "Undo",
       retry: "Try again",
       actionsFor: ({ name }: { name: string }) => `Actions for ${name}`,
     },
     de: {
       moreActions: "Weitere Aktionen",
+      levelsAbove: "Übergeordnete Ebenen",
       undo: "Rückgängig",
       retry: "Erneut versuchen",
       actionsFor: ({ name }: { name: string }) => `Aktionen für ${name}`,
@@ -28,3 +30,5 @@ export const useOverlayMessages = (): (() => OverlayMessages) => {
 };
 
 export const checkOverlayMessages = () => overlayMessages.check();
+/** The words in one language, such as for a check that a German screen shows no English ones. */
+export const resolveOverlayMessages = (locale: string): OverlayMessages => overlayMessages.resolve([locale]).t;
