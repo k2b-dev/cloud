@@ -751,16 +751,30 @@ const CalendarViewMenu = <V extends string>(props: {
       <div
         ref={(element) => {
           list = element;
-          // below the button, at its end; without a script the browser shows it in the middle
+          // Below the button, at its end (its left in a right-to-left page), 8 px inside the screen; without a script
+          // the browser shows it in the middle.
           element.addEventListener("beforetoggle", (event) => {
             if (event.newState !== "open" || !trigger) return;
             const rect = trigger.getBoundingClientRect();
+            const rtl = getComputedStyle(trigger).direction === "rtl";
             element.style.top = `${rect.bottom + 4}px`;
-            element.style.right = `${Math.max(8, window.innerWidth - rect.right)}px`;
-            element.style.left = "auto";
             element.style.bottom = "auto";
             element.style.margin = "0";
+            element.style.left = rtl ? `${Math.max(8, rect.left)}px` : "auto";
+            element.style.right = rtl ? "auto" : `${Math.max(8, window.innerWidth - rect.right)}px`;
           });
+          // once it shows, it has a width: a list wider than the room at its end moves back onto the screen
+          element.addEventListener("toggle", (event) => {
+            if (event.newState !== "open") return;
+            const box = element.getBoundingClientRect();
+            if (box.left < 8) element.style.left = "8px";
+            if (box.right > window.innerWidth - 8) element.style.left = `${Math.max(8, window.innerWidth - 8 - box.width)}px`;
+            if (box.left < 8 || box.right > window.innerWidth - 8) element.style.right = "auto";
+          });
+          // a list anchored to a button that moved would stand beside nothing
+          const resize = () => close();
+          window.addEventListener("resize", resize);
+          onCleanup(() => window.removeEventListener("resize", resize));
         }}
         id={id}
         popover="auto"
@@ -779,7 +793,7 @@ const CalendarViewMenu = <V extends string>(props: {
                   <button
                     type="button"
                     class="k2b-calendar-view-menu__item"
-                    aria-pressed={active() ? "true" : "false"}
+                    aria-current={active() ? "true" : undefined}
                     onClick={() => {
                       close();
                       props.onView(option.value);

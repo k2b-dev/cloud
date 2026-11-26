@@ -300,7 +300,7 @@
   background: var(--k2b-calendar-event-hover, var(--k2b-surface-muted));
 }
 
-.k2b-ui .k2b-calendar-view-menu__item:is([aria-current="page"], [aria-pressed="true"]) {
+.k2b-ui .k2b-calendar-view-menu__item[aria-current]:not([aria-current="false"]) {
   font-weight: 600;
 }
 
@@ -4276,15 +4276,9 @@
   bottom: 2px;
 }
 
-/* Narrow week columns keep the title; the time is in the grid already. */
+/* A band of the week is a container: in a narrow one the link count and faces give way, the time drops its pieces. */
 .k2b-ui .k2b-calendar-week .k2b-calendar-band {
   container-type: inline-size;
-}
-
-@container (max-width: 14rem) {
-  .k2b-ui .k2b-calendar-band:is([data-size="xs"], [data-size="s"]) .k2b-calendar-event__meta {
-    display: none;
-  }
 }
 
 /* The icon keeps one box whether it shows the dot or an arrow, so the button never changes its width. */

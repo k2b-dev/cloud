@@ -1044,7 +1044,8 @@ export const TimeMore = (props: {
         }}
         onClick={toggle}
       >
-        +{props.more.bands.length}
+        {/* "+2" also in a right-to-left page, never "2+" */}
+        <bdi dir="ltr">+{props.more.bands.length}</bdi>
       </button>
       <div
         ref={(element) => {

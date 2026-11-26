@@ -348,7 +348,7 @@ for (const view of ["week", "day"] as const)
       const options = page.locator(".k2b-calendar-view-menu__list:popover-open .k2b-calendar-view-menu__item");
       await options.first().waitFor();
       expect(await options.allTextContents()).toEqual(["Tag", "Woche", "Monat", "Jahr"]);
-      expect(await options.filter({ hasText: view === "week" ? "Woche" : "Tag" }).getAttribute("aria-pressed")).toBe("true");
+      expect(await options.filter({ hasText: view === "week" ? "Woche" : "Tag" }).getAttribute("aria-current")).toBe("true");
       // the list stands below its button, inside the screen
       const list = await page.locator(".k2b-calendar-view-menu__list").evaluate((element) => element.getBoundingClientRect().toJSON());
       const button = await trigger.evaluate((element) => element.getBoundingClientRect().toJSON());
@@ -358,3 +358,26 @@ for (const view of ["week", "day"] as const)
       await page.close();
     }
   });
+
+test('right to left, 390 px: the view list stays on the screen, and "+n" reads "+2"', async () => {
+  const page = await open("week", 390, "rtl");
+  try {
+    await page.locator(".k2b-calendar-view-menu__trigger").click();
+    const list = page.locator(".k2b-calendar-view-menu__list:popover-open");
+    await list.waitFor();
+    const box = await list.evaluate((element) => element.getBoundingClientRect().toJSON());
+    expect(box.left).toBeGreaterThanOrEqual(7.5);
+    expect(box.right).toBeLessThanOrEqual(390 - 7.5);
+    // a resize closes it: its button may have moved
+    await page.setViewportSize({ width: 380, height: 900 });
+    await list.waitFor({ state: "hidden" });
+    expect(
+      await page
+        .locator(".k2b-calendar-more bdi")
+        .first()
+        .evaluate((element) => getComputedStyle(element).direction),
+    ).toBe("ltr");
+  } finally {
+    await page.close();
+  }
+});
