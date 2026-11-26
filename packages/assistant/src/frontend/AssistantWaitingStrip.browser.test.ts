@@ -800,18 +800,33 @@ describe("Waiting for you", () => {
         // behind it never shows, between the chips neither. The band looks the same with the conversation hidden.
         const field = await rect(page, ".assistant-chat-composer__column");
         const band = { x: row.left, y: row.top, width: row.right - row.left, height: field.top - row.top };
+        // Where the scroll stops depends on the frame's height, so a gap between two messages can lie behind the band: then
+        // the next line of the conversation moves up behind it, a small scroll that keeps the pill.
         const behind = await page.evaluate((band) => {
           const content = document.querySelector(".k2b-chat-timeline__content")!;
-          const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
-          const range = document.createRange();
-          for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-            if (!node.textContent?.trim()) continue;
-            range.selectNodeContents(node);
-            for (const box of range.getClientRects())
-              if (box.bottom > band.y && box.top < band.y + band.height && box.right > band.x && box.left < band.x + band.width)
-                return true;
-          }
-          return false;
+          const lines = () => {
+            const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+            const range = document.createRange();
+            const boxes: DOMRect[] = [];
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+              if (!node.textContent?.trim()) continue;
+              range.selectNodeContents(node);
+              for (const box of range.getClientRects())
+                if (box.right > band.x && box.left < band.x + band.width && box.height > 0) boxes.push(box);
+            }
+            return boxes;
+          };
+          const covered = () => lines().some((box) => box.bottom > band.y && box.top < band.y + band.height);
+          if (covered()) return true;
+          const next = lines()
+            .filter((box) => box.top >= band.y + band.height)
+            .sort((a, b) => a.top - b.top)[0];
+          let scroller: HTMLElement | null = content.parentElement;
+          while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY)))
+            scroller = scroller.parentElement;
+          if (!next || !scroller) return false;
+          scroller.scrollTop += Math.ceil(next.top - band.y) + 2;
+          return covered();
         }, band);
         // Text of the conversation lies behind the band, so the comparison below means something.
         expect(behind).toBe(true);

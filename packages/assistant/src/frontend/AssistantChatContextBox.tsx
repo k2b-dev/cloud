@@ -375,7 +375,8 @@ export function AssistantChatContextPlaces(props: {
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
   const contextEmpty = () => {
     const snapshot = props.state.snapshot();
-    return Boolean(snapshot && snapshot.results.length === 0 && snapshot.sourceCount === 0 && snapshot.fileCount === 0);
+    // No snapshot yet (or none at all) is nothing to show either.
+    return !snapshot || (snapshot.results.length === 0 && snapshot.sourceCount === 0 && snapshot.fileCount === 0);
   };
   createEffect(on(() => props.chatId, host.close, { defer: true }));
   const freeze = createReadingFreeze();
