@@ -38,6 +38,7 @@ export const oauthMessages = i18n.define({
       noRedirectText: "This client sends nobody back: it signs in without a browser.",
       everyoneOfProfile: "everyone with this kind of account",
       activeConnections: "active connections",
+      activeConnectionsLabel: "Active connections",
       heroMeta: ({ people, fresh }: { people: string; fresh: string }) => `${people} people · ${fresh} new in 7 days`,
       newPerDayWords: ({ name, total, today }: { name: string; total: number; today: number }) =>
         `${name}: ${total} new connections in 30 days, ${today} today`,
@@ -255,6 +256,7 @@ export const oauthMessages = i18n.define({
       noRedirectText: "Dieser Client schickt niemanden zurück: Er meldet sich ohne Browser an.",
       everyoneOfProfile: "alle mit dieser Art von Konto",
       activeConnections: "aktive Verbindungen",
+      activeConnectionsLabel: "Aktive Verbindungen",
       heroMeta: ({ people, fresh }) => `${people} Personen · ${fresh} neu in 7 Tagen`,
       newPerDayWords: ({ name, total, today }) => `${name}: ${total} neue Verbindungen in 30 Tagen, heute ${today}`,
       allClients: "Alle Clients",

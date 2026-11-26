@@ -38,6 +38,7 @@ export const OAuthFixture = (props: { search: string; data?: OAuthFixtureData; n
         }
         open={open ? { id: open, found: clients.find((client) => client.id === open) ?? null } : null}
         activity={fixtureActivity(clients, props.data === "worst")}
+        accent="#4338ca"
         connections={fixtureConnections(clients)}
       />
     </LocaleProvider>

@@ -60,6 +60,11 @@ export type OAuthScreenProps = {
   figures: { total: number; public: number; dynamic: number };
   /** All connections: active, people, new per day, unused clients (`oauthService.client.connectionFigures`). */
   activity: ConnectionFigures;
+  /**
+   * The colour of OAuth itself: its figures and histories carry it, while the shell around shows the colour of the area
+   * the page stands in (Administration).
+   */
+  accent: string;
   /** The connections of the listed and the open client, by `clientId`. */
   connections: Record<string, ClientConnections>;
   /** The client open beside the list (`client=<id>`), read on its own; `found` is null when it is gone. */
@@ -450,7 +455,11 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         <Section icon="chart-bar" title={t().newPerDay} count={t().last30Days}>
           <Show when={connectionsOf(client).perDay.some((count) => count > 0)} fallback={<Text muted>{t().noConnectionsIn30Days}</Text>}>
             <Inline>
-              <Spark values={connectionsOf(client).perDay} label={trendWords(client.name, connectionsOf(client).perDay)} />
+              <Spark
+                values={connectionsOf(client).perDay}
+                label={trendWords(client.name, connectionsOf(client).perDay)}
+                color={props.accent}
+              />
             </Inline>
           </Show>
         </Section>
@@ -506,50 +515,51 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       .filter((client) => client.registrationKind === "dynamic")
       .sort((x, y) => Date.parse(y.createdAt) - Date.parse(x.createdAt))[0];
     return (
-      <Band>
-        <Bar
-          start={
-            <Inline>
-              <Text type="lead">{number(a.active)}</Text>
-              <Text weight="strong">{t().activeConnections}</Text>
-              <Text type="meta" muted>
-                {t().heroMeta({ people: number(a.people), fresh: number(a.newLast7) })}
-              </Text>
-            </Inline>
-          }
-          end={<Spark values={a.perDay} label={trendWords(t().allClients, a.perDay)} />}
-        />
+      <>
+        {/* the one figure with its real trend, in the colour of OAuth */}
+        <Cells>
+          <Cells.Cell
+            icon="plug-connected"
+            color={props.accent}
+            label={t().activeConnectionsLabel}
+            value={number(a.active)}
+            meta={t().heroMeta({ people: number(a.people), fresh: number(a.newLast7) })}
+            trend={{ values: a.perDay, label: trendWords(t().allClients, a.perDay), color: props.accent }}
+          />
+        </Cells>
         <Show when={props.figures.dynamic > 0 || a.unused.count > 0 || props.search}>
-          <Inline>
-            <Show when={props.figures.dynamic > 0}>
-              <Text>
-                <Icon name="world" /> <Text weight="strong">{number(props.figures.dynamic)}</Text> {t().selfRegisteredWord}
-                <Show when={newest}>
-                  {(client) => (
-                    <Text type="meta" muted>
-                      {" "}
-                      {t().newestSince({ name: client().name, date: client().created })}
-                    </Text>
-                  )}
-                </Show>
-              </Text>
-            </Show>
-            <Show when={a.unused.count > 0}>
-              <Text>
-                <Chip status="warn">{t().unusedCount({ count: a.unused.count })}</Chip>{" "}
-                <Text type="meta" muted>
-                  {a.unused.names.join(", ")}
+          <Band>
+            <Inline>
+              <Show when={props.figures.dynamic > 0}>
+                <Text>
+                  <Icon name="world" /> <Text weight="strong">{number(props.figures.dynamic)}</Text> {t().selfRegisteredWord}
+                  <Show when={newest}>
+                    {(client) => (
+                      <Text type="meta" muted>
+                        {" "}
+                        {t().newestSince({ name: client().name, date: client().created })}
+                      </Text>
+                    )}
+                  </Show>
                 </Text>
-              </Text>
-            </Show>
-            <Show when={props.search}>
-              <Text type="meta" muted>
-                {t().searchResult({ query: props.search, count: total() })}
-              </Text>
-            </Show>
-          </Inline>
+              </Show>
+              <Show when={a.unused.count > 0}>
+                <Text>
+                  <Chip status="warn">{t().unusedCount({ count: a.unused.count })}</Chip>{" "}
+                  <Text type="meta" muted>
+                    {a.unused.names.join(", ")}
+                  </Text>
+                </Text>
+              </Show>
+              <Show when={props.search}>
+                <Text type="meta" muted>
+                  {t().searchResult({ query: props.search, count: total() })}
+                </Text>
+              </Show>
+            </Inline>
+          </Band>
         </Show>
-      </Band>
+      </>
     );
   };
 
@@ -623,7 +633,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                     const c = connectionsOf(client);
                     if (client.serviceAccountId) return "–";
                     return c.perDay.some((count) => count > 0) ? (
-                      <Spark values={c.perDay} label={trendWords(client.name, c.perDay)} />
+                      <Spark values={c.perDay} label={trendWords(client.name, c.perDay)} color={props.accent} />
                     ) : (
                       t().noUse
                     );

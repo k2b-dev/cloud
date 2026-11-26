@@ -266,6 +266,11 @@ export type SparkProps = {
    * of the data ("Änderungen der letzten 7 Tage"): a rise, a fall and a flat line would then say the same.
    */
   label: string;
+  /**
+   * The data colour of the thing the history belongs to, where it is not the colour around it: a hex colour, an
+   * `oklch()` or `var(--…)`. The bars take its soft tone and the last one its ink.
+   */
+  color?: string;
 };
 
 /**
@@ -275,7 +280,7 @@ export type SparkProps = {
 export const Spark = (props: SparkProps) => {
   const top = () => Math.max(...props.values, 0);
   return (
-    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label}>
+    <span class="k2-spark" data-k2-part="Spark" role="img" aria-label={props.label} style={custom({ "--k2-c": props.color })}>
       <For each={props.values}>
         {(value) => <i style={custom({ "--k2-v": `${top() > 0 ? Math.max(8, Math.round((value / top()) * 100)) : 8}%` })} />}
       </For>

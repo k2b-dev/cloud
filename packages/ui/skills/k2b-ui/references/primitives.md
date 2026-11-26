@@ -323,8 +323,10 @@ lines instead of cutting a thing.
 - `Spark`: `values` (oldest first), `label`: what the bars say as one
   sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
   never only the title of the data. A few bars of a short history, the
-  last strongest; beside a number, never instead of it.
-- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  last strongest; beside a number, never instead of it. `color` gives it the
+  data colour of the thing it belongs to where that differs from the colour
+  around it (an app's figures inside the Administration shell).
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`, `Spark`,
   `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
   `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
   the primitives derive readable foregrounds themselves (symbols and bars

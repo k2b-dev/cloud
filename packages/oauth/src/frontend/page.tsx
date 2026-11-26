@@ -3,7 +3,7 @@ import { getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { formatDate } from "@k2b/cloud/shared";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
-import { ssr } from "../config";
+import { ACCENT, ssr } from "../config";
 import type { OAuthClient } from "../contracts";
 import { oauthService } from "../service";
 import OAuthScreen from "./_components/OAuthScreen.island";
@@ -51,6 +51,7 @@ export default ssr<AuthContext>(async (c) => {
         clients={clientsPage.items.map(row)}
         figures={summary}
         activity={activity}
+        accent={ACCENT}
         connections={connections}
         open={openId ? { id: openId, found: opened ? row(opened) : null } : null}
       />
