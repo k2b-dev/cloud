@@ -34,6 +34,20 @@ render(
               wrap="toggle"
             />
           </Section>
+          <Section icon="database" title="Abfrage">
+            <CodeBlock
+              label="offene-laeufe.sql"
+              code={"SELECT job, count(*) FROM runs -- heute\nWHERE state = 'error' AND started > :since LIMIT 20"}
+              language="sql"
+            />
+          </Section>
+          <Section icon="markdown" title="Notiz">
+            <CodeBlock
+              label="README.md"
+              code={"# Gateway\nSiehe [die Anleitung](https://example.org/gateway) und `cloud.env`."}
+              language="markdown"
+            />
+          </Section>
           <Section icon="list-details" title="Protokoll von heute">
             <CodeBlock label="gateway.log" code={longLog} lineNumbers />
           </Section>

@@ -2,7 +2,7 @@
 // downloaded while hidden), a config with line numbers and a switch for long lines, a command, and a snippet with
 // highlighting: each a CodeBlock in its Section. A copy says "Kopiert" in a toast. See `states` at the end: the
 // worst case of a long log (2,000 lines, one of 10,000 signs) that shows 200 lines and "Alles zeigen".
-import { Bar, Button, CodeBlock, Nav, Pane, Section, StatusRow, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Chip, CodeBlock, Nav, Pane, Section, StatusRow, Text, Workspace } from "@k2b/ui/v2";
 
 const key = `-----BEGIN OPENSSH PRIVATE KEY-----
 b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
@@ -73,16 +73,17 @@ export default function GatewayAccess(props: Props) {
         label="Gateway Werkstatt Nord"
         status={
           <StatusRow
-            lead="Verbunden seit 12. November"
+            lead="3 Standorte verbunden"
             facts={[
-              { value: "3", after: "Standorte" },
+              { before: "seit", value: "12. November" },
               { before: "Version", value: "0.71.2" },
             ]}
+            filters={<Chip status="ok">Verbunden</Chip>}
           />
         }
       >
         {props.log ? (
-          <Section icon="list-details" title="Protokoll von heute" count={2000}>
+          <Section icon="list-details" title="Protokoll von heute" count="2.000 Zeilen">
             <CodeBlock label="gateway.log" code={longLog} lineNumbers wrap="toggle" download="gateway.log" />
           </Section>
         ) : (

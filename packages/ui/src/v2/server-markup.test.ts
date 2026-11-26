@@ -81,7 +81,8 @@ test("a hidden secret leaves no sign of its code in the server's markup; highlig
   expect(hidden).not.toContain("BEGIN");
   expect(hidden).not.toContain("b3BlbnNz");
   expect(hidden).toContain('role="region"');
-  expect(hidden).toContain('aria-label="gateway_ed25519"');
+  // its name says that it is hidden
+  expect(hidden).toContain('aria-label="gateway_ed25519, hidden"');
   // each run of signs keeps its width: "-----BEGIN" is 10 signs, the second line 24
   expect(hidden).toContain("--k2-code-signs:10");
   expect(hidden).toContain("--k2-code-signs:24");

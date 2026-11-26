@@ -251,7 +251,7 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 
 An admin page of a gateway: a `Nav`, a head `Bar` with the title and the
 one primary "Verbindung prüfen" (mirrored as `Workspace primary`), a
-`StatusRow`, and four `Section`s, each with one `CodeBlock`: the private key
+`StatusRow` ("3 Standorte verbunden" with a `Chip status="ok"`), and four `Section`s, each with one `CodeBlock`: the private key
 as `secret` with `download`, the config with `lineNumbers`, `wrap="toggle"`
 and `download`, the command to run, and a TypeScript snippet with
 `language="ts"`. `states` exports the worst case of a log: 2,000 lines, one of 10,000 signs, of which the block

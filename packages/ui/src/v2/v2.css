@@ -2371,19 +2371,31 @@
   padding: 0 6px;
   border-top: var(--k2-hairline);
 }
-/* highlighting: quiet comments, strings and numbers in a colour of their own, keywords in the ink of blue */
-.k2-ui .k2-code-line .k2-hl-comment {
+/* highlighting, in few colours of meaning: quiet comments and marks of Markdown, strings in green, numbers and
+   parameters in amber, keywords, links and references in the ink of blue, names of functions a little stronger;
+   operators and plain names keep the text's ink. Scripts write `hl-*`, SQL and Markdown `cd-*` (with `k2-` before). */
+.k2-ui .k2-code-line :is(.k2-hl-comment, .k2-cd-c) {
   color: var(--k2-subtle);
   font-style: italic;
 }
-.k2-ui .k2-code-line .k2-hl-string {
+.k2-ui .k2-code-line :is(.k2-cd-md-syntax, .k2-cd-md-checkbox, .k2-hl-operator) {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-code-line :is(.k2-hl-string, .k2-cd-s, .k2-cd-md-code, .k2-cd-md-tag) {
   color: var(--k2-ok);
 }
-.k2-ui .k2-code-line .k2-hl-number {
+.k2-ui .k2-code-line :is(.k2-hl-number, .k2-cd-n, .k2-hl-parameter, .k2-cd-param, .k2-cd-md-formula) {
   color: var(--k2-warn-ink);
 }
-.k2-ui .k2-code-line .k2-hl-keyword {
+.k2-ui .k2-code-line :is(.k2-hl-keyword, .k2-cd-k, .k2-cd-md-link, .k2-cd-md-ref, .k2-cd-md-directive) {
   color: var(--k2-blue-ink);
+}
+.k2-ui .k2-code-line :is(.k2-hl-function) {
+  color: var(--k2-text);
+  font-weight: 500;
+}
+.k2-ui .k2-code-line :is(.k2-hl-identifier, .k2-hl-variable, .k2-cd-p) {
+  color: var(--k2-text-2);
 }
 
 /* ══ Components (layer 2): made of the primitives above, CSS only for the order of their parts ════════════════ */

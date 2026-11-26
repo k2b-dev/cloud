@@ -42,6 +42,27 @@ export type CodeBlockProps = {
  */
 export const codeLinesShown = 200;
 
+/** Copies through a selection in a hidden field, for a page where the clipboard API is missing or refused. */
+const copyBySelection = (text: string): boolean => {
+  const before = document.activeElement;
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.readOnly = true;
+  field.setAttribute("aria-hidden", "true");
+  field.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  document.body.append(field);
+  field.select();
+  let done = false;
+  try {
+    done = document.execCommand("copy");
+  } catch {
+    done = false;
+  }
+  field.remove();
+  if (before instanceof HTMLElement) before.focus({ preventScroll: true });
+  return done;
+};
+
 const languageNames: Partial<Record<CodeLanguage, string>> = {
   ts: "TypeScript",
   tsx: "TypeScript",
@@ -54,15 +75,34 @@ const languageNames: Partial<Record<CodeLanguage, string>> = {
 };
 
 /**
+ * The highlighter's classes (`hl-*` for scripts, `cd-*` for SQL and Markdown) in the namespace of v2.css: every class
+ * of a token gets `k2-` before it. The highlighter writes only its own spans, so their class lists are all there is.
+ */
+const inNamespace = (line: string) =>
+  line.replace(
+    /class="([^"]*)"/g,
+    (_attribute, classes: string) =>
+      `class="${classes
+        .split(" ")
+        .map((name) => `k2-${name}`)
+        .join(" ")}"`,
+  );
+
+/** The signs of a run as a person sees them: a letter with its accents or an emoji is one sign. */
+const signs = (run: string) =>
+  typeof Intl.Segmenter === "function"
+    ? [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(run)].length
+    : [...run].length;
+
+/**
  * A hidden line in the shape of the real one: spaces and tabs kept, every run of signs a row of dots exactly as wide
- * (drawn by CSS at one `ch` a sign, so no font can make it wider or narrower than the code it hides).
+ * (drawn by CSS at one `ch` a sign, so no font can make it wider or narrower than the code it hides). A wide sign
+ * (such as a CJK character) takes two places when it shows; a key or a config has none.
  */
 const Hidden = (props: { line: string }) => (
   <code>
     <For each={props.line.split(/(\s+)/u).filter((part) => part !== "")}>
-      {(part) =>
-        /^\s+$/u.test(part) ? part : <span class="k2-code-mask" style={custom({ "--k2-code-signs": String([...part].length) })} />
-      }
+      {(part) => (/^\s+$/u.test(part) ? part : <span class="k2-code-mask" style={custom({ "--k2-code-signs": String(signs(part)) })} />)}
     </For>
     {props.line === "" ? " " : null}
   </code>
@@ -88,20 +128,26 @@ export const CodeBlock = (props: CodeBlockProps) => {
   // highlighted only while it shows: a hidden secret never reaches the page as text
   // the highlighter's classes (`hl-*`) in the namespace of v2.css
   const drawn = createMemo(() =>
-    masked()
-      ? shown()
-      : highlightCodeDisplayLines(shown().join("\n"), props.language ?? "text").map((line) => line.replace(/class="hl-/g, 'class="k2-hl-')),
+    masked() ? shown() : highlightCodeDisplayLines(shown().join("\n"), props.language ?? "text").map(inNamespace),
   );
   const rest = () => lines().length - shown().length;
   // the widest number of the whole code, so the column keeps its width when the rest shows
   const digits = () => (props.lineNumbers ? String(String(lines().length).length) : undefined);
+  let body: HTMLDivElement | undefined;
   const copy = async () => {
-    try {
-      await copyToClipboard(props.code);
-      toast(t().copied, { status: "ok" });
-    } catch {
-      toast(t().copyFailed, { status: "bad" });
-    }
+    const done = await copyToClipboard(props.code).then(
+      () => true,
+      // a page without the clipboard API (plain HTTP) or without its permission: the selection way, as browsers had it
+      () => copyBySelection(props.code),
+    );
+    if (done) toast(t().copied, { status: "ok" });
+    // a hidden code cannot be selected by hand: the sentence says to show it first
+    else toast(masked() ? t().copyFailedHidden : t().copyFailed, { status: "bad" });
+  };
+  const showAll = () => {
+    setAll(true);
+    // the button goes; the focus goes to the lines, which now hold the rest
+    body?.focus({ preventScroll: true });
   };
   return (
     <div
@@ -117,8 +163,9 @@ export const CodeBlock = (props: CodeBlockProps) => {
         <Show when={props.language && languageNames[props.language]}>{(name) => <span class="k2-code-language">{name()}</span>}</Show>
         <span class="k2-code-deeds">
           <Show when={props.secret}>
-            <Button variant="ghost" icon={masked() ? "eye" : "eye-off"} onClick={() => setRevealed(masked())}>
-              {masked() ? t().show : t().hide}
+            {/* one word in both states (a toggle), so the button keeps its width */}
+            <Button variant="ghost" icon="eye" pressed={revealed()} onClick={() => setRevealed(!revealed())}>
+              {t().show}
             </Button>
           </Show>
           <Show when={props.wrap === "toggle"}>
@@ -138,7 +185,13 @@ export const CodeBlock = (props: CodeBlockProps) => {
         </span>
       </div>
       {/* the lines scroll sideways here, never the page; the keyboard reaches them through the focus */}
-      <div class="k2-code-body" role="region" aria-label={props.label} aria-description={masked() ? t().hidden : undefined} tabIndex={0}>
+      <div
+        ref={body}
+        class="k2-code-body"
+        role="region"
+        aria-label={masked() ? t().hiddenName({ name: props.label }) : props.label}
+        tabIndex={0}
+      >
         <div class="k2-code-lines">
           <For each={drawn()}>
             {(line, index) => (
@@ -158,7 +211,7 @@ export const CodeBlock = (props: CodeBlockProps) => {
       </div>
       <Show when={rest() > 0}>
         <div class="k2-code-more">
-          <Button variant="text" onClick={() => setAll(true)}>
+          <Button variant="text" onClick={showAll}>
             {t().showAll({ lines: new Intl.NumberFormat(locale()).format(lines().length) })}
           </Button>
         </div>

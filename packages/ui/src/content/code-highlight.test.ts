@@ -149,3 +149,29 @@ for (const [name, source] of [
     ).toBe(source);
   });
 }
+
+// One pass over a line: a line four times as long takes about four times as long, not sixteen. Measured as a ratio
+// (the best of three runs at each length), so a slow or busy machine changes both sides alike.
+const fastest = (run: () => void) => {
+  let best = Number.POSITIVE_INFINITY;
+  for (let round = 0; round < 3; round++) {
+    const start = performance.now();
+    run();
+    best = Math.min(best, performance.now() - start);
+  }
+  return best;
+};
+
+for (const [name, line] of [
+  ["many link openings", (n: number) => `${"[".repeat(n)}a](${"b".repeat(n)}`],
+  ["many links without an end", (n: number) => "[a](b".repeat(n / 5)],
+  ["many formulas without an end", (n: number) => "=A(".repeat(n / 3)],
+  ["many code spans without an end", (n: number) => "`a".repeat(n / 2)],
+  ["many strong marks without an end", (n: number) => "**a".repeat(n / 3)],
+] as const)
+  test(`Markdown highlighting reads a long line once: ${name}`, () => {
+    const short = fastest(() => highlightCodeDisplayLines(line(6_000), "markdown"));
+    const long = fastest(() => highlightCodeDisplayLines(line(24_000), "markdown"));
+    // linear: about 4; quadratic: about 16
+    expect(long / Math.max(short, 1)).toBeLessThan(8);
+  });

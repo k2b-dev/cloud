@@ -14,7 +14,7 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 ## Code to read and copy
 
-The admin page of a gateway: a private key hidden until "Zeigen", a config with line numbers and a switch for long lines, a command and a TypeScript snippet, each a `CodeBlock` in its `Section`. Copy says "Kopiert" in a toast; copy and download work while the key is hidden, and the hidden key keeps the shape of its signs, so nothing moves when it shows. Switch to the log: 2,000 lines with one of 10,000 signs show 200 lines and "Alles zeigen", and the long line scrolls inside its block, never the page.
+The admin page of a gateway: a private key hidden until "Zeigen", a config with line numbers and a switch for long lines, a command and a TypeScript snippet, each a `CodeBlock` in its `Section`. Copy says "Kopiert" in a toast; copy and download work while the key is hidden, and the hidden key keeps the shape of its signs, so nothing moves when it shows. Hidden means hidden from eyes: the key still travels to the browser in the page's data, so send it only to a person who may have it. Switch to the log: 2,000 lines with one of 10,000 signs show 200 lines and "Alles zeigen", and the long line scrolls inside its block, never the page.
 
 <Example recipe="code" height="640" default="Hidden key" />
 

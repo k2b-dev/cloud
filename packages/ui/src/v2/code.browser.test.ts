@@ -87,6 +87,8 @@ for (const width of [1440, 390]) {
       await more.click();
       await settled(page);
       expect(await log.locator(".k2-code-line").count()).toBe(2000);
+      // the button went; the focus stands on the lines that hold the rest, not on the page
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("gateway.log");
       expect(await more.count()).toBe(0);
       expect(await log.locator(".k2-code-number").last().textContent()).toBe("2000");
       // the number column had the width of four digits from the start, so the code did not move
@@ -117,7 +119,7 @@ for (const width of [1440, 390]) {
   test(`at ${width}: a secret stays hidden in the shape of its signs until "Zeigen", and copy takes it while hidden`, async () => {
     await withPage(width, async (page) => {
       const key = block(page, "gateway_ed25519");
-      const body = page.getByRole("region", { name: "gateway_ed25519" });
+      const body = page.getByRole("region", { name: "gateway_ed25519, verborgen" });
       const before = await key.evaluate((element) => ({
         text: element.textContent ?? "",
         height: element.getBoundingClientRect().height,
@@ -125,7 +127,10 @@ for (const width of [1440, 390]) {
       }));
       expect(before.text).not.toContain("BEGIN");
       expect(before.text).not.toContain("b3BlbnNz");
-      expect(await body.getAttribute("aria-description")).toBe("Verborgen, bis du „Zeigen“ drückst");
+      expect(await body.count()).toBe(1);
+      const show = key.getByRole("button", { name: "Zeigen" });
+      const showWidth = await show.evaluate((button) => button.getBoundingClientRect().width);
+      expect(await show.getAttribute("aria-pressed")).toBe("false");
       await page.evaluate(() => {
         Object.defineProperty(navigator, "clipboard", {
           configurable: true,
@@ -135,7 +140,7 @@ for (const width of [1440, 390]) {
       await key.getByRole("button", { name: "Kopieren: gateway_ed25519" }).click();
       await page.getByText("Kopiert", { exact: true }).waitFor();
       expect(await page.evaluate(() => Reflect.get(window, "__copied"))).toContain("-----BEGIN OPENSSH PRIVATE KEY-----");
-      await key.getByRole("button", { name: "Zeigen" }).click();
+      await show.click();
       await settled(page);
       const after = await key.evaluate((element) => ({
         text: element.textContent ?? "",
@@ -146,20 +151,69 @@ for (const width of [1440, 390]) {
       expect(after.height).toBe(before.height);
       // as wide as the code it hid, to the subpixel a font rounds to
       expect(Math.abs(after.width - before.width)).toBeLessThan(0.5);
-      expect(await key.getByRole("button", { name: "Verbergen" }).count()).toBe(1);
+      // a toggle that is on now, as wide as before; the lines have their plain name again
+      expect(await show.getAttribute("aria-pressed")).toBe("true");
+      expect(await show.evaluate((button) => button.getBoundingClientRect().width)).toBe(showWidth);
+      expect(await page.getByRole("region", { name: "gateway_ed25519", exact: true }).count()).toBe(1);
     });
   });
 
-  test(`at ${width}: a copy that fails says so in one sentence`, async () => {
+  test(`at ${width}: without the clipboard API (plain HTTP, or refused), copy takes the selection way and says "Kopiert"`, async () => {
     await withPage(width, async (page) => {
       await page.evaluate(() => {
         Object.defineProperty(navigator, "clipboard", {
           configurable: true,
           value: { writeText: async () => Promise.reject(new Error("denied")) },
         });
+        // what the selection way copies: the selected text of the field it selected
+        document.execCommand = (command: string) => {
+          const field = document.activeElement;
+          Reflect.set(window, "__copied", command === "copy" && field instanceof HTMLTextAreaElement ? field.value : "");
+          return command === "copy";
+        };
+      });
+      const copy = block(page, "gateway_ed25519").getByRole("button", { name: "Kopieren: gateway_ed25519" });
+      await copy.click();
+      await page.getByText("Kopiert", { exact: true }).waitFor();
+      expect(await page.evaluate(() => Reflect.get(window, "__copied"))).toContain("-----BEGIN OPENSSH PRIVATE KEY-----");
+      // the hidden field is gone, and the focus is back on the button
+      expect(await page.locator("body > textarea").count()).toBe(0);
+      expect(await copy.evaluate((button) => button === document.activeElement)).toBe(true);
+    });
+  });
+
+  test(`at ${width}: a copy that fails both ways says so in one sentence, and a hidden code is to be shown first`, async () => {
+    await withPage(width, async (page) => {
+      await page.evaluate(() => {
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: async () => Promise.reject(new Error("denied")) },
+        });
+        document.execCommand = () => false;
       });
       await block(page, "cloud.env").getByRole("button", { name: "Kopieren: cloud.env" }).click();
       await page.getByText("Kopieren hat nicht geklappt; markiere den Code und kopiere ihn mit der Tastatur.").waitFor();
+      await block(page, "gateway_ed25519").getByRole("button", { name: "Kopieren: gateway_ed25519" }).click();
+      await page.getByText("Kopieren hat nicht geklappt; drücke „Zeigen“, markiere den Code und kopiere ihn mit der Tastatur.").waitFor();
+    });
+  });
+
+  test(`at ${width}: SQL and Markdown are highlighted in the colours of v2, as scripts are`, async () => {
+    await withPage(width, async (page) => {
+      const colour = (label: string, text: string) =>
+        block(page, label)
+          .locator("code span", { hasText: text })
+          .first()
+          .evaluate((span) => getComputedStyle(span).color);
+      const blue = "rgb(29, 78, 216)";
+      const green = "rgb(4, 120, 87)";
+      const amber = "rgb(180, 83, 9)";
+      expect(await colour("offene-laeufe.sql", "SELECT")).toBe(blue);
+      expect(await colour("offene-laeufe.sql", "'error'")).toBe(green);
+      expect(await colour("offene-laeufe.sql", "20")).toBe(amber);
+      expect(await colour("offene-laeufe.sql", ":since")).toBe(amber);
+      expect(await colour("README.md", "[die Anleitung]")).toBe(blue);
+      expect(await colour("README.md", "cloud.env")).toBe(green);
     });
   });
 }
