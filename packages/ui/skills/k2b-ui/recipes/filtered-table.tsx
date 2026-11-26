@@ -224,11 +224,15 @@ export default function FilteredOrders(props: Props) {
     state().group === "status"
       ? [...rows()].sort((a, b) => STATUS.findIndex((s) => s.value === a.status) - STATUS.findIndex((s) => s.value === b.status))
       : rows();
-  // The search is part of the address too: the field shows it, and Enter sets it through the declaration (a search
-  // the address holds but no field shows would filter the list for no visible reason).
+  // The search is part of the address too: the field shows it, and Enter sets it through the declaration and writes
+  // the address as the bar does (one history entry), so reload, back and a shared link keep it. A search the address
+  // holds but no field shows would filter the list for no visible reason.
   const search = (text: string) => {
     const next = orderQuery.set(state(), "q", text.trim());
-    if (next) setState(next);
+    if (!next) return;
+    const params = orderQuery.serialize(next, location.search).toString();
+    history.pushState(history.state, "", `${location.pathname}${params ? `?${params}` : ""}${location.hash}`);
+    setState(next);
   };
   return (
     <Workspace
@@ -366,6 +370,9 @@ export default function FilteredOrders(props: Props) {
 // The states Fibel's Example offers beside the default; the recipe test renders each one as well. `editor` opens the
 // editor of the status filter the way a person does, by pressing its statement.
 export const states = {
+  // what the server parses from the page's own address, as on a reload (the recipe test types a search, reloads and
+  // goes back)
+  address: () => <FilteredOrders address={typeof location === "undefined" ? undefined : location.search.slice(1) || undefined} />,
   empty: () => <FilteredOrders rows={[]} address="status=done&amount=5000.." />,
   loading: () => <FilteredOrders loading />,
   editor: { render: () => <FilteredOrders />, press: "Filter Status ist Offen oder In Arbeit bearbeiten" },
@@ -393,7 +400,7 @@ const worstOrders: Order[] = [
     customer: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG",
     kind: "cabinet",
     status: "open",
-    team: [people.felix, people.mira, people.jonas, people.sami],
+    team: [people.felix, people.mira, people.jonas],
     due: "31.12.2026",
     amount: 12345678.9,
   },
@@ -404,7 +411,7 @@ const worstOrders: Order[] = [
     customer: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
     kind: "cabinet",
     status: "done",
-    team: [people.felix, people.mira, people.jonas, people.sami],
+    team: [people.felix, people.mira, people.jonas],
     due: "05.12.2026",
     amount: -42.5,
   },
@@ -414,7 +421,7 @@ const worstOrders: Order[] = [
     customer: "王秀英",
     kind: "cabinet",
     status: "open",
-    team: [people.felix, people.mira, people.jonas, people.sami],
+    team: [people.felix, people.mira, people.jonas],
     due: "06.12.2026",
     amount: 1284,
   },

@@ -216,4 +216,50 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
         await page.close();
       }
     });
+
+  // The search of the filter recipe lived only in the island (Codex review of #4209): Enter filtered, a reload lost it.
+  // On a page with a real address the recipe mounts as the server would render it from that address.
+  test("filtered-table.tsx: a search is written to the address on Enter, kept on reload, undone by back", async () => {
+    const origin = "http://recipes.test";
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    page.setDefaultTimeout(2000);
+    const errors = pageErrors(page);
+    await page.route(`${origin}/**`, (route) =>
+      route.fulfill({
+        contentType: "text/html; charset=utf-8",
+        body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      }),
+    );
+    const mount = async () => {
+      await page.addScriptTag({ content: `window.__recipe = ${JSON.stringify({ name: "filtered-table.tsx", state: "address" })};` });
+      await page.addScriptTag({ content: bundle });
+      await page.waitForFunction(() => window.__mounted === true);
+      await settled(page);
+    };
+    const field = page.getByRole("searchbox", { name: "Auftrag oder Kunde" });
+    try {
+      await page.goto(`${origin}/auftraege?status=open`);
+      await mount();
+      await field.fill("Regal");
+      await field.press("Enter");
+      await settled(page);
+      expect(new URL(page.url()).searchParams.get("q")).toBe("Regal");
+      expect(new URL(page.url()).searchParams.get("status")).toBe("open");
+      // back leaves the search, forward brings it again: the bar follows the address
+      await page.goBack();
+      await settled(page);
+      expect(new URL(page.url()).searchParams.get("q")).toBeNull();
+      expect(await field.inputValue()).toBe("");
+      await page.goForward();
+      await settled(page);
+      expect(await field.inputValue()).toBe("Regal");
+      // a reload renders from the address: the search stands in its field
+      await page.reload();
+      await mount();
+      expect(await field.inputValue()).toBe("Regal");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
 });
