@@ -109,6 +109,8 @@ type Api = {
   share: number[];
   /** Answers to creating a user. */
   user: number[];
+  /** Answers to denying a request. */
+  deny: number[];
   posts: { path: string; body: unknown }[];
   deletes: string[];
   pages: string[];
@@ -120,6 +122,7 @@ const api = (patch: Partial<Api> = {}): Api => ({
   create: [],
   share: [],
   user: [],
+  deny: [],
   posts: [],
   deletes: [],
   pages: [],
@@ -132,6 +135,8 @@ const routes: Record<string, (url: URL) => State> = {
   // as the record's server: `?key=` is what the key section opens
   [`/app/accounts/users/${AGENT_ID}`]: (url) => ({ screen: "record", open: url.searchParams.get("key") ?? undefined }),
   "/app/accounts/users/new": (url) => ({ screen: "new-user", request: url.searchParams.has("request") }),
+  // the requests list stands in as the place a denied request leads to
+  "/app/accounts/requests": () => ({ screen: "new-user" }),
 };
 
 const open = async (view: View, address: string, answers: Api, state?: State) => {
@@ -225,6 +230,8 @@ const open = async (view: View, address: string, answers: Api, state?: State) =>
     }
     if (url.pathname === `/api/accounts/account-requests/${accountRequest.id}/deny` && method === "POST") {
       answers.posts.push({ path: url.pathname, body: request.postDataJSON() });
+      const status = answers.deny.shift() ?? 200;
+      if (status !== 200) return route.fulfill({ status, json: { message: "Die Anfrage ist schon bearbeitet." } });
       return route.fulfill({ json: { ok: true } });
     }
     return route.fulfill({ status: 404, json: { message: "Not found" } });
@@ -502,8 +509,8 @@ describe("a new account on v2", () => {
     }
   }, 60_000);
 
-  test("from a request the form is filled for FreeIPA, and the request can be denied with a reason", async () => {
-    const answers = api();
+  test("from a request the form is filled for FreeIPA; a refused deny stays, a denied request leads to the requests", async () => {
+    const answers = api({ deny: [409] });
     const { context, tab, errors } = await open(wide, `/app/accounts/users/new?request=${accountRequest.id}`, answers);
     try {
       expect(await tab.getByRole("radio", { name: "FreeIPA" }).isChecked()).toBe(true);
@@ -512,10 +519,17 @@ describe("a new account on v2", () => {
       await dialog(tab).getByRole("textbox").fill("Bitte über die Personalabteilung.");
       await shoot(tab, "new-user-deny-light-1440");
       await dialog(tab).getByRole("button", { name: "Anfrage ablehnen" }).click();
-      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
-      expect(answers.posts).toEqual([
-        { path: `/api/accounts/account-requests/${accountRequest.id}/deny`, body: { reason: "Bitte über die Personalabteilung." } },
-      ]);
+      // refused: the dialog stays with the server's reason and the typed reason
+      await dialog(tab).getByText("Die Anfrage ist schon bearbeitet.").waitFor();
+      expect(await dialog(tab).getByRole("textbox").inputValue()).toBe("Bitte über die Personalabteilung.");
+      await dialog(tab).getByRole("button", { name: "Anfrage ablehnen" }).click();
+      await tab.waitForFunction(() => location.pathname === "/app/accounts/requests");
+      const deny = {
+        path: `/api/accounts/account-requests/${accountRequest.id}/deny`,
+        body: { reason: "Bitte über die Personalabteilung." },
+      };
+      expect(answers.posts).toEqual([deny, deny]);
+      expect(answers.pages.at(-1)).toBe("/app/accounts/requests");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

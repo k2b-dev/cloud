@@ -50,6 +50,7 @@ export type NewUserScreenProps = {
 };
 
 const USERS_PATH = "/app/accounts/users";
+const REQUESTS_PATH = "/app/accounts/requests";
 
 /** Each account type's mark, so a type looks the same wherever it stands. */
 const categoryMark: Record<AccountCategory, { icon: string; color: string }> = {
@@ -61,13 +62,13 @@ const categoryMark: Record<AccountCategory, { icon: string; color: string }> = {
 /**
  * A new account on v2, a page of its own: the account type, the person's name and address, administration and the
  * welcome mail, and what creating does. From an open request (`?request=`) the request stands above the form, fills it
- * and can be denied. After creating, the page shows the result with the way to the new account.
+ * and can be denied, which leads to the requests list. After creating, the page shows the result with the way to the new account.
  */
 export default function NewUserScreen(props: NewUserScreenProps) {
   const locale = useLocale();
   const t = useAccountsMessages();
   const words = useNewUserMessages();
-  const { openPage, showChanges } = usePageSwap();
+  const { openPage } = usePageSwap();
   const request = props.request;
   const categories = allowedCategories(props.categoryPolicy, props.freeIpaEnabled, request !== null);
   const [form, setForm] = createSignal<CreateUserForm>({
@@ -436,7 +437,8 @@ export default function NewUserScreen(props: NewUserScreenProps) {
             request={open()}
             close={(denied) => {
               setDenying(false);
-              if (denied) void showChanges();
+              // a denied request is done: the requests list shows it among the denied ones
+              if (denied) void openPage(REQUESTS_PATH);
             }}
           />
         )}
