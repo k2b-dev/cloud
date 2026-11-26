@@ -49,7 +49,12 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
     const least = Math.min(4, fontSize / 3);
     let shownWidth = box.width;
-    for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
+    // (tabs give way whole by their own rule, which Tabs checks itself: their row is no such box)
+    for (
+      let ancestor = parent.parentElement;
+      ancestor && ancestor !== root.parentElement && !ancestor.matches(".k2-tabs");
+      ancestor = ancestor.parentElement
+    ) {
       const style = getComputedStyle(ancestor);
       if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
       shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
