@@ -216,6 +216,82 @@ items.push(
 );
 export const ITEMS = items;
 
+/** The Spaces sidebar beside the calendar. */
+export const SIDEBAR = {
+  spaces: [
+    { id: "TeamLg", name: "Team Logistik", color: "#8b5cf6", description: null, openItemCount: 9 },
+    { id: "Einkf1", name: "Einkauf", color: "#3b82f6", description: null, openItemCount: 4 },
+    { id: "Messe1", name: "Messe 2026", color: "#f97316", description: null, openItemCount: 12 },
+    { id: "Werks1", name: "Werkstatt", color: "#10b981", description: null, openItemCount: 2 },
+  ],
+  pinnedSpaceIds: [],
+  myWorkCount: 5,
+};
+
+/** The longest Space name the schema takes is 100 characters; a real one comes close. */
+const LONG_SPACE = "Jahresinventur Nordlager mit Kühlhaus, Retourenfläche und allen Außenregalen – Hamburg-Billbrook";
+
+/** The worst case: one Space with a name at the limit, many Spaces, and counts past a thousand. */
+export const WORST_SIDEBAR = {
+  spaces: [
+    { id: "TeamLg", name: LONG_SPACE, color: "#8b5cf6", description: null, openItemCount: 12_840 },
+    { id: "Einkf1", name: "Einkauf", color: "#3b82f6", description: null, openItemCount: 1 },
+    { id: "Messe1", name: "会议准备", color: "#f97316", description: null, openItemCount: 0 },
+    { id: "Werks1", name: "🎉 Sommerfest", color: "#10b981", description: null, openItemCount: 2 },
+  ],
+  pinnedSpaceIds: ["TeamLg"],
+  myWorkCount: 1_284,
+};
+export const WORST_SOURCES: CalendarSourceView[] = SOURCES.map((source) =>
+  source.appId === "spaces"
+    ? {
+        ...source,
+        calendars: source.calendars.map((calendar) => (calendar.id === "TeamLg" ? { ...calendar, name: LONG_SPACE } : calendar)),
+      }
+    : source,
+);
+
+/** 30 entries on today from four calendars, overlapping from 07:00 to 19:30, with long, short and foreign titles. */
+const crowdedTitles = [
+  "Jährliche Sicherheitsunterweisung für alle Lagermitarbeitenden einschließlich Aushilfen und Nachtschicht",
+  "X",
+  "会议准备：年度预算审查",
+  "🎉 Kuchen für Jo 🎂",
+  "Benachrichtigungseinstellungen im Lagerverwaltungssystem prüfen",
+  "Call mit bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+  "Đặng Thị Ngọc Hân · Einarbeitung",
+  "Standup",
+];
+const crowdedCalendars = [
+  ["spaces", "TeamLg"],
+  ["spaces", "Einkf1"],
+  ["meetings", "meine"],
+  ["academy", "schulungen"],
+] as const;
+const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+export const WORST_ITEMS: SourcedCalendarItem[] = [
+  ...items,
+  ...Array.from({ length: 30 }, (_, index) => {
+    const [appId, calendarId] = crowdedCalendars[index % crowdedCalendars.length]!;
+    const start = 7 * 60 + index * 25;
+    return event(
+      appId,
+      calendarId,
+      crowdedTitles[index % crowdedTitles.length]!,
+      27,
+      clock(start),
+      clock(start + (index % 4 === 0 ? 120 : 45)),
+      {
+        location: index % 5 === 0 ? "Halle 2, Laderampe 4, hinter dem Kühlhaus (Zufahrt über Tor B)" : undefined,
+      },
+    );
+  }),
+  allDay("absence", "team-logistik", "Aleksandra Wiśniewska-Kowalczyk · Elternzeit bis einschließlich Ende Januar", 26, 31),
+  allDay("absence", "team-logistik", "J · abwesend", 27, 28),
+  allDay("absence", "team-logistik", "نور الهدى عبد الرحمن · Urlaub", 27, 30),
+  deadline("TeamLg", "Inventurliste Nordlager vollständig abgleichen und an die Buchhaltung übergeben", 27, "17:00"),
+];
+
 /** What a source answers for a range and the chosen calendars, as the Spaces route returns it. */
 export const answerFor = (
   range: CalendarRange,

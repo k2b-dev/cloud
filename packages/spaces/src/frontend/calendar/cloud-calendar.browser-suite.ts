@@ -17,7 +17,7 @@ import {
   type SourcedCalendarItem,
   viewWindow,
 } from "./calendar-model";
-import { answerFor, ITEMS, NOW, SOURCES, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
+import { answerFor, ITEMS, NOW, SOURCES, SIDEBAR as sidebar, TIME_ZONE, TODAY } from "./cloud-calendar.browser-data";
 
 // The page renders on the server and then runs its real island bundle in a real browser, as Spaces serves it.
 const packageCache = resolve(import.meta.dir, "../../../node_modules/.cache");
@@ -54,16 +54,6 @@ let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
 const dateConfigFor = (locale: "en" | "de") => ({ locale, timeZone: TIME_ZONE, weekStartsOn: 1 as const });
-const sidebar = {
-  spaces: [
-    { id: "TeamLg", name: "Team Logistik", color: "#8b5cf6", description: null, openItemCount: 9 },
-    { id: "Einkf1", name: "Einkauf", color: "#3b82f6", description: null, openItemCount: 4 },
-    { id: "Messe1", name: "Messe 2026", color: "#f97316", description: null, openItemCount: 12 },
-    { id: "Werks1", name: "Werkstatt", color: "#10b981", description: null, openItemCount: 2 },
-  ],
-  pinnedSpaceIds: [],
-  myWorkCount: 5,
-};
 
 /** The status row under the head: the count, what still loads, and which calendars show busy times only. */
 const STATUS = '[data-k2-part="StatusRow"]';

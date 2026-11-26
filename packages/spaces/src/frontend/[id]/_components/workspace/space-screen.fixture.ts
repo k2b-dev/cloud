@@ -2,8 +2,10 @@
  * Invented data for a Space on v2 in tests and previews: a logistics team's board ("usual"), a worst case (long and
  * foreign names, many tags, huge counts) and a huge list (1,000 items, paged as the server pages them). Nothing personal.
  */
-import type { ItemListResult, SpaceColumn, SpaceDetail, SpaceItem, SpaceTag } from "@/contracts";
-import { defaultCalendarFilter } from "../calendar/filter";
+import type { CalendarItem, ItemListResult, SpaceAssignableUser, SpaceColumn, SpaceDetail, SpaceItem, SpaceTag } from "@/contracts";
+import type { EventInvitationContext } from "@/integration";
+import { defaultCalendarFilter, parseCalendarRoute } from "../calendar/filter";
+import { calendarWindow } from "../calendar/range";
 import type { KanbanBucketInitial } from "../kanban/types";
 import type { SpaceScreenProps } from "./SpaceScreen";
 import type { SpaceItemDetail, SpacesWorkspaceState } from "./workspace-types";
@@ -145,6 +147,198 @@ const worstItems: SpaceItem[] = [
   item("Item05", "Col001", "🎉🎉🎉 Party 🎉🎉🎉", { startsAt: "2026-12-31T20:00:00+01:00", endsAt: "2027-01-01T02:00:00+01:00" }),
 ];
 
+/** The longest Space name the schema takes is 100 characters; a real one comes close. */
+const longSpaceName = "Jahresinventur Nordlager mit Kühlhaus, Retourenfläche und allen Außenregalen – Hamburg-Billbrook";
+
+/** 40 members: long, compound, accented, non-Latin, one-letter, emoji-first, lower-case, and one service account. */
+const worstNames = [
+  "Aleksandra Wiśniewska-Kowalczyk",
+  "Christopher Alexander Montgomery III",
+  "Jo",
+  "J",
+  "Đặng Thị Ngọc Hân",
+  "王秀英",
+  "نور الهدى عبد الرحمن",
+  "Seán O'Brien-Ó Súilleabháin",
+  "María José de la Cruz y Fernández",
+  "dana",
+  "🦊 Fox",
+  "Maximiliane Alexandra von Hohenzollern-Sigmaringen",
+  "Hans-Peter Schäfer-Grünwald",
+  "Ümit Yılmaz",
+];
+const firstNames = ["Jürgen", "Björn", "Zoë", "Renée", "Malte", "Jana", "Tobias", "Friederike", "Lukas", "Merle", "Ole", "Svenja", "Kai"];
+const lastNames = ["Weißmüller", "Groß", "Lindqvist", "Duchâteau", "Sommer", "Berger", "Krüger", "Oberhauser-Wettstein", "Brandt"];
+const worstPeople: SpaceAssignableUser[] = [
+  ...worstNames,
+  ...Array.from({ length: 25 }, (_, index) => `${firstNames[index % firstNames.length]} ${lastNames[(index * 4) % lastNames.length]}`),
+].map((displayName, index) => ({
+  id: `66666666-6666-4666-8666-${String(index).padStart(12, "0")}`,
+  uid: `member${index}`,
+  kind: "user" as const,
+  displayName,
+  avatarHash: null,
+}));
+worstPeople.push({
+  id: "77777777-7777-4777-8777-777777777777",
+  uid: "inventory-sync",
+  kind: "service_account",
+  displayName: "Inventur-Abgleich (Warenwirtschaft → Spaces, nächtlich)",
+  avatarHash: null,
+});
+
+/** One item: every count says 1. */
+const oneItems: SpaceItem[] = [
+  item("Item01", "Col001", "Clear out shelf B", { tags: [tags[0]!], assignees: [robin], deadline: "2026-10-16", deadlineAllDay: true }),
+];
+
+/** Calendar entries beyond the list's own events, so a month and a week look like a real team's. */
+const usualCalendar: SpaceItem[] = [
+  ...["2026-10-13", "2026-10-14", "2026-10-15", "2026-10-16", "2026-10-20", "2026-10-21", "2026-10-22"].map((day, index) =>
+    item(`Stand${index}`, "Col002", "Stand-up at ramp 1", {
+      startsAt: `${day}T09:15:00+02:00`,
+      endsAt: `${day}T09:30:00+02:00`,
+      location: "Ramp 1",
+    }),
+  ),
+  item("Cal001", "Col001", "Forklift inspection", {
+    startsAt: "2026-10-14T10:30:00+02:00",
+    endsAt: "2026-10-14T11:30:00+02:00",
+    location: "Hall 2",
+    tags: [tags[0]!],
+  }),
+  item("Cal002", "Col001", "Inventory days", {
+    startsAt: "2026-10-22T00:00:00+02:00",
+    endsAt: "2026-10-24T00:00:00+02:00",
+    allDay: true,
+    tags: [tags[0]!],
+  }),
+  item("Cal003", "Col002", "Quarterly review with purchasing", {
+    startsAt: "2026-10-15T11:00:00+02:00",
+    endsAt: "2026-10-15T12:00:00+02:00",
+    location: "Room Elbe",
+    assignees: [kim, robin],
+  }),
+  item("Cal004", "Col001", "Route planning workshop", {
+    startsAt: "2026-10-09T13:00:00+02:00",
+    endsAt: "2026-10-09T16:00:00+02:00",
+    tags: [tags[2]!],
+  }),
+  item("Cal005", "Col001", "Fire drill", { startsAt: "2026-10-28T10:00:00+02:00", endsAt: "2026-10-28T10:30:00+02:00" }),
+];
+
+/** 30 events on one day (the fixture's today), overlapping from 07:00 to 19:30, with long, short and foreign titles. */
+const worstDayTitles = [
+  "Annual safety briefing for all warehouse staff including temporary workers and the night shift",
+  "X",
+  "会议准备：年度预算审查",
+  "🎉 Birthday cake for Jo 🎂",
+  "Benachrichtigungseinstellungen im Lagerverwaltungssystem prüfen",
+  "Lieferantengespräch Spedition Nord – Rahmenvertrag 2027",
+  "Stand-up",
+  "Call with bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+];
+const worstDay: SpaceItem[] = Array.from({ length: 30 }, (_, index) => {
+  const start = 7 * 60 + index * 25;
+  const time = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  return item(`Day${String(index).padStart(3, "0")}`, columns[index % 3]!.id, `${worstDayTitles[index % worstDayTitles.length]}`, {
+    startsAt: `2026-10-15T${time(start)}:00+02:00`,
+    endsAt: `2026-10-15T${time(start + (index % 4 === 0 ? 120 : 45))}:00+02:00`,
+    location: index % 5 === 0 ? "Hall 2, loading ramp 4, behind the cold store (enter through gate B)" : null,
+    tags: index % 3 === 0 ? tags : [],
+    assignees: index % 2 === 0 ? [robin, kim] : [],
+  });
+});
+const worstCalendar: SpaceItem[] = [
+  ...worstDay,
+  ...Array.from({ length: 6 }, (_, index) =>
+    item(`AllD${index}`, "Col001", index === 0 ? longTitle : `Absence: ${worstNames[index]}`, {
+      startsAt: `2026-10-${String(13 + (index % 3)).padStart(2, "0")}T00:00:00+02:00`,
+      endsAt: `2026-10-${String(16 + (index % 2)).padStart(2, "0")}T00:00:00+02:00`,
+      allDay: true,
+    }),
+  ),
+  item("Dead01", "Col001", longTitle, { deadline: "2026-10-15T17:00:00+02:00", priority: "urgent" }),
+];
+
+/** A Space item as the calendar route sends it. */
+const calendarItemOf = (space: Pick<SpaceDetail, "id" | "name" | "color">, source: SpaceItem): CalendarItem => ({
+  id: source.id,
+  spaceId: space.id,
+  spaceName: space.name,
+  spaceColor: space.color,
+  title: source.title,
+  descriptionPreview: source.description,
+  location: source.location,
+  url: source.url,
+  startsAt: source.startsAt,
+  endsAt: source.endsAt,
+  allDay: source.allDay,
+  deadline: source.deadline,
+  deadlineAllDay: source.deadlineAllDay,
+  priority: source.priority,
+  recurrence: source.recurrence,
+  recurringEventId: source.recurringEventId,
+  recurrenceId: source.recurrenceId,
+  tags: source.tags,
+  columnId: source.columnId,
+  assignees: source.assignees ?? [],
+  activeBlockerCount: source.activeBlockerCount,
+});
+
+/** What `GET …/items/:id/invitation-context` answers: verified senders, earlier attendees and the last draft. */
+export const invitationContext = (state: SpaceFixtureState = "usual"): EventInvitationContext => {
+  const worst = state === "worst";
+  return {
+    mailboxes: [
+      {
+        id: "Mbox01",
+        name: worst ? "Lagerlogistik Nord – Disposition, Wareneingang und Retouren (gemeinsames Postfach)" : "Logistics team",
+        identities: [
+          {
+            id: "Iden01",
+            label: worst ? "Disposition" : "Team",
+            from: {
+              name: worst ? "Aleksandra Wiśniewska-Kowalczyk" : "Logistics team",
+              address: worst
+                ? "disposition.wareneingang+kalender@lagerlogistik-nord-hamburg-billbrook.example.com"
+                : "logistics@example.com",
+            },
+            isDefault: true,
+          },
+        ],
+      },
+      {
+        id: "Mbox02",
+        name: "Robin Example",
+        identities: [{ id: "Iden02", label: "Robin", from: { name: null, address: "robin@example.com" }, isDefault: true }],
+      },
+    ],
+    attendees: worst
+      ? [
+          { name: null, address: "bartholomew.fitzgerald@northwind-industries-holdings.example.com" },
+          { name: null, address: "a@b.test" },
+          { name: null, address: "first.last+billing-notifications@example.com" },
+          ...worstPeople.slice(0, 20).map((person, index) => ({ name: person.displayName, address: `member${index}@example.com` })),
+        ]
+      : [
+          { name: "Kim Example", address: "kim@example.com" },
+          { name: null, address: "dispatch@forwarder.example.com" },
+        ],
+    canCancel: worst,
+    lastDelivery: worst
+      ? {
+          sequence: 3,
+          method: "request",
+          state: "failed",
+          draftId: null,
+          errorMessage: "The mailbox Lagerlogistik Nord rejected the draft: quota exceeded (2.0 GB of 2.0 GB used)",
+          updatedAt: "2026-10-15T06:40:00.000Z",
+        }
+      : null,
+  };
+};
+
 const result = (items: SpaceItem[], total = items.length): ItemListResult => ({
   items,
   page: 1,
@@ -162,7 +356,8 @@ export const hugeItems = Array.from({ length: 1000 }, (_, index) =>
   }),
 );
 
-export type SpaceFixtureState = "usual" | "worst" | "huge" | "empty";
+export type SpaceFixtureState = "usual" | "worst" | "huge" | "empty" | "one";
+export const spaceFixtureStates: SpaceFixtureState[] = ["usual", "worst", "huge", "empty", "one"];
 
 const buckets = (items: SpaceItem[]): KanbanBucketInitial[] =>
   columns.map((column) => {
@@ -199,11 +394,25 @@ export const itemDetail = (source: SpaceItem): SpaceItemDetail => ({
 export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual"): SpaceScreenProps => {
   const url = new URL(href, "http://spaces.local");
   const view = (["list", "table", "kanban", "calendar"] as const).find((entry) => entry === url.searchParams.get("view")) ?? "list";
-  const items = state === "worst" ? worstItems : state === "huge" ? hugeItems.slice(0, 50) : state === "empty" ? [] : usualItems;
-  const open = items.find((entry) => entry.id === url.searchParams.get("item"));
+  const items =
+    state === "worst"
+      ? worstItems
+      : state === "huge"
+        ? hugeItems.slice(0, 50)
+        : state === "empty"
+          ? []
+          : state === "one"
+            ? oneItems
+            : usualItems;
+  const calendarSource =
+    state === "worst" ? worstCalendar : state === "usual" ? [...usualItems, ...usualCalendar] : items.filter((entry) => entry.startsAt);
+  const open = [...items, ...calendarSource].find((entry) => entry.id === url.searchParams.get("item"));
+  const calendarRoute = parseCalendarRoute(url, SPACE_DATES);
+  const calendarView = calendarRoute.view === "year" ? "month" : calendarRoute.view;
+  const calendarRange = calendarWindow(calendarView, new Date(calendarRoute.date), SPACE_DATES);
   const space: SpaceDetail = {
     id: "Space1",
-    name: state === "worst" ? longTitle : "Planning",
+    name: state === "worst" ? longSpaceName : "Planning",
     description: state === "worst" ? `${longTitle}. ${longTitle}.` : "Team work",
     color: "#6366f1",
     icalToken: "calendar-token",
@@ -231,11 +440,11 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
     snapshotDay: "2026-10-15",
     itemsResult: result(items, state === "huge" ? hugeItems.length : items.length),
     kanbanBuckets: buckets(items),
-    calendarView: "month",
-    calendarDate: "2026-10-15T00:00:00.000Z",
+    calendarView,
+    calendarDate: calendarRoute.date,
     calendarFilter: defaultCalendarFilter,
-    calendarRange: { from: "2026-09-28T00:00:00.000Z", to: "2026-11-23T00:00:00.000Z" },
-    calendarItems: [],
+    calendarRange,
+    calendarItems: calendarSource.filter((entry) => entry.startsAt ?? entry.deadline).map((entry) => calendarItemOf(space, entry)),
     calendarWeather: {},
     calendarTray: null,
     selectedItemDetail: open ? itemDetail(open) : null,
@@ -246,16 +455,27 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
       spaces: [
         { id: "Space1", name: space.name, color: "#6366f1", description: null, openItemCount: items.length },
         { id: "Space2", name: "Ideas", color: "#2563eb", description: null, openItemCount: 3 },
+        ...(state === "worst"
+          ? [
+              { id: "Space3", name: "会议准备", color: "#f97316", description: null, openItemCount: 1 },
+              { id: "Space4", name: "🎉 Sommerfest", color: "#db2777", description: null, openItemCount: 0 },
+              { id: "Space5", name: "Kundenservice Nord", color: "#0ea5e9", description: null, openItemCount: 12_840 },
+            ]
+          : []),
       ],
       pinnedSpaceIds: ["Space1"],
       myWorkCount: 4,
     },
-    people: [
-      { id: robin.id, uid: "robin", displayName: robin.displayName, kind: "user", avatarHash: null },
-      { id: kim.id, uid: "kim", displayName: kim.displayName, kind: "user", avatarHash: null },
-    ],
+    people:
+      state === "worst"
+        ? worstPeople
+        : [
+            { id: robin.id, uid: "robin", displayName: robin.displayName, kind: "user", avatarHash: null },
+            { id: kim.id, uid: "kim", displayName: kim.displayName, kind: "user", avatarHash: null },
+          ],
     state: okState,
     dateConfig: SPACE_DATES,
-    mailIntegrationAvailable: false,
+    // The invitations section of an event shows only where Mail can take a draft; `?mail` turns it on.
+    mailIntegrationAvailable: url.searchParams.has("mail"),
   };
 };
