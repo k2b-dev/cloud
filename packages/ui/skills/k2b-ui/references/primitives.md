@@ -164,7 +164,10 @@ inside it.
 - `marks` (chips, icons, avatars bottom right): use them with 3 lines; on a
   2-line row they add a third line. The third line shares its width with
   the marks, so keep it a preview text that may be cut, never an amount.
-- `action` (one framed button at the end; under the text on the phone),
+- `action` (one framed button at the end; under the text on the phone; its
+  name is its words and then the row's title, "Ansehen Angebot Küche", so
+  rows with the same deed are told apart: name nothing yourself; on the
+  phone a finger hits 44 px of it, its look unchanged),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
@@ -277,7 +280,9 @@ lines instead of cutting a thing.
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
   `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
-  `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
+  `onClick`, `menu` (chevron), `forward`, `about` (the id of what the deed
+  is about, such as a row's title: its name is its own words, then those;
+  `Row` does this for its `action`), `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the
   width, the look and the focus stay, a second press and a second sending
   of the form do nothing), `pressed` (a toggle such as a favourite star:
