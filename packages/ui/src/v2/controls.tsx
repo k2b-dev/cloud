@@ -235,7 +235,9 @@ const sizesToText = () => typeof CSS !== "undefined" && CSS.supports("field-sizi
  */
 const followText = (area: HTMLTextAreaElement, value: () => string | undefined) => {
   const fit = () => {
-    area.style.height = "auto";
+    // measured from its minimum (v2.css: `rows` lines), not from its height now: `auto` would keep the rows the
+    // server asked for its first value, and a field emptied later would stay that high
+    area.style.height = "0px";
     area.style.height = `${area.scrollHeight}px`;
   };
   createEffect(on(value, () => queueMicrotask(fit)));

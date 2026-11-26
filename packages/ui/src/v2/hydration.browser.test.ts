@@ -53,16 +53,6 @@ type PageOptions = { fallback?: boolean; beforeClient?: (page: Page) => Promise<
 
 const withPage = async (run: (page: Page) => Promise<void>, width = 1440, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin" });
-  if (options.fallback)
-    await page.addInitScript(() => {
-      const supports = CSS.supports.bind(CSS);
-      CSS.supports = ((...query: [string, string?]) =>
-        query[0] === "field-sizing"
-          ? false
-          : query.length === 2
-            ? supports(query[0], query[1]!)
-            : supports(query[0])) as typeof CSS.supports;
-    });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   const consoleErrors: string[] = [];
@@ -74,6 +64,18 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440, option
       `<!doctype html><html lang="de"><head><meta charset="utf-8">${server.script}<style>${css}</style><style>${testCss}</style>${options.fallback ? "<style>.k2-ui textarea { field-sizing: fixed !important; }</style>" : ""}</head><body class="k2-ui"><div id="root">${server.html}</div></body></html>`,
     );
     await options.beforeClient?.(page);
+    // without field-sizing, the page asks the browser and hears no (an init script does not reach a page set by
+    // `setContent`, so the answer is set here, before the client starts)
+    if (options.fallback)
+      await page.evaluate(() => {
+        const supports = CSS.supports.bind(CSS);
+        CSS.supports = ((...query: [string, string?]) =>
+          query[0] === "field-sizing"
+            ? false
+            : query.length === 2
+              ? supports(query[0], query[1]!)
+              : supports(query[0])) as typeof CSS.supports;
+      });
     // what the server sent, kept to compare with the page once it is live
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
@@ -279,6 +281,11 @@ for (const fallback of [false, true])
       async (page) => {
         expect(await height(page)).toBe(sent);
         expect(sent).toBe(8 * 20);
+        // emptied, it shrinks to its 3 rows, although its `value` stays the long one (nothing writes it back)
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("");
+        expect(await height(page)).toBe(3 * 20);
+        await page.getByRole("textbox", { name: "Lange Antwort" }).fill("Eins\nZwei\nDrei\nVier\nFünf");
+        expect(await height(page)).toBe(5 * 20);
       },
       1440,
       {
