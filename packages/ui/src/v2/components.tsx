@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -35,7 +36,7 @@ type NavEntryBase = {
    * entry's name for assistive technology. An entry with it is a little taller.
    */
   meta?: string;
-  /** A count at the end, such as unread mails. */
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -105,11 +106,18 @@ export type NavProps = {
   foot?: readonly NavItem[];
 };
 
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
+
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
 const NavEnd = (props: { item: NavItem }) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const status = (): Status | undefined => (props.item.dot === "running" ? undefined : props.item.dot);
   return (
     <>
@@ -121,7 +129,7 @@ const NavEnd = (props: { item: NavItem }) => {
         </Show>
       </Show>
       <Show when={props.item.count !== undefined}>
-        <span class="k2-ni-count">{props.item.count}</span>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
       </Show>
       <Show when={props.item.meta}>
         <span class="k2-ni-meta">{props.item.meta}</span>
@@ -169,6 +177,7 @@ const NavLink = (props: { item: NavItem; level: number }) => (
     onClick={() => props.item.onClick?.()}
     class="k2-ni"
     data-k2-part="Nav.Item"
+    data-meta={props.item.meta ? "" : undefined}
     aria-current={props.item.current ? "page" : undefined}
     data-level={props.level > 1 ? String(props.level) : undefined}
   >
@@ -193,6 +202,7 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
         id={`${id}-fold`}
         class="k2-ni"
         data-k2-part="Nav.Item"
+        data-meta={props.item.meta ? "" : undefined}
         data-fold=""
         aria-expanded={open() ? "true" : "false"}
         aria-controls={open() ? id : undefined}
@@ -251,7 +261,7 @@ export type Tab = {
   label: string;
   /** A Tabler icon before the name. */
   icon?: string;
-  /** A quiet count after the name. */
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -277,21 +287,24 @@ export type TabsProps = {
 };
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -320,6 +333,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -364,7 +378,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
