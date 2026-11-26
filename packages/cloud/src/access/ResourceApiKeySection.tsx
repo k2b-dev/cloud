@@ -248,7 +248,7 @@ function CreateKeyDialog(props: {
         />
       </Field>
       <Show when={expiry() === "date"}>
-        {/* k2b-ui gap: DateInput gives the typed text, without a picker yet; the day is read here. */}
+        {/* k2b-ui gap (DatePicker is on main; switch after merging main): DateInput gives the typed text, without a picker yet; the day is read here. */}
         <Field name="day" label={t().expires} error={tried() && dayInvalid() ? t().expiryDayInvalid : undefined}>
           <DateInput value={day()} onInput={setDay} placeholder={t().dayPlaceholder} />
         </Field>

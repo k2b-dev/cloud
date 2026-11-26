@@ -500,7 +500,7 @@ export function PublicPageEditor(props: {
         <Show when={!previewFailed()} fallback={<Failed text={t().previewFailed} onRetry={() => void refreshPreview()} />}>
           <Show when={previewQuery.data()}>
             {(status) => (
-              // k2b-ui gap: the public page is not on v2 yet; its own components draw the preview in a canvas.
+              // k2b-ui gap (lane PS: MinimalLayout ui="v2" and a public page recipe): the public page is not on v2 yet; its own components draw the preview in a canvas.
               <Canvas label={t().preview}>
                 <PublicPageBody status={status()} layout="preview" selectedSectionId={selectedSectionId()} feedback={<FeedbackPreview />} />
               </Canvas>

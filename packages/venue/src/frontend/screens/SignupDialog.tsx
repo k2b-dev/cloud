@@ -180,7 +180,7 @@ function SignupForm(props: { dashboard: VenueDashboard; userId: string; close: (
                 </Notice>
               )}
             </Show>
-            {/* k2b-ui gap: no date and time range picker in v2; the v1 picker keeps its behaviour in a canvas. */}
+            {/* k2b-ui gap (lane K time input; DatePicker is on main): no date and time range picker in v2; the v1 picker keeps its behaviour in a canvas. */}
             <Canvas label={t().time}>
               <DateRangePicker
                 label={t().time}

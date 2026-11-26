@@ -125,7 +125,7 @@ export default function VenueSettingsScreen(props: VenueSettingsProps) {
       if (!owner.signal.aborted) toast(error instanceof Error ? error.message : String(error), { status: "bad" });
     }
   };
-  // k2b-ui gap: v2 has no time input yet; the opening, exception and shift dialogs keep their v1 time pickers.
+  // k2b-ui gap (lane K time input, follow-up to #4159): v2 has no time input yet; the opening, exception and shift dialogs keep their v1 time pickers.
   const openSaving = async (
     render: (close: (saved: boolean) => void, guard: (handler: () => void) => void) => JSX.Element,
     success: () => string,
@@ -334,7 +334,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
             />
           </Field>
         </Band>
-        {/* k2b-ui gap: no colour or image input in v2; the v1 inputs keep their behaviour in a canvas. */}
+        {/* k2b-ui gap (#4191): no colour or image input in v2; the v1 inputs keep their behaviour in a canvas. */}
         <Canvas label={t().publicBranding}>
           <ColorInput
             aria-label={t().themeColor}
@@ -403,7 +403,7 @@ function AccessArea(props: {
       wrote = true;
     };
     try {
-      // k2b-ui gap: the access dialog of the platform is not on v2 yet; it keeps its behaviour over this page.
+      // k2b-ui gap (#4207, openAccessDialog from @k2b/cloud/access/v2): the access dialog of the platform is not on v2 yet; it keeps its behaviour over this page.
       await openAccessDialog({
         target: { type: "venue.venue", id: venueId() },
         resourceName: props.settings.venue.name,
