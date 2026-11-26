@@ -331,15 +331,8 @@ const SettingsBody = (props: { close: () => void }) => {
   );
 };
 
-const openSettingsDialog = () => dialogCore.open<void>((close) => <SettingsBody close={() => close()} />, panelDialogOptions);
-
-export default function AdminNotebooksAppSettings() {
-  const locale = useLocale();
-  const t = () => notebooksAdminMessages.resolve([locale()]).t;
-  return (
-    <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={() => void openSettingsDialog()}>
-      <i class="ti ti-settings text-sm" />
-      {t().settings}
-    </Button>
-  );
-}
+/**
+ * The app's settings for administrators, in the v1 panel dialog until v2 has `Setting` (look rule 10, #4223).
+ * k2b-ui gap: Setting.
+ */
+export const openNotebooksAppSettings = () => dialogCore.open<void>((close) => <SettingsBody close={() => close()} />, panelDialogOptions);

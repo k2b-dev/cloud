@@ -12,6 +12,12 @@ Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab
 
 <Example recipe="filtered-table" height="520" default="Filtered" />
 
+## A folder: two rows above list and detail
+
+A page head has at most two full-width rows above its list and its detail: the path with the deeds, then the filters with the count, the order and the display at the `FilterBar`'s `end`. Without a `StatusRow` under it, the bar is the status row of the list (52 px); while files are selected, a `StatusRow selection` takes its place at the same height, and on the phone its actions float at the bottom. Switch the state: the grid of pictures, and three photos selected.
+
+<Example recipe="files" height="720" default="List" />
+
 ## Cloud shows, the app filters
 
 `@k2b/ui` gives the frontend and the types: the declaration, the bar, the editors and the address. It filters nothing and stores nothing.
@@ -27,6 +33,7 @@ Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab
 - **"+ Filter"** lists the fields, the common ones first. A field without a value is a dashed statement that applies once it has one. **"Zurücksetzen"** returns to the current view in one step.
 - **Sort and group** stand in words in the status row: "⇅ Fällig ↑" and "Nach Status", each a menu with one choice.
 - **On the phone** the bar is one line that scrolls sideways. Every tap opens the filter sheet: every field with its value, sort and group, and "Zurücksetzen" and "9 Aufträge zeigen" at the foot.
+- **How the list shows** goes to `display` as menu sections, such as list or grid. On the desktop each section is a menu at the bar's end; on the phone sort, grouping and display fold into one menu "Ansicht" at the end of the bar, so no choice is lost.
 - **A period of its own.** A `dateRange` or `timeRange` editor lists its presets, then "Von …" and "Bis …" with their values. Each opens a `DatePicker` beside the editor, like a submenu (ArrowRight opens it, Escape closes only it; to the left where the right has no room). A picked day applies at once; a point in time adds hour and minute and applies with "Übernehmen". A day that does not fit ("Von" after "Bis", an hour the clocks skip) says why under the calendar, which stays open. On the phone the calendar is the sheet's next step.
 - **Values that load.** A `lookup` field opens `Lookup`: a search that waits 200 ms, aborts an older search, shows placeholder rows while it loads, and says "Erneut versuchen" when it fails. `Lookup` also works in a form.
 

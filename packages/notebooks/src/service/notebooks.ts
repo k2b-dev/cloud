@@ -380,40 +380,243 @@ export const listAdmin = async (params: {
   };
 };
 
+/** The days the administration looks back on a notebook's activity: one bar each, the last is today. */
+export const ADMIN_ACTIVITY_DAYS = 30;
+/** How many notebooks an exception names; the count says how many there are in all. */
+const ADMIN_NAMED = 2;
+
+/** The calendar days of the administration's window in `timeZone`, counted back from `now`; the last is today. */
+type ActivityWindow = { timeZone: string; now?: Date };
+
+export type NotebookAdminSummary = {
+  total: number;
+  /** Notebooks nobody can reach: no access entry. */
+  orphaned: number;
+  totalPermissions: number;
+  /** Notebooks with any activity in the window. */
+  active: number;
+  /** Notebooks with activity on each day of the window, oldest first; the last is today. */
+  activePerDay: number[];
+  /** The first notebooks nobody can reach, by name. */
+  orphanedNames: string[];
+  /** The first notebooks without activity in the window, by name. */
+  quietNames: string[];
+};
+
 /**
  * Aggregated admin stats — single SQL roundtrip. Filtered by `search` so the
  * numbers match what the admin sees in the table. Counted in the DB, NOT in
- * the page-bound items array (which only sees the visible page).
+ * the page-bound items array (which only sees the visible page). The activity
+ * part is bounded by the matching notebooks times the days of the window.
  */
-export const adminSummary = async (params: {
-  search?: string;
-}): Promise<{
-  total: number;
-  orphaned: number;
-  totalPermissions: number;
-}> => {
+export const adminSummary = async (params: { search?: string } & ActivityWindow): Promise<NotebookAdminSummary> => {
   const query = params.search?.trim().toLowerCase();
   const pattern = query && query.length > 0 ? `%${query}%` : null;
-
-  const [row] = await sql<{ total: number; orphaned: number; total_permissions: number }[]>`
-    WITH filtered AS (
-      SELECT n.id, COUNT(na.access_id)::int AS permission_count
+  const now = params.now ?? new Date();
+  const last = ADMIN_ACTIVITY_DAYS - 1;
+  const [row] = await sql<
+    {
+      total: number;
+      orphaned: number;
+      total_permissions: number;
+      active: number;
+      active_per_day: number[];
+      orphaned_names: string[];
+      quiet_names: string[];
+    }[]
+  >`
+    WITH bounds AS (
+      SELECT (${now}::timestamptz AT TIME ZONE ${params.timeZone})::date AS today
+    ), filtered AS (
+      SELECT n.id, n.name, COUNT(na.access_id)::int AS permission_count
       FROM notebooks.notebooks n
       LEFT JOIN notebooks.notebook_access na ON na.notebook_id = n.id
       WHERE (${pattern}::text IS NULL OR LOWER(n.name) LIKE ${pattern})
       GROUP BY n.id
+    ), active_days AS (
+      SELECT DISTINCT f.id AS notebook_id, bounds.today - (e.last_occurred_at AT TIME ZONE ${params.timeZone})::date AS ago
+      FROM filtered f
+      CROSS JOIN bounds
+      JOIN notebooks.activity_events e
+        ON e.notebook_id = f.id
+        AND e.last_occurred_at >= ((bounds.today - ${last}::int)::timestamp AT TIME ZONE ${params.timeZone})
+      WHERE bounds.today - (e.last_occurred_at AT TIME ZONE ${params.timeZone})::date BETWEEN 0 AND ${last}::int
     )
     SELECT
-      COUNT(*)::int                                             AS total,
-      COUNT(*) FILTER (WHERE permission_count = 0)::int         AS orphaned,
-      COALESCE(SUM(permission_count), 0)::int                   AS total_permissions
-    FROM filtered
+      (SELECT COUNT(*)::int FROM filtered) AS total,
+      (SELECT COUNT(*)::int FROM filtered WHERE permission_count = 0) AS orphaned,
+      (SELECT COALESCE(SUM(permission_count), 0)::int FROM filtered) AS total_permissions,
+      (SELECT COUNT(DISTINCT notebook_id)::int FROM active_days) AS active,
+      ARRAY(
+        SELECT COUNT(a.notebook_id)::int
+        FROM generate_series(${last}::int, 0, -1) AS day(ago)
+        LEFT JOIN active_days a ON a.ago = day.ago
+        GROUP BY day.ago
+        ORDER BY day.ago DESC
+      ) AS active_per_day,
+      ARRAY(
+        SELECT f.name FROM filtered f WHERE f.permission_count = 0 ORDER BY LOWER(f.name), f.id LIMIT ${ADMIN_NAMED}
+      ) AS orphaned_names,
+      ARRAY(
+        SELECT f.name FROM filtered f
+        WHERE NOT EXISTS (SELECT 1 FROM active_days a WHERE a.notebook_id = f.id)
+        ORDER BY LOWER(f.name), f.id
+        LIMIT ${ADMIN_NAMED}
+      ) AS quiet_names
   `;
   return {
     total: row?.total ?? 0,
     orphaned: row?.orphaned ?? 0,
     totalPermissions: row?.total_permissions ?? 0,
+    active: row?.active ?? 0,
+    activePerDay: Array.from(row?.active_per_day ?? [], Number),
+    orphanedNames: Array.from(row?.orphaned_names ?? [], String),
+    quietNames: Array.from(row?.quiet_names ?? [], String),
   };
+};
+
+/** Who an access entry names, as the administration shows it in a stack: a person, a group, an account, everyone. */
+export type NotebookAdminPrincipal = {
+  kind: "user" | "group" | "service_account" | "authenticated";
+  id: string | null;
+  name: string;
+  avatarHash: string | null;
+};
+
+/** How many of a notebook's access entries a row shows; its count says how many there are in all. */
+const ADMIN_STACK = 3;
+
+export type NotebookAdminActivity = {
+  notebookId: string;
+  noteCount: number;
+  /** When anything last happened in the notebook, at any time. */
+  lastActivityAt: string | null;
+  /** The changes on each day of the administration's window, oldest first; the last is today. */
+  changesPerDay: number[];
+  /** The first who have access: people first, then groups and accounts, each by name. */
+  access: NotebookAdminPrincipal[];
+};
+
+type DbAdminPrincipal = { kind: NotebookAdminPrincipal["kind"]; id: string | null; name: string; avatar_hash: string | null };
+
+/**
+ * The size, the recent activity and the first who have access of the notebooks on one page of the administration:
+ * one statement for the page, bounded by the page's notebooks times the days of the window (and three entries each).
+ */
+export const adminActivity = async (params: { notebookIds: string[] } & ActivityWindow): Promise<NotebookAdminActivity[]> => {
+  if (params.notebookIds.length === 0) return [];
+  const now = params.now ?? new Date();
+  const last = ADMIN_ACTIVITY_DAYS - 1;
+  const rows = await sql<
+    { id: string; note_count: number; last_activity_at: Date | null; changes_per_day: number[]; access: DbAdminPrincipal[] | string }[]
+  >`
+    WITH bounds AS (
+      SELECT (${now}::timestamptz AT TIME ZONE ${params.timeZone})::date AS today
+    )
+    SELECT
+      n.id,
+      (SELECT COUNT(*)::int FROM notebooks.notes nt WHERE nt.notebook_id = n.id) AS note_count,
+      (
+        SELECT e.last_occurred_at FROM notebooks.activity_events e
+        WHERE e.notebook_id = n.id
+        ORDER BY e.last_occurred_at DESC, e.id DESC
+        LIMIT 1
+      ) AS last_activity_at,
+      ARRAY(
+        SELECT COALESCE(SUM(e.occurrence_count), 0)::int
+        FROM generate_series(${last}::int, 0, -1) AS day(ago)
+        LEFT JOIN notebooks.activity_events e
+          ON e.notebook_id = n.id
+          AND e.last_occurred_at >= ((bounds.today - ${last}::int)::timestamp AT TIME ZONE ${params.timeZone})
+          AND bounds.today - (e.last_occurred_at AT TIME ZONE ${params.timeZone})::date = day.ago
+        GROUP BY day.ago
+        ORDER BY day.ago DESC
+      ) AS changes_per_day,
+      COALESCE((
+        SELECT json_agg(json_build_object('kind', p.kind, 'id', p.id, 'name', p.name, 'avatar_hash', p.avatar_hash) ORDER BY p.rank, LOWER(p.name))
+        FROM (
+          SELECT
+            CASE WHEN a.user_id IS NOT NULL THEN 'user' WHEN a.group_id IS NOT NULL THEN 'group'
+              WHEN a.service_account_id IS NOT NULL THEN 'service_account' ELSE 'authenticated' END AS kind,
+            COALESCE(a.user_id, a.group_id, a.service_account_id) AS id,
+            COALESCE(NULLIF(u.display_name, ''), u.uid, g.name, sa.name, '') AS name,
+            u.avatar_hash,
+            CASE WHEN a.user_id IS NOT NULL THEN 0 WHEN a.group_id IS NOT NULL THEN 1 ELSE 2 END AS rank
+          FROM notebooks.notebook_access na
+          JOIN auth.access a ON a.id = na.access_id
+          LEFT JOIN auth.users u ON u.id = a.user_id
+          LEFT JOIN auth.groups g ON g.id = a.group_id
+          LEFT JOIN auth.service_accounts sa ON sa.id = a.service_account_id
+          WHERE na.notebook_id = n.id AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL OR a.authenticated_only)
+          ORDER BY rank, LOWER(COALESCE(NULLIF(u.display_name, ''), u.uid, g.name, sa.name, ''))
+          LIMIT ${ADMIN_STACK}
+        ) p
+      ), '[]'::json) AS access
+    FROM notebooks.notebooks n
+    CROSS JOIN bounds
+    WHERE n.id = ANY(${toPgUuidArray(params.notebookIds)}::uuid[])
+  `;
+  return rows.map((row) => ({
+    notebookId: row.id,
+    noteCount: row.note_count,
+    lastActivityAt: row.last_activity_at ? new Date(row.last_activity_at).toISOString() : null,
+    changesPerDay: Array.from(row.changes_per_day, Number),
+    access: (typeof row.access === "string" ? (JSON.parse(row.access) as DbAdminPrincipal[]) : row.access).map((principal) => ({
+      kind: principal.kind,
+      id: principal.id,
+      name: principal.name,
+      avatarHash: principal.avatar_hash,
+    })),
+  }));
+};
+
+export type NotebookAdminWriter = {
+  kind: "user" | "service_account";
+  id: string;
+  name: string;
+  avatarHash: string | null;
+  /** Their changes in the administration's window. */
+  changes: number;
+  lastAt: string;
+};
+
+/** How many people the detail of a notebook names as the ones who write in it. */
+const ADMIN_WRITERS = 6;
+
+/**
+ * Who changed a notebook in the administration's window, most changes first: one statement, at most six people.
+ */
+export const adminWriters = async (params: { notebookId: string } & ActivityWindow): Promise<NotebookAdminWriter[]> => {
+  const now = params.now ?? new Date();
+  const rows = await sql<
+    { kind: NotebookAdminWriter["kind"]; id: string; name: string; avatar_hash: string | null; changes: number; last_at: Date }[]
+  >`
+    SELECT
+      e.actor_kind AS kind,
+      e.actor_id AS id,
+      COALESCE(NULLIF(u.display_name, ''), u.uid, sa.name, '') AS name,
+      u.avatar_hash,
+      SUM(e.occurrence_count)::int AS changes,
+      MAX(e.last_occurred_at) AS last_at
+    FROM notebooks.activity_events e
+    LEFT JOIN auth.users u ON e.actor_kind = 'user' AND u.id = e.actor_id
+    LEFT JOIN auth.service_accounts sa ON e.actor_kind = 'service_account' AND sa.id = e.actor_id
+    WHERE e.notebook_id = ${params.notebookId}::uuid
+      AND e.actor_kind <> 'system'
+      AND e.last_occurred_at >= (((${now}::timestamptz AT TIME ZONE ${params.timeZone})::date - ${ADMIN_ACTIVITY_DAYS - 1}::int)::timestamp AT TIME ZONE ${params.timeZone})
+      AND e.last_occurred_at <= ${now}::timestamptz
+    GROUP BY e.actor_kind, e.actor_id, u.display_name, u.uid, u.avatar_hash, sa.name
+    ORDER BY changes DESC, last_at DESC
+    LIMIT ${ADMIN_WRITERS}
+  `;
+  return rows.map((row) => ({
+    kind: row.kind,
+    id: row.id,
+    name: row.name,
+    avatarHash: row.avatar_hash,
+    changes: row.changes,
+    lastAt: new Date(row.last_at).toISOString(),
+  }));
 };
 
 /**

@@ -24,7 +24,8 @@ import { ActionButton, Button } from "./button";
 import { useControlMessages } from "./control-messages";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
-import { Icon } from "./marks";
+import { Chip, Icon } from "./marks";
+import { useSettingMessages } from "./setting-messages";
 import { textEdge } from "./tokens";
 import type { Action } from "./types";
 
@@ -77,7 +78,32 @@ export type FieldProps = {
  * A field: a label line of 20 px, the control of 36 px, a hint or the error under it. The label line has a fixed
  * height, so fields in a row stand on one line (rule K5).
  */
-export const Field = (props: FieldProps) => {
+export const Field = (props: FieldProps) => <FieldFrame field={props} />;
+
+export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
+  /**
+   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." beside
+   * its control, so a page that saves as a whole shows what will change.
+   */
+  was?: string;
+  /**
+   * One quiet deed for this setting, such as "Auf Standard zurücksetzen" while the value differs from its default: a
+   * text button at the end of the name's line, as `Field action` has it. The value's column keeps its place, so the
+   * deed coming or going moves nothing.
+   */
+  action?: Action;
+};
+
+/**
+ * One setting of a settings page: its name and a quiet hint on the left, the control beside them in a column of
+ * 300 px, so the values stand in one line down the page and are read at a glance. On a narrow column the control
+ * goes under the name. The control is the same as in a `Field`: `Input`, `Select`, `DateInput`, `Check` or `Choice`.
+ */
+export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
+
+const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action }; setting?: boolean }) => {
+  const props = frame.field;
+  const t = useSettingMessages();
   const control = createUniqueId();
   const label = createUniqueId();
   const message = createUniqueId();
@@ -130,8 +156,10 @@ export const Field = (props: FieldProps) => {
       )}
     </Show>
   );
-  // The deed stands beside the label line, never in it: a button inside a <label> would be pressed with it.
-  const actionLine = (
+  const part = frame.setting ? "Setting" : "Field";
+  const setting = frame.setting ? "" : undefined;
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  const deed = (
     <Show when={props.action}>
       {(action) => (
         <span class="k2-field-action">
@@ -140,33 +168,66 @@ export const Field = (props: FieldProps) => {
       )}
     </Show>
   );
+  // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
+  const was = (
+    <Show when={props.was}>
+      {(before) => (
+        <span class="k2-field-was">
+          <Chip yours>{t().changedFrom({ value: before() })}</Chip>
+        </span>
+      )}
+    </Show>
+  );
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined} role="group" aria-labelledby={label}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+      role="group"
+      aria-labelledby={label}
+    >
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   ) : named ? (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   ) : (
-    <div class="k2-field" data-k2-part="Field" data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
-      {actionLine}
       {content}
+      {deed}
+      {was}
       {messageLine}
     </div>
   );

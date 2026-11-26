@@ -98,7 +98,13 @@ export const notebooksService = {
           hasNext: page * perPage < result.total,
         };
       },
-      summary: async (config: { filter?: { query?: string } }) => notebooks.adminSummary({ search: config.filter?.query }),
+      /** The figures over every notebook matching the filter; the activity counts calendar days in `timeZone`. */
+      summary: async (config: { filter?: { query?: string }; timeZone: string; now?: Date }) =>
+        notebooks.adminSummary({ search: config.filter?.query, timeZone: config.timeZone, now: config.now }),
+      /** The size, the last change, the recent activity and the first who have access of the notebooks on one page. */
+      activity: notebooks.adminActivity,
+      /** Who changed one notebook in the last 30 days, most changes first. */
+      writers: notebooks.adminWriters,
     },
     graph: links.buildNotebookGraph,
     /** The Links page's graph: whole while small, otherwise the bounded pages around one page. */

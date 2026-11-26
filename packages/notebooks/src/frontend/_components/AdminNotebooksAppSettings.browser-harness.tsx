@@ -1,8 +1,9 @@
 import { LocaleProvider } from "@k2b/ui";
+import { Button } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
-import AdminNotebooksAppSettings from "./AdminNotebooksAppSettings.island";
+import { openNotebooksAppSettings } from "./AdminNotebooksAppSettings";
 
-/** The real settings button of the Notebooks administration; the test serves the settings API. */
+/** The settings of the Notebooks administration, opened as its head's button does; the test serves the settings API. */
 declare global {
   interface Window {
     mountSettings: (locale: string) => void;
@@ -16,7 +17,9 @@ window.mountSettings = (locale) => {
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <AdminNotebooksAppSettings />
+        <Button icon="settings" onClick={() => void openNotebooksAppSettings()}>
+          {locale === "de" ? "Einstellungen" : "Settings"}
+        </Button>
       </LocaleProvider>
     ),
     host,
