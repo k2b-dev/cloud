@@ -134,7 +134,8 @@ const measure = (page: Page) =>
       legendOutside,
       ownClip,
       pitch: Math.round(pitch * 10) / 10,
-      legendReachable: !scrolls || list?.tabIndex === 0,
+      legendScrolls: scrolls,
+      legendFocusable: list?.tabIndex === 0,
       lanes: lanes.length,
       legend: legend.length,
     };
@@ -147,14 +148,20 @@ const inside = (found: Awaited<ReturnType<typeof measure>>) => {
   expect(found.ownClip).toBe(true);
   // a lane keeps 18 px at least (three quarters of its 24); a legend that needs more room scrolls
   expect(found.pitch).toBeGreaterThanOrEqual(17.9);
-  expect(found.legendReachable).toBe(true);
+  // the legend takes the focus while it scrolls, and only then
+  expect(found.legendFocusable).toBe(found.legendScrolls);
   expect(found.lanes).toBe(6);
   expect(found.legend).toBe(8);
 };
 
 for (const width of [1440, 390])
   test(`at ${width}: lane names and the legend stay inside the chart, every lane and every state shown`, async () => {
-    await withPage(width, async (page) => inside(await measure(page)));
+    await withPage(width, async (page) => {
+      const found = await measure(page);
+      inside(found);
+      // one line of states at 1440: nothing to scroll, so the legend takes no focus
+      if (width === 1440) expect(found.legendScrolls).toBe(false);
+    });
   });
 
 test("at 390, in a page written right to left: lane names start at the left edge of the chart and stay in their column", async () => {
@@ -166,5 +173,13 @@ test("at 1440, with a hidden timeline of the same lanes first on the page: the n
 });
 
 test("at 390, with eight long state names: the lanes keep 18 px each and the legend scrolls instead", async () => {
-  await withPage(390, async (page) => inside(await measure(page)), { longStates: true });
+  await withPage(
+    390,
+    async (page) => {
+      const found = await measure(page);
+      inside(found);
+      expect(found.legendScrolls).toBe(true);
+    },
+    { longStates: true },
+  );
 });

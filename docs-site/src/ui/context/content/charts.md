@@ -201,7 +201,10 @@ state a `label` as well: the colour and the word name the state together.
 
 The legend stands below the timeline and wraps at any width. It takes at most
 40% of the height that you give the chart. Each lane keeps at least 18 px; a
-legend that needs more room keeps one line and scrolls. Each lane
+legend that needs more room keeps one line and scrolls, and takes the focus for
+that. A height of your own needs room for both: at least three quarters of the
+drawing (about 50 px and 18 px a lane) and 28 px for the legend. In a lower box the
+lanes get less. Each lane
 name starts at the left edge. The label column cuts off a long name with a
 short fade before the plot. The full name stays in the tooltip and in the
 lane's accessible name.

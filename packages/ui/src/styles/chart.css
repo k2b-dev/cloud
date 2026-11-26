@@ -51,7 +51,10 @@
   max-height: 40%;
 }
 :is(.k2b-ui, .k2-ui) .k2b-chart[data-legend-placement="bottom-start"] > .k2b-chart__svg {
-  min-height: calc(var(--k2b-chart-height) * 0.75);
+  /* the drawing takes what the legend leaves (a basis of 0), and the legend gives way only below this least height;
+     never so high that a box lower than the drawing loses the legend's first line */
+  flex-basis: 0;
+  min-height: min(calc(var(--k2b-chart-height) * 0.75), calc(100% - 28px));
 }
 :is(.k2b-ui, .k2-ui) .k2b-chart__legend-item {
   display: inline-flex;

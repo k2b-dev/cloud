@@ -172,7 +172,7 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     if (props.kind === "pareto") return props;
     const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
     // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
-    // instance (the same on the server and in the browser).
+    // instance (unique per page, on the server and in the browser).
     return drawing.kind === "stateTimeline" ? { ...drawing, legend: false, idPrefix: `${chartTooltipId}-drawing` } : drawing;
   };
   const messages = useUiMessages();
@@ -197,6 +197,14 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
       ? props.legend !== false
       : props.kind === "line" && props.legend === true && (props.legendPlacement === "top-start" || lineDetailsEnabled(props));
   const legendSeries = () => (props.kind === "line" || props.kind === "area" ? props.series : []);
+  // Whether the states' legend has more lines than room (it scrolls then); measured in the browser only.
+  const [legendScrolls, setLegendScrolls] = createSignal(false);
+  const watchLegend = (legend: HTMLDivElement) => {
+    if (typeof ResizeObserver === "undefined") return;
+    const sizes = new ResizeObserver(() => setLegendScrolls(legend.scrollHeight > legend.clientHeight + 1));
+    sizes.observe(legend);
+    onCleanup(() => sizes.disconnect());
+  };
   const stateLegend = () => (props.kind === "stateTimeline" && props.legend !== false ? (props.states ?? []) : []);
   const legendValue = (index: number) => {
     if (props.kind === "line") {
@@ -714,7 +722,14 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
         />
         <Show when={stateLegend().length > 0}>
           {/* HTML wraps the states at any width; inside the stretched drawing the legend could only run off its side. */}
-          <div class="k2b-chart__legend" role="group" aria-label={chartMessages().chartLegend} tabIndex={0}>
+          {/* it takes the focus only while it scrolls, so the keyboard reaches the states it hides */}
+          <div
+            ref={watchLegend}
+            class="k2b-chart__legend"
+            role="group"
+            aria-label={chartMessages().chartLegend}
+            tabIndex={legendScrolls() ? 0 : undefined}
+          >
             <For each={stateLegend()}>
               {(state, index) => (
                 <span class="k2b-chart__legend-item">
