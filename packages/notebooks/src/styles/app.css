@@ -532,16 +532,7 @@
 .dark .notebook-book-content a.notebook-book-tag:hover {
   background: color-mix(in srgb, var(--color-emerald-900) 50%, transparent);
 }
-.notebook-book-content .notebook-book-tag-page a,
-.notebook-book-content .notebook-book-tag-page a:hover {
-  color: inherit;
-  text-decoration: none;
-}
-.notebook-book-tag-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-  gap: 1rem;
-}
+
 .notebook-book-empty {
   color: var(--color-zinc-600);
 }
@@ -613,10 +604,6 @@
   .notebook-book-content .notebook-book-mermaid > details {
     display: none;
   }
-}
-
-.notebook-detail-panel-header {
-  view-transition-name: notebook-detail-panel;
 }
 
 .k2b-ui .notebooks-overview-workspace {
@@ -754,137 +741,6 @@
 
 .k2b-ui .notebooks-overview-mobile-activity {
   display: none;
-}
-
-/* ── Note side panel ──────────────────────────────────────────────────
-   Built from the shared DetailPanel rhythm; these rules only arrange the
-   panel's own pieces: the action row, the meta line states, the offline band,
-   the outline depth, and the activity rows. */
-/* The actions take the row; "…" from the shared header ends it beside them. */
-.k2b-ui .notebook-detail-primary {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 0;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.k2b-ui .notebook-detail-actions {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.625rem 0.5rem;
-}
-
-.k2b-ui .notebook-detail-actions__ai {
-  display: flex;
-  flex: 0 0 auto;
-}
-
-.k2b-ui .notebook-view-menu {
-  flex: 0 0 auto;
-}
-
-.k2b-ui .notebook-view-menu__chevron {
-  color: var(--k2b-text-muted);
-  font-size: 0.75rem;
-}
-
-.k2b-ui .notebook-meta-name {
-  color: var(--k2b-text-secondary);
-}
-
-.k2b-ui .notebook-meta-state {
-  color: var(--k2b-text-secondary);
-  font-weight: 600;
-}
-
-.k2b-ui .notebook-meta-state[data-tone="warning"] {
-  color: var(--k2b-warning-text);
-}
-
-.k2b-ui .notebook-meta-state i {
-  font-size: 0.75rem;
-  vertical-align: -0.0625rem;
-}
-
-.k2b-ui .notebook-time time[tabindex] {
-  border-radius: 0.125rem;
-}
-
-.k2b-ui .notebook-time time[tabindex]:focus-visible {
-  outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: 1px;
-}
-
-/* Offline: one flat band in the header with what happens and how to retry. */
-.k2b-ui .notebook-offline-band {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.625rem 0.75rem;
-  border-radius: var(--k2b-radius-control);
-  color: var(--k2b-text);
-  background: color-mix(in srgb, var(--k2b-warning-text) 10%, transparent);
-  font-size: 0.75rem;
-  line-height: 1.125rem;
-}
-
-.k2b-ui .notebook-offline-band > i {
-  margin-top: 0.125rem;
-  color: var(--k2b-warning-text);
-  font-size: 0.875rem;
-}
-
-.k2b-ui .notebook-offline-band__copy {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.125rem;
-}
-
-.k2b-ui .notebook-offline-band__copy p {
-  margin: 0;
-  color: var(--k2b-text-secondary);
-}
-
-.k2b-ui .notebook-offline-band__action.k2b-button {
-  margin: 0.25rem 0 0 -0.375rem;
-  color: var(--k2b-warning-text);
-  font-weight: 600;
-}
-
-/* Task progress in the app's color, like the current outline row. */
-.k2b-ui .notebook-tasks .k2b-progress__value {
-  background: var(--k2b-detail-panel-accent, var(--k2b-accent-600));
-}
-
-.k2b-ui .notebook-panel-rows {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-}
-
-/* Deeper headings step in; the level itself needs no label. */
-.k2b-ui .notebook-outline-row[data-depth="1"] .k2b-detail-panel__action-copy {
-  padding-inline-start: 0.875rem;
-}
-
-.k2b-ui .notebook-outline-row[data-depth="2"] .k2b-detail-panel__action-copy {
-  padding-inline-start: 1.75rem;
-}
-
-.k2b-ui .notebook-reference-name {
-  font-family: var(--k2b-font-mono, ui-monospace, monospace);
-  font-size: 0.6875rem;
-}
-
-.k2b-ui .notebook-activity-alert {
-  margin-bottom: 0.5rem;
 }
 
 @media (max-width: 47.999rem) {

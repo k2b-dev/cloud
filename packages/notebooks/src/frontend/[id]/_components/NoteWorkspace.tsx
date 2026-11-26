@@ -1,6 +1,6 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Canvas, Empty, Menu, type MenuEntry, Pane, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Empty, Pane, Tabs, Workspace } from "@k2b/ui/v2";
 import { type Component, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AnnotationProjection } from "../../../lib/annotation-contracts";
@@ -8,11 +8,11 @@ import { navigateToNotebookNote } from "../../lib/soft-navigation";
 import { buildNoteUrl } from "../../params";
 import { notebookWorkspaceMessages } from "../messages";
 import { bookMessages } from "./book/messages";
-import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT, RICH_MODE_CHANGED_EVENT, TOGGLE_RICH_MODE_EVENT } from "./detail/events";
+import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "./detail/events";
 import NoteDetails, { type NoteDetailsProps } from "./detail/NoteDetails";
 import type { NoteEditorProps } from "./editor/NoteEditor";
 import NotePreview from "./editor/NotePreview";
-import { changeFullWidth, createFullWidth } from "./full-width";
+import NoteViewMenu from "./NoteViewMenu";
 import NotebookSidebarBody from "./sidebar/NotebookSidebarBody";
 import { useNotebookSidebar } from "./sidebar/notebook-sidebar-state";
 import type { NotebookContext } from "./sidebar/types";
@@ -52,20 +52,15 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
   const note = () => sidebar.currentNoteId() ?? props.note?.editor.noteId ?? "";
   const notebook = () => props.ctx.notebook.id;
   const [detailsOpen, setDetailsOpen] = createSignal(props.note?.details?.initiallyOpen ?? false);
-  const [rich, setRich] = createSignal(props.note?.editor.initialRichMode !== "source");
-  const fullWidth = createFullWidth(props.ctx.fullWidth);
 
   // The editor loads after the first picture: the server and the first browser render both show the preview.
   const [Editor, setEditor] = createSignal<Component<NoteEditorProps>>();
   onMount(() => {
     if (props.note) void import("./editor/NoteEditor").then((module) => setEditor(() => module.default));
     const onState = (event: Event) => setDetailsOpen((event as CustomEvent<{ isOpen: boolean }>).detail.isOpen);
-    const onRich = (event: Event) => setRich((event as CustomEvent<{ isRich: boolean }>).detail.isRich);
     window.addEventListener(DETAIL_PANEL_STATE_EVENT, onState);
-    window.addEventListener(RICH_MODE_CHANGED_EVENT, onRich);
     onCleanup(() => {
       window.removeEventListener(DETAIL_PANEL_STATE_EVENT, onState);
-      window.removeEventListener(RICH_MODE_CHANGED_EVENT, onRich);
     });
   });
 
@@ -79,24 +74,6 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
       if (!shown(mode)) void navigateToNotebookNote(buildNoteUrl(notebook(), note(), mode));
     },
   });
-  const viewMenu = (): MenuEntry[] => [
-    ...(props.mode === "edit"
-      ? [
-          {
-            title: t().textView,
-            choice: rich() ? "rich" : "source",
-            onChoose: (value: string) => {
-              if ((value === "rich") !== rich()) window.dispatchEvent(new CustomEvent(TOGGLE_RICH_MODE_EVENT));
-            },
-            items: [
-              { label: t().formattedText, icon: "typography", value: "rich" },
-              { label: t().markdownText, icon: "markdown", value: "source" },
-            ],
-          },
-        ]
-      : []),
-    { label: t().fullWidth, meta: t().fullWidthHint, checked: fullWidth(), onClick: () => changeFullWidth(!fullWidth()) },
-  ];
 
   return (
     <>
@@ -122,9 +99,12 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
             }
             end={
               <Show when={props.note}>
-                <Menu label={t().view} icon="adjustments-horizontal" items={viewMenu()}>
-                  {t().view}
-                </Menu>
+                <NoteViewMenu
+                  mode={props.mode}
+                  fullWidth={props.ctx.fullWidth}
+                  initialRich={props.note?.editor.initialRichMode !== "source"}
+                  host={() => document.querySelector(".notebook-document-surface")}
+                />
                 <Show when={props.note?.details}>
                   <Button
                     icon="layout-sidebar-right"
@@ -155,7 +135,7 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
                 <Canvas label={t().editorSurface}>
                   <div
                     class="notebook-document-surface flex flex-1 min-w-0 min-h-0 flex-col"
-                    data-full-width={fullWidth() ? "" : undefined}
+                    data-full-width={props.ctx.fullWidth ? "" : undefined}
                     data-comments=""
                     data-detail-open={detailsOpen() ? "" : undefined}
                   >

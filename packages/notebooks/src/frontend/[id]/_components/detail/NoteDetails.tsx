@@ -828,6 +828,38 @@ export default function NoteDetails(props: NoteDetailsProps) {
     }
     return t().presenceAlone;
   };
+  /** Who is here, in one line: the others first, then you; at most three names and the rest as a count. */
+  const presenceNames = () => {
+    const people = presencePeople();
+    if (presenceState() === "loading") return t().hereNow;
+    if (people.length === 0) return t().hereNow;
+    const names = [...people.filter((entry) => !entry.self), ...people.filter((entry) => entry.self)].map((entry) =>
+      entry.self ? t().you : entry.name,
+    );
+    return names.length > 3 ? `${names.slice(0, 3).join(", ")} +${names.length - 3}` : names.join(", ");
+  };
+  /** Where the others write: "Jana Berger schreibt · Mengen erfassen"; otherwise that they read. */
+  const presenceWriting = () => {
+    const others = presencePeople().filter((entry) => !entry.self);
+    const writing = others.filter((entry) => entry.activity === "writing");
+    return (writing.length > 0 ? writing : others)
+      .slice(0, 2)
+      .map((entry) => `${entry.shortName} ${presenceLine(entry)}`)
+      .join("; ");
+  };
+  const presenceMenu = (): MenuEntry[] =>
+    presenceState() === "unavailable"
+      ? [{ label: t().retry, icon: "refresh", onClick: () => window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT)) }]
+      : jumpEntries();
+  /** Jumping to where someone writes, one entry per writing person. */
+  const jumpEntries = (): MenuEntry[] =>
+    presencePeople()
+      .filter((entry) => entry.onSelect)
+      .map((entry) => ({
+        label: entry.place ? `${entry.name} · ${entry.place}` : entry.name,
+        icon: "pencil",
+        onClick: () => entry.onSelect?.(),
+      }));
   const presenceLine = (entry: DetailPresencePerson) =>
     [entry.activity === "writing" ? t().presenceWriting : t().presenceReading, entry.place, entry.trailing].filter(Boolean).join(" · ");
   const accessPerson = (entry: DetailAccessEntry): Person => ({ name: entry.name, image: entry.src ?? undefined });
@@ -877,321 +909,336 @@ export default function NoteDetails(props: NoteDetailsProps) {
   // The details stay mounted while closed, so they follow the note through soft navigation and the toggle.
   return (
     <Show when={open()}>
-    <Pane
-      detail
-      label={t().noteDetails}
-      width={{ min: 300, default: 360 }}
-      back={{ label: noteTitle() || t().untitled, href: buildNoteUrl(props.notebookId, noteId(), props.presentationMode), onNavigate: () => closePanel() }}
-      scrollKey="notebook-detail"
-      head={
-        <Bar
-          start={<Text weight="strong">{noteTitle() || t().untitled}</Text>}
-          end={
-            <>
-              <Menu label={t().moreActions} items={moreMenu()} />
-              <Button variant="ghost" icon="x" label={t().closeNoteDetails} onClick={closePanel} />
-            </>
-          }
-        />
-      }
-      status={<Bar start={<Text type="meta">{metaText()}</Text>} />}
-    >
-      {/* Only a connection that will come back promises to resend; an ended session shows the editor's own bar. */}
-      <Show when={offline() && !sync().ended}>
-        <Notice
-          tone="warn"
-          icon="alert-triangle"
-          title={t().offlineTitle}
-          actions={[{ label: t().reconnect, icon: "refresh", onClick: reconnect, disabled: reconnecting() }]}
-        >
-          {t().offlineDetail}
-        </Notice>
-      </Show>
-      <Show when={canEditWithAi()}>
-        <Bar
-          start={
-            <Button
-              icon="sparkles"
-              busy={editWithAi.loading()}
-              disabled={offline()}
-              title={offline() ? t().needsConnection : undefined}
-              onClick={() => void editWithAi.mutate()}
-            >
-              {t().editWithAi}
-            </Button>
-          }
-        />
-      </Show>
-
-      <Section
-        icon="users"
-        title={t().hereNow}
-        count={presencePeople().length || undefined}
-        actions={[{ label: t().copyNoteLink, icon: "link", onClick: copyNoteLink }]}
-      >
-        <Switch>
-          <Match when={presenceState() === "loading"}>
-            <Loading rows={1} lines={2} />
-          </Match>
-          <Match when={presencePeople().length > 0}>
-            <For each={presencePeople()}>
-              {(entry) => (
-                <Row
-                  avatar={{ name: entry.name, image: entry.src ?? undefined, color: entry.color ?? undefined }}
-                  lines={[entry.self ? `${entry.name} (${t().you})` : entry.name, presenceLine(entry)]}
-                  onOpen={entry.onSelect}
-                />
-              )}
-            </For>
-          </Match>
-        </Switch>
-        <Show when={presenceState() !== "loading" && (presencePeople().length <= 1 || presenceState() !== "live")}>
-          <Text type="meta" muted>
-            {presenceText()}
-          </Text>
-        </Show>
-        <Show when={presenceState() === "unavailable"}>
+      <Pane
+        detail
+        label={t().noteDetails}
+        width={{ min: 300, default: 360 }}
+        back={{
+          label: noteTitle() || t().untitled,
+          href: buildNoteUrl(props.notebookId, noteId(), props.presentationMode),
+          onNavigate: () => closePanel(),
+        }}
+        scrollKey="notebook-detail"
+        head={
           <Bar
+            start={<Text weight="strong">{noteTitle() || t().untitled}</Text>}
             end={
-              <Button variant="text" icon="refresh" onClick={() => window.dispatchEvent(new CustomEvent(PRESENCE_RETRY_EVENT))}>
-                {t().retry}
+              <>
+                <Menu label={t().moreActions} items={moreMenu()} />
+                <Button variant="ghost" icon="x" label={t().closeNoteDetails} onClick={closePanel} />
+              </>
+            }
+          />
+        }
+        // Offline the state line offers to reconnect; only a connection that will come back promises to resend, so an
+        // ended session leaves this to the editor's own bar. Nothing below moves when the connection comes and goes.
+        status={
+          <Bar
+            start={<Text type="meta">{metaText()}</Text>}
+            end={
+              <Show when={offline() && !sync().ended}>
+                <Button
+                  variant="text"
+                  icon="refresh"
+                  busy={reconnecting()}
+                  disabled={reconnecting()}
+                  title={`${t().offlineTitle}. ${t().offlineDetail}`}
+                  onClick={reconnect}
+                >
+                  {t().reconnect}
+                </Button>
+              </Show>
+            }
+          />
+        }
+      >
+        {/* Only a connection that will come back promises to resend; an ended session shows the editor's own bar. */}
+        <Show when={canEditWithAi()}>
+          <Bar
+            start={
+              <Button
+                icon="sparkles"
+                busy={editWithAi.loading()}
+                disabled={offline()}
+                title={offline() ? t().needsConnection : undefined}
+                onClick={() => void editWithAi.mutate()}
+              >
+                {t().editWithAi}
               </Button>
             }
           />
         </Show>
-      </Section>
 
-      {/* k2b-ui gap: the comment thread and its composer (rich, from @k2b/editor) keep their v1 drawing until the v2
-          composer lands; they stand here unchanged. */}
-      <NoteCommentsSection
-        notebookId={props.notebookId}
-        noteId={noteId()}
-        currentUserId={props.currentUserId}
-        canWrite={props.canWrite}
-        initialCommentsPage={props.initialCommentsPage}
-        dateConfig={props.dateConfig}
-        offline={offline()}
-      />
-
-      <Show when={tasks().total > 0}>
-        <Section icon="list-check" title={t().tasks}>
-          <Progress value={tasks().done} of={tasks().total} label={t().tasksDone({ done: tasks().done, total: tasks().total })} />
-        </Section>
-      </Show>
-
-      <Show when={outline().length >= 2}>
-        <Section icon="list-tree" title={t().contents} count={outline().length}>
-          {/* The editor sends a new outline after each pause in typing; rows keep their elements and take new values. */}
-          <Index each={outline()}>
-            {(item) => (
-              <Row
-                lines={[headingRow(item())]}
-                current={activeHeading() === item().id}
-                href={`#${item().id}`}
-                onNavigate={(nav) => {
-                  nav.event.preventDefault();
-                  scrollToHeading(item().id);
-                }}
-                marks={
-                  (writersByHeading().get(item().id) ?? []).length > 0 ? (
-                    <For each={writersByHeading().get(item().id)}>
-                      {(writer) => <Avatar name={writer.name} image={writer.src ?? undefined} color={writer.color ?? undefined} />}
-                    </For>
-                  ) : undefined
-                }
-              />
-            )}
-          </Index>
-        </Section>
-      </Show>
-
-      <Section icon="hash" title={t().tags} count={relations().tags.length || undefined}>
-        <Show
-          when={relations().tags.length > 0}
-          fallback={
-            <Show when={props.canWrite}>
-              <Text type="meta" muted>
-                {t().tagsHint}
-              </Text>
-            </Show>
-          }
-        >
-          <Inline>
-            <For each={relations().tags}>
-              {(tag) => (
-                <Chip tag href={buildTagPageUrl(props.notebookId, tag, props.presentationMode)}>
-                  {`#${tag}`}
-                </Chip>
-              )}
-            </For>
-          </Inline>
-        </Show>
-      </Section>
-
-      <Show when={backlinks().length > 0 || relations().outgoing.length > 0}>
-        <Section icon="link" title={t().noteLinks} count={backlinks().length + relations().outgoing.length}>
-          <For each={backlinks().map(linkItem)}>
-            {(link) => (
-              <Row
-                icon="arrow-back-up"
-                lines={link.trailing ? [link.title, link.trailing] : [link.title]}
-                meta={t().linkedBy}
-                href={link.href}
-              />
-            )}
-          </For>
-          <For each={relations().outgoing.map(linkItem)}>
-            {(link) => <Row icon="arrow-forward-up" lines={link.trailing ? [link.title, link.trailing] : [link.title]} href={link.href} />}
-          </For>
-        </Section>
-      </Show>
-
-      <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
-        <Section icon="paperclip" title={t().attachments} count={visibleAttachments().length || undefined}>
-          <Show
-            when={!attachmentMetadata.error()}
-            fallback={<Failed text={t().attachmentsLoadDescription} onRetry={() => void attachmentMetadata.refresh()} />}
-          >
-            {/* k2b-ui gap: a Row has no image thumbnail (Mark thumbnail #4208); an image shows its kind's symbol. */}
-            <For each={visibleAttachments()}>
-              {(attachment) => (
-                <Menu.Context items={attachmentMenu(attachment)}>
-                  <Row
-                    icon={attachmentIcon(attachment)}
-                    lines={[
-                      attachment.filename,
-                      `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`,
-                    ]}
-                    onOpen={() => openAttachment(props.notebookId, attachment, visibleAttachments())}
-                    end={<Menu label={t().attachmentActions({ filename: attachment.filename })} items={attachmentMenu(attachment)} />}
-                  />
-                </Menu.Context>
-              )}
-            </For>
-          </Show>
-        </Section>
-      </Show>
-
-      <Show when={namedBlocks().length > 0}>
-        <Section icon="at" title={t().references} count={namedBlocks().length}>
-          <Index each={namedBlocks()}>
-            {(block) => (
-              <Row
-                icon={(REFERENCE_ICONS[block().type] ?? "ti-at").replace(/^ti-/, "")}
-                lines={[`@${block().name}`]}
-                meta={t().referenceType({ type: block().type })}
-                onOpen={() => scrollToNamedBlock(block())}
-              />
-            )}
-          </Index>
-        </Section>
-      </Show>
-
-      {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
-      <Show when={props.accessVisible}>
         <Section
-          icon="lock-access"
-          title={t().access}
-          summary={t().accessWholeNotebook}
-          actions={
-            props.canManageAccess
-              ? [
-                  {
-                    label: t().manageAccess,
-                    onClick: () =>
-                      window.dispatchEvent(
-                        new CustomEvent<OpenNotebookSettingsEventDetail>(OPEN_NOTEBOOK_SETTINGS_EVENT, { detail: { tab: "access" } }),
-                      ),
-                  },
-                ]
-              : undefined
-          }
+          icon="users"
+          title={t().hereNow}
+          count={presencePeople().length || undefined}
+          actions={[{ label: t().copyNoteLink, icon: "link", onClick: copyNoteLink }]}
         >
-          <Switch>
-            <Match when={access().state === "error"}>
-              <Failed text={t().accessLoadFailed} onRetry={() => void loadAccess()} />
-            </Match>
-            <Match when={access().state !== "ready"}>
-              <Loading rows={2} lines={2} />
-            </Match>
-            <Match when={true}>
-              <For each={accessEntries()}>
-                {(entry) => (
-                  <Row avatar={accessPerson(entry)} lines={[entry.name, entry.detail ? `${entry.role} · ${entry.detail}` : entry.role]} />
+          {/* One row whatever happens: people coming and going, or the connection failing, never move what is below. */}
+          <Row
+            icon={presenceState() === "live" ? "users" : presenceState() === "loading" ? "loader-2" : "wifi-off"}
+            // Three lines, each cut with "…": long names never wrap and the row never grows (the marks share the third).
+            lines={[
+              presenceNames(),
+              presenceState() === "live" && presencePeople().length > 1 ? presenceWriting() : presenceText(),
+              // a no-break space keeps the third line as high as when it holds the hint
+              jumpEntries().length > 0 ? t().hereNowHint : "\u00a0",
+            ]}
+            // Marks are always there (also empty), so the row keeps its three-line height when people come and go.
+            marks={
+              <For each={presencePeople().slice(0, 5)}>
+                {(entry) => <Avatar name={entry.name} image={entry.src ?? undefined} color={entry.color ?? undefined} />}
+              </For>
+            }
+            // Always the same "…": the jumps to where people write, or a retry while presence is unavailable; with nothing
+            // to offer it is disabled, so the row keeps its shape.
+            end={
+              <Menu
+                label={t().hereNowHint}
+                icon="map-pin"
+                disabled={presenceMenu().length === 0}
+                items={presenceMenu().length > 0 ? presenceMenu() : [{ label: t().retry, disabled: true }]}
+              />
+            }
+          />
+        </Section>
+
+        {/* k2b-ui gap: the comment thread and its composer (rich, from @k2b/editor) keep their v1 drawing until the v2
+          composer lands; they stand here unchanged. */}
+        <NoteCommentsSection
+          notebookId={props.notebookId}
+          noteId={noteId()}
+          currentUserId={props.currentUserId}
+          canWrite={props.canWrite}
+          initialCommentsPage={props.initialCommentsPage}
+          dateConfig={props.dateConfig}
+          offline={offline()}
+        />
+
+        <Show when={tasks().total > 0}>
+          <Section icon="list-check" title={t().tasks}>
+            <Progress value={tasks().done} of={tasks().total} label={t().tasksDone({ done: tasks().done, total: tasks().total })} />
+          </Section>
+        </Show>
+
+        <Show when={outline().length >= 2}>
+          <Section icon="list-tree" title={t().contents} count={outline().length}>
+            {/* The editor sends a new outline after each pause in typing; rows keep their elements and take new values. */}
+            <Index each={outline()}>
+              {(item) => (
+                <Row
+                  lines={[headingRow(item())]}
+                  current={activeHeading() === item().id}
+                  href={`#${item().id}`}
+                  onNavigate={(nav) => {
+                    nav.event.preventDefault();
+                    scrollToHeading(item().id);
+                  }}
+                  // who writes here, as a quiet note on the same line: presence never makes a heading's row taller
+                  meta={(writersByHeading().get(item().id) ?? []).map((writer) => writer.shortName).join(", ") || undefined}
+                />
+              )}
+            </Index>
+          </Section>
+        </Show>
+
+        <Section icon="hash" title={t().tags} count={relations().tags.length || undefined}>
+          <Show
+            when={relations().tags.length > 0}
+            fallback={
+              <Show when={props.canWrite}>
+                <Text type="meta" muted>
+                  {t().tagsHint}
+                </Text>
+              </Show>
+            }
+          >
+            <Inline>
+              <For each={relations().tags}>
+                {(tag) => (
+                  <Chip tag href={buildTagPageUrl(props.notebookId, tag, props.presentationMode)}>
+                    {`#${tag}`}
+                  </Chip>
                 )}
               </For>
-            </Match>
-          </Switch>
-        </Section>
-      </Show>
-
-      <Section
-        icon="info-circle"
-        title={t().moreAboutNote}
-        more={{ label: t().openVersionHistory, href: buildVersionsUrl(props.notebookId, noteId()) }}
-      >
-        <Facts items={facts()} />
-      </Section>
-
-      {/* The log loads after the first paint and is the last section, so nothing above it moves when it arrives. */}
-      <Section
-        icon="activity"
-        title={t().activity}
-        more={
-          !noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)
-            ? {
-                label: t().loadOlder,
-                onClick: () => {
-                  setActivityExpanded(true);
-                  activityRead = "older";
-                  void noteActivity.loadMore();
-                },
-              }
-            : activityExpanded() || hiddenActivity() > 0
-              ? {
-                  label: activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() }),
-                  onClick: () => setActivityExpanded(!activityExpanded()),
-                }
-              : undefined
-        }
-      >
-        <Show when={noteActivity.error() && activityItems().length === 0}>
-          <Failed text={t().activityLoadShort} onRetry={retryActivity} />
-        </Show>
-        <Show
-          when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
-          fallback={<Loading rows={3} lines={2} />}
-        >
-          <For each={visibleActivity()}>
-            {(item) => (
-              <Row
-                avatar={person(item.actor)}
-                lines={[
-                  person(item.actor).name,
-                  `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`,
-                ]}
-                time={relative(item.lastOccurredAt)}
-                href={activityHref(item)}
-                onOpen={activityHref(item) ? undefined : () => revealComment(item)}
-              />
-            )}
-          </For>
-          <Show when={activityComplete()}>
-            <Row
-              avatar={person(authors().createdBy)}
-              lines={[person(authors().createdBy).name, t().createdNote]}
-              time={relative(createdAt())}
-              href={buildVersionsUrl(props.notebookId, noteId())}
-            />
+            </Inline>
           </Show>
+        </Section>
+
+        <Section icon="link" title={t().noteLinks} count={backlinks().length + relations().outgoing.length || undefined}>
+          <Show
+            when={backlinks().length > 0 || relations().outgoing.length > 0}
+            fallback={
+              <Text type="meta" muted>
+                {t().noneYet}
+              </Text>
+            }
+          >
+            <For each={backlinks().map(linkItem)}>
+              {(link) => (
+                <Row
+                  icon="arrow-back-up"
+                  lines={link.trailing ? [link.title, link.trailing] : [link.title]}
+                  meta={t().linkedBy}
+                  href={link.href}
+                />
+              )}
+            </For>
+            <For each={relations().outgoing.map(linkItem)}>
+              {(link) => (
+                <Row icon="arrow-forward-up" lines={link.trailing ? [link.title, link.trailing] : [link.title]} href={link.href} />
+              )}
+            </For>
+          </Show>
+        </Section>
+
+        <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
+          <Section icon="paperclip" title={t().attachments} count={visibleAttachments().length || undefined}>
+            <Show
+              when={!attachmentMetadata.error()}
+              fallback={<Failed text={t().attachmentsLoadDescription} onRetry={() => void attachmentMetadata.refresh()} />}
+            >
+              {/* k2b-ui gap: a Row has no image thumbnail (Mark thumbnail #4208); an image shows its kind's symbol. */}
+              <For each={visibleAttachments()}>
+                {(attachment) => (
+                  <Menu.Context items={attachmentMenu(attachment)}>
+                    <Row
+                      icon={attachmentIcon(attachment)}
+                      lines={[
+                        attachment.filename,
+                        `${fileKindLabel({ name: attachment.filename, mediaType: attachment.mimeType }, locale())} · ${formatFileViewSize(attachment.sizeBytes, locale())}`,
+                      ]}
+                      onOpen={() => openAttachment(props.notebookId, attachment, visibleAttachments())}
+                      end={<Menu label={t().attachmentActions({ filename: attachment.filename })} items={attachmentMenu(attachment)} />}
+                    />
+                  </Menu.Context>
+                )}
+              </For>
+            </Show>
+          </Section>
         </Show>
-        <Show when={noteActivity.error() && activityItems().length > 0}>
-          <Notice tone="bad" actions={[{ label: t().retry, onClick: retryActivity }]}>
-            {t().activityLoadShort}
-          </Notice>
+
+        <Show when={namedBlocks().length > 0}>
+          <Section icon="at" title={t().references} count={namedBlocks().length}>
+            <Index each={namedBlocks()}>
+              {(block) => (
+                <Row
+                  icon={(REFERENCE_ICONS[block().type] ?? "ti-at").replace(/^ti-/, "")}
+                  lines={[`@${block().name}`]}
+                  meta={t().referenceType({ type: block().type })}
+                  onOpen={() => scrollToNamedBlock(block())}
+                />
+              )}
+            </Index>
+          </Section>
         </Show>
-      </Section>
-    </Pane>
+
+        {/* Read-only for everyone with access of their own; public-link readers never get the list. */}
+        <Show when={props.accessVisible}>
+          <Section
+            icon="lock-access"
+            title={t().access}
+            summary={t().accessWholeNotebook}
+            actions={
+              props.canManageAccess
+                ? [
+                    {
+                      label: t().manageAccess,
+                      onClick: () =>
+                        window.dispatchEvent(
+                          new CustomEvent<OpenNotebookSettingsEventDetail>(OPEN_NOTEBOOK_SETTINGS_EVENT, { detail: { tab: "access" } }),
+                        ),
+                    },
+                  ]
+                : undefined
+            }
+          >
+            <Switch>
+              <Match when={access().state === "error"}>
+                <Failed text={t().accessLoadFailed} onRetry={() => void loadAccess()} />
+              </Match>
+              <Match when={access().state !== "ready"}>
+                <Loading rows={2} lines={2} />
+              </Match>
+              <Match when={true}>
+                <For each={accessEntries()}>
+                  {(entry) => (
+                    <Row avatar={accessPerson(entry)} lines={[entry.name, entry.detail ? `${entry.role} · ${entry.detail}` : entry.role]} />
+                  )}
+                </For>
+              </Match>
+            </Switch>
+          </Section>
+        </Show>
+
+        <Section
+          icon="info-circle"
+          title={t().properties}
+          more={{ label: t().openVersionHistory, href: buildVersionsUrl(props.notebookId, noteId()) }}
+        >
+          <Facts items={facts()} />
+        </Section>
+
+        {/* The log loads after the first paint and is the last section, so nothing above it moves when it arrives. */}
+        <Section
+          icon="activity"
+          title={t().activity}
+          more={
+            !noteActivity.error() && noteActivity.hasMore() && (activityExpanded() || hiddenActivity() === 0)
+              ? {
+                  label: t().loadOlder,
+                  onClick: () => {
+                    setActivityExpanded(true);
+                    activityRead = "older";
+                    void noteActivity.loadMore();
+                  },
+                }
+              : activityExpanded() || hiddenActivity() > 0
+                ? {
+                    label: activityExpanded() ? t().showLess : t().showMore({ count: hiddenActivity() }),
+                    onClick: () => setActivityExpanded(!activityExpanded()),
+                  }
+                : undefined
+          }
+        >
+          <Show when={noteActivity.error() && activityItems().length === 0}>
+            <Failed text={t().activityLoadShort} onRetry={retryActivity} />
+          </Show>
+          <Show
+            when={!noteActivity.loading() || activityItems().length > 0 || noteActivity.error()}
+            fallback={<Loading rows={3} lines={2} />}
+          >
+            <For each={visibleActivity()}>
+              {(item) => (
+                <Row
+                  avatar={person(item.actor)}
+                  lines={[
+                    person(item.actor).name,
+                    `${describeNoteActivityEntry(item.action, locale())}${item.occurrenceCount > 1 ? ` ${t().times({ count: item.occurrenceCount })}` : ""}`,
+                  ]}
+                  time={relative(item.lastOccurredAt)}
+                  href={activityHref(item)}
+                  onOpen={activityHref(item) ? undefined : () => revealComment(item)}
+                />
+              )}
+            </For>
+            <Show when={activityComplete()}>
+              <Row
+                avatar={person(authors().createdBy)}
+                lines={[person(authors().createdBy).name, t().createdNote]}
+                time={relative(createdAt())}
+                href={buildVersionsUrl(props.notebookId, noteId())}
+              />
+            </Show>
+          </Show>
+          <Show when={noteActivity.error() && activityItems().length > 0}>
+            <Notice tone="bad" actions={[{ label: t().reload, onClick: retryActivity }]}>
+              {t().activityLoadShort}
+            </Notice>
+          </Show>
+        </Section>
+      </Pane>
     </Show>
   );
 }

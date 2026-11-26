@@ -12,9 +12,9 @@ import { editor } from "../../lib/editor";
 import { notebookListOptions, notebookMermaidOptions, notebookUrlOptions } from "../../lib/editor/notebook-options";
 import { notebookWorkspaceMessages } from "../messages";
 import { keepBookReadingPosition } from "./book/book-reading-position";
-import { ViewMenu } from "./detail/ViewMenu";
 import { keepReadingPosition } from "./editor/reading-position";
 import { followFullWidth } from "./full-width";
+import NoteViewMenu from "./NoteViewMenu";
 import { FeaturesSection } from "./settings/FeaturesSection";
 import { parseFullWidth, readFullWidth } from "./settings/NotebookSettingsStore";
 
@@ -95,7 +95,7 @@ function Harness() {
           <DetailPanel>
             <DetailPanel.Body>
               <nav>Ansichten</nav>
-              <ViewMenu mode="edit" notebookId="book01" noteId="note01" canEdit isRich onToggleRich={() => {}} fullWidth={initial} />
+              <NoteViewMenu mode="edit" fullWidth={initial} initialRich host={() => port} />
               <Section title="Inhalt" icon="ti ti-list">
                 Einleitung und Planung
               </Section>
@@ -180,7 +180,8 @@ const harness = {
   panelRects: () => {
     const panel = document.querySelector(".k2b-detail-panel")!;
     const body = panel.querySelector(".k2b-detail-panel__body")!;
-    return [panel, ...body.children, panel.querySelector(".notebook-view-menu__trigger")!].map(rect);
+    const view = [...panel.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Ansicht")!;
+    return [panel, ...body.children, view].map(rect);
   },
   command: () => {
     const command = collectContextAwareCommands().find((command) => command.id === "notebooks.view.fullWidth");

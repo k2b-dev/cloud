@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser } from "../../../../../ui/test/browser";
@@ -51,7 +52,9 @@ beforeAll(async () => {
       return build.outputs[0]!.text();
     }),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // the head's "Ansicht" menu is a v2 Menu; its styles come with v2.css
+  const v2Css = await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text();
+  const css = ["@layer properties, theme, base, components, utilities;", ...outputs, v2Css].join("\n");
   const { html } = renderNotebookBook({ markdown, notebookId: "book01", locale: "de" });
   server = Bun.serve({
     hostname: "127.0.0.1",
@@ -62,7 +65,7 @@ beforeAll(async () => {
       const host = new URL(request.url).searchParams.get("host");
       const hostStyle = host ? `container:k2b-app-area / inline-size;width:${Number(host)}px;flex:none` : "width:100%";
       return new Response(
-        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0;display:flex"><div id="app-host" style="${hostStyle}"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div></div>${host ? '<aside style="flex:1">Host panel</aside>' : ""}<script id="note-source" type="text/plain">${markdown}</script><script id="book-source" type="text/plain">${html}</script><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui k2-ui" style="margin:0;display:flex"><div id="app-host" style="${hostStyle}"><div id="root" style="height:100dvh;display:flex;flex-direction:column"></div></div>${host ? '<aside style="flex:1">Host panel</aside>' : ""}<script id="note-source" type="text/plain">${markdown}</script><script id="book-source" type="text/plain">${html}</script><script src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },

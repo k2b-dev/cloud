@@ -1,8 +1,25 @@
-import { CloudAvatar } from "@k2b/cloud/account/ui";
 import { type DateContext, dates, type Paginated } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { announce, Button, Discussion, IconButton, MarkdownView, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { announce, useLocale } from "@k2b/ui";
+import {
+  Band,
+  Bar,
+  Button,
+  confirm,
+  Failed,
+  Field,
+  Input,
+  Loading,
+  Menu,
+  type MenuEntry,
+  type Person,
+  Prose,
+  Row,
+  Section,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicNoteComment } from "@/api/public-resources";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -36,6 +53,7 @@ const parseSource = (source: string) => {
 export default function NoteCommentsSection(props: Props) {
   const locale = useLocale();
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const toast = useToast();
   const source = () => sourceFor(props.notebookId, props.noteId);
   const initialSource = sourceFor(props.notebookId, props.noteId);
   const emptyPage: Paginated<PublicNoteComment> = { items: [], page: 1, perPage: PER_PAGE, total: 0, hasNext: false };
@@ -136,7 +154,7 @@ export default function NoteCommentsSection(props: Props) {
     onCleanup(() => window.removeEventListener(REVEAL_COMMENT_EVENT, listener));
   });
 
-  const exactTime = (value: string) => dates.formatDateTime(value, props.dateConfig);
+  const _exactTime = (value: string) => dates.formatDateTime(value, props.dateConfig);
 
   type CommentTarget = { notebookId: string; noteId: string };
   // The list shows a saved change only after the refresh, so a screen reader hears the outcome only then. When the
@@ -145,7 +163,7 @@ export default function NoteCommentsSection(props: Props) {
     if (source() !== sourceFor(target.notebookId, target.noteId)) return;
     void commentsQuery.invalidate({ cursor: null }).then(
       () => announce(outcome),
-      () => toast.error(t().commentSavedReloadFailed),
+      () => void toast(t().commentSavedReloadFailed, { status: "bad" }),
     );
   };
 
@@ -208,7 +226,7 @@ export default function NoteCommentsSection(props: Props) {
     },
     // The comment leaves the list together with its delete button, which had focus, so a screen reader is told.
     onSuccess: (target) => reconcile(target, t().commentDeleted),
-    onError: (error) => toast.error(error.message),
+    onError: (error) => void toast(error.message, { status: "bad" }),
   });
 
   onCleanup(() => {
@@ -221,12 +239,11 @@ export default function NoteCommentsSection(props: Props) {
     if (deleteConfirming() || deleteMutation.loading()) return;
     setDeleteConfirming(true);
     try {
-      const confirmed = await prompts.confirm(t().deleteCommentConfirm, {
+      const confirmed = await confirm({
         title: t().deleteComment,
-        icon: "ti ti-trash",
-        variant: "danger",
-        confirmText: t().delete,
-        cancelText: t().cancel,
+        description: t().deleteCommentConfirm,
+        confirm: t().delete,
+        cancel: t().cancel,
       });
       if (!confirmed) return;
       await deleteMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, commentId: comment.id });
@@ -235,172 +252,152 @@ export default function NoteCommentsSection(props: Props) {
     }
   };
 
-  /**
-   * The composer opens below the newest comment, possibly outside the panel's view, and the button that opened it
-   * turns disabled: focus moves into the composer and the panel shows it. Cancel hands focus back to the button.
-   */
-  const revealComposer = (form: HTMLFormElement) => {
-    composerForm = form;
-    requestAnimationFrame(() => {
-      if (!form.isConnected) return;
-      form.scrollIntoView({ block: "nearest" });
-      form.querySelector<HTMLTextAreaElement>("textarea")?.focus({ preventScroll: true });
-    });
+  /** The newest few, or all once unfolded; the list reads oldest first, so the conversation continues at its end. */
+  const shownComments = () => (expanded() ? commentsPage().items : commentsPage().items.slice(-NEWEST));
+  const hiddenComments = () => commentsPage().items.length - shownComments().length;
+  const [draft, setDraft] = createSignal("");
+  const [editDraft, setEditDraft] = createSignal("");
+  const submitDraft = async () => {
+    const content = draft().trim();
+    if (!content || createMutation.loading()) return;
+    const outcome = await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
+    // A call that did not run keeps the draft.
+    if (outcome === "success") {
+      setDraft("");
+      setComposerOpen(false);
+    }
   };
-  const cancelComposer = () => {
-    setComposerOpen(false);
-    commentButton?.focus();
+  const submitEdit = async (comment: PublicNoteComment) => {
+    const content = editDraft().trim();
+    if (!content || updateMutation.loading()) return;
+    const outcome = await updateMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, commentId: comment.id, content });
+    if (outcome === "success") setEditingId(null);
   };
-  const composer = () => (
-    <Show when={props.canWrite && composerOpen()}>
-      <Discussion.Composer
-        ref={revealComposer}
-        label={t().addComment}
-        placeholder={t().commentPlaceholder}
-        submitLabel={t().postComment}
-        cancelLabel={t().cancel}
-        onCancel={cancelComposer}
-        lines={5}
-        onSubmit={async (content) => {
-          const outcome = await createMutation.mutate({ notebookId: props.notebookId, noteId: props.noteId, content });
-          if (outcome === "error") throw createMutation.error();
-          // A call that did not run keeps the draft.
-          return outcome === "success";
-        }}
-      />
-    </Show>
-  );
+  const commentMenu = (comment: PublicNoteComment): MenuEntry[] => [
+    ...(comment.canEdit
+      ? [
+          {
+            label: t().editComment,
+            icon: "pencil",
+            onClick: () => {
+              setEditDraft(comment.content);
+              setEditingId(comment.id);
+            },
+          },
+        ]
+      : []),
+    ...(comment.canDelete
+      ? [
+          {
+            label: t().deleteComment,
+            icon: "trash",
+            danger: true,
+            disabled: deleteConfirming() || deleteMutation.loading(),
+            onClick: () => deleteComment(comment),
+          },
+        ]
+      : []),
+  ];
+  const person = (comment: PublicNoteComment): Person => ({
+    name: comment.authorDisplayName,
+    image:
+      comment.authorAvatarHash && comment.authorUserId
+        ? `/api/accounts/users/${encodeURIComponent(comment.authorUserId)}/avatar?rev=${encodeURIComponent(comment.authorAvatarHash)}`
+        : undefined,
+  });
 
   return (
     <Show when={props.canWrite || commentsPage().total > 0}>
-      <Discussion
-        label={t().comments}
-        icon="ti ti-message-circle"
-        count={commentsPage().total}
-        data-note-comments=""
-        tabIndex={-1}
+      <Section
+        icon="message-circle"
+        title={t().comments}
+        count={commentsPage().total || undefined}
+        // Stays in the head while the composer is open, so the head never changes its shape; offline it waits, disabled.
         actions={
-          props.canWrite ? (
-            // Stays in the header while the composer is open, so the header never changes its shape. Offline it stays in
-            // place, disabled, and says why.
-            <Show
-              when={props.offline}
-              fallback={
-                <Button ref={commentButton} variant="ghost" size="xs" disabled={composerOpen()} onClick={() => setComposerOpen(true)}>
-                  <i class="ti ti-plus" aria-hidden="true" /> {t().comment}
-                </Button>
-              }
-            >
-              <Tooltip.Anchor content={t().needsConnection}>
-                <Button variant="ghost" size="xs" disabled aria-label={`${t().comment}: ${t().needsConnection}`}>
-                  <i class="ti ti-plus" aria-hidden="true" /> {t().comment}
-                </Button>
-              </Tooltip.Anchor>
-            </Show>
-          ) : undefined
+          props.canWrite
+            ? [{ label: t().comment, icon: "plus", disabled: composerOpen() || !!props.offline, onClick: () => setComposerOpen(true) }]
+            : undefined
+        }
+        more={
+          hiddenComments() > 0
+            ? { label: t().showMore({ count: hiddenComments() }), onClick: () => setExpanded(true) }
+            : commentsPage().hasNext
+              ? { label: t().loadEarlierComments, onClick: () => void commentsQuery.loadMore() }
+              : undefined
         }
       >
-        <Discussion.List
-          loading={(commentsQuery.loading() || commentsQuery.refreshing()) && commentsPage().items.length === 0}
-          loadingLabel={t().loadingComments}
-          error={commentsQuery.error()?.message}
-          onRetry={() => commentsQuery.refresh()}
-          hasMore={commentsPage().hasNext}
-          loadingMore={commentsQuery.loadingMore()}
-          loadMoreLabel={t().loadEarlierComments}
-          onLoadMore={() => commentsQuery.loadMore()}
-          fold={NEWEST}
-          expanded={expanded()}
-          onExpandedChange={setExpanded}
-        >
-          <For each={commentsPage().items}>
-            {(comment) => {
-              const isOwn = () => comment.authorUserId === props.currentUserId;
-              const isEditing = () => editingId() === comment.id;
-              return (
-                <Discussion.Item
-                  data-note-comment={comment.id}
-                  tabIndex={-1}
-                  avatar={
-                    <CloudAvatar
-                      username={comment.authorDisplayName}
-                      userId={comment.authorUserId}
-                      avatarHash={comment.authorAvatarHash}
-                      size="xs"
-                    />
-                  }
-                  author={isOwn() ? t().you : comment.authorDisplayName}
-                  timestamp={
-                    <Tooltip.Anchor content={exactTime(comment.createdAt)}>
-                      {/* Focusable, so the exact date also shows from the keyboard. */}
-                      <time dateTime={comment.createdAt} tabIndex={0}>
-                        {dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
-                      </time>
-                    </Tooltip.Anchor>
-                  }
-                  meta={comment.updatedAt !== comment.createdAt ? <span>{t().editedLower}</span> : undefined}
-                  actions={
+        <Switch>
+          <Match when={commentsQuery.error() && commentsPage().items.length === 0}>
+            <Failed text={commentsQuery.error()?.message ?? t().loadingComments} onRetry={() => void commentsQuery.refresh()} />
+          </Match>
+          <Match when={(commentsQuery.loading() || commentsQuery.refreshing()) && commentsPage().items.length === 0}>
+            <Loading rows={2} lines={2} />
+          </Match>
+          <Match when={commentsPage().items.length === 0 && !composerOpen()}>
+            <Text type="meta" muted>
+              {t().noneYet}
+            </Text>
+          </Match>
+        </Switch>
+        <For each={shownComments()}>
+          {(comment) => {
+            const isOwn = () => comment.authorUserId === props.currentUserId;
+            const isEditing = () => editingId() === comment.id;
+            return (
+              <Band>
+                <Row
+                  avatar={person(comment)}
+                  lines={[isOwn() ? t().you : comment.authorDisplayName]}
+                  meta={comment.updatedAt !== comment.createdAt ? t().editedLower : undefined}
+                  time={dates.formatDateTimeRelative(comment.createdAt, props.dateConfig)}
+                  end={
                     props.canWrite && isOwn() && !isEditing() && (comment.canEdit || comment.canDelete) ? (
-                      <>
-                        <Show when={comment.canEdit}>
-                          <Tooltip.Anchor content={t().editComment}>
-                            <IconButton
-                              tooltip={false}
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => setEditingId(comment.id)}
-                              label={t().editComment}
-                            >
-                              <i class="ti ti-pencil" aria-hidden="true" />
-                            </IconButton>
-                          </Tooltip.Anchor>
-                        </Show>
-                        <Show when={comment.canDelete}>
-                          <Tooltip.Anchor content={t().deleteComment}>
-                            <IconButton
-                              variant="ghost"
-                              size="xs"
-                              onClick={() => void deleteComment(comment)}
-                              disabled={deleteConfirming() || deleteMutation.loading()}
-                              label={t().deleteComment}
-                              tooltip={false}
-                            >
-                              <i class="ti ti-trash" aria-hidden="true" />
-                            </IconButton>
-                          </Tooltip.Anchor>
-                        </Show>
-                      </>
+                      <Menu label={t().commentActions} items={commentMenu(comment)} />
                     ) : undefined
                   }
+                />
+                <Show
+                  when={isEditing()}
+                  fallback={
+                    // k2b-ui gap: Prose renders no images or tables, which a comment's Markdown may hold; it shows them as text.
+                    <Prose markdown={comment.content} />
+                  }
                 >
-                  <Show when={isEditing()} fallback={<MarkdownView markdown={comment.content} headingScale="compact" />}>
-                    <Discussion.Composer
-                      label={t().editComment}
-                      initialValue={comment.content}
-                      submitLabel={t().saveComment}
-                      cancelLabel={t().cancel}
-                      onCancel={() => setEditingId(null)}
-                      lines={3}
-                      onSubmit={async (content) => {
-                        const outcome = await updateMutation.mutate({
-                          notebookId: props.notebookId,
-                          noteId: props.noteId,
-                          commentId: comment.id,
-                          content,
-                        });
-                        if (outcome === "error") throw updateMutation.error();
-                        return outcome === "success";
-                      }}
-                    />
-                  </Show>
-                </Discussion.Item>
-              );
-            }}
-          </For>
-        </Discussion.List>
+                  <Field label={t().editComment} name="comment">
+                    <Input multiline value={editDraft()} disabled={updateMutation.loading()} onInput={setEditDraft} />
+                  </Field>
+                  <Bar
+                    end={
+                      <>
+                        <Button onClick={() => setEditingId(null)}>{t().cancel}</Button>
+                        <Button busy={updateMutation.loading()} onClick={() => void submitEdit(comment)}>
+                          {t().saveComment}
+                        </Button>
+                      </>
+                    }
+                  />
+                </Show>
+              </Band>
+            );
+          }}
+        </For>
         {/* The composer opens below the newest comment, where the conversation continues. */}
-        {composer()}
-      </Discussion>
+        <Show when={props.canWrite && composerOpen()}>
+          <Field label={t().addComment} name="comment">
+            <Input multiline value={draft()} placeholder={t().commentPlaceholder} disabled={createMutation.loading()} onInput={setDraft} />
+          </Field>
+          <Bar
+            end={
+              <>
+                <Button onClick={() => setComposerOpen(false)}>{t().cancel}</Button>
+                <Button busy={createMutation.loading()} disabled={!draft().trim()} onClick={() => void submitDraft()}>
+                  {t().postComment}
+                </Button>
+              </>
+            }
+          />
+        </Show>
+      </Section>
     </Show>
   );
 }
