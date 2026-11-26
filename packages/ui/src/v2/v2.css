@@ -287,8 +287,9 @@
   color: inherit;
   text-decoration: none;
 }
-/* entries that are a link with an address and a button without one: the button keeps the look of the link */
-.k2-ui :where(.k2-ni, .k2-tab, .k2-sec-link, .k2-fab) {
+/* entries that are a link with an address and a button without one: the button keeps the look of the link; the head
+   of a disclosure is a button that draws no frame of its own */
+.k2-ui :where(.k2-ni, .k2-tab, .k2-sec-link, .k2-fab, .k2-disc-head) {
   appearance: none;
   background: none;
   border: 0;
