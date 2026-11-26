@@ -1076,6 +1076,20 @@ export default function RecordsView(props: Props) {
         ];
       })
       .slice(0, 3);
+  /** The count of the list, then what narrows it beyond the bar and its key figures, in one quiet line. */
+  const summary = () =>
+    [
+      recordCountText(),
+      ...(activeRecordMetaCount() > 0 ? [words().metadataActive({ count: activeRecordMetaCount() })] : []),
+      ...aggregateFacts().map((fact) => `${fact.before} ${fact.value}`),
+    ].join(" · ");
+  const moreFilters = () => (
+    <Show when={!props.viewMode && !props.trashMode}>
+      <Button variant="ghost" icon="filter" onClick={() => setQueryOpen(true)}>
+        {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().moreFilters}
+      </Button>
+    </Show>
+  );
   const status = () => (
     <StatusRow
       lead={recordCountText()}
@@ -1084,13 +1098,7 @@ export default function RecordsView(props: Props) {
         ...(activeRecordMetaCount() > 0 ? [{ value: words().metadataActive({ count: activeRecordMetaCount() }) }] : []),
         ...aggregateFacts(),
       ]}
-      filters={
-        <Show when={!props.viewMode && !props.trashMode}>
-          <Button variant="ghost" icon="filter" onClick={() => setQueryOpen(true)}>
-            {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().moreFilters}
-          </Button>
-        </Show>
-      }
+      filters={moreFilters()}
       selection={
         selectedBulkCount() > 0
           ? {
@@ -1149,20 +1157,21 @@ export default function RecordsView(props: Props) {
           label={tableName()}
           scrollKey={`grids-records-${props.tableId}-${props.viewId ?? "default"}`}
           status={
-            <>
-              <Show when={statements() && !props.trashMode ? statements() : undefined}>
-                {(each) => (
-                  <FilterBar
-                    query={each().query}
-                    state={barState()?.state ?? each().query.reset()}
-                    onChange={onBarChange}
-                    names={statementNames()}
-                    results={recordCountText()}
-                  />
-                )}
-              </Show>
-              {status()}
-            </>
+            // Two rows above the records (look rule 9): the head, then this one. A table page's filter bar carries the
+            // count and the deeds of its list at its end; a selection takes its place at the same height.
+            <Show when={selectedBulkCount() === 0 && !props.trashMode ? statements() : undefined} fallback={status()}>
+              {(each) => (
+                <FilterBar
+                  query={each().query}
+                  state={barState()?.state ?? each().query.reset()}
+                  onChange={onBarChange}
+                  names={statementNames()}
+                  results={summary()}
+                  // k2b-ui gap: the bar has no refresh mark like StatusRow loading; rows update in place meanwhile.
+                  end={moreFilters()}
+                />
+              )}
+            </Show>
           }
         >
           <LiveNotice />

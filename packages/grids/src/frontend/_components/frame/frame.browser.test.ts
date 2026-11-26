@@ -402,16 +402,20 @@ describe("the records page on v2", () => {
   }, 60_000);
 
   // MW: 1,000 rows take 21 s in WebKit until the virtual Table lands (#4211)
-  test.skipIf(browserName === "webkit")("1,000 records render; their size is pinned until the table is virtualized", async () => {
-    const { context, tab, errors, readyMs } = await open(wide, table, "huge");
-    try {
-      const count = await elements(tab);
-      // k2b-ui gap: the v2 Table is not virtualized yet (lane MW); this pins today's size.
-      console.info(`grids records huge: ${count} elements, ready ${readyMs} ms`);
-      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(1000);
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 90_000);
+  test.skipIf(browserName === "webkit")(
+    "1,000 records render; their size is pinned until the table is virtualized",
+    async () => {
+      const { context, tab, errors, readyMs } = await open(wide, table, "huge");
+      try {
+        const count = await elements(tab);
+        // k2b-ui gap: the v2 Table is not virtualized yet (lane MW); this pins today's size.
+        console.info(`grids records huge: ${count} elements, ready ${readyMs} ms`);
+        expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(1000);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    },
+    90_000,
+  );
 });

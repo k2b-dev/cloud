@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Empty, FilterBar, Input, List, Menu, Notice, Pane, Row, Section, StatusRow, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Empty, FilterBar, Input, List, ListOrder, Menu, Notice, Pane, Row, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { navigationReferenceKey } from "../../../navigation-contracts";
 import { workspaceMessages } from "../workspace/messages";
@@ -227,16 +227,15 @@ function HomeList(props: HomeProps) {
       label={props.state.base.name}
       scrollKey={`grids-home-${props.state.base.id}`}
       status={
-        <>
-          <FilterBar
-            query={query()}
-            state={state()}
-            onChange={props.setQuery}
-            icons={{ type: "category" }}
-            results={t().resourcesCount({ count: number(shown().length) })}
-          />
-          <StatusRow lead={lead()} />
-        </>
+        // two rows above the list (look rule 9): the head, then this bar with the count and the order at its end
+        <FilterBar
+          query={query()}
+          state={state()}
+          onChange={props.setQuery}
+          icons={{ type: "category" }}
+          results={lead()}
+          end={<ListOrder query={query()} state={state()} onChange={props.setQuery} />}
+        />
       }
     >
       <LiveNotice />
