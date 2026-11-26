@@ -87,9 +87,9 @@ const openMenuOf = (item: Element) => item.querySelector<HTMLElement>(":scope > 
 
 /** The "…" of a place: out of the tab order (the tree is one stop; Shift+F10 opens it); its keys and presses stay its own. */
 const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
-  // A shortcut for the pointer only (`pointerOnly`: out of the tab order and hidden from assistive technology from the
-  // first markup on), which opens the same menu as Shift+F10 on the tree item. The focus a closing menu gives back to
-  // it goes to the tree item instead.
+  // No Tab stop and hidden from assistive technology (`pointerOnly`, from the first markup on; a tree owns only its
+  // items): the keys open the same menu with Shift+F10 on the tree item, a phone with a long press on the row
+  // (`Menu.Context`). The focus a closing menu gives back to it goes to the tree item instead.
   const back = (event: FocusEvent) => {
     if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
       event.target.closest<HTMLElement>('[role="treeitem"]')?.focus();
@@ -259,45 +259,51 @@ export const NavTreeView = (props: NavTree) => {
       class="k2-nt-item"
       aria-posinset={entry.position}
       aria-setsize={entry.size}
+      // its deeds open from Shift+F10 on the place (the "…" is no Tab stop)
+      aria-keyshortcuts={entry.node.menu ? "Shift+F10" : undefined}
       ref={(element: HTMLElement) => keepPlace(element, () => ({ position: entry.position, size: entry.size }))}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.target !== event.currentTarget || !entry.node.menu || !asksForMenu(event)) return;
         event.preventDefault();
         if (event.currentTarget instanceof Element) openMenuOf(event.currentTarget);
       }}
-      onContextMenu={(event: MouseEvent) => {
-        // a right-click on this place's row, not on a place nested in it
-        const item = event.currentTarget;
-        if (!entry.node.menu || !(item instanceof Element) || !(event.target instanceof Element)) return;
-        if (event.target.closest('[role="treeitem"]') !== item) return;
-        event.preventDefault();
-        openMenuOf(item);
-      }}
     >
-      <div class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
-        <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
-          {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
-          <parts.Indicator class="k2-nt-chev">
-            <Icon name="chevron-right" />
-            <Icon name="loader-2" />
-            <Icon name="alert-circle" />
-          </parts.Indicator>
-        </Show>
-        <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
-        <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
-          {(href) => (
-            // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
-            <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
-              {entry.node.label}
-            </parts.Link>
-          )}
-        </Show>
-        <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
-        <Show when={entry.node.count !== undefined}>
-          <span class="k2-ni-count">{entry.node.count}</span>
-        </Show>
-        <Show when={entry.node.menu}>{(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}</Show>
-      </div>
+      {(() => {
+        const row = (
+          <div class="k2-ni k2-nt-row" data-k2-part="Nav.Item" data-has-menu={entry.node.menu ? "" : undefined}>
+            <Show when={isBranch(entry.node)} fallback={<span class="k2-nt-chev" />}>
+              {/* the arrow; while the children load a turning circle, after a failure a red mark (opening again retries) */}
+              <parts.Indicator class="k2-nt-chev">
+                <Icon name="chevron-right" />
+                <Icon name="loader-2" />
+                <Icon name="alert-circle" />
+              </parts.Indicator>
+            </Show>
+            <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
+            <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
+              {(href) => (
+                // the tree item is what assistive technology meets (named by this text); Enter on it follows the link
+                <parts.Link href={href()} onNavigate={entry.node.onNavigate} class="k2-ni-name" role="none">
+                  {entry.node.label}
+                </parts.Link>
+              )}
+            </Show>
+            <Show when={entry.node.dot}>{(status) => <Dot status={status()} />}</Show>
+            <Show when={entry.node.count !== undefined}>
+              <span class="k2-ni-count">{entry.node.count}</span>
+            </Show>
+            <Show when={entry.node.menu}>
+              {(menu) => <TreeMenu label={overlay().actionsFor({ name: entry.node.label })} items={menu()} />}
+            </Show>
+          </div>
+        );
+        // a right-click and a long press on the row open the place's deeds (a phone, also with VoiceOver, has no keys)
+        return (
+          <Show when={entry.node.menu} fallback={row}>
+            {(menu) => <Menu.Context items={menu()}>{row}</Menu.Context>}
+          </Show>
+        );
+      })()}
       <Show when={isBranch(entry.node)}>
         <parts.Group class="k2-nt-group">
           {untrack(() =>

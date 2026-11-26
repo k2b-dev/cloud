@@ -84,9 +84,10 @@ export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
   /**
-   * The button is a shortcut for the pointer only, such as the "…" on a row of a tree or a tile of a grid whose deeds
-   * the thing itself opens with Shift+F10: out of the tab order and hidden from assistive technology, from the first
-   * markup on.
+   * The button is a shortcut for the pointer only, from the first markup on: no Tab stop, hidden from assistive
+   * technology, such as the "…" on a place of a tree or a tile of a grid that is one Tab stop. Only together with
+   * `Menu.Context` on the thing (a right-click and a long press, also with VoiceOver on a phone) and an own key binding
+   * (Shift+F10, named in the thing's `aria-keyshortcuts`).
    */
   pointerOnly?: boolean;
 };
