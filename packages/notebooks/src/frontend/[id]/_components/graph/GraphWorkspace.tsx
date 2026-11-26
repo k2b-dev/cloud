@@ -54,9 +54,7 @@ export default function GraphFrame(props: GraphFrameProps) {
           <Workspace
             sidebar={props.shell.sidebar}
             head={
-              <Bar
-                end={<Button icon="x" label={t().closeGraph} href={props.backHref ?? `/app/notebooks/${props.notebookId}`} keep />}
-              />
+              <Bar end={<Button icon="x" label={t().closeGraph} href={props.backHref ?? `/app/notebooks/${props.notebookId}`} keep />} />
             }
           >
             <Pane label={t().graphTitle}>
