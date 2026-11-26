@@ -2675,6 +2675,8 @@ html[data-k2b-motion="reduced"] .k2b-ui *::backdrop {
    (#4165). `stretch` fills the place and gives every option the same share. */
 .k2b-ui .k2b-segmented-control {
   @apply inline-flex max-w-full items-stretch;
+  /* as wide as its options in every parent: a flex column or a grid would stretch it otherwise */
+  width: fit-content;
   gap: 2px;
   padding: 3px;
   border: 0;

@@ -15,7 +15,7 @@ import { createComponent, render } from "solid-js/web";
 import { SegmentedControl } from ${JSON.stringify(resolve(ui, "dist/browser/index.js"))};
 const options = ["Members", "Dialog", "Confirm", "Undo", "Error"].map((label) => ({ value: label.toLowerCase(), label }));
 const control = (extra) => createComponent(SegmentedControl, { value: "members", onValueChange: () => {}, ariaLabel: "State", options, ...extra });
-for (const [name, extra] of [["auto", {}], ["block", {}], ["small", { size: "sm" }], ["stretch", { stretch: true }]]) {
+for (const [name, extra] of [["auto", {}], ["block", {}], ["small", { size: "sm" }], ["column", {}], ["grid", {}], ["stretch", { stretch: true }], ["column-stretch", { stretch: true }]]) {
   const cell = document.getElementById(name);
   render(() => control(extra), cell);
 }
@@ -34,7 +34,7 @@ afterAll(async () => {
 
 /** Each control: its width against its place, and for each option the room between its label and its edges. */
 const measure = () =>
-  ["auto", "block", "small", "stretch"].map((name) => {
+  ["auto", "block", "small", "column", "grid", "stretch", "column-stretch"].map((name) => {
     const cell = document.getElementById(name)!;
     const control = cell.querySelector<HTMLElement>(".k2b-segmented-control")!;
     const options = [...control.querySelectorAll<HTMLElement>(".k2b-segmented-control__option")].map((option) => {
@@ -63,8 +63,9 @@ for (const width of [390, 1440])
     try {
       await page.setContent(`<!doctype html><html lang="en"><head><style>${css}</style>
         <style>*,*::before,*::after{transition:none!important}
-        body{margin:0;padding:16px} #auto{display:inline-flex} #block,#small,#stretch{display:block;margin-top:16px}</style></head>
-        <body class="k2b-ui"><div id="auto"></div><div id="block"></div><div id="small"></div><div id="stretch"></div></body></html>`);
+        body{margin:0;padding:16px} #auto{display:inline-flex} #block,#small,#stretch{display:block;margin-top:16px}
+        #column,#column-stretch{display:flex;flex-direction:column;margin-top:16px} #grid{display:grid;margin-top:16px}</style></head>
+        <body class="k2b-ui"><div id="auto"></div><div id="block"></div><div id="small"></div><div id="column"></div><div id="grid"></div><div id="stretch"></div><div id="column-stretch"></div></body></html>`);
       await page.addScriptTag({ content: script });
       await page.locator("#stretch .k2b-segmented-control").waitFor();
       await settled(page);
@@ -72,11 +73,11 @@ for (const width of [390, 1440])
       for (const control of found) {
         // the label keeps the option's padding on both sides: at least 8 px, never the edge; stretch gives equal shares
         // instead, so it is for labels that fit them
-        for (const option of control.name === "stretch" ? [] : control.options) {
+        for (const option of control.name.endsWith("stretch") ? [] : control.options) {
           expect({ control: control.name, whole: option.whole }).toEqual({ control: control.name, whole: true });
           expect(option.room, `${control.name} room`).toBeGreaterThanOrEqual(8);
         }
-        if (control.name === "stretch") {
+        if (control.name.endsWith("stretch")) {
           expect(Math.abs(control.width - control.place)).toBeLessThan(1);
           const widths = control.options.map((option) => option.width);
           expect(Math.max(...widths) - Math.min(...widths)).toBeLessThan(1);
