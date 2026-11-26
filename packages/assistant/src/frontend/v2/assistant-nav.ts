@@ -33,6 +33,8 @@ export type AssistantNavOptions = {
   waitingCount: Accessor<number>;
   hasPersonalCode: Accessor<boolean>;
   placeChats: Accessor<{ total: number; items: AiConversation[] } | null>;
+  /** More open chats exist than the list holds; the last entry leads to the list of every chat. */
+  moreConversations: Accessor<boolean>;
   /** Opens a chat in place; false when it could not, and the address then loads as a page. */
   openConversation: (conversationId: string) => Promise<boolean>;
   openProject: (projectId: string) => Promise<boolean>;
@@ -287,10 +289,15 @@ export function createAssistantNav(options: AssistantNavOptions) {
           ]
         : []),
     ];
+    // The sidebar lists a bounded page of open chats; the older ones are one step away in the list of every chat.
+    const more: NavGroup[] = options.moreConversations()
+      ? [{ items: [{ label: v2().moreChats, icon: "dots", onClick: options.openAllChats }] }]
+      : [];
     return [
       { items: top },
       projects,
       ...(chats.length > 0 ? chats : [{ label: v2().chats, items: [] }]),
+      ...more,
       ...(folded.length > 0 ? [{ items: folded }] : []),
     ];
   });

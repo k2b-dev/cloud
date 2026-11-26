@@ -226,6 +226,7 @@ export default ssr<AuthContext>(async (c) => {
       initialCounts={sidebar.counts}
       initialConversations={initialConversations}
       initialDoneCount={sidebar.doneCount}
+      initialMoreConversations={sidebar.moreConversations ?? false}
       initialQuestions={sidebar.questions}
       initialConversationId={activeConversation?.shortId ?? null}
       initialArtifactPath={initialArtifactPath}

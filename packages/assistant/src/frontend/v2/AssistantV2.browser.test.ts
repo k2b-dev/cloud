@@ -113,6 +113,8 @@ const propsOf = (scene: Scene, url: URL) => {
     initialLiveCursor: "s6t.cloud-live-core.0",
     initialConversations: conversations,
     initialDoneCount: conversations.filter((conversation) => conversation.isDone).length,
+    // The server lists at most 100 open chats and says when more exist (AI_SIDEBAR_CONVERSATIONS_MAX).
+    initialMoreConversations: state === "huge",
     initialPlaceChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
     initialQuestions: scene.waiting ? FIXTURE_QUESTIONS : { items: [], count: 0 },
     initialConversationId: open?.id ?? null,
@@ -519,7 +521,7 @@ describe("Assistant on v2", () => {
     }
   }, 60_000);
 
-  test("measure: elements on the first picture, usual and 1,000 chats", async () => {
+  test("measure: elements on the first picture, usual and the most open chats the sidebar lists", async () => {
     for (const state of ["usual", "huge"] as const) {
       const started = performance.now();
       const { context, page, errors } = await open(wide, "/app/assistant", { state });
@@ -532,6 +534,7 @@ describe("Assistant on v2", () => {
         }));
         console.log(`measure ${state}: ready ${ready} ms, elements ${counts.all}, in the sidebar ${counts.nav}, loading ${counts.loading}`);
         expect(counts.loading).toBe(0);
+        if (state === "huge") expect(await page.getByRole("button", { name: "Weitere Chats …" }).count()).toBe(1);
         expect(errors).toEqual([]);
       } finally {
         await context.close();

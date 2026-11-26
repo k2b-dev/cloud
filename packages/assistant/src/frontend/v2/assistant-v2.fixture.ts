@@ -2,7 +2,7 @@ import type { AiConversation, AiProject, AiStoredMessage } from "@k2b/cloud/ai";
 
 /**
  * Invented data for the Assistant's v2 screens: one person's chats over a month, Projects, chats at places, done
- * chats and one open conversation. `worst` stretches every name and count, `huge` holds 1,000 chats, `empty` none.
+ * chats and one open conversation. `worst` stretches every name and count, `huge` holds the 100 open chats the server lists at most, with more behind them, `empty` none.
  */
 export type AssistantV2FixtureState = "usual" | "worst" | "huge" | "empty";
 
@@ -127,7 +127,7 @@ const WORST: AiConversation[] = [
   ...USUAL.slice(5),
 ];
 
-const HUGE: AiConversation[] = Array.from({ length: 1_000 }, (_, index) =>
+const HUGE: AiConversation[] = Array.from({ length: 100 }, (_, index) =>
   chat(
     `Hug${String(index).padStart(4, "0")}`,
     `Chat ${index + 1}: ${["Angebot", "Rechnung", "Termin", "Bestellung", "Notiz"][index % 5]} ${index + 1}`,

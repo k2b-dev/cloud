@@ -260,6 +260,8 @@ type Props = {
   initialCounts?: import("@k2b/cloud/ai").AiConversationCounts;
   initialConversations: AiConversation[];
   initialDoneCount: number;
+  /** More open chats exist than the sidebar's first page lists. */
+  initialMoreConversations?: boolean;
   initialConversationId: string | null;
   initialArtifactPath: string | null;
   initialWorkspaceHref?: string;
@@ -3724,6 +3726,7 @@ export default function AssistantWorkspace(props: Props) {
           waitingCount: () => waiting().total,
           hasPersonalCode: () => Boolean(props.code?.has),
           placeChats: () => sidebar.data()?.placeChats ?? props.initialPlaceChats ?? null,
+          moreConversations: () => sidebar.data()?.moreConversations ?? props.initialMoreConversations ?? false,
           openConversation: openAndFocusConversation,
           openProject,
           openApprovals,

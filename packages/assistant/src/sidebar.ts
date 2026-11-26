@@ -1,4 +1,5 @@
 import {
+  AI_SIDEBAR_CONVERSATIONS_MAX,
   type AiConversation,
   type AiOpenQuestions,
   type AiProject,
@@ -30,6 +31,8 @@ export type AssistantSidebarSnapshot = {
   counts: import("@k2b/cloud/ai").AiConversationCounts;
   projects: AiProject[];
   doneCount: number;
+  /** More open chats exist than the sidebar lists (`AI_SIDEBAR_CONVERSATIONS_MAX`); the list of every chat holds them. */
+  moreConversations?: boolean;
   questions: AiOpenQuestions;
   /** The person's chats at places, which `conversations` leaves out: their total and newest page. Null: not listed. */
   placeChats?: { total: number; items: AiConversation[] } | null;
@@ -54,13 +57,15 @@ export const loadAssistantSidebarSnapshot = async (
   const [questions, projects, activeConversations, donePage, counts, placePage] = await Promise.all([
     listAiOpenQuestions({ ownerUserId: userId, ...context }),
     aiProjects.list(identity),
-    aiConversations.listSidebarConversations({ ownerUserId: userId }),
+    // One more than the sidebar shows tells whether the list goes on, in the same statement.
+    aiConversations.listSidebarConversations({ ownerUserId: userId, limit: AI_SIDEBAR_CONVERSATIONS_MAX + 1 }),
     aiConversations.listConversationsPage({ ownerUserId: userId, done: true, page: 1, perPage: 15 }),
     aiConversations.getConversationCounts({ ownerUserId: userId }),
     // A failed list leaves "At places" with its failure line; the rest of the sidebar still shows.
     aiConversations.listConversationsPage({ ownerUserId: userId, place: "any", page: 1, perPage: PLACE_CHATS_PAGE }).catch(() => null),
   ]);
-  const conversations = [...activeConversations, ...donePage.items];
+  const moreConversations = activeConversations.length > AI_SIDEBAR_CONVERSATIONS_MAX;
+  const conversations = [...activeConversations.slice(0, AI_SIDEBAR_CONVERSATIONS_MAX), ...donePage.items];
   const apps = new Map<string, ReturnType<AssistantPlaceAppLookup>>();
   const appOf = (appId: string) => {
     let app = apps.get(appId);
@@ -92,6 +97,7 @@ export const loadAssistantSidebarSnapshot = async (
     counts,
     placeChats,
     doneCount: donePage.total,
+    moreConversations,
     projects: projects.map((project) => ({ ...project, id: project.shortId })),
     conversations: conversations.map((conversation) => ({
       ...conversation,

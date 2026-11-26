@@ -26,7 +26,7 @@ import {
   projectMigratedCapabilityCalls,
 } from "./capability-targets-history";
 import { aiTurnErrorText } from "./chat/turn-error";
-import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS } from "./limits";
+import { AI_MESSAGE_SEARCH_TEXT_MAX_CHARS, AI_SIDEBAR_CONVERSATIONS_MAX } from "./limits";
 import { projectAiMaps } from "./map-store";
 import { AI_MEMORY_LEARNING_DEFAULT_ENABLED } from "./prefs";
 import type { AiTurnBlock } from "./protocol";
@@ -1700,6 +1700,9 @@ export const aiConversations: AiConversationService = {
   },
 
   listSidebarConversations: async (input) => {
+    // One more than the sidebar shows is allowed, so a caller can tell that more exist without a second statement.
+    const sidebarLimit = (limit: number | undefined) =>
+      Math.max(1, Math.min(Math.trunc(limit ?? AI_SIDEBAR_CONVERSATIONS_MAX), AI_SIDEBAR_CONVERSATIONS_MAX + 1));
     const rows = await sql<ConversationRow[]>`
       SELECT conversation.*, ${effectiveDone()} AS is_done,
         latest.status AS latest_turn_status, ${browserWorkPending()} AS latest_browser_pending,
@@ -1727,6 +1730,7 @@ export const aiConversations: AiConversationService = {
         AND conversation.created_by_user_id = ${input.ownerUserId}::uuid
         AND conversation.archived_at IS NULL AND NOT ${effectiveDone()}
       ORDER BY conversation.pinned_at DESC NULLS LAST, conversation.last_used_at DESC, conversation.id
+      LIMIT ${sidebarLimit(input.limit)}
     `;
     return rows.map(rowToConversation);
   },

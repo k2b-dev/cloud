@@ -891,7 +891,8 @@ export type AiConversationService = {
     unassigned?: boolean;
     limit?: number;
   }): Promise<AiConversation[]>;
-  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter }): Promise<AiConversation[]>;
+  /** The open chats of the sidebar, pinned first, then the newest; at most `limit`, `AI_SIDEBAR_CONVERSATIONS_MAX` when not set. */
+  listSidebarConversations(input: { ownerUserId: string; place?: AiConversationPlaceFilter; limit?: number }): Promise<AiConversation[]>;
   listConversationsPage(input: {
     ownerUserId: string;
     place?: AiConversationPlaceFilter;
