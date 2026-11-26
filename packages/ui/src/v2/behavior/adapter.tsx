@@ -178,6 +178,18 @@ const callUser = (handler: unknown, event: Event) => {
 
 const host = { by: "framework", attaches: "all" } as const;
 
+/**
+ * Core writes some words for assistive technology in English only, such as a colour slider's "26 degrees". Where the
+ * author gives the same attribute (in the page's language), the author's words win, as core lets authors own a label.
+ */
+const authorWords = ["aria-valuetext"] as const;
+const wordsOfAuthor = (attrs: Props, user: PartProps): Props => {
+  if (!authorWords.some((name) => user[name] != null && attrs[name] !== undefined)) return attrs;
+  const out = { ...attrs };
+  for (const name of authorWords) if (user[name] != null) delete out[name];
+  return out;
+};
+
 /** Element props for a part: attributes, `class`, author handlers (`onKeyDown` …), `ref`, and children. */
 export type PartProps = Props & {
   children?: JSX.Element | ((state: Props) => JSX.Element);
@@ -219,7 +231,12 @@ export function part<P extends Primitive>(
       watched.attrs();
       const now = current();
       takeOwnId(now, user.id);
-      return toSolidAttrs(yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null));
+      return toSolidAttrs(
+        wordsOfAuthor(
+          yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null),
+          user,
+        ),
+      );
     },
     undefined,
     { equals: sameRecord },

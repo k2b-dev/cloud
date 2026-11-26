@@ -12,6 +12,8 @@ export type FilePickOptions = {
   onValueChange?: (files: File[]) => void;
   /** Called with files that `accept` or `maxSize` ruled out. */
   onReject?: (files: File[]) => void;
+  /** What assistive technology hears after a pick, in the page's language; `null` says nothing. */
+  announcement?: (change: { added: File[]; rejected: readonly unknown[] }) => string | null;
   accept?: string;
   maxSize?: number;
   disabled?: boolean;

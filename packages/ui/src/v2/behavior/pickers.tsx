@@ -33,8 +33,8 @@ export type RangeParts = {
   Track: SlotComponent;
   /** The filled part of the track, from the start to the thumb. */
   Indicator: SlotComponent;
-  /** The one thumb, with its native range input inside. */
-  Thumb: (props: PartProps) => ReturnType<SlotComponent>;
+  /** The one thumb, with its native range input inside; `input` are that input's element props (its description). */
+  Thumb: (props: PartProps & { input?: PartProps }) => ReturnType<SlotComponent>;
   /** The value as it reads. */
   Value: SlotComponent;
   /** The hidden input a form sends. */
@@ -56,14 +56,16 @@ export function useRange(options: () => RangeOptions): RangeParts {
     Control: slotComponent(handle, "control", "div"),
     Track: slotComponent(handle, "track", "div"),
     Indicator: slotComponent(handle, "indicator", "div"),
-    Thumb: (props) =>
-      part(
+    Thumb: (props) => {
+      const { input, ...thumb } = props;
+      return part(
         handle,
         "thumb",
         () => ({ index: 0 }),
-        { ...props, children: part(handle, "thumb-input", () => ({ index: 0 }), {}, "input") },
+        { ...thumb, children: part(handle, "thumb-input", () => ({ index: 0 }), input ?? {}, "input") },
         "div",
-      ),
+      );
+    },
     Value: slotComponent(handle, "value", "output"),
     Input: slotComponent(handle, "input", "input"),
   };

@@ -53,8 +53,8 @@ test("server markup: the code is one named input under drawn boxes, the folded g
   expect(markup).toContain(">werkstatt.example<");
   expect(markup).toContain('aria-expanded="false"');
   expect(markup).not.toContain("Drei Pakete");
-  // the closed answer stays in the page (in the browser as hidden="until-found", so find in page reaches it)
-  expect(markup).toContain("Sie gelten bis zu ihrem Ende weiter.");
+  // a closed answer is not sent: the server and the first render show the same closed disclosure
+  expect(markup).not.toContain("Sie gelten bis zu ihrem Ende weiter.");
 });
 
 test("field action: in the 20 px label line, the field keeps its height, a press runs it", async () => {
@@ -96,12 +96,12 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
     await input.click();
     await page.keyboard.type("k2b.example");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 2);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 2);
     expect(await deeds(page)).toEqual(["tags:werkstatt.example,k2b.example"]);
     expect(await input.inputValue()).toBe("");
     await input.focus();
     await page.keyboard.press("Backspace");
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 1);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 1);
     // each value is sent under the field's name
     expect(
       await page
@@ -109,7 +109,7 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
         .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)),
     ).toEqual(["werkstatt.example"]);
     await page.getByRole("button", { name: "werkstatt.example entfernen" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 0);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 0);
     expect((await deeds(page)).at(-1)).toBe("tags:");
   });
 });
@@ -150,10 +150,10 @@ test("slider: named by its field, arrows step it, the end of a key press commits
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("End");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("dim:100"));
-    expect(await page.locator(".k2-slider-value").textContent()).toBe("100");
+    expect(await field(page, "Abdunkeln").locator(".k2-slider-value").textContent()).toBe("100");
     const [control, thumb] = [
       await field(page, "Abdunkeln").locator(".k2-slider").boundingBox(),
-      await page.locator(".k2-slider-thumb").boundingBox(),
+      await field(page, "Abdunkeln").locator(".k2-slider-thumb").boundingBox(),
     ];
     expect(control?.height).toBe(36);
     expect(thumb?.width).toBe(16);
@@ -162,20 +162,26 @@ test("slider: named by its field, arrows step it, the end of a key press commits
 
 test("colour: a swatch press sets it, a typed CSS colour becomes its code, the hue thumb is named and steps", async () => {
   await withPage(async (page) => {
-    const code = page.getByRole("textbox", { name: "Farbcode" });
+    const accent = field(page, "Akzentfarbe");
+    const code = accent.getByRole("textbox", { name: "Farbcode" });
     expect(await code.inputValue()).toBe("#b45309");
-    await page.getByRole("option", { name: "Farbe #1d4ed8" }).click();
+    await accent.getByRole("option", { name: "Farbe #1d4ed8" }).click();
     expect(await code.inputValue()).toBe("#1d4ed8");
     await code.fill("rgb(15, 118, 110)");
     await code.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
-    expect(await page.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
-    const hue = page.getByRole("slider", { name: "Farbton" });
+    expect(await accent.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
+    const hue = accent.getByRole("slider", { name: "Farbton" });
     const before = await hue.getAttribute("aria-valuenow");
     await hue.focus();
     await page.keyboard.press("ArrowRight");
     expect(await hue.getAttribute("aria-valuenow")).not.toBe(before);
-    expect(await page.getByRole("slider", { name: "Sättigung und Helligkeit" }).count()).toBe(1);
+    expect(await accent.getByRole("slider", { name: "Sättigung und Helligkeit" }).count()).toBe(1);
+    // the values are said in the page's language
+    expect(await hue.getAttribute("aria-valuetext")).toMatch(/^\d+ Grad$/);
+    expect(await accent.getByRole("slider", { name: "Sättigung und Helligkeit" }).getAttribute("aria-valuetext")).toMatch(
+      /^Sättigung \d+ %, Helligkeit \d+ %$/,
+    );
   });
 });
 
@@ -194,6 +200,75 @@ test("disclosure and folded group open and close in place and say so", async () 
     expect(await page.locator(".k2-group").getAttribute("data-folded")).toBeNull();
     await page.keyboard.press("Enter");
     await page.getByText("Drei Pakete").waitFor({ state: "hidden" });
+  });
+});
+
+// What a form sends and what its reset puts back, read as the browser sends it.
+const sent = (page: Page) =>
+  page.evaluate(() => {
+    const form = document.getElementById("sent") as HTMLFormElement;
+    const entries = [...new FormData(form)].map(([name, value]) => ({
+      name,
+      value: typeof value === "string" ? value : `file:${value.name}`,
+    }));
+    return { entries, valid: form.checkValidity() };
+  });
+const reset = (page: Page) => page.evaluate(() => (document.getElementById("sent") as HTMLFormElement).reset());
+type Entry = { name: string; value: string };
+const entriesOf = (entries: Entry[], name: string) => entries.filter((entry) => entry.name === name).map((entry) => entry.value);
+const files = (entries: Entry[]) => entries.filter((entry) => entry.value.startsWith("file:"));
+
+test("a form sends the tags one entry each, nothing of a locked list, the image's value and no file entry", async () => {
+  await withPage(async (page) => {
+    let form = await sent(page);
+    expect(entriesOf(form.entries, "hosts")).toEqual(["mx1.example"]);
+    expect(entriesOf(form.entries, "locked")).toEqual([]);
+    expect(files(form.entries)).toEqual([]);
+    // the image is required and still empty: the form is not valid
+    expect(entriesOf(form.entries, "banner")).toEqual([""]);
+    expect(form.valid).toBe(false);
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    form = await sent(page);
+    expect(entriesOf(form.entries, "banner")).toEqual(["data:text/plain,b"]);
+    expect(files(form.entries)).toEqual([]);
+    expect(form.valid).toBe(true);
+    // the picker said nothing in English
+    expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/accepted|rejected/i);
+  });
+});
+
+test("tags: named by their field's label; a form's reset puts the uncontrolled list back", async () => {
+  await withPage(async (page) => {
+    const input = page.getByRole("combobox", { name: "Server", exact: true });
+    expect(await input.count()).toBe(1);
+    await input.click();
+    await page.keyboard.type("mx2.example");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 3);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
+    await reset(page);
+    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 2);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
+  });
+});
+
+test("slider: its thumb carries the field's label and hint; a form's reset puts the input, the number shown and the value sent back together", async () => {
+  await withPage(async (page) => {
+    const thumb = page.getByRole("slider", { name: "Stufe" });
+    expect(await thumb.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
+      "Wie stark abgedunkelt wird.",
+    );
+    await thumb.focus();
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => (document.querySelector("#sent .k2-slider-value") as HTMLElement | null)?.textContent === "100");
+    expect(entriesOf((await sent(page)).entries, "level")).toEqual(["100"]);
+    await reset(page);
+    await page.waitForFunction(() => (document.querySelector("#sent .k2-slider-value") as HTMLElement | null)?.textContent === "30");
+    expect(await thumb.inputValue()).toBe("30");
+    expect(entriesOf((await sent(page)).entries, "level")).toEqual(["30"]);
   });
 });
 

@@ -36,6 +36,7 @@ export function Demo() {
   const [image, setImage] = createSignal<string | null>(null);
   const [dim, setDim] = createSignal(30);
   const [accent, setAccent] = createSignal("#b45309");
+  const [banner, setBanner] = createSignal<string | null>(null);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -103,6 +104,30 @@ export function Demo() {
             <CodeInput onComplete={(code) => did(`code:${code}`)} />
           </Field>
         </Band>
+        {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
+        <form id="sent" onSubmit={(event) => event.preventDefault()}>
+          <Band>
+            <Field name="hosts" label="Server">
+              <TagsInput value={["mx1.example"]} />
+            </Field>
+            <Field name="locked" label="Gesperrte Server">
+              <TagsInput value={["mx9.example"]} disabled />
+            </Field>
+            <Field name="banner" label="Banner" required>
+              <ImageInput
+                value={banner()}
+                onChange={setBanner}
+                transform={async (file) => `data:text/plain,${encodeURIComponent(await file.text())}`}
+              />
+            </Field>
+            <Field name="level" label="Stufe" hint="Wie stark abgedunkelt wird.">
+              <Slider value={30} step={10} />
+            </Field>
+            <Field name="tone" label="Ton">
+              <ColorInput value="#1d4ed8" />
+            </Field>
+          </Band>
+        </form>
         <Section title="Fragen">
           <Disclosure title="Was passiert mit laufenden Sitzungen?">
             <Text type="body">Sie gelten bis zu ihrem Ende weiter.</Text>

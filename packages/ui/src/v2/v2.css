@@ -265,9 +265,8 @@
 .k2-ui :where([class^="k2-"], [class*=" k2-"])::after {
   box-sizing: border-box;
 }
-/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden. Not a
-   closed panel that find in page may open (`until-found`): the browser hides it its own way (content-visibility). */
-.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden]:not([hidden="until-found"]) {
+/* `hidden` wins over every display rule of v2: the behaviour layer keeps a closed list mounted and hidden */
+.k2-ui :is([class^="k2-"], [class*=" k2-"])[hidden] {
   display: none !important;
 }
 /* elements a primitive draws without a class of their own */
