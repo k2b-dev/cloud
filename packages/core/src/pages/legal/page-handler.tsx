@@ -10,10 +10,10 @@
 
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
-import { MinimalLayout } from "@k2b/cloud/ssr";
-import { Band, Bar, Empty, Prose, RecordHead } from "@k2b/ui/v2";
+import { Band, Empty, Prose } from "@k2b/ui/v2";
 import { ssr } from "../../config";
 import { corePageMessages } from "../messages";
+import { VisitorPage } from "../VisitorPage";
 
 type LegalKind = "terms" | "privacy" | "imprint";
 
@@ -39,10 +39,9 @@ export const makeLegalPage = (kind: LegalKind) =>
     const appName = (await coreSettings.get<string>("app.name")) || "My App";
     c.get("page").title = title;
 
-    // A visitor page in one column on v2. The text is Markdown in `Prose`: raw HTML in it shows as text.
+    // A visitor page on v2 in one measure. The text is Markdown in `Prose`: raw HTML in it shows as text.
     return () => (
-      <MinimalLayout c={c} ui="v2" column>
-        <Bar start={<RecordHead name={title} avatar={{ name: appName, image: "/branding/logo" }} />} />
+      <VisitorPage c={c} appName={appName} title={title}>
         {trimmedContent ? (
           <Band label={title}>
             <Prose markdown={trimmedContent} />
@@ -50,6 +49,6 @@ export const makeLegalPage = (kind: LegalKind) =>
         ) : (
           <Empty icon="file-off" text={`${t.legalNotConfigured({ title })} /admin/base/legal.`} />
         )}
-      </MinimalLayout>
+      </VisitorPage>
     );
   });

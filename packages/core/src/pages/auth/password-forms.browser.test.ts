@@ -89,7 +89,7 @@ const page = (lang: string) =>
   // Playwright's WebKit ignores the charset of a routed response, so the page names it, as a Cloud page does.
   `<!doctype html><html lang="${lang}" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">` +
   `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
-  `<body class="k2b-ui k2-ui"><main class="minimal-layout-main" data-column><div class="minimal-layout-column" id="root"></div></main><script src="/harness.js"></script></body></html>`;
+  `<body class="k2b-ui k2-ui"><main><div id="root"></div></main><script src="/harness.js"></script></body></html>`;
 
 /** Opens one form; the API answers come from `api` in order, and every call is recorded. */
 const open = async (form: Form, view: View, lang: "en" | "de", api: Api, path = `${pathOf(form)}${query(form)}`) => {

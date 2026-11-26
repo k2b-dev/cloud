@@ -2,7 +2,7 @@ import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema }
 import { cookies } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, CodeFigure, Field, Input, Notice, Text } from "@k2b/ui/v2";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
@@ -150,6 +150,8 @@ export default function AppLoginForm(props: {
         {props.fallback.label}
       </Button>
     ) : undefined;
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
     <>
       <ApprovalFeedbackV2 error={error()} />
@@ -171,15 +173,19 @@ export default function AppLoginForm(props: {
         <Show
           when={pending()}
           fallback={
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                void start();
-              }}
-            >
+            <>
+              <form
+                id={formId}
+                hidden
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void start();
+                }}
+              />
               <Band>
                 <Field label={t().identifier} required>
                   <Input
+                    form={formId}
                     icon="user"
                     value={identifier()}
                     onInput={setIdentifier}
@@ -195,12 +201,12 @@ export default function AppLoginForm(props: {
               <FormActions
                 start={fallbackButton()}
                 end={
-                  <Button variant="primary" type="submit" busy={busy()} disabled={!identifier().trim()}>
+                  <Button variant="primary" type="submit" form={formId} busy={busy()} disabled={!identifier().trim()}>
                     {t().signIn}
                   </Button>
                 }
               />
-            </form>
+            </>
           }
         >
           {(request) => (

@@ -1,11 +1,10 @@
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import { isSignOutOthersRetry } from "../../sign-out-others";
+import { VisitorPage } from "../../VisitorPage";
 import { authMessages } from "../messages";
-import { VisitorHead } from "../VisitorHead";
 import NewPasswordForm from "./NewPasswordForm.island";
 
 /** Set new password page (for expired/temporary passwords). */
@@ -20,9 +19,8 @@ export default ssr(async (c) => {
 
   c.get("page").title = t.setNewPassword;
   return () => (
-    <MinimalLayout c={c} ui="v2" column>
-      <VisitorHead appName={appName} title={t.setNewPassword} description={t.expiredPasswordDescription} />
+    <VisitorPage c={c} appName={appName} title={t.setNewPassword} description={t.expiredPasswordDescription}>
       <NewPasswordForm defaultUsername={user} redirectTo={redirectTo} signOutFailed={isSignOutOthersRetry(params)} />
-    </MinimalLayout>
+    </VisitorPage>
   );
 });

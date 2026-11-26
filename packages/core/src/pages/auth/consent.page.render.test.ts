@@ -6,8 +6,8 @@ import { join } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { serveCoreV2Sheet } from "@k2b/cloud/ssr/testing";
 import { Hono } from "hono";
+import { serveCoreV2Sheet } from "../../../../../tests/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "core-consent-page-tests-"));
@@ -44,7 +44,7 @@ const spies: Array<{ mockRestore(): void }> = [];
 beforeEach(() => {
   spies.push(
     // Core serves v2.css, so the page links it alone.
-    { mockRestore: serveCoreV2Sheet() },
+    serveCoreV2Sheet(),
     spyOn(auth.session, "getToken").mockReturnValue(null),
     spyOn(services.legalConsent, "pending").mockResolvedValue({ user: pendingUser, sid: "consent-session", authEpoch: 0 }),
     spyOn(services.legalConsent, "documents").mockResolvedValue({ documents: [...documents], version }),
@@ -68,7 +68,7 @@ test("the consent page renders the pending document version in a stable attribut
 test("the consent page is a v2 visitor page in one column, without v1 or Tailwind markup", async () => {
   const app = new Hono().get("/auth/continue", ...handler);
   const html = await (await app.request("https://cloud.example.test/auth/continue")).text();
-  expect(html).toMatch(/<main class="minimal-layout-main" data-column=""/);
+  expect(html).toMatch(/<main class="minimal-layout-main" data-measure=""/);
   expect(html).toMatch(/<h1 class="k2-record-name"[^>]*>Before you start<\/h1>/);
   expect(html).toContain('data-k2-part="Check"');
   expect(html).not.toMatch(/k2b-button|k2b-checkbox|bg-zinc|standalone-card|rounded-2xl/);

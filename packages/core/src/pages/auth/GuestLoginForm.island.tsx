@@ -4,7 +4,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, createUniqueId, onMount, Show } from "solid-js";
 import { LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { signInAgainHref } from "../sign-out-others";
 import { FormActions } from "./FormActions";
@@ -74,22 +74,29 @@ export default function GuestLoginForm(props: {
 
   const loading = () => emailMutation.loading() || tokenMutation.loading();
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const codeFormId = createUniqueId();
+  const emailFormId = createUniqueId();
   return (
     <Show
       when={!showTokenInput()}
       fallback={
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            tokenMutation.mutate({});
-          }}
-        >
+        <>
+          <form
+            id={codeFormId}
+            hidden
+            onSubmit={(e) => {
+              e.preventDefault();
+              tokenMutation.mutate({});
+            }}
+          />
           <Notice tone="note" icon="mail-check">
             {t().checkEmail}
           </Notice>
           <Band>
             <Field label={t().loginCode} hint={t().loginCodeDescription}>
               <Input
+                form={codeFormId}
                 icon="key"
                 value={tokenInput()}
                 onInput={setTokenInput}
@@ -110,26 +117,30 @@ export default function GuestLoginForm(props: {
           </Show>
           <FormActions
             end={
-              <Button variant="primary" type="submit" busy={loading()}>
+              <Button variant="primary" type="submit" form={codeFormId} busy={loading()}>
                 {loading() ? t().verifying : t().verify}
               </Button>
             }
           />
-        </form>
+        </>
       }
     >
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          emailMutation.mutate({});
-        }}
-      >
+      <>
+        <form
+          id={emailFormId}
+          hidden
+          onSubmit={(e) => {
+            e.preventDefault();
+            emailMutation.mutate({});
+          }}
+        />
         <Band>
           <Field
             label={t().emailOrUsername}
             hint={props.allowSelfRegistration ? t().selfRegistrationEmailDescription : t().existingEmailDescription}
           >
             <Input
+              form={emailFormId}
               icon="mail"
               value={email()}
               onInput={setEmail}
@@ -154,12 +165,12 @@ export default function GuestLoginForm(props: {
             )
           }
           end={
-            <Button variant="primary" type="submit" icon="send" busy={loading()}>
+            <Button variant="primary" type="submit" form={emailFormId} icon="send" busy={loading()}>
               {loading() ? t().sendingLoginLink : t().sendLoginLink}
             </Button>
           }
         />
-      </form>
+      </>
     </Show>
   );
 }

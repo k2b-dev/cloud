@@ -2,7 +2,7 @@ import { signOutBrowserSession } from "@k2b/cloud/browser/session";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Check, Notice, Text } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { FormActions } from "./FormActions";
 import { authMessages } from "./messages";
 
@@ -44,15 +44,20 @@ export default function ConsentForm(props: { userId: string; version: string; re
       setBusy(false);
     }
   };
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
     // The nightly, release and Chat smokes read the pending version from this attribute.
-    <form
-      data-legal-version={props.version}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit(true);
-      }}
-    >
+    <>
+      <form
+        id={formId}
+        hidden
+        data-legal-version={props.version}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit(true);
+        }}
+      />
       <Band>
         <Check
           checked={accepted()}
@@ -84,17 +89,17 @@ export default function ConsentForm(props: { userId: string; version: string; re
         )}
       </Show>
       <FormActions
+        start={
+          <Button type="button" disabled={busy()} onClick={() => void submit(false)}>
+            {t().consentCancel}
+          </Button>
+        }
         end={
-          <>
-            <Button type="button" disabled={busy()} onClick={() => void submit(false)}>
-              {t().consentCancel}
-            </Button>
-            <Button variant="primary" type="submit" busy={busy()} disabled={!accepted() || stale()}>
-              {t().consentContinue}
-            </Button>
-          </>
+          <Button variant="primary" type="submit" form={formId} busy={busy()} disabled={!accepted() || stale()}>
+            {t().consentContinue}
+          </Button>
         }
       />
-    </form>
+    </>
   );
 }

@@ -4,3 +4,21 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+/* The code a device shows, in its own drawing (`DeviceCode`): large and in the mono face, so a person compares it with
+   the terminal sign by sign before allowing. */
+.oauth-device-code {
+  margin: 0 var(--k2-edge);
+  padding: 16px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-canvas);
+  color: var(--k2-text);
+  font-family: var(--k2-font-mono);
+  font-size: 32px;
+  line-height: 40px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}

@@ -32,18 +32,18 @@ export type MinimalLayoutProps = {
    */
   ui?: "v2";
   /**
-   * With `ui="v2"`: the content stands in one centred column (at most 560 px) on the page's background, such as a
-   * sign-in, a consent or a legal text; on the phone it fills the width. Write it from v2 parts (`Bar`, `Band`,
-   * `Notice`); without `column` the content fills the window, such as one `Workspace`.
+   * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its one child, the
+   * workspace, stands
+   * as a column of 560 px, centred on the page background, so its words and its buttons stay together; on a phone it
+   * takes the whole width. (Beside a Core older than its v2.css the page keeps the whole width.)
    */
-  column?: boolean;
+  measure?: boolean;
 };
 
 /** A v2 page beside an older Core: the frame its sheet lacks, inline (the page fills the window above the footer). */
 const OLDER_CORE = {
   page: "display:flex;flex-direction:column;min-height:100dvh",
   main: "display:flex;flex:1 1 auto;min-height:0;min-width:0",
-  column: "width:100%;max-width:560px;margin:0 auto",
 };
 
 export default function MinimalLayout(props: MinimalLayoutProps) {
@@ -60,26 +60,21 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   // Without the footer the main area is the v2 scope; with it, the whole page is (see below), or beside an older Core
   // the main area alone.
   // (A `style` is written only where it is set: Solid's server writes an empty one for `undefined`.)
-  const inner = () =>
-    !props.column ? (
-      props.children
-    ) : v2Sheet ? (
-      <div class="minimal-layout-column">{props.children}</div>
-    ) : (
-      <div class="minimal-layout-column" style={OLDER_CORE.column}>
-        {props.children}
-      </div>
-    );
   const content = (scope: boolean, kiosk: boolean) =>
     !v2 ? (
       props.children
     ) : v2Sheet ? (
-      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"} data-column={props.column ? "" : undefined}>
-        {inner()}
+      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"} data-measure={props.measure ? "" : undefined}>
+        {props.children}
       </main>
     ) : (
-      <main class="k2-ui minimal-layout-main" style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}>
-        {inner()}
+      // beside an older Core the measure has no column: its sheet does not know the attribute
+      <main
+        class="k2-ui minimal-layout-main"
+        data-measure={props.measure ? "" : undefined}
+        style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}
+      >
+        {props.children}
       </main>
     );
 
@@ -99,7 +94,7 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   const apps = resolveAppPresentations(props.c.get("runtime")?.apps ?? [], locale);
   const page = (inner: JSX.Element) =>
     v2Sheet ? (
-      <div class="k2-ui minimal-layout" data-ui="v2" data-column={props.column ? "" : undefined}>
+      <div class="k2-ui minimal-layout" data-ui="v2">
         {inner}
       </div>
     ) : v2 ? (

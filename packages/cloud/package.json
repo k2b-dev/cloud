@@ -136,7 +136,6 @@
     "./ssr/code-schedule": "./src/ssr/code-page/schedule.ts",
     "./ssr/WorkspaceNavigation.island": "./src/ssr/WorkspaceNavigation.island.tsx",
     "./ssr/layout-runtime": "./src/ssr/layout-runtime.ts",
-    "./ssr/testing": "./src/ssr/testing.ts",
     "./ssr/*": "./src/ssr/*",
     "./config": "./src/config/index.ts",
     "./config/*": "./src/config/*",

@@ -1,235 +1,85 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { mkdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin";
-import tailwind from "bun-plugin-tailwind";
+import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
+import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
-// Where the card sits, whether it is framed or flat, and whether anything moves when a control is
-// hovered or focused is decided by the cascade of Cloud, @k2b/ui and Tailwind styles at a viewport
-// width, with the fonts a person gets, which only a real engine resolves.
-
-const viewports = {
-  phone: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
-  desktop: { viewport: { width: 1440, height: 900 }, isMobile: false, hasTouch: false },
-} as const;
-
-const origin = "https://cloud.test";
-const uiDist = dirname(fileURLToPath(import.meta.resolve("@k2b/ui/fonts/plex.css")));
+// Every page a person sees during an authorization, as the server sends it, in a real engine with Cloud's stylesheets,
+// Plex fonts and icons: the v2 layout rules at phone and desktop width, controls that move nothing, the decision's
+// order, and the forms' Origin through the platform guard. `CLOUD_OAUTH_PAGE_SHOTS=<dir>` also saves light pictures.
+const shots = process.env.CLOUD_OAUTH_PAGE_SHOTS;
+const states = Object.keys(authorizationStates) as AuthorizationState[];
 
 let browser: Browser;
-/** What the page template links, by path, as Core serves it from the @k2b/ui presets. */
-let stylesheets: Record<string, string>;
-let iconFont: string;
+let assets: ShellAssets;
 beforeAll(async () => {
-  const entries = [resolve(import.meta.dir, "../styles/app.css"), resolve(import.meta.dir, "../../../../styles.css")];
-  const built = await Promise.all(entries.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
-  for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
-  const [appCss, globalCss] = await Promise.all(built.map((build) => build.outputs[0]!.text()));
-  const icons = await Bun.file(resolve(uiDist, "tabler.css")).text();
-  iconFont = resolve(uiDist, /tabler-icons-[\w-]+\.woff2/.exec(icons)![0]);
-  stylesheets = {
-    "/public/fonts.css": (await Bun.file(resolve(uiDist, "plex.css")).text()).replaceAll("./fonts/", "/public/fonts/"),
-    "/public/tabler-icons.css": icons.replace(/\.\/tabler-icons-[\w-]+\.woff2(\?[^)]*)?/, "/public/tabler-icons.woff2"),
-    "/public/oauth/app.css": appCss!,
-    "/public/global.css": globalCss!,
-  };
+  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") });
+  if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
-}, 60_000);
+}, launchHookMs);
 afterAll(async () => {
   await browser?.close();
 });
 
-const card = 'section[aria-labelledby="oauth-page-title"]';
+const open = async (state: AuthorizationState, locale: "en" | "de", width: number) =>
+  openShellPage(browser, assets, { path: "/authorization-page", html: await renderAuthorizationState(state, locale), width });
 
 /**
- * The server-rendered document with the stylesheets and fonts it links, once the fonts are in and its
- * styles have settled. The pages need no script to show their state; the platform's MinimalLayout
- * test owns the first frame. Without the inline theme script, nothing stops the parser before
- * `<body>`, so a stylesheet that arrives late can apply after the engine styled the card once, and
- * the card's and buttons' colors then transition from their unstyled values. None of these tests is
- * about motion: under reduced motion, @k2b/ui makes every transition inside `.k2b-ui` instant.
- *
- * `late` holds one stylesheet back until the parsed card has been styled once, as the engine
- * sometimes does on its own under load.
+ * Every box in the page and the footer on the document, rounded to hundredths of a pixel: a page taller than the window
+ * scrolls a hovered control into view, which moves nothing.
  */
-const open = async (
-  state: AuthorizationState,
-  locale: "en" | "de",
-  viewport: keyof typeof viewports,
-  theme: "light" | "dark" = "light",
-  late?: string,
-): Promise<Page> => {
-  const html = new HTMLRewriter()
-    .on("script", { element: (script) => void script.remove() })
-    .transform(await renderAuthorizationState(state, locale, theme));
-  const page = await browser.newPage({ ...viewports[viewport], deviceScaleFactor: 1, reducedMotion: "reduce" });
-  const { promise: styledOnce, resolve: styled } = Promise.withResolvers<void>();
-  await page.route(`${origin}/**`, async (route) => {
-    const { pathname } = new URL(route.request().url());
-    if (pathname === "/authorization-page")
-      return route.fulfill({ contentType: "text/html", headers: { "referrer-policy": "same-origin" }, body: html });
-    const stylesheet = stylesheets[pathname];
-    if (stylesheet !== undefined) {
-      if (pathname === late) await styledOnce;
-      return route.fulfill({ contentType: "text/css", body: stylesheet });
-    }
-    if (pathname === "/public/tabler-icons.woff2") return route.fulfill({ path: iconFont });
-    if (pathname.startsWith("/public/fonts/"))
-      return route.fulfill({ path: resolve(uiDist, "fonts", pathname.slice("/public/fonts/".length)) });
-    return route.fulfill({ status: 404, body: "" });
-  });
-  const loaded = page.goto(`${origin}/authorization-page`);
-  if (late !== undefined) {
-    await page.waitForSelector(card, { state: "attached" });
-    // settled: styles the card once before the held stylesheet arrives; the unsettled moment is the subject.
-    await page.evaluate((selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor, card);
-    styled();
-  }
-  await loaded;
-  const fonts = await page.evaluate(async () => {
-    await document.fonts.ready;
-    const loaded: string[] = [];
-    document.fonts.forEach((font) => {
-      if (font.status === "loaded") loaded.push(font.family);
-    });
-    return loaded;
-  });
-  // Measured in a fallback font, a row that wraps for a person would pass.
-  expect(fonts, state).toEqual(expect.arrayContaining(["IBM Plex Sans", "tabler-icons"]));
-  await settled(page);
-  return page;
-};
-
-/**
- * Text and icons in the card whose contrast against the surface behind them is below WCAG AA: 4.5:1
- * for text and 3:1 for icons, and the animations still running when they were read.
- */
-const lowContrast = (page: Page) =>
-  page.evaluate((selector) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = canvas.height = 1;
-    const context = canvas.getContext("2d", { willReadFrequently: true })!;
-    /** The sRGB pixel that CSS colors painted over each other, the first at the bottom, leave. */
-    const paint = (colors: string[]) => {
-      for (const color of ["#fff", ...colors]) {
-        context.fillStyle = color;
-        context.fillRect(0, 0, 1, 1);
-      }
-      return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
-    };
-    const luminance = (rgb: number[]) => {
-      const [r, g, b] = rgb.map((value) => {
-        const channel = value / 255;
-        return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
-      });
-      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
-    };
-    const card = document.querySelector(selector)!;
-    const found: string[] = [];
-    for (const element of [card, ...card.querySelectorAll("*")]) {
-      const icon = element.matches("i.ti");
-      const text = Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent!.trim());
-      if (!(icon || text) || !element.checkVisibility()) continue;
-      const backgrounds: string[] = [];
-      for (let node: Element | null = element; node; node = node.parentElement) backgrounds.unshift(getComputedStyle(node).backgroundColor);
-      const [light, dark] = [luminance(paint(backgrounds)), luminance(paint([...backgrounds, getComputedStyle(element).color]))].sort(
-        (a, b) => b - a,
-      );
-      const ratio = (light! + 0.05) / (dark! + 0.05);
-      if (ratio < (icon ? 3 : 4.5)) found.push(`${element.tagName.toLowerCase()}.${element.className}: ${ratio.toFixed(2)}`);
-    }
-    const running = document
-      .getAnimations()
-      .filter((animation) => animation.timeline === document.timeline && animation.playState !== "finished")
-      .map((animation) => {
-        const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-        return {
-          target: target ? `${target.tagName.toLowerCase()}.${target.className}` : null,
-          name:
-            animation instanceof CSSTransition
-              ? animation.transitionProperty
-              : animation instanceof CSSAnimation
-                ? animation.animationName
-                : animation.id,
-          currentTime: animation.currentTime,
-          playState: animation.playState,
-        };
-      });
-    return { found, running };
-  }, card);
-
-/**
- * Where the card sits and what frames it, with the animations still running when it was read. A
- * framed card has a border, a shadow, and a surface of its own that stands out from the page.
- */
-const layoutOf = (page: Page) =>
-  page.evaluate((selector) => {
-    const card = document.querySelector(selector)!;
-    const box = card.getBoundingClientRect();
-    const style = getComputedStyle(card);
-    const running = document
-      .getAnimations()
-      .filter((animation) => animation.timeline === document.timeline && animation.playState !== "finished")
-      .map((animation) => {
-        const target = animation.effect instanceof KeyframeEffect ? animation.effect.target : null;
-        return {
-          target: target ? `${target.tagName.toLowerCase()}.${target.className}` : null,
-          name:
-            animation instanceof CSSTransition
-              ? animation.transitionProperty
-              : animation instanceof CSSAnimation
-                ? animation.animationName
-                : animation.id,
-          currentTime: animation.currentTime,
-          playState: animation.playState,
-        };
-      });
-    return {
-      mains: document.querySelectorAll("main").length,
-      mainBackground: getComputedStyle(document.querySelector("main")!).backgroundColor,
-      navs: Array.from(document.querySelectorAll("nav"), (nav) => nav.closest("footer") !== null),
-      headings: Array.from(document.querySelectorAll("h1"), (heading) => heading.id),
-      card: { left: box.left, right: box.right, top: box.top, bottom: box.bottom },
-      frame: {
-        borderTopWidth: style.borderTopWidth,
-        boxShadow: style.boxShadow,
-        backgroundColor: style.backgroundColor,
-        bodyBackgroundColor: getComputedStyle(document.body).backgroundColor,
-      },
-      scrollWidth: document.documentElement.scrollWidth,
-      running,
-    };
-  }, card);
-
-const framed = ({ frame }: Awaited<ReturnType<typeof layoutOf>>) =>
-  frame.borderTopWidth !== "0px" &&
-  frame.boxShadow !== "none" &&
-  frame.backgroundColor !== "rgba(0, 0, 0, 0)" &&
-  frame.backgroundColor !== frame.bodyBackgroundColor;
-
-/** A failure context with what framed the card and what still ran when it was read. */
-const described = (context: string, layout: Awaited<ReturnType<typeof layoutOf>>) =>
-  `${context}; frame ${JSON.stringify(layout.frame)}; running ${JSON.stringify(layout.running)}`;
-
-/** Every box in the card and the footer, rounded to hundredths of a pixel. */
 const boxes = (page: Page) =>
   page.evaluate(() =>
     Array.from(document.querySelectorAll("main, main *, footer, footer *"), (element) => {
+      // an element without a box to see (the fields of a hidden form, an empty toast region) moves nothing
       const box = element.getBoundingClientRect();
-      return [box.x, box.y, box.width, box.height].map((value) => Math.round(value * 100) / 100).join(",");
+      if (box.width === 0 && box.height === 0) return "none";
+      return [box.x + window.scrollX, box.y + window.scrollY, box.width, box.height]
+        .map((value) => Math.round(value * 100) / 100)
+        .join(",");
     }),
   );
 
+/** The decision's controls in document order: the buttons that send its form and the sign-in that takes Allow's place. */
+const decision = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('main :is(button[form="oauth-decision"], a[href^="/auth/login"])'), (control) => {
+      const box = control.getBoundingClientRect();
+      return {
+        name: control.tagName === "A" ? "confirm" : (control as HTMLButtonElement).value,
+        left: box.left,
+        top: box.top,
+        fits: control.scrollWidth <= control.clientWidth,
+      };
+    }),
+  );
+
+/** The decision's controls in the order Tab reaches them. */
+const focusOrder = async (page: Page) => {
+  const order: string[] = [];
+  for (let step = 0; step < 16 && order.length < 2; step += 1) {
+    await page.keyboard.press("Tab");
+    const name = await page.evaluate(() => {
+      const active = document.activeElement;
+      if (active?.getAttribute("form") === "oauth-decision") return (active as HTMLButtonElement).value;
+      return active?.tagName === "A" && active.getAttribute("href")?.startsWith("/auth/login") ? "confirm" : null;
+    });
+    if (name) order.push(name);
+  }
+  return order;
+};
+
 describe("OAuth authorization pages in a browser", () => {
   test("real consent, device and logout forms send the canonical Origin through the platform guard", async () => {
-    const states = ["consent", "confirm", "logout"] as const;
+    const posted = ["consent", "confirm", "logout"] as const;
     const documents = new Map<string, string>(
       await Promise.all(
-        states.map(
+        posted.map(
           async (state) =>
             [
               `/fixture/${state}`,
@@ -241,28 +91,28 @@ describe("OAuth authorization pages in a browser", () => {
       ),
     );
     let formOrigin = "";
-    const posts: Array<{ origin: string | undefined; cookie: string | undefined }> = [];
+    const posts: Array<{ origin: string | undefined; cookie: string | undefined; body: Record<string, string> }> = [];
     const target = new Hono()
       .use(sessionOriginGuard([], async () => formOrigin))
-      .post("*", (c) => {
-        posts.push({ origin: c.req.header("Origin"), cookie: c.req.header("Cookie") });
+      .post("*", async (c) => {
+        const body = Object.fromEntries(Object.entries(await c.req.parseBody()).map(([key, value]) => [key, String(value)]));
+        posts.push({ origin: c.req.header("Origin"), cookie: c.req.header("Cookie"), body });
         return c.text("Confirmed");
       })
       .get("*", (c) => {
-        const path = c.req.path;
-        const html = documents.get(path);
-        if (html !== undefined) return c.html(html, 200, { "Referrer-Policy": "same-origin" });
-        const stylesheet = stylesheets[path];
-        if (stylesheet !== undefined) return new Response(stylesheet, { headers: { "Content-Type": "text/css" } });
-        if (path === "/public/tabler-icons.woff2") return new Response(Bun.file(iconFont));
-        if (path.startsWith("/public/fonts/")) return new Response(Bun.file(resolve(uiDist, "fonts", path.slice("/public/fonts/".length))));
-        return c.notFound();
+        const html = documents.get(c.req.path);
+        return html === undefined ? c.notFound() : c.html(html, 200, { "Referrer-Policy": "same-origin" });
       });
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: target.fetch });
     formOrigin = `http://localhost:${server.port}`;
     try {
-      for (const state of states) {
-        const context = await browser.newContext({ ...viewports.phone, reducedMotion: "reduce" });
+      for (const state of posted) {
+        const context = await browser.newContext({
+          viewport: { width: 390, height: 844 },
+          isMobile: true,
+          hasTouch: true,
+          reducedMotion: "reduce",
+        });
         try {
           await context.addCookies([{ name: "session_token", value: "web-fixture", url: formOrigin, sameSite: "Lax", httpOnly: true }]);
           const page = await context.newPage();
@@ -274,7 +124,15 @@ describe("OAuth authorization pages in a browser", () => {
           ]);
           expect(response.status(), state).toBe(200);
           expect(posts.length, state).toBe(before + 1);
-          expect(posts.at(-1)).toEqual({ origin: formOrigin, cookie: "session_token=web-fixture" });
+          const post = posts.at(-1)!;
+          expect({ origin: post.origin, cookie: post.cookie }).toEqual({ origin: formOrigin, cookie: "session_token=web-fixture" });
+          // the same fields as before: the hidden request (and code) and the pressed button's decision
+          if (state === "logout") expect(post.body, state).toEqual({});
+          else
+            expect(Object.keys(post.body).sort(), state).toEqual(
+              state === "confirm" ? ["decision", "request", "user_code"] : ["decision", "request"],
+            );
+          if (state !== "logout") expect(post.body.decision, state).toBe("approve");
         } finally {
           await context.close();
         }
@@ -284,69 +142,55 @@ describe("OAuth authorization pages in a browser", () => {
     }
   });
 
-  for (const viewport of Object.keys(viewports) as Array<keyof typeof viewports>) {
-    const { width, height } = viewports[viewport].viewport;
-
-    for (const theme of ["light", "dark"] as const) {
-      test(`every state is one centered, readable card without app chrome in ${theme} mode at ${width} px`, async () => {
-        for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
-          const page = await open(state, "en", viewport, theme);
+  for (const width of [390, 1440]) {
+    test(`every state keeps the v2 rules in both languages at ${width} px`, async () => {
+      for (const state of states) {
+        for (const locale of ["de", "en"] as const) {
+          const { context, tab, errors } = await open(state, locale, width);
           try {
-            const layout = await layoutOf(page);
-            const context = described(`${state} ${theme} at ${width} px`, layout);
-            expect(layout.mains, context).toBe(1);
-            // One page background from top to footer: no band behind the card that ends at the footer.
-            expect(layout.mainBackground, context).toBe("rgba(0, 0, 0, 0)");
-            // The only navigation is the footer's legal links: no rail, header, or app navigation.
-            expect(layout.navs, context).toEqual([true]);
-            expect(layout.headings, context).toEqual(["oauth-page-title"]);
-            expect(layout.scrollWidth, context).toBeLessThanOrEqual(width);
-            expect(layout.card.left, context).toBeGreaterThanOrEqual(0);
-            expect(layout.card.right, context).toBeLessThanOrEqual(width);
-            // Centered: as much room on the left as on the right.
-            expect(Math.abs(layout.card.left - (width - layout.card.right)), context).toBeLessThan(1);
-            expect(layout.card.bottom, context).toBeLessThanOrEqual(height);
-            // A frame on the desktop, flat on the phone where the page padding is all the room there is.
-            expect(framed(layout), context).toBe(viewport === "desktop");
-            const contrast = await lowContrast(page);
-            expect(contrast.found, `${state} ${theme} at ${width} px; running ${JSON.stringify(contrast.running)}`).toEqual([]);
+            const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+            const name = `${state} ${locale} at ${width} px`;
+            expect({ name, problems: layout.problems }).toEqual({ name, problems: [] });
+            expect(await tab.evaluate(() => document.documentElement.scrollWidth), name).toBeLessThanOrEqual(width);
+            if (shots && locale === "de") await tab.screenshot({ path: join(shots, `${state}-${width}.png`) });
+            expect(errors, name).toEqual([]);
           } finally {
-            await page.close();
+            await context.close();
           }
         }
-      }, 60_000);
-    }
+      }
+    }, 300_000);
 
     test(`hovering or focusing any control moves nothing at ${width} px`, async () => {
-      for (const state of Object.keys(authorizationStates) as AuthorizationState[]) {
-        const page = await open(state, "en", viewport);
+      for (const state of states) {
+        const { context, tab } = await open(state, "en", width);
         try {
-          await page.mouse.move(0, 0);
-          await settled(page);
-          const resting = await boxes(page);
+          await tab.mouse.move(0, 0);
+          await settled(tab);
+          const resting = await boxes(tab);
           // The closed language menu is rendered but hidden.
-          const controls = page
+          const controls = tab
             .locator("main :is(a[href], button, input:not([type=hidden])), footer :is(a[href], button)")
             .filter({ visible: true });
           const count = await controls.count();
           expect(count, state).toBeGreaterThan(0);
           for (let index = 0; index < count; index += 1) {
             await hoverInPlace(controls.nth(index));
-            await settled(page);
-            expect(await boxes(page), `${state}: hover on control ${index}`).toEqual(resting);
+            await settled(tab);
+            expect(await boxes(tab), `${state}: hover on control ${index}`).toEqual(resting);
           }
-          await page.mouse.move(0, 0);
-          await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+          await tab.mouse.move(0, 0);
+          await tab.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
           for (let step = 0; step < count; step += 1) {
-            await page.keyboard.press("Tab");
-            await settled(page);
-            expect(await boxes(page), `${state}: Tab ${step + 1}`).toEqual(resting);
+            await tab.keyboard.press("Tab");
+            await settled(tab);
+            expect(await boxes(tab), `${state}: Tab ${step + 1}`).toEqual(resting);
           }
         } finally {
-          await page.close();
+          await context.close();
         }
       }
-    }, 120_000);
+    }, 300_000);
 
     test(`Deny and Allow share one row in reading and focus order, also in German, at ${width} px`, async () => {
       for (const [state, locale] of [
@@ -354,146 +198,139 @@ describe("OAuth authorization pages in a browser", () => {
         ["confirm", "de"],
         ["consent", "de"],
       ] as const) {
-        const page = await open(state, locale, viewport);
+        const { context, tab } = await open(state, locale, width);
         try {
-          const buttons = await page.evaluate(() =>
-            Array.from(document.querySelectorAll<HTMLButtonElement>("main form button"), (button) => {
-              const box = button.getBoundingClientRect();
-              return {
-                value: button.value,
-                left: box.left,
-                top: box.top,
-                height: box.height,
-                fits: button.scrollWidth <= button.clientWidth,
-              };
-            }),
-          );
-          const context = `${state} ${locale} at ${width} px`;
+          const row = await decision(tab);
+          const name = `${state} ${locale} at ${width} px`;
           expect(
-            buttons.map((button) => button.value),
-            context,
+            row.map((control) => control.name),
+            name,
           ).toEqual(["deny", "approve"]);
-          expect(buttons[0]!.top, context).toBe(buttons[1]!.top);
-          expect(buttons[0]!.left, context).toBeLessThan(buttons[1]!.left);
-          for (const button of buttons) {
-            expect(button.fits, context).toBe(true);
-            expect(button.height, context).toBeGreaterThanOrEqual(40);
-          }
+          expect(row[0]!.top, name).toBe(row[1]!.top);
+          expect(row[0]!.left, name).toBeLessThan(row[1]!.left);
+          for (const control of row) expect(control.fits, name).toBe(true);
           // Keyboard order matches what the person sees: Deny, then Allow.
-          const order: string[] = [];
-          for (let step = 0; step < 12 && order.length < 2; step += 1) {
-            await page.keyboard.press("Tab");
-            const value = await page.evaluate(() =>
-              document.activeElement?.closest("main form") ? (document.activeElement as HTMLButtonElement).value : null,
-            );
-            if (value) order.push(value);
-          }
-          expect(order, context).toEqual(["deny", "approve"]);
+          expect(await focusOrder(tab), name).toEqual(["deny", "approve"]);
         } finally {
-          await page.close();
+          await context.close();
         }
       }
     }, 60_000);
 
     test(`Confirm identity takes Allow's place in the same row, also in German, at ${width} px`, async () => {
-      for (const [plain, reauthenticate] of [
-        ["confirm", "confirmReauthenticate"],
-        ["consent", "consentReauthenticate"],
-      ] as const) {
+      for (const state of ["confirmReauthenticate", "consentReauthenticate"] as const) {
         for (const locale of ["en", "de"] as const) {
-          const context = `${reauthenticate} ${locale} at ${width} px`;
-          const slots = async (state: AuthorizationState) => {
-            const page = await open(state, locale, viewport);
-            try {
-              const row = await page.evaluate(() =>
-                Array.from(document.querySelectorAll<HTMLElement>("main form :is(button, a)"), (control) => {
-                  const box = control.getBoundingClientRect();
-                  return {
-                    name: control.tagName === "A" ? "confirm" : (control as HTMLButtonElement).value,
-                    left: box.left,
-                    top: box.top,
-                    width: box.width,
-                    height: box.height,
-                    fits: control.scrollWidth <= control.clientWidth,
-                  };
-                }),
-              );
-              const order: string[] = [];
-              for (let step = 0; step < 12 && order.length < 2; step += 1) {
-                await page.keyboard.press("Tab");
-                const name = await page.evaluate(() => {
-                  const active = document.activeElement;
-                  if (!active?.closest("main form")) return null;
-                  return active.tagName === "A" ? "confirm" : (active as HTMLButtonElement).value;
-                });
-                if (name) order.push(name);
-              }
-              return { row, order };
-            } finally {
-              await page.close();
-            }
-          };
-          const before = await slots(plain);
-          const after = await slots(reauthenticate);
-          expect(
-            after.row.map((control) => control.name),
-            context,
-          ).toEqual(["deny", "confirm"]);
-          expect(after.order, context).toEqual(["deny", "confirm"]);
-          const [deny, confirm] = after.row;
-          const allow = before.row[1]!;
-          // The same cell as Allow: same column, size, and row as Deny.
-          expect(confirm!.top, context).toBe(deny!.top);
-          expect(confirm!.left, context).toBe(allow.left);
-          expect(confirm!.width, context).toBe(allow.width);
-          expect(confirm!.height, context).toBe(allow.height);
-          expect(confirm!.fits, context).toBe(true);
+          const { context, tab } = await open(state, locale, width);
+          try {
+            const row = await decision(tab);
+            const name = `${state} ${locale} at ${width} px`;
+            expect(
+              row.map((control) => control.name),
+              name,
+            ).toEqual(["deny", "confirm"]);
+            expect(row[0]!.top, name).toBe(row[1]!.top);
+            expect(row[0]!.left, name).toBeLessThan(row[1]!.left);
+            for (const control of row) expect(control.fits, name).toBe(true);
+            expect(await focusOrder(tab), name).toEqual(["deny", "confirm"]);
+          } finally {
+            await context.close();
+          }
         }
       }
     }, 60_000);
 
-    test(`the approved page ends with a visible status that says the tab can be closed at ${width} px`, async () => {
+    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width, at ${width} px`, async () => {
+      for (const state of ["consent", "confirm", "entry", "logout"] as const) {
+        const { context, tab } = await open(state, "de", width);
+        try {
+          const page = await tab.evaluate(() => {
+            const box = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
+            const field = document.querySelector('input[name="user_code"]:not([type="hidden"])')?.getBoundingClientRect();
+            return {
+              left: box.left,
+              right: box.right,
+              view: document.documentElement.clientWidth,
+              field: field?.left ?? null,
+              page: getComputedStyle(document.querySelector(".minimal-layout")!).backgroundColor,
+              card: getComputedStyle(document.querySelector("[data-k2-workspace]")!).backgroundColor,
+              footer: document.querySelector("footer")?.getAttribute("data-ui") ?? null,
+            };
+          });
+          const name = `${state} at ${width} px`;
+          if (width === 1440) {
+            expect(page.right - page.left, name).toBeLessThanOrEqual(560);
+            // centred: as much room on the left as on the right
+            expect(Math.abs(page.left - (page.view - page.right)), name).toBeLessThanOrEqual(1);
+            // the real v2 frame: a card on the tinted page, the v2 footer below
+            expect(page.page, name).not.toBe(page.card);
+          } else expect({ left: page.left, right: page.right }, name).toEqual({ left: 0, right: page.view });
+          expect(page.footer, name).toBe("v2");
+          // the code field stands on the text edge, not at the pane's border
+          if (page.field !== null) expect(page.field - page.left, name).toBeGreaterThanOrEqual(16);
+        } finally {
+          await context.close();
+        }
+      }
+    }, 60_000);
+
+    test(`the device code stands large in the mono face, in a block of its own, at ${width} px`, async () => {
+      const { context, tab } = await open("confirm", "de", width);
+      try {
+        const code = await tab.evaluate(() => {
+          const element = document.querySelector('[data-testid="device-user-code"]')!;
+          const look = getComputedStyle(element);
+          return { text: element.textContent, size: Number.parseFloat(look.fontSize), family: look.fontFamily, edge: look.borderTopWidth };
+        });
+        expect(code.text).toBe("WDJB-MJHT");
+        expect(code.size).toBeGreaterThanOrEqual(28);
+        expect(code.family).toContain("monospace");
+        expect(code.edge).toBe("1px");
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+    test(`the code field has the focus, and Enter in it sends the code at ${width} px`, async () => {
+      const { context, tab } = await open("entry", "de", width);
+      try {
+        expect(await tab.evaluate(() => document.activeElement?.getAttribute("name"))).toBe("user_code");
+        await tab.keyboard.type("WDJB-MJHT");
+        const [request] = await Promise.all([
+          tab.waitForRequest((request) => new URL(request.url()).pathname === "/oauth/device"),
+          tab.keyboard.press("Enter"),
+        ]);
+        expect(request.method()).toBe("GET");
+        expect(new URL(request.url()).searchParams.get("user_code")).toBe("WDJB-MJHT");
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+    test(`the approved page ends on the first screen with the words that the tab can be closed at ${width} px`, async () => {
       for (const [locale, title, body] of [
         ["en", "Device connected", "You can close this tab now."],
         ["de", "Gerät verbunden", "Du kannst diesen Tab jetzt schließen."],
       ] as const) {
-        const page = await open("approved", locale, viewport);
+        const { context, tab } = await open("approved", locale, width);
         try {
-          const status = page.getByRole("status");
-          expect(await status.getByRole("heading", { level: 1 }).textContent()).toBe(title);
-          expect(await status.textContent()).toContain(body);
-          const result = await page.evaluate(() => {
-            const box = document.querySelector('[role="status"]')!.getBoundingClientRect();
-            return {
-              box: { top: box.top, bottom: box.bottom },
-              forms: document.querySelectorAll("form").length,
-              mainControls: document.querySelectorAll("main :is(a[href], button, input)").length,
-            };
-          });
-          const context = `${locale} at ${width} px`;
+          expect(await tab.getByRole("heading", { level: 1 }).textContent()).toBe(title);
+          const words = tab.getByText(body);
+          expect(await words.isVisible()).toBe(true);
+          const box = (await words.boundingBox())!;
+          const result = await tab.evaluate(() => ({
+            forms: document.querySelectorAll("form").length,
+            mainControls: document.querySelectorAll("main :is(a[href], button, input)").length,
+            height: window.innerHeight,
+          }));
+          const name = `${locale} at ${width} px`;
           // Nothing left to do on this page, and the whole result is on the first screen.
-          expect(result.forms, context).toBe(0);
-          expect(result.mainControls, context).toBe(0);
-          expect(result.box.top, context).toBeGreaterThanOrEqual(0);
-          expect(result.box.bottom, context).toBeLessThanOrEqual(height);
+          expect(result.forms, name).toBe(0);
+          expect(result.mainControls, name).toBe(0);
+          expect(box.y + box.height, name).toBeLessThanOrEqual(result.height);
         } finally {
-          await page.close();
+          await context.close();
         }
       }
     }, 60_000);
   }
-
-  test("a card styled before its last stylesheet arrived is read framed and readable at 1440 px", async () => {
-    for (const theme of ["light", "dark"] as const) {
-      const page = await open("confirm", "en", "desktop", theme, "/public/global.css");
-      try {
-        const layout = await layoutOf(page);
-        expect(framed(layout), described(`confirm ${theme} at 1440 px`, layout)).toBe(true);
-        const contrast = await lowContrast(page);
-        expect(contrast.found, `confirm ${theme} at 1440 px; running ${JSON.stringify(contrast.running)}`).toEqual([]);
-      } finally {
-        await page.close();
-      }
-    }
-  }, 60_000);
 });

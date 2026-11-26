@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Field, Input, Notice } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { FormActions } from "../FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
@@ -70,18 +70,24 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
     },
   });
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
     <Show when={!signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate({});
-          }}
-        >
+        <>
+          <form
+            id={formId}
+            hidden
+            onSubmit={(e) => {
+              e.preventDefault();
+              mutation.mutate({});
+            }}
+          />
           <Band>
             <Field label={t().username} hint={t().organizationUsernameDescription}>
               <Input
+                form={formId}
                 icon="user"
                 value={username()}
                 onInput={setUsername}
@@ -94,6 +100,7 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
             </Field>
             <Field label={t().currentPassword} hint={t().currentPasswordDescription}>
               <Input
+                form={formId}
                 icon="lock"
                 type="password"
                 value={currentPassword()}
@@ -106,6 +113,7 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
           </Band>
           <Band>
             <PasswordSetupFieldsV2
+              form={formId}
               newPassword={newPassword}
               confirmPassword={confirmPassword}
               onNewPasswordChange={setNewPassword}
@@ -120,12 +128,12 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
               </Button>
             }
             end={
-              <Button variant="primary" type="submit" icon="lock-check" busy={mutation.loading()}>
+              <Button variant="primary" type="submit" form={formId} icon="lock-check" busy={mutation.loading()}>
                 {mutation.loading() ? t().updatingPassword : t().setPassword}
               </Button>
             }
           />
-        </form>
+        </>
       </Show>
     </Show>
   );

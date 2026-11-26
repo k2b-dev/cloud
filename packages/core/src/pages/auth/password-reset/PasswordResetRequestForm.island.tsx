@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Field, Input, Notice } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref } from "../../sign-out-others";
 import { FormActions } from "../FormActions";
 import { authMessages } from "../messages";
@@ -36,13 +36,18 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
     },
   });
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        mutation.mutate({});
-      }}
-    >
+    <>
+      <form
+        id={formId}
+        hidden
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate({});
+        }}
+      />
       <Show when={sent()}>
         <Notice tone="note" icon="mail-check">
           <span role="status">{t().resetSent}</span>
@@ -50,7 +55,16 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
       </Show>
       <Band>
         <Field label={t().emailAddress} hint={t().organizationEmailDescription}>
-          <Input icon="mail" type="email" value={email()} onInput={setEmail} placeholder="you@example.org" autocomplete="email" autofocus />
+          <Input
+            form={formId}
+            icon="mail"
+            type="email"
+            value={email()}
+            onInput={setEmail}
+            placeholder="you@example.org"
+            autocomplete="email"
+            autofocus
+          />
         </Field>
       </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
@@ -61,11 +75,11 @@ export default function PasswordResetRequestForm(props: PasswordResetRequestForm
           </Button>
         }
         end={
-          <Button variant="primary" type="submit" icon="send" busy={mutation.loading()}>
+          <Button variant="primary" type="submit" form={formId} icon="send" busy={mutation.loading()}>
             {mutation.loading() ? t().sendingResetLink : t().sendResetLink}
           </Button>
         }
       />
-    </form>
+    </>
   );
 }

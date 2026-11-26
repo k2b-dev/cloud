@@ -1,11 +1,10 @@
 import { auth, getLocale } from "@k2b/cloud/server";
 import { coreSettings, legalConsent } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
+import { VisitorPage } from "../VisitorPage";
 import ConsentForm from "./ConsentForm.island";
 import { authMessages } from "./messages";
-import { VisitorHead } from "./VisitorHead";
 
 export default ssr(async (c) => {
   const t = authMessages.resolve([getLocale(c)]).t;
@@ -20,9 +19,8 @@ export default ssr(async (c) => {
   const appName = (await coreSettings.get<string>("app.name")) || "My App";
   c.get("page").title = t.consentTitle;
   return () => (
-    <MinimalLayout c={c} ui="v2" column>
-      <VisitorHead appName={appName} title={t.consentTitle} description={t.consentDescription} />
+    <VisitorPage c={c} appName={appName} title={t.consentTitle} description={t.consentDescription}>
       <ConsentForm userId={pending.user.id} version={version} redirectTo={redirectTo} />
-    </MinimalLayout>
+    </VisitorPage>
   );
 });

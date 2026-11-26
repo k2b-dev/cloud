@@ -19,6 +19,8 @@ export function PasswordSetupFieldsV2(props: {
   onConfirmPasswordChange: (value: string) => void;
   /** The new password is the form's first field and takes the focus. */
   autofocus?: boolean;
+  /** The `id` of the form the fields are sent with. */
+  form?: string;
 }) {
   const locale = useLocale();
   const resolved = () => passwordSetupMessages.resolve([locale()]);
@@ -48,6 +50,7 @@ export function PasswordSetupFieldsV2(props: {
     <>
       <Field label={t().newPassword} hint={t().newPasswordDescription}>
         <Input
+          form={props.form}
           icon="lock-open"
           type="password"
           value={props.newPassword()}
@@ -77,6 +80,7 @@ export function PasswordSetupFieldsV2(props: {
       />
       <Field label={t().confirmPassword} hint={t().confirmPasswordDescription}>
         <Input
+          form={props.form}
           icon="lock-check"
           type="password"
           value={props.confirmPassword()}

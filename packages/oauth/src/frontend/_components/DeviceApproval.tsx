@@ -1,7 +1,8 @@
-import { ButtonLink, DescriptionList, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Facts, Text } from "@k2b/ui/v2";
 import { Match, Show, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, DecisionHeader, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, DeviceCode, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
 type DeviceOutcome = "approved" | "denied" | "expired" | "blocked";
@@ -24,7 +25,7 @@ export const deviceResultTitle = (outcome: DeviceOutcome, t: ReturnType<typeof o
     outcome
   ];
 
-/** The content of the device approval card; the server decides which state is shown. */
+/** The device approval; the server decides which state is shown, and the page's head names it. */
 export function DeviceApproval(props: { view: DeviceApprovalView }) {
   const locale = useLocale();
   const t = () => oauthMessages.resolve([locale()]).t;
@@ -34,27 +35,23 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
       <Match when={props.view.kind === "entry" && props.view}>
         {(view) => (
           <>
-            <DecisionHeader title={t().deviceTitle}>{t().deviceEnterCode}</DecisionHeader>
-            <div class="mt-6">
-              <DeviceCodeForm code={view().code} error={view().error} />
-            </div>
+            <Text>{t().deviceEnterCode}</Text>
+            <DeviceCodeForm code={view().code} error={view().error} />
           </>
         )}
       </Match>
       <Match when={props.view.kind === "confirm" && props.view}>
         {(view) => (
           <>
-            <DecisionHeader title={t().deviceConfirmTitle({ name: view().client.name })} />
-            <p class="mt-6 text-sm text-dimmed">{t().deviceConfirmCode}</p>
-            <p class="mt-1 font-mono text-3xl font-semibold tracking-[0.12em] text-primary tabular-nums" data-testid="device-user-code">
-              {view().code}
-            </p>
-            <div class="mt-3">
-              <DescriptionList
-                layout="compact"
-                items={[{ term: t().clientId, description: <span class="break-all font-mono">{view().client.clientId}</span> }]}
-              />
-            </div>
+            <Text weight="strong">{t().deviceConfirmTitle({ name: view().client.name })}</Text>
+            <Text>{t().deviceConfirmCode}</Text>
+            <DeviceCode label={t().deviceCodeLabel} code={view().code} />
+            <Facts
+              items={[
+                { label: t().application, value: view().client.name },
+                { label: t().clientId, value: view().client.clientId, mono: true },
+              ]}
+            />
             <RequestedAccess scopes={view().scopes} />
             <CautionNote>{t().deviceOwnCodeWarning}</CautionNote>
             <Show when={view().reauthenticateHref}>
@@ -73,20 +70,20 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
         {(view) => (
           <Switch>
             <Match when={view().outcome === "approved"}>
-              <Outcome icon="ti ti-circle-check" success title={deviceResultTitle("approved", t())} body={t().deviceApprovedBody} />
+              <Outcome icon="circle-check" ok body={t().deviceApprovedBody} />
             </Match>
             <Match when={view().outcome === "denied"}>
-              <Outcome icon="ti ti-circle-x" title={deviceResultTitle("denied", t())} body={t().deviceDeniedBody} />
+              <Outcome icon="circle-x" body={t().deviceDeniedBody} />
             </Match>
             <Match when={view().outcome === "expired"}>
-              <Outcome icon="ti ti-clock" title={deviceResultTitle("expired", t())} body={view().message ?? t().deviceExpiredBody}>
-                <ButtonLink href="/oauth/device" variant="secondary" size="lg">
-                  {t().deviceEnterAnother}
-                </ButtonLink>
-              </Outcome>
+              <Outcome
+                icon="clock"
+                body={view().message ?? t().deviceExpiredBody}
+                action={{ label: t().deviceEnterAnother, href: "/oauth/device" }}
+              />
             </Match>
             <Match when={view().outcome === "blocked"}>
-              <Outcome icon="ti ti-lock" title={deviceResultTitle("blocked", t())} body={view().message} />
+              <Outcome icon="lock" body={view().message ?? t().authorizationFailed} />
             </Match>
           </Switch>
         )}

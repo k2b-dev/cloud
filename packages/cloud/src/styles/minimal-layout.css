@@ -30,56 +30,27 @@
   color: var(--k2-text);
 }
 
-/* A visitor page in one column (`column`): a sign-in, a consent, a legal text. A card of at most 560 px, centred on the
-   page's background at one height from the top, so a page whose content grows or a switched account type never moves
-   the head; on the phone the column is the page. */
-.minimal-layout-main[data-column] {
-  box-sizing: border-box;
-  height: auto;
-  min-height: 100vh;
-  min-height: 100dvh;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 96px 24px 48px;
-  background: var(--k2-canvas);
-}
-
-.minimal-layout > .minimal-layout-main[data-column] {
-  min-height: 0;
-}
-
-/* the footer stands on the same background as the column */
-.minimal-layout[data-ui="v2"][data-column] {
-  background: var(--k2-canvas);
-}
-
-.minimal-layout-column {
-  display: flex;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 560px;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--k2-card-edge);
-  border-radius: var(--k2-r-card);
-  background: var(--k2-surface);
-}
-
-@media not all and (min-width: 768px) {
-  .minimal-layout-main[data-column] {
-    align-items: stretch;
-    padding: 0;
-    background: var(--k2-surface);
+/* A page with a measure (`MinimalLayout ui="v2" measure`): from 768 px one task to read and decide stands as a column
+   of 560 px, centred on the page background, as a card with the one hairline and the card radius (the page's one
+   child, its workspace). Below, it is the
+   page without a measure: the workspace fills the window above the footer, flat, and scrolls inside. */
+@media (min-width: 768px) {
+  .minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]) {
+    background: var(--k2-canvas);
   }
-
-  .minimal-layout[data-ui="v2"][data-column] {
-    background: var(--k2-surface);
+  .minimal-layout-main[data-measure] {
+    justify-content: center;
+    align-items: flex-start;
+    padding: 48px 16px 24px;
   }
-
-  .minimal-layout-column {
-    max-width: none;
-    border: 0;
-    border-radius: 0;
+  .minimal-layout-main[data-measure] > :only-child {
+    flex: 0 1 560px;
+    min-width: 0;
+    height: auto;
+    border: var(--k2-hairline);
+    border-radius: var(--k2-r-card);
+    background: var(--k2-surface);
+    overflow: hidden;
   }
 }
 

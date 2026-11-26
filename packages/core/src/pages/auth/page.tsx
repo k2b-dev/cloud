@@ -2,11 +2,11 @@ import { type AccountCategory, resolveAccountCategoryLogin } from "@k2b/cloud/co
 import { auth, getLocale } from "@k2b/cloud/server";
 import { appApproval, coreSettings, readAccountCategoryPolicy } from "@k2b/cloud/services";
 import { normalizeRedirectTo, readLoginMethodFromCookieHeader } from "@k2b/cloud/shared";
-import { MinimalLayout } from "@k2b/cloud/ssr";
 import { Band, Bar, Button, Inline, Notice, Tabs, Text } from "@k2b/ui/v2";
 import { ssr } from "../../config";
 import { useAppSignIn } from "../app-approval/availability";
 import { appApprovalMessages } from "../app-approval/messages";
+import { VisitorPage } from "../VisitorPage";
 import AdminLoginForm from "./AdminLoginForm.island";
 import AppLoginForm from "./AppLoginForm.island";
 import GuestLoginForm from "./GuestLoginForm.island";
@@ -15,7 +15,6 @@ import LoginForm from "./LoginForm.island";
 import { isReauthenticationRequest } from "./login-redirect";
 import { authMessages } from "./messages";
 import PasskeyLoginButton from "./PasskeyLoginButton.island";
-import { VisitorHead } from "./VisitorHead";
 
 /** Login page. */
 export default ssr(async (c) => {
@@ -124,8 +123,7 @@ export default ssr(async (c) => {
       : [];
 
   return () => (
-    <MinimalLayout c={c} ui="v2" column>
-      <VisitorHead appName={appName} title={title} description={description} />
+    <VisitorPage c={c} appName={appName} title={title} description={description}>
       {categoryTabs.length > 0 && <Bar start={<Tabs label={t.fallbackMethod} items={categoryTabs} />} />}
       {signedOutIdle && (
         <>
@@ -173,19 +171,22 @@ export default ssr(async (c) => {
         </Band>
       )}
       {!isAdminLogin && !token && (
-        // One line from the text edge that wraps on a narrow phone, never a staircase.
-        <Band>
-          <Inline>
-            {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
-            <Button variant="ghost" icon="lifebuoy" href={supportHref}>
-              {t.contactSupport}
-            </Button>
-            <Button variant="ghost" icon="shield" href={adminHref}>
-              {t.adminToken}
-            </Button>
-          </Inline>
-        </Band>
+        // One line in the flow of the column, from the text edge, in the size of the bar above; it wraps on a narrow
+        // phone, never a staircase.
+        <Bar
+          start={
+            <Inline>
+              {showPasskey && <PasskeyLoginButton redirectTo={redirectTo} forget={sharedWorkstation} />}
+              <Button variant="ghost" icon="lifebuoy" href={supportHref}>
+                {t.contactSupport}
+              </Button>
+              <Button variant="ghost" icon="shield" href={adminHref}>
+                {t.adminToken}
+              </Button>
+            </Inline>
+          }
+        />
       )}
-    </MinimalLayout>
+    </VisitorPage>
   );
 });

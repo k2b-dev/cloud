@@ -1,11 +1,10 @@
 import { getLocale } from "@k2b/cloud/server";
 import { coreSettings } from "@k2b/cloud/services";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { MinimalLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../../config";
 import { isSignOutOthersRetry } from "../../sign-out-others";
+import { VisitorPage } from "../../VisitorPage";
 import { authMessages } from "../messages";
-import { VisitorHead } from "../VisitorHead";
 import PasswordResetCompleteForm from "./PasswordResetCompleteForm.island";
 import PasswordResetRequestForm from "./PasswordResetRequestForm.island";
 
@@ -27,13 +26,12 @@ export default ssr(async (c) => {
 
   c.get("page").title = formTitle;
   return () => (
-    <MinimalLayout c={c} ui="v2" column>
-      <VisitorHead appName={appName} title={formTitle} description={formSubtitle} />
+    <VisitorPage c={c} appName={appName} title={formTitle} description={formSubtitle}>
       {completing ? (
         <PasswordResetCompleteForm token={token ?? ""} redirectTo={redirectTo} signOutFailed={retry} />
       ) : (
         <PasswordResetRequestForm redirectTo={redirectTo} />
       )}
-    </MinimalLayout>
+    </VisitorPage>
   );
 });

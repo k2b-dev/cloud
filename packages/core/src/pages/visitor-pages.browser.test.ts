@@ -5,11 +5,11 @@ import { join, resolve } from "node:path";
 import type { User } from "@k2b/cloud/contracts";
 import { auth } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { serveCoreV2Sheet } from "@k2b/cloud/ssr/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
 import { launchBrowser, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { authMessages } from "./auth/messages";
@@ -67,7 +67,7 @@ beforeEach(() => {
   legalContent = privacyText;
   spies.push(
     // Core serves v2.css, so the pages link it alone.
-    { mockRestore: serveCoreV2Sheet() },
+    serveCoreV2Sheet(),
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
         (key === "app.name"
@@ -183,13 +183,13 @@ const measure = async (name: Name, width: number, locale: Locale) => {
     const page = await render(pages[name], locale);
     await tab.setContent(
       `<!doctype html><html lang="${locale}" class="light"><head><meta http-equiv="Content-Security-Policy" content="script-src &#39;none&#39;"><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-        `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+        `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style></head>` +
         `<body${page.attributes}>${page.content}</body></html>`,
     );
     await tab.evaluate(() => document.fonts.ready);
     await settled(tab);
     const outline = await describeV2Page(tab, "main");
-    const layout = await measureV2Layout(tab, { root: ".minimal-layout-column" });
+    const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
     const shots = process.env.CLOUD_VISITOR_SHOTS;
     if (shots) {
       mkdirSync(shots, { recursive: true });
@@ -202,7 +202,7 @@ const measure = async (name: Name, width: number, locale: Locale) => {
         return { left, right, top, bottom, width, height };
       };
       return {
-        column: box(document.querySelector(".minimal-layout-column")),
+        column: box(document.querySelector(".minimal-layout-main[data-measure] > :only-child")),
         footer: box(document.querySelector("footer")),
         heading: document.querySelector("main h1")?.textContent?.trim(),
         autofocus: Array.from(document.querySelectorAll("main [autofocus]")).map(
@@ -214,11 +214,19 @@ const measure = async (name: Name, width: number, locale: Locale) => {
         v1: Array.from(document.body.querySelectorAll("[class*='k2b-'], [class*='standalone-'], [class*='auth-']"))
           .filter((element) => !element.closest("[data-k2-prose]"))
           .map((element) => element.className),
+        // a field or a send button outside any form would send nothing on Enter or press
+        unbound: Array.from(
+          document.querySelectorAll<HTMLInputElement | HTMLButtonElement>("main input:not([type=checkbox]), main button[type=submit]"),
+        )
+          .filter((element) => !element.form)
+          .map((element) => element.outerHTML.slice(0, 80)),
         scrollWidth: document.documentElement.scrollWidth,
         // Controls and words the column cuts off at its edge (it clips, so the page itself never scrolls sideways).
         cut: (() => {
-          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
-          return Array.from(document.querySelectorAll(".minimal-layout-column :is(a, button, input, label, h1, [role=tab])"))
+          const column = document.querySelector(".minimal-layout-main[data-measure] > :only-child")!.getBoundingClientRect();
+          return Array.from(
+            document.querySelectorAll(".minimal-layout-main[data-measure] > :only-child :is(a, button, input, label, h1, [role=tab])"),
+          )
             .filter((element) => {
               const box = element.getBoundingClientRect();
               return box.width > 0 && (box.left < column.left - 0.5 || box.right > column.right + 0.5);
@@ -227,8 +235,8 @@ const measure = async (name: Name, width: number, locale: Locale) => {
         })(),
         // Buttons keep the column's 16 px gutter on both sides: a full line wraps instead of squeezing to the edge.
         gutter: (() => {
-          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
-          return Array.from(document.querySelectorAll(".minimal-layout-column [data-k2-part=Button]"))
+          const column = document.querySelector(".minimal-layout-main[data-measure] > :only-child")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".minimal-layout-main[data-measure] > :only-child [data-k2-part=Button]"))
             .filter((element) => {
               const box = element.getBoundingClientRect();
               return box.width > 0 && (box.left < column.left + 15.5 || box.right > column.right - 15.5);
@@ -257,6 +265,7 @@ describe("Core visitor pages on v2", () => {
           expect(page.v1, context).toEqual([]);
           expect(page.scrollWidth, context).toBeLessThanOrEqual(width);
           expect(page.cut, context).toEqual([]);
+          expect(page.unbound, context).toEqual([]);
           expect(page.gutter, context).toEqual([]);
           const column = page.column!;
           if (width === 1440) {

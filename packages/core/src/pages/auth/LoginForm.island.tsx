@@ -3,7 +3,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
@@ -61,13 +61,18 @@ export default function LoginForm(props: {
     return params.size > 0 ? `/auth/password-reset?${params.toString()}` : "/auth/password-reset";
   };
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        mutation.mutate({});
-      }}
-    >
+    <>
+      <form
+        id={formId}
+        hidden
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate({});
+        }}
+      />
       <Show when={props.showBanner}>
         <Notice tone="note" icon="info-circle">
           {t().freeIpaBanner({ appName: props.appName || t().thisApp })}
@@ -76,6 +81,7 @@ export default function LoginForm(props: {
       <Band>
         <Field label={t().usernameOrEmail} hint={t().usernameDescription}>
           <Input
+            form={formId}
             icon="user"
             value={username()}
             onInput={setUsername}
@@ -88,6 +94,7 @@ export default function LoginForm(props: {
         </Field>
         <Field label={t().password} hint={t().passwordDescription}>
           <Input
+            form={formId}
             icon="lock"
             type="password"
             value={password()}
@@ -109,11 +116,11 @@ export default function LoginForm(props: {
           )
         }
         end={
-          <Button variant="primary" type="submit" icon="login-2" busy={mutation.loading()}>
+          <Button variant="primary" type="submit" form={formId} icon="login-2" busy={mutation.loading()}>
             {mutation.loading() ? t().signingIn : t().signInWithFreeIpa}
           </Button>
         }
       />
-    </form>
+    </>
   );
 }

@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Check, Field, Input, Notice } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref } from "../sign-out-others";
 import { FormActions } from "./FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
@@ -34,16 +34,30 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
     },
   });
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        mutation.mutate({});
-      }}
-    >
+    <>
+      <form
+        id={formId}
+        hidden
+        onSubmit={(e) => {
+          e.preventDefault();
+          mutation.mutate({});
+        }}
+      />
       <Band>
         <Field label={t().adminToken}>
-          <Input icon="key" type="password" value={token()} onInput={setToken} autocomplete="off" spellcheck={false} autofocus />
+          <Input
+            form={formId}
+            icon="shield"
+            type="password"
+            value={token()}
+            onInput={setToken}
+            autocomplete="off"
+            spellcheck={false}
+            autofocus
+          />
         </Field>
       </Band>
       <Show when={requiresRecovery()}>
@@ -62,6 +76,7 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
           <Button
             variant="primary"
             type="submit"
+            form={formId}
             icon="shield"
             disabled={requiresRecovery() && !restoreLocalLogin()}
             busy={mutation.loading()}
@@ -70,6 +85,6 @@ export default function AdminLoginForm(props: { redirectTo?: string; requiresRec
           </Button>
         }
       />
-    </form>
+    </>
   );
 }

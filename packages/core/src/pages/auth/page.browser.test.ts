@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DEFAULT_ACCOUNT_CATEGORY_POLICY } from "@k2b/cloud/contracts";
 import * as services from "@k2b/cloud/services";
-import { serveCoreV2Sheet } from "@k2b/cloud/ssr/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { serveCoreV2Sheet } from "../../../../../tests/fixtures/core-v2-sheet";
 import { launchBrowser, pageErrors, settled, storedCookie } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { authMessages } from "./messages";
@@ -35,7 +35,7 @@ beforeEach(() => {
     ),
     spyOn(services, "readAccountCategoryPolicy").mockResolvedValue(DEFAULT_ACCOUNT_CATEGORY_POLICY),
     // Core serves v2.css, so the page links it alone.
-    { mockRestore: serveCoreV2Sheet() },
+    serveCoreV2Sheet(),
     spyOn(services.appApproval, "config").mockResolvedValue({
       issuer: "https://cloud.example.test",
       appOrigin: "https://auth.example.test",
@@ -121,7 +121,7 @@ const open = async (view: View, query: string, options: Options = {}) => {
   const page = await body(query, options.locale ?? "en", options.cookie);
   await tab.setContent(
     `<!doctype html><html lang="${options.locale ?? "en"}" class="light"><head><meta http-equiv="Content-Security-Policy" content="script-src &#39;none&#39;"><base href="${origin}/"><meta name="viewport" content="width=device-width, initial-scale=1">` +
-      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style></head>` +
+      `<link rel="stylesheet" href="${origin}/public/fonts.css"><link rel="stylesheet" href="${origin}/public/tabler-icons.css"><style>${css}</style><style>solid-client,solid-island{display:contents}</style></head>` +
       `<body${page.attributes}>${page.content}</body></html>`,
   );
   await tab.evaluate(() => document.fonts.ready);
@@ -134,7 +134,7 @@ const measure = async (view: View, query: string, options: Options = {}) => {
   try {
     await settled(tab);
     const outline = await describeV2Page(tab, "main");
-    const layout = await measureV2Layout(tab, { root: ".minimal-layout-column" });
+    const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
     const shots = process.env.CLOUD_VISITOR_SHOTS;
     if (shots && options.shot) {
       mkdirSync(shots, { recursive: true });
@@ -148,7 +148,7 @@ const measure = async (view: View, query: string, options: Options = {}) => {
       };
       const focused = Array.from(document.querySelectorAll("[autofocus]"));
       return {
-        column: box(document.querySelector(".minimal-layout-column")),
+        column: box(document.querySelector(".minimal-layout-main[data-measure] > :only-child")),
         footer: box(document.querySelector("footer")),
         heading: document.querySelector("main h1")?.textContent?.trim(),
         autofocus: focused.map((element) => `${element.tagName.toLowerCase()} ${element.getAttribute("type") ?? "text"}`),
@@ -158,11 +158,19 @@ const measure = async (view: View, query: string, options: Options = {}) => {
         v1: Array.from(document.body.querySelectorAll("[class*='k2b-'], [class*='standalone-'], [class*='auth-']")).map(
           (element) => element.className,
         ),
+        // a field or a send button outside any form would send nothing on Enter or press
+        unbound: Array.from(
+          document.querySelectorAll<HTMLInputElement | HTMLButtonElement>("main input:not([type=checkbox]), main button[type=submit]"),
+        )
+          .filter((element) => !element.form)
+          .map((element) => element.outerHTML.slice(0, 80)),
         scrollWidth: document.documentElement.scrollWidth,
         // Controls and words the column cuts off at its edge (it clips, so the page itself never scrolls sideways).
         cut: (() => {
-          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
-          return Array.from(document.querySelectorAll(".minimal-layout-column :is(a, button, input, label, h1, [role=tab])"))
+          const column = document.querySelector(".minimal-layout-main[data-measure] > :only-child")!.getBoundingClientRect();
+          return Array.from(
+            document.querySelectorAll(".minimal-layout-main[data-measure] > :only-child :is(a, button, input, label, h1, [role=tab])"),
+          )
             .filter((element) => {
               const box = element.getBoundingClientRect();
               return box.width > 0 && (box.left < column.left - 0.5 || box.right > column.right + 0.5);
@@ -171,8 +179,8 @@ const measure = async (view: View, query: string, options: Options = {}) => {
         })(),
         // Buttons keep the column's 16 px gutter on both sides: a full line wraps instead of squeezing to the edge.
         gutter: (() => {
-          const column = document.querySelector(".minimal-layout-column")!.getBoundingClientRect();
-          return Array.from(document.querySelectorAll(".minimal-layout-column [data-k2-part=Button]"))
+          const column = document.querySelector(".minimal-layout-main[data-measure] > :only-child")!.getBoundingClientRect();
+          return Array.from(document.querySelectorAll(".minimal-layout-main[data-measure] > :only-child [data-k2-part=Button]"))
             .filter((element) => {
               const box = element.getBoundingClientRect();
               return box.width > 0 && (box.left < column.left + 15.5 || box.right > column.right - 15.5);
@@ -293,6 +301,7 @@ describe("sign-in page in a browser", () => {
           expect(page.v1, context).toEqual([]);
           expect(page.scrollWidth, context).toBeLessThanOrEqual(view.width);
           expect(page.cut, context).toEqual([]);
+          expect(page.unbound, context).toEqual([]);
           expect(page.gutter, context).toEqual([]);
           const column = page.column!;
           if (view === desktop) {

@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Band, Button, Notice } from "@k2b/ui/v2";
-import { createSignal, Show } from "solid-js";
+import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { FormActions } from "../FormActions";
 import { afterSignInHref, confirmationRequestOptions } from "../login-redirect";
@@ -70,17 +70,23 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
     },
   });
 
+  // the form stands apart and hidden; its fields and buttons name it, so no form box stands in the column
+  const formId = createUniqueId();
   return (
     <Show when={!signInAgain()} fallback={<PasswordChangedSignInAgain redirectTo={props.redirectTo} />}>
       <Show when={!signOutFailed()} fallback={<SignOutOthersRecovery redirectTo={props.redirectTo} />}>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            mutation.mutate({});
-          }}
-        >
+        <>
+          <form
+            id={formId}
+            hidden
+            onSubmit={(e) => {
+              e.preventDefault();
+              mutation.mutate({});
+            }}
+          />
           <Band>
             <PasswordSetupFieldsV2
+              form={formId}
               newPassword={newPassword}
               confirmPassword={confirmPassword}
               onNewPasswordChange={setNewPassword}
@@ -106,12 +112,12 @@ export default function PasswordResetCompleteForm(props: PasswordResetCompleteFo
               </Button>
             }
             end={
-              <Button variant="primary" type="submit" icon="lock-check" busy={mutation.loading()}>
+              <Button variant="primary" type="submit" form={formId} icon="lock-check" busy={mutation.loading()}>
                 {mutation.loading() ? t().resettingPassword : t().setPassword}
               </Button>
             }
           />
-        </form>
+        </>
       </Show>
     </Show>
   );
