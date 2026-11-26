@@ -965,7 +965,7 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
     <div
       class="k2-tile"
       role="listitem"
-      data-open={props.tile.href !== undefined ? "" : undefined}
+      data-open={props.tile.href !== undefined || props.tile.onOpen ? "" : undefined}
       data-selected={selected() ? "" : undefined}
     >
       <span class="k2-tile-media">
@@ -979,7 +979,7 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
         </Show>
       </span>
       <span class="k2-tile-title" id={title} title={props.tile.title}>
-        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} onOpen={props.tile.onOpen}>
           {props.tile.title}
         </RowOpen>
       </span>

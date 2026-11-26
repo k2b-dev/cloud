@@ -178,3 +178,13 @@ test("key numbers count themselves on the server: the cells say how many they ar
   expect(markup).toMatch(/class="k2-cells"[^>]*data-n="3"/);
   expect([...markup.matchAll(/data-k2-part="Cells.Cell" data-i="(\d)"/g)].map((match) => match[1])).toEqual(["1", "2", "3"]);
 });
+
+test("a media tile may open by a deed: its title is a button, and the tile is marked as one that opens", () => {
+  const markup = html(Tiles, {
+    variant: "media",
+    label: "Notizen",
+    items: [{ key: "n", icon: "note", title: "Notiz zur Abnahme", onOpen: () => {} }],
+  });
+  expect(markup).toMatch(/class="k2-tile"[^>]*data-open=""/);
+  expect(markup).toMatch(/<button type="button" class="k2-row-open"[^>]*>Notiz zur Abnahme</);
+});
