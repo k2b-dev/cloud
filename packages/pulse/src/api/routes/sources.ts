@@ -123,6 +123,7 @@ const routes = new Hono<AuthContext>()
               signal: c.req.raw.signal,
               limit: page.limit ?? SOURCE_PAGE_MAX,
               offset: page.offset,
+              query: page.q,
             }),
             (items) => projectSources(items),
           ),

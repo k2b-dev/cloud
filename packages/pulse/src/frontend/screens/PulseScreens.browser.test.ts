@@ -133,12 +133,17 @@ const desktop: View = { width: 1440, height: 900, touch: false };
 const tablet: View = { width: 1024, height: 768, touch: true };
 const phone: View = { width: 390, height: 844, touch: true };
 
-type Call = { method: string; path: string; body: unknown };
+type Call = { method: string; path: string; body: unknown; query?: URLSearchParams };
 /** The Pulse API as the server answers it for the invented base; `override` answers one call differently. */
 const answer = async (route: Route, calls: Call[], override?: (call: Call) => { status: number; json?: unknown } | undefined) => {
   const request = route.request();
   const url = new URL(request.url());
-  const call: Call = { method: request.method(), path: url.pathname, body: request.postData() ? JSON.parse(request.postData()!) : null };
+  const call: Call = {
+    method: request.method(),
+    path: url.pathname,
+    body: request.postData() ? JSON.parse(request.postData()!) : null,
+    query: url.searchParams,
+  };
   calls.push(call);
   const special = override?.(call);
   if (special) return route.fulfill({ status: special.status, json: special.json ?? {} });
@@ -153,7 +158,14 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
     return route.fulfill({ json: { ...fixtureBases[0], outage: { unavailable: false, since: null } } });
   if (call.path === base && call.method === "PATCH") return route.fulfill({ json: { ...fixtureBases[0], ...(call.body as object) } });
   if (call.path === `${base}/sources/figures`) return route.fulfill({ json: figuresOf(fixtureSources) });
-  if (call.path === `${base}/sources` && call.method === "GET") return route.fulfill({ json: fixtureSources });
+  // the list endpoint as the server answers it: searched by name, one page from the offset
+  if (call.path === `${base}/sources` && call.method === "GET") {
+    const words = url.searchParams.get("q")?.toLowerCase() ?? "";
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 500);
+    const matching = fixtureSources.filter((source) => source.name.toLowerCase().includes(words));
+    return route.fulfill({ json: matching.slice(offset, offset + limit) });
+  }
   if (call.path === `${base}/sources` && call.method === "POST")
     return route.fulfill({
       status: 201,
@@ -248,6 +260,21 @@ const shoot = async (tab: Page, name: string) => {
 const writes = (calls: Call[]) => calls.filter((call) => call.method !== "GET");
 
 describe("Pulse on v2", () => {
+  test("the sources search asks the server, keeps the words in the address and the figures cover all sources", async () => {
+    const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}`);
+    try {
+      await tab.getByRole("searchbox", { name: "Quellen durchsuchen…" }).fill("drucker");
+      await tab.waitForFunction(() => location.search === "?q=drucker");
+      await tab.locator('[data-k2-part="Table"]').getByText("Switch Halle 1").waitFor({ state: "detached" });
+      await settled(tab);
+      expect(calls.some((call) => call.path.endsWith("/sources") && call.query?.get("q") === "drucker")).toBe(true);
+      expect(await tab.locator('[data-k2-part="Table"]').getByText("Drucker Halle 2").isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("the base list filters as it is typed, keeps the words in the address and creates a base", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/app/pulse");
     try {
@@ -292,13 +319,22 @@ describe("Pulse on v2", () => {
     }
   }, 60_000);
 
-  test("on the phone the open source is the page, with the way back and its edit button", async () => {
-    const { context, tab, errors } = await open(phone, `/app/pulse/${baseId}/sources/s7Ee8Ff9`);
+  test("on the phone a tap on a source opens it as the page, with its name, the way back and its edit button", async () => {
+    const { context, tab, errors } = await open(phone, `/app/pulse/${baseId}`);
     try {
+      // a tap on the row, as a finger opens it
+      await tab.locator('[data-k2-part="Table"]').getByText("Drucker Halle 2").tap();
+      await tab.waitForURL(`${origin}/app/pulse/${baseId}/sources/s7Ee8Ff9`);
+      await settled(tab);
       await shoot(tab, "source-open-390");
-      expect(await tab.getByRole("link", { name: "Quellen" }).first().isVisible()).toBe(true);
+      expect(await tab.getByText("Drucker Halle 2", { exact: true }).first().isVisible()).toBe(true);
+      const back = tab.getByRole("link", { name: "Quellen" }).first();
+      expect(await back.isVisible()).toBe(true);
       expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
+      // the way back is a tap too, and leads to the list
+      await back.tap();
+      await tab.waitForURL(`${origin}/app/pulse/${baseId}`);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

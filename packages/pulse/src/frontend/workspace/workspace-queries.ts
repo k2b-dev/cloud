@@ -1,16 +1,19 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import { query } from "@k2b/stdlib/solid";
 import { type Accessor, createMemo } from "solid-js";
-import { type PulseBase, type PulseSource, type PulseSourceScrape, SOURCE_PAGE_MAX, type SourceFigures } from "../../contracts";
+import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from "../../contracts";
 import { jsonFetch } from "../http";
+import { SOURCES_PAGE } from "./source-page";
 import type { PulseWorkspaceProps } from "./types";
 
 type SourceDetail = { baseId: string; sourceId: string; scrapes: PulseSourceScrape[]; apiKeys: ResourceApiKey[] };
 
 export const createPulseWorkspaceQueries = (
-  props: PulseWorkspaceProps,
+  props: PulseWorkspaceProps & { initialSearch?: string },
   selectedSourceId: Accessor<string>,
   loadSources?: Accessor<boolean>,
+  /** The words the source list is searched for on the server; settled, not every keystroke. */
+  search?: Accessor<string>,
 ) => {
   const baseId = props.initialBaseId;
   const bases = query.create({
@@ -18,14 +21,30 @@ export const createPulseWorkspaceQueries = (
     initial: props.initialQueryCoverage.bases ? { source: "bases", data: props.initialBases } : undefined,
     load: (_, { abortSignal }) => jsonFetch<PulseBase[]>("/api/pulse/bases", { signal: abortSignal }),
   });
-  const baseData = query.create({
+  // One page of sources at a time, searched on the server; more pages come on request. The figures above the list
+  // cover all sources, so the list never needs all of them.
+  type SourcePage = { offset: number; items: PulseSource[] };
+  const pageSource = () => ({ baseId, q: (search?.() ?? "").trim() });
+  const pages = query.createInfinite<{ baseId: string; q: string }, SourcePage, number>({
     enabled: () => loadSources?.() ?? props.initialRouteState.view === "sources",
-    source: () => baseId,
-    initial: props.initialQueryCoverage.baseData ? { source: baseId, data: props.initialSources } : undefined,
-    // the list is bounded like every list read; the figures above it cover all sources
-    load: (id, { abortSignal }) =>
-      jsonFetch<PulseSource[]>(`/api/pulse/bases/${id}/sources?limit=${SOURCE_PAGE_MAX}`, { signal: abortSignal }),
+    source: pageSource,
+    isSameSource: (left, right) => left.baseId === right.baseId && left.q === right.q,
+    initial: props.initialQueryCoverage.baseData
+      ? { source: { baseId, q: (props.initialSearch ?? "").trim() }, pages: [{ offset: 0, items: props.initialSources }] }
+      : undefined,
+    loadPage: async (page, { cursor, abortSignal }) => {
+      const offset = cursor ?? 0;
+      const query = new URLSearchParams({ limit: String(SOURCES_PAGE), offset: String(offset) });
+      if (page.q) query.set("q", page.q);
+      const items = await jsonFetch<PulseSource[]>(`/api/pulse/bases/${page.baseId}/sources?${query}`, { signal: abortSignal });
+      return { offset, items };
+    },
+    getNextCursor: (page) => (page.items.length === SOURCES_PAGE ? page.offset + SOURCES_PAGE : null),
   });
+  const baseData = {
+    ...pages,
+    data: (): PulseSource[] | undefined => (pages.pages().length ? pages.pages().flatMap((page) => page.items) : undefined),
+  };
   const figures = query.create({
     enabled: () => loadSources?.() ?? props.initialRouteState.view === "sources",
     source: () => baseId,

@@ -1,5 +1,5 @@
 import type { CloudCliContext } from "@k2b/cloud/cli";
-import type { PulseBase, PulseSource } from "../contracts";
+import { type PulseBase, type PulseSource, SOURCE_PAGE_MAX } from "../contracts";
 import { exactMatch, readApi } from "./shared";
 
 export const PULSE_BASE_DEFAULT_KEY = "pulse.base";
@@ -51,8 +51,18 @@ export const resolveBaseFromCommand = async (
   return { base: await resolveBase(ctx, baseRef), rest };
 };
 
-export const listSources = (ctx: CloudCliContext, baseId: string): Promise<PulseSource[]> =>
-  readApi<PulseSource[]>(ctx, `/bases/${encodeURIComponent(baseId)}/sources`);
+/** All sources of a base, read page by page as the list endpoint returns them (at most `SOURCE_PAGE_MAX` at a time). */
+export const listSources = async (ctx: CloudCliContext, baseId: string): Promise<PulseSource[]> => {
+  const sources: PulseSource[] = [];
+  for (;;) {
+    const page = await readApi<PulseSource[]>(
+      ctx,
+      `/bases/${encodeURIComponent(baseId)}/sources?limit=${SOURCE_PAGE_MAX}&offset=${sources.length}`,
+    );
+    sources.push(...page);
+    if (page.length < SOURCE_PAGE_MAX) return sources;
+  }
+};
 
 export const resolveSource = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PulseSource> =>
   exactMatch(await listSources(ctx, baseId), ref, [(source) => source.id, (source) => source.name], "source");

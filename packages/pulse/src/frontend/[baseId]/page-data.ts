@@ -57,7 +57,11 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   const sources =
     route.view === "sources"
       ? // one page of sources with their store figures, as many as the table shows at a time (bounded read)
-        await pulseService.source.list(baseId, user, { signal: c.req.raw.signal, limit: SOURCES_PAGE })
+        await pulseService.source.list(baseId, user, {
+          signal: c.req.raw.signal,
+          limit: SOURCES_PAGE,
+          query: url.searchParams.get("q")?.trim() || null,
+        })
       : { ok: true as const, data: noSources };
   if (!sources.ok) return { kind: "error", status: sources.error.status };
   const sourceCount = await pulseService.source.count(baseId, user);

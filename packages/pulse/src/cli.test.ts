@@ -277,7 +277,7 @@ describe("pulse CLI", () => {
 
     expect(calls.map((call) => call.path)).toEqual([
       `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
     ]);
     expect(tables[0]).toEqual([
@@ -361,7 +361,7 @@ describe("pulse CLI", () => {
 
     expect(calls.map((call) => call.path)).toEqual([
       `/api/pulse/bases/${baseId}`,
-      `/api/pulse/bases/${baseId}/sources`,
+      `/api/pulse/bases/${baseId}/sources?limit=500&offset=0`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys`,
       `/api/pulse/bases/${baseId}/sources/${sourceId}/api-keys/${sourceToken.id}`,
     ]);

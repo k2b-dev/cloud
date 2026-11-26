@@ -254,6 +254,7 @@ export const SourcePageQuerySchema = z.object({
     .optional()
     .describe(`Sources per page, ${SOURCE_PAGE_MAX} at most and by default`),
   offset: z.coerce.number().int().min(0).optional().describe("Sources to skip, for the next page"),
+  q: z.string().trim().max(200).optional().describe("Only sources whose name contains these words"),
 });
 export const SourceFiguresSchema = z.object({
   total: z.number().int().nonnegative(),

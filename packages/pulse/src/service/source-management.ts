@@ -252,20 +252,21 @@ export const sourceFigures = async (
 ): Promise<Result<SourceFigures>> => {
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
-  const [totals, failing, live, counts] = await Promise.all([
-    sql<{ total: number; active: number; failing: number }[]>`
+  const [totals, failing, counts] = await Promise.all([
+    sql<{ total: number; active: number; failing: number; ids: string[] }[]>`
       SELECT count(*)::int AS total,
         count(*) FILTER (WHERE enabled)::int AS active,
-        count(*) FILTER (WHERE enabled AND last_error IS NOT NULL)::int AS failing
+        count(*) FILTER (WHERE enabled AND last_error IS NOT NULL)::int AS failing,
+        COALESCE(array_agg(id::text), '{}') AS ids
       FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`,
     sql<{ id: string; name: string }[]>`
       SELECT short_id AS id, name FROM pulse.sources
       WHERE NOT deleted AND enabled AND last_error IS NOT NULL AND base_id = ${baseId}::uuid
       ORDER BY last_error_at DESC NULLS LAST, name LIMIT 3`,
-    sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`,
+    // the base's cached aggregate, the same one the page's list reads in this request
     sourceCounts(baseId, now, signal),
   ]);
-  const ids = live.map((row) => row.id);
+  const ids = totals[0]?.ids ?? [];
   const known = counts.has("");
   return ok({
     total: totals[0]?.total ?? 0,

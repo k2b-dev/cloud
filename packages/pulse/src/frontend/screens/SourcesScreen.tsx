@@ -26,7 +26,7 @@ import {
   Text,
   useToast,
 } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AlertRule } from "../../alert-contracts";
 import type { PulseBaseRead, PulseSource } from "../../contracts";
@@ -85,7 +85,7 @@ const sourceLine = (source: PulseSource, t: Words) =>
       )
     : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
 
-const PAGE = SOURCES_PAGE;
+const _PAGE = SOURCES_PAGE;
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
@@ -128,7 +128,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     disposed = true;
   });
 
-  const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => true);
+  // the list is searched on the server once the words settle, not on every keystroke
+  const [settled, setSettled] = createSignal(props.initialSearch ?? "");
+  let settle: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => clearTimeout(settle));
+  const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => true, settled);
   const bases = () => queries.bases.data() ?? props.initialBases;
   const sources = () => queries.baseData.data() ?? props.initialSources;
   // the figures of all sources, read with their own aggregate; the list below is one page of them
@@ -136,14 +140,13 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const base = () => bases().find((entry) => entry.id === baseId) ?? null;
   const baseName = () => base()?.name ?? t().appName;
   const selected = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
-  const shown = createMemo(() => {
-    const needle = search().trim().toLowerCase();
-    return needle ? sources().filter((source) => source.name.toLowerCase().includes(needle)) : sources();
-  });
-  // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
-  const [visible, setVisible] = createSignal(PAGE);
+  // k2b-ui gap: tables do not virtualize yet (lane MW); the server sends SOURCES_PAGE rows at a time, more on request.
+  const shown = sources;
   const readQueries = () =>
-    selectedSourceId() ? [queries.bases, queries.baseData, queries.sourceDetail] : [queries.bases, queries.baseData];
+    // the figures belong to the page's reads, so a failed refresh of them shows like any other
+    selectedSourceId()
+      ? [queries.bases, queries.baseData, queries.figures, queries.sourceDetail]
+      : [queries.bases, queries.baseData, queries.figures];
   const writeBlocked = () => readQueries().some((query) => query.loading() || query.stale() || query.error() !== null);
   const readError = () =>
     readQueries()
@@ -239,7 +242,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
 
   const changeSearch = (value: string) => {
     setSearch(value);
-    setVisible(PAGE);
+    clearTimeout(settle);
+    settle = setTimeout(() => setSettled(value.trim()), 250);
     if (isServer) return;
     const url = new URL(location.href);
     if (value.trim()) url.searchParams.set("q", value.trim());
@@ -255,8 +259,6 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const openAdd = () => {
     if (controller.requireWritable()) setAdding(true);
   };
-  const _paused = () => sources().filter((source) => !source.enabled).length;
-  const _failingSources = () => sources().filter((source) => source.enabled && source.status.lastError);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const alerts = () => props.initialAttention?.alerts ?? [];
 
@@ -302,7 +304,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           // a search says what it found; the base's state stands in the figures below
           status={
             search().trim() ? (
-              <StatusRow lead={words().matchesCount({ count: shown().length, total: sources().length })} loading={refreshing()} />
+              <StatusRow lead={words().matchesFound({ count: shown().length, more: queries.baseData.hasMore() })} loading={refreshing()} />
             ) : undefined
           }
         >
@@ -404,7 +406,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           {/* k2b-ui gap: v2 Table does not virtualize yet (lane MW); a base holds at most a few hundred sources. */}
           <Table
             label={words().sources}
-            rows={shown().slice(0, visible())}
+            rows={shown()}
             rowKey={(source) => source.id}
             current={selectedSourceId() || undefined}
             open={(source) => ({ href: sourceHref(source) })}
@@ -451,15 +453,17 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               },
             ]}
           />
-          <Show when={shown().length > visible()}>
+          <Show when={queries.baseData.hasMore()}>
             <Bar
               start={
                 <Text type="meta" muted>
-                  {words().rowsShown({ shown: String(visible()), total: String(shown().length) })}
+                  {search().trim()
+                    ? words().matchesFound({ count: shown().length, more: true })
+                    : words().rowsShown({ shown: number(shown().length), total: number(figures()?.total ?? shown().length) })}
                 </Text>
               }
               end={
-                <Button icon="chevrons-down" onClick={() => setVisible(visible() + PAGE)}>
+                <Button icon="chevrons-down" busy={queries.baseData.loadingMore()} onClick={() => void queries.baseData.loadMore()}>
                   {words().showMore}
                 </Button>
               }

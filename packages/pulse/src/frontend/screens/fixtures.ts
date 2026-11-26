@@ -3,6 +3,7 @@ import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from ".
 import type { BaseAttention } from "../../service/base-attention";
 import type { SavedQuery } from "../../service/saved-queries";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
+import { SOURCES_PAGE } from "../workspace/source-page";
 import type { QueryAuthor } from "./QueriesScreen";
 import type { SourcesScreenProps } from "./SourcesScreen";
 
@@ -308,7 +309,8 @@ export const sourcesProps = (
     initialBases: fixtureBases,
     initialBaseId: fixtureBases[0]!.id,
     initialRouteState: { view: "sources", sourceId: open },
-    initialSources: sources,
+    // the server sends the first page of sources; the figures cover all of them
+    initialSources: sources.slice(0, SOURCES_PAGE),
     initialSettings: { maxRawRetentionDays: 365, admins: ["Jana Petersen"] },
     initialPermissions: { write: true, admin: true },
     initialAttention: {

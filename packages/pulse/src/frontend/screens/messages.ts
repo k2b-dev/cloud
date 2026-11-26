@@ -15,6 +15,8 @@ export const screenMessages = i18n.define({
       storeColumn: "Store",
       retentionDays: ({ days }: { days: number }) => `${days} ${i18n.plural(days, "en", { one: "day", other: "days" })}`,
       matchesCount: ({ count, total }: { count: number; total: number }) => `${count} of ${total}`,
+      matchesFound: ({ count, more }: { count: number; more: boolean }) =>
+        `${count}${more ? "+" : ""} ${count === 1 && !more ? "match" : "matches"}`,
       storeTrouble: ({ count }: { count: number }) =>
         `${count} ${i18n.plural(count, "en", { one: "store needs attention", other: "stores need attention" })}`,
       sourcesFine: "All sources without errors",
@@ -114,6 +116,7 @@ export const screenMessages = i18n.define({
       storeColumn: "Speicher",
       retentionDays: ({ days }) => `${days} ${i18n.plural(days, "de", { one: "Tag", other: "Tage" })}`,
       matchesCount: ({ count, total }) => `${count} von ${total}`,
+      matchesFound: ({ count, more }) => `${count}${more ? "+" : ""} Treffer`,
       storeTrouble: ({ count }) =>
         `${count} ${i18n.plural(count, "de", { one: "Speicher braucht Aufmerksamkeit", other: "Speicher brauchen Aufmerksamkeit" })}`,
       sourcesFine: "Alle Quellen fehlerfrei",
