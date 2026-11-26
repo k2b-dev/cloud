@@ -140,15 +140,14 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
 // colour of its app, and the platform may set its readable ink. v2.css may read them, never define them.
-// Set from outside the sheet: by core, by the platform (the app colour), or by script on the document (`TabBar` and
-// `NoticeStack` measure themselves, so the parts beside them keep their room).
+// Set from outside the sheet: by core, by the platform (the app colour), or by script on the document (`NoticeStack`
+// measures itself, so the panes keep their room).
 const foreignVariables = new Set([
   "--anchor-width",
   "--available-height",
   "--keyboard-inset",
   "--k2-app",
   "--k2-app-ink",
-  "--k2-tabbar-h",
   "--k2-notice-stack",
 ]);
 

@@ -67,7 +67,7 @@ A band with a sign, a sentence and its consequence, and at most two deeds; a dee
 
 ### NoticeStack
 
-Notices that float at the bottom, above a `TabBar` and the safe area, until their state ends or the person hides them. Nothing on the page moves when one comes or goes: the panes keep the room the stack covers free at their end, so their last row stays reachable. On the phone each deed is a framed button of at least 44 px in the end column.
+Notices that float at the bottom, above the safe area and, with `tabBar`, above a `TabBar` (from the server's page on), until their state ends or the person hides them. Nothing on the page moves when one comes or goes: the panes keep the room the stack covers free at their end, so their last row stays reachable. On the phone each deed is a framed button of at least 44 px in the end column.
 
 <Props of="NoticeStack" />
 

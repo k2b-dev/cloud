@@ -8,16 +8,27 @@ import { Nav, Notice, NoticeStack, Pane, Row, TabBar, Text, Workspace } from "..
 declare global {
   interface Window {
     __hideNotices?: () => void;
+    __navigated?: number;
   }
 }
 
+// Spaces is the open place, in the sheet of "More"; it opens in place, so the sheet closes over the same page.
 const places = [
-  { label: "Start", icon: "home", href: "#start", current: true },
+  { label: "Start", icon: "home", href: "#start" },
   { label: "Chat", icon: "messages", href: "#chat", unread: 3 },
   { label: "Dateien", icon: "folder", href: "#dateien" },
   { label: "Mail", icon: "mail", href: "#mail", unread: 120 },
   { label: "Notizbücher", icon: "notebook", href: "#notizbuecher", unread: 2 },
-  { label: "Spaces", icon: "layout-kanban", href: "#spaces", unread: 5 },
+  {
+    label: "Spaces",
+    icon: "layout-kanban",
+    href: "#spaces",
+    unread: 5,
+    current: true,
+    onNavigate: () => {
+      window.__navigated = (window.__navigated ?? 0) + 1;
+    },
+  },
 ];
 
 const LOGO =
@@ -53,6 +64,11 @@ export function Demo() {
               Neue Version von Lindenhof Cloud
             </Notice>
           </div>
+          <div id="titled">
+            <Notice tone="warn" title="Schlüssel läuft ab" meta="in 3 Tagen" actions={[{ label: "Verlängern", onClick: () => {} }]}>
+              Danach kann der Dienst nicht mehr auf das Lager zugreifen.
+            </Notice>
+          </div>
           {Array.from({ length: 30 }, (_, index) => (
             <Row icon="box" lines={[`Regal ${index + 1}`, "Lager Nord"]} href="#regal" />
           ))}
@@ -60,7 +76,7 @@ export function Demo() {
         </Pane>
       </Workspace>
       <TabBar label="App" items={places} />
-      <NoticeStack>
+      <NoticeStack tabBar>
         <Show when={notices()}>
           <Notice tone="warn" icon="wifi-off" actions={[{ label: "Ausblenden", onClick: () => setNotices(false) }]}>
             Offline – Änderungen gehen raus, sobald du wieder online bist

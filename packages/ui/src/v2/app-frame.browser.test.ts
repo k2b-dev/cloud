@@ -73,7 +73,9 @@ for (const width of [1440, 390])
 test("server markup: four tabs and More, the open one marked, counts as figures and in words; the sidebar's logo", () => {
   const tabs = [...markup.matchAll(/data-k2-part="TabBar\.(?:Tab|More)"/g)];
   expect(tabs).toHaveLength(5);
-  expect(markup).toMatch(/aria-current="page"[^>]*>(?:(?!<\/a>).)*Start/);
+  // the open place is in the sheet: More is the current one, for the eye and for assistive technology
+  expect(markup).toMatch(/data-k2-part="TabBar\.More"[^>]*data-current=""[^>]*aria-current="page"/);
+  expect(markup).not.toMatch(/aria-current="page"[^>]*>(?:(?!<\/a>).)*Start/);
   expect(markup).toContain(">99+<");
   expect(markup).toContain("Mehr als 99 ungelesen");
   expect(markup).toContain("3 ungelesen");
@@ -90,7 +92,6 @@ test("on the phone the tab bar holds the home indicator and More opens a sheet w
     const bar = (await box(page, ".k2-tabbar"))!;
     expect(Math.round(bar.bottom)).toBe(844);
     expect(bar.height).toBe(1 + 56 + insets.bottom);
-    expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("--k2-tabbar-h"))).toBe(`${bar.height}px`);
     // a count stands clear of its symbol with a ring of the bar's surface
     expect(await page.evaluate(() => getComputedStyle(document.querySelector(".k2-tab > .k2-unread")!).boxShadow)).toContain("2px");
     await page.getByRole("button", { name: /Mehr/ }).click();
@@ -101,6 +102,46 @@ test("on the phone the tab bar holds the home indicator and More opens a sheet w
       expect.stringContaining("Spaces"),
     ]);
     expect(await sheet.textContent()).toContain("5 ungelesen");
+    // Escape closes it and the focus is on "More" again
+    await page.keyboard.press("Escape");
+    await sheet.waitFor({ state: "hidden" });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-k2-part"))).toBe("TabBar.More");
+    // a place that opens in place closes it too, and the focus comes back the same way
+    await page.getByRole("button", { name: /Mehr/ }).click();
+    await sheet.waitFor();
+    await sheet.getByRole("link", { name: /Spaces/ }).click();
+    await sheet.waitFor({ state: "hidden" });
+    expect(await page.evaluate(() => window.__navigated)).toBe(1);
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-k2-part"))).toBe("TabBar.More");
+  });
+});
+
+test("before the page comes alive, the server's notices already stand above the tab bar", async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+  try {
+    // the server's page alone: no script mounts it
+    await page.setContent(
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root">${markup}</div></body></html>`,
+    );
+    await settled(page);
+    const stack = (await box(page, ".k2-notice-stack"))!;
+    const bar = (await box(page, ".k2-tabbar"))!;
+    expect(Math.round(stack.bottom)).toBe(Math.round(bar.top - 12));
+  } finally {
+    await page.close();
+  }
+});
+
+test("a notice with a title has its deed beside the title, and its text runs under both across the full width", async () => {
+  await withPage(1440, async (page) => {
+    const deed = (await box(page, "#titled .k2-notice-end"))!;
+    const title = (await box(page, "#titled .k2-notice-title"))!;
+    const text = (await box(page, "#titled .k2-notice-text"))!;
+    expect(deed.left).toBeGreaterThan(title.right - 0.5);
+    expect(Math.abs(deed.top + deed.height / 2 - (title.top + title.height / 2))).toBeLessThanOrEqual(1);
+    // nothing lies over the text: it starts below the deed and reaches under it
+    expect(text.top).toBeGreaterThanOrEqual(deed.bottom - 0.5);
+    expect(text.right).toBeGreaterThan(deed.left);
   });
 });
 
@@ -109,7 +150,7 @@ test("from 768 px the tab bar leaves; the sidebar shows the logo and the attenti
     expect(await box(page, ".k2-tabbar")).toBeUndefined();
     const logo = (await box(page, ".k2-nav-logo"))!;
     expect(logo.height).toBe(20);
-    const chat = page.locator(".k2-ni", { hasText: "Chat" });
+    const chat = page.locator(".k2-nav .k2-ni", { hasText: "Chat" });
     expect(await chat.locator(".k2-unread").textContent()).toBe("3");
     expect(await chat.getAttribute("aria-current")).toBeNull();
   });

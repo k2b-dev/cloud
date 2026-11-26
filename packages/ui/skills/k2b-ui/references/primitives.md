@@ -406,15 +406,18 @@ lines instead of cutting a thing.
   one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
   Use it for errors with a way out instead of "try again"
   buttons of your own.
-- `NoticeStack`: children are `Notice`s of a state of the whole app that
-  lasts ("Offline", a new version). They float at the bottom, above a
-  `TabBar` and the safe area; the panes keep the room they cover free at
+- `NoticeStack`: `tabBar?` (the page has a `TabBar` on the phone),
+  children are `Notice`s of a state of the whole app that lasts
+  ("Offline", a new version). They float at the bottom, above the safe
+  area and, with `tabBar`, above the bar from the server's page on; the panes keep the room they cover free at
   their end. On the phone each deed is a framed button of at least 44 px in
   the end column. Give each notice a deed that hides it.
 - `TabBar`: `label`, `items: { label, icon, href, onNavigate?, current?,
   unread? }[]`; the places of an installed app on the phone, at the bottom
   edge with the safe area. Up to five stand in the bar; with more, four
-  and "Mehr", which opens a sheet with the others and their counts. From
+  and "Mehr", which opens a sheet with the others and their counts and is
+  the current tab while one of them is open (Escape and a place that opens in
+  place close the sheet; the focus returns to "Mehr"). From
   768 px it leaves and the app's `Nav` holds the places.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
