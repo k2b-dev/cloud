@@ -8,7 +8,7 @@ import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { CalendarItem, SpaceColumn, SpaceTag } from "@/contracts";
-import { browserName, launchBrowser } from "../../../../../../ui/test/browser";
+import { browserName, launchBrowser, settled } from "../../../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin";
 import { parseCalendarRoute } from "./filter";
 import { calendarWindow } from "./range";
@@ -535,6 +535,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await filterBar(page).getByText("3 shown", { exact: true }).waitFor();
       await page.waitForURL(/cd=2026-11-01/);
       await shoot(page, "month-midscroll-en");
+      await settled(page);
       expect(await page.locator(day("2026-10-16")).getAttribute("aria-selected")).toBe("true");
       await scrollWeek(page, "2026-11-02");
       // Nov 2 through Dec 6 contain only the last two days of the autumn break.
@@ -563,6 +564,7 @@ describe(`Spaces month view in ${browserName}`, () => {
       await page.touchscreen.tap(point.x, point.y);
       await page.waitForURL(/cd=2026-11-09/);
       expect(await page.locator(day("2026-11-09")).getAttribute("aria-selected")).toBe("true");
+      await settled(page);
       const row = await box(page, '[data-week-key="2026-11-09"]');
       const viewport = await box(page, ".k2b-calendar-month");
       expect(Math.abs(row.height * 5 + 32 - viewport.height)).toBeLessThanOrEqual(5);

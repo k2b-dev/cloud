@@ -203,7 +203,7 @@
    tag's name always stands in the footer. State changes only paint. */
 .spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
 /* The cards (6 px inside their column) start at the pane's text edge, clear of the sidebar's line and its grip. */
-.spaces-kanban-columns { padding-inline: calc(var(--k2-edge, 20px) - 0.375rem); }
+.spaces-kanban-columns { padding-inline: 0.875rem; }
 .spaces-kanban-column { width: 17.5rem; }
 .k2b-ui .spaces-kanban-card {
   /* KanbanBoard sets the first tag's colour inline on a tinted card. */
@@ -243,7 +243,7 @@ body.k2b-ui > .spaces-kanban-card[aria-hidden="true"] {
 @media (prefers-reduced-motion: reduce) { .k2b-ui .spaces-kanban-card { transition: none; } }
 /* Phone: one column at a time with a look at the next, so it is clear the board goes on. */
 @media not all and (min-width: 48rem) {
-  .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; }
+  .spaces-kanban-columns { --spaces-kanban-gap: 0.75rem; padding-inline: 0.625rem; }
   .spaces-kanban-column { width: calc(100vw - 4.5rem); max-width: 20rem; }
 }
 

@@ -14,8 +14,6 @@ export const SPACE_COLORS = [
   ["gray", "#6b7280"],
 ] as const;
 
-type ColorName = (typeof SPACE_COLORS)[number][0];
-
 const colorMessages = i18n.define({
   baseLocale: "en",
   messages: {
@@ -31,7 +29,7 @@ const colorMessages = i18n.define({
       teal: "Teal",
       gray: "Gray",
       own: ({ hex }: { hex: string }) => `Own colour (${hex})`,
-    } satisfies Record<ColorName, string> & { own: (params: { hex: string }) => string },
+    },
     de: {
       blue: "Blau",
       indigo: "Indigo",

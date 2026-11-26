@@ -194,7 +194,6 @@ const openPage = async (view: View, locale: "en" | "de", query = "") => {
     timezoneId: TIME_ZONE,
   });
   const page = await context.newPage();
-  page.on("pageerror", (error) => console.error(`page error: ${error.message}`));
   await page.goto(`${server.url}app/spaces/Space1?lang=${locale}${query}`);
   await page.evaluate(() => window.document.fonts.ready);
   await page.waitForFunction(
