@@ -1,3 +1,4 @@
+import { LocaleProvider } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import FilterScreen from "./FilterScreen.island";
 import FormScreen from "./FormScreen.island";
@@ -10,6 +11,9 @@ import { DeliveriesScreen, RecordScreen } from "./record-screen";
 import TableScreen from "./TableScreen.island";
 import V2Inspect from "./V2Inspect.island";
 import V2InspectSwitch from "./V2InspectSwitch.island";
+
+/** The language of the demo screens' data, and so of the library's own words on them. */
+export const DEMO_LOCALE = "de";
 
 /** One v2 demo screen: what it is, the approved mockup it is measured against, the colour of its app. */
 export type V2Screen = {
@@ -110,7 +114,7 @@ export const v2Screens = {
   keys: {
     title: "Zustände · Schlüssel eines Agenten",
     description:
-      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), disabled fields and a disabled deed of a notice, and facts with a token in monospace. On the phone the side column stands under the table, with one line between them.",
+      "An agent's keys in Accounts: a picture in the record head, heads that sort (press Name or Zuletzt genutzt), a busy button (press Bild ändern), a disabled deed of a notice, and facts with a token in monospace and the access it may read but not change. On the phone the side column stands under the table, with one line between them.",
     mockup: "tabelle.html (Sortiert), index.html (Button, Field)",
     app: "#7c3aed",
     phone: { back: "Agenten" },
@@ -119,7 +123,7 @@ export const v2Screens = {
   menus: {
     title: "Menü · Popover · Toast",
     description:
-      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a panel, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
+      "Orders in Grids with the overlays of v2: „Neu“ opens a menu with a submenu of templates, the view menu holds a choice of order and settings that toggle, each under its heading, the filter is a menu of two toggles, which stays on the phone, the refresh button has a hint. Each row has its deeds on a right-click or a long press and behind its own „…“; deleting one answers with a toast and „Rückgängig“.",
     mockup: "index.html (Menu · Popover · Toast), 07-formular-menue",
     app: "#047857",
     phone: { back: "Aufträge" },
@@ -231,53 +235,54 @@ export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => 
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
       <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
-      <div class="ui-v2-screen__card">{screen.render(props.search ?? "")}</div>
+      {/* the demo data is German, so the library's own words are too; islands read it from <html lang> (see server.tsx) */}
+      <div class="ui-v2-screen__card">
+        <LocaleProvider locale={DEMO_LOCALE}>{screen.render(props.search ?? "")}</LocaleProvider>
+      </div>
       <V2Inspect />
     </div>
   );
 };
 
-/** The Fibel page of one or more screens: what they show, where the knowledge lives, and each screen in a frame. */
-export const V2DemoPage = (props: { names: readonly V2ScreenName[]; title: string; documentation?: string }) => {
+/**
+ * The demo screens of Fibel's page "Whole screens": each one framed like the Cloud shell and measured against its
+ * approved mockup, with the switch that shows their parts.
+ */
+export const V2DemoScreens = (props: { names: readonly V2ScreenName[] }) => {
   const frame = (name: V2ScreenName) => `v2-frame-${name}`;
   return (
-    <article class="ui-showcase ui-reference-showcase">
-      <header class="ui-reference-heading">
-        <div class="ui-page-heading">
-          <p>@k2b/ui/v2 · provisional</p>
-          <h1>{props.title}</h1>
-        </div>
-      </header>
-      <div class="ui-v2-demo">
-        <div class="ui-v2-demo__intro">
-          <p>
-            Every part of {props.names.length > 1 ? "these screens" : "this screen"} is a v2 primitive; there is no CSS of its own. How to
-            build it is in the agent skill <code>k2b-ui</code>, which ships with the package. Each screen is measured against its approved
-            mockup at 1440 and 390 px.
-          </p>
-          <p class="ui-v2-demo__actions">
-            <V2InspectSwitch frames={props.names.map(frame)} />
-          </p>
-        </div>
-        <For each={props.names}>
-          {(name) => {
-            const screen: V2Screen = v2Screens[name];
-            const src = `/en/ui/v2/screen/${name}${screen.query ?? ""}`;
-            return (
-              <section class="ui-v2-demo__screen" aria-label={screen.title}>
-                <h2>{screen.title}</h2>
-                <p>
-                  {screen.description} Mockup: <code>{screen.mockup}</code>. <a href={src}>Open the screen on its own</a>.
-                </p>
-                <iframe id={frame(name)} class="ui-v2-demo__frame" src={src} title={`${screen.title}, built with @k2b/ui/v2`} />
-              </section>
-            );
-          }}
-        </For>
-        <Show when={props.documentation}>
-          {(documentation) => <section class="ui-documentation fibel-prose" aria-label="How to use it" innerHTML={documentation()} />}
-        </Show>
+    <section class="ui-v2-demo" aria-labelledby="v2-demo-screens">
+      <div class="ui-v2-demo__intro">
+        <h2 id="v2-demo-screens">Demo screens</h2>
+        <p>
+          Screens of real apps, framed like the Cloud shell. Every part is a v2 primitive; there is no CSS of their own. Each screen is
+          measured against its approved mockup at 1440 and 390 px.
+        </p>
+        <p class="ui-v2-demo__actions">
+          <V2InspectSwitch frames={props.names.map(frame)} />
+        </p>
       </div>
-    </article>
+      <For each={props.names}>
+        {(name) => {
+          const screen: V2Screen = v2Screens[name];
+          const src = `/en/ui/v2/screen/${name}${screen.query ?? ""}`;
+          return (
+            <section class="ui-v2-demo__screen" aria-label={screen.title}>
+              <h3>{screen.title}</h3>
+              <p>
+                {screen.description} Mockup: <code>{screen.mockup}</code>. <a href={src}>Open the screen on its own</a>.
+              </p>
+              <iframe
+                id={frame(name)}
+                class="ui-v2-demo__frame"
+                src={src}
+                title={`${screen.title}, built with @k2b/ui/v2`}
+                loading="lazy"
+              />
+            </section>
+          );
+        }}
+      </For>
+    </section>
   );
 };
