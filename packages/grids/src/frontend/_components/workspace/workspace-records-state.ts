@@ -6,6 +6,7 @@ import type { Field, GridRecord, Table, View } from "../../../service";
 import { gridsService } from "../../../service";
 import * as publicResources from "../../../service/public-resources";
 import { activeDisplayConfig } from "../records-view/display-mode";
+import { recordsFilterStatements } from "../records-view/filter-statements";
 import { parseRecordsState, type RecordsState } from "../records-view/query-url";
 import { resolveWorkspaceMessages } from "./messages";
 import { emptyRecordDetail, loadRecordDetailData, writableDocumentTemplates } from "./workspace-record-detail-state";
@@ -399,7 +400,13 @@ export const loadRecordsState = async (
       { title: view.queryResultView.name },
     ]);
   }
-  const recordsState = await resolveUrlRecordsState(activeTable.id, view.tableFields, parseRecordsState(common.chrome.url.searchParams));
+  // A table page (no saved view) states its simple filters as FilterBar parameters beside its `filter` JSON.
+  const statements = view.activeViewForQuery ? undefined : recordsFilterStatements(view.tableFields, "en");
+  const recordsState = await resolveUrlRecordsState(
+    activeTable.id,
+    view.tableFields,
+    parseRecordsState(common.chrome.url.searchParams, statements),
+  );
   const displayConfig = activeDisplayConfig(activeTable.displayConfig, view.activeViewForQuery?.displayConfig);
   const strictViewScope = !!view.activeViewForQuery && !gridsService.permission.hasAtLeast(view.activeTableLevel, "read");
   const initial = await loadInitialRecords({

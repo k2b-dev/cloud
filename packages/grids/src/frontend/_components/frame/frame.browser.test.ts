@@ -364,9 +364,26 @@ describe("the records page on v2", () => {
       await tab.locator("[data-k2-part=Table] thead").getByRole("button", { name: "Fällig", exact: true }).click();
       await tab.waitForFunction(() => (new URL(location.href).searchParams.get("sort") ?? "").includes('"date"'));
 
-      await tab.getByRole("button", { name: "Filter" }).click();
+      await tab.getByRole("button", { name: "Weitere Filter" }).click();
       await tab.getByRole("dialog", { name: "Filtern und sortieren" }).waitFor();
       await shoot(tab, "grids-records-filter-light-1440");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a simple filter is a statement in the address; other filters stay in the dialog", async () => {
+    const address = `${table}?f-status=Arbeit&filter=${encodeURIComponent(JSON.stringify({ op: "AND", filters: [{ fieldId: "text", op: "regex", value: "^W" }] }))}`;
+    const { context, tab, errors } = await open(wide, address);
+    try {
+      const bar = tab.locator("[data-k2-part=FilterBar]");
+      await bar.waitFor();
+      expect(await bar.textContent()).toContain("Status");
+      expect(await bar.textContent()).toContain("Arbeit");
+      // the regex leaf has no statement: the dialog keeps it and its button counts it
+      expect(await tab.getByRole("button", { name: "Weitere Filter (1)" }).count()).toBe(1);
+      await shoot(tab, "grids-records-filterbar-light-1440");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -7,6 +7,7 @@ import {
   Button,
   Canvas,
   Empty,
+  FilterBar,
   Input,
   Menu,
   type MenuEntry,
@@ -18,6 +19,7 @@ import {
   Tabs,
   Text,
 } from "@k2b/ui/v2";
+import type { ListQueryState } from "@k2b/ui/v2/list-query";
 import { createEffect, createMemo, createRenderEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { preloadBarcodes } from "#barcode-drawing";
 import type {
@@ -51,9 +53,11 @@ import { openExportRecordsDialog } from "../records/ExportRecordsDialog";
 import { recordMessages } from "../records/messages";
 import { createRecordAccess } from "../records/record-access";
 import { fieldDisplayFormatForView } from "../records/record-display";
+import { fetchRecordLookup } from "../records/record-lookup";
 import { formatFieldValueText } from "../table/field-value-format";
 import type { GroupBucket } from "../table/GroupedTable";
 import GroupedTable from "../table/GroupedTable";
+import type { FilterLeaf } from "../toolbar/FilterPanel";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import type {
   PublicWorkspaceBulkLauncher as WorkspaceBulkLauncher,
@@ -62,6 +66,7 @@ import type {
 } from "../workspace/workspace-public-state-model";
 import { bulkWorkflowActionLabel } from "./bulk-selection";
 import { activeDisplayConfig, calendarQueryFilter, cardImageFieldIds, removeCalendarQueryFilter } from "./display-mode";
+import { filterLeaves, joinFilter, recordsFilterStatements, splitFilter } from "./filter-statements";
 import { recordsViewMessages } from "./messages";
 import { buildRecordsUrl, type CardSize, type RecordsState, recordsPath } from "./query-url";
 import { RecordCalendarView } from "./RecordCalendarView";
@@ -341,7 +346,26 @@ export default function RecordsView(props: Props) {
     };
   };
 
+  // The simple filters of a table page are FilterBar statements in the address; saved views keep their own query.
+  const statements = createMemo(() =>
+    props.viewMode || props.activeView || props.viewId
+      ? undefined
+      : recordsFilterStatements(fields(), locale(), {
+          load: async (target, text, context) =>
+            (
+              await fetchRecordLookup({
+                tableId: (target.config as { targetTableId?: string }).targetTableId ?? "",
+                query: text,
+                limit: context.limit,
+                signal: context.signal,
+                locale: locale(),
+              })
+            ).map((item) => ({ value: item.id, label: item.label })),
+          names: () => mergedRelationLabels(),
+        }),
+  );
   const { sync: syncUrl } = createRecordsUrlController({
+    statements,
     path: {
       baseId: props.baseId,
       tableId: props.tableId,
@@ -789,7 +813,38 @@ export default function RecordsView(props: Props) {
     })),
   ];
 
-  const filterCount = () => toolbarFilterRows().length;
+  const barState = createMemo(() => {
+    const each = statements();
+    return each ? splitFilter(each, query().filter) : undefined;
+  });
+  /** Leaves the bar cannot state; without a bar (a saved view) every leaf counts. */
+  const filterCount = () => (barState() ? (barState()?.rest ?? toolbarFilterRows()).length : toolbarFilterRows().length);
+  /** A statement changed in the bar: it joins the leaves the dialog keeps, which the address's `filter` holds. */
+  const onBarChange = (next: ListQueryState) => {
+    const each = statements();
+    if (!each) return;
+    const raw = new URL(window.location.href).searchParams.get("filter");
+    let kept: FilterLeaf[] | null = null;
+    try {
+      kept = raw ? filterLeaves(JSON.parse(raw) as RecordQuery["filter"]) : [];
+    } catch {
+      kept = null;
+    }
+    const filter = joinFilter(each, next, kept ?? barState()?.rest ?? []);
+    if (JSON.stringify(filter ?? null) === JSON.stringify(query().filter ?? null)) return;
+    onToolbarCommit({ filter, sort: query().sort, groupBy: query().groupBy, aggregations: query().aggregations });
+  };
+  /** Names of the linked records the relation statements name, from the labels the page already has. */
+  const statementNames = () => {
+    const state = barState()?.state;
+    if (!state) return {};
+    const labels = mergedRelationLabels();
+    return Object.fromEntries(
+      Object.entries(state.filters as Record<string, unknown>)
+        .filter(([, value]) => Array.isArray(value))
+        .map(([key, value]) => [key, (value as string[]).map((id) => ({ value: id, label: labels[id] ?? id }))]),
+    );
+  };
   const sortCount = () => toolbarSortRows().length;
   const searchKey = (event: KeyboardEvent) => {
     if (event.isComposing) return;
@@ -1032,7 +1087,7 @@ export default function RecordsView(props: Props) {
       filters={
         <Show when={!props.viewMode && !props.trashMode}>
           <Button variant="ghost" icon="filter" onClick={() => setQueryOpen(true)}>
-            {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().filter}
+            {filterCount() + sortCount() > 0 ? words().filterCount({ count: filterCount() + sortCount() }) : words().moreFilters}
           </Button>
         </Show>
       }
@@ -1090,7 +1145,26 @@ export default function RecordsView(props: Props) {
       primary={primaryAction()}
     >
       <Pane.Split>
-        <Pane label={tableName()} scrollKey={`grids-records-${props.tableId}-${props.viewId ?? "default"}`} status={status()}>
+        <Pane
+          label={tableName()}
+          scrollKey={`grids-records-${props.tableId}-${props.viewId ?? "default"}`}
+          status={
+            <>
+              <Show when={statements() && !props.trashMode ? statements() : undefined}>
+                {(each) => (
+                  <FilterBar
+                    query={each().query}
+                    state={barState()?.state ?? each().query.reset()}
+                    onChange={onBarChange}
+                    names={statementNames()}
+                    results={recordCountText()}
+                  />
+                )}
+              </Show>
+              {status()}
+            </>
+          }
+        >
           <LiveNotice />
           <Show when={needsManualRefresh()}>
             <Notice

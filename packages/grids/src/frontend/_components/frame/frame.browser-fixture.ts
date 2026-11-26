@@ -5,6 +5,7 @@
  */
 import type { PublicBase, PublicTable } from "../../../api/public-dto";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
+import { recordsFilterStatements } from "../records-view/filter-statements";
 import { parseRecordsState } from "../records-view/query-url";
 import type RecordsView from "../records-view/RecordsView";
 import { fields as tableFields, records as tableRecords } from "../table/database-table.fixture-data";
@@ -228,7 +229,8 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
 
 /** The records page of a table for a variant and an address, as the server renders it (`record`, `sort`, `q` …). */
 export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof RecordsView>[0] => {
-  const state = parseRecordsState(params);
+  // the server reads a table page's statements with the table's fields
+  const state = parseRecordsState(params, recordsFilterStatements(tableFields, "de"));
   const items =
     variant === "huge"
       ? Array.from({ length: 1000 }, (_, index) => ({
