@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 
 const ui = `${resolve(import.meta.dir, "../../../../ui")}/`;
@@ -280,6 +280,73 @@ test("Berechtigungen loads the notebook's access, closes the menu and opens the 
     expect(await menu.getAttribute("aria-busy")).not.toBe("true");
   } finally {
     accessLoads.length = 0;
+    await page.close();
+  }
+}, 60_000);
+
+/** Tabs forward until the focus stands on `target` (at most `limit` presses), as a person with a keyboard does. */
+const tabTo = async (page: Page, target: Locator, limit = 60) => {
+  for (let press = 0; press < limit; press++) {
+    await page.keyboard.press("Tab");
+    if (await target.evaluate((element) => element === document.activeElement)) return;
+  }
+  throw new Error("The target was not reached with Tab");
+};
+
+/** Moves through an open menu with the arrow key until `name` has the focus (a menu has few items). */
+const arrowTo = async (page: Page, name: string) => {
+  for (let press = 0; press < 6; press++) {
+    if ((await page.evaluate(() => document.activeElement?.textContent?.trim())) === name) return;
+    await page.keyboard.press("ArrowDown");
+  }
+  throw new Error(`${name} not reached with the arrow key`);
+};
+
+// The row menu of earlier versions held Berechtigungen and Löschen; both stay one menu away in the open notebook.
+for (const width of [1440, 390]) {
+  test(`${width}: every deed of a notebook is reachable by keyboard alone: open it, then its menu`, async () => {
+    const page = await open("/admin/notebooks", width);
+    try {
+      await tabTo(page, page.getByRole("link", { name: /^Handbuch Lager/ }).filter({ visible: true }));
+      await page.keyboard.press("Enter");
+      await page.waitForURL((url) => url.searchParams.get("open") === "nb0000");
+      await page.locator('[data-k2-part="Pane"][data-detail]').waitFor();
+      await tabTo(page, page.getByRole("button", { name: "Aktionen für Handbuch Lager" }).filter({ visible: true }));
+      await page.keyboard.press("Enter");
+      const menu = page.getByRole("menu").filter({ visible: true });
+      await menu.waitFor();
+      expect(await menu.getByRole("menuitem").allTextContents()).toEqual(["Berechtigungen", "Löschen"]);
+      // Berechtigungen by keys: the access dialog opens
+
+      await arrowTo(page, "Berechtigungen");
+      await page.keyboard.press("Enter");
+      await page.getByRole("dialog").filter({ hasText: "Handbuch Lager" }).waitFor();
+      await page.keyboard.press("Escape");
+      // Löschen by keys: the question comes, and nothing is deleted before it is answered
+      await tabTo(page, page.getByRole("button", { name: "Aktionen für Handbuch Lager" }).filter({ visible: true }));
+      await page.keyboard.press("Enter");
+      await menu.waitFor();
+      await arrowTo(page, "Löschen");
+      await page.keyboard.press("Enter");
+      await page.getByRole("alertdialog").waitFor();
+      expect(deletes).toEqual([]);
+      await page.keyboard.press("Escape");
+    } finally {
+      deletes.length = 0;
+      accessLoads.length = 0;
+      await page.close();
+    }
+  }, 60_000);
+}
+
+test("an open notebook the reader holds no grant on shows its figures and no note titles", async () => {
+  const page = await open("/admin/notebooks?open=nb0000&history=hidden");
+  try {
+    const history = page.locator('[data-k2-part="Pane"][data-detail]').getByRole("region", { name: "Verlauf" });
+    expect(await history.getByText("Den Verlauf sehen nur Mitglieder dieses Notizbuchs", { exact: false }).isVisible()).toBe(true);
+    expect(await history.locator('[data-k2-part="Digest"]').count()).toBe(0);
+    expect(await page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Cells.Cell"]').count()).toBe(3);
+  } finally {
     await page.close();
   }
 }, 60_000);

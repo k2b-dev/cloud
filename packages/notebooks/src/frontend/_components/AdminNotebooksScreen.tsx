@@ -66,6 +66,8 @@ export type AdminNotebookDetail = {
   /** Who has access and how, up to the first 50; `accessTotal` says how many there are in all. */
   access: { principal: AdminNotebookPrincipal; permission: string }[];
   accessTotal: number;
+  /** The viewer may read the history: it names notes, so it needs their own access to the notebook. */
+  historyVisible: boolean;
   /** Who changed it in the last 30 days, most changes first. */
   writers: (AdminNotebookPrincipal & { changes: number; lastAt: string })[];
   /** What happened last, newest first. */
@@ -446,7 +448,10 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
                 </Show>
               </Section>
               <Section icon="history" title={t().history}>
-                <Show when={detail().history.length > 0} fallback={<Text muted>{t().noHistory}</Text>}>
+                <Show
+                  when={detail().history.length > 0}
+                  fallback={<Text muted>{detail().historyVisible ? t().noHistory : t().historyMembersOnly}</Text>}
+                >
                   <Digest
                     label={t().history}
                     activity={detail().history.map((entry) => ({

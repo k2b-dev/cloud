@@ -135,7 +135,8 @@ const worstSummary = {
 };
 
 /** What the server sends for the open notebook (`?open=`): its access, who writes in it and its history. */
-const detailOf = (row: Fixture | undefined): AdminNotebookDetail | undefined => {
+/** `historyVisible: false`: the reader holds no grant on the notebook, so its history (which names notes) stays out. */
+const detailOf = (row: Fixture | undefined, historyVisible = true): AdminNotebookDetail | undefined => {
   if (!row) return undefined;
   const index = Number(row.shortId.slice(2));
   const people = principals.filter((principal) => principal.kind === "user");
@@ -165,9 +166,11 @@ const detailOf = (row: Fixture | undefined): AdminNotebookDetail | undefined => 
     changesPerDay: row.changesPerDay,
     access,
     accessTotal: row.permissionCount,
+    historyVisible,
     writers,
-    history:
-      writers.length > 1
+    history: !historyVisible
+      ? []
+      : writers.length > 1
         ? [
             ["note.edited", 0, 2],
             ["comment.created", 1, 5],
@@ -222,7 +225,11 @@ if (root) {
           pages={data === "worst" ? 129 : params.get("pages") === "2" ? 2 : 1}
           search={params.get("search") ?? ""}
           summary={data === "worst" ? worstSummary : summaryOf(shown)}
-          detail={detailOf(shown.find((row) => row.shortId === params.get("open")))}
+          // `?history=hidden`: the reader holds no grant on the open notebook
+          detail={detailOf(
+            shown.find((row) => row.shortId === params.get("open")),
+            params.get("history") !== "hidden",
+          )}
           dateConfig={{ timeZone: "Europe/Berlin", locale, firstDayOfWeek: 1 }}
           now={now}
         />

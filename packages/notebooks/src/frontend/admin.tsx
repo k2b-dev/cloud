@@ -12,19 +12,27 @@ const DETAIL_ACCESS = 50;
 const DETAIL_HISTORY = 8;
 
 type Window = { timeZone: string; now: Date };
+/** Who reads the page: their access subject, as every permission-aware read of Notebooks takes it. */
+type Viewer = { userId: string | null; serviceAccountId: string | null };
 
 /** The open notebook (`?open=<short id>`) with what its detail shows; none when the address names no notebook. */
-const loadDetail = async (shortId: string | undefined, window: Window): Promise<AdminNotebookDetail | undefined> => {
+const loadDetail = async (shortId: string | undefined, window: Window, viewer: Viewer): Promise<AdminNotebookDetail | undefined> => {
   if (!shortId) return undefined;
   const notebook = await notebooksService.notebook.getByShortId({ shortId });
   if (!notebook) return undefined;
-  const [[activity], writers, access, history] = await Promise.all([
+  // The history names notes, so it is read through the viewer's own access to this notebook, like every reader of
+  // Notebooks: the permission the notebook's grants give them (`getNotebookPermission`) and the history visible to them
+  // (`activity.list`). The administration's role adds none; without a grant the detail shows figures, no note titles.
+  const [[activity], writers, access, permission] = await Promise.all([
     notebooksService.notebook.admin.activity({ notebookIds: [notebook.id], ...window }),
     notebooksService.notebook.admin.writers({ notebookId: notebook.id, ...window }),
     notebooksService.notebook.access.list({ notebookId: notebook.id, pagination: { page: 1, perPage: DETAIL_ACCESS } }),
-    // the administration reads every notebook's history, as it manages every notebook's access
-    notebooksService.activity.list({ bypassAccess: true, notebookId: notebook.id, limit: DETAIL_HISTORY }),
+    notebooksService.notebook.permission.get({ notebookId: notebook.id, ...viewer }),
   ]);
+  const historyVisible = permission !== "none";
+  const history = historyVisible
+    ? await notebooksService.activity.list({ ...viewer, notebookId: notebook.id, limit: DETAIL_HISTORY })
+    : { items: [] };
   return {
     shortId: notebook.shortId,
     name: notebook.name,
@@ -51,6 +59,7 @@ const loadDetail = async (shortId: string | undefined, window: Window): Promise<
       permission: entry.permission,
     })),
     accessTotal: access.total,
+    historyVisible,
     writers,
     history: history.items.map((event) => ({
       id: event.id,
@@ -75,6 +84,7 @@ export default ssr<AuthContext>(async (c) => {
   // one moment and one time zone for the activity's days and for the relative times, so the server's page and the
   // browser's agree
   const window: Window = { timeZone: getTimeZone(c), now: new Date() };
+  const accessSubject = c.get("accessSubject");
 
   // List + summary in parallel — summary is a single SQL aggregation across the
   // full filtered set, NOT just the visible page.
@@ -84,7 +94,10 @@ export default ssr<AuthContext>(async (c) => {
       filter: { query: search || undefined },
     }),
     notebooksService.notebook.admin.summary({ filter: { query: search || undefined }, ...window }),
-    loadDetail(c.req.query("open"), window),
+    loadDetail(c.req.query("open"), window, {
+      userId: accessSubject.type === "user" ? accessSubject.userId : null,
+      serviceAccountId: accessSubject.type === "service_account" ? accessSubject.serviceAccountId : null,
+    }),
   ]);
   // the page's notebooks: their size, their last change and the first who have access, in one statement
   const activity = new Map(
