@@ -250,6 +250,10 @@ export class FilesRoot {
       recursive: args[1] ?? false,
     });
   }
+  /** Counts below a path; reads only, as `stat`. */
+  recursiveStats(...args: Parameters<RootClient["recursiveStats"]>) {
+    return this.#client.recursiveStats(...args);
+  }
   // Maintenance only: these rebuild derived metadata, without changing user data.
   refreshStats(...args: Parameters<RootClient["refreshStats"]>) {
     return this.#client.refreshStats(...args);

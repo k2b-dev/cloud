@@ -1,8 +1,8 @@
-import { useLocale } from "@k2b/ui";
-import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
+import { formatFileViewSize, useLocale } from "@k2b/ui";
+import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Table, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
-import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
+import type { BaseSummary, BasesResult, MarkedEntry, StorageFacts } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
@@ -10,9 +10,9 @@ import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
-import { formatWhen, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
+import { actorOf, formatWhen, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
-import { ActivityLineRow } from "./history-v2";
+import { ActivityLineRow, personOf } from "./history-v2";
 import { useFilesMessages } from "./messages";
 import { activityUrl, filesUrl } from "./urls";
 
@@ -35,6 +35,8 @@ export default function OverviewPane(props: {
   favorites: { items: readonly MarkedEntry[]; more: boolean } | null;
   /** This person's last changes and opened files; `null` when they could not be read. */
   recent: RecentByYou | null;
+  /** Who changed each storage last, what it holds and how many belong to it; a part that failed is null. */
+  facts: StorageFacts;
   env: HistoryEnvironment;
   onNavigate: OnNavigate;
   onRetry: () => void;
@@ -44,6 +46,32 @@ export default function OverviewPane(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const labels = createMemo(() => props.bases.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) })));
+  // each fact by its storage; a storage without one shows "—" in that cell
+  const byBase = <T extends { baseId: string }>(items: readonly T[] | null) => new Map((items ?? []).map((item) => [item.baseId, item]));
+  const changes = createMemo(() => byBase(props.facts.changes));
+  const usage = createMemo(() => byBase(props.facts.usage));
+  const members = createMemo(() => byBase(props.facts.members));
+  const kind = (base: BaseSummary) => {
+    if (base.kind === "users") return b().onlyYou;
+    const count = members().get(base.id)?.members;
+    return count === undefined ? "—" : b().v2GroupMembers(count);
+  };
+  const used = (base: BaseSummary) => {
+    const value = usage().get(base.id);
+    if (!value) return "—";
+    const size = formatFileViewSize(value.bytes, locale());
+    // a count that stopped at its limit is a lower bound
+    return value.complete ? size : `≥ ${size}`;
+  };
+  const lastBy = (base: BaseSummary) => {
+    const change = changes().get(base.id);
+    // the table names who changed what the storage holds: any such change reads as a person's, never a visitor's link
+    return change ? actorOf({ actor: change.actor, via: change.via, action: "file.edit" }, h(), props.env) : null;
+  };
+  const lastWhen = (base: BaseSummary) => {
+    const change = changes().get(base.id);
+    return change ? formatWhen(change.time, locale(), h(), props.env) : "—";
+  };
   // runs this page opened; opening is presentation only, so a reload starts closed
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
   const toggle = (key: string) =>
@@ -88,23 +116,50 @@ export default function OverviewPane(props: {
             {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
           </Notice>
         ))}
-        {/* The storages, compact: the page's job (below 970 px the sidebar is a drawer). One line each with its kind;
-            a storage that is not there says so. The dense table with usage, people and last change follows with its data. */}
+        {/* The storages as a table (Valentin 26.11.: dense, not the sidebar again): what each is, who belongs to it,
+            what it holds and who changed it last. On the phone each is a row of two lines. A storage that is not
+            there says so with its chip. */}
         <Section icon="folders" color={FILES_COLOR} title={t().storage} count={props.bases.length}>
-          <List
+          <Table
             label={b().allStorage}
-            items={props.bases}
+            rows={props.bases}
             rowKey={(base) => base.id}
-            row={(base) => (
-              <Row
-                mark={storageMark(base)}
-                lines={[baseLabel(base, b(), locale())]}
-                meta={base.kind === "users" ? b().onlyYou : t().group}
-                href={filesUrl(base.id)}
-                onNavigate={props.onNavigate}
-                end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
-              />
-            )}
+            open={(base) => ({ href: filesUrl(base.id), onNavigate: props.onNavigate })}
+            phone={(base) => ({
+              // the facts it has; a fact that is missing is left out, not shown as a dash in the middle of a line
+              lines: [baseLabel(base, b(), locale()), [kind(base), used(base)].filter((fact) => fact !== "—").join(" · ") || "—"],
+              mark: storageMark(base),
+              time: changes().get(base.id) ? lastWhen(base) : undefined,
+              marks: base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined,
+            })}
+            columns={[
+              {
+                title: t().storage,
+                mark: (base) => storageMark(base),
+                cell: (base) => baseLabel(base, b(), locale()),
+              },
+              {
+                // who belongs to it; one that is not there says so here, in a column with room for its chip
+                title: b().v2People,
+                width: { min: 130, default: 160 },
+                drop: true,
+                cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : kind(base)),
+              },
+              { title: b().v2Used, width: { min: 90, default: 100 }, align: "end", drop: true, cell: (base) => used(base) },
+              {
+                title: b().v2LastChange,
+                width: { min: 200, default: 260 },
+                drop: true,
+                avatar: (base) => {
+                  const actor = lastBy(base);
+                  return actor ? personOf(actor) : undefined;
+                },
+                cell: (base) => {
+                  const actor = lastBy(base);
+                  return actor ? `${actor.person?.name ?? actor.label} · ${lastWhen(base)}` : lastWhen(base);
+                },
+              },
+            ]}
           />
         </Section>
         <Section

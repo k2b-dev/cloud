@@ -1,7 +1,17 @@
 import { query } from "@k2b/stdlib/solid";
 import { batch, createEffect, createSignal, onCleanup } from "solid-js";
 import type { ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
-import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry, MarkedEntry, SharePage, TrashEntry } from "../contracts";
+import type {
+  BasesResult,
+  DirectoryResult,
+  EditorLaunch,
+  EntryResult,
+  FileEntry,
+  MarkedEntry,
+  SharePage,
+  StorageFacts,
+  TrashEntry,
+} from "../contracts";
 import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
@@ -43,6 +53,8 @@ export type WorkspaceSnapshot = {
   favoritesPreview?: { items: MarkedEntry[]; more: boolean } | null;
   /** This person's last changes and opened files for the overview; null when they could not be read. */
   recentByYou?: { page: ActivityPage; opened: MarkedEntry[] } | null;
+  /** The storage table's facts for the overview; each part is null when it could not be read, and its cells say "—". */
+  storageFacts?: StorageFacts;
   /** One-time hints the server decided to show to this person. */
   hints?: { recentMoved?: boolean; selectionPill?: boolean };
   /** Instant this snapshot was built; history dates count "today" and ranges from it on server and client alike. */

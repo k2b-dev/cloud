@@ -150,6 +150,11 @@ const api = new Hono<AuthContext>()
   .get("/recent", middleware.openapi({ summary: "Recently opened entries of the user", ...requiresAuth }), async (c) =>
     respond(c, ok(await filesService.recent(requestCall(c)))),
   )
+  .get(
+    "/storage-facts",
+    middleware.openapi({ summary: "Who changed each storage of the user last, what it holds and how many belong to it", ...requiresAuth }),
+    async (c) => respond(c, ok(await filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }))),
+  )
   .get("/favorites", middleware.openapi({ summary: "Favorite entries of the user", ...requiresAuth }), async (c) =>
     respond(c, ok(await filesService.favorites(requestCall(c)))),
   )

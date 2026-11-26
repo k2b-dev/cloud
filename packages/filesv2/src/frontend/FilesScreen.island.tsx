@@ -77,6 +77,7 @@ import {
   loadFavorites,
   loadRecent,
   loadRecovery,
+  loadStorageFacts,
   moveActivityBack,
   recheckActivity,
   resolveTarget,
@@ -198,7 +199,7 @@ export default function FilesScreen(props: {
         return { ...base, shares: response.ok ? await response.json() : null };
       }
       if (view === "overview") {
-        const [favorites, recent] = await Promise.all([
+        const [favorites, recent, facts] = await Promise.all([
           loadFavorites(signal, b().favoritesFailed)
             .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
             .catch(() => null),
@@ -208,8 +209,12 @@ export default function FilesScreen(props: {
           ])
             .then(([page, opened]) => ({ page, opened }))
             .catch(() => null),
+          loadStorageFacts(signal, b().loadFailed).catch((error: unknown) => {
+            if (signal.aborted) throw error;
+            return { changes: null, usage: null, members: null };
+          }),
         ]);
-        return { ...base, favoritesPreview: favorites, recentByYou: recent };
+        return { ...base, favoritesPreview: favorites, recentByYou: recent, storageFacts: facts };
       }
       if (view === "edit") {
         if (selected?.status !== "existing") return base;
@@ -1124,6 +1129,7 @@ export default function FilesScreen(props: {
             issues={snapshot().bases.issues}
             favorites={snapshot().favoritesPreview ?? null}
             recent={snapshot().recentByYou ?? null}
+            facts={snapshot().storageFacts ?? { changes: null, usage: null, members: null }}
             env={history().env}
             onNavigate={onNavigate}
             onRetry={() => void go(snapshot().source, true)}

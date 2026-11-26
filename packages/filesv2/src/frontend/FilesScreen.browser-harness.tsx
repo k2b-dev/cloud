@@ -19,6 +19,7 @@ import {
   fixtureSearch,
   fixtureShares,
   fixtureSnapshot,
+  fixtureStorageFacts,
   fixtureStorages,
   fixtureTrash,
 } from "./files-screen.fixture";
@@ -59,6 +60,7 @@ if (view === "favorites") snapshot.marks = fixtureFavorites;
 if (view === "shares") snapshot.shares = fixtureShares(fixture);
 if (view === "overview") {
   snapshot.bases = { ...snapshot.bases, items: fixtureStorages(fixture) };
+  snapshot.storageFacts = fixtureStorageFacts(fixture, snapshot.bases.items);
   if (fixture === "worst") snapshot.bases.issues = [{ area: "freeipa", code: "unavailable" }];
   snapshot.favoritesPreview = fixture === "empty" ? { items: [], more: false } : { items: fixtureFavorites, more: false };
   snapshot.recentByYou =

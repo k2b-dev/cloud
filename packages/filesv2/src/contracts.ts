@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { StorageLastChange } from "./activity-contracts";
 import { DOCUMENT_FORMATS, DOCUMENT_KINDS, type DocumentFormat } from "./documents";
 import type { MachineOwner } from "./machine-contracts";
 
@@ -56,6 +57,18 @@ export type BaseSummary = {
   /** The root offers Filegate stable IDs (`index` and `managed`); entries then carry stable refs. */
   stableIds?: boolean;
 };
+/**
+ * What a storage holds, for the storage table: its bytes as Filegate counts them under the storage's path. A count that
+ * stopped at the scan limit is `complete: false`, a lower bound. Storages that could not be counted are left out.
+ */
+export type StorageUsage = { baseId: string; bytes: number; complete: boolean };
+/** How many people belong to a group storage; counted only for the storages the reader belongs to. */
+export type StorageMembers = { baseId: string; members: number };
+/**
+ * What the storage table shows beside each storage's name. Each part is read alone and is null when it failed, so its
+ * cells say "—" and the rest stands.
+ */
+export type StorageFacts = { changes: StorageLastChange[] | null; usage: StorageUsage[] | null; members: StorageMembers[] | null };
 export type FileEntry = {
   revision?: string;
   /** Stable `filesv2.entry` ref (`n:<baseId>:<fileId>`) that survives rename and move; absent where only path refs exist. */

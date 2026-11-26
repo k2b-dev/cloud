@@ -21,6 +21,7 @@ import {
   MovementChainInput,
   type ShareAccessCounts,
   ShareAccessInput,
+  type StorageLastChange,
 } from "../activity-contracts";
 import { type ActivityCandidate, type ActivityPosition, activityReaderData, type CandidateInput } from "../data/activity-reader";
 import type { Binding, bindings } from "../data/bases";
@@ -587,6 +588,29 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           scanLimitReached,
           searchLimitReached,
         });
+      });
+    },
+    /**
+     * Who changed each of the reader's storages last, and when: a column of the storage table. One statement for
+     * all of them (`latestChanges`), then one read of the people's names. Without history it is empty.
+     */
+    async storageChanges(call: ActivityReadCall): Promise<StorageLastChange[]> {
+      return withActivityReadBudget(call.requestAbort, async (budget) => {
+        const current = await context(call, budget, { endpoint: "storageChanges" });
+        if (!current.historyAvailable) return [];
+        const rows = await budget.run(() =>
+          data.latestChanges({ serverUrl: current.scope.serverUrl, bindingIds: current.scope.bindingIds }, budget),
+        );
+        const items = rows.map(
+          (row): StorageLastChange => ({
+            baseId: publicId(row),
+            time: new Date(row.effective_time).toISOString(),
+            actor: { kind: row.actor_kind, userId: row.actor_user_id, name: null },
+            via: row.via,
+          }),
+        );
+        await names(items, budget);
+        return current.finish(items);
       });
     },
     async shareAccess(call: ActivityReadCall, rawInput: ShareAccessInput): Promise<ShareAccessCounts> {

@@ -139,6 +139,8 @@ export const ActivityBatchContextSchema = z
   })
   .strict();
 export type ActivityBatchContext = z.infer<typeof ActivityBatchContextSchema>;
+/** Who changed a storage's content last, and when, as its members see it; nothing of the item. */
+export type StorageLastChange = { baseId: string; time: string; actor: ActivityEntry["actor"]; via: string };
 export type ActivityChain = {
   sourceId: string;
   hops: { activityId: string; time: string; actor: ActivityEntry["actor"]; via: string; before: ActivitySide; after: ActivitySide }[];

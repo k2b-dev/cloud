@@ -23,6 +23,8 @@ import {
   fixtureSearch,
   fixtureShareAccess,
   fixtureShares,
+  fixtureStorageFacts,
+  fixtureStorages,
   fixtureTrash,
   fixtureVersions,
 } from "./files-screen.fixture";
@@ -223,6 +225,7 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     }
     if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixtureTrash });
     if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
+    if (url.pathname === `${api}/storage-facts`) return route.fulfill({ json: fixtureStorageFacts(fixture, fixtureStorages(fixture)) });
     // An item's own history stays empty; Activity answers with the day of the fixture.
     if (url.pathname === `${api}/activity`)
       // "me" is answered as the server answers it: the person's own changes only.
@@ -716,8 +719,12 @@ describe("the views beside the folders on v2", () => {
 
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
-      // the storages, compact: the page's job, also where the sidebar is a drawer
-      await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
+      // the storages as a table, its facts read in place as on the server: who changed each last, what it holds
+      const storageRows = tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])");
+      await storageRows.first().waitFor();
+      await tab.waitForFunction(() =>
+        document.querySelector("table[aria-label='Alle Ablagen'] tbody")?.textContent?.includes("Mira Sommer"),
+      );
       await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
       // beside the storages, the viewer's own last changes in the row design of Activity, under their day
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
@@ -933,10 +940,9 @@ describe("the views beside the folders on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
     try {
       const ready = performance.now() - started;
-      // the storages are one list that keeps only its rows in view; it says how many it holds
-      const storages = tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]");
-      expect(await storages.first().getAttribute("aria-setsize")).toBe("201");
-      expect(await storages.count()).toBeLessThan(80);
+      // the storages are one table that keeps only its rows in view; it says how many it holds
+      expect(await tab.locator("table[aria-label='Alle Ablagen']").getAttribute("aria-rowcount")).toBe("202");
+      expect(await tab.locator("table[aria-label='Alle Ablagen'] tbody tr:not([data-spacer])").count()).toBeLessThan(80);
       console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
       await expectClean(tab);
       expect(ready).toBeLessThan(5000);

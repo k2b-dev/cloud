@@ -248,6 +248,19 @@ describe("Filesv2 progressive navigation", () => {
             bases,
             favoritesPreview: null,
             recentByYou: null,
+            // the home has all three facts; the group only its people, so its other cells say "—"
+            storageFacts: {
+              changes: [
+                {
+                  baseId: "home",
+                  time: "2026-10-20T10:30:00.000Z",
+                  actor: { kind: "user", userId: "u-bob", name: "Bob Berger" },
+                  via: "web",
+                },
+              ],
+              usage: [{ baseId: "home", bytes: 1_250_000, complete: false }],
+              members: [{ baseId: "ipa", members: 6 }],
+            },
             now: "2026-10-20T12:30:00.000Z",
           },
         }),
@@ -260,9 +273,16 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     // The server read every part: nothing asks for itself after the first picture.
     expect(apiRequests).toHaveLength(0);
-    // the storages, compact, on the page itself (the sidebar is a drawer on narrow screens)
-    const cards = () => dom.root.querySelectorAll('[data-k2-part="List"][aria-label="All storage"] [data-k2-part="Row"]');
+    // the storages as a table: what each is, who belongs to it, what it holds, who changed it last
+    const cards = () => [...dom.root.querySelectorAll<HTMLElement>('table[aria-label="All storage"] tbody tr:not([data-spacer])')];
     expect(cards()).toHaveLength(2);
+    const cells = (row: HTMLElement) => [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim());
+    const home = cells(cards()[0]!);
+    // a count that stopped at its limit is a lower bound; the last change leads with the person's avatar
+    expect(home.slice(1, 3)).toEqual(["Only you", "≥ 1.2 MB"]);
+    expect(home[3]).toEndWith("Bob Berger · today, 10:30 AM");
+    expect(cards()[0]!.querySelector('[data-k2-part="Avatar"]')).not.toBeNull();
+    expect(cells(cards()[1]!).slice(1)).toEqual(["6 people", "—", "—"]);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
     expect(failed()).toHaveLength(2);
     failed()[0]!.querySelector<HTMLButtonElement>("button")!.click();

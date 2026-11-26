@@ -1,5 +1,5 @@
 import type { ActivityEntry, ActivityPage, ActivitySide, ShareAccessCounts } from "../activity-contracts";
-import type { BaseSummary, FileEntry, FileVersion, MarkdownLaunch, MarkedEntry, SharePage, ShareView } from "../contracts";
+import type { BaseSummary, FileEntry, FileVersion, MarkdownLaunch, MarkedEntry, SharePage, ShareView, StorageFacts } from "../contracts";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 // Invented folders for the v2 folder screen's browser test and design review: a fixed "now", no real people or files.
@@ -426,6 +426,38 @@ export function fixtureStorages(fixture: FixtureCase): BaseSummary[] {
     })),
     { ...fixtureBase, id: "gone", name: "Archiv 2019", status: "missing" as const, reason: "missing" },
   ];
+}
+
+/**
+ * The storage table's facts for these storages: who changed each last (hours apart), what it holds, how many belong to
+ * a group. The worst case leaves facts out ("—"), counts one storage only in part ("≥") and names nobody for one change.
+ */
+export function fixtureStorageFacts(fixture: FixtureCase, storages: readonly BaseSummary[]): StorageFacts {
+  const shown = storages.filter((base) => base.status === "existing");
+  const hours = (index: number) => new Date(Date.parse(FIXTURE_NOW) - (index * 7 + 1) * 3_600_000).toISOString();
+  return {
+    changes: shown.flatMap((base, index) =>
+      fixture === "worst" && index % 4 === 3
+        ? []
+        : [
+            {
+              baseId: base.id,
+              time: hours(index),
+              actor:
+                fixture === "worst" && index === 1
+                  ? { kind: "user" as const, userId: null, name: null }
+                  : { kind: "user" as const, ...PEOPLE[index % PEOPLE.length]! },
+              via: "web",
+            },
+          ],
+    ),
+    usage: shown.flatMap((base, index) =>
+      fixture === "worst" && index % 3 === 2
+        ? []
+        : [{ baseId: base.id, bytes: 1_250_000 * (index + 1) ** 3, complete: !(fixture === "worst" && index === 1) }],
+    ),
+    members: shown.filter((base) => base.kind === "groups").map((base, index) => ({ baseId: base.id, members: ((index * 5) % 23) + 2 })),
+  };
 }
 
 /** All storage: the favorites, and what this person did last. */

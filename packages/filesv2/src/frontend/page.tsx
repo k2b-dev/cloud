@@ -133,7 +133,7 @@ export default ssr<AuthContext>(async (c) => {
       initial.trash = await filesService.trash(requestCall(c), { baseId: selected.id }).catch(() => null);
     else if (overview)
       // The overview's three parts are in the first picture, so nothing loads or moves after it; each fails alone.
-      [initial.favoritesPreview, initial.recentByYou] = await Promise.all([
+      [initial.favoritesPreview, initial.recentByYou, initial.storageFacts] = await Promise.all([
         filesService
           .favorites(requestCall(c), { limit: FAVORITES_PREVIEW + 1 })
           .then((items) => ({ items: items.slice(0, FAVORITES_PREVIEW), more: items.length > FAVORITES_PREVIEW }))
@@ -144,6 +144,8 @@ export default ssr<AuthContext>(async (c) => {
         ])
           .then(([page, opened]) => ({ page, opened }))
           .catch(() => null),
+        // the storage table: each fact alone, so one that fails leaves only its cells empty
+        filesService.storageFacts({ ...requestCall(c), requestAbort: c.req.raw.signal }),
       ]);
     else if (editView && selected?.status === "existing")
       initial.editor = await filesService.editor(requestCall(c), { baseId: selected.id, path: requestedFile! });

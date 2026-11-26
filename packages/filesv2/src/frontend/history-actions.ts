@@ -155,10 +155,12 @@ export type ActorView = {
   icon: string | null;
 };
 
-const assistantVia = (entry: ActivityEntry) => entry.via === "agent" || entry.execution?.origin === "assistant";
-const appId = (entry: ActivityEntry) => (entry.via.startsWith("app:") ? entry.via.slice(4) : (entry.execution?.callingApp ?? null));
+/** What names who acted: a change's actor, its channel and run, and its action (a visitor's word depends on it). */
+export type ActorFacts = Pick<ActivityEntry, "actor" | "via" | "action" | "execution">;
+const assistantVia = (entry: ActorFacts) => entry.via === "agent" || entry.execution?.origin === "assistant";
+const appId = (entry: ActorFacts) => (entry.via.startsWith("app:") ? entry.via.slice(4) : (entry.execution?.callingApp ?? null));
 
-export function actorOf(entry: ActivityEntry, t: HistoryMessages, env: HistoryEnvironment): ActorView {
+export function actorOf(entry: ActorFacts, t: HistoryMessages, env: HistoryEnvironment): ActorView {
   if (entry.actor.kind === "observed") return { kind: "observed", label: t.noCloudEntry, person: null, agent: null, icon: "ti ti-server" };
   if (entry.actor.kind === "system") return { kind: "system", label: t.filesSystem, person: null, agent: null, icon: "ti ti-settings" };
   if (entry.actor.kind === "visitor") {

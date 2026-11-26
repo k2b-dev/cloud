@@ -31,6 +31,13 @@ export async function loadRecent(signal: AbortSignal, fallback: string) {
   return response.json();
 }
 
+/** The storage table's facts; each part the server could not read is null. */
+export async function loadStorageFacts(signal: AbortSignal, fallback: string) {
+  const response = await apiClient["storage-facts"].$get({}, { init: { signal } });
+  if (!response.ok) return apiFailure(response, fallback);
+  return response.json();
+}
+
 /** This person's favorites, each resolved against current access on the server. */
 export async function loadFavorites(signal: AbortSignal, fallback: string) {
   const response = await apiClient.favorites.$get({}, { init: { signal } });

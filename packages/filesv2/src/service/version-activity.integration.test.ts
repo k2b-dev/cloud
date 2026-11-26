@@ -291,6 +291,17 @@ suite("version activity with real Filegate", () => {
     }
   });
 
+  test("the storage table counts what a storage holds below its path, and leaves out a storage it cannot count", async () => {
+    await root().mkdir(`${home}/usage`, { ownership: { dirMode: "0700" } });
+    await root().put(`${home}/usage/a.pdf`, new Blob(["x".repeat(300)]));
+    await root().put(`${home}/usage/b.txt`, new Blob(["x".repeat(50)]));
+    const own = (await service.storageUsage(testCall(actor))).find((usage) => usage.baseId === baseId());
+    expect(own?.complete).toBe(true);
+    expect(own?.bytes).toBeGreaterThanOrEqual(350);
+    // the other person has no folder yet: no count, no failure of the table
+    expect((await service.storageUsage(testCall(administrator))).map((usage) => usage.baseId)).toEqual([]);
+  });
+
   test.each([...operations])("%s records one confirmed service action with the original caller and saved version", async (operation) => {
     const file = await fixture(`confirmed-${operation}`);
     const call = callFor(operation);

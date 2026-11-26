@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { sql } from "@k2b/cloud";
+import { redis, sql } from "@k2b/cloud";
 import { type CloudResourceReaderView, DISCUSSION_PAGE_LIMIT } from "@k2b/cloud/contracts";
 import { type Principal, type RequestActor, resolveDisplayNames } from "@k2b/cloud/server";
 import {
@@ -48,6 +48,9 @@ import type {
   SearchHit,
   SearchQuery,
   SearchResult,
+  StorageFacts,
+  StorageMembers,
+  StorageUsage,
   UploadLease,
   UploadSession,
 } from "../contracts";
@@ -134,6 +137,16 @@ type Candidate = NewBinding & { name: string; storage?: Binding; owner?: Machine
 type Inspection = { summary: BaseSummary; candidate: Candidate; binding: Binding | null };
 const PAGE_SIZE = 50;
 const maintenanceLog = logger("filesv2:maintenance");
+const usageLog = logger("filesv2:usage");
+/** A storage's count walks at most as far as a search without an index does. */
+const USAGE_SCAN_LIMIT = 10_000;
+/** One page asks Filegate for at most this many counts at once. */
+const USAGE_CONCURRENCY = 4;
+/** A count stays this long in Valkey, so the storage table reads fast again; changes show after it. */
+const USAGE_TTL_SECONDS = 300;
+/** The platform counts at most this many groups per call. */
+const MEMBER_COUNT_BATCH = 50;
+const UsageCacheSchema = z.object({ bytes: z.number().nonnegative(), complete: z.boolean() });
 /** Covers a tab left open overnight; every WOPI call re-checks permissions, the token only names user and file. */
 const EDITOR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Collabora hands over whole documents; Cloud holds one in memory while forwarding it to Filegate. */
@@ -1715,8 +1728,95 @@ export function createFilesService(
       if (config.unreadable) throw new FilesError("configuration_unreadable", 503);
       await recoverActivity({ activityId, config, connect: deps.connect, signal: call.requestAbort });
     },
-  });
+  }); /**
+   * What each of the reader's Cloud storages holds, for the storage table. Filegate counts below the storage's path
+   * (from its index where it has one) at most `USAGE_SCAN_LIMIT` entries, `USAGE_CONCURRENCY` storages at a time;
+   * Valkey keeps a count for `USAGE_TTL_SECONDS`. A storage that cannot be counted is left out, and its cell says
+   * "—". Linux storages are left out too: their count would include what the reader's Unix rights do not show.
+   */
+  async function storageUsage(call: UserFilesCall, signal?: AbortSignal): Promise<StorageUsage[]> {
+    const state = await context(call.actor);
+    if (state.config.unreadable || !state.config.cloud.enabled) return [];
+    const items = state.candidates.filter(
+      (item) => item.area === "cloud" && !(item.kind === "groups" && state.personalGroupIds.has(item.identity_id)),
+    );
+    const root = deps.connect(state.config, signal).root(state.config.cloud.root);
+    const counted: StorageUsage[] = [];
+    let next = 0;
+    const count = async () => {
+      while (next < items.length) {
+        signal?.throwIfAborted();
+        const item = items[next++]!;
+        const baseId = `${item.area}:${item.kind}:${item.identity_id}`;
+        const key = `filesv2:usage:${createHash("sha256")
+          .update(JSON.stringify([state.config.url, item.root, item.path]))
+          .digest("hex")}`;
+        // the cache only saves a walk: when Valkey fails, Filegate counts
+        const cached = await redis
+          .get(key)
+          .then((value) => (value ? UsageCacheSchema.parse(JSON.parse(value)) : null))
+          .catch(() => null);
+        if (cached) {
+          counted.push({ baseId, ...cached });
+          continue;
+        }
+        try {
+          const stats = await root.recursiveStats(item.path, USAGE_SCAN_LIMIT, signal);
+          const value = { bytes: stats.bytes, complete: stats.complete };
+          counted.push({ baseId, ...value });
+          await redis.send("SET", [key, JSON.stringify(value), "EX", String(USAGE_TTL_SECONDS)]).catch(() => undefined);
+        } catch (error) {
+          if (signal?.aborted) throw error;
+          usageLog.warn("Storage usage could not be counted", { baseId, error });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(USAGE_CONCURRENCY, items.length) }, count));
+    return counted;
+  }
+  /**
+   * How many people belong to each of the reader's group storages, for the storage table: counts only, from the
+   * platform, which counts a group only for its own members. In batches of the platform's limit.
+   */
+  async function storageMembers(call: UserFilesCall): Promise<StorageMembers[]> {
+    const state = await context(call.actor);
+    if (state.machine) return [];
+    const groups = state.candidates.filter((item) => item.kind === "groups" && !state.personalGroupIds.has(item.identity_id));
+    const counted: { baseId: string; members: number }[] = [];
+    for (let start = 0; start < groups.length; start += MEMBER_COUNT_BATCH) {
+      const batch = groups.slice(start, start + MEMBER_COUNT_BATCH);
+      const counts = new Map(
+        (
+          await deps.identities.groupMemberCounts(
+            call.actor,
+            batch.map((item) => item.identity_id),
+          )
+        ).map((row) => [row.groupId, row.members]),
+      );
+      for (const item of batch) {
+        const members = counts.get(item.identity_id);
+        if (members !== undefined) counted.push({ baseId: `${item.area}:${item.kind}:${item.identity_id}`, members });
+      }
+    }
+    return counted;
+  }
+
   return {
+    storageUsage,
+    storageMembers,
+    /**
+     * The storage table's facts: who changed each storage last, what it holds, how many belong to it. Each part is
+     * read alone and is null when it failed, so one that fails leaves only its own cells empty.
+     */
+    async storageFacts(call: UserFilesCall & { requestAbort?: AbortSignal }): Promise<StorageFacts> {
+      const [changes, usage, members] = await Promise.all([
+        activityReader.storageChanges(call).catch(() => null),
+        storageUsage(call, call.requestAbort).catch(() => null),
+        storageMembers(call).catch(() => null),
+      ]);
+      call.requestAbort?.throwIfAborted();
+      return { changes, usage, members };
+    },
     ...lifecycle,
     /** Private history-reader hook: authorize the current item before comparing any stored endpoint. */
     async observeActivityContact(call: ActivityReadCall, id: string, signal?: AbortSignal): Promise<void> {

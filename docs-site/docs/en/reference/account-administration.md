@@ -41,6 +41,7 @@ their route policies, credential scopes and resource permissions.
 | --- | --- |
 | `self(actor)` | Current user and `{ localLinuxEnabled, freeipaEnabled }` availability |
 | `groups(actor, { after? })` | A page of the caller's effective groups, including nested membership |
+| `groupMemberCounts(actor, groupIds)` | `[{ groupId, members }]` for at most 50 groups: people in each group, members of nested groups of the same provider counted once. Only groups the caller belongs to are counted; any other group is left out. Counts only, no names. More than 50 IDs fail with `too_many_groups` |
 | `inventory(actor, { kind, provider, after?, id?, name? })` | Administrator-only page of known users or groups |
 
 Users contain `{ id, provider, username, profile, posix }`. `posix` is either

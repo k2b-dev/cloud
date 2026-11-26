@@ -53,6 +53,34 @@ export type ActivityCandidate = {
   observed_after: unknown;
 };
 export type ActivityPosition = { time: string; id: string };
+/** A storage's newest content change: the binding, when, and who; nothing of the item. */
+export type LatestChangeRow = {
+  binding_id: string;
+  area: Binding["area"];
+  kind: Binding["kind"];
+  identity_id: string;
+  effective_time: string;
+  actor_kind: ActivityEntry["actor"]["kind"];
+  actor_user_id: string | null;
+  via: string;
+};
+/** Changes to what a storage holds; reads, shares, comments and checks are no change of its content. */
+const CONTENT_ACTIONS: readonly HistoryAction[] = [
+  "folder.create",
+  "file.create",
+  "file.upload",
+  "file.overwrite",
+  "file.edit",
+  "item.rename",
+  "item.move",
+  "item.copy",
+  "item.trash",
+  "item.restore",
+  "item.purge",
+  "version.restore",
+  "version.restore_copy",
+];
+
 export type CandidateInput = {
   scope: { admin: boolean; userId: string; bindingIds: string[]; serverUrl: string };
   baseId?: string;
@@ -254,6 +282,42 @@ export const activityReaderData = {
       WHERE activity.id=${id}::uuid`;
     const rows = await readQuery(query, budget);
     return rows[0] ?? null;
+  },
+  /**
+   * The newest finished change to the content of each given storage, as its members see it: who and when, nothing
+   * of the item. One statement for all storages; each walks its base's effective-time index and stops at the first
+   * row inside the storage's own path, the same Cloud grant boundary `candidates` applies to a side. The rows are
+   * bounded by the bindings asked for, which are the reader's own.
+   */
+  async latestChanges(input: { serverUrl: string; bindingIds: string[] }, budget?: ActivityReadBudget): Promise<LatestChangeRow[]> {
+    if (!input.bindingIds.length) return [];
+    budget?.check();
+    const actions = toPgTextArray([...CONTENT_ACTIONS]);
+    const ids = toPgUuidArray(input.bindingIds);
+    const query = sql<
+      LatestChangeRow[]
+    >`SELECT b.id AS binding_id,b.area,b.kind,b.identity_id,latest.effective_time,latest.actor_kind,latest.actor_user_id,latest.via
+      FROM filesv2.bases b
+      CROSS JOIN LATERAL (
+        SELECT sides.effective_time,sides.actor_kind,sides.actor_user_id,sides.via FROM (
+          (SELECT a.id,coalesce(a.finished_at,a.started_at) AS effective,coalesce(a.finished_at,a.started_at)::text AS effective_time,
+            a.actor_kind,a.actor_user_id,a.via
+          FROM filesv2.activity a
+          WHERE a.base_id=b.id AND a.server_url=${input.serverUrl} AND a.state='done' AND a.action=ANY(${actions}::text[])
+            AND ((a.root=b.root AND (a.path_before=b.path OR starts_with(a.path_before,b.path || '/')))
+              OR (a.base_after_id IS NULL AND coalesce(a.root_after,a.root)=b.root
+                AND (a.path_after=b.path OR starts_with(a.path_after,b.path || '/'))))
+          ORDER BY coalesce(a.finished_at,a.started_at) DESC,a.id DESC LIMIT 1)
+          UNION ALL
+          (SELECT a.id,coalesce(a.finished_at,a.started_at),coalesce(a.finished_at,a.started_at)::text,a.actor_kind,a.actor_user_id,a.via
+          FROM filesv2.activity a
+          WHERE a.base_after_id=b.id AND a.server_url=${input.serverUrl} AND a.state='done' AND a.action=ANY(${actions}::text[])
+            AND coalesce(a.root_after,a.root)=b.root AND (a.path_after=b.path OR starts_with(a.path_after,b.path || '/'))
+          ORDER BY coalesce(a.finished_at,a.started_at) DESC,a.id DESC LIMIT 1)
+        ) sides ORDER BY sides.effective DESC,sides.id DESC LIMIT 1
+      ) latest
+      WHERE b.id=ANY(${ids}::uuid[]) AND b.area='cloud' AND b.lifecycle='active'`;
+    return readQuery(query, budget);
   },
   /** One statement keeps totals and networks on the same snapshot during concurrent rollup.
    * The internal clock is deliberately separate from the transport input. */
