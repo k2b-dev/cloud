@@ -5,6 +5,7 @@ import { cookies } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
 import { Calendar, type CalendarEvent, Chart, useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
   Canvas,
@@ -62,7 +63,7 @@ import {
 } from "../schedule-url";
 import { CalendarSubscriptionDialog, PublicLinkDialog } from "./LinkDialogs";
 import { useVenueWords } from "./messages";
-import ShiftDetailPane from "./ShiftDetailPane";
+import ShiftDetailPane, { slotChip } from "./ShiftDetailPane";
 import SignupDialog from "./SignupDialog";
 import { iconName } from "./VenueOverviewScreen";
 import { venueNav, venueSettingsHref } from "./venue-nav";
@@ -83,6 +84,18 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
     load: (source, { abortSignal }) => loadVenueDashboard(source, abortSignal, t().refreshFailed),
   });
   const dashboard = () => dashboardQuery.data() ?? props.dashboard;
+  // a sign-up of mine and the planned shift it belongs to, with the others who work it
+  const slotOf = (shift: ShiftAssignment) =>
+    shift.templateId
+      ? dashboard().slots.find((slot) => slot.template.id === shift.templateId && slot.startsAt === shift.startsAt)
+      : undefined;
+  const coworkers = (slot: UpcomingSlot) => slot.assignments.filter((person) => person.userId !== props.userId);
+  const STATE_HEX: Record<string, string> = { zinc: "#52525b", emerald: "#059669", amber: "#d97706", red: "#dc2626", blue: "#2563eb" };
+  const mineMark = (shift: ShiftAssignment) => {
+    const slot = slotOf(shift);
+    if (!slot) return { icon: "clock-plus", color: "var(--k2-muted)" };
+    return { icon: "calendar-event", color: STATE_HEX[slotState(slot, t()).color] ?? "#2563eb" };
+  };
   const venue = () => dashboard().venue;
   const view = (): VenueView => props.initialView;
   const calendarView = (): VenueCalendarView => props.initialCalendarView;
@@ -305,7 +318,8 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
           view() === "shifts" ? (
             gapsMenu()
           ) : view() === "my-shifts" ? (
-            <Button icon="calendar-share" onClick={() => setSubscribing(true)}>
+            // the subscription has no other place, so it stays in the head on the phone too
+            <Button icon="calendar-share" keep onClick={() => setSubscribing(true)}>
               {t().subscribeCalendar}
             </Button>
           ) : view() === "feedback" ? (
@@ -427,7 +441,28 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
                 <For each={dashboard().myUpcomingShifts}>
                   {(shift) => (
                     <Row
-                      mark={{ icon: shift.templateId ? "calendar-event" : "clock-plus", color: venue().accentColor }}
+                      // the mark carries the shift's staffing in its colour, the chip says it, the faces show who works along
+                      mark={mineMark(shift)}
+                      marks={
+                        <Show when={slotOf(shift)}>
+                          {(slot) => (
+                            <Inline>
+                              <Show when={coworkers(slot()).length > 0}>
+                                <Avatar.Stack
+                                  people={coworkers(slot()).map((person) => ({ name: person.userDisplayName }))}
+                                  max={4}
+                                  label={words().withPeople({
+                                    names: coworkers(slot())
+                                      .map((person) => person.userDisplayName)
+                                      .join(", "),
+                                  })}
+                                />
+                              </Show>
+                              {slotChip(slot(), t())}
+                            </Inline>
+                          )}
+                        </Show>
+                      }
                       lines={
                         shift.note
                           ? [assignmentTitle(shift), formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale()), shift.note]

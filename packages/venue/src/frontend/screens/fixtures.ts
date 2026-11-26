@@ -220,25 +220,21 @@ const brunch = slotOf(
   ],
 );
 
-/** Two of the viewer's shifts next week, beyond the calendar's week. */
-const nextWeek = [
-  person(
-    "Asg011",
-    "user-1",
-    "Robin Example",
-    { startsAt: "2026-12-01T10:00:00.000Z", endsAt: "2026-12-01T13:00:00.000Z" },
-    "Temp01",
-    "Mittagstheke",
-  ),
-  person(
-    "Asg012",
-    "user-1",
-    "Robin Example",
-    { startsAt: "2026-12-04T07:00:00.000Z", endsAt: "2026-12-04T10:00:00.000Z" },
-    "Temp04",
-    "Frühstück",
-  ),
-];
+/** Two shifts next week, beyond the calendar's week, that the viewer took: the lunch still lacks one, breakfast is covered. */
+const nextLunch = slotOf("2026-12-01", lunch.template, { startsAt: "2026-12-01T10:00:00.000Z", endsAt: "2026-12-01T13:00:00.000Z" }, [
+  ["Asg011", "user-1", "Robin Example"],
+  ["Asg013", "user-3", "Sam Beispiel"],
+]);
+const nextBreakfast = slotOf(
+  "2026-12-04",
+  breakfast.template,
+  { startsAt: "2026-12-04T07:00:00.000Z", endsAt: "2026-12-04T10:00:00.000Z" },
+  [
+    ["Asg012", "user-1", "Robin Example"],
+    ["Asg014", "user-6", "Lea Sommer"],
+  ],
+);
+const nextWeek = [nextLunch.assignments[0]!, nextBreakfast.assignments[0]!];
 
 /** The opening hours: Monday to Thursday 8–16, Friday 8–14, Saturday 9–13. */
 const HOURS: Record<number, [string, string]> = {
@@ -277,7 +273,7 @@ export const fixtureDashboard = (patch: Partial<VenueDashboard> = {}): VenueDash
   openingRules,
   overrides: [],
   templates: [lunch.template, evening.template, stocktaking.template, breakfast.template, brunch.template],
-  slots: [stocktaking, lunch, evening, breakfast, brunch],
+  slots: [stocktaking, lunch, evening, breakfast, brunch, nextLunch, nextBreakfast],
   otherAssignments: [],
   outlook: {
     startDate: "2026-11-25",
