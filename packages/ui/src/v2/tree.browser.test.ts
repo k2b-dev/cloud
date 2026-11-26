@@ -488,12 +488,38 @@ test("table tree: a focused row that a refetch moves keeps the focus", async () 
   });
 });
 
-test("server markup: a place's '…' is out of the tab order and hidden from screen readers before the page is live", () => {
+test("server markup: a place's '…' is for the pointer only; the place names Shift+F10 and its row opens the deeds on a long press", () => {
   const nav = markup.slice(markup.indexOf('role="tree"'), markup.indexOf('role="treegrid"'));
   const triggers = [...nav.matchAll(/<span class="k2-nt-menu"[^>]*><button([^>]*)>/g)].map((match) => match[1] ?? "");
   expect(triggers.length).toBeGreaterThan(0);
   for (const trigger of triggers) {
     expect(trigger).toContain('tabindex="-1"');
+    // a tree owns only its items; the "…" is the pointer's shortcut
     expect(trigger).toContain('aria-hidden="true"');
   }
+  expect(nav).toMatch(/<div[^>]*aria-keyshortcuts="Shift\+F10"[^>]*role="treeitem"/);
+});
+
+test("table tree: a refetch never takes back the focus a person moved elsewhere in the same moment", async () => {
+  await withPage(async (page) => {
+    await row(page, "Notiz.txt").focus();
+    await page.evaluate(() => {
+      window.__reverse?.();
+      // in the same pass the person goes to the search or a panel outside the table
+      document.querySelector<HTMLElement>('.k2-nav a[href="#zuletzt"]')?.focus();
+    });
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("href"))).toBe("#zuletzt");
+  });
+});
+
+test("nav tree: a place's row opens its deeds on a long press (a phone, also with VoiceOver, has no Shift+F10)", async () => {
+  await withPage(async (page) => {
+    // core's long press binding marks the area with its delay in every engine
+    expect(
+      await place(page, "Projekte")
+        .locator(":scope > .k2-nt-row")
+        .evaluate((row) => (row as HTMLElement).style.getPropertyValue("--hold-delay")),
+    ).toBe("500ms");
+  });
 });

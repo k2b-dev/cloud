@@ -698,7 +698,7 @@ export const Table = <T,>(props: TableProps<T>) => {
     props.tree?.onExpandedChange?.(next);
     if (kept !== undefined)
       requestAnimationFrame(() => {
-        if (!body?.contains(document.activeElement)) focusRow(kept);
+        if (focusLost()) focusRow(kept);
       });
   };
   const [busy, setBusy] = createSignal<readonly string[]>([]);
@@ -851,6 +851,8 @@ export const Table = <T,>(props: TableProps<T>) => {
   // each row asks whether it is the stop; a move of the stop updates two rows, not all of them
   const isTabStop = createSelector(tabStop);
   let body: HTMLTableSectionElement | undefined;
+  // The focus a moved row lost goes to the page itself; a focus anywhere else is where the person went meanwhile.
+  const focusLost = () => document.activeElement === null || document.activeElement === document.body;
   // the element of each row of the tree, by its key
   const rowElements = new Map<string, HTMLElement>();
   const rowRef = (rowKey: string) => (element: HTMLElement) => {
@@ -872,7 +874,7 @@ export const Table = <T,>(props: TableProps<T>) => {
         const kept = body?.contains(document.activeElement) ? focused() : undefined;
         if (kept === undefined) return;
         requestAnimationFrame(() => {
-          if (!body?.contains(document.activeElement)) focusRow(kept);
+          if (focusLost()) focusRow(kept);
         });
       },
       { defer: true },
