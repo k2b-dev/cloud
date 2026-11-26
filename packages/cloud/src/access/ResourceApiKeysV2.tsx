@@ -26,14 +26,12 @@ type Grantable = ResourceApiKeyPermissionOption["value"];
 type Expiry = "30" | "90" | "365" | "never" | "date";
 
 const inDays = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
-/** A typed date ("27.11.2026" or "2026-11-27") as the end of that day in the reader's zone, or `null` if it is none. */
-const typedDate = (text: string): string | null => {
-  const value = text.trim();
-  const match = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/.exec(value) ?? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+/** A picked day (a date key such as "2027-12-31") as the end of that day here, or `null` when it is none or past. */
+const endOfDay = (key: string): string | null => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(key);
   if (!match) return null;
-  const [year, month, day] = value.includes(".") ? [match[3], match[2], match[1]] : [match[1], match[2], match[3]];
-  const date = new Date(Number(year), Number(month) - 1, Number(day), 23, 59, 59);
-  return Number.isNaN(date.getTime()) || date.getDate() !== Number(day) || date.getTime() < Date.now() ? null : date.toISOString();
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 23, 59, 59);
+  return Number.isNaN(date.getTime()) || date.getTime() < Date.now() ? null : date.toISOString();
 };
 
 /**
@@ -80,7 +78,7 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
     setCreating(true);
   };
   const expiresAt = (): string | null | undefined =>
-    expiry() === "never" ? null : expiry() === "date" ? (typedDate(date()) ?? undefined) : inDays(Number(expiry()));
+    expiry() === "never" ? null : expiry() === "date" ? (endOfDay(date()) ?? undefined) : inDays(Number(expiry()));
   const create = async () => {
     if (busy()) return;
     const trimmed = name().trim();
@@ -218,7 +216,6 @@ export function ResourceApiKeysV2(props: ResourceApiKeysProps) {
           />
         </Field>
         <Show when={expiry() === "date"}>
-          {/* k2b-ui gap: the v2 DateInput has no calendar yet; the date is typed. */}
           <Field label={t().expiryDate} name="key-expiry-date" error={dateError()}>
             <DateInput
               value={date()}
