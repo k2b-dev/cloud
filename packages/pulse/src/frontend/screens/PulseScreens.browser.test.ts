@@ -142,7 +142,8 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
     method: request.method(),
     path: url.pathname,
     body: request.postData() ? JSON.parse(request.postData()!) : null,
-    query: url.searchParams,
+    // only a request with a query string carries it, so writes compare as before
+    ...(url.search ? { query: url.searchParams } : {}),
   };
   calls.push(call);
   const special = override?.(call);
@@ -322,12 +323,12 @@ describe("Pulse on v2", () => {
   test("on the phone a tap on a source opens it as the page, with its name, the way back and its edit button", async () => {
     const { context, tab, errors } = await open(phone, `/app/pulse/${baseId}`);
     try {
-      // a tap on the row, as a finger opens it
-      await tab.locator('[data-k2-part="Table"]').getByText("Drucker Halle 2").tap();
+      // a tap on the row, as a finger opens it: the phone shows the rows as a list, the row on screen takes the tap
+      await tab.locator('a.k2-row-open[href$="/sources/s7Ee8Ff9"]:visible').first().tap();
       await tab.waitForURL(`${origin}/app/pulse/${baseId}/sources/s7Ee8Ff9`);
       await settled(tab);
       await shoot(tab, "source-open-390");
-      expect(await tab.getByText("Drucker Halle 2", { exact: true }).first().isVisible()).toBe(true);
+      expect(await tab.locator(':text-is("Drucker Halle 2"):visible').count()).toBeGreaterThan(0);
       const back = tab.getByRole("link", { name: "Quellen" }).first();
       expect(await back.isVisible()).toBe(true);
       expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
