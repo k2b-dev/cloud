@@ -647,20 +647,46 @@ test("lookup: Arrow up from the second entry goes to the first, and from the fir
 
 // ── Delta review of #4136 (a400358): each test failed before its fix ───────────────────────────────────────────
 
-test("daylight saving: an unchanged bound keeps its instant, a time that does not exist is refused", async () => {
+/**
+ * Opens the calendar of "Von" (0) or "Bis" (1) of the open editor with the keys of a submenu. Keys, not clicks: in
+ * WebKit each pointer action right after a popover opened or closed waits up to 1.7 s for Playwright's stable check.
+ */
+const openBound = async (page: Page, index: number) => {
+  await page.locator(".k2-fpop .k2-fed-bounds .k2-mi").nth(index).focus();
+  await page.keyboard.press("ArrowRight");
+  await page.locator(".k2-dpop").waitFor();
+};
+
+test("daylight saving: both bounds applied unchanged keep their instants, also a wall time that comes twice", async () => {
   // 00:30Z is 02:30 summer time in Berlin; 02:30 comes twice that night. 03:00Z is 04:00 winter time.
   const seen = "seen=2026-10-25T00:30Z..2026-10-25T03:00Z";
   await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
     await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
-    const fields = page.locator(".k2-fpop .k2-fed-field input");
-    await fields.nth(1).press("Enter");
-    await page.waitForTimeout(100);
-    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
-    // 02:30 on 29 March does not exist in Berlin: the clocks jump from 02:00 to 03:00
-    await fields.first().fill("2026-03-29T02:30");
-    await fields.first().press("Enter");
-    await page.getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
-    expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    expect(await page.locator(".k2-fpop .k2-fed-bounds .k2-mi").allTextContents()).toEqual(["Von25.10., 02:30", "Bis25.10., 04:00"]);
+    const cascade = page.locator(".k2-dpop");
+    const time = cascade.getByRole("textbox", { name: "Uhrzeit" });
+    for (const index of [1, 0]) {
+      await openBound(page, index);
+      expect(await time.inputValue()).toBe(index === 0 ? "02:30" : "04:00");
+      await time.press("Enter");
+      await cascade.waitFor({ state: "detached" });
+      expect(new URL(page.url()).searchParams.get("seen")).toBe("2026-10-25T00:30Z..2026-10-25T03:00Z");
+    }
+  });
+});
+
+test("daylight saving: a wall time the clocks jump over is refused at its calendar", async () => {
+  // 00:30Z is 01:30 winter time in Berlin on 29 March 2026; at 02:00 the clocks jump to 03:00, so 02:30 does not exist
+  const seen = "seen=2026-03-29T00:30Z..2026-03-29T03:00Z";
+  await withPage(`${seen}&_tz=Europe/Berlin`, async (page) => {
+    await page.getByRole("button", { name: /^Filter Gesehen .* bearbeiten$/ }).click();
+    await openBound(page, 0);
+    const time = page.locator(".k2-dpop").getByRole("textbox", { name: "Uhrzeit" });
+    expect(await time.inputValue()).toBe("01:30");
+    await time.fill("02:30");
+    await time.press("Enter");
+    await page.locator(".k2-dpop").getByText("Diese Uhrzeit gibt es an diesem Tag nicht (Zeitumstellung).").waitFor();
+    expect(new URL(page.url()).searchParams.get("seen")).toBe(seen.slice(5));
   });
 });
 
