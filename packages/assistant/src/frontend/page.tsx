@@ -274,7 +274,7 @@ export default ssr<AuthContext>(async (c) => {
       </PanelLayout>
     );
   return () => (
-    <Layout c={c} fullPage title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
+    <Layout c={c} fullPage ui="v2" title={[{ title: t.start, href: "/" }, { title: t.assistant }]}>
       {workspace()}
     </Layout>
   );

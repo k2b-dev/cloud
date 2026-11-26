@@ -69,6 +69,7 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
+import { useToast as useToastV2 } from "@k2b/ui/v2";
 import {
   batch,
   createEffect,
@@ -116,6 +117,7 @@ import { openAssistantCloudReference, resolveAssistantCloudResource } from "./As
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
+import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import AssistantProjectView from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
 import type { AssistantQueueHost } from "./AssistantQueueConnected";
@@ -198,6 +200,9 @@ import { placeMessages } from "./place-messages";
 import { quotaText } from "./quota-messages";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
+import AssistantFrameV2 from "./v2/AssistantFrameV2";
+import { createAssistantChatDeeds } from "./v2/assistant-chat-deeds";
+import { assistantV2Messages } from "./v2/assistant-v2-messages";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
 import type { AssistantWakeupLineText } from "./wakeup-line";
 import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
@@ -3369,356 +3374,461 @@ export default function AssistantWorkspace(props: Props) {
     </div>
   );
 
-  return (
-    <AssistantLiveProvider value={liveHub}>
-      <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
-        <AssistantSidebar
-          basePath={basePath}
-          conversations={conversations}
+  // The parts of the page, shared by the v1 frame of the panel and the v2 frame of the page.
+  const PanelTop = () => (
+    <>
+      <Show when={props.embedded && !mainView()}>
+        <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
+        <AssistantCodeBlock
+          initial={props.initialCodeBlock}
           timeZone={props.timeZone}
-          renderedAt={props.renderedAt}
-          doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
-          activeConversationId={chat.activeConversationId}
-          activeView={mainView() ?? "chat"}
-          projects={projects()}
-          activeProjectId={activeProject()?.id ?? null}
-          creatingConversation={() => newConversation.loading() || composerPicking() > 0}
-          onNewConversation={() => void createAndFocusConversation()}
-          onCreateProject={async () => {
+          chatOpen={Boolean(chat.activeConversationId() || activeProject())}
+          disabled={panelAttachDisabled()}
+          revision={codeRevision()}
+          onEdit={async (ref) => {
+            // Gustav works on a place's Code with that place in the message; the chat's tools find its Code.
+            await attachPanelResource(ref, () => true);
+            focusComposer();
+          }}
+        />
+        <Show when={showsAttachPlace()}>
+          <AssistantPanelContext
+            initial={props.initialPanelContext ?? null}
+            disabled={panelAttachDisabled()}
+            attach={attachPanelResource}
+          />
+        </Show>
+      </Show>
+    </>
+  );
+  const MainContent = () => (
+    <>
+      <PanelTop />
+      <Show
+        when={!mainView()}
+        fallback={
+          <>
+            <Show
+              when={codeOpen()}
+              fallback={
+                <AssistantApprovalsView
+                  initial={approvalsRendered() ? props.approvals.page : undefined}
+                  questions={() => waiting().entries}
+                  questionsPage={openQuestions}
+                  onJump={(question) => void jumpToQuestion(question)}
+                  initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
+                  timeZone={props.timeZone}
+                />
+              }
+            >
+              <Show
+                when={codeRendered() && props.code?.detail}
+                fallback={
+                  <AssistantCodeView
+                    userId={props.userId}
+                    timeZone={props.timeZone}
+                    initial={codeRendered() ? props.code?.page : undefined}
+                    onCreateInChat={createFromCodeView}
+                  />
+                }
+              >
+                {(detail) => <AssistantCodeDetail data={detail()} />}
+              </Show>
+            </Show>
+            <Show when={props.embedded}>
+              <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
+                <PanelRow />
+              </div>
+            </Show>
+          </>
+        }
+      >
+        <Show
+          keyed
+          when={projectView()}
+          fallback={
+            <Chat class="assistant-chat-shell min-h-0 flex-1">
+              <div class="assistant-chat-layout" data-tabs={artifactWorkspace.state().tabs.length > 0 ? "open" : undefined}>
+                <div class="contents">
+                  <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
+                    <Show
+                      when={emptyChat()}
+                      fallback={
+                        <AiChatActionsProvider
+                          actions={{
+                            renderWakeupLine: (line, key) => <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />,
+                            renderTurnErrorAction: (error) =>
+                              props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
+                            onQuote: addQuote,
+                            renderCodeAuthoringStop: (state, continuable, superseded) => (
+                              <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+                            ),
+                            renderCodeDecision: (entry) => (
+                              <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                            ),
+                            renderSecretRequest: (request) => (
+                              <SecretRequestEntry
+                                {...request}
+                                conversationId={chat.activeConversationId}
+                                timeZone={props.timeZone}
+                                titles={secretTitles}
+                              />
+                            ),
+                            renderCodeVersion: (version) => (
+                              <AssistantCodeVersionCard
+                                store={codeVersionCards}
+                                {...version}
+                                timeZone={props.timeZone}
+                                onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                onAsk={askGustav}
+                              />
+                            ),
+                            actionDisabled: () => chat.runStatus() === "stopping",
+                            onCheckAction: (request) => chat.checkAction(request),
+                            onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
+                            onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
+                            onShowQuestion: (anchor) => {
+                              const conversationId = chat.activeConversationId();
+                              if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                            },
+                            onApproval: async (request, input) => {
+                              if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
+                            },
+                            onRevokeWebsite: async (origin) => {
+                              const conversationId = chat.activeConversationId();
+                              if (conversationId) await revokeChatWebsite(conversationId, origin);
+                            },
+                            onFrontendToolResult: async (request, result) => {
+                              if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
+                            },
+                            onForkMessage: async (entry, input) => {
+                              const conversation = await chat.forkMessage(entry.id, input);
+                              if (!conversation) throw new Error(t().forkFailed);
+                              if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
+                            },
+                            onRetryMessage: async (entry, input) => {
+                              const retried = await chat.retryUserMessage(entry.id, {
+                                ...input,
+                                model: selectedModelRequest(),
+                              });
+                              if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
+                            },
+                            onMessageFeedback: async (entry, feedback) => {
+                              const saved = feedback
+                                ? await chat.setMessageFeedback(entry.id, feedback)
+                                : await chat.clearMessageFeedback(entry.id);
+                              if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
+                            },
+                            onContinueTurn: async (message) => {
+                              const target = chat.activeConversationId();
+                              if (!target) throw new Error(t().authoringContinueFailed);
+                              // Sending replaces the saved draft; what the person was writing goes back into it.
+                              const sent = await sendBesideComposer(session(target), {
+                                send: () => send({ message }),
+                                hasContent: () => Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
+                                save: () => saveComposer(target, target),
+                              });
+                              if (!sent) throw new Error(t().authoringContinueFailed);
+                            },
+                            onOpenFile: (path) => void openFiles(path),
+                            onOpenWebLink: (href, title) => {
+                              const open = openWebPage();
+                              if (!open) return false;
+                              open(href, title);
+                              return true;
+                            },
+                            resolveFileLink: (href) => {
+                              const context = workspaceContext();
+                              const conversationId = chat.activeConversationId();
+                              return conversationId && context?.chatId === conversationId
+                                ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
+                                : null;
+                            },
+                            fileUrl: chat.fileContentUrl,
+                            onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
+                          }}
+                        >
+                          <ConversationTimeline />
+                        </AiChatActionsProvider>
+                      }
+                    >
+                      <AssistantEmptyChat
+                        // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
+                        composer={<AssistantComposer />}
+                        notices={<ComposerNotices />}
+                        modelNote={modelNote()}
+                        projects={projects()}
+                        selectedProjectId={emptyProjectId()}
+                        choosingProject={choosingProject()}
+                        onChooseProject={() => void chooseEmptyChatProject()}
+                        onStarter={props.embedded ? undefined : useStarter}
+                        rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
+                        place={
+                          emptyPlace()
+                            ? {
+                                title: emptyPlace()!.title,
+                                appName: emptyPlace()!.app.name,
+                                starters: emptyPlace()!.starters,
+                                onStarter: (starter) => void useStarter({ ...starter, icon: "ti ti-sparkles" }),
+                              }
+                            : null
+                        }
+                      />
+                    </Show>
+                  </section>
+
+                  <Show when={!emptyChat()}>
+                    <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+                      <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
+                        {/* Right above everything over the field, under the thumb on phones. It lies over the
+                            timeline's free end, so it comes and goes without moving the field or the chat. */}
+                        <WaitingRow queue />
+                        <ComposerNotices />
+                        {modelNote()}
+                        <AssistantComposer />
+                        <Show when={props.embedded}>
+                          <PanelRow />
+                        </Show>
+                      </div>
+                    </div>
+                  </Show>
+                </div>
+                <Show when={activeConversation() && !emptyChat()}>
+                  <AssistantChatContextPlaces
+                    chatId={chat.activeConversationId()}
+                    state={contextState}
+                    actions={contextBoxActions()}
+                    project={activeConversationProject()}
+                    title={activeConversation()?.title ?? null}
+                    onSheet={openContextSheet}
+                  />
+                </Show>
+              </div>
+            </Chat>
+          }
+        >
+          {(view) => (
+            <Show when={projects().find((project) => project.id === view.projectId)}>
+              {(project) => (
+                <AssistantProjectView
+                  project={project()}
+                  initialPage={view.page}
+                  initialContext={view.context}
+                  composer={
+                    <div class="flex flex-col gap-2">
+                      <WaitingRow />
+                      {modelNote()}
+                      <AssistantComposer projectId={project().id} projectName={project().name} />
+                      <Show when={props.embedded}>
+                        <PanelRow />
+                      </Show>
+                    </div>
+                  }
+                  onOpenConversation={openAndFocusConversation}
+                />
+              )}
+            </Show>
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  const TabsContent = () => (
+    <Show
+      when={workspaceMounted()}
+      fallback={
+        <div class="flex h-full items-center justify-center">
+          <Placeholder state="loading" title={artifactCopy().loading} />
+        </div>
+      }
+    >
+      <Suspense
+        fallback={
+          <div class="flex h-full items-center justify-center">
+            <Placeholder state="loading" title={artifactCopy().loading} />
+          </div>
+        }
+      >
+        <ChatWorkspace
+          onOpenView={openContextView}
+          project={activeConversationProject()}
+          conversationId={chat.activeConversationId()}
+          controller={artifactWorkspace}
+          userId={props.userId}
+          refreshKey={filesRefreshKey()}
+          onJump={(target) => void jumpTo(target)}
+          onOpenSecrets={openChatSecrets}
+          snapshot={contextState.snapshot}
+          onAsk={askAboutTab}
+          onAdd={() => openContextOverview("files", sidebarCopy().title)}
+          webReader={webReader() === true}
+          arrangeHintSeen={props.arrangeHintSeen === true}
+        />
+      </Suspense>
+    </Show>
+  );
+
+  // The page on v2: the same chat, views and tabs in v2's frame. The panel keeps v1's frame until its layout runs on v2.
+  // k2b-ui gap: PanelLayout has no `ui: "v2"`, so the panel at /app/assistant/panel cannot render v2 primitives yet.
+  const archiveBlocker = (conversation: AiConversation) =>
+    assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null);
+  const PageFrame = () => {
+    const toastV2 = useToastV2();
+    const deeds = createAssistantChatDeeds({
+      basePath,
+      locale,
+      toast: toastV2,
+      live: liveHub,
+      projects,
+      conversations,
+      activeConversationId: chat.activeConversationId,
+      archiveBlocker,
+      queuedMessageCount: (conversation) =>
+        conversation.id === chat.activeConversationId() && !queuedMessages.loading() && !queuedMessages.stale() && !queuedMessages.error()
+          ? queuedMessages.data()?.length
+          : undefined,
+      openConversation: openAndFocusConversation,
+      onUpdated: updateConversation,
+      onArchived: archiveConversation,
+    });
+    // The phone shows the chat or its tabs, one at a time; the server draws the wide page, where both stand.
+    const [phone, setPhone] = createSignal(false);
+    onMount(() => {
+      const query = window.matchMedia("not all and (min-width: 768px)");
+      setPhone(query.matches);
+      const change = () => setPhone(query.matches);
+      query.addEventListener("change", change);
+      onCleanup(() => query.removeEventListener("change", change));
+    });
+    const v2 = () => assistantV2Messages.resolve([locale()]).t;
+    const headPath = () => {
+      if (mainView() === "approvals") return [{ label: t().waitingForYou }];
+      if (mainView() === "code") return [{ label: t().myCode, href: codeHref }];
+      const project = activeProject();
+      if (project) return [{ label: project.name }];
+      const open = activeConversation();
+      if (!open) return [{ label: v2().newChatPage }];
+      const own = projects().find((entry) => entry.id === open.projectId);
+      return [...(own ? [{ label: own.name, href: assistantProjectHref(basePath, own.id) }] : []), { label: open.title }];
+    };
+    return (
+      <AssistantFrameV2
+        nav={{
+          basePath,
+          conversations,
+          doneCount: () => sidebar.data()?.doneCount ?? props.initialDoneCount,
+          timeZone: props.timeZone,
+          renderedAt: props.renderedAt,
+          activeConversationId: chat.activeConversationId,
+          activeView: () => mainView() ?? "chat",
+          activeProjectId: () => activeProject()?.id ?? null,
+          projects,
+          waitingCount: () => waiting().total,
+          hasPersonalCode: () => Boolean(props.code?.has),
+          placeChats: () => sidebar.data()?.placeChats ?? props.initialPlaceChats ?? null,
+          openConversation: openAndFocusConversation,
+          openProject,
+          openApprovals,
+          openCode,
+          createProject: async () => {
             // Loaded when someone creates a project: the form stays out of the workspace bundle.
             const project = await createProjectForm(locale(), (module) => module.openAssistantCreateProjectDialog());
             if (project) navigateTo(assistantProjectHref(basePath, project.id));
-          }}
-          onOpenProject={openProject}
-          onOpenConversation={openAndFocusConversation}
-          archiveBlocker={(conversation) =>
-            assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
-          }
-          queuedMessageCount={(conversation) =>
-            conversation.id === chat.activeConversationId() &&
-            !queuedMessages.loading() &&
-            !queuedMessages.stale() &&
-            !queuedMessages.error()
-              ? queuedMessages.data()?.length
-              : undefined
-          }
-          onConversationUpdated={updateConversation}
-          onConversationArchived={archiveConversation}
-          waitingCount={() => waiting().total}
-          onOpenApprovals={openApprovals}
-          hasPersonalCode={() => Boolean(props.code?.has)}
-          onOpenCode={openCode}
-          live={liveHub}
-          placeChats={() => sidebar.data()?.placeChats ?? null}
-          initialPlacesFilter={props.initialPlacesFilter}
-        />
+          },
+          editConversation: deeds.edit,
+          archiveConversation: deeds.archive,
+          archiveBlocker,
+          openAllChats: deeds.openAll,
+          openPreferences: () => void openAssistantPrefsModal(),
+          onConversationUpdated: updateConversation,
+        }}
+        openChat={() => (mainView() || activeProject() ? null : (activeConversation() ?? null))}
+        path={headPath}
+        newChat={() => ({
+          label: t().newChat,
+          icon: "plus",
+          disabled: newConversation.loading() || composerPicking() > 0,
+          onClick: () => void createAndFocusConversation(),
+        })}
+        main={<MainContent />}
+        tabs={{
+          open: () => artifactWorkspace.state().tabs.length > 0 && (!phone() || artifactWorkspace.mobile() === "workspace"),
+          back: () => ({ label: activeConversation()?.title ?? artifactCopy().chat, onClick: () => artifactWorkspace.setMobile("chat") }),
+          content: <TabsContent />,
+        }}
+      />
+    );
+  };
 
-        <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
-            <AppWorkspace.MainPane
-              id="chat"
-              label={artifactCopy().chat}
-              scroll={false}
-              minSize={360}
-              class="assistant-chat-pane flex min-h-0 flex-col"
-            >
-              <Show when={props.embedded && !mainView()}>
-                <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
-                <AssistantCodeBlock
-                  initial={props.initialCodeBlock}
-                  timeZone={props.timeZone}
-                  chatOpen={Boolean(chat.activeConversationId() || activeProject())}
-                  disabled={panelAttachDisabled()}
-                  revision={codeRevision()}
-                  onEdit={async (ref) => {
-                    // Gustav works on a place's Code with that place in the message; the chat's tools find its Code.
-                    await attachPanelResource(ref, () => true);
-                    focusComposer();
-                  }}
-                />
-                <Show when={showsAttachPlace()}>
-                  <AssistantPanelContext
-                    initial={props.initialPanelContext ?? null}
-                    disabled={panelAttachDisabled()}
-                    attach={attachPanelResource}
-                  />
-                </Show>
-              </Show>
-              <Show
-                when={!mainView()}
-                fallback={
-                  <>
-                    <Show
-                      when={codeOpen()}
-                      fallback={
-                        <AssistantApprovalsView
-                          initial={approvalsRendered() ? props.approvals.page : undefined}
-                          questions={() => waiting().entries}
-                          questionsPage={openQuestions}
-                          onJump={(question) => void jumpToQuestion(question)}
-                          initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
-                          timeZone={props.timeZone}
-                        />
-                      }
-                    >
-                      <Show
-                        when={codeRendered() && props.code?.detail}
-                        fallback={
-                          <AssistantCodeView
-                            userId={props.userId}
-                            timeZone={props.timeZone}
-                            initial={codeRendered() ? props.code?.page : undefined}
-                            onCreateInChat={createFromCodeView}
-                          />
-                        }
-                      >
-                        {(detail) => <AssistantCodeDetail data={detail()} />}
-                      </Show>
-                    </Show>
-                    <Show when={props.embedded}>
-                      <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
-                        <PanelRow />
-                      </div>
-                    </Show>
-                  </>
-                }
+  return (
+    <AssistantLiveProvider value={liveHub}>
+      <Show when={props.embedded} fallback={<PageFrame />}>
+        <AppWorkspace mobileSurface="flush" class="flex-1 min-h-0">
+          <AssistantSidebar
+            basePath={basePath}
+            conversations={conversations}
+            timeZone={props.timeZone}
+            renderedAt={props.renderedAt}
+            doneCount={sidebar.data()?.doneCount ?? props.initialDoneCount}
+            activeConversationId={chat.activeConversationId}
+            activeView={mainView() ?? "chat"}
+            projects={projects()}
+            activeProjectId={activeProject()?.id ?? null}
+            creatingConversation={() => newConversation.loading() || composerPicking() > 0}
+            onNewConversation={() => void createAndFocusConversation()}
+            onCreateProject={async () => {
+              // Loaded when someone creates a project: the form stays out of the workspace bundle.
+              const project = await createProjectForm(locale(), (module) => module.openAssistantCreateProjectDialog());
+              if (project) navigateTo(assistantProjectHref(basePath, project.id));
+            }}
+            onOpenProject={openProject}
+            onOpenConversation={openAndFocusConversation}
+            archiveBlocker={(conversation) =>
+              assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null)
+            }
+            queuedMessageCount={(conversation) =>
+              conversation.id === chat.activeConversationId() &&
+              !queuedMessages.loading() &&
+              !queuedMessages.stale() &&
+              !queuedMessages.error()
+                ? queuedMessages.data()?.length
+                : undefined
+            }
+            onConversationUpdated={updateConversation}
+            onConversationArchived={archiveConversation}
+            waitingCount={() => waiting().total}
+            onOpenApprovals={openApprovals}
+            hasPersonalCode={() => Boolean(props.code?.has)}
+            onOpenCode={openCode}
+            live={liveHub}
+            placeChats={() => sidebar.data()?.placeChats ?? null}
+            initialPlacesFilter={props.initialPlacesFilter}
+          />
+          <AppWorkspace.Content>
+            <AppWorkspace.Main scroll={false} mobilePane={artifactWorkspace.mobile()}>
+              <AppWorkspace.MainPane
+                id="chat"
+                label={artifactCopy().chat}
+                scroll={false}
+                minSize={360}
+                class="assistant-chat-pane flex min-h-0 flex-col"
               >
-                <Show
-                  keyed
-                  when={projectView()}
-                  fallback={
-                    <Chat class="assistant-chat-shell min-h-0 flex-1">
-                      <div class="assistant-chat-layout" data-tabs={artifactWorkspace.state().tabs.length > 0 ? "open" : undefined}>
-                        <div class="contents">
-                          <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
-                            <Show
-                              when={emptyChat()}
-                              fallback={
-                                <AiChatActionsProvider
-                                  actions={{
-                                    renderWakeupLine: (line, key) => (
-                                      <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />
-                                    ),
-                                    renderTurnErrorAction: (error) =>
-                                      props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
-                                    onQuote: addQuote,
-                                    renderCodeAuthoringStop: (state, continuable, superseded) => (
-                                      <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
-                                    ),
-                                    renderCodeDecision: (entry) => (
-                                      <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
-                                    ),
-                                    renderSecretRequest: (request) => (
-                                      <SecretRequestEntry
-                                        {...request}
-                                        conversationId={chat.activeConversationId}
-                                        timeZone={props.timeZone}
-                                        titles={secretTitles}
-                                      />
-                                    ),
-                                    renderCodeVersion: (version) => (
-                                      <AssistantCodeVersionCard
-                                        store={codeVersionCards}
-                                        {...version}
-                                        timeZone={props.timeZone}
-                                        onActivated={() => setCodeRevision((revision) => revision + 1)}
-                                        onAsk={askGustav}
-                                      />
-                                    ),
-                                    actionDisabled: () => chat.runStatus() === "stopping",
-                                    onCheckAction: (request) => chat.checkAction(request),
-                                    onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
-                                    onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
-                                    onShowQuestion: (anchor) => {
-                                      const conversationId = chat.activeConversationId();
-                                      if (conversationId) void jumpToQuestion({ conversationId, anchor });
-                                    },
-                                    onApproval: async (request, input) => {
-                                      if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
-                                    },
-                                    onRevokeWebsite: async (origin) => {
-                                      const conversationId = chat.activeConversationId();
-                                      if (conversationId) await revokeChatWebsite(conversationId, origin);
-                                    },
-                                    onFrontendToolResult: async (request, result) => {
-                                      if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
-                                    },
-                                    onForkMessage: async (entry, input) => {
-                                      const conversation = await chat.forkMessage(entry.id, input);
-                                      if (!conversation) throw new Error(t().forkFailed);
-                                      if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
-                                    },
-                                    onRetryMessage: async (entry, input) => {
-                                      const retried = await chat.retryUserMessage(entry.id, {
-                                        ...input,
-                                        model: selectedModelRequest(),
-                                      });
-                                      if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
-                                    },
-                                    onMessageFeedback: async (entry, feedback) => {
-                                      const saved = feedback
-                                        ? await chat.setMessageFeedback(entry.id, feedback)
-                                        : await chat.clearMessageFeedback(entry.id);
-                                      if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
-                                    },
-                                    onContinueTurn: async (message) => {
-                                      const target = chat.activeConversationId();
-                                      if (!target) throw new Error(t().authoringContinueFailed);
-                                      // Sending replaces the saved draft; what the person was writing goes back into it.
-                                      const sent = await sendBesideComposer(session(target), {
-                                        send: () => send({ message }),
-                                        hasContent: () =>
-                                          Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
-                                        save: () => saveComposer(target, target),
-                                      });
-                                      if (!sent) throw new Error(t().authoringContinueFailed);
-                                    },
-                                    onOpenFile: (path) => void openFiles(path),
-                                    onOpenWebLink: (href, title) => {
-                                      const open = openWebPage();
-                                      if (!open) return false;
-                                      open(href, title);
-                                      return true;
-                                    },
-                                    resolveFileLink: (href) => {
-                                      const context = workspaceContext();
-                                      const conversationId = chat.activeConversationId();
-                                      return conversationId && context?.chatId === conversationId
-                                        ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
-                                        : null;
-                                    },
-                                    fileUrl: chat.fileContentUrl,
-                                    onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
-                                  }}
-                                >
-                                  <ConversationTimeline />
-                                </AiChatActionsProvider>
-                              }
-                            >
-                              <AssistantEmptyChat
-                                // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
-                                composer={<AssistantComposer />}
-                                notices={<ComposerNotices />}
-                                modelNote={modelNote()}
-                                projects={projects()}
-                                selectedProjectId={emptyProjectId()}
-                                choosingProject={choosingProject()}
-                                onChooseProject={() => void chooseEmptyChatProject()}
-                                onStarter={props.embedded ? undefined : useStarter}
-                                rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
-                                place={
-                                  emptyPlace()
-                                    ? {
-                                        title: emptyPlace()!.title,
-                                        appName: emptyPlace()!.app.name,
-                                        starters: emptyPlace()!.starters,
-                                        onStarter: (starter) => void useStarter({ ...starter, icon: "ti ti-sparkles" }),
-                                      }
-                                    : null
-                                }
-                              />
-                            </Show>
-                          </section>
-
-                          <Show when={!emptyChat()}>
-                            <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
-                              <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
-                                {/* Right above everything over the field, under the thumb on phones. It lies over the
-                                    timeline's free end, so it comes and goes without moving the field or the chat. */}
-                                <WaitingRow queue />
-                                <ComposerNotices />
-                                {modelNote()}
-                                <AssistantComposer />
-                                <Show when={props.embedded}>
-                                  <PanelRow />
-                                </Show>
-                              </div>
-                            </div>
-                          </Show>
-                        </div>
-                        <Show when={activeConversation() && !emptyChat()}>
-                          <AssistantChatContextPlaces
-                            chatId={chat.activeConversationId()}
-                            state={contextState}
-                            actions={contextBoxActions()}
-                            project={activeConversationProject()}
-                            title={activeConversation()?.title ?? null}
-                            onSheet={openContextSheet}
-                          />
-                        </Show>
-                      </div>
-                    </Chat>
-                  }
-                >
-                  {(view) => (
-                    <Show when={projects().find((project) => project.id === view.projectId)}>
-                      {(project) => (
-                        <AssistantProjectView
-                          project={project()}
-                          initialPage={view.page}
-                          initialContext={view.context}
-                          composer={
-                            <div class="flex flex-col gap-2">
-                              <WaitingRow />
-                              {modelNote()}
-                              <AssistantComposer projectId={project().id} projectName={project().name} />
-                              <Show when={props.embedded}>
-                                <PanelRow />
-                              </Show>
-                            </div>
-                          }
-                          onOpenConversation={openAndFocusConversation}
-                        />
-                      )}
-                    </Show>
-                  )}
-                </Show>
-              </Show>
-            </AppWorkspace.MainPane>
-            <AppWorkspace.MainPane
-              id="workspace"
-              label={artifactCopy().workspace}
-              open={artifactWorkspace.state().tabs.length > 0}
-              defaultSize={680}
-              minSize={320}
-              scroll={false}
-            >
-              <Show
-                when={workspaceMounted()}
-                fallback={
-                  <div class="flex h-full items-center justify-center">
-                    <Placeholder state="loading" title={artifactCopy().loading} />
-                  </div>
-                }
+                <MainContent />
+              </AppWorkspace.MainPane>
+              <AppWorkspace.MainPane
+                id="workspace"
+                label={artifactCopy().workspace}
+                open={artifactWorkspace.state().tabs.length > 0}
+                defaultSize={680}
+                minSize={320}
+                scroll={false}
               >
-                <Suspense
-                  fallback={
-                    <div class="flex h-full items-center justify-center">
-                      <Placeholder state="loading" title={artifactCopy().loading} />
-                    </div>
-                  }
-                >
-                  <ChatWorkspace
-                    onOpenView={openContextView}
-                    project={activeConversationProject()}
-                    conversationId={chat.activeConversationId()}
-                    controller={artifactWorkspace}
-                    userId={props.userId}
-                    refreshKey={filesRefreshKey()}
-                    onJump={(target) => void jumpTo(target)}
-                    onOpenSecrets={openChatSecrets}
-                    snapshot={contextState.snapshot}
-                    onAsk={askAboutTab}
-                    onAdd={() => openContextOverview("files", sidebarCopy().title)}
-                    webReader={webReader() === true}
-                    arrangeHintSeen={props.arrangeHintSeen === true}
-                  />
-                </Suspense>
-              </Show>
-            </AppWorkspace.MainPane>
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
+                <TabsContent />
+              </AppWorkspace.MainPane>
+            </AppWorkspace.Main>
+          </AppWorkspace.Content>
+        </AppWorkspace>
+      </Show>
     </AssistantLiveProvider>
   );
 }
