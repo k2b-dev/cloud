@@ -4079,6 +4079,30 @@
   gap: 12px;
   padding: 0 12px 8px;
 }
+/* The verb of a field with several ("enthält", "ist leer"): one select under the head, on the text edge. */
+.k2-ui .k2-fed-verb {
+  display: flex;
+  padding: 0 12px 8px;
+}
+.k2-ui .k2-fed-verb > .k2-input[data-select] {
+  flex: 1;
+  min-width: 0;
+}
+/* One day or minute of a verb ("vor", "nach"): the calendar right in the editor. */
+.k2-ui .k2-fed-pick {
+  display: flex;
+  flex-direction: column;
+}
+/* "+ Filter" for many fields: the search over them, as wide as a filter's editor. */
+.k2-ui .k2-pop.k2-fpick {
+  padding-top: 8px;
+}
+.k2-ui .k2-fpick .k2-opt > .k2-icon {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-fsheet-search {
+  margin: 8px var(--k2-edge) 4px;
+}
 .k2-ui .k2-fed-body[data-flush] {
   padding-inline: 0;
   gap: 0;

@@ -639,6 +639,29 @@ describe("parameter names", () => {
       "field key",
     );
   });
+
+  test("a renamed part frees its address name, but a field never takes the key `set` reaches the part by", () => {
+    const base = { key: "x", sort: { options: { id: { label: "ID" } }, default: { field: "id", direction: "asc" } } } as const;
+    // "sort" is set's key of the sort: a field `sort` would hide the sort from set (and from the bar)
+    expect(() => defineListQuery({ ...base, fields: { sort: field.text({ label: "Sorte" }) }, params: { sort: "order" } })).toThrow(
+      "set key",
+    );
+    expect(() =>
+      defineListQuery({
+        ...base,
+        fields: { group: field.text({ label: "Warengruppe" }) },
+        group: { id: { label: "ID" } },
+        params: { group: "by" },
+      }),
+    ).toThrow("set key");
+    // without the part, the key is free: a field `q` without a search, a field `sort` with a fixed sort
+    const free = defineListQuery({
+      key: "y",
+      fields: { q: field.text({ label: "Q" }), sort: field.text({ label: "Sorte" }) },
+      sort: { fixed: { field: "id", direction: "asc", label: "ID" } },
+    });
+    expect(free.parse("q=a&sort=b").state.filters).toEqual({ q: "a", sort: "b" });
+  });
 });
 
 test("a declaration built at runtime with hundreds of fields parses and serializes", () => {

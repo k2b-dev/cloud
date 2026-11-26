@@ -889,6 +889,12 @@ const reservedOf = (declaration: ListQueryDeclaration, names: ListQueryParamName
     ...(declaration.group ? [names.group] : []),
   ]);
 
+/** Whether `set` takes this key for a part the declaration has: "q" for its search, "sort" for a sort to choose, "group". */
+const setKeyOf = (declaration: ListQueryDeclaration, key: string): boolean =>
+  (key === "q" && declaration.search !== undefined) ||
+  (key === "sort" && declaration.sort.fixed === undefined) ||
+  (key === "group" && declaration.group !== undefined);
+
 /** Checks a declaration and returns the checked defaults of its mandatory fields. */
 const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string, { readonly raw: string; readonly value: unknown }> => {
   const pageParams = new Set(declaration.pageParams ?? []);
@@ -905,6 +911,9 @@ const checkDeclaration = (declaration: ListQueryDeclaration): ReadonlyMap<string
       throw new Error(`defineListQuery: field key "${key}" is reserved or not a stable code`);
     }
     if (pageParams.has(key)) throw new Error(`defineListQuery: "${key}" is both a field and a page parameter`);
+    // `set` takes "q", "sort" and "group" for the parts; a field of that key would hide its part from it (and from the
+    // bar), whatever name the address gives the part
+    if (setKeyOf(declaration, key)) throw new Error(`defineListQuery: field key "${key}" is the set key of the ${key} part`);
     if (definition.verbs) {
       const allowed: readonly FilterVerb[] = filterVerbs[definition.kind];
       if (definition.verbs.length === 0 || definition.verbs.some((verb) => !allowed.includes(verb))) {
