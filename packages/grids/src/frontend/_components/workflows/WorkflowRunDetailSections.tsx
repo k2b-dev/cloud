@@ -93,12 +93,12 @@ export function WorkflowRunInputsSection(props: { inputs: WorkflowRunInputRow[] 
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    // an empty section says so in one quiet line under its title
-    <Section title={t().input} summary={props.inputs.length === 0 ? t().noInputs : undefined}>
-      <Show when={props.inputs.length > 0}>
+    // a run without inputs has no inputs section
+    <Show when={props.inputs.length > 0}>
+      <Section title={t().input}>
         <Facts items={props.inputs.map((input) => ({ label: input.label, value: input.display }))} />
-      </Show>
-    </Section>
+      </Section>
+    </Show>
   );
 }
 
@@ -115,53 +115,52 @@ export function WorkflowRunStepsSection(props: {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
   return (
-    <Section
-      title={t().steps}
-      count={props.steps.length || undefined}
-      summary={props.truncated ? t().stepsTruncated : props.steps.length === 0 && !props.loading ? t().noStepDetails : undefined}
-    >
-      <For each={props.steps} fallback={<Show when={props.loading}>{<Loading rows={3} lines={2} />}</Show>}>
-        {(step) => {
-          const error = () => workflowStepErrorMessage(step.outcome, locale());
-          const summary = () => workflowStepOutcomeSummary(step.outcome, locale());
-          const effects = () =>
-            (step.action ? workflowStepPlannedEffects(step.outcome, locale()) : [])
-              .map((effect) => (effect.detail ? `${effect.title} · ${effect.detail}` : effect.title))
-              .join(" · ");
-          const status = () => stepStatus(workflowStepStatusTone(step.status));
-          const unresolved = () => workflowStepIssueReason(step.outcome) !== null;
-          const ms = () =>
-            step.startedAt && step.finishedAt
-              ? `${Math.max(0, new Date(step.finishedAt).getTime() - new Date(step.startedAt).getTime()).toLocaleString(locale())} ms`
-              : "–";
-          return (
-            <Row
-              lines={[
-                `${step.sourcePath.length > 0 ? step.sourcePath.join(".") : step.key} · ${step.action ?? step.kind}`,
-                error() ?? summary() ?? (effects() || workflowStepStatusLabel(step.status, locale())),
-              ]}
-              time={ms()}
-              states={
-                status() || unresolved() ? (
-                  <Chip status={status() ?? "warn"}>{workflowStepStatusLabel(step.status, locale())}</Chip>
-                ) : undefined
-              }
-              action={
-                step.documentConfirmation && props.onInspectExport
-                  ? {
-                      label: financialExportMessages.resolve([locale()]).t.title,
-                      icon: "file-check",
-                      onClick: () => {
-                        if (step.documentConfirmation) props.onInspectExport?.(step.documentConfirmation.receiptId);
-                      },
-                    }
-                  : undefined
-              }
-            />
-          );
-        }}
-      </For>
-    </Section>
+    // a run without step details has no steps section
+    <Show when={props.steps.length > 0 || props.loading}>
+      <Section title={t().steps} count={props.steps.length || undefined} summary={props.truncated ? t().stepsTruncated : undefined}>
+        <For each={props.steps} fallback={<Show when={props.loading}>{<Loading rows={3} lines={2} />}</Show>}>
+          {(step) => {
+            const error = () => workflowStepErrorMessage(step.outcome, locale());
+            const summary = () => workflowStepOutcomeSummary(step.outcome, locale());
+            const effects = () =>
+              (step.action ? workflowStepPlannedEffects(step.outcome, locale()) : [])
+                .map((effect) => (effect.detail ? `${effect.title} · ${effect.detail}` : effect.title))
+                .join(" · ");
+            const status = () => stepStatus(workflowStepStatusTone(step.status));
+            const unresolved = () => workflowStepIssueReason(step.outcome) !== null;
+            const ms = () =>
+              step.startedAt && step.finishedAt
+                ? `${Math.max(0, new Date(step.finishedAt).getTime() - new Date(step.startedAt).getTime()).toLocaleString(locale())} ms`
+                : "–";
+            return (
+              <Row
+                lines={[
+                  `${step.sourcePath.length > 0 ? step.sourcePath.join(".") : step.key} · ${step.action ?? step.kind}`,
+                  error() ?? summary() ?? (effects() || workflowStepStatusLabel(step.status, locale())),
+                ]}
+                time={ms()}
+                states={
+                  status() || unresolved() ? (
+                    <Chip status={status() ?? "warn"}>{workflowStepStatusLabel(step.status, locale())}</Chip>
+                  ) : undefined
+                }
+                action={
+                  step.documentConfirmation && props.onInspectExport
+                    ? {
+                        label: financialExportMessages.resolve([locale()]).t.title,
+                        icon: "file-check",
+                        onClick: () => {
+                          if (step.documentConfirmation) props.onInspectExport?.(step.documentConfirmation.receiptId);
+                        },
+                      }
+                    : undefined
+                }
+              />
+            );
+          }}
+        </For>
+      </Section>
+    </Show>
   );
 }
 
@@ -185,43 +184,46 @@ export function WorkflowRunDocumentsSection(props: {
     documentFormatLabel(document.artifacts.find((artifact) => artifact.key === document.primaryArtifactKey)?.mimeType);
   const next = () => (props.documents.hasMore && props.documents.nextOffset !== null ? props.documents.nextOffset : null);
   return (
-    <Section
-      title={t().generatedDocuments}
-      count={props.documents.total || undefined}
-      actions={
-        props.documents.total > 0
-          ? [{ label: downloadAll(), icon: "download", disabled: props.downloadingAll, onClick: props.onDownloadAll }]
-          : undefined
-      }
-      summary={props.loadMoreError ?? (props.documents.items.length === 0 ? t().noGeneratedDocuments : undefined)}
-      more={
-        next() !== null
-          ? { label: t().loadMoreDocuments, disabled: props.loadingMore, onClick: () => props.onLoadMore(next()!) }
-          : undefined
-      }
-    >
-      <Show when={props.documents.items.length > 0}>
-        <For each={props.documents.items}>
-          {(document) => (
-            <Row
-              mark={{ ...kindMark("documentTemplate"), kind: formatOf(document) }}
-              lines={[document.filename, `${formatOf(document)} · ${document.number}`]}
-              onOpen={() => {
-                if (props.downloadingDocumentId !== document.id) props.onDownload(document);
-              }}
-              end={
-                <Button
-                  icon="download"
-                  variant="ghost"
-                  label={t().downloadNamed({ name: document.filename })}
-                  busy={props.downloadingDocumentId === document.id}
-                  onClick={() => props.onDownload(document)}
-                />
-              }
-            />
-          )}
-        </For>
-      </Show>
-    </Section>
+    // a run that made no documents has no documents section
+    <Show when={props.documents.total > 0 || props.loadMoreError}>
+      <Section
+        title={t().generatedDocuments}
+        count={props.documents.total || undefined}
+        actions={
+          props.documents.total > 0
+            ? [{ label: downloadAll(), icon: "download", disabled: props.downloadingAll, onClick: props.onDownloadAll }]
+            : undefined
+        }
+        summary={props.loadMoreError}
+        more={
+          next() !== null
+            ? { label: t().loadMoreDocuments, disabled: props.loadingMore, onClick: () => props.onLoadMore(next()!) }
+            : undefined
+        }
+      >
+        <Show when={props.documents.items.length > 0}>
+          <For each={props.documents.items}>
+            {(document) => (
+              <Row
+                mark={{ ...kindMark("documentTemplate"), kind: formatOf(document) }}
+                lines={[document.filename, `${formatOf(document)} · ${document.number}`]}
+                onOpen={() => {
+                  if (props.downloadingDocumentId !== document.id) props.onDownload(document);
+                }}
+                end={
+                  <Button
+                    icon="download"
+                    variant="ghost"
+                    label={t().downloadNamed({ name: document.filename })}
+                    busy={props.downloadingDocumentId === document.id}
+                    onClick={() => props.onDownload(document)}
+                  />
+                }
+              />
+            )}
+          </For>
+        </Show>
+      </Section>
+    </Show>
   );
 }

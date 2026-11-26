@@ -8,13 +8,14 @@ import type { PublicField as Field, PublicTable as Table, PublicView as View } f
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { openViewSettingsDialog } from "../dialogs/ViewSettingsDialogs";
 import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
+import GridsHero, { type GridsHeroProps } from "../frame/GridsHero";
 import { v2Icon } from "../frame/grids-nav";
 import { kindMark } from "../frame/kind-marks";
 import { recordsScreenMessages } from "../records-view/screen-messages";
 import { errorMessage } from "../utils/api-helpers";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import { queryMessages } from "./messages";
-import QueryResults from "./QueryResults";
+import QueryResults, { type QueryResult, resultFacts, resultLead, summedColumn } from "./QueryResults";
 
 export type QueryViewScreenProps = {
   frame: NavigationState;
@@ -83,6 +84,34 @@ export default function QueryViewScreen(props: QueryViewScreenProps) {
     return null;
   };
 
+  /**
+   * The hero of a report: what it adds up on this page ("169.260" for a sum by month) with the rows themselves as its
+   * trend, oldest first as the view sorts them. A view that adds nothing up has no hero.
+   */
+  const heroOf = (current: QueryResult): GridsHeroProps | null => {
+    const column = summedColumn(current);
+    if (!column || current.rows.length === 0) return null;
+    const values = current.rows.map((row) => Number(row.values[column.key]) || 0);
+    const total = values.reduce((sum, value) => sum + value, 0);
+    return {
+      label: column.label,
+      figure: total.toLocaleString(locale(), { maximumFractionDigits: 2 }),
+      // the figure's name and the other totals of the page; the rows stand in the toolbar over the table
+      meta: [
+        column.label,
+        ...resultFacts(current, locale())
+          .filter((fact) => fact.before !== column.label)
+          .map((fact) =>
+            [fact.before, typeof fact.value === "number" ? fact.value.toLocaleString(locale()) : fact.value].filter(Boolean).join(" "),
+          ),
+      ].join(" · "),
+      trend:
+        values.length > 1
+          ? { values: values.slice(-31), label: t().trendLabel({ name: column.label, count: Math.min(values.length, 31) }) }
+          : undefined,
+    };
+  };
+
   const openSettings = () =>
     openViewSettingsDialog({
       baseId: props.baseId,
@@ -123,24 +152,29 @@ export default function QueryViewScreen(props: QueryViewScreenProps) {
             fallback={<Failed text={failure() ?? t().loadViewFailed} onRetry={() => page.mutate({ cursor: null, history: [] })} />}
           >
             {(resolved) => (
-              <QueryResults
-                result={resolved()}
-                mark={resolved().mode === "groups" ? kindMark("view", props.view.icon) : kindMark("table", props.table.icon)}
-                baseId={props.baseId}
-                fieldsByTable={props.fieldsByTable}
-                loading={page.loading()}
-                canGoBack={pageHistory().length > 0 || pageCursor() !== null}
-                backToFirst={pageHistory().length === 0}
-                onPrevious={() => {
-                  const history = pageHistory();
-                  if (history.length === 0 && !pageCursor()) return;
-                  page.mutate({
-                    cursor: history.length > 0 ? (history.at(-1) ?? null) : null,
-                    history: history.slice(0, -1),
-                  });
-                }}
-                onNext={(cursor) => page.mutate({ cursor, history: [...pageHistory(), pageCursor()] })}
-              />
+              <>
+                <Show when={heroOf(resolved())}>{(hero) => <GridsHero {...hero()} />}</Show>
+                <QueryResults
+                  // k2b-ui gap: a bar per row in the app's soft colour (the share of each month) has no part yet
+                  summary={heroOf(resolved()) ? resultLead(resolved(), locale()) : undefined}
+                  result={resolved()}
+                  mark={resolved().mode === "groups" ? kindMark("view", props.view.icon) : kindMark("table", props.table.icon)}
+                  baseId={props.baseId}
+                  fieldsByTable={props.fieldsByTable}
+                  loading={page.loading()}
+                  canGoBack={pageHistory().length > 0 || pageCursor() !== null}
+                  backToFirst={pageHistory().length === 0}
+                  onPrevious={() => {
+                    const history = pageHistory();
+                    if (history.length === 0 && !pageCursor()) return;
+                    page.mutate({
+                      cursor: history.length > 0 ? (history.at(-1) ?? null) : null,
+                      history: history.slice(0, -1),
+                    });
+                  }}
+                  onNext={(cursor) => page.mutate({ cursor, history: [...pageHistory(), pageCursor()] })}
+                />
+              </>
             )}
           </Show>
         </Show>

@@ -22,6 +22,11 @@ const plain = (value: unknown, locale: string, numeric = false): string => {
   if (typeof value === "number") return value.toLocaleString(locale, { maximumFractionDigits: 2 });
   if (numeric && typeof value === "string" && /^-?\d+(\.\d+)?$/.test(value))
     return Number(value).toLocaleString(locale, { maximumFractionDigits: 2 });
+  // a group key by month or day reads in the reader's calendar ("Jan. 2026", "14.11.2026"), not as ISO
+  if (typeof value === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(value))
+    return new Intl.DateTimeFormat(locale, { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${value}-01T00:00:00Z`));
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value))
+    return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
   if (typeof value === "string" || typeof value === "boolean") return String(value);
   if (Array.isArray(value)) return value.map((each) => plain(each, locale, numeric)).join(", ");
   return JSON.stringify(value);
@@ -55,6 +60,10 @@ export const resultFacts = (result: QueryResult | null, locale: string): StatusF
   return totals.length ? totals : [{ value: result.columns.length, after: t.columnsWord({ count: result.columns.length }) }];
 };
 
+/** The column a grouped result adds up: its first sum, else its first count. */
+export const summedColumn = (result: QueryResult) =>
+  result.columns.find((column) => column.aggregate === "sum") ?? result.columns.find((column) => column.aggregate === "count");
+
 /** The one line over a result: its rows, its key figures and how long the query took ("Zeilen 1–100 · 5 Spalten · 84 ms"). */
 export const resultSummary = (result: QueryResult, locale: string, took?: number | null): string => {
   const said = (value: string | number | undefined) => (typeof value === "number" ? value.toLocaleString(locale) : (value ?? ""));
@@ -81,6 +90,8 @@ export default function QueryResults(props: {
   onNext?: (cursor: string) => void;
   /** How long the query took in ms, measured where it ran; unknown for the page the server rendered. */
   took?: number | null;
+  /** The toolbar's words when the screen states the figures elsewhere (a hero): only what is not said there. */
+  summary?: string;
 }) {
   const locale = useLocale();
   const t = () => queryMessages.resolve([locale()]).t;
@@ -132,7 +143,7 @@ export default function QueryResults(props: {
   return (
     <>
       <Bar
-        start={props.loading ? t().runningQuery : resultSummary(props.result, locale(), props.took)}
+        start={props.loading ? t().runningQuery : (props.summary ?? resultSummary(props.result, locale(), props.took))}
         end={
           <Show when={props.canGoBack || next()}>
             <Button icon="chevron-left" disabled={!props.canGoBack} busy={props.loading} onClick={() => props.onPrevious?.()}>

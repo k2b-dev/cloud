@@ -2,7 +2,23 @@ import { liveConnection } from "@k2b/cloud/browser/live";
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { dialogCore, panelDialogWorkspaceOptions, prompts, toast, useLocale } from "@k2b/ui";
-import { type Action, Bar, Button, Facts, Failed, Loading, Menu, type MenuEntry, Notice, Pane, RecordHead } from "@k2b/ui/v2";
+import {
+  type Action,
+  Avatar,
+  Bar,
+  Button,
+  Chip,
+  Facts,
+  Failed,
+  Inline,
+  Loading,
+  Menu,
+  type MenuEntry,
+  Notice,
+  Pane,
+  RecordHead,
+  Text,
+} from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -94,6 +110,8 @@ export function WorkflowRunDetailPanel(props: {
   onClose: () => void;
   /** The way back to the runs on the phone, where the run is a page of its own. */
   back?: Action;
+  /** The run's main deed (run again, or cancel while it runs) for the phone's primary action; none for a reader. */
+  onPrimary?: (action: Action | undefined) => void;
 }) {
   const locale = useLocale();
   const t = () => workflowMessages.resolve([locale()]).t;
@@ -464,6 +482,17 @@ export function WorkflowRunDetailPanel(props: {
       : []),
     { label: t().refreshRunDetails, icon: "refresh", onClick: () => refresh() },
   ];
+  createEffect(() => {
+    const current = run();
+    props.onPrimary?.(
+      !current || !canWrite()
+        ? undefined
+        : running()
+          ? { label: t().cancelRun, icon: "player-stop", onClick: () => void cancelRun() }
+          : { label: t().runAgain, icon: "repeat", onClick: () => void runAgain() },
+    );
+  });
+  onCleanup(() => props.onPrimary?.(undefined));
   const statusLabel = () => (run() ? workflowRunStatusLabel(run()!.status, locale()) : t().loading);
 
   return (
@@ -475,10 +504,13 @@ export function WorkflowRunDetailPanel(props: {
       head={
         <Bar
           start={
-            <RecordHead
-              name={run() ? t().runAt({ value: runName(run()!.createdAt, locale()) }) : t().workflowRun}
-              kinds={[statusLabel()]}
-            />
+            <>
+              <RecordHead name={run() ? t().runAt({ value: runName(run()!.createdAt, locale()) }) : t().workflowRun} />
+              {/* the state: a problem in its colour right at the head, anything else a quiet word */}
+              <Show when={run() && failedRun(run()!.status) ? run() : null} fallback={<Chip>{statusLabel()}</Chip>}>
+                {(current) => <Chip status={current().status === "needs_attention" ? "warn" : "bad"}>{statusLabel()}</Chip>}
+              </Show>
+            </>
           }
           end={
             <>
@@ -568,6 +600,9 @@ export function WorkflowRunDetailPanel(props: {
 }
 
 /** A run is named by when it started, short: "25.11., 07:43". */
+/** A run that went wrong: failed, canceled or waiting for a person. */
+const failedRun = (status: PublicWorkflowRun["status"]) => status === "failed" || status === "canceled" || status === "needs_attention";
+
 const runName = (value: string, locale: string) =>
   new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 
@@ -584,7 +619,18 @@ function WorkflowRunHead(props: { run: PublicWorkflowRun; provenance: PublicWork
       <Facts
         inline
         items={[
-          { label: t().startedBy, value: runStartedBy(props.run, props.provenance, locale()) },
+          {
+            label: t().startedBy,
+            // a person shows as a face and a name; a service account or the system as words
+            value: props.provenance?.actorLabel ? (
+              <Inline>
+                <Avatar name={props.provenance.actorLabel} decorative />
+                <Text>{props.provenance.actorLabel}</Text>
+              </Inline>
+            ) : (
+              runStartedBy(props.run, props.provenance, locale())
+            ),
+          },
           { label: t().duration, value: formatDuration(props.run, locale()) },
           {
             label: t().finished,

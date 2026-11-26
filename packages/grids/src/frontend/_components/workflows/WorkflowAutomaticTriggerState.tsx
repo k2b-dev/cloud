@@ -53,12 +53,11 @@ export function WorkflowAutomaticTriggerState(props: { state: PublicWorkflowTrig
       </Show>
       <For each={props.state.recordEvents}>
         {(trigger) => (
+          // what fires it, once: the workflow's own state stands in its head; only a paused trigger says so
           <Row
             icon="bolt"
-            lines={[
-              trigger.state === "active" ? t().enabled : t().paused,
-              `${tableLabel(trigger.tableId)} · ${trigger.event} · ${trigger.hasFilter ? t().filtered : t().allMatchingRecords}`,
-            ]}
+            lines={[`${tableLabel(trigger.tableId)} · ${trigger.event}`, trigger.hasFilter ? t().filtered : t().allMatchingRecords]}
+            states={trigger.state === "active" ? undefined : <Chip status="warn">{t().paused}</Chip>}
           />
         )}
       </For>

@@ -241,6 +241,24 @@ export const baseHomeFixture = (variant: FixtureVariant, options: { edit: boolea
   } as unknown as PublicOkWorkspaceState;
 };
 
+/** Ten orders of a workshop, as different as real ones: customers, states, amounts, due dates and people. */
+const ORDER_ROWS = [
+  ["Website-Relaunch", "In Arbeit", "Bäckerei Sonnenkorn", "12400.00", "2026-11-14", "Team Web"],
+  ["Hebebühne Wartung", "Offen", "Autohaus Renz", "2180.50", "2026-11-28", "Jonas Kern"],
+  ["Druckluftanlage Halle 3", "Wartet auf Teile", "Stadtwerke Auental", "8640.00", "2026-12-03", "Mira Solberg"],
+  ["Küchenfront Eiche", "In Arbeit", "Architekturbüro Winter", "3420.00", "2026-11-20", "Felix Thal"],
+  ["Empfangstresen", "Offen", "Hotel Seeblick", "5900.00", "2026-12-09", "Jonas Kern"],
+  ["Regal Archiv", "Erledigt", "Kanzlei Berger & Kern", "760.00", "2026-11-02", "Sami Yilmaz"],
+  ["Bad Oswald", "In Arbeit", "Familie Oswald", "4310.00", "2026-11-18", "Mira Solberg"],
+  ["Weinregal Keller", "Offen", "Weingut Hartwig", "2480.00", "2026-12-15", "Felix Thal"],
+  ["Garderobe Praxis", "Erledigt", "Physio Kern", "1640.00", "2026-10-30", "Jonas Kern"],
+  ["Küche Gemeindehaus", "Wartet auf Freigabe", "Gemeinde Ohlsbach", "11200.00", "2026-12-20", "Sami Yilmaz"],
+] as const;
+const orders = tableRecords.map((record, index) => {
+  const [text, status, customer, number, date, owner] = ORDER_ROWS[index % ORDER_ROWS.length]!;
+  return { ...record, data: { ...record.data, text, status, customer, number, date, owner } };
+});
+
 /** The records page of a table for a variant and an address, as the server renders it (`record`, `sort`, `q` …). */
 export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof RecordsView>[0] => {
   // the server reads a table page's statements with the table's fields
@@ -274,7 +292,7 @@ export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams)
               notes: "Eine sehr lange Notiz, die erklärt, welche Absprachen getroffen wurden und warum die Lieferung später kommt.",
             },
           }))
-        : tableRecords.slice(0, sized(variant, tableRecords.length));
+        : orders.slice(0, sized(variant, orders.length));
   const frame = baseHomeFixture(variant, { edit: params.get("edit") === "true", groups: false });
   return {
     frame: { ...frame, route: { kind: "records", activeKey: "table:table", activeTableId: "table" } },
@@ -434,12 +452,12 @@ export const queryResultFixture = (variant: FixtureVariant, start = 0): PublicDs
     }),
     rows: Array.from({ length: size }, (_, offset) => {
       const index = start + offset;
-      const record = tableRecords[index % tableRecords.length]!;
+      const record = orders[index % orders.length]!;
       return {
         recordId: `record-${index}`,
         values: {
           ...Object.fromEntries(QUERY_FIELDS.map((id) => [id, record.data[id] ?? null])),
-          text: variant === "worst" ? worst(index) : `${record.data.text} ${index + 1}`,
+          text: variant === "worst" ? worst(index) : index < orders.length ? String(record.data.text) : `${record.data.text} ${index + 1}`,
           ...(variant === "worst" && index === 3 ? { number: "987654321.99" } : {}),
         },
       };

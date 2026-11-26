@@ -2,9 +2,10 @@ import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { dialogCore, PanelDialog, Placeholder, panelDialogWorkspaceOptions, prompts, useLocale } from "@k2b/ui";
 import {
+  type Action,
+  Band,
   Bar,
   Button,
-  Cells,
   Chip,
   Empty,
   FilterBar,
@@ -18,6 +19,7 @@ import {
   Section,
   type Status,
   Table,
+  Text,
 } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, lazy, onCleanup, onMount, Show, Suspense } from "solid-js";
 import type { z } from "zod";
@@ -34,6 +36,7 @@ import {
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { scannerLauncherPromptInputSources } from "../../../workflows/contracts";
 import GridsFrame, { LiveNotice } from "../frame/GridsFrame";
+import GridsHero, { type HeroException } from "../frame/GridsHero";
 import { errorMessage } from "../utils/api-helpers";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import type {
@@ -55,7 +58,6 @@ import { WorkflowRunDetailPanel } from "./WorkflowRunDetailPanel";
 import { requestWorkflowRunInput } from "./WorkflowRunInputDialog";
 import type { WorkflowScannerState } from "./WorkflowScannerSurface";
 import {
-  formatWorkflowRunDate as formatDate,
   formatWorkflowRunDuration as formatDuration,
   isTerminalWorkflowRunStatus,
   workflowChannelLabel,
@@ -150,6 +152,10 @@ const formatMetricDuration = (ms: number | null, locale: string): string => {
   return `${format(ms / 60_000)}m`;
 };
 
+/** A start in a list: day and minute, no seconds. */
+const shortDate = (value: string, locale: string) =>
+  new Intl.DateTimeFormat(locale, { dateStyle: "short", timeStyle: "short" }).format(new Date(value));
+
 const formatPercent = (value: number, locale: string): string =>
   // a rate of no runs is no number
   !Number.isFinite(value)
@@ -175,6 +181,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
   const t = () => workflowMessages.resolve([locale()]).t;
   const [selectedRunId, setSelectedRunId] = createSignal(props.selectedRunId);
   const [runUpdate, setRunUpdate] = createSignal<PublicWorkflowRun | null>(null);
+  const [runPrimary, setRunPrimary] = createSignal<Action | undefined>(undefined);
   /** Opens a run (or closes it with `null`) as a step in the address, so Back closes it again. */
   const selectRun = (runId: string | null) => {
     const url = new URL(window.location.href);
@@ -575,7 +582,16 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
       items: STATS_WINDOWS.map((value) => ({ label: statsWindowLabel(value, locale()), value })),
     },
   ];
-  const failing = () => (activeStats()?.failed ?? 0) + (activeStats()?.needsAttention ?? 0) > 0;
+  /** What needs attention in the window, each once: failed runs with the newest reason, runs waiting for a person. */
+  const heroExceptions = (): HeroException[] => {
+    const counts = activeStats();
+    if (!counts) return [];
+    const reason = runs().find((run) => run.status === "failed" && run.error)?.error?.message;
+    return [
+      ...(counts.failed > 0 ? [{ status: "bad" as const, text: t().failedCount({ count: counts.failed }), detail: reason }] : []),
+      ...(counts.needsAttention > 0 ? [{ status: "warn" as const, text: t().attentionCount({ count: counts.needsAttention }) }] : []),
+    ];
+  };
   const runTone = (status: PublicWorkflowRun["status"]): Status | undefined => {
     const tone = workflowRunStatusTone(status);
     // direction B: a run that went well or runs is a quiet word; colour only where it went wrong
@@ -661,9 +677,12 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
         </Show>
       }
       primary={
-        props.canRunActiveWorkflow && activeWorkflow()?.enabled
-          ? { label: t().runWorkflow, icon: "player-play", onClick: () => void runWorkflow() }
-          : undefined
+        // an open run brings its own deed; the list the workflow's
+        selectedRunId()
+          ? runPrimary()
+          : props.canRunActiveWorkflow && activeWorkflow()?.enabled
+            ? { label: t().runWorkflow, icon: "player-play", onClick: () => void runWorkflow() }
+            : undefined
       }
     >
       <Show
@@ -676,21 +695,8 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
       >
         {(workflow) => (
           <Pane.Split>
-            <Pane
-              label={t().workflowRuns}
-              scrollKey={`grids-workflow-runs-${workflow().id}`}
-              status={
-                <FilterBar
-                  query={runsQuery()}
-                  state={runsListState(runsQuery(), currentUrlState())}
-                  onChange={changeRuns}
-                  icons={{ status: "circle-dashed", channel: "route" }}
-                  results={t().runCount({ count: runs().length, more: Boolean(nextCursor()) })}
-                />
-              }
-            >
+            <Pane label={t().workflowRuns} scrollKey={`grids-workflow-runs-${workflow().id}`}>
               <LiveNotice />
-              <Show when={workflow().description}>{(description) => <Notice tone="note">{description()}</Notice>}</Show>
               <Show when={loadError()}>
                 {(message) => (
                   <Notice tone="bad" actions={[{ label: t().retry, icon: "refresh", onClick: reloadAll }]}>
@@ -698,40 +704,31 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   </Notice>
                 )}
               </Show>
-              {/* The hero of the screen: how the workflow runs. Direction B wants one figure (--t-figure) with its real
-                  trend and the exceptions under it; until DP's hero band lands, it is this band of three cells. The
-                  runs have no series per day yet (stats are totals, the run list is paged), so no trend is drawn. */}
-              <Bar
-                start={t().healthOver({ window: statsWindowLabel(statsWindow(), locale()) })}
-                end={<Menu icon="clock" label={t().metricsWindow} items={windowChoice()} />}
-              />
+              {/* the purpose stands once, quietly (it moves into the head as soon as RecordHead ids give way, #4346) */}
+              <Show when={workflow().description}>
+                {(description) => (
+                  <Band>
+                    <Text muted>{description()}</Text>
+                  </Band>
+                )}
+              </Show>
               <Show when={stats()} fallback={<Loading rows={1} lines={2} />}>
-                <Cells>
-                  <Cells.Cell
-                    icon="activity"
-                    label={t().lastRun}
-                    value={activeStats()?.latestStatus ? runChipOf(activeStats()!.latestStatus!) : t().noRuns}
-                    meta={activeStats()?.lastRunAt ? formatDate(activeStats()!.lastRunAt!, locale()) : undefined}
-                  />
-                  <Cells.Cell
-                    icon="list"
-                    label={t().runs}
-                    value={(activeStats()?.total ?? 0).toLocaleString(locale())}
-                    meta={t().activeNow({ count: activeStats()?.active ?? 0 })}
-                  />
-                  <Cells.Cell
-                    icon="alert-triangle"
-                    label={t().errorRate}
-                    value={
-                      failing() ? (
-                        <Chip status="bad">{formatPercent(activeStats()?.errorRate ?? 0, locale())}</Chip>
-                      ) : (
-                        formatPercent(activeStats()?.errorRate ?? 0, locale())
-                      )
-                    }
-                    meta={t().p99Meta({ value: formatMetricDuration(activeStats()?.p99DurationMs ?? null, locale()) })}
-                  />
-                </Cells>
+                <GridsHero
+                  label={t().runsIn({ window: statsWindowLabel(statsWindow(), locale()) })}
+                  figure={t().runCountFigure({
+                    count: activeStats()?.total ?? 0,
+                    formatted: (activeStats()?.total ?? 0).toLocaleString(locale()),
+                  })}
+                  meta={[
+                    statsWindowLabel(statsWindow(), locale()),
+                    ...((activeStats()?.errorRate ?? 0) > 0
+                      ? [t().errorRateMeta({ value: formatPercent(activeStats()!.errorRate, locale()) })]
+                      : []),
+                    t().p99Meta({ value: formatMetricDuration(activeStats()?.p99DurationMs ?? null, locale()) }),
+                    ...((activeStats()?.active ?? 0) > 0 ? [t().activeNow({ count: activeStats()!.active })] : []),
+                  ].join(" · ")}
+                  exceptions={heroExceptions()}
+                />
               </Show>
               <Show
                 when={triggerState() && (triggerState()!.schedule || triggerState()!.recordEvents.length > 0) ? triggerState() : null}
@@ -743,6 +740,14 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
               >
                 {(state) => <WorkflowAutomaticTriggerState state={state()} tables={props.tables} />}
               </Show>
+              <FilterBar
+                query={runsQuery()}
+                state={runsListState(runsQuery(), currentUrlState())}
+                onChange={changeRuns}
+                icons={{ status: "circle-dashed", channel: "route" }}
+                results={t().runCount({ count: runs().length, more: Boolean(nextCursor()) })}
+                end={<Menu icon="clock" label={t().metricsWindow} items={windowChoice()} />}
+              />
               <Table
                 label={t().workflowRuns}
                 rows={runs()}
@@ -760,14 +765,14 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                     run.error?.message ?? run.resultMessage ?? workflowRunStatusLabel(run.status, locale()),
                     `${workflowChannelLabel(run.channel, locale())} · ${run.mode === "dryRun" ? t().dryRun : t().execute} · ${formatDuration(run, locale())}`,
                   ],
-                  time: formatDate(run.createdAt, locale()),
+                  time: shortDate(run.createdAt, locale()),
                   marks: runTone(run.status) ? (
                     <Chip status={runTone(run.status)!}>{workflowRunStatusLabel(run.status, locale())}</Chip>
                   ) : undefined,
                 })}
                 columns={[
                   { title: t().status, width: { min: 180, default: 190 }, cell: runChip },
-                  { title: t().started, width: { min: 160, default: 170 }, cell: (run) => formatDate(run.createdAt, locale()) },
+                  { title: t().started, width: { min: 130, default: 140 }, cell: (run) => shortDate(run.createdAt, locale()) },
                   {
                     title: t().channel,
                     width: { min: 100, default: 120 },
@@ -781,8 +786,6 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                     cell: (run) => run.error?.message ?? run.resultMessage ?? "–",
                   },
                   { title: t().duration, width: { min: 70, default: 90 }, align: "end", cell: (run) => formatDuration(run, locale()) },
-                  // A revision is a version number: its digits stay ungrouped.
-                  { title: t().revision, align: "end", drop: true, cell: (run) => String(run.workflowRevision) },
                 ]}
               />
               <Show when={nextCursor()}>
@@ -808,6 +811,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   onSelectRun={selectRun}
                   onClose={() => selectRun(null)}
                   back={{ label: t().runs, href: runHref(null) }}
+                  onPrimary={setRunPrimary}
                 />
               )}
             </Show>
