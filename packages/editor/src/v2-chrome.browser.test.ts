@@ -315,7 +315,8 @@ test("both toolbars show a format that is on, and a button under the pointer, th
     });
     await page.locator('[data-editor="shared"] .cm-content').getByText("Lieferung").click();
     await page.waitForFunction(
-      () => document.querySelectorAll(':is([role="toolbar"], [data-k2b-editor-toolbar]) [aria-pressed="true"][aria-label^="Fett"]').length >= 2,
+      () =>
+        document.querySelectorAll(':is([role="toolbar"], [data-k2b-editor-toolbar]) [aria-pressed="true"][aria-label^="Fett"]').length >= 2,
     );
     // the toolbars ease their colours (150 ms): read them once no transition runs (the caret blinks on, an animation)
     const eased = () => page.waitForFunction(() => document.getAnimations().every((motion) => !(motion instanceof CSSTransition)));
@@ -369,20 +370,22 @@ test("inside v2 a menu of the toolbar is the v2 menu: its button in the bar's si
   try {
     const trigger = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
     const box = await trigger.boundingBox();
-    expect({ width: box?.width, height: box?.height, v2: await trigger.evaluate((button) => button.classList.contains("k2-btn")) }).toEqual({
-      width: 28,
-      height: 28,
-      v2: true,
-    });
+    expect({ width: box?.width, height: box?.height, v2: await trigger.evaluate((button) => button.classList.contains("k2-btn")) }).toEqual(
+      {
+        width: 28,
+        height: 28,
+        v2: true,
+      },
+    );
     await page.locator('[data-editor="shared"] .cm-content').getByText("Familie Oswald").click();
     await trigger.click();
     const menu = page.locator(".k2-menu");
     await menu.waitFor();
     expect(await menu.locator(".k2-mi .k2-mi-label").allTextContents()).toEqual(["Zitat", "Code im Text", "Link", "Tabelle"]);
     expect(await menu.locator(".k2-mh").allTextContents()).toEqual(["Einfügen"]);
-    expect(await menu.locator(".k2-mi").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height)))).toEqual([
-      32, 32, 32, 32,
-    ]);
+    expect(
+      await menu.locator(".k2-mi").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height))),
+    ).toEqual([32, 32, 32, 32]);
     // the keys walk it; Enter runs the entry on the note, and the note has the focus again
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
@@ -468,4 +471,3 @@ test("inside v2 the toolbar at a selection floats on the v2 menu surface with th
     await page.close();
   }
 }, 30_000);
-

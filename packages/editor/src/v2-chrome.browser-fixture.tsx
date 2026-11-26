@@ -1,8 +1,8 @@
+import { EditorSelection } from "@codemirror/state";
 import { Button, LocaleProvider, MarkdownEditor } from "@k2b/ui";
 import { Bar, Canvas, Pane, Text, Workspace } from "@k2b/ui/v2";
-import { render } from "solid-js/web";
-import { EditorSelection } from "@codemirror/state";
 import { onMount } from "solid-js";
+import { render } from "solid-js/web";
 import { BubbleMenu, createEditor, Editor, markdownActions, SlashMenu, Toolbar } from "./index";
 
 declare global {
