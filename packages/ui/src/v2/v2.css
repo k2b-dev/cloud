@@ -1331,17 +1331,17 @@
   margin-right: -8px;
 }
 .k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -6px;
+  margin-inline-end: -6px;
 }
 /* a ghost button with words first in a bar, or last at the end of a bar, a group head or a row, stands with its
    words on the text edge, as a text button does (K5): it gives back its room and its unseen 1 px frame */
 .k2-ui .k2-bar-start > .k2-btn[data-variant="ghost"]:not([data-icon-only]):first-child {
-  margin-left: calc(-1px - var(--k2-btn-pad));
+  margin-inline-start: calc(-1px - var(--k2-btn-pad));
 }
 .k2-ui
   :is(.k2-bar-end, .k2-gh-end, .k2-row-end)
-  > .k2-btn[data-variant="ghost"]:not([data-icon-only]):not(:has(~ :not([popover], [data-slot$="-content"]))) {
-  margin-right: calc(-1px - var(--k2-btn-pad-end));
+  > .k2-btn[data-variant="ghost"]:not([data-icon-only]):nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
+  margin-inline-end: calc(-1px - var(--k2-btn-pad-end));
 }
 .k2-ui .k2-group[data-folded] {
   padding-bottom: 0;
@@ -1593,7 +1593,7 @@
 }
 .k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
 .k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -10px;
+  margin-inline-end: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
    Controls inside the row stand above the stretch, so each keeps its own target. */
@@ -2095,7 +2095,7 @@
 }
 /* an icon button at the end stands with its icon on the text edge */
 .k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
-  margin-right: -10px;
+  margin-inline-end: -10px;
 }
 
 /* ── Prose: reading text, 14/22, measure 720 ────────────────────────────────────────────────────────────────── */

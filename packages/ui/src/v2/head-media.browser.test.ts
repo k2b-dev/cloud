@@ -1327,6 +1327,22 @@ test("a bar that ends a section draws no line of its own: one line parts it from
           return [Math.round(text(start!).left - pane.left), Math.round(pane.right - text(end!).right)];
         });
         expect(words).toEqual(width === 390 ? [16, 16] : [20, 20]);
+        // pulled to the text edge, a ghost button keeps its whole focus ring (3 px) inside every column that clips it
+        const cut = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-sec > .k2-bar .k2-btn")].flatMap((button) => {
+            const ring = button.getBoundingClientRect();
+            const found: string[] = [];
+            for (let box = button.parentElement; box; box = box.parentElement) {
+              const style = getComputedStyle(box);
+              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+              const room = box.getBoundingClientRect();
+              if (ring.left - 3 < room.left - 0.5 || ring.right + 3 > room.right + 0.5)
+                found.push(`${button.textContent} in ${box.className}`);
+            }
+            return found;
+          }),
+        );
+        expect(cut).toEqual([]);
         // a space without a symbol: its first letter in the symbol's size and place, in the middle of its mark
         const initial = await page.evaluate(() => {
           const letter = document.querySelector<HTMLElement>(".k2-mk-initial")!;
