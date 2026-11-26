@@ -12,15 +12,15 @@ import { browserName, launchBrowser, launchHookMs } from "../../test/browser";
 // the style and layout of 300 new nodes synchronously (`offsetHeight` and a computed style after each redraw; a time
 // per frame would sit on the 16.7 ms of a frame and see nothing below it), the best of three batches after a warm-up,
 // the plain and the shipped sheet one right after the other in the same browser, in three passes, and keeps the
-// lowest of the three ratios: a busy moment of the machine makes one pass dearer, not all three. It prints the ratio,
-// so CI logs add data points.
+// median of the three ratios: a busy moment of the machine that hits one sheet of one pass moves neither way. It
+// prints the ratios, so CI logs add data points.
 //
 // The thresholds come from these ratios on the test VM, the Playwright container at --cpus 0.5 / 1 / 2 and three runs
 // at once at --cpus 1:
-//   WebKit    inner parts without a wrapper's way (#4339, 27.11.2026)  2.9 / 2.6 / 2.6, at once 1.6–2.9
+//   WebKit    inner parts without a wrapper's way (#4339, 26.11.2026)  2.9 / 2.6 / 2.6, at once 1.6–2.9
 //             one selector list per rule (#4329, 26.11.2026)           1.9 / 3.0–3.4 / 3.2, at once 2.0–3.4
 //             one :is() per rule (#4193)                               14.9 / 20.4–22.4 / 22.1, at once 13.2–14.0
-//   Chromium  #4339 1.6 / 1.6 / 1.6, at once 1.2–1.2 (one pass at once 3.9, a busy moment)
+//   Chromium  #4339 1.6 / 1.6 / 1.6, at once 1.2 (and once 3.9, a busy moment that hit only the plain sheet)
 //             #4329 1.3 / 1.6 / 1.6, at once 1.2–1.8   #4193 2.9 / 2.7 / 2.6, at once 2.1–4.0
 // WebKit fails above 5: above the highest ratio of today's sheet with room for a busy machine, below half the lowest
 // of #4193's. In Chromium #4193's sheet and today's overlap under load, so it fails only above 3, a sheet clearly
@@ -101,11 +101,11 @@ const styleTime = async (css: string): Promise<number> => {
 };
 
 test("a page that redraws 300 nodes styles them with the shipped v2.css in at most the measured multiple of the plain sheet's time", async () => {
-  // three passes, each the plain sheet and then the shipped one; the lowest ratio of a pass counts
+  // three passes, each the plain sheet and then the shipped one; the median ratio of a pass counts
   const passes: { plain: number; shipped: number }[] = [];
   for (let pass = 0; pass < 3; pass++) passes.push({ plain: await styleTime(plain), shipped: await styleTime(shipped) });
   const ratios = passes.map((pass) => pass.shipped / pass.plain);
-  const ratio = Math.min(...ratios);
+  const ratio = [...ratios].sort((a, b) => a - b)[1]!;
   console.log(
     `island-css cost ${browserName}: ${passes.map((pass) => `plain ${pass.plain.toFixed(1)} ms, shipped ${pass.shipped.toFixed(1)} ms`).join("; ")}; ratios ${ratios.map((r) => r.toFixed(2)).join(" / ")} (limit ${limit})`,
   );
