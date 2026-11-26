@@ -1439,7 +1439,7 @@ app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => { ${escape} 
 }, 90_000);
 
 test("typed app(id) stays a resource factory and app() is a checker type diagnostic", async () => {
-  const fixture = sdkFixture("capabilities");
+  const fixture = sdkFixture("directory");
   const sdk = generateCodeSdk(
     [
       {
@@ -1451,20 +1451,20 @@ test("typed app(id) stays a resource factory and app() is a checker type diagnos
     { mode: "personal" },
   );
   const checked = await check(
-    `import { app, capabilities } from "@sdk";
+    `import { app, directory } from "@sdk";
 app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, async () => {
-  const h = capabilities.app("App001");
-  const type: "capabilities.app" = h.type;
+  const h = directory.app("App001");
+  const type: "directory.app" = h.type;
   const id: "App001" = h.id;
-  await capabilities.search({});
+  await directory.search({});
 }); export default app;`,
     { sdk },
   );
   if (!checked.ok) throw new Error(JSON.stringify(checked.diagnostics));
-  expect(checked.manifest.permissions.map((p) => p.operation)).toEqual(["capabilities.search"]);
+  expect(checked.manifest.permissions.map((p) => p.operation)).toEqual(["directory.search"]);
   const rejected = await check(
-    `import { app, capabilities } from "@sdk";
-app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, () => { capabilities.app(); }); export default app;`,
+    `import { app, directory } from "@sdk";
+app.schedule({ name: "schedule-0", cron: "0 8 * * 1" }, () => { directory.app(); }); export default app;`,
     { sdk },
   );
   expect(rejected.ok).toBe(false);

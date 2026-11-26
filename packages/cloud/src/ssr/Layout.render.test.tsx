@@ -746,7 +746,7 @@ test("page swap replaces only the content column and its page data", async () =>
       expect(canvas.getAttribute("data-nav-shell")).toMatch(/^[a-f0-9]{32}$/);
       expect(canvas.getAttribute("data-nav-scope")).toBe("/app/swap");
       expect(canvas.getAttribute("data-nav-attributes")).toBe("data-layout-full-page data-workspace-sidebar-collapsed");
-      expect(canvas.hasAttribute("data-k2-host-search")).toBe(false);
+      expect(column.querySelector("main")?.hasAttribute("data-k2-host-search")).toBe(false);
       signature ??= canvas.getAttribute("data-nav-shell");
       canvasClass ??= canvas.getAttribute("class");
       expect(canvas.getAttribute("data-nav-shell")).toBe(signature);
@@ -773,7 +773,7 @@ test("page swap replaces only the content column and its page data", async () =>
     // document loads, as its shell differs.
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?ui=v2")).text();
     const v2 = window.document.querySelector(".cloud-app-canvas")!;
-    expect(v2.hasAttribute("data-k2-host-search")).toBe(true);
+    expect(v2.querySelector("main")?.hasAttribute("data-k2-host-search")).toBe(true);
     expect(v2.getAttribute("data-nav-shell")).not.toBe(signature);
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?focusMode=true")).text();
     expect(window.document.querySelector("[data-nav-shell],[data-nav-root],[data-nav-scope]")).toBeNull();

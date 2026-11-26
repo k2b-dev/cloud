@@ -29,6 +29,9 @@ and such changes are not treated as breaking until then.
 | `@k2b/cloud/server` | Supported, server-only | Hono middleware, validation, actors, results, and access |
 | `@k2b/cloud/services` | Supported, server-only | Feature services named by a capability guide |
 | `@k2b/cloud/shared` | Supported, portable | Shared helpers, including `previewSourceKind` and `PreviewVariant` for [file previews](/en/docs/platform/previews) |
+| `@k2b/cloud/shared/account-display` | Supported, portable | `groupDisplayName` and the other account names of `@k2b/cloud/shared`, alone: an island carries only them |
+| `@k2b/cloud/shared/format` | Supported, portable | `formatNumber`, `formatDateTime` and the other formatters of `@k2b/cloud/shared`, alone |
+| `@k2b/cloud/shared/principal-label` | Supported, portable | `principalLabel` and its messages, alone; the `@k2b/cloud/shared` barrel brings every helper and its libraries |
 | `@k2b/cloud/contracts` | Supported | Browser-safe schemas and shared data contracts, including [`AssistantPlaceSchema`](/en/docs/ai/assistant-places) |
 | `@k2b/cloud/browser` | Supported, browser | Typed Hono browser clients |
 | `@k2b/cloud/app-key` | Supported, portable | [Ed25519 app-key generation, validation, formatting, and fingerprints](/en/docs/operations/app-keys#use-the-portable-key-format-helpers) |
@@ -44,7 +47,6 @@ and such changes are not treated as breaking until then.
 | `@k2b/ui/text-editor` | Supported, SolidJS | [Markdown editor with editable table cells](/en/ui/input/text-editor); application-injected collaboration |
 | `@k2b/ui/text-editor/model` | Supported, portable | Pure Markdown table parsing and minimal source edits for the editor and server actions |
 | `@k2b/ui/v2/list-query` | Provisional, portable | [Declared filters, sorts, and groups of a v2 list and their URL](/en/docs/frontend/url-state-and-navigation#declare-a-v2-list-query) |
-| `@k2b/ui/v2/host` | Provisional, browser | `focusPageSearch` for a host whose phone bar holds the one search (`data-k2-host-search`): its search button opens the head search of the page's v2 workspace |
 | `@k2b/editor` | Supported, SolidJS | [Editor, toolbar, bubble menu, and slash menu on shared state](/en/docs/frontend/editor) |
 | `@k2b/editor/styles.css` | Supported, Tailwind CSS | [Widget styles and source class scanning](/en/docs/frontend/editor#compose-markdown-extensions) |
 | `@k2b/editor/markdown` | Supported, CodeMirror | [Optional Markdown extensions and source parsers](/en/docs/frontend/editor#compose-markdown-extensions) |
@@ -609,7 +611,7 @@ for execution, model access, and usage accounting.
 | `@k2b/cloud/contracts/code-runs` | Supported, browser and server | Browser-safe run-entry input and snapshot schemas | [Run entries](/en/docs/platform/code-runs#read-one-run-and-its-entries) |
 | `@k2b/cloud/contracts/notifications` | Supported | Browser-safe notification contracts | [Notifications](/en/docs/platform/notifications) |
 | `@k2b/cloud/contracts/geo-snapshot` | Supported, browser and server | Validate map snapshot manifests and image bounds | [Saved maps](/en/docs/platform/saved-map-documents) |
-| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel | — |
+| `@k2b/cloud/contracts/*` | Advanced | Named contract modules; prefer the barrel on the server, and the named module in an island, which then carries only its own schemas | — |
 | `@k2b/cloud/config/*` | Advanced | Named configuration modules; prefer the barrel | — |
 
 Every app-facing specialized row has a guide. `Platform-owned` and `Advanced`
