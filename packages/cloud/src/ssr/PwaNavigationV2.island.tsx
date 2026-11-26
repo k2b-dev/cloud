@@ -10,10 +10,10 @@ export type PwaNavEntry = {
   icon: string;
   href: string;
   current: boolean;
-  /** The part's `pwa.badge` route: a count that calls for attention, in the sidebar and on its tab. */
+  /** The part's `pwa.badge` route: a count that calls for attention, in the rail and on its tab. */
   badge?: string;
-  /** The part's `pwa.summary` route: a quiet count in the sidebar. */
-  summary?: string;
+  /** Its app's colour for its symbol in the rail, as the app bar shows it on this page's canvas. */
+  tone?: { light: string; dark: string };
 };
 
 export type PwaNavigationV2Props = {
@@ -30,7 +30,7 @@ export type PwaNavigationV2Props = {
   tabs: PwaNavEntry[];
   /** A screen of its own: the tab bar steps aside (`hidden`) and `setPwaScreen` brings it back in place. */
   screen?: boolean;
-  /** Every count route of the page, read once a minute like the web's. */
+  /** Every badge route of the page, read once a minute like the web's. */
   endpoints: string[];
 };
 
@@ -48,6 +48,7 @@ export default function PwaNavigationV2(props: PwaNavigationV2Props) {
     icon: entry.icon,
     href: entry.href,
     current: entry.current,
+    ...(entry.tone ? { tone: entry.tone } : {}),
     get unread() {
       return read(entry.badge);
     },

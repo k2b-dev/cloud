@@ -63,8 +63,8 @@ mark; `0`, an error, or another answer shows none.
 
 `summary` (optional) names a `GET` route that says what waits in the part, as
 a `PwaPartSummary`: `{ "count": n, "text": "…" }`. Start shows `text` under
-the part instead of its `description`, and the sidebar shows `count` quietly
-beside a part without a `badge`. Write `text` in the request's locale, as one
+the part instead of its `description`, and the v1 frame's sidebar shows `count`
+quietly beside a part without a `badge`. Write `text` in the request's locale, as one
 line of at most 200 characters, such as "5 tasks for you · 1 today". Start reserves an
 empty summary line until the route answers, and clears it when a read fails. The line
 stays the same height when live text arrives; long text is truncated visually. Parts
@@ -185,7 +185,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | --- | --- |
 | `c` | The request context |
 | `title` | Header heading and document title |
-| `sidebarTitle` | Optional heading beside the sidebar, where the sidebar already names the installation; `title` by default |
+| `sidebarTitle` | Optional heading on wide screens, where the sidebar or the rail already shows the installation; `title` by default. Beside the v2 rail, a heading that only repeats the open place does not show |
 | `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
@@ -249,12 +249,16 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   indicator itself; a part that opens or leaves such a screen in place calls
   `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`, which
   also works when the page shows in the v1 frame beside an older Core.
-- From 48 rem a v2 `Nav` with the installation's logo, Start, every part,
-  and Settings at its foot stands beside the page. A part's badge is a count
-  that calls for attention, its summary a quiet count beside it.
+- From 48 rem a v2 `Rail` stands beside the page, as Cloud's app bar on
+  every other Cloud page: the installation's logo, Start, every part in its
+  app's colour, and Settings at its foot; each place's name shows as a hint.
+  A part's badge is a count on its symbol; its summary stays on Start.
 - The frame owns the way to Settings: below 48 rem Start's head holds it,
-  since Settings is no tab; beside the sidebar its foot leads there. A page
+  since Settings is no tab; beside the rail its foot leads there. A page
   never adds its own Settings button.
+- Beside the rail the head shows no title that only repeats the open place
+  (such as "Start" or a part's name); a head left empty by that leaves there.
+  The phone keeps its title.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
   `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
   phone, where the app has no shell bar to take them), with one

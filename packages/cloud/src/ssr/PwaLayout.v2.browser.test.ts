@@ -19,7 +19,7 @@ import { session } from "../services/session";
 import { buildOlderGlobal } from "../styles/older-core-global.test-fixture";
 
 // A Cloud app page on v2 (`PwaLayout ui="v2"`) as the phone and a wide screen show it: the frame, the page's panes, the
-// tab bar or the sidebar, clear of the safe areas, in the canvas the status bar takes. The page loads Core's v2.css
+// tab bar or the rail, clear of the safe areas, in the canvas the status bar takes. The page loads Core's v2.css
 // alone; beside an older Core it keeps global.css, which holds the same rules.
 const root = mkdtempSync(join(tmpdir(), "cloud-pwa-layout-v2-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -266,10 +266,11 @@ describe("PwaLayout ui v2 in a browser", () => {
             expect(result.tabs!.height).toBe(1 + 56 + insets.bottom);
             expect(result.main!.bottom).toBeLessThanOrEqual(result.tabs!.top + 0.5);
           } else {
-            // Wide: the sidebar beside the page, no tab bar; the page keeps clear of the bottom inset.
+            // Wide: the rail beside the page as Cloud's app bar (56 px, from the card's top to its bottom), no tab bar;
+            // the page keeps clear of the bottom inset.
             expect(result.tabs).toBeUndefined();
-            expect(result.nav).toMatchObject({ left: 0, width: 248 });
-            expect(result.main!.left).toBeGreaterThanOrEqual(248);
+            expect(result.nav).toMatchObject({ left: 0, width: 56 });
+            expect(result.main!.left).toBeGreaterThanOrEqual(56);
             expect(result.main!.bottom).toBeLessThanOrEqual(900 - insets.bottom + 0.5);
           }
         } finally {
@@ -379,7 +380,7 @@ describe("PwaLayout ui v2 in a browser", () => {
     ] as const) {
       const start = await open("/pwa/", width, "v2.css");
       try {
-        // beside the sidebar its foot leads to Settings: never twice
+        // beside the rail its foot leads to Settings: never twice
         expect(await settingsLink(start), `${width}`).toBe(shown);
       } finally {
         await start.close();
@@ -396,7 +397,7 @@ describe("PwaLayout ui v2 in a browser", () => {
     }
   }, 60_000);
 
-  test("with many parts the tab bar shows four and More, and the sidebar lists them all in their natural order", async () => {
+  test("with many parts the tab bar shows four and More, and the rail lists them all in their natural order", async () => {
     runtimeApps = manyApps;
     const page = await open("/pwa/inventory", 390, "v2.css");
     const wide = await open("/pwa/inventory", 1440, "v2.css");

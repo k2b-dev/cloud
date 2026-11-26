@@ -3,6 +3,9 @@ import { Bar, Button, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import { env } from "../config/env";
 import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
+import { appBarGrounds } from "./app-appearance";
+import { appCanvasTone } from "./app-color";
+import { appIconTone, declaredIconColor } from "./app-icon-style";
 import type { PwaLayoutProps } from "./PwaLayout";
 import PwaNavigationV2, { type PwaNavEntry } from "./PwaNavigationV2.island";
 import PwaRuntimeV2 from "./PwaRuntimeV2.island";
@@ -34,7 +37,7 @@ const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
  * `Workspace` from its island, and the frame keeps only the navigation.
  */
 export default function PwaLayoutV2(props: PwaLayoutProps) {
-  const { locale, t, user, cloud, page, parts, path, builds, countRoutes, settingsHref, currentPart } = pwaFrame(props.c, props.title);
+  const { locale, t, user, cloud, page, parts, path, builds, settingsHref, currentPart } = pwaFrame(props.c, props.title);
   // Its app colours sit on the body; it links Core's v2.css alone, without v1 and the shell (see `pageStylesheetLinks`).
   Object.assign(page, { appUi: "v2", stylesheets: "v2" });
   // A bare page brings its own head: what the frame's head would show is not shown, which an author should learn at once.
@@ -42,14 +45,16 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
   if (dropped.length > 0 && env.IS_DEVELOPMENT)
     console.warn(`PwaLayout ui="v2" bare "${props.title}": ${dropped.join(", ")} not shown; a bare page puts them in its own head.`);
   const navigation = !!user && parts.length > 0;
+  // each part's symbol in its app's colour, readable on this page's canvas, as on Cloud's app bar
+  const grounds = appBarGrounds(currentPart?.appearance);
   const entry = (part: (typeof parts)[number]): PwaNavEntry => ({
     id: part.id,
     label: part.name,
     icon: iconName(part.icon),
     href: part.pwa.href,
     current: part === currentPart,
+    tone: appCanvasTone(appIconTone({ id: part.id, iconColor: declaredIconColor(part.appearance) }), grounds),
     ...(part.pwa.badge ? { badge: part.pwa.badge } : {}),
-    ...(part.pwa.summary ? { summary: part.pwa.summary } : {}),
   });
   // Start and every part: the tab bar shows four and "More" with the others. Settings is no tab, so none is marked there.
   const start: PwaNavEntry = { id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: path === PWA_SCOPE };
@@ -136,7 +141,8 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
             tabsLabel={t.tabs}
             tabs={tabItems}
             screen={props.screen || undefined}
-            endpoints={countRoutes}
+            // the rail and the tabs show only counts that call for attention; Start reads its summaries itself
+            endpoints={[...new Set(parts.flatMap((part) => (part.pwa.badge ? [part.pwa.badge] : [])))]}
           />
         </Show>
         <main class="pwa-v2-main">

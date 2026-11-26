@@ -111,7 +111,7 @@ const page = ssr<AuthContext>(
       back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items", withSidebar: c.req.query("back") !== "phone" } : undefined,
       sidebarTitle: c.req.query("sidebarTitle"),
       status: c.req.query("status") ? "[[status]]" : undefined,
-      actions: "[[actions]]",
+      actions: c.req.query("noActions") === undefined ? "[[actions]]" : undefined,
       ui: c.req.query("ui") === "v2" ? "v2" : undefined,
       bare: c.req.query("bare") !== undefined,
       screen: c.req.query("screen") !== undefined,
@@ -510,11 +510,11 @@ describe("PwaLayout ui v2", () => {
       expect(tab("/pwa/beta").querySelector(".k2-unread")?.textContent).toBe("99+");
       expect(tab("/pwa/beta").querySelector(".k2-hidden-text")?.textContent).toBe("Mehr als 99 ungelesen");
       expect([...document.querySelectorAll(".k2-tabbar > .k2-tab")].some((link) => link.hasAttribute("title"))).toBe(false);
-      // In the sidebar the badge is the attention count beside the summary's quiet one; one signal each.
+      // In the rail, as on Cloud's app bar, only the attention count stands on the symbol; a summary stays on Start.
       const entry = document.querySelector('.pwa-v2-nav a[href="/pwa/alpha"]')!;
-      expect(entry.querySelector(".k2-ni-count")?.textContent).toBe("8");
       expect(entry.querySelector(".k2-unread")?.textContent).toBe("3");
-      expect(document.querySelector(".pwa-v2-nav .k2-nav-title img")?.getAttribute("src")).toBe("/branding/logo");
+      expect(entry.textContent).not.toContain("8");
+      expect(document.querySelector(".pwa-v2-nav .k2-rail-logo img")?.getAttribute("src")).toBe("/branding/logo");
     } finally {
       counts.mockRestore();
     }
@@ -545,7 +545,7 @@ describe("PwaLayout ui v2", () => {
     expect(document.querySelector('[data-k2-part="Pane"] [data-slot="status"]')?.textContent).toBe("[[status]]");
   });
 
-  test("every part in the sidebar and as a tab, with its routes for the counts", async () => {
+  test("every part in the rail and as a tab, in its app's colour, with the routes of its badges", async () => {
     signIn("app");
     apps = [
       shell,
@@ -565,24 +565,31 @@ describe("PwaLayout ui v2", () => {
       { href: "/pwa/inventory", label: "Inventory", current: true, badge: undefined },
       { href: "/pwa/zeta", label: "Zeta", current: false, badge: undefined },
     ]);
-    const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown>;
-    expect({ ...navigation, tabs: undefined } as Record<string, unknown>).toEqual({
+    const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown> & {
+      parts: ({ tone?: { light: string; dark: string } } & Record<string, unknown>)[];
+    };
+    // each part's symbol has its app's colour in both themes, as the app bar derives it
+    for (const entry of navigation.parts)
+      expect(entry.tone).toEqual({ light: expect.stringMatching(/^#/), dark: expect.stringMatching(/^#/) });
+    expect({ ...navigation, tabs: undefined, parts: navigation.parts.map(({ tone: _, ...entry }) => entry) } as Record<
+      string,
+      unknown
+    >).toEqual({
       title: "Example Cloud",
       logo: "/branding/logo",
       start: { id: "start", label: "Start", icon: "home", href: "/pwa/", current: false },
-      appsLabel: "Apps",
       parts: [
         { id: "alpha", label: "Alpha", icon: "alpha", href: "/pwa/alpha", current: false, badge: "/pwa/alpha/unread" },
-        { id: "beta", label: "Beta", icon: "beta", href: "/pwa/beta", current: false, summary: "/pwa/beta/summary" },
+        { id: "beta", label: "Beta", icon: "beta", href: "/pwa/beta", current: false },
         { id: "inventory", label: "Inventory", icon: "inventory", href: "/pwa/inventory", current: true },
         { id: "zeta", label: "Zeta", icon: "zeta", href: "/pwa/zeta", current: false },
       ],
       settings: { id: "settings", label: "Settings", icon: "settings", href: "/pwa/settings", current: false },
       tabsLabel: "App",
       tabs: undefined,
-      endpoints: ["/pwa/alpha/unread", "/pwa/beta/summary"],
+      endpoints: ["/pwa/alpha/unread"],
     });
-    // The sidebar's entries are links in the server's page, before the counts arrive.
+    // The rail's places are links in the server's page, before the counts arrive.
     expect(document.querySelector('.pwa-v2-nav nav a[href="/pwa/inventory"]')?.getAttribute("aria-current")).toBe("page");
   });
 
@@ -599,13 +606,30 @@ describe("PwaLayout ui v2", () => {
     expect(screen?.hasAttribute("data-tabs")).toBe(true);
   });
 
-  test("names the sidebar's page on wide screens and hides a back link the sidebar already leads to", async () => {
+  test("names the page on wide screens by `sidebarTitle` and hides a back link the rail already leads to", async () => {
     signIn("app");
     apps = [shell, part("inventory", "Inventory")];
-    const { document } = await render("/pwa/inventory/42?ui=v2&title=Shelf&sidebarTitle=Inventory&back=phone");
+    const { document } = await render("/pwa/inventory/42?ui=v2&title=Shelf&sidebarTitle=Shelves&back=phone");
     expect(document.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Shelf");
-    expect(document.querySelector(".pwa-v2-title .pwa-v2-wide-only")?.textContent).toBe("Inventory");
+    expect(document.querySelector(".pwa-v2-title .pwa-v2-wide-only")?.textContent).toBe("Shelves");
     expect(document.querySelector(".pwa-v2-back")?.getAttribute("data-with-sidebar")).toBe("hide");
+    expect(document.querySelector(".pwa-v2")?.hasAttribute("data-wide-head")).toBe(false);
+  });
+
+  test("beside the rail no title repeats the open place, and a head left empty by that leaves; the phone keeps it", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const repeats = (await render("/pwa/inventory?ui=v2&title=Inventory&noActions")).document;
+    expect(repeats.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Inventory");
+    expect(repeats.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
+    expect(repeats.querySelector(".pwa-v2")?.getAttribute("data-wide-head")).toBe("none");
+    // Start, titled with the installation's name on the phone and "Start" beside the rail
+    const start = (await render("/pwa/?ui=v2&title=Example%20Cloud&sidebarTitle=Start&noActions")).document;
+    expect(start.querySelector(".pwa-v2-title .pwa-v2-wide-only")).toBeNull();
+    expect(start.querySelector(".pwa-v2")?.getAttribute("data-wide-head")).toBe("none");
+    // a head with the page's actions stays, without the repeated title
+    const actions = (await render("/pwa/inventory?ui=v2&title=Inventory")).document;
+    expect(actions.querySelector(".pwa-v2")?.hasAttribute("data-wide-head")).toBe(false);
   });
 
   test("without a person: no sidebar, no tabs, no keepalive and no timezone reload; builds reach the runtime", async () => {

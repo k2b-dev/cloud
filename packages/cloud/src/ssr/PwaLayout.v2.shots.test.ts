@@ -29,7 +29,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
-const { Button, Chip, Digest, Facts, Notice, Pane, Progress, Row, Section, StatusRow, Text } = await import("@k2b/ui/v2");
+const { Chip, Digest, Facts, Notice, Pane, Progress, Row, Section, StatusRow, Text } = await import("@k2b/ui/v2");
 
 const { ssr } = defineApp({
   id: "inventory",
@@ -228,7 +228,12 @@ const settingsMain = () => [
   // the account and everything beyond this device live in Cloud's own settings: one clear way there
   section({ icon: "user", color: "#be185d", title: "Konto" }, () => [
     row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Mia Muster", "mia.muster@example.org"] }),
-    row({ icon: "settings", color: "#be185d", lines: ["Alle Einstellungen", "Konto, Sicherheit und Mitteilungen in Lindenhof Cloud"], href: "/me" }),
+    row({
+      icon: "settings",
+      color: "#be185d",
+      lines: ["Alle Einstellungen", "Konto, Sicherheit und Mitteilungen in Lindenhof Cloud"],
+      href: "/me",
+    }),
   ]),
   section({ icon: "palette", color: "#7c3aed", title: "Darstellung" }, () => [
     row({
@@ -372,9 +377,9 @@ const server = new Hono<AuthContext>()
           title: "Einstellungen",
           // no part's place: a screen of its own with the way back to Start
           screen: true,
-          // what this page holds, in one line: this device only; the rest is in Cloud's settings
+          // what this page holds, in one line: this device only; "Alle Einstellungen" leads to the rest
           get status() {
-            return createComponent(StatusRow, { lead: "Nur für dieses Gerät · alles Weitere unter „Alle Einstellungen“" });
+            return createComponent(StatusRow, { lead: "Nur für dieses Gerät" });
           },
           // beside the rail, its marked entry already says where the page stands
           back: { href: "/pwa/", label: "Start", withSidebar: false },

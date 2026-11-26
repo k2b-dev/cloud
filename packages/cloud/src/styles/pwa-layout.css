@@ -96,11 +96,13 @@ html[data-pwa-v2] body {
     background: var(--k2-canvas);
   }
 
+  /* the rail stands from the card's top to its bottom, as Cloud's app bar does */
   .pwa-v2[data-sidebar] .pwa-v2-nav {
     grid-row: 1 / -1;
     grid-column: 1;
     display: flex;
     min-height: 0;
+    padding-block: 8px;
   }
 
   /* A head that would only name the open place, beside the rail that already shows it (see PwaLayoutV2). */
