@@ -111,3 +111,11 @@ test("an empty state that is a result is a status region with a toned sign; a pl
   const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch nichts." }));
   expect(plain).toContain('<div class="k2-state" data-k2-part="Empty"><span class="k2-sign"><');
 });
+
+// Terms beside a form open in a new tab, so what was filled in stays; other links open in place.
+test("text that leads somewhere opens a new tab only when asked", () => {
+  const link = (newTab?: boolean) =>
+    renderToString(() => createComponent(Text, { href: "/legal/terms", newTab, children: "Nutzungsbedingungen" }));
+  expect(link(true)).toMatch(/<a[^>]*target="_blank"[^>]*rel="noopener"/);
+  expect(link()).not.toMatch(/target=|rel=/);
+});

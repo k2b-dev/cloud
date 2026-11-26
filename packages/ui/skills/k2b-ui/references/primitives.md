@@ -225,7 +225,9 @@ line with `end` (such as a print button).
 `type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
 `weight` (`"strong"` 600, `"medium"` 500 for a state or amount that stands
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
-(underlined words that lead somewhere; blue is only for the main action).
+(underlined words that lead somewhere; blue is only for the main action),
+`newTab` (with `href`: opens in a new tab, so a form beside the words keeps
+what was filled in, such as terms to accept).
 Without `type`, text takes the role of its place.
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
@@ -317,6 +319,11 @@ lines instead of cutting a thing.
 
 ## Components
 
+- `CodeFigure`: `value`, `label`, `group?` (signs per group, 3 by default).
+  A code a person compares with another screen or types elsewhere, such as
+  the code a sign-in by app shows on both devices: large, monospaced, in
+  groups. Assistive technology reads it sign by sign after `label`. Not for
+  secrets; a code that arrives later stands in a `role="status"` region.
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
