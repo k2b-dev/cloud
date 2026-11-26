@@ -551,6 +551,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       problems.push(
         `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
       );
+  // A column's foot ("Speichern" under a form) is the page's one primary: a floating main action beside it competes with
+  // it and, on the phone, stands over it.
+  if (root.querySelector(".k2-fab") && root.querySelector(".k2-pane > .k2-scroll > [data-slot='foot']"))
+    problems.push("a Pane foot and a floating main action: the foot's save is the page's one primary; drop Workspace primary");
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {

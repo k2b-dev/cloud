@@ -92,6 +92,17 @@ describe("describeV2", () => {
     expect(text).toContain('- 2 primary buttons ("Eins", "Zwei")');
   });
 
+  test("reports a floating main action on a page whose column has a foot", () => {
+    const pane = (foot: string) =>
+      `<section class="k2-pane" data-k2-part="Pane" aria-label="Einstellungen"><div class="k2-scroll"><section class="k2-sec" data-k2-part="Section"></section>${foot}</div></section>`;
+    const foot = `<div class="k2-slot" data-slot="foot"><div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button">Speichern</button></div></div></div>`;
+    const fab = `<button class="k2-fab" aria-label="Neuer Schlüssel"></button>`;
+    const finding = "a Pane foot and a floating main action";
+    expect(outline(pane(foot) + fab)).toContain(finding);
+    expect(outline(pane(foot))).not.toContain(finding);
+    expect(outline(pane("") + fab)).not.toContain(finding);
+  });
+
   test("counts the primary action per surface: an open dialog has its own beside the page's", () => {
     const head = `<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button" data-variant="primary">Schlüssel erstellen</button></div></div>`;
     const dialog = (label: string, buttons: string) =>
