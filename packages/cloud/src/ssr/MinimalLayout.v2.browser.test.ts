@@ -9,7 +9,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as watcher from "../_internal/runtime-watcher";
-import { buildOlderGlobal } from "../styles/older-core-global.fixture";
+import { buildOlderGlobal } from "../styles/older-core-global.test-fixture";
 
 // A visitor page without the Cloud shell on v2: the k2b-ui "public page" recipe inside `MinimalLayout ui="v2"`. The
 // page and its footer share the window; a kiosk page without the footer takes the whole window and scrolls inside.
