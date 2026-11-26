@@ -80,7 +80,13 @@ for (const [name, address] of Object.entries(WEBHOOKS))
       try {
         const errors = pageErrors(page);
         await page.goto(new URL(address, server.url).href);
-        expect({ width, errors, ...(await check(page, name, width)) }).toEqual({ width, errors: [], loaders: 0, problems: null, layout: [] });
+        expect({ width, errors, ...(await check(page, name, width)) }).toEqual({
+          width,
+          errors: [],
+          loaders: 0,
+          problems: null,
+          layout: [],
+        });
       } finally {
         await page.close();
       }

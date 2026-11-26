@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createComponent, createSignal } from "solid-js";
+import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../../../ui/test/dom";
 import { createWebhookQueries, type WebhookQuerySource } from "./webhook-queries";

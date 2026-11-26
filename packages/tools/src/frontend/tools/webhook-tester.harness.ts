@@ -1,8 +1,9 @@
 // The webhook tester's API in the browser harness: it answers from the invented fixture and keeps creates, deletes
 // and sends for the page's life. The fixture is named once (`?fixture=`) and kept in the session, because the
 // tester's own addresses do not carry it.
-import { fixtureData, fixtureStore, selectLogs, type WebhookFixture } from "./webhook-tester.fixture";
+
 import type { WebhookLog } from "./webhook-queries";
+import { fixtureData, fixtureStore, selectLogs, type WebhookFixture } from "./webhook-tester.fixture";
 
 const FIXTURES: WebhookFixture[] = ["normal", "empty", "error", "huge", "worst"];
 
@@ -43,7 +44,11 @@ export const webhookHarness = () => {
       store.endpoints.splice(index, 1);
       return new Response(null, { status: 204 });
     }
-    const filters = { endpointId: url.searchParams.get("endpointId") ?? undefined, method: url.searchParams.get("method") ?? undefined, q: url.searchParams.get("q") ?? undefined };
+    const filters = {
+      endpointId: url.searchParams.get("endpointId") ?? undefined,
+      method: url.searchParams.get("method") ?? undefined,
+      q: url.searchParams.get("q") ?? undefined,
+    };
     if (path === "/incoming-logs") return Response.json({ items: selectLogs(store.logs, "incoming", filters, store.limit) });
     if (path === "/outgoing-logs") return Response.json({ items: selectLogs(store.logs, "outgoing", filters, store.limit) });
     if (path === "/send" && method === "POST") {
@@ -76,9 +81,7 @@ export const webhookHarness = () => {
     const url = new URL(input instanceof Request ? input.url : String(input), location.href);
     if (!url.pathname.startsWith("/tools/api/webhooks/")) return native(input, init);
     const request = input instanceof Request ? input : undefined;
-    return request
-      ? request.text().then((body) => answer(url, { method: request.method, body: body || undefined }))
-      : answer(url, init);
+    return request ? request.text().then((body) => answer(url, { method: request.method, body: body || undefined })) : answer(url, init);
   }, native);
   return fixtureData(location.search, fixture);
 };

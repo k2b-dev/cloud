@@ -57,7 +57,12 @@ const sectionAction = (page: Page, text: string) => page.locator('[data-k2-part=
 const geometry = async (page: Page) => {
   await settled(page);
   return page.evaluate(() =>
-    ['[data-k2-part="StatusRow"]', '[data-k2-part="Canvas"]', '[data-k2-part="Cells"]', '[data-k2-part="Progress"] .k2-progress-track'].flatMap((selector) =>
+    [
+      '[data-k2-part="StatusRow"]',
+      '[data-k2-part="Canvas"]',
+      '[data-k2-part="Cells"]',
+      '[data-k2-part="Progress"] .k2-progress-track',
+    ].flatMap((selector) =>
       [...document.querySelectorAll(selector)].map((node) => {
         const rect = node.getBoundingClientRect();
         return { selector, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
@@ -138,12 +143,16 @@ test("the durations read in full in German and English, on a phone and a wide pa
   ] as const) {
     const page = await open("idle", width, lang);
     try {
-      const options = await page.locator('[role="radiogroup"]').first().locator('input[type="radio"]').evaluateAll((nodes) =>
-        nodes.map((node) => {
-          const text = node.closest("label")!.querySelector<HTMLElement>(".k2-choice-text")!;
-          return { text: text.textContent?.trim(), clipped: text.scrollWidth > text.clientWidth + 1 };
-        }),
-      );
+      const options = await page
+        .locator('[role="radiogroup"]')
+        .first()
+        .locator('input[type="radio"]')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => {
+            const text = node.closest("label")!.querySelector<HTMLElement>(".k2-choice-text")!;
+            return { text: text.textContent?.trim(), clipped: text.scrollWidth > text.clientWidth + 1 };
+          }),
+        );
       expect(options).toEqual(
         (lang === "de" ? ["Schnell · 14 s", "Genau · 29 s"] : ["Quick · 14 s", "Accurate · 29 s"]).map((text) => ({
           text,

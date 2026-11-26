@@ -110,5 +110,7 @@ render(
 );
 // The start button is the pane's one button with the start word; the scenarios that measure press it at once.
 const start = () =>
-  [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => /^(Test starten|Start test)$/.test(button.textContent!.trim()));
+  [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    /^(Test starten|Start test)$/.test(button.textContent!.trim()),
+  );
 if (!["idle", "offline", "disabled"].includes(scenario)) requestAnimationFrame(() => start()?.click());

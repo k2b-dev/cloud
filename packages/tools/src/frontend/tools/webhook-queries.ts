@@ -47,7 +47,10 @@ export type WebhookQuerySource = {
  */
 export const instant = (value: unknown): string => {
   if (value instanceof Date) return value.toISOString();
-  const text = String(value).trim().replace(" ", "T").replace(/([+-]\d\d)$/, "$1:00");
+  const text = String(value)
+    .trim()
+    .replace(" ", "T")
+    .replace(/([+-]\d\d)$/, "$1:00");
   const date = new Date(text);
   return Number.isNaN(date.getTime()) ? String(value) : date.toISOString();
 };

@@ -3,7 +3,6 @@ import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
   Band,
-  Bar,
   Button,
   Dialog,
   Empty,
@@ -14,6 +13,7 @@ import {
   List,
   Menu,
   type MenuEntry,
+  Notice,
   type OnNavigate,
   Pane,
   Row,
@@ -31,8 +31,8 @@ import ToolsScreen from "../ToolsScreen";
 import { type WebhookMessages, webhookMessages } from "./webhook-messages";
 import type { WebhookTesterData } from "./webhook-page-data";
 import { assertOk, createWebhookQueries, type Endpoint, type WebhookLog, type WebhookQuerySource } from "./webhook-queries";
-import { RequestPane, RequestTable, timeReader } from "./webhook-request";
 import { METHODS, type Method, receivedQuery, sentQuery } from "./webhook-query";
+import { RequestPane, RequestTable, timeReader } from "./webhook-request";
 
 const BASE = "/tools/webhooks";
 const DETAIL_WIDTH = 400;
@@ -71,9 +71,9 @@ const useTester = (data: WebhookTesterData) => {
       history.pushState(history.state, "", navigation.href);
       setRequest(id);
     };
-  const copy = (text: string, done: string) =>
+  const copy = (text: string) =>
     void navigator.clipboard.writeText(text).then(
-      () => toast(done, { status: "ok" }),
+      () => toast(t().copied, { status: "ok" }),
       () => toast(t().copyFailed, { status: "bad" }),
     );
   return { t, when, request, setRequest, show, copy, toast };
@@ -171,7 +171,10 @@ function Received(props: { data: WebhookTesterData }) {
   });
   const remove = mutation.create<Endpoint, Endpoint>({
     mutation: async (endpoint, { abortSignal }) => {
-      const response = await apiClient.webhooks.endpoints[":endpointId"].$delete({ param: { endpointId: endpoint.id } }, { init: { signal: abortSignal } });
+      const response = await apiClient.webhooks.endpoints[":endpointId"].$delete(
+        { param: { endpointId: endpoint.id } },
+        { init: { signal: abortSignal } },
+      );
       await assertOk(response);
       return endpoint;
     },
@@ -180,9 +183,12 @@ function Received(props: { data: WebhookTesterData }) {
     create.abort();
     remove.abort();
   });
+  const refreshAll = () => void Promise.all([queries.endpoints.refresh(), queries.logs.refresh()]).catch(() => undefined);
+  const [createError, setCreateError] = createSignal<string>();
   const openCreate = () => {
     setName("");
     setNameError(undefined);
+    setCreateError(undefined);
     setCreating(true);
   };
   const submitCreate = async () => {
@@ -190,15 +196,12 @@ function Received(props: { data: WebhookTesterData }) {
     const value = name().trim();
     if (!value) return setNameError(t().enterEndpointName);
     const outcome = await create.mutate({ name: value });
-    if (outcome === "error") return toast(create.error()?.message || t().endpointCreateFailed, { status: "bad" });
+    // the reason stands in the dialog, where the name can be changed and sent again
+    if (outcome === "error") return setCreateError(create.error()?.message || t().endpointCreateFailed);
     if (outcome !== "success") return;
     setCreating(false);
-    try {
-      await queries.endpoints.invalidate();
-      toast(t().endpointCreated, { status: "ok" });
-    } catch {
-      toast(t().endpointCreatedRefreshFailed, { status: "bad" });
-    }
+    toast(t().endpointCreated, { status: "ok" });
+    await queries.endpoints.invalidate().catch(() => toast(t().listNotRefreshed, { status: "bad", retry: refreshAll }));
   };
   const deleteEndpoint = async (endpoint: Endpoint) => {
     const agreed = await Dialog.confirm({
@@ -209,7 +212,7 @@ function Received(props: { data: WebhookTesterData }) {
     });
     if (!agreed) return;
     const outcome = await remove.mutate(endpoint);
-    if (outcome === "error") return toast(remove.error()?.message || t().endpointDeleteFailed, { status: "bad" });
+    if (outcome === "error") return toast(t().endpointDeleteFailed, { status: "bad", retry: () => void deleteEndpoint(endpoint) });
     if (outcome !== "success") return;
     // a filter on the deleted endpoint ends with it
     if (state().filters.endpoint === endpoint.id) {
@@ -217,18 +220,16 @@ function Received(props: { data: WebhookTesterData }) {
       history.replaceState(history.state, "", addressOf("receive", query().serialize(next), request()));
       setState(next);
     }
-    try {
-      await Promise.all([queries.endpoints.invalidate(), queries.logs.invalidate()]);
-      toast(t().endpointDeleted, { status: "ok" });
-    } catch {
-      toast(t().endpointDeletedRefreshFailed, { status: "bad" });
-    }
+    toast(t().endpointDeleted, { status: "ok" });
+    await Promise.all([queries.endpoints.invalidate(), queries.logs.invalidate()]).catch(() =>
+      toast(t().listNotRefreshed, { status: "bad", retry: refreshAll }),
+    );
   };
   const deeds = (endpoint: Endpoint): MenuEntry[] => {
     const filtered = filterTo(endpoint);
     return [
       ...(filtered ? [{ label: t().showRequests, icon: "filter", href: addressOf("receive", query().serialize(filtered), null) }] : []),
-      { label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint), t().urlCopied) },
+      { label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint)) },
       { label: t().deleteEndpoint({ name: endpoint.name }), icon: "trash", danger: true, onClick: () => void deleteEndpoint(endpoint) },
     ];
   };
@@ -265,14 +266,22 @@ function Received(props: { data: WebhookTesterData }) {
                 icons={{ endpoint: "webhook", method: "code" }}
                 results={t().requestCount({ count: logs().length })}
               />
-              <RequestStatus t={t()} logs={logs()} loading={queries.logs.loading() || queries.logs.refreshing()} onRefresh={() => void queries.logs.refresh().catch(() => undefined)} facts={[{ value: String(endpoints().length), after: t().endpoints }]} />
+              <RequestStatus
+                t={t()}
+                logs={logs()}
+                loading={queries.logs.loading() || queries.logs.refreshing()}
+                onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
+                facts={[{ value: String(endpoints().length), after: t().endpoints }]}
+              />
             </>
           }
         >
           <Section icon="webhook" title={t().endpoints} count={endpoints().length} summary={t().endpointsSummary}>
             <Show
               when={endpoints().length > 0}
-              fallback={<Empty icon="webhook" text={t().noEndpoints} action={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }} />}
+              fallback={
+                <Empty icon="webhook" text={t().noEndpoints} action={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }} />
+              }
             >
               <List label={t().endpoints}>
                 <For each={endpoints()}>
@@ -285,7 +294,7 @@ function Received(props: { data: WebhookTesterData }) {
                         meta={t().requestCount({ count: endpoint.requestCount })}
                         time={endpoint.lastRequestAt ? t().lastRequest({ time: when()(endpoint.lastRequestAt) }) : t().noRequestYet}
                         current={state().filters.endpoint === endpoint.id}
-                        action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint), t().urlCopied) }}
+                        action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint)) }}
                         end={<Menu label={t().endpointActions({ name: endpoint.name })} items={deeds(endpoint)} />}
                       />
                     </Menu.Context>
@@ -294,7 +303,15 @@ function Received(props: { data: WebhookTesterData }) {
               </List>
             </Show>
           </Section>
-          <Show when={!failed()} fallback={<Failed text={t().loadFailed} onRetry={() => void Promise.all([queries.endpoints.refresh(), queries.logs.refresh()]).catch(() => undefined)} />}>
+          <Show
+            when={!failed()}
+            fallback={
+              <Failed
+                text={t().loadFailed}
+                onRetry={() => void Promise.all([queries.endpoints.refresh(), queries.logs.refresh()]).catch(() => undefined)}
+              />
+            }
+          >
             <RequestTable
               label={t().requests}
               rows={logs()}
@@ -342,6 +359,13 @@ function Received(props: { data: WebhookTesterData }) {
           </>
         }
       >
+        <Show when={createError()}>
+          {(reason) => (
+            <Notice tone="bad" title={t().endpointCreateFailed}>
+              {reason()}
+            </Notice>
+          )}
+        </Show>
         <Field label={t().nameLabel} hint={t().nameHint} error={nameError()} required>
           <Input
             value={name()}
@@ -375,7 +399,11 @@ const RequestStatus = (props: {
       lead={props.t.requestCount({ count: props.logs.length })}
       loading={props.loading}
       facts={[...(errors() > 0 ? [{ value: String(errors()), after: props.t.errors }] : []), ...(props.facts ?? [])]}
-      filters={<Button variant="ghost" icon="refresh" onClick={props.onRefresh}>{props.t.refresh}</Button>}
+      filters={
+        <Button variant="ghost" icon="refresh" onClick={props.onRefresh}>
+          {props.t.refresh}
+        </Button>
+      }
     />
   );
 };
@@ -412,6 +440,7 @@ function Sent(props: { data: WebhookTesterData }) {
   const [body, setBody] = createSignal('{\n  "hello": "world"\n}');
   const [headersError, setHeadersError] = createSignal<string>();
   const [targetError, setTargetError] = createSignal<string>();
+  const [sendError, setSendError] = createSignal<string>();
   // the form keeps what was typed between two sends, so a request is easy to send again with a change
   const [composing, setComposing] = createSignal(false);
   const send = mutation.create<WebhookLog, { url: string; method: Method; headers: Record<string, string>; body: string }>({
@@ -439,21 +468,23 @@ function Sent(props: { data: WebhookTesterData }) {
   };
   const submit = async () => {
     if (send.loading()) return;
+    setSendError(undefined);
     if (!target().trim()) return setTargetError(t().enterTarget);
     const parsed = parseHeaders();
     if (!parsed) return;
     const startedAt = location.href;
     const outcome = await send.mutate({ url: target().trim(), method: method(), headers: parsed, body: method() === "GET" ? "" : body() });
-    if (outcome === "error") return toast(send.error()?.message || t().requestFailed, { status: "bad" });
+    // the reason (a blocked or unreachable target) stands in the dialog, where the request can be changed
+    if (outcome === "error") return setSendError(send.error()?.message || t().requestFailed);
     if (outcome !== "success") return;
     const log = send.data()!;
     setComposing(false);
+    toast(t().requestSent, { status: "ok" });
     try {
       await queries.logs.invalidate();
     } catch {
-      return toast(t().requestSentRefreshFailed, { status: "bad" });
+      return toast(t().listNotRefreshed, { status: "bad", retry: () => void queries.logs.refresh().catch(() => undefined) });
     }
-    toast(t().requestSent, { status: "ok" });
     // the answer opens beside the list, unless the person went elsewhere while it was sent
     if (location.href !== startedAt) return;
     history.pushState(history.state, "", href(log.id));
@@ -485,12 +516,26 @@ function Sent(props: { data: WebhookTesterData }) {
           scrollKey="tools-webhooks-sent"
           status={
             <>
-              <FilterBar query={query()} state={state()} onChange={setState} icons={{ method: "code" }} results={t().requestCount({ count: logs().length })} />
-              <RequestStatus t={t()} logs={logs()} loading={queries.logs.loading() || queries.logs.refreshing()} onRefresh={() => void queries.logs.refresh().catch(() => undefined)} />
+              <FilterBar
+                query={query()}
+                state={state()}
+                onChange={setState}
+                icons={{ method: "code" }}
+                results={t().requestCount({ count: logs().length })}
+              />
+              <RequestStatus
+                t={t()}
+                logs={logs()}
+                loading={queries.logs.loading() || queries.logs.refreshing()}
+                onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
+              />
             </>
           }
         >
-          <Show when={!failed()} fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}>
+          <Show
+            when={!failed()}
+            fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}
+          >
             <RequestTable
               label={t().requests}
               rows={logs()}
@@ -501,7 +546,11 @@ function Sent(props: { data: WebhookTesterData }) {
               onOpen={(id) => show(id)}
               empty={
                 state().search || state().filters.method
-                  ? { icon: "filter-off", text: t().noMatches, action: { label: t().resetFilters, icon: "filter-off", href: `${BASE}?mode=send` } }
+                  ? {
+                      icon: "filter-off",
+                      text: t().noMatches,
+                      action: { label: t().resetFilters, icon: "filter-off", href: `${BASE}?mode=send` },
+                    }
                   : { icon: "send", text: t().emptyOutgoing }
               }
             />
@@ -513,7 +562,15 @@ function Sent(props: { data: WebhookTesterData }) {
           </Band>
         </Pane>
         <Show when={request()}>
-          <RequestPane log={openLog()} endpointName={undefined} t={t()} when={when()} listLabel={t().requests} closeHref={href(null)} onClose={show(null)} />
+          <RequestPane
+            log={openLog()}
+            endpointName={undefined}
+            t={t()}
+            when={when()}
+            listLabel={t().requests}
+            closeHref={href(null)}
+            onClose={show(null)}
+          />
         </Show>
       </Pane.Split>
       <Dialog
@@ -530,9 +587,20 @@ function Sent(props: { data: WebhookTesterData }) {
         }
       >
         <Text>{t().sendRequestSubtitle}</Text>
+        <Show when={sendError()}>
+          {(reason) => (
+            <Notice tone="bad" title={t().requestFailed}>
+              {reason()}
+            </Notice>
+          )}
+        </Show>
         <Field.Row>
           <Field label={t().methodLabel}>
-            <Select options={[...METHODS]} value={method()} onChange={(value) => setMethod(METHODS.find((item) => item === value) ?? "POST")} />
+            <Select
+              options={[...METHODS]}
+              value={method()}
+              onChange={(value) => setMethod(METHODS.find((item) => item === value) ?? "POST")}
+            />
           </Field>
           <Field label={t().targetUrlLabel} error={targetError()} required>
             <Input
@@ -566,4 +634,3 @@ function Sent(props: { data: WebhookTesterData }) {
     </ToolsScreen>
   );
 }
-

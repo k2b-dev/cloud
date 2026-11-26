@@ -29,7 +29,15 @@ export const fixtureEndpoints = (): Endpoint[] => [
   endpoint(4, "Paperless Eingang", "wh_Zx9cV4bN6mA1", 0, null),
 ];
 
-type Template = { endpoint: number; method: string; path?: string; query?: string; type: string; body: string | null; headers: Record<string, string> };
+type Template = {
+  endpoint: number;
+  method: string;
+  path?: string;
+  query?: string;
+  type: string;
+  body: string | null;
+  headers: Record<string, string>;
+};
 const templates: Template[] = [
   {
     endpoint: 1,
@@ -127,7 +135,13 @@ export const fixtureLogs = (endpoints: Endpoint[] = fixtureEndpoints(), count = 
 /** Long names, unbreakable addresses and bodies, other scripts and emoji: what a column must survive. */
 const worst = (): { endpoints: Endpoint[]; logs: WebhookLog[] } => {
   const endpoints = [
-    endpoint(1, "Zahlungseingänge der Buchhaltung für alle Filialen in Süddeutschland und Österreich (Testumgebung)", `wh_${"x".repeat(60)}`, 123_456, 1),
+    endpoint(
+      1,
+      "Zahlungseingänge der Buchhaltung für alle Filialen in Süddeutschland und Österreich (Testumgebung)",
+      `wh_${"x".repeat(60)}`,
+      123_456,
+      1,
+    ),
     endpoint(2, "東京オフィス受注システム連携 🚚📦", "wh_tokyo", 7, 90),
     endpoint(3, "A", "wh_a", 0, null),
   ];
@@ -138,10 +152,20 @@ const worst = (): { endpoints: Endpoint[]; logs: WebhookLog[] } => {
       path: long,
       url: `${FIXTURE_ORIGIN}${long}?${"utm_source=newsletter&".repeat(12)}x=1`,
       query: `?${"utm_source=newsletter&".repeat(12)}x=1`,
-      requestBody: JSON.stringify({ text: "Ä".repeat(3_000), emoji: "🎉".repeat(50), list: Array.from({ length: 80 }, (_, i) => `item-${i}`) }),
-      requestHeaders: Object.fromEntries(Array.from({ length: 40 }, (_, i) => [`x-custom-header-with-a-very-long-name-${i}`, "w".repeat(120)])),
+      requestBody: JSON.stringify({
+        text: "Ä".repeat(3_000),
+        emoji: "🎉".repeat(50),
+        list: Array.from({ length: 80 }, (_, i) => `item-${i}`),
+      }),
+      requestHeaders: Object.fromEntries(
+        Array.from({ length: 40 }, (_, i) => [`x-custom-header-with-a-very-long-name-${i}`, "w".repeat(120)]),
+      ),
     },
-    { ...incoming(2, templates[3]!, endpoints, 30), requestBody: "```json\n{}\n```".repeat(20), requestContentType: `multipart/form-data; boundary=${"-".repeat(70)}` },
+    {
+      ...incoming(2, templates[3]!, endpoints, 30),
+      requestBody: "```json\n{}\n```".repeat(20),
+      requestContentType: `multipart/form-data; boundary=${"-".repeat(70)}`,
+    },
     { ...incoming(3, templates[1]!, endpoints, 60 * 24 * 400), requestBody: "مرحبا بالعالم ".repeat(40) },
   ];
   return { endpoints, logs };
@@ -160,7 +184,12 @@ export const selectLogs = (
     .filter((log) => !filters.method || log.method === filters.method)
     .filter((log) => {
       const q = filters.q?.toLowerCase();
-      return !q || [log.url, log.path, log.query, log.requestContentType, log.requestBody, log.responseBody, log.error].some((part) => part?.toLowerCase().includes(q));
+      return (
+        !q ||
+        [log.url, log.path, log.query, log.requestContentType, log.requestBody, log.responseBody, log.error].some((part) =>
+          part?.toLowerCase().includes(q),
+        )
+      );
     })
     .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
     .slice(0, limit);
@@ -182,5 +211,10 @@ export const fixtureData = (search: string, fixture: WebhookFixture, locale = "d
   const store = fixtureStore(fixture);
   const t = webhookMessages.resolve([locale]).t;
   const filters = logFilters(mode === "send" ? sentQuery(t).parse(search).state : receivedQuery(t, store.endpoints).parse(search).state);
-  return { ...base, endpoints: store.endpoints, logs: selectLogs(store.logs, mode === "send" ? "outgoing" : "incoming", filters, store.limit), failed: false };
+  return {
+    ...base,
+    endpoints: store.endpoints,
+    logs: selectLogs(store.logs, mode === "send" ? "outgoing" : "incoming", filters, store.limit),
+    failed: false,
+  };
 };

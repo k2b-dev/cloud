@@ -40,7 +40,11 @@ export const loadWebhookTester = async <T extends AuthContext>(c: Context<T>, ur
     const logs =
       mode === "send"
         ? await webhookTesterService.listOutgoingLogs(user.id, { method: filters.method, query: filters.q })
-        : await webhookTesterService.listIncomingLogs(user.id, { endpointId: filters.endpointId, method: filters.method, query: filters.q });
+        : await webhookTesterService.listIncomingLogs(user.id, {
+            endpointId: filters.endpointId,
+            method: filters.method,
+            query: filters.q,
+          });
     return { ...base, endpoints, logs: logs.map(normalizeLog), failed: false };
   } catch {
     // The page still opens: the list says it could not be read and offers to try again.

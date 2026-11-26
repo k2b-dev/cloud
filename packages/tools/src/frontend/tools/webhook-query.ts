@@ -48,13 +48,22 @@ export const receivedQuery = (t: WebhookMessages, endpoints: readonly Pick<Endpo
 
 /** The address of the sent requests: method and the search `q`. */
 export const sentQuery = (t: WebhookMessages) =>
-  defineListQuery({ key: "webhooks-sent", fields: { method: methodField(t) }, search: { label: t.searchLabel }, sort: newestFirst(t), pageParams });
+  defineListQuery({
+    key: "webhooks-sent",
+    fields: { method: methodField(t) },
+    search: { label: t.searchLabel },
+    sort: newestFirst(t),
+    pageParams,
+  });
 
 export type ReceivedQuery = ReturnType<typeof receivedQuery>;
 export type SentQuery = ReturnType<typeof sentQuery>;
 
 /** The filters of the API (and the service) for a state of either address. */
-export const logFilters = (state: { readonly filters: { readonly endpoint?: string; readonly method?: Method }; readonly search?: string }) => ({
+export const logFilters = (state: {
+  readonly filters: { readonly endpoint?: string; readonly method?: Method };
+  readonly search?: string;
+}) => ({
   ...(state.filters.endpoint ? { endpointId: state.filters.endpoint } : {}),
   ...(state.filters.method ? { method: state.filters.method } : {}),
   ...(state.search ? { q: state.search } : {}),

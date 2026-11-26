@@ -34,6 +34,14 @@ export const StatusChip = (props: { log: WebhookLog; t: WebhookMessages }) => (
 );
 
 export const targetOf = (log: WebhookLog) => log.path || log.url;
+const kindAndSize = (log: WebhookLog) =>
+  [log.requestContentType?.split(";")[0], log.requestBody ? `${new TextEncoder().encode(log.requestBody).length} B` : null]
+    .filter(Boolean)
+    .join(" · ") || "–";
+const hostAndDuration = (log: WebhookLog) => {
+  const host = URL.canParse(log.url) ? new URL(log.url).host : log.url;
+  return log.durationMs === null ? host : `${host} · ${log.durationMs} ms`;
+};
 export const shortBody = (value: string | null) => {
   if (!value) return "–";
   const compact = value.replace(/\s+/g, " ").trim();
@@ -57,8 +65,16 @@ export const RequestTable = (props: {
   endpointOf?: (log: WebhookLog) => string;
 }) => {
   const columns = (): Column<WebhookLog>[] => {
-    const method: Column<WebhookLog> = { title: props.t.colMethod, width: { min: 88, default: 92 }, cell: (row) => <MethodChip method={row.method} /> };
-    const time: Column<WebhookLog> = { title: props.t.colTime, width: { min: 104, default: 120 }, cell: (row) => props.when(row.createdAt) };
+    const method: Column<WebhookLog> = {
+      title: props.t.colMethod,
+      width: { min: 88, default: 92 },
+      cell: (row) => <MethodChip method={row.method} />,
+    };
+    const time: Column<WebhookLog> = {
+      title: props.t.colTime,
+      width: { min: 104, default: 120 },
+      cell: (row) => props.when(row.createdAt),
+    };
     // the body takes what is left and gives way first; the content type stands in the open request
     const body: Column<WebhookLog> = { title: props.t.colBody, cell: (row) => shortBody(row.requestBody), drop: true };
     const endpointOf = props.endpointOf;
@@ -80,13 +96,10 @@ export const RequestTable = (props: {
       current={props.current ?? undefined}
       open={(row) => ({ href: props.href(row.id), onNavigate: props.onOpen(row.id) })}
       empty={props.empty}
-      // three lines on the phone, each cut with "…": who (or where), the address, the body; the chip shares the third
+      // k2b-ui gap: a phone row's second line is not cut to one line; a long unbreakable text (a JSON body) wraps under
+      // the marks. Until it is, the second line stays short: the content type and size, or the host and duration.
       phone={(row) => ({
-        lines: [
-          props.endpointOf?.(row) ?? targetOf(row),
-          props.endpointOf ? `${targetOf(row)}${row.query}` : [row.method, row.durationMs === null ? null : `${row.durationMs} ms`].filter(Boolean).join(" · "),
-          shortBody(row.requestBody),
-        ],
+        lines: [props.endpointOf?.(row) ?? targetOf(row), props.endpointOf ? kindAndSize(row) : hostAndDuration(row)],
         time: props.when(row.createdAt),
         marks: props.endpointOf ? <MethodChip method={row.method} /> : <StatusChip log={row} t={props.t} />,
       })}
@@ -112,7 +125,8 @@ const parseJsonLike = (value: unknown): { ok: true; value: unknown } | { ok: fal
   }
   return typeof current === "string" ? { ok: false, value: current } : { ok: true, value: current };
 };
-const rawText = (value: unknown) => (value === null || value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value, null, 2));
+const rawText = (value: unknown) =>
+  value === null || value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value, null, 2);
 const valueText = (value: unknown) =>
   value === null || value === undefined ? "null" : typeof value === "object" ? JSON.stringify(value, null, 2) : String(value);
 /** Raw text as a code block whose fence is longer than any run of backticks inside it. */
@@ -148,10 +162,21 @@ const Part = (props: { icon: string; title: string; value: unknown; t: WebhookMe
           : undefined
       }
     >
-      <Show when={text()} fallback={<Text type="meta" muted>{props.t.noBody}</Text>}>
+      <Show
+        when={text()}
+        fallback={
+          <Text type="meta" muted>
+            {props.t.noBody}
+          </Text>
+        }
+      >
         <Show when={parsed().ok && !raw() && fields().length > 0} fallback={<Prose markdown={codeBlock(text())} />}>
           <Facts
-            items={fields().map(([label, value]) => ({ label, value: valueText(value), mono: typeof value === "object" && value !== null }))}
+            items={fields().map(([label, value]) => ({
+              label,
+              value: valueText(value),
+              mono: typeof value === "object" && value !== null,
+            }))}
           />
         </Show>
       </Show>
@@ -188,7 +213,9 @@ export const RequestPane = (props: {
           end={
             <>
               <Show when={props.log}>
-                {(log) => <Button variant="ghost" icon="braces" label={props.t.copyJson} onClick={() => copy(JSON.stringify(log(), null, 2))} />}
+                {(log) => (
+                  <Button variant="ghost" icon="braces" label={props.t.copyJson} onClick={() => copy(JSON.stringify(log(), null, 2))} />
+                )}
               </Show>
               <Button variant="ghost" icon="x" label={props.t.close} href={props.closeHref} onNavigate={props.onClose} />
             </>
