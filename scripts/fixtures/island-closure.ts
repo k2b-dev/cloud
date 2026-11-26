@@ -25,13 +25,16 @@ const stubDeadModule = (path: string, code: string, imported?: ReadonlySet<strin
 
 /**
  * Source inputs reachable without loading an on-demand chunk. `dead` modules are replaced by `stubDeadModule`, which
- * keeps only the `imported` names when they are given.
+ * keeps only the `imported` names when they are given. `importers` collects every module that imports another one,
+ * also one whose code the bundler drops whole and leaves out of the metafile's inputs: it still links that module's
+ * imports, so a stub must keep the names it imports.
  */
 export const buildIslandClosure = async (
   entries: string[],
   files?: Record<string, string>,
   dead?: ReadonlySet<string>,
   imported?: ReadonlySet<string>,
+  importers?: Set<string>,
 ) => {
   const stubs: string[] = [];
   for (const path of dead ?? []) if (!barrel.test(files?.[path] ?? (await Bun.file(path).text()))) stubs.push(path);
@@ -45,6 +48,19 @@ export const buildIslandClosure = async (
     define: { "process.env.NODE_ENV": '"production"' },
     splitting: true,
     plugins: [
+      ...(importers
+        ? [
+            {
+              name: "island-closure-importers",
+              setup(build: Bun.PluginBuilder) {
+                build.onResolve({ filter: /.*/ }, ({ importer }) => {
+                  if (importer) importers.add(resolve(importer));
+                  return undefined;
+                });
+              },
+            },
+          ]
+        : []),
       ...(stubs.length
         ? [
             {
