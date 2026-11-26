@@ -1,0 +1,6 @@
+### A v2 head without a name, and a line after a column's last part
+
+- **What happened:** On the Notebooks overview, the head showed deeds on the right and nothing on the left ("hier wirkt es so als ob was fehlt"), and v2 pages had no `h1`. A section drew a rule under its last row although nothing followed it ("die horizontale Border sollte weg sein").
+- **Root cause:** A `Workspace` had no idea of the page's name. A head built from a `Bar` with only `end` left its start empty and named nothing. Every section, row and band drew its line under itself. The rule that removes the line after a column's last part applied only on the phone, to stacked panes.
+- **Error class:** A v2 page that leaves its structure to the app: a heading that every page needs but nothing guarantees, and lines that a part draws for itself instead of for the space between two parts.
+- **Guard:** `describeV2` reports a head that names no page and a head built before its `Workspace`. `server-markup.test.ts` checks the one `h1` from `title` or from the Nav's current entry. `v2-css.test.ts` checks that every part with a line under it gives up that line as a column's last part. `hydration.browser.test.ts` checks that every pane ends without a line and that `document.title` follows a new name.
