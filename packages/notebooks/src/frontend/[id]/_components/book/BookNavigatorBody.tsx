@@ -32,6 +32,8 @@ export type BookNavigatorProps = {
   current?: "graph";
   /** While the graph shows: the page it opened from, which its Links item keeps. */
   graphBack?: string;
+  /** The way into the workspace at the top; Book's own head offers the views instead. On by default. */
+  workspaceEntry?: boolean;
 };
 
 /**
@@ -149,7 +151,7 @@ export function useBookNavigator(props: BookNavigatorProps) {
   // Both entries fill the same slot, so switching between them never moves the contents list.
   const workspaceEntry = () => {
     const current = state();
-    if (!current.canWrite) return null;
+    if (!current.canWrite || props.workspaceEntry === false) return null;
     if (current.selectedNoteId && !current.locked)
       return { label: t().write, icon: "ti ti-pencil", href: withPresentationMode(current.currentHref, "write") };
     return {

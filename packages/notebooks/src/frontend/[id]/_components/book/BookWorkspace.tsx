@@ -1,7 +1,7 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Canvas, Pane, Tabs, Text, Workspace } from "@k2b/ui/v2";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, mergeProps, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { notebookWorkspaceMessages } from "../../messages";
 import { commentMessages } from "../comments/messages";
@@ -33,7 +33,7 @@ export default function BookWorkspace(props: BookWorkspaceProps) {
   const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const book = () => bookMessages.resolve([locale()]).t;
   const comments = () => commentMessages.resolve([locale()]).t;
-  const navigator = useBookNavigator(props);
+  const navigator = useBookNavigator(mergeProps(props, { workspaceEntry: false }));
   const initial: BookMetadata = {
     href: props.currentHref,
     title: props.noteTitle,
@@ -75,23 +75,23 @@ export default function BookWorkspace(props: BookWorkspaceProps) {
                     ...(shown().selectedNoteId && !shown().locked
                       ? [{ label: t().openAsEdit, icon: "pencil", href: workspaceHref("write") }]
                       : []),
-                    // the note's open comments count on Read, which opens at the first of them
-                    {
-                      label: t().openAsRead,
-                      icon: "eye",
-                      count: openComments() > 0 ? openComments() : undefined,
-                      href: openComments() > 0 ? commentsHref(shown().href) : workspaceHref("readonly"),
-                    },
+                    { label: t().openAsRead, icon: "eye", href: workspaceHref("readonly") },
                     { label: book().book, icon: "book", current: true, href: withPresentationMode(shown().href, "book") },
                   ]}
                 />
               </Show>
             }
             end={
-              // a reader has no views, so the comments are a button of their own
-              <Show when={!shown().canWrite && openComments() > 0}>
-                <Button icon="message-circle" href={commentsHref(shown().href)} keep>
-                  {comments().bookEntry({ count: openComments() })}
+              // the note's open comments: their sign and number, named in words; Read opens at the first of them
+              <Show when={openComments() > 0}>
+                <Button
+                  icon="message-circle"
+                  label={comments().bookEntry({ count: openComments() })}
+                  title={comments().bookEntry({ count: openComments() })}
+                  href={commentsHref(shown().href)}
+                  keep
+                >
+                  {String(openComments())}
                 </Button>
               </Show>
             }

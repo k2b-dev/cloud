@@ -266,7 +266,7 @@ export default function BookController(props: Props) {
       if (
         !anchor ||
         // Book's own links: the reading surface, its navigation and its head (v1 shell or v2 workspace)
-        !anchor.closest(".notebook-book-shell, [data-k2-workspace]") ||
+        !anchor.closest("[data-k2-workspace]") ||
         anchor.hasAttribute("download") ||
         (anchor.target && anchor.target !== "_self")
       )

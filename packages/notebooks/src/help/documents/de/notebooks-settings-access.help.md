@@ -31,7 +31,7 @@ Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du zwischen drei Ansicht
 - **Schreibgeschützt:** Arbeitsbereich und Detailbereich nutzen, ohne den Notiztext zu bearbeiten.
 - **Buch:** Das Notizbuch als Handbuch lesen, ohne den Arbeitsbereich des Editors.
 
-Oben in einer Notiz wechseln **Bearbeiten**, **Lesen** und **Buch** zwischen den Ansichten. Buch zeigt sie Personen mit Zugriff **Bearbeiten** oder **Verwalten**. Gesperrte Notizen bieten kein **Bearbeiten**.
+Oben in einer Notiz wechseln **Bearbeiten**, **Lesen** und **Buch** zwischen den Ansichten. Buch zeigt diese Ansichten Personen mit Zugriff **Bearbeiten** oder **Verwalten**. Gesperrte Notizen bieten kein **Bearbeiten**.
 
 Ist keine Notiz ausgewählt oder die Notiz gesperrt, zeigt Buch Personen mit Zugriff **Bearbeiten** oder **Verwalten** in der Seitenleiste **Arbeitsbereich öffnen**. Damit öffnest du die Einstellungen oder erstellst eine Notiz.
 

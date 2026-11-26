@@ -44,7 +44,7 @@ describe("Book controller", () => {
     const globals = ["HTMLInputElement", "HTMLFormElement", "FormData", "CSS"] as const;
     const previous = globals.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
     globals.forEach((key) => Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: dom.window[key] }));
-    dom.root.innerHTML = `<div class="notebook-book-shell"><div class="notebook-book-main"><span id="notebook-book-name">Handbook</span>
+    dom.root.innerHTML = `<div data-k2-workspace=""><div class="notebook-book-main"><span id="notebook-book-name">Handbook</span>
       <a id="second" href="/app/notebooks/book01/notes/note02?mode=book">Second</a>
       <a id="third" href="/app/notebooks/book01/notes/note03?mode=book">Third</a>
       <a id="toc" href="#heading">TOC</a>

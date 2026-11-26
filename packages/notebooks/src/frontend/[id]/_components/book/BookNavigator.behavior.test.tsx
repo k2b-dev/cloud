@@ -48,7 +48,7 @@ describe("Book navigation tree", () => {
     const globals = ["HTMLInputElement", "HTMLFormElement", "FormData", "CSS", "PointerEvent"] as const;
     const previous = globals.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
     globals.forEach((key) => Object.defineProperty(globalThis, key, { configurable: true, writable: true, value: dom.window[key] }));
-    dom.root.innerHTML = `<div class="notebook-book-shell"><div id="navigator"></div><div class="notebook-book-main">
+    dom.root.innerHTML = `<div data-k2-workspace=""><div id="navigator"></div><div class="notebook-book-main">
       <article id="notebook-book-content" tabindex="-1"><h1>${selectedNoteId}</h1></article><div id="controller"></div></div></div>`;
     const requests: Array<{ href: string; resolve: (value: Response) => void }> = [];
     let currentTree = tree;

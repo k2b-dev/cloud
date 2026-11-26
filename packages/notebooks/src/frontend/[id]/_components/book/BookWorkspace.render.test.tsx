@@ -113,12 +113,13 @@ describe("Book on v2", () => {
     expect(await views(render())).toEqual([]);
     expect(render()).not.toMatch(/mode=write|mode=readonly/);
   });
-  test("authors can leave an empty Book without exposing an edit action to readers", () => {
+  test("authors can leave an empty Book without exposing an edit action to readers", async () => {
+    // the head's Read leads into the workspace; the navigation offers no second way
     const empty = render(true, false, "en", null);
     expect(empty).toContain("/app/notebooks/book01?mode=readonly");
-    expect(empty).toContain("Open workspace");
+    expect(empty).not.toContain("Open workspace");
     expect(empty).not.toContain("mode=write");
-    expect(render(false, false, "en", null)).not.toContain("Open workspace");
+    expect(render(false, false, "en", null)).not.toContain("mode=readonly");
   });
   test("localizes controls and empty states without leaking editor data", () => {
     expect(bookMessages.check()).toEqual([]);

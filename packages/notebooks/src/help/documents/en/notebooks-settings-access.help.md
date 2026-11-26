@@ -31,7 +31,7 @@ With **Edit** or **Manage** access, you can switch between three views:
 - **Read-only:** Keep the editor workspace and the detail panel without editing the note text.
 - **Book:** Read the notebook as a handbook, without the editor workspace.
 
-At the top of a note, **Edit**, **Read** and **Book** switch between the views. Book shows them to people with **Edit** or **Manage** access. Locked notes offer no **Edit**.
+At the top of a note, **Edit**, **Read** and **Book** switch between the views. Book shows these views to people with **Edit** or **Manage** access. Locked notes offer no **Edit**.
 
 If no note is selected or the note is locked, Book shows **Open workspace** in the sidebar to people with **Edit** or **Manage** access. Use it to open the settings or to create a note.
 
