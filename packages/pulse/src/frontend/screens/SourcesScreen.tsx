@@ -85,7 +85,8 @@ const dataCount = (source: PulseSource, t: Words) =>
       ? "—"
       : t.sqlTodayCount({ count: source.todayCount });
 
-const PAGE = 100;
+/** Rows a table shows at a time: a source row draws its mark, state and figures, so 50 keep WebKit inside the 1.5 s budget. */
+const PAGE = 50;
 
 const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
   -H "Authorization: Bearer <api-key>" \\
