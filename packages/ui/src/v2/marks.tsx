@@ -91,7 +91,9 @@ const createPicture = (src: () => string | undefined) => {
   return { state, Picture };
 };
 
-export const Avatar = (props: AvatarProps) => {
+// A face, and in a stack its place from 1 on, which the stylesheet reads to let the later ones give way (a sibling
+// count such as :nth-of-type cannot see through an island's wrapper).
+const Face = (props: AvatarProps & { place?: number }) => {
   // Shown, the initials under the picture leave, as a picture may be transparent.
   const picture = createPicture(() => props.image);
   return (
@@ -99,6 +101,7 @@ export const Avatar = (props: AvatarProps) => {
       class="k2-av"
       data-k2-part="Avatar"
       data-k2-avatar=""
+      data-place={props.place === undefined ? undefined : String(props.place)}
       data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.name}
@@ -111,6 +114,8 @@ export const Avatar = (props: AvatarProps) => {
     </span>
   );
 };
+
+export const Avatar = (props: AvatarProps) => <Face {...props} />;
 
 export type AvatarStackProps = {
   /** The people, in order: who changed last, who has access. */
@@ -146,7 +151,7 @@ Avatar.Stack = (props: AvatarStackProps) => {
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
       style={custom({ "--k2-avs-n": String(shown().length), "--k2-avs-rest": all() ? "0" : "1" })}
     >
-      <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
+      <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
       <For each={counts()}>
         {(count) => (
           <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">

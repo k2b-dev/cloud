@@ -57,11 +57,16 @@ test("named charts preserve browser output and reactive data at desktop and phon
           </style></head><body class="k2b-ui"><main></main><button id="update-chart">Update</button><div id="reactive" style="height:200px"></div></body></html>`);
         await page.addScriptTag({ content: bundle });
         await settled(page);
-        const equal = await page
-          .locator("main > section")
-          .evaluateAll((sections) =>
-            sections.map((section) => section.querySelector(".direct svg")?.outerHTML === section.querySelector(".named svg")?.outerHTML),
-          );
+        const equal = await page.locator("main > section").evaluateAll((sections) =>
+          sections.map((section) => {
+            // each instance gives its own definitions its own ids (a state timeline's clip), so they are no difference
+            const drawing = (place: string) =>
+              section
+                .querySelector(`${place} svg`)
+                ?.outerHTML.replace(/k2b-chart-tooltip-[\w-]+?-drawing/g, "k2b-chart-tooltip-ID-drawing");
+            return drawing(".direct") === drawing(".named");
+          }),
+        );
         expect(equal).toEqual(Array(Object.keys(chartFixtures).length).fill(true));
         if (process.env.CHART_SCREENSHOTS) {
           mkdirSync(process.env.CHART_SCREENSHOTS, { recursive: true });
