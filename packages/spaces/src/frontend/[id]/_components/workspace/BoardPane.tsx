@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Canvas, Failed, FilterBar, Pane, StatusRow, Text } from "@k2b/ui/v2";
+import { Canvas, Failed, FilterBar, Pane, StatusRow } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { SpaceDetail, SpaceWormhole } from "@/contracts";
 import { useSpaceMessages } from "../../messages";
@@ -73,6 +73,9 @@ export default function BoardPane(props: Props) {
   return (
     <Pane
       label={t.kanban}
+      // k2b-ui gap: rule 9 puts filters, count and sort in one row under the head; until the head rows of lane DP land,
+      // the FilterBar and the StatusRow are two (a FilterBar cannot stand in the StatusRow: its filter place leaves on
+      // the phone, where the bar must stay).
       status={
         <>
           <FilterBar
@@ -87,13 +90,6 @@ export default function BoardPane(props: Props) {
         </>
       }
     >
-      <Show when={props.space.description}>
-        {(description) => (
-          <Band>
-            <Text type="meta">{description()}</Text>
-          </Band>
-        )}
-      </Show>
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
       {/* k2b-ui gap: a Canvas cannot fill the rest of its pane; the board scrolls inside its own columns. Columns page
           with "Load more" and are not virtualized yet. */}

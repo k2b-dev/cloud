@@ -49,12 +49,13 @@ export function useSpacesNav(props: SpacesNavProps) {
     {
       label: "Spaces",
       action: props.canCreate ? { label: t().newSpace, icon: "plus", onClick: () => setCreating(true) } : undefined,
-      // k2b-ui gap: a Nav entry has no data colour; a Space's colour shows on its page, not in the sidebar.
+      // Each Space carries its mark: its symbol (a pin when pinned) on its colour.
       items: orderSidebarSpaces(props.spaces, pinned()).map((space) => {
         const isPinned = pinned().includes(space.id);
         return {
           label: space.name,
           icon: isPinned ? "pin" : "point-filled",
+          color: space.color ?? undefined,
           href: `/app/spaces/${space.id}`,
           onClick: visit,
           count: space.openItemCount,

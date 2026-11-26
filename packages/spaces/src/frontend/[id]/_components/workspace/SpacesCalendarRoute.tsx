@@ -236,6 +236,9 @@ export default function SpacesCalendarRoute(props: Props) {
   return (
     <Pane
       label={t.calendar}
+      // k2b-ui gap: rule 9 puts filters, count and sort in one row under the head; until the head rows of lane DP land,
+      // the FilterBar and the StatusRow are two (a FilterBar cannot stand in the StatusRow: its filter place leaves on
+      // the phone, where the bar must stay).
       status={
         <>
           <FilterBar

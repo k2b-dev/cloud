@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, StatusRow, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, StatusRow, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemGroupBy, ItemListResult, SpaceDetail, SpaceItem } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -103,6 +103,9 @@ export default function ItemsPane(props: Props) {
     <Pane
       label={props.currentView === "table" ? t.table : t.list}
       scrollKey={`spaces-${props.currentView}-${props.space.id}`}
+      // k2b-ui gap: rule 9 puts filters, count and sort in one row under the head; until the head rows of lane DP land,
+      // the FilterBar and the StatusRow are two (a FilterBar cannot stand in the StatusRow: its filter place leaves on
+      // the phone, where the bar must stay).
       status={
         <>
           <FilterBar
@@ -153,13 +156,6 @@ export default function ItemsPane(props: Props) {
         </>
       }
     >
-      <Show when={props.space.description}>
-        {(description) => (
-          <Band>
-            <Text type="meta">{description()}</Text>
-          </Band>
-        )}
-      </Show>
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
       <Show
         when={!empty()}
