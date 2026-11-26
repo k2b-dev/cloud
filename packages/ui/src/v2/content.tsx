@@ -21,7 +21,7 @@ import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status } from "./types";
+import type { Action, OnNavigate, Person, Status, Width } from "./types";
 import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -663,10 +663,10 @@ export type Column<T> = {
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
-   * default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px (`fixed`: its default, no grip). The
+   * column is exactly its default wide; cut text never widens it.
    */
-  width?: { min: number; default: number };
+  width?: Width;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
@@ -921,7 +921,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
+                    <Show when={index() > 0 && props.columns[index() - 1]?.width && !props.columns[index() - 1]!.width!.fixed}>
                       <span
                         class="k2-cgrip"
                         role="separator"

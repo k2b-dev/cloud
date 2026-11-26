@@ -23,7 +23,7 @@ import {
   Text,
   Workspace,
 } from "@k2b/ui/v2";
-import { Show } from "solid-js";
+import { For, Show } from "solid-js";
 
 const brand = { name: "Kulturhaus Lindenhof", color: "#9a3412" };
 const kinds = {
@@ -35,7 +35,7 @@ const kinds = {
 } as const;
 type Kind = keyof typeof kinds;
 type Seats = { free: number; of: number };
-type Event = { title: string; kind: Kind; time: string; room: string; seats: Seats; host?: { name: string; color: string } };
+type Event = { title: string; kind: Kind; time: string; room: string; seats: Seats; host: { name: string; color: string } };
 
 const today: Event[] = [
   {
@@ -60,11 +60,26 @@ const today: Event[] = [
     time: "20:00–21:30",
     room: "Großer Saal",
     seats: { free: 0, of: 120 },
+    host: { name: "Clara Weiß", color: "#0e7490" },
   },
-  { title: "Kurzfilmnacht: Nachbarschaften", kind: "film", time: "21:45–23:30", room: "Saal 1", seats: { free: 34, of: 60 } },
+  {
+    title: "Kurzfilmnacht: Nachbarschaften",
+    kind: "film",
+    time: "21:45–23:30",
+    room: "Saal 1",
+    seats: { free: 34, of: 60 },
+    host: { name: "Jonas Becker", color: "#be123c" },
+  },
 ];
 const week: Event[] = [
-  { title: "Sprachcafé Deutsch–Ukrainisch", kind: "talk", time: "Do 17:00", room: "Café", seats: { free: 18, of: 25 } },
+  {
+    title: "Sprachcafé Deutsch–Ukrainisch",
+    kind: "talk",
+    time: "Do 17:00",
+    room: "Café",
+    seats: { free: 18, of: 25 },
+    host: { name: "Olena Koval", color: "#15803d" },
+  },
   {
     title: "Kinder-Theaterwerkstatt",
     kind: "workshop",
@@ -73,15 +88,49 @@ const week: Event[] = [
     seats: { free: 2, of: 14 },
     host: { name: "Mara Okafor", color: "#be185d" },
   },
-  { title: "Jazz-Session mit offener Bühne", kind: "concert", time: "Fr 20:00", room: "Großer Saal", seats: { free: 61, of: 120 } },
-  { title: "Lyrik aus dem Stadtteil", kind: "reading", time: "Sa 11:00", room: "Saal 2", seats: { free: 22, of: 40 } },
-  { title: "Dokumentarfilm: Der letzte Bäcker", kind: "film", time: "Sa 19:00", room: "Saal 1", seats: { free: 5, of: 60 } },
-  { title: "Podium: Wohnen im Quartier", kind: "talk", time: "So 16:00", room: "Großer Saal", seats: { free: 44, of: 120 } },
+  {
+    title: "Jazz-Session mit offener Bühne",
+    kind: "concert",
+    time: "Fr 20:00",
+    room: "Großer Saal",
+    seats: { free: 61, of: 120 },
+    host: { name: "Clara Weiß", color: "#0e7490" },
+  },
+  {
+    title: "Lyrik aus dem Stadtteil",
+    kind: "reading",
+    time: "Sa 11:00",
+    room: "Saal 2",
+    seats: { free: 22, of: 40 },
+    host: { name: "Dr. Henrike Vogt", color: "#7c3aed" },
+  },
+  {
+    title: "Dokumentarfilm: Der letzte Bäcker",
+    kind: "film",
+    time: "Sa 19:00",
+    room: "Saal 1",
+    seats: { free: 5, of: 60 },
+    host: { name: "Jonas Becker", color: "#be123c" },
+  },
+  {
+    title: "Podium: Wohnen im Quartier",
+    kind: "talk",
+    time: "So 16:00",
+    room: "Großer Saal",
+    seats: { free: 44, of: 120 },
+    host: { name: "Olena Koval", color: "#15803d" },
+  },
 ];
+
+/** What the wall screen shows after what runs now. */
+const next = [...today.slice(1), ...week.slice(0, 2)];
 
 const few = (seats: Seats) => seats.free > 0 && seats.free <= Math.max(3, seats.of / 10);
 
-/** The state of the seats in colour, sign and word; never a colour alone. */
+/**
+ * The seats: a chip in colour, sign and word only for what asks to act (booked out, almost full); the usual case is
+ * quiet text, so the two exceptions stand out.
+ */
 const seatsChip = (seats: Seats) =>
   seats.free === 0 ? (
     <Chip status="bad" icon="ban">
@@ -90,7 +139,7 @@ const seatsChip = (seats: Seats) =>
   ) : few(seats) ? (
     <Chip status="warn" icon="alert-triangle">{`Noch ${seats.free}`}</Chip>
   ) : (
-    <Chip status="ok">{`${seats.free} frei`}</Chip>
+    <Text muted>{`${seats.free} frei`}</Text>
   );
 
 type Listed = Event & { day: "Heute" | "Diese Woche"; key: string };
@@ -115,12 +164,12 @@ const programme = (events: Listed[]) => (
     columns={[
       {
         title: "Veranstaltung",
-        width: { min: 240, default: 340 },
+        width: { min: 240, default: 340, fixed: true },
         cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room}`] }),
       },
       {
         title: "Art",
-        width: { min: 100, default: 112 },
+        width: { min: 100, default: 112, fixed: true },
         drop: true,
         cell: (event) => (
           <Chip tag color={kinds[event.kind].color} icon={kinds[event.kind].icon}>
@@ -130,19 +179,18 @@ const programme = (events: Listed[]) => (
       },
       {
         title: "Leitung",
-        width: { min: 64, default: 72 },
+        width: { min: 64, default: 72, fixed: true },
         drop: true,
-        cell: (event) => (event.host ? <Avatar name={event.host.name} color={event.host.color} /> : ""),
+        cell: (event) => <Avatar name={event.host.name} color={event.host.color} />,
       },
       {
         title: "Belegt",
-        width: { min: 172, default: 196 },
+        width: { min: 172, default: 196, fixed: true },
         drop: true,
         cell: (event) => <Progress value={taken(event.seats)} of={event.seats.of} label={`${taken(event.seats)}/${event.seats.of}`} />,
       },
       { title: "Plätze", align: "end", cell: (event) => seatsChip(event.seats) },
     ]}
-    // k2b-ui gap: a phone row of a table lets a long title take a second line; the look asks for one line with "…".
     phone={(event) => ({
       lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`],
       avatar: event.host,
@@ -163,13 +211,14 @@ export default function VenueProgramme(props: Props) {
     <Workspace
       head={
         <Bar
-          start={<RecordHead name={brand.name} avatar={{ name: brand.name, initials: "KL", color: brand.color }} kinds={["Programm"]} />}
+          start={<RecordHead name={brand.name} avatar={{ name: brand.name, initials: "KL", color: brand.color }} />}
           end={
             props.kiosk ? (
               <Text type="meta">Mittwoch, 26. November · aktualisiert sich jede Minute</Text>
             ) : (
-              <Button variant="primary" icon="ticket" href="#reservieren" keep>
-                Platz reservieren
+              // words only: with the brand it stays one row on a phone
+              <Button variant="primary" href="#reservieren" keep>
+                Reservieren
               </Button>
             )
           }
@@ -183,9 +232,7 @@ export default function VenueProgramme(props: Props) {
             <Bar
               start={
                 <Inline>
-                  <Text weight="strong">
-                    {props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length} Veranstaltungen`}
-                  </Text>
+                  <Text weight="strong">{props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length}`}</Text>
                   <Show when={almost() > 0}>
                     <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
                   </Show>
@@ -209,7 +256,7 @@ export default function VenueProgramme(props: Props) {
             {programme([...listed(events(), "Heute"), ...listed(week, "Diese Woche")])}
           </Show>
         </Pane>
-        <Pane side label="Ihr Besuch" width={{ min: 280, default: 360 }}>
+        <Pane side label="Ihr Besuch" width={{ min: 280, default: 360, fixed: true }}>
           <Section icon="armchair" color={brand.color} title="Plätze heute">
             <Row
               icon="armchair"
@@ -247,6 +294,13 @@ export default function VenueProgramme(props: Props) {
               end={<Progress value={9} of={12} label="9/12" />}
             />
           </Section>
+          <Show when={props.kiosk}>
+            <Section icon="clock" color={brand.color} title="Als Nächstes">
+              <For each={next}>
+                {(event) => <Row avatar={event.host} lines={[event.title, `${event.time} · ${event.room}`]} end={seatsChip(event.seats)} />}
+              </For>
+            </Section>
+          </Show>
           <Show when={!props.kiosk}>
             <Notice tone="note" icon="wheelchair" title="Barrierefrei">
               Alle Säle sind stufenlos über den Hof erreichbar. Eine Höranlage gibt es im Großen Saal.
