@@ -260,6 +260,7 @@ export default function RunsScreen(props: RunsScreenProps) {
           label={t().runs}
           rows={rows()}
           rowKey={(row) => `${row.ref.kind}:${row.ref.id}`}
+          sticky
           current={props.run ? `${props.run.kind}:${props.run.id}` : undefined}
           group={
             single()
@@ -294,7 +295,7 @@ export default function RunsScreen(props: RunsScreenProps) {
           })}
           columns={[
             { title: t().name, width: { min: 220, default: 360 }, cell: (row) => ({ lines: [row.name, row.detail || "—"] }) },
-            { title: t().status, width: { min: 110, default: 130 }, cell: (row) => statusChip(row.status) },
+            { title: t().status, width: { min: 150, default: 160 }, cell: (row) => statusChip(row.status) },
             { title: t().app, width: { min: 100, default: 130 }, cell: (row) => appChip(row.appId), drop: true },
             { title: t().started, width: { min: 120, default: 140 }, cell: (row) => at(row.at) },
             { title: t().duration, width: { min: 80, default: 100 }, align: "end", cell: (row) => duration(row.durationMs), drop: true },
