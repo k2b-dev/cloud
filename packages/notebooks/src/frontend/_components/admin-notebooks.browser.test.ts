@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 
 const ui = `${resolve(import.meta.dir, "../../../../ui")}/`;
@@ -111,41 +111,92 @@ const open = async (path: string, width = 1440) => {
   return page;
 };
 
-for (const width of [1440, 390]) {
-  test(`${width}: the notebooks are a clean v2 admin screen that says how many there are and which nobody can reach`, async () => {
+const row = (page: Page, name: string) => page.locator('[data-k2-part="Table"] tbody tr', { hasText: name });
+
+for (const width of [1440, 1024, 390]) {
+  test(`${width}: the notebooks are a clean v2 admin screen led by how many were used, with what needs a look`, async () => {
     const page = await open("/admin/notebooks", width);
     try {
       const outline = await describeV2Page(page, "#root");
       expect(outline.includes("Problems (") ? outline : "").toBe("");
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-      // the first row states the numbers, and the notebooks nobody can reach stay in it on the phone
-      expect(await page.locator('[data-k2-part="StatusRow"] .k2-status-lead').textContent()).toBe("24 Notizbücher, 1 ohne Zugriff");
-      expect(await page.locator('[data-k2-part="StatusRow"]').getByText("1 ohne Zugriff").isVisible()).toBe(true);
-      // the one nobody can reach stands out
-      expect(await page.locator('[data-k2-part="Chip"][data-status="bad"]').filter({ visible: true }).count()).toBe(1);
-      // every notebook carries its sign, also in the phone's rows (plain until Mark gives it the Notebooks colour)
-      const signs = page
-        .locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-name]:not([data-name="dots"])')
-        .filter({ visible: true });
-      expect(await signs.count()).toBeGreaterThanOrEqual(10);
+      // the admin bar and the shell name the page: the head holds only its deeds
+      expect(await page.locator('[data-slot="head"] .k2-bar-start').count()).toBe(0);
+      // the hero: how many notebooks were used in 30 days, of how many, with its trend
+      const hero = page.locator('[data-k2-part="Band"]');
+      expect((await hero.locator('[data-k2-part="Inline"]').first().textContent())?.replace(/\s+/g, " ")).toBe(
+        "18aktiv in 30 Tagenvon 24 Notizbüchern",
+      );
+      expect(await hero.locator('[data-k2-part="Spark"]').getAttribute("aria-label")).toMatch(/^Notizbücher mit Änderungen je Tag/);
+      // the exceptions, each on its own line with the first names: nobody can reach (red), quiet for 30 days (waiting)
+      expect(await hero.locator('[data-k2-part="Chip"][data-status="bad"]').textContent()).toBe("1 ohne Zugriff");
+      expect(await hero.getByText("⁨Altes Wiki⁩", { exact: true }).isVisible()).toBe(true);
+      expect(await hero.locator('[data-k2-part="Chip"][data-status="warn"]').textContent()).toBe("6 seit 30 Tagen ohne Änderung");
+      // every notebook carries its mark, also in the phone's rows
+      expect(await page.locator('[data-k2-part="Pane"] [data-k2-part="Mark"]').filter({ visible: true }).count()).toBeGreaterThanOrEqual(8);
       if (width > 600) {
         expect(await page.locator('[data-k2-part="Table"] tbody tr').count()).toBe(24);
-        expect(await page.getByRole("columnheader", { name: "Aktionen" }).count()).toBe(1);
-        // the description takes the room, the access is a number under its head, and no column offers a grip
-        const width = (name: string) =>
-          page.getByRole("columnheader", { name, exact: true }).evaluate((cell) => cell.getBoundingClientRect().width);
-        expect(await width("Beschreibung")).toBeGreaterThan(2 * (await width("Berechtigungen")));
-        const cell = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" }).locator("td").nth(2);
-        expect((await cell.textContent())?.trim()).toBe("6");
-        // the description's head has no grip; the one before the actions' column comes with the number column's width (k2b-ui gap)
-        expect(await page.getByRole("columnheader", { name: "Beschreibung", exact: true }).locator(".k2-cgrip").count()).toBe(0);
+        expect(await page.getByRole("columnheader").allTextContents()).toEqual(["Notizbuch", "Zugriff", "Notizen", "Zuletzt"]);
+        // the table fits beside the admin bar: no column runs out of sight
+        expect(await page.locator(".k2-table-scroll").evaluate((scroll) => scroll.scrollWidth <= scroll.clientWidth)).toBe(true);
+        // the one picture of a row: who has access; nobody is the exception, in red with its word
+        expect(await row(page, "Handbuch Lager").locator('[data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe("6 mit Zugriff");
+        expect((await row(page, "Handbuch Lager").locator("td").nth(2).textContent())?.trim()).toBe("148");
+        expect(await row(page, "Altes Wiki").locator('[data-k2-part="Chip"][data-status="bad"]').textContent()).toBe("niemand");
+        // a long standstill waits; an unknown last change says so
+        expect(await row(page, "Altes Wiki").locator("td").nth(3).locator('[data-tone="warn"]').count()).toBe(1);
+        expect((await row(page, "Recht").locator("td").nth(3).textContent())?.trim()).toBe("unbekannt");
+      } else {
+        // two lines per row: the name, then who can reach it and its notes; the exception in red in that line
+        expect(await page.getByText("6 mit Zugriff · 148 Notizen").isVisible()).toBe(true);
+        expect(await page.getByText("Niemand hat Zugriff").first().isVisible()).toBe(true);
       }
     } finally {
       await page.close();
     }
   }, 60_000);
 }
+
+test("a notebook opens beside the list from its row, with its changes, access, writers and history", async () => {
+  const page = await open("/admin/notebooks");
+  try {
+    // no detail while none is open: the list has the whole width
+    expect(await page.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(0);
+    await row(page, "Handbuch Lager").getByRole("link", { name: "Handbuch Lager" }).click();
+    await page.waitForURL((url) => url.searchParams.get("open") === "nb0000");
+    const detail = page.locator('[data-k2-part="Pane"][data-detail]');
+    await detail.waitFor();
+    expect(await detail.getAttribute("aria-label")).toBe("Handbuch Lager");
+    expect(await detail.locator('[data-k2-part="Cells.Cell"]').count()).toBe(3);
+    expect(await detail.getByRole("region", { name: "Zugriff" }).getByText("Ada Renz").isVisible()).toBe(true);
+    expect(await detail.getByRole("region", { name: "Wer schreibt" }).getByText("42 Änderungen").isVisible()).toBe(true);
+    expect(await detail.getByRole("region", { name: "Verlauf" }).getByText("Wareneingang", { exact: false }).first().isVisible()).toBe(
+      true,
+    );
+    // the list keeps its width beside it, and the open row is marked
+    expect(
+      await page.locator('[data-k2-part="Pane"]:not([data-detail])').evaluate((pane) => pane.getBoundingClientRect().width),
+    ).toBeLessThan(700);
+    // closing returns to the list as it was
+    expect(await detail.getByRole("link", { name: "Schließen" }).getAttribute("href")).toBe("/admin/notebooks");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("an open notebook nobody can reach says so at its head, with the way to give access", async () => {
+  const page = await open("/admin/notebooks?open=nb0004");
+  try {
+    const notice = page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Notice"]');
+    expect(await notice.getAttribute("data-tone")).toBe("bad");
+    expect(await notice.getByText("Niemand hat Zugriff").isVisible()).toBe(true);
+    expect(await notice.getByRole("button", { name: "Berechtigungen" }).isVisible()).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
 
 test("the search goes into the address, and an empty result says so", async () => {
   const page = await open("/admin/notebooks");
@@ -160,19 +211,18 @@ test("the search goes into the address, and an empty result says so", async () =
   const empty = await open("/admin/notebooks?empty=1&search=Zeppelin");
   try {
     await empty.getByText("Keine Notizbücher passen zu „Zeppelin“.").waitFor();
-    // nothing found is said once, by the empty table, which offers to reset the search
-    expect(await empty.locator('[data-k2-part="StatusRow"]').count()).toBe(0);
+    // nothing found is said once, by the empty table, which offers to reset the search; no figures
+    expect(await empty.locator('[data-k2-part="Band"]').count()).toBe(0);
     expect(await empty.getByRole("link", { name: "Suche zurücksetzen" }).getAttribute("href")).toBe("/admin/notebooks");
   } finally {
     await empty.close();
   }
 }, 60_000);
 
-test("a row's menu deletes after asking, and a refused delete says so in a few fixed words", async () => {
-  const page = await open("/admin/notebooks");
+test("the open notebook's menu deletes after asking, and a refused delete says so in a few fixed words", async () => {
+  const page = await open("/admin/notebooks?open=nb0004");
   try {
-    const row = (name: string) => page.locator('[data-k2-part="Table"] tbody tr', { hasText: name });
-    await row("Altes Wiki").getByRole("button", { name: "Aktionen für Altes Wiki" }).click();
+    await page.getByRole("button", { name: "Aktionen für Altes Wiki" }).click();
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     // nothing happens before the question is answered
     await page.getByRole("alertdialog").waitFor();
@@ -191,14 +241,14 @@ test("a row's menu deletes after asking, and a refused delete says so in a few f
 }, 60_000);
 
 test("a network that fails says so in fixed words, for the access and for deleting", async () => {
-  const page = await open("/admin/notebooks");
+  const page = await open("/admin/notebooks?open=nb0000");
   try {
     await page.route("**/api/notebooks/**", (route) => route.abort("internetdisconnected"));
-    const row = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" });
-    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    const menu = page.getByRole("button", { name: "Aktionen für Handbuch Lager" });
+    await menu.click();
     await page.getByRole("menuitem", { name: "Berechtigungen" }).click();
     await page.locator('[data-k2-part="Toast"]').getByText("Zugriff nicht geladen").waitFor();
-    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    await menu.click();
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     await page.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
     await page.locator('[data-k2-part="Toast"]').getByText("Notizbuch nicht gelöscht").waitFor();
@@ -218,27 +268,28 @@ test("more notebooks than one page holds go on with Weiter", async () => {
 }, 60_000);
 
 test("Berechtigungen loads the notebook's access, closes the menu and opens the access dialog", async () => {
-  const page = await open("/admin/notebooks");
+  const page = await open("/admin/notebooks?open=nb0000");
   try {
-    const row = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" });
-    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    const menu = page.getByRole("button", { name: "Aktionen für Handbuch Lager" });
+    await menu.click();
     await page.getByRole("menuitem", { name: "Berechtigungen" }).click();
     await page.getByRole("dialog").filter({ hasText: "Handbuch Lager" }).waitFor();
     expect(accessLoads).toEqual(["nb0000"]);
     // the menu closed once the access had loaded; it does not wait busy behind the dialog
     expect(await page.getByRole("menu").filter({ visible: true }).count()).toBe(0);
-    expect(await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).getAttribute("aria-busy")).not.toBe("true");
+    expect(await menu.getAttribute("aria-busy")).not.toBe("true");
   } finally {
     accessLoads.length = 0;
     await page.close();
   }
 }, 60_000);
 
-test("390: a row's deeds stay reachable on the phone, where the table shows rows", async () => {
-  const page = await open("/admin/notebooks", 390);
+test("390: an open notebook is a page of its own with a way back, and its deeds stay reachable", async () => {
+  const page = await open("/admin/notebooks?open=nb0004", 390);
   try {
-    const actions = page.getByRole("button", { name: "Aktionen für Altes Wiki" }).filter({ visible: true });
-    await actions.click();
+    expect(await page.getByRole("link", { name: "Notizbücher" }).filter({ visible: true }).getAttribute("href")).toBe("/admin/notebooks");
+    expect(await page.locator('[data-k2-part="Table"]').filter({ visible: true }).count()).toBe(0);
+    await page.getByRole("button", { name: "Aktionen für Altes Wiki" }).filter({ visible: true }).click();
     await page.getByRole("menuitem", { name: "Löschen" }).click();
     await page.getByRole("alertdialog").waitFor();
     // asking deletes nothing yet
@@ -246,6 +297,47 @@ test("390: a row's deeds stay reachable on the phone, where the table shows rows
     await page.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
   } finally {
     deletes.length = 0;
+    await page.close();
+  }
+}, 60_000);
+
+for (const width of [1440, 390]) {
+  test(`${width}: the worst an installation holds stays inside the screen, in the language's digits`, async () => {
+    const page = await open("/admin/notebooks?data=worst&open=wc0000", width);
+    try {
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      if (width > 600) {
+        const hero = page.locator('[data-k2-part="Band"]');
+        // the exceptions name 120-sign names cut to a few words, so the band never runs past its pane
+        expect(await hero.evaluate((band) => band.scrollWidth <= band.clientWidth)).toBe(true);
+        expect(await hero.getByText("9.302").isVisible()).toBe(true);
+        expect(await hero.getByText("1.204 ohne Zugriff").isVisible()).toBe(true);
+        expect(await hero.getByText(/Qualitätsmanagementhand…⁩, ⁨https:\/\/wiki\.northwind-…⁩ \+1\.202$/).isVisible()).toBe(true);
+        expect(await page.locator(".k2-table-scroll").evaluate((scroll) => scroll.scrollWidth <= scroll.clientWidth)).toBe(true);
+        // a five-digit access count: three faces and the rest as one quiet "+n", never two
+        const access = row(page, "Alle Mitarbeitenden").locator("td").nth(1);
+        expect(await access.getByText("+12.477").isVisible()).toBe(true);
+        expect(await access.locator(".k2-avs-rest").filter({ visible: true }).count()).toBe(0);
+      }
+      // the open notebook's name is cut in its head, never pushing its deeds away
+      expect(
+        await page
+          .getByRole("button", { name: /^Aktionen für Qualitätsmanagementhandbuch/ })
+          .filter({ visible: true })
+          .isVisible(),
+      ).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+}
+
+test("390: the worst rows keep two lines in the language's digits", async () => {
+  const page = await open("/admin/notebooks?data=worst", 390);
+  try {
+    expect(await page.getByText("12.480 mit Zugriff · 48.213 Notizen").isVisible()).toBe(true);
+    expect(await page.getByText("1 mit Zugriff · 1 Notiz").first().isVisible()).toBe(true);
+  } finally {
     await page.close();
   }
 }, 60_000);
