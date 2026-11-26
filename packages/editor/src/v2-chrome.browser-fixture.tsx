@@ -9,6 +9,8 @@ declare global {
   interface Window {
     /** Selects a span of the note, as a person who drags over words. */
     __k2Select?: (word: string) => void;
+    /** The note's Markdown as the editor holds it. */
+    __k2Doc?: () => string;
   }
 }
 
@@ -32,6 +34,7 @@ if (root)
     const editor = createEditor();
     const actions = markdownActions(editor, "de");
     onMount(() => {
+      window.__k2Doc = () => editor.view()?.state.doc.toString() ?? "";
       window.__k2Select = (word) => {
         const view = editor.view();
         const at = view?.state.doc.toString().indexOf(word) ?? -1;

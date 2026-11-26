@@ -284,7 +284,7 @@ const ringsCut = async (page: Page, bar: string) => {
       for (const point of points) {
         const over = document.elementFromPoint(point.x, point.y);
         if (!over) return { name, cut: "outside the window" };
-        for (let box = over; box && !box.contains(button); box = box.parentElement) {
+        for (let box: Element | null = over; box && !box.contains(button); box = box.parentElement) {
           const style = getComputedStyle(box);
           if (style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.backgroundImage !== "none")
             return { name, cut: `covered by ${box.getAttribute("aria-label") ?? box.className}` };
@@ -400,12 +400,58 @@ test("inside v2 a menu of the toolbar is the v2 menu: its button in the bar's si
     expect(
       await menu.locator(".k2-mi").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height))),
     ).toEqual([32, 32, 32, 32]);
-    // the keys walk it; Enter runs the entry on the note, and the note has the focus again
+    // the arrow reaches the first entry ("Zitat"), Enter runs it on the note's line, and the note has the focus again
+    const before = await page.evaluate(() => window.__k2Doc?.() ?? "");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await menu.waitFor({ state: "hidden" });
-    await page.waitForFunction(() => document.querySelector('[data-editor="shared"] .cm-content')?.textContent?.includes("Familie Oswald"));
-    expect(await page.evaluate(() => document.activeElement?.closest('[data-editor="shared"]') !== null)).toBe(true);
+    await page.waitForFunction((was) => window.__k2Doc?.() !== was, before);
+    expect(await page.evaluate(() => window.__k2Doc?.() ?? "")).toContain("> Familie Oswald");
+    expect(await noteHasFocus(page)).toBe(true);
+    // Escape closes it without a change, and the focus goes back into the note, not to the button
+    const now = await page.evaluate(() => window.__k2Doc?.() ?? "");
+    await trigger.click();
+    await menu.waitFor();
+    await page.keyboard.press("Escape");
+    await menu.waitFor({ state: "hidden" });
+    expect(await noteHasFocus(page)).toBe(true);
+    expect(await page.evaluate(() => window.__k2Doc?.() ?? "")).toBe(now);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+/** Whether the note's editable text has the focus. */
+const noteHasFocus = (page: Page) =>
+  page.evaluate(() => {
+    const content = document.querySelector('[data-editor="shared"] .cm-content');
+    return !!content && !!document.activeElement && content.contains(document.activeElement);
+  });
+
+test("the menu's button stands where the v1 button stood before it: the swap after mount moves nothing", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 720 } });
+  try {
+    // every "Mehr" button that enters the page, with its box at that moment: the v1 one first, then the v2 one
+    await page.addInitScript(() => {
+      const boxes: string[] = [];
+      Reflect.set(window, "__k2MoreBoxes", boxes);
+      new MutationObserver(() => {
+        for (const button of document.querySelectorAll<HTMLElement>('[data-k2b-editor-toolbar] button[aria-label="Mehr"]')) {
+          if (button.dataset.seen) continue;
+          button.dataset.seen = "";
+          const { left, top, width, height } = button.getBoundingClientRect();
+          boxes.push(`${button.classList.contains("k2-btn") ? "v2" : "v1"} ${[left, top, width, height].map(Math.round).join(",")}`);
+        }
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.goto(server.url.href);
+    await page.waitForFunction(() => document.querySelector('[data-k2b-editor-toolbar] .k2-btn[aria-label="Mehr"]'));
+    await settled(page);
+    const boxes: unknown = await page.evaluate(() => Reflect.get(window, "__k2MoreBoxes"));
+    const found = Array.isArray(boxes) ? boxes.map(String) : [];
+    expect(found.length).toBeGreaterThanOrEqual(1);
+    expect(found.at(-1)?.startsWith("v2")).toBe(true);
+    expect(new Set(found.map((box) => box.slice(3))).size).toBe(1);
   } finally {
     await page.close();
   }
@@ -513,10 +559,14 @@ test("on a phone a menu of the toolbar leaves the note its focus and keyboard: a
     // an entry: it runs on the note, and the note keeps its focus
     await more.tap();
     await page.locator(".k2-menu").waitFor();
+    // while the menu is open the note keeps its focus, so the phone's keyboard stays open
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+    const before = await page.evaluate(() => window.__k2Doc?.() ?? "");
     await page.locator(".k2-mi", { hasText: "Zitat" }).tap();
     await page.locator(".k2-menu").waitFor({ state: "hidden" });
     await settled(page);
-    expect(await note.textContent()).toContain("Familie Oswald");
+    expect(await page.evaluate(() => window.__k2Doc?.() ?? "")).not.toBe(before);
     expect(await noteFocused(page)).toBe(true);
     // a tap beside the menu closes it, and the note has its focus again. WebKit's touch emulation sends only
     // pointerdown and touchstart for a tap (no pointerup, mousedown or click, as Safari on a phone does), so this part

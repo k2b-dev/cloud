@@ -27,7 +27,9 @@ export type ToolbarMenu = {
   icon: string;
   label: string;
   sections: { label?: string; actions: EditorAction[] }[];
+  /** Where the menu opens on a v1 page. In a v2 screen the v2 menu places itself below its button. */
   position?: DropdownPosition;
+  /** The menu's width on a v1 page. In a v2 screen the v2 menu is as wide as its longest entry. */
   width?: string;
 };
 /** Host-rendered control that needs more than an action, such as a style picker; it reads the same handle. */
@@ -117,10 +119,18 @@ const menuEntries = (editor: EditorHandle, menu: ToolbarMenu, locale: string): M
   });
 
 /** Inside a v2 screen a menu of the toolbar is the v2 menu of `@k2b/ui`: its surface, its entries, its keys. */
-function ToolbarMenuV2(props: { editor: EditorHandle; menu: ToolbarMenu }) {
+function ToolbarMenuV2(props: { editor: EditorHandle; menu: ToolbarMenu; coarse: boolean }) {
   const locale = useLocale();
+  // On touch screens the note keeps its focus and keyboard while the menu is open; closed from inside (Escape, an
+  // entry), the menu gives the focus back to the note, as every control of the toolbar does.
   return (
-    <Menu icon={props.menu.icon.replace(/^ti-/, "")} label={props.menu.label} items={menuEntries(props.editor, props.menu, locale())} />
+    <Menu
+      icon={props.menu.icon.replace(/^ti-/, "")}
+      label={props.menu.label}
+      items={menuEntries(props.editor, props.menu, locale())}
+      keepFocus={props.coarse}
+      returnFocus={() => props.editor.view()?.contentDOM}
+    />
   );
 }
 
@@ -248,7 +258,7 @@ export function Toolbar(props: ToolbarProps) {
                         item.render()
                       ) : isMenu(item) ? (
                         <Show when={v2()} fallback={<ToolbarMenuButton editor={props.editor} menu={item} coarse={coarse()} />}>
-                          <ToolbarMenuV2 editor={props.editor} menu={item} />
+                          <ToolbarMenuV2 editor={props.editor} menu={item} coarse={coarse()} />
                         </Show>
                       ) : (
                         <ToolbarButton editor={props.editor} action={item} />
