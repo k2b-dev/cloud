@@ -336,3 +336,43 @@ test("a link in a cut second line shows its whole focus ring", async () => {
     "rows",
   );
 });
+
+// Review of #4251: a tab that is open on one device only keeps the rules of the open tab there: without room it stays
+// after the tabs that fit, and where even a short name has no room it folds into the menu, ticked, the menu tab open.
+for (const [width, device] of [
+  [390, "phone"],
+  [1440, "desktop"],
+] as const)
+  test(`tabs open on the ${device} only keep the open tab's place and its tick in the menu at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const state = (label: string) =>
+          page.locator(`nav[aria-label="${label}"] .k2-tab`).evaluateAll((tabs) =>
+            tabs.map((tab) => ({
+              name: tab.querySelector(".k2-tab-label")?.textContent ?? tab.textContent?.trim(),
+              shown: (tab as HTMLElement).offsetWidth > 0 && !tab.hasAttribute("data-overflow"),
+              current: tab.getAttribute("aria-current"),
+            })),
+          );
+        const open = (tabs: { name?: string | null; shown: boolean; current: string | null }[]) =>
+          // a tab folded away is hidden (out of the accessibility tree too); the open ones a person sees and hears
+          tabs.filter((tab) => tab.current === "page" && tab.shown).map((tab) => tab.name);
+        const many = await state("Viele");
+        const tight = await state("Eng");
+        if (device === "desktop") {
+          expect(open(many)).toEqual(["Übersicht"]);
+          expect(open(tight)).toEqual(["Übersicht"]);
+          return;
+        }
+        // the last of six stays after the tabs that fit
+        expect(open(many)).toEqual(["Notizen"]);
+        expect(await page.locator(`nav[aria-label="Viele"] .k2-tab`, { hasText: "Notizen" }).getAttribute("data-kept")).toBe("");
+        // too little room even for a short name: the menu tab is the open one, the tab its ticked entry
+        expect(open(tight)).toEqual(["Mehr"]);
+        await page.locator(`nav[aria-label="Eng"] .k2-tab[data-menu]`).click();
+        expect(await page.getByRole("menuitemcheckbox", { name: "Notizen der Woche" }).getAttribute("aria-checked")).toBe("true");
+      },
+      "tabsfold",
+    );
+  });

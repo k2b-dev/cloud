@@ -343,7 +343,10 @@ lines instead of cutting a thing.
   desktop, while the address names no view) is `current: "phone"` on one tab
   and `current: "desktop"` on another: the stylesheet marks the right one
   from the server's first paint, nothing switches on load. Never read the
-  width yourself to choose a tab; a person's choice is `current: true`.
+  width yourself to choose a tab. Once a person chose a view, pass `true`
+  for it and `false` for the others, never a device value (or two tabs look
+  open). Known: until the page mounts, assistive technology hears no tab as
+  open (`aria-current` needs the width); the look is right from the start.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where

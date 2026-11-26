@@ -75,6 +75,18 @@ for (const [width, height, device, shown] of [
       expect(live.map((tab) => tab.current)).toEqual(["Graph", "Liste", "Tabelle"].map((name) => (name === shown ? "page" : null)));
       expect(Buffer.compare(before, await page.screenshot())).toBe(0);
       if (browserName === "chromium") expect(await page.evaluate(() => window.__shifts)).toBe(0);
+      // Review of #4251: across 768 px after the mount, the open tab and what assistive technology hears follow the width
+      const other = device === "phone" ? "Graph" : "Liste";
+      await page.setViewportSize(device === "phone" ? { width: 1440, height: 900 } : { width: 390, height: 844 });
+      await settled(page);
+      expect((await tabs(page)).map((tab) => [tab.name, tab.open, tab.current])).toEqual(
+        ["Graph", "Liste", "Tabelle"].map((name) => [name, name === other, name === other ? "page" : null]),
+      );
+      await page.setViewportSize({ width, height });
+      await settled(page);
+      expect((await tabs(page)).map((tab) => [tab.name, tab.open, tab.current])).toEqual(
+        ["Graph", "Liste", "Tabelle"].map((name) => [name, name === shown, name === shown ? "page" : null]),
+      );
       // a person's choice wins on every device
       await page.evaluate(() => window.__pick?.("table"));
       await settled(page);

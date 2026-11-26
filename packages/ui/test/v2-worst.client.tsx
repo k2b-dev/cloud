@@ -42,7 +42,42 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-if (scenario === "rows")
+// `<body data-case="tabsfold">`: tabs whose open tab depends on the device, with too little room: in a box of 300 px the
+// phone's tab is the last of six (it stays, as the open tab does), in a box of 150 px it has no room and folds
+if (scenario === "tabsfold")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <div style={{ width: "300px" }}>
+            <Tabs
+              label="Viele"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Dokumente", onClick: () => undefined },
+                { label: "Aufgaben", onClick: () => undefined },
+                { label: "Kontakte", onClick: () => undefined },
+                { label: "Notizen", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+          <div style={{ width: "150px" }}>
+            <Tabs
+              label="Eng"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Notizen der Woche", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "rows")
   render(
     () => (
       <Workspace>

@@ -24,6 +24,7 @@ import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { textEdge } from "./tokens";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -239,6 +240,9 @@ export type Tab = {
    * The view shown now. `"phone"` or `"desktop"` makes it the view shown on that kind of device only, for a default
    * that depends on the device (the list on the phone, the graph on the desktop) while the address names none: the
    * stylesheet marks it from the server's first paint, before the page knows its width, so nothing switches on load.
+   * Device values are only for that default: once a person chose a view, pass `true` for it and `false` for every
+   * other tab, or two tabs look open. Known: until the page mounts, assistive technology hears no tab as the open one
+   * (`aria-current` needs the width); the look is right from the first paint.
    */
   current?: boolean | "phone" | "desktop";
   /**
@@ -274,8 +278,8 @@ const TabFace = (props: { tab: Tab }) => (
 const shownOn = (tab: Tab, wide: boolean | undefined) =>
   tab.current === true || (wide !== undefined && tab.current === (wide ? "desktop" : "phone"));
 
-/** The width from which a page is laid out for the desktop, as the stylesheet's `@media (min-width: 768px)`. */
-const DESKTOP = "(min-width: 768px)";
+/** The width from which v2 lays a page out for the desktop, the one width of v2.css (`textEdge.phoneBelow`). */
+const DESKTOP = `(min-width: ${textEdge.phoneBelow}px)`;
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
 const asEntry = (tab: Tab, shown: boolean): MenuEntry => ({
