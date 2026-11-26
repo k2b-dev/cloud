@@ -206,7 +206,8 @@ test("the phone bar's search opens the head's field over the head, and Escape gi
     await settled(page);
     expect(await button.evaluate((trigger) => document.activeElement === trigger)).toBe(true);
     expect(await search.inputValue()).toBe("Brandt");
-    expect((await head(page)).field[0]).toBeLessThanOrEqual(1);
+    // with words the field stays open over the head, so the page says what filters it (head block, 26.11.)
+    expect((await head(page)).field).toEqual([390 - 2 * 16, 16, 16]);
     // the field focused another way (an app's shortcut): Escape still comes back to the bar's button, never to the page
     await search.focus();
     await page.keyboard.press("Escape");

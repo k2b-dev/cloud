@@ -22,7 +22,15 @@ export function SpaceHead(props: { name: string; deeds?: boolean; more?: boolean
         <Nav
           title="Spaces"
           icon="layout-kanban"
-          groups={[{ items: [{ label: props.name, icon: "layout-kanban", current: true, href: "#space" }] }]}
+          // the sidebar's open entry is another page than the Space ("Meine Aufgaben"), so the head names the Space
+          groups={[
+            {
+              items: [
+                { label: "Meine Aufgaben", icon: "checkbox", current: true, href: "#mine" },
+                { label: props.name, icon: "layout-kanban", href: "#space" },
+              ],
+            },
+          ]}
         />
       }
       head={

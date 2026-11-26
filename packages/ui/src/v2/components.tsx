@@ -11,10 +11,11 @@ import {
   children as resolveChildren,
   Show,
   untrack,
+  useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { markStatusRow } from "./bar-place";
+import { markBarPlace, markStatusRow, SidebarPlaceContext } from "./bar-place";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
@@ -190,33 +191,47 @@ const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ?
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
 /** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
-export const Nav = (props: NavProps) => (
-  <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
-    <div class="k2-nav-title">
-      <Icon name={props.icon} />
-      {props.title}
-    </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
-        </>
-      )}
-    </Index>
-    <Show when={props.foot?.length}>
-      <div class="k2-nav-foot">
-        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+/** The words of the current entry, also one folded away. */
+const currentEntry = (items: readonly NavItem[]): string | undefined => {
+  for (const item of items) {
+    if (item.current) return item.label;
+    const inner = item.items ? currentEntry(item.items) : undefined;
+    if (inner !== undefined) return inner;
+  }
+  return undefined;
+};
+
+export const Nav = (props: NavProps) => {
+  // the workspace learns which page the sidebar already names, so its head does not name it a second time
+  useContext(SidebarPlaceContext)?.(() => currentEntry([...props.groups.flatMap((group) => group.items), ...(props.foot ?? [])]));
+  return (
+    <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
+      <div class="k2-nav-title">
+        <Icon name={props.icon} />
+        {props.title}
       </div>
-    </Show>
-  </nav>
-);
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
+          </>
+        )}
+      </Index>
+      <Show when={props.foot?.length}>
+        <div class="k2-nav-foot">
+          <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+        </div>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -388,31 +403,65 @@ export const Tabs = (props: TabsProps) => {
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
-export const Path = (props: PathProps) => (
-  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
-    <For each={props.items}>
-      {(item, index) => (
-        <>
-          <Show when={index() > 0}>
-            <Icon name="chevron-right" />
-          </Show>
-          <Show
-            when={index() === props.items.length - 1}
-            fallback={
-              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
-                <a class="k2-path-step" href={item.href}>
-                  {item.label}
-                </a>
-              </Show>
-            }
-          >
-            <b aria-current="page">{item.label}</b>
-          </Show>
-        </>
-      )}
-    </For>
-  </nav>
-);
+/** The end of a long name that stays when the name is cut in its middle: its extension or number, up to 12 letters. */
+const nameEnd = (name: string) => (name.length > 16 ? name.slice(-Math.min(12, Math.floor(name.length / 2))) : "");
+
+/**
+ * Whether an address is the page itself: a step there leads nowhere new, and following it would load the page again
+ * and lose what is not saved. Known in the browser only, after the first render, which stays the server's.
+ */
+const usePageItself = () => {
+  const [address, setAddress] = createSignal<string>();
+  onMount(() => setAddress(location.href));
+  return (href: string | undefined) => {
+    const here = address();
+    if (href === undefined || here === undefined) return false;
+    return new URL(href, here).href === new URL(here).href;
+  };
+};
+
+export const Path = (props: PathProps) => {
+  // a path in the start of a bar gives way before the bar's actions
+  markBarPlace("start", "path");
+  const itself = usePageItself();
+  return (
+    <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
+      <For each={props.items}>
+        {(item, index) => (
+          <>
+            <Show when={index() > 0}>
+              <Icon name="chevron-right" />
+            </Show>
+            <Show
+              when={index() === props.items.length - 1}
+              fallback={
+                <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
+                  {/* a step to the page itself is no link (the first render stays the server's) */}
+                  <a
+                    class="k2-path-step"
+                    href={itself(item.href) ? undefined : item.href}
+                    aria-current={itself(item.href) ? "page" : undefined}
+                    title={item.label}
+                  >
+                    {item.label}
+                  </a>
+                </Show>
+              }
+            >
+              {/* the open item: cut in its middle where it has no room, its end kept, its whole name its hint */}
+              <b aria-current="page" title={item.label}>
+                <span class="k2-path-name">{nameEnd(item.label) ? item.label.slice(0, -nameEnd(item.label).length) : item.label}</span>
+                <Show when={nameEnd(item.label)}>
+                  <span class="k2-path-name-end">{nameEnd(item.label)}</span>
+                </Show>
+              </b>
+            </Show>
+          </>
+        )}
+      </For>
+    </nav>
+  );
+};
 
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 

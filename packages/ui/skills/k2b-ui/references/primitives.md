@@ -48,11 +48,21 @@ The working surface of an app: one per screen.
   field from its bar (a head with a path opens it over the first row).
 - A head with a title (`Text` in `Bar start`, such as a Space's name)
   gives way in this order below 1100 px of its own width (a laptop beside
-  its sidebar): first its actions fold as on the phone, the search to its
-  symbol while it holds no words (with words it stays open, so a filtered
-  list says so) and the buttons without `keep` into the "…", while the
-  main action stays. Then its tabs give way, whole tab by whole tab. Its
+  its sidebar): first its buttons without `keep` fold into the "…", while
+  the main action stays. Then its tabs give way, whole tab by whole tab. Its
   title is cut with "…" last. A head of tabs alone keeps its actions.
+- The head is one block with the toolbar rows of the column under it
+  (`FilterBar`, `StatusRow` in `Pane status`): no line between them, one
+  under the last row. A `FilterBar` in the head's `Bar start` stands in
+  its line while there is room and wraps as its second row below 1100 px.
+- A head search is its symbol at every width while it holds no words; a
+  click or "/" opens it over the head, and with words (also from the
+  address, on the server's page and the phone) it stays open.
+- While the sidebar shows, a head title with the words of the sidebar's
+  current entry gives way: the page is named once. The phone and the drawer
+  show it.
+- One main action at the head's end: several `variant="primary"` become
+  one "+" menu with their names and deeds.
 
 ### Pane
 

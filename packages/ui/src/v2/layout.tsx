@@ -13,7 +13,7 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { BarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
+import { BarPlaceContext, HeadPlaceContext, SidebarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -187,8 +187,12 @@ export const Workspace = (props: WorkspaceProps) => {
   const width = () => props.sidebarWidth ?? sidebarDefault;
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
-  const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // the sidebar tells which page its current entry names; the head's title does not name it a second time
+  const [placeName, setPlaceName] = createSignal<() => string | undefined>();
+  const sidebar = resolveChildren(() => (
+    <SidebarPlaceContext.Provider value={(name) => setPlaceName(() => name)}>{props.sidebar}</SidebarPlaceContext.Provider>
+  ));
+  const head = resolveChildren(() => <HeadPlaceContext.Provider value={() => placeName()?.()}>{props.head}</HeadPlaceContext.Provider>);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -216,7 +220,9 @@ export const Workspace = (props: WorkspaceProps) => {
   const drawerRule = () =>
     `@media (min-width: 768px) { @container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } ` +
+    // the sidebar is a drawer now: the head names the page again
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] .k2-bar-start > .k2-text[data-names-place] { display: revert; } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -571,12 +577,13 @@ export const Bar = (props: BarProps) => {
   // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
   const [title, setTitle] = createSignal(0);
   const [toolbar, setToolbar] = createSignal(0);
+  const [path, setPath] = createSignal(0);
   const [more, setMore] = createSignal(0);
   const counter = (set: (change: (count: number) => number) => void) => () => {
     set((count) => count + 1);
     return () => set((count) => count - 1);
   };
-  const marks = { title: counter(setTitle), toolbar: counter(setToolbar), more: counter(setMore) };
+  const marks = { title: counter(setTitle), toolbar: counter(setToolbar), path: counter(setPath), more: counter(setMore) };
   // the main actions at its end; more than one become one "+" menu (one create action at a head's end)
   const [creates, setCreates] = createSignal<readonly (() => MenuEntry)[]>([]);
   const create = (entry: () => MenuEntry) => {
@@ -592,7 +599,13 @@ export const Bar = (props: BarProps) => {
     <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), create }}>{props.end}</BarPlaceContext.Provider>
   ));
   return (
-    <div class="k2-bar" data-k2-part="Bar" data-title={title() > 0 ? "" : undefined} data-toolbar={toolbar() > 0 ? "" : undefined}>
+    <div
+      class="k2-bar"
+      data-k2-part="Bar"
+      data-title={title() > 0 ? "" : undefined}
+      data-toolbar={toolbar() > 0 ? "" : undefined}
+      data-path={path() > 0 ? "" : undefined}
+    >
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>

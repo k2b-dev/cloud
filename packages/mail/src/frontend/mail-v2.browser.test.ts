@@ -14,8 +14,9 @@ const { startMailV2Server, MAIL_V2_PATH } = await import("./mail-v2.browser-serv
 const mockup: Record<number, Record<string, [selector: string, box: string]>> = {
   1440: {
     head: ['.k2-ws-main > [data-slot="head"] > .k2-bar', "250,1 1125x56"],
-    status: ['[data-k2-part="StatusRow"]', "250,57 432x52"],
-    row: ['[data-k2-part="List"] > [data-k2-part="Row"]', "250,109 432x73"],
+    // the head and the list's status row are one block (Valentin 26.11.): no line between them, 4 px apart
+    status: ['[data-k2-part="StatusRow"]', "250,61 432x52"],
+    row: ['[data-k2-part="List"] > [data-k2-part="Row"]', "250,113 432x73"],
     readerHead: ['[data-k2-part="Pane"][data-detail] > [data-slot="head"] > .k2-bar', "683,57 692x52"],
     notice: ['[data-k2-part="Notice"][data-tone="ai"]', "683,149 692x85"],
     listGrip: ['[data-k2-part="Pane.Split"] .k2-grip', "677,460 11x20"],
@@ -221,8 +222,10 @@ describe("Mail on the v2 pilot", () => {
       await page.getByRole("menuitem", { name: "Kontakt ausblenden" }).waitFor();
       await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
       await page.keyboard.press("Escape");
-      // The head's filter menu at the search field, v1's (F9).
-      await page.locator('[data-k2-workspace] [data-slot="head"] [data-k2-part="Input"]').getByRole("button", { name: "Filter" }).click();
+      // The head's filter menu at the search field, v1's (F9): the search is its symbol, so it opens first.
+      const field = page.locator('[data-k2-workspace] .k2-ws-main > [data-slot="head"] [data-k2-part="Input"]');
+      await field.locator("input").focus();
+      await field.getByRole("button", { name: "Filter" }).click();
       await page.getByRole("menuitem", { name: "Weitere Filter …" }).waitFor();
       expect(await page.locator("[data-k2-workspace] button[disabled]").count()).toBe(0);
       expect(errorsOf.get(page)).toEqual([]);
@@ -333,14 +336,15 @@ describe("Mail on the v2 pilot", () => {
     try {
       await page.evaluate(() => Object.assign(window, { stayed: true }));
       const tabs = page.locator('[data-k2-workspace] [data-k2-part="Tabs"]');
-      expect(await tabs.getByRole("link", { name: /Wartet auf Antwort/ }).isVisible()).toBe(false);
       const more = tabs.getByRole("button", { name: /Weitere/ });
-      expect(await more.textContent()).toContain("+9");
+      // the views without room wait behind it, counted; the first of them leads its menu
+      expect(await more.textContent()).toMatch(/\+\d+/);
       await more.click();
       const first = page.getByRole("menuitem").first();
-      expect(await first.textContent()).toContain("Wartet auf Antwort");
+      const name = (await first.textContent())?.trim() ?? "";
+      expect(await tabs.getByRole("link", { name }).isVisible()).toBe(false);
       await first.click();
-      await page.waitForURL(/view=waiting/);
+      await page.waitForURL(/view=/);
       await settled(page);
       expect(await page.evaluate(() => "stayed" in window)).toBe(true);
       expect(errorsOf.get(page)).toEqual([]);

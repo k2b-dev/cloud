@@ -284,6 +284,22 @@ const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search:
   });
 };
 
+/**
+ * A head search stays open while a menu at its end is open (a filter): the focus is in that menu then, not in the
+ * field. The field marks itself (`data-held`), so the head's rules need no `:has()`. Known in the browser only.
+ */
+const useHeldOpen = (box: () => HTMLElement | undefined, search: () => boolean) => {
+  onMount(() => {
+    const element = box();
+    const end = element?.querySelector(":scope > .k2-input-end");
+    if (!search() || !element || !end) return;
+    const update = () => element.toggleAttribute("data-held", end.querySelector('[aria-expanded="true"]') !== null);
+    const watch = new MutationObserver(update);
+    watch.observe(end, { subtree: true, attributes: true, attributeFilter: ["aria-expanded"] });
+    onCleanup(() => watch.disconnect());
+  });
+};
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
@@ -296,13 +312,19 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
+  let box: HTMLElement | undefined;
+  useHeldOpen(
+    () => box,
+    () => props.type === "search",
+  );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   // what stands at the field's end (the filter of a search) belongs to the field, not to the bar around it
   const end = resolveChildren(() => <BarPlaceContext.Provider value={undefined}>{props.end}</BarPlaceContext.Provider>);
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
-    placeholder: props.placeholder,
+    // a search without words of its own shows its name while empty, so its folded symbol knows when it holds words
+    placeholder: props.placeholder ?? (props.type === "search" ? props.label : undefined),
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
@@ -318,6 +340,9 @@ export const Input = (props: InputProps) => {
   });
   return (
     <span
+      ref={(element) => {
+        box = element;
+      }}
       class="k2-input"
       data-k2-part="Input"
       data-invalid={field?.invalid ? "" : undefined}

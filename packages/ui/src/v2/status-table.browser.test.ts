@@ -236,7 +236,7 @@ for (const column of [1440, 1024, 700])
     );
   });
 
-test("390 px: the search of the head stays as its symbol, opens over the head while it has the focus, and folds back", async () => {
+test("390 px: the search of the head stays as its symbol, opens over the head while it has the focus or words, and folds back", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -268,17 +268,23 @@ test("390 px: the search of the head stays as its symbol, opens over the head wh
       });
       // the open field covers the views and draws no line of its own: the head keeps its one line
       expect((await measureV2Layout(page, { root: '[data-slot="head"] > .k2-bar' })).problems).toEqual([]);
+      // with words it stays open when the focus leaves, so the page says what filters it; emptied, it folds back
       await search.fill("Zeitüberschreitung");
       await search.blur();
       await settled(page);
-      expect(await shape()).toEqual(folded);
+      const kept = await shape();
+      expect([kept.left, kept.right]).toEqual([textEdge.phone, textEdge.phone]);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      await search.fill("");
+      await search.blur();
+      await settled(page);
+      expect(await shape()).toEqual(folded);
     },
     { width: 390 },
   );
 });
 
-test("390 px: Escape folds the open search of the head back and keeps its words, unless the app takes Escape", async () => {
+test("390 px: Escape takes the focus from the open search of the head and keeps its words, unless the app takes Escape", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -290,7 +296,8 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
       await settled(page);
       expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
-      expect(await width()).toBe(36);
+      // its words keep it open over the head
+      expect(await width()).toBeGreaterThan(300);
       // an app that takes Escape itself (onKeyDown with preventDefault) decides alone: the field stays open
       await page.evaluate(() => {
         window.__k2TakeEscape = true;
@@ -309,7 +316,7 @@ test("390 px: Escape folds the open search of the head back and keeps its words,
 
 // The Cloud shell offers the page's search in its phone bar (as the mockup draws Mail): the head keeps its tabs, and the
 // field opens over the head when the host focuses it.
-test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus, Escape folds it away", async () => {
+test("390 px in a host's bar: the folded search leaves the head to its tabs, opens over the head on focus or with words, and folds away emptied", async () => {
   await withPage(
     async (page) => {
       const search = page.getByRole("searchbox", { name: "Durchsuchen" });
@@ -336,6 +343,11 @@ test("390 px in a host's bar: the folded search leaves the head to its tabs, ope
       await settled(page);
       expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
       expect(await search.inputValue()).toBe("Zeitüberschreitung");
+      // with words it stays open over the head, so the page says what filters it; emptied, it folds away again
+      expect((await state()).field).toEqual([390 - 2 * textEdge.phone, textEdge.phone, textEdge.phone]);
+      await search.fill("");
+      await search.blur();
+      await settled(page);
       expect(await state()).toEqual(folded);
     },
     { width: 390, host: true },
@@ -405,23 +417,32 @@ test("390 px in a host's bar with a path: the search opens over the status row a
   );
 });
 
-test("1440 px: Escape in the search of the head is the browser's and the app's, the field is not folded", async () => {
+// The head's search is its symbol at every width (Valentin 26.11.): focused, it opens over the head; Escape folds it
+// and keeps its words, and with words it stays open.
+test("1440 px: Escape folds the open search of the head and keeps its words, which keep it open", async () => {
   await withPage(async (page) => {
     const search = page.getByRole("searchbox", { name: "Durchsuchen" });
     await search.focus();
     await page.keyboard.type("mail");
     await page.keyboard.press("Escape");
     await settled(page);
-    expect(await search.evaluate((input) => document.activeElement === input)).toBe(true);
-  });
-});
-
-test("1440 px: the search of the head is its field of 184 px", async () => {
-  await withPage(async (page) => {
+    expect(await search.evaluate((input) => document.activeElement === input)).toBe(false);
+    expect(await search.inputValue()).toBe("mail");
     const width = await page.evaluate(() =>
       Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width),
     );
-    expect(width).toBe(184);
+    expect(width).toBeGreaterThan(36);
+  });
+});
+
+test("1440 px: the search of the head is its symbol of 36 px and opens over the head on focus", async () => {
+  await withPage(async (page) => {
+    const width = () =>
+      page.evaluate(() => Math.round(document.querySelector('[data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect().width));
+    expect(await width()).toBe(36);
+    await page.getByRole("searchbox", { name: "Durchsuchen" }).focus();
+    await settled(page);
+    expect(await width()).toBeGreaterThan(300);
   });
 });
 

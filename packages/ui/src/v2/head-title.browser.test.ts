@@ -123,7 +123,8 @@ test("at 1440 px in the shell the head has room for its actions; the tabs gave w
     const seen = await head(page);
     expect(seen.head).toBeGreaterThanOrEqual(1100);
     expect(seen.actions).toEqual(["search", "Ada Lovelace", "Space-Menü", "Neue Aufgabe"]);
-    expect(seen.search).toBeGreaterThan(36);
+    // the search is its symbol at every width (head block, Valentin 26.11.)
+    expect(seen.search).toBe(36);
     expect(seen.outside).toEqual([]);
     // the name nearly whole (582 of 583 px in Chromium, 444 px with WebKit's wider letters)
     expect(seen.title).toBeGreaterThanOrEqual(420);

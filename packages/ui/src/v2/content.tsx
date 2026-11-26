@@ -14,7 +14,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
-import { markBarPlace } from "./bar-place";
+import { HeadPlaceContext, inBarStart, markBarPlace } from "./bar-place";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
@@ -57,6 +57,15 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
 export const Text = (props: TextProps) => {
   // a text in the start of a bar names its page there
   markBarPlace("start", "title");
+  // In the head of a workspace, a title that only repeats the page the sidebar's current entry names gives way while the
+  // sidebar shows (the phone and the drawer show it). The words are made once and read from here.
+  const place = inBarStart() ? useContext(HeadPlaceContext) : undefined;
+  const words = place ? resolveChildren(() => props.children) : undefined;
+  const repeats = () => {
+    const text = words?.();
+    const name = place?.();
+    return typeof text === "string" && name !== undefined && text.trim() === name.trim();
+  };
   return (
     <Dynamic
       component={props.href ? "a" : "span"}
@@ -65,8 +74,9 @@ export const Text = (props: TextProps) => {
       data-k2-part="Text"
       data-type={props.type}
       data-tone={props.tone}
+      data-names-place={repeats() ? "" : undefined}
     >
-      {props.children}
+      {words ? words() : props.children}
     </Dynamic>
   );
 };

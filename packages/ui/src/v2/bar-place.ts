@@ -1,8 +1,8 @@
 import { createContext, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
-/** What marks a bar: a title in its start, a toolbar (a filter bar) in its start, the "…" at its end. */
-export type BarMark = "title" | "toolbar" | "more";
+/** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" at its end. */
+export type BarMark = "title" | "toolbar" | "path" | "more";
 
 /** A place of a `Bar`, its start or its end, which hears what stands in it. */
 type BarPlace = {
@@ -50,3 +50,12 @@ export const markStatusRow = (row: StatusRowKind) => {
   const hear = useContext(StatusPlaceContext);
   if (hear) onCleanup(hear(row));
 };
+
+/** The sidebar tells its workspace the words of its current entry: the page the sidebar already names. */
+export const SidebarPlaceContext = createContext<(name: () => string | undefined) => void>();
+
+/** In the workspace's head: the words of the sidebar's current entry, which a title of the same words repeats. */
+export const HeadPlaceContext = createContext<() => string | undefined>();
+
+/** Whether a part stands in the start of a bar (where a `Text` is the bar's title). */
+export const inBarStart = () => useContext(BarPlaceContext)?.place === "start";

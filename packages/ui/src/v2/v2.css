@@ -2338,7 +2338,7 @@
 .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-tabs-nav {
   flex-shrink: 1000;
 }
-.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within):has(> input:placeholder-shown) {
+.k2-ui :where(.k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end) > .k2-input[data-search]:not(:focus-within, [data-held]):has(> input:placeholder-shown) {
   /* the field's box holds its unseen input: a tap on the symbol goes into it, and nothing beside it is covered */
   position: relative;
   width: var(--k2-h-control);
@@ -2347,17 +2347,18 @@
   border-color: transparent;
   background: transparent;
 }
-.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input:placeholder-shown {
+.k2-ui :where(.k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end) > .k2-input[data-search]:not(:focus-within, [data-held]) > input:placeholder-shown {
   position: absolute;
   inset: 0;
   opacity: 0;
 }
-.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input:placeholder-shown ~ .k2-input-end {
+.k2-ui :where(.k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end) > .k2-input[data-search]:not(:focus-within, [data-held]) > input:placeholder-shown ~ .k2-input-end {
   display: none;
 }
 /* while it has the focus the field opens over the title and the views from the head's start to its end (their words
-   stand behind it; the mark of the open view stays on the line) */
-.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
+   stand behind it; the mark of the open view stays on the line). These rules weigh less than the phone's, which win
+   below 768 px (`:where`). */
+.k2-ui :where(.k2-ws-main > [data-slot="head"] > .k2-bar > .k2-bar-end) > .k2-input[data-search]:is(:focus-within, [data-held]) {
   position: absolute;
   z-index: 2;
   top: calc((var(--k2-h-head) - var(--k2-h-control)) / 2);
@@ -2372,7 +2373,8 @@
 /* The head of a workspace and the toolbar rows of the column under it (a filter bar, a status row) are one block
    (Valentin 26.11.): no line between the head and the rows nor between the rows, 4 px between them, and the last row
    draws the one line under the block. The pane marks its status place with its rows (`data-block="filter status"`),
-   and the workspace takes its head's line away. A row the pane does not know (a bar of its own) keeps its line. */
+   and the workspace takes its head's line away. On the phone the rows stand without the gap: the head is often the
+   shell's bar there. A row the pane does not know (a bar of its own) keeps its line. */
 .k2-ui [data-slot="status"][data-block] :is(.k2-fbar, .k2-bar[data-status-row]) {
   margin-top: 4px;
 }
@@ -2387,12 +2389,14 @@
   flex-wrap: wrap;
   row-gap: 4px;
 }
+/* the head's first row keeps its height (the bar's own line below it), and the toolbar draws no line of its own */
 .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-end {
-  min-height: var(--k2-h-head);
+  min-height: calc(var(--k2-h-head) - 1px);
 }
 .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-start > .k2-fbar {
   flex: 1 1 320px;
   min-width: 0;
+  border-bottom-color: transparent;
 }
 @container k2-head (max-width: 1059px) {
   .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-start {
@@ -2402,6 +2406,12 @@
     order: 1;
     flex: 1 0 100%;
   }
+}
+/* The sidebar's current entry names the page ("Einstellungen", "Alle Ablagen"): a head title of the same words gives
+   way while the sidebar shows, and the head keeps its views, actions and toolbar. Where the sidebar is a drawer (the
+   workspace's own rule) and on the phone, the head names the page again. */
+.k2-ui .k2-ws > .k2-ws-main > [data-slot="head"] .k2-bar-start > .k2-text[data-names-place] {
+  display: none;
 }
 /* several main actions at a bar's end stand as its one "+" menu, which lists them */
 .k2-ui .k2-bar-end[data-creates] > [data-variant="primary"] {
@@ -2605,6 +2615,40 @@
 .k2-ui .k2-path > .k2-icon {
   font-size: 14px;
   color: var(--k2-n400);
+}
+/* A path gives way before the actions of its bar (the bar marks itself, `data-path`): first the steps before the
+   last are cut with "…", then the last step, the open item, is cut in its middle ("IMG_2026…Espresso.jpg"): its start
+   gives way, its end stays whole. The whole name of each step is its hint. */
+.k2-ui .k2-bar[data-path] > .k2-bar-end {
+  flex: none;
+}
+.k2-ui .k2-bar[data-path] > .k2-bar-start {
+  flex: 0 1 auto;
+}
+.k2-ui .k2-bar-start > .k2-path {
+  flex: 0 1 auto;
+}
+.k2-ui .k2-path > .k2-icon {
+  flex: none;
+}
+.k2-ui .k2-path-step {
+  flex: 0 1000 auto;
+  min-width: 2ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-path > b {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.k2-ui .k2-path-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-path-name-end {
+  flex: none;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
@@ -3612,6 +3656,12 @@
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-creates {
     display: none;
   }
+  .k2-ui .k2-ws > .k2-ws-main > [data-slot="head"] .k2-bar-start > .k2-text[data-names-place] {
+    display: revert;
+  }
+  .k2-ui [data-slot="status"][data-block] :is(.k2-fbar, .k2-bar[data-status-row]) {
+    margin-top: 0;
+  }
   /* The search of a head stays as its symbol, 36 px like an icon button: a tap goes into the field itself (so the
      phone's keyboard comes at once), and while it has the focus the field opens over the head from edge to edge. It
      folds back when the focus leaves; its words stay. */
@@ -3627,16 +3677,32 @@
     border-color: transparent;
     background: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-icon {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-held]) > .k2-icon {
     color: var(--k2-muted);
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > input {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-held]) > input:placeholder-shown {
     position: absolute;
     inset: 0;
     opacity: 0;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) > .k2-input-end {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-held]) > input:placeholder-shown ~ .k2-input-end {
     display: none;
+  }
+  /* A search that holds words (a filtered list, also from the address on the server's page) stays open over the head
+     with them, so the page says what filters it; emptied, it folds back to its symbol. Its surface reaches the head's
+     edges above and below and leaves the head's one line. */
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-held]):not(:has(> input:placeholder-shown)) {
+    position: absolute;
+    z-index: 2;
+    top: calc((100% - var(--k2-h-control)) / 2);
+    left: var(--k2-edge);
+    right: var(--k2-edge);
+    width: auto;
+    padding: 0 12px;
+    justify-content: flex-start;
+    border-color: var(--k2-line-control);
+    background: var(--k2-surface);
+    box-shadow: 0 0 0 calc((var(--k2-h-head) - var(--k2-h-control)) / 2 - 3px) var(--k2-surface);
   }
   /* the field covers the head's views; the cover draws no line of its own, the bar's line stays the one line */
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within)::after {
@@ -3650,7 +3716,7 @@
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab[aria-current] {
     border-bottom-color: transparent;
   }
-  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {
+  .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-held]) {
     position: absolute;
     z-index: 2;
     top: calc((100% - var(--k2-h-control)) / 2);
@@ -3667,7 +3733,7 @@
      the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
      way as a head with only a path does, also while its search is open: the field then lies over the content's first
      row, so nothing below moves. */
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within, [data-held]):has(> input:placeholder-shown) {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3688,7 +3754,7 @@
   .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):has(> .k2-bar-end > .k2-input[data-search])::after {
     content: none;
   }
-  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:focus-within {
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:is(:focus-within, [data-held]) {
     top: calc((var(--k2-h-status) - var(--k2-h-control)) / 2);
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
