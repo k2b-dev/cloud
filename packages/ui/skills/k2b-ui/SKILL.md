@@ -129,7 +129,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
 | 2–4 key numbers side by side | `Cells` with `Cells.Cell` (`trend` for a short history; elsewhere `Spark`) | `record.tsx`, `home.tsx` |
-| a titled part of a page; parts side by side | `Section` (title, count, ≤ 2 actions, `more`); `Section.Columns` | `record.tsx`, `home.tsx` |
+| a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
 | the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
 | labels with values; a token to copy | `Facts` (`inline` for one line; `mono` and `copy` for a key) | `record.tsx` |
@@ -189,8 +189,8 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
 without a head action has its "Save" as the one primary in its footer
-`Bar`; while a form is open beside a list, it holds the one primary and
-the head's "New" turns default. An open dialog or sheet is a surface of its own
+`Bar`; a form shown beside a page that has a head primary saves with a
+default (framed) button. An open dialog or sheet is a surface of its own
 and has its own one primary (such as "Erstellen").
 
 What a list has open belongs in the address: render the `Pane detail` only

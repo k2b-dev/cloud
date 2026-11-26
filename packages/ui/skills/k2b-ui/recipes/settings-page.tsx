@@ -10,7 +10,6 @@ import {
   Chip,
   Digest,
   Icon,
-  Inline,
   Input,
   Nav,
   Pane,
@@ -60,7 +59,7 @@ const kinds = [
 ];
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
 
 // `saved`: nothing changed yet, so there is nothing to save.
 type Props = { saved?: boolean };
@@ -130,24 +129,14 @@ export default function SigninSettings(props: Props) {
             icon="building-fortress"
             color="#7c3aed"
             label="FreeIPA"
-            // a state as the cell's statement: symbol and word in its tone, as large as a number
-            value={
-              <Text type="lead" tone="ok">
-                <Icon name="circle-check" /> Verbunden
-              </Text>
-            }
+            value={<Chip status="ok">Verbunden</Chip>}
             meta="ipa.kolb.internal · 18 ms · geprüft 09:40"
             href="#freeipa"
           />
           <Cells.Cell
             icon="alert-triangle"
             label="Fehlgeschlagen, 24 Std."
-            // the number stands as a number; what needs a person stands beside it as a tinted chip
-            value={
-              <>
-                7 <Chip status="warn">1 gesperrt</Chip>
-              </>
-            }
+            value={<Chip status="warn">7</Chip>}
             meta="1 Konto gesperrt · 5 × Passwort falsch"
           />
         </Cells>
@@ -181,25 +170,18 @@ export default function SigninSettings(props: Props) {
                       </Text>
                     ),
                   },
-                  { title: "Bezeichnung", width: { min: 110, default: 130 }, drop: true, cell: (row) => row.label },
+                  { title: "Bezeichnung", width: { min: 120, default: 150 }, drop: true, cell: (row) => row.label },
                   { title: "Konten", width: { min: 64, default: 72 }, align: "end", cell: (row) => String(row.accounts) },
-                  { title: "Ablauf", width: { min: 110, default: 140 }, drop: true, cell: (row) => row.expires },
+                  { title: "Ablauf", width: { min: 100, default: 120 }, drop: true, cell: (row) => row.expires },
                 ]}
               />
             </Section>
             <Section icon="clock-hour-4" title="Sitzungen">
               <Setting label="Angemeldet bleiben" hint="Danach muss man sich neu anmelden." was={props.saved ? undefined : "12 Std."}>
-                {/* the unit stands beside the field, not in it */}
-                <Inline>
-                  <Input type="number" value="8" />
-                  <Text>Std.</Text>
-                </Inline>
+                <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
               </Setting>
               <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt.">
-                <Inline>
-                  <Input type="number" value="15" />
-                  <Text>Min. ohne Eingabe</Text>
-                </Inline>
+                <Input type="number" value="15" end={<Text type="meta">Min. ohne Eingabe</Text>} />
               </Setting>
             </Section>
             <Section icon="device-mobile-check" title="App-Freigabe" count="6 Geräte gekoppelt">

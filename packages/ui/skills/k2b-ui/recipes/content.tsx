@@ -23,7 +23,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Handbuch", color: "#7c3aed", icon: "notebook" };
+export const app = { color: "#7c3aed", icon: "notebook" };
 
 const page = { icon: "file-text", color: "#7c3aed" };
 const people = [{ name: "Ada Renz" }, { name: "Lena Hartwig" }, { name: "Felix Thal" }];
@@ -133,65 +133,15 @@ export default function IntakeGuide(props: Props) {
             </Section>
             <Section icon="map" title="Hof-Plan" summary="Möbel kommen über Tor 2 in Halle B.">
               {/* A drawing of its own (a plan, a map, a chart of @k2b/ui) stands in a Canvas; inside it, CSS is free. */}
-              <Canvas label="Plan des Hofs: Einfahrt über Tor 2, Halle B für Möbel, Tresor in Halle A" height={240}>
-                <svg viewBox="0 0 720 240" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
-                  {/* the yard, the street and the way in */}
-                  <rect x="0" y="0" width="720" height="240" style={{ fill: "var(--k2-n50)" }} />
-                  <rect x="0" y="200" width="720" height="40" style={{ fill: "var(--k2-n200)" }} />
-                  <text x="16" y="224" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
-                    Lindenallee
-                  </text>
-                  <path
-                    d="M520 200 V150 H430"
-                    style={{ fill: "none", stroke: "var(--k2-app)", "stroke-width": "3", "stroke-dasharray": "6 6" }}
-                  />
-                  <path d="M436 144 L428 150 L436 156" style={{ fill: "none", stroke: "var(--k2-app)", "stroke-width": "3" }} />
-                  {/* Halle A with the safe */}
-                  <rect x="40" y="24" width="220" height="150" rx="6" style={{ fill: "var(--k2-surface)", stroke: "var(--k2-n300)" }} />
-                  <text x="56" y="48" style={{ font: "var(--k2-t-row)", "font-weight": "600", fill: "var(--k2-text)" }}>
+              <Canvas label="Plan des Hofs mit Tor 2 und Halle B" height={160}>
+                <svg viewBox="0 0 400 160" width="100%" height="100%" style={{ display: "block" }} role="img" aria-label="Plan des Hofs">
+                  <rect x="20" y="20" width="160" height="120" style={{ fill: "var(--k2-n100)" }} />
+                  <rect x="220" y="20" width="160" height="120" style={{ fill: "var(--k2-app-tint)" }} />
+                  <text x="100" y="84" text-anchor="middle" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
                     Halle A
                   </text>
-                  <text x="56" y="66" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
-                    Kunst, Schmuck
-                  </text>
-                  <rect
-                    x="180"
-                    y="110"
-                    width="64"
-                    height="48"
-                    rx="4"
-                    style={{ fill: "color-mix(in srgb, #ca8a04 18%, var(--k2-surface))", stroke: "#ca8a04" }}
-                  />
-                  <text x="212" y="139" text-anchor="middle" style={{ font: "var(--k2-t-meta)", "font-weight": "600", fill: "#854d0e" }}>
-                    Tresor
-                  </text>
-                  {/* Halle B for furniture, reached through gate 2 */}
-                  <rect x="300" y="24" width="250" height="110" rx="6" style={{ fill: "var(--k2-app-tint)", stroke: "var(--k2-app)" }} />
-                  <text x="316" y="48" style={{ font: "var(--k2-t-row)", "font-weight": "600", fill: "var(--k2-app-text)" }}>
-                    Halle B · Möbel
-                  </text>
-                  <text x="316" y="66" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-app-text)" }}>
-                    Anlieferung nur nach Termin
-                  </text>
-                  <rect x="410" y="130" width="40" height="8" style={{ fill: "var(--k2-app)" }} />
-                  <text x="456" y="138" style={{ font: "var(--k2-t-meta)", "font-weight": "600", fill: "var(--k2-app-text)" }}>
-                    Tor 2
-                  </text>
-                  {/* parking for vans */}
-                  <rect
-                    x="590"
-                    y="24"
-                    width="100"
-                    height="150"
-                    rx="6"
-                    style={{ fill: "none", stroke: "var(--k2-n300)", "stroke-dasharray": "4 4" }}
-                  />
-                  <text x="640" y="104" text-anchor="middle" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
-                    Transporter
-                  </text>
-                  <rect x="60" y="174" width="40" height="8" style={{ fill: "var(--k2-n400)" }} />
-                  <text x="106" y="182" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
-                    Tor 1
+                  <text x="300" y="84" text-anchor="middle" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-app-text)" }}>
+                    Halle B · Tor 2
                   </text>
                 </svg>
               </Canvas>

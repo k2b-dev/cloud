@@ -26,7 +26,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
 
 // A small logo as a data URL, so the recipe draws without the network.
 const logo =

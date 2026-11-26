@@ -704,8 +704,7 @@ export const Digest = (props: DigestProps) => {
                 class="k2-row"
                 data-k2-part="Digest.Entry"
                 data-activity=""
-                // without a place the time stands at the end of the sentence, as in a row; with one, under it
-                data-lines={entry.place ? "2" : "1"}
+                data-lines="2"
                 data-open={entry.href !== undefined ? "" : undefined}
                 role="listitem"
               >
@@ -715,9 +714,7 @@ export const Digest = (props: DigestProps) => {
                 <span class="k2-row-l1">
                   <RowOpen href={entry.href}>{entry.text}</RowOpen>
                 </span>
-                <Show when={entry.place} fallback={<span class="k2-row-time">{entry.time}</span>}>
-                  {(place) => <span class="k2-row-l2">{`${place()} · ${entry.time}`}</span>}
-                </Show>
+                <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
               </div>
             )}
           </For>

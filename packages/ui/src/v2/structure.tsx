@@ -105,32 +105,6 @@ export const Section = (props: SectionProps) => {
   );
 };
 
-export type SectionColumnsProps = {
-  /** The sections, in reading order: left to right, then the next row. */
-  children: JSX.Element;
-};
-
-/**
- * Sections side by side, such as the groups of a place's home: two columns where the pane has room for two of at
- * least 360 px, one column below that. Each section keeps its head and its one line at the end; no line stands
- * between the columns.
- */
-Section.Columns = (props: SectionColumnsProps) => {
-  const sections = resolveChildren(() => props.children);
-  return (
-    <div class="k2-sec-cols" data-k2-part="Section.Columns">
-      <For each={sections.toArray()}>
-        {(section) => (
-          // each cell is a column of its own: its section's line reaches both of its edges
-          <div class="k2-sec-col" data-k2-column="">
-            {section}
-          </div>
-        )}
-      </For>
-    </div>
-  );
-};
-
 export type GroupProps = {
   /** A Tabler icon before the title. */
   icon?: string;

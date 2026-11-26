@@ -116,17 +116,14 @@ marks and a state chip) and who changed it (`Digest activity`).
 ![form beside a list at 1440 px](../images/form-detail-1440.png)
 ![form beside a list at 390 px](../images/form-detail-390.png)
 
-"Neuer Termin" in the head opened the form; the list shows each
-appointment with the mark of its kind and the fitter in its second line,
-and a clash as a chip; the form is a `Pane detail` beside the list, so the
-list stays in view while it is filled in, with `Select`, `DateInput`,
-`Input`, `Choice` inside a `Field` (fields stand in one column of a fixed
-width), a multiline `Input`, and `Check`s, one of them `disabled` with the
-reason in its words. Its footer `Bar` holds the page's one primary,
-"Termin anlegen".
+The page's one primary "Neuer Termin" stays in the head; the list shows
+each appointment with the mark of its kind and the fitter in its second
+line, and a clash as a chip; the form is a `Pane detail` beside the list, so the list stays in view while it is
+filled in, with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
+multiline `Input`, and `Check`s, one of them `disabled` with the reason
+in its words. Its footer `Bar` saves with a default button.
 
-- While the form is open it holds the one primary; the head's "Neuer
-  Termin" is a default button then.
+- A form beside a page with a head primary never gets a second primary.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
 
@@ -135,15 +132,14 @@ reason in its words. Its footer `Bar` holds the page's one primary,
 ![pairing at 1440 px](../images/pairing-1440.png)
 ![pairing at 390 px](../images/pairing-390.png)
 
-The paired devices as a `Table`: the device with the mark of its kind,
-its person with an avatar, when it was last seen, a state chip and an
-icon button that removes the device after
+The paired devices as a `List` of `Row`s with the mark of their kind,
+their person and when they were last seen, a state chip only where
+something is off, and an icon button that removes the device after
 `Dialog.confirm({ …, danger: true })`. Beside them a `Pane side` with a
 `Section` with `id` (a link target): the steps as `Text`, a `QrCode` (the
 app makes its SVG with `@k2b/stdlib/qr`) and the code to compare as
 `CodeDisplay`; the wait for the other device is a `Notice tone="warn"`,
-which assistive technology hears politely; under it the latest pairings
-as `Digest activity`.
+which assistive technology hears politely.
 
 - Steps of a pairing in a dialog: `Dialog stepwise`, so a shorter step
   does not make it jump.
@@ -178,9 +174,8 @@ and the one primary "Speichern"; a `Pane side` shows who changed what
 `RecordHead` in the head `Bar`; `Tabs` as the head of the record's `Pane`.
 Across both columns: a pinned `Notice tone="note"` and `Cells` with the key
 statements. Below them a `Pane.Split`: the main column with
-`Section "Anstehend"` (`Row yours` with marks, row actions), the
-deliveries as rows (id over its sentence, the date at the end, the state
-as a chip) with a `more` link, and the customer's articles as rows
+`Section "Anstehend"` (`Row yours` with marks, row actions), a `Section`
+with a `Digest` and a `more` link, and the customer's articles as rows
 with the mark of their category, price and state; a `Pane side` with the
 contact `Facts`, the people who look after the customer as rows with
 avatars, and `Digest activity`.
@@ -242,8 +237,7 @@ The bases of Grids. `Nav` entries with `color`, so each base leads with its
 `Mark`; a `StatusRow` whose lead says what counts today, with chips for
 what lets a person act; `Tiles variant="card"` with `stats`, `people`,
 `foot`, `trend` and the `create` card with templates as `choices`; a
-`Table` of what was opened last (the thing and its base with their marks,
-entries, who changed it with an avatar, when); a
+`List` of two-line `Row`s with `mark` in the colour of their kind; a
 `Pane side` with `Digest activity`, each sentence with the thing's
 `Mark` and name.
 
@@ -258,11 +252,9 @@ entries, who changed it with an avatar, when); a
 ![home at 1440 px](../images/home-1440.png)
 ![home at 390 px](../images/home-390.png)
 
-One base: four `Cells` (a `trend` on the first; a number with a tinted
-chip beside it, never inside), the groups as `Section`s side by side in
-`Section.Columns`, each of strong `Row`s with `mark`, their figures in the
-second line and their state as a chip in `marks`; then `Digest activity`
-under "Zuletzt geändert", each time at the end of its sentence.
+One base: `Cells` with a `trend` on the first, the things as `Section`s of
+`Row`s with `mark`, their figures in the second line and their state as a
+chip in `marks`; then `Digest activity` under "Zuletzt geändert".
 
 - A state that needs a person (a failed workflow, new form entries) stands
   in its row and as a `dot` on its sidebar entry.
@@ -364,9 +356,8 @@ star and a "…" `Menu` with the same entries in its `end`. The offer the addres
 ![dialogs at 390 px](../images/dialogs-390.png)
 
 Members of a space (its `Mark` in the head, the spaces with theirs in the
-`Nav`) as a `Table`: face and name (`Column avatar`), the role as a chip,
-the last activity and a "…" menu per member; open invitations as rows
-with a mark. "Einladen" opens a `Dialog` with
+`Nav`) as rows with avatars, their role and last activity in the second
+line; open invitations with a mark. "Einladen" opens a `Dialog` with
 `Field`s and its own primary in the foot (a sheet on the phone);
 `Workspace primary` opens the same dialog. Removing a member asks with
 `Dialog.confirm`, then a toast offers "Rückgängig"; "Erneut senden"
@@ -382,8 +373,7 @@ answers with a toast with `status` `ok` or `bad`.
 ![states at 1440 px](../images/states-1440.png)
 ![states at 390 px](../images/states-390.png)
 
-A table of deliveries (supplier with the mark of its goods, gate,
-amount, value, who checked it with an avatar, a state chip, the time),
+A list of deliveries, each with the mark of its goods and a state chip,
 with a `StatusRow` and its states in the place of the rows:
 `Empty` for nothing yet and another `Empty` for nothing behind a
 filter, `Loading` with the rows and lines that usually come, `Failed`

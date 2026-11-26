@@ -108,7 +108,7 @@ const threads: Thread[] = [
 const open = threads[0]!;
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { name: "Mail", color: "#0f766e", icon: "mail" };
+export const app = { color: "#0f766e", icon: "mail" };
 
 export default function MailScreen() {
   return (

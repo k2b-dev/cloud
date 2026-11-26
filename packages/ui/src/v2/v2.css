@@ -626,10 +626,6 @@
   min-width: 0;
   flex: none;
 }
-/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
-.k2-ui .k2-scroll > .k2-bar:last-child {
-  border-bottom: 0;
-}
 .k2-ui .k2-bar-start,
 .k2-ui .k2-bar-end {
   display: flex;
@@ -750,8 +746,8 @@
 }
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  /* the cell's statement in the type of a statement (18), as large as the page's lead */
-  font: var(--k2-t-lead);
+  font: var(--k2-t-body);
+  font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1046,20 +1042,6 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
-/* sections side by side: two columns where both get 360 px, else one; no line between the columns */
-.k2-ui .k2-sec-cols {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(max(min(360px, 100%), 40%), 1fr));
-  min-width: 0;
-}
-.k2-ui .k2-sec-col {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.k2-ui .k2-sec-col > .k2-sec {
-  flex: 1;
-}
 .k2-ui .k2-sh {
   display: flex;
   align-items: center;
@@ -1162,6 +1144,7 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
+  background: var(--k2-n50);
 }
 .k2-ui .k2-gh[data-meta] {
   min-height: var(--k2-h-head);
@@ -2699,10 +2682,6 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
-/* a form reads down one column of a fixed width: its fields never run across a wide pane (settings stand as rows) */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-field:not([data-setting]), .k2-frow) {
-  max-width: 600px;
-}
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
   margin-inline: var(--k2-edge);
@@ -2771,8 +2750,8 @@
    between settings: a section separates them from the next topic. */
 .k2-ui .k2-field[data-setting] {
   grid-template-columns: minmax(0, 1fr) 300px;
-  grid-template-rows: auto auto auto;
-  grid-template-areas: "label control" "message control" ". was";
+  grid-template-rows: auto auto;
+  grid-template-areas: "label control" "message was";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -2781,8 +2760,6 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
-  /* the name and its hint stand together, beside the middle of the control */
-  align-self: end;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
@@ -2794,7 +2771,11 @@
 }
 .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
   grid-area: control;
+  grid-row: 1 / span 2;
   min-width: 0;
+}
+.k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
+  grid-row: 1;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-was {
   grid-area: was;
@@ -2809,8 +2790,9 @@
     grid-template-areas: "label" "message" "control" "was";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > .k2-field-label {
-    align-self: start;
+  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was),
+  .k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
+    grid-row: auto;
   }
 }
 
@@ -3048,33 +3030,11 @@
 }
 .k2-ui .k2-color-swatch {
   flex: none;
-  appearance: none;
-  padding: 3px;
   width: var(--k2-h-control);
   height: var(--k2-h-control);
   border-radius: var(--k2-r-control);
   border: var(--k2-hairline);
-  background: var(--k2-surface);
-  cursor: default;
-}
-.k2-ui .k2-color-swatch:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--k2-blue-ring);
-}
-.k2-ui .k2-color-fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: calc(var(--k2-r-control) - 3px);
   background: var(--color-picker-color);
-}
-/* the picker on its panel: area over hue, as wide as the panel */
-.k2-ui .k2-color-pop {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 280px;
-  padding: 12px;
 }
 .k2-ui .k2-color-head > .k2-input {
   flex: 1;
@@ -4460,12 +4420,6 @@
     overflow-y: auto;
   }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
-    display: none;
-  }
-  /* the filters and counts of the list above the split belong to the list: they leave with it while a detail is the
-     page, and so does the floating main action of the list (the detail has its own deeds) */
-  .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
-  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail] > [data-k2-part="Back"]) .k2-fab {
     display: none;
   }
   .k2-ui .k2-pane-back {

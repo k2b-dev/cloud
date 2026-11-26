@@ -178,12 +178,6 @@ such as `/me#screen`), children. No line under
 the head or between entries, one line at the end. Put `Row`s directly in a
 section, or a `Digest`, `Facts`, `Group`s.
 
-### Section.Columns
-
-Sections side by side, such as the groups of a place's home: two columns
-where both get at least 360 px, one below that. Each section keeps its
-head and its one line at the end; no line stands between the columns.
-
 ### Group
 
 What belongs together, framed: `icon`, `color`, `title`, `count`, `meta`

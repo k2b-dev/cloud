@@ -544,8 +544,6 @@ type TableBase<T> = {
     mark?: MarkProps;
     time?: JSX.Element;
     marks?: JSX.Element;
-    /** The row's deeds at its end, such as its "…" menu, as `Row end`: what a column of deeds offers on the desktop. */
-    end?: JSX.Element;
   };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
@@ -960,10 +958,15 @@ export const Table = <T,>(props: TableProps<T>) => {
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide; in a table wider than all of them together the columns share the rest
-                  in proportion (fixed layout), so a row stays one connected line and no text is cut while room is free */}
+              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column) => <col style={column.width ? { width: `${column.width.default}px` } : undefined} />}
+                {(column, index) => (
+                  <col
+                    style={
+                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
+                    }
+                  />
+                )}
               </For>
             </colgroup>
           </Show>
@@ -1238,7 +1241,6 @@ export const Table = <T,>(props: TableProps<T>) => {
                             mark={form.mark}
                             time={form.time}
                             marks={form.marks}
-                            end={form.end}
                             strong
                             href={target?.href}
                             onNavigate={target?.onNavigate}
