@@ -173,7 +173,8 @@ const shellProps = (name: string, parts: RuntimeAppMeta[]) => {
     return {
       screen: "SettingsScreen",
       props: {
-        account: { id: user.id, name: "Mia Muster", mail: "mia.muster@werkstatt.example" },
+        account: { id: user.id },
+        pairedSince: "12. Nov. 2026",
         theme: "system",
         name: "iPhone von Mia",
         nameMaxLength: 80,

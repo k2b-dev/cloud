@@ -240,7 +240,7 @@ describe("shell routes", () => {
     expect(html).toContain("k2b-tab-bar");
   });
 
-  test("Settings needs an app session and shows the account, this phone and the version", async () => {
+  test("Settings needs an app session and holds this device only, with the way to Cloud's own settings", async () => {
     const anonymous = await request("/pwa/settings");
     expect(anonymous.status).toBe(302);
     expect(anonymous.headers.get("location")).toBe("/pwa/_auth/session/launch?to=%2Fpwa%2Fsettings");
@@ -249,11 +249,12 @@ describe("shell routes", () => {
     const response = await request("/pwa/settings", { headers: { Cookie: "pwa_session=test-session; cloud.locale=en" } });
     expect(response.status).toBe(200);
     const html = await response.text();
-    expect(html).toContain("Mia Muster");
-    expect(html).toContain("mia.muster@example.test");
+    // this device only: no account block; the account, security and other devices are one way to Cloud's settings
+    expect(html).not.toContain("mia.muster@example.test");
+    expect(html).toContain('href="/me"');
     expect(html).toContain("&quot;iPhone&quot;");
     expect(html).toMatch(/<input[^>]*disabled[^>]*maxlength="80"/);
-    expect(html).toMatch(/Cloud \d+\.\d+\.\d+/);
+    expect(html).toMatch(/Paired since|Gekoppelt seit/);
     expect(html).toContain('href="/pwa/"');
   });
 

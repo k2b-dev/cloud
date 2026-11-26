@@ -94,7 +94,7 @@ const choose = async (dom: DomTestHarness, current: string, option: string) => {
 };
 const settings = () =>
   createComponent(modules!.SettingsScreen, {
-    account: { id: "mia", name: "Mia Muster" },
+    account: { id: "mia" },
     theme: "light",
     name: "iPhone",
     nameMaxLength: 80,

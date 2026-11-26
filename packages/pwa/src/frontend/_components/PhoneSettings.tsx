@@ -3,31 +3,40 @@ import { reloadOnce } from "@k2b/cloud/browser/reload";
 import type { CloudThemePreference } from "@k2b/cloud/shared";
 import { createPreferenceController, THEME_CYCLE } from "@k2b/cloud/ssr/preference-controller";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Input, List, Menu, Notice, NoticeStack, Row, Text, useToast } from "@k2b/ui/v2";
+import { Button, Icon, Input, Menu, Notice, NoticeStack, Row, Section, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import { shellMessages } from "../../messages";
 import { phoneAuth } from "../phone";
 import { askToSignOut, signOutOfApp } from "./sign-out";
 
 export type PhoneSettingsProps = {
-  /** The signed-in person, as the page read them. */
-  account: { id: string; name: string; mail?: string; avatar?: string };
+  /** The signed-in person; their id keys the drafts of this page. */
+  account: { id: string };
   theme: CloudThemePreference;
   /** The longest name a phone takes (`PWA_LIMITS.nameMaxLength`), from the page: the island loads no contract schemas. */
   nameMaxLength: number;
   /** This phone's name; empty when the request carries no device. */
   name: string;
   cloud: string;
-  /** The release line beside Sign out. */
+  /** The release line, where the device's pairing date is not known. */
   version: string;
+  /** When this phone was paired, in the person's format; absent without a device. */
+  pairedSince?: string;
 };
+
+/** Where the account, security and the other devices are set: Cloud's own settings. */
+const ALL_SETTINGS = "/me";
+/** The marks of the three parts: this device, the Cloud, and how the app looks. */
+const DEVICE = "#64748b";
+const CLOUD = "#be185d";
+const LOOK = "#7c3aed";
 
 const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
 
 /**
- * The app's Settings inside its frame, as setting rows: each says what it sets on the left and holds its control on
- * the right (k2b-ui gap: the v2 `Setting` row of #4223 takes over once it lands). The account, language, appearance,
- * this phone's name, and signing out at the end.
+ * The app's Settings inside its frame, for this device only: its name and signing it out, the way to Cloud's own
+ * settings for the account and the other devices, and how the app looks. Each row says what it sets on the left and
+ * holds its control on the right (k2b-ui gap: the v2 `Setting` row of #4223 takes over once it lands).
  */
 export default function PhoneSettings(props: PhoneSettingsProps) {
   const locale = useLocale();
@@ -96,66 +105,22 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
 
   return (
     <>
-      <List label={t().account}>
-        <Row
-          avatar={{ name: props.account.name, image: props.account.avatar }}
-          lines={props.account.mail ? [props.account.name, props.account.mail] : [props.account.name]}
-        />
-      </List>
-      <List label={t().settings}>
-        <Row
-          icon="language"
-          lines={[t().language]}
-          end={
-            <Menu
-              label={`${t().language}: ${language()}`}
-              items={[
-                {
-                  title: t().language,
-                  choice: preferences.language(),
-                  onChoose: (value: string) => {
-                    if (value !== preferences.language()) preferences.toggleLanguage();
-                  },
-                  items: [
-                    { value: "en", label: "English" },
-                    { value: "de", label: "Deutsch" },
-                  ],
-                },
-              ]}
-            >
-              {language()}
-            </Menu>
-          }
-        />
-        <Row
-          icon={iconName(theme().icon)}
-          lines={[t().appearance]}
-          end={
-            <Menu
-              label={words().appearance({ current: theme().label })}
-              items={[
-                {
-                  title: t().appearance,
-                  choice: preferences.theme(),
-                  onChoose: (value: string) => {
-                    const next = THEME_CYCLE.find((mode) => mode === value);
-                    if (next) preferences.setTheme(next);
-                  },
-                  items: THEME_CYCLE.map((mode) => ({
-                    value: mode,
-                    label: preferences.themeOption(mode).label,
-                    icon: iconName(preferences.themeOption(mode).icon),
-                  })),
-                },
-              ]}
-            >
-              {theme().label}
-            </Menu>
-          }
-        />
+      {/* this device first: its name and signing it out are what a phone comes here for */}
+      <Section icon="device-mobile" color={DEVICE} title={t().thisPhone}>
         <Row
           icon="device-mobile"
-          lines={error() ? [t().thisPhone, error()] : [t().thisPhone]}
+          color={DEVICE}
+          lines={[saved() || t().noName, props.pairedSince ? t().pairedSince({ date: props.pairedSince }) : props.version]}
+          end={
+            <Button icon="logout" keep busy={signingOut()} onClick={() => void signOut()}>
+              {t().signOut}
+            </Button>
+          }
+        />
+        <Row
+          icon="pencil"
+          color={DEVICE}
+          lines={error() ? [t().phoneName, error()] : [t().phoneName]}
           end={
             <>
               <Input
@@ -186,15 +151,71 @@ export default function PhoneSettings(props: PhoneSettingsProps) {
             </>
           }
         />
-      </List>
-      <Bar
-        start={<Text type="meta">{props.version}</Text>}
-        end={
-          <Button icon="logout" busy={signingOut()} onClick={() => void signOut()}>
-            {t().signOut}
-          </Button>
-        }
-      />
+      </Section>
+      {/* the account, security and the other devices live in Cloud's own settings: one clear way there */}
+      <Section icon="cloud" color={CLOUD} title={props.cloud}>
+        <Row
+          icon="settings"
+          color={CLOUD}
+          lines={[t().allSettings, t().allSettingsHint]}
+          end={<Icon name="external-link" />}
+          href={ALL_SETTINGS}
+        />
+      </Section>
+      <Section icon="palette" color={LOOK} title={t().appearanceSection}>
+        <Row
+          icon={iconName(theme().icon)}
+          color={LOOK}
+          lines={[t().lookRow]}
+          end={
+            <Menu
+              label={words().appearance({ current: theme().label })}
+              items={[
+                {
+                  title: t().appearance,
+                  choice: preferences.theme(),
+                  onChoose: (value: string) => {
+                    const next = THEME_CYCLE.find((mode) => mode === value);
+                    if (next) preferences.setTheme(next);
+                  },
+                  items: THEME_CYCLE.map((mode) => ({
+                    value: mode,
+                    label: preferences.themeOption(mode).label,
+                    icon: iconName(preferences.themeOption(mode).icon),
+                  })),
+                },
+              ]}
+            >
+              {theme().label}
+            </Menu>
+          }
+        />
+        <Row
+          icon="language"
+          color={LOOK}
+          lines={[t().language]}
+          end={
+            <Menu
+              label={`${t().language}: ${language()}`}
+              items={[
+                {
+                  title: t().language,
+                  choice: preferences.language(),
+                  onChoose: (value: string) => {
+                    if (value !== preferences.language()) preferences.toggleLanguage();
+                  },
+                  items: [
+                    { value: "en", label: "English" },
+                    { value: "de", label: "Deutsch" },
+                  ],
+                },
+              ]}
+            >
+              {language()}
+            </Menu>
+          }
+        />
+      </Section>
       {/* what comes after the page has drawn floats over it, so nothing on the page moves */}
       <NoticeStack>
         <Show when={draftLost()}>
