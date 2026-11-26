@@ -133,8 +133,12 @@ This needs the v2 stylesheet of `@k2b/ui` (`@k2b/ui/v2.css`), which Cloud's
 stylesheet loads. Inside `.k2-ui` the toolbar's height, padding and button size
 come from v2, so a host's classes on the toolbar cannot change them.
 
-The bubble menu, the slash menu, and the toolbar's menus still open with the
-v1 look, because they open outside the v2 scope.
+The menus follow v2 too. A `{ kind: "menu" }` item of the toolbar is the v2
+`Menu` of `@k2b/ui`: its button has the size of the other buttons, a section
+with a label stands under its heading, and the shortcut is the entry's meta.
+The slash menu has the surface and the 32 px entries of a v2 menu. The bubble
+menu floats on the same surface, with the toolbar's buttons. On a v1 page all
+three keep their v1 look.
 
 ## Dictate into the note
 

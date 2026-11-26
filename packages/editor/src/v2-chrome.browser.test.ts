@@ -156,12 +156,13 @@ const tabOrder = async (page: Page) => {
   }
   return names;
 };
-/** Every toolbar button by its accessible name, in the order of the page. */
+/** Every toolbar button on the page by its accessible name, in the order of the page (the entries of a closed menu
+ * are not on it). */
 const toolbarNames = (page: Page) =>
   page.evaluate(() =>
-    [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")].map(
-      (button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "",
-    ),
+    [...document.querySelectorAll(".k2b-markdown-editor__toolbar button, [data-k2b-editor-toolbar] button")]
+      .filter((button) => button.getClientRects().length > 0)
+      .map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""),
   );
 
 test("inside v2 the toolbars keep every name and the focus order they have in a v1 page", async () => {
@@ -313,7 +314,9 @@ test("both toolbars show a format that is on, and a button under the pointer, th
       document.dispatchEvent(new Event("selectionchange"));
     });
     await page.locator('[data-editor="shared"] .cm-content').getByText("Lieferung").click();
-    await page.waitForFunction(() => document.querySelectorAll('[aria-pressed="true"][aria-label^="Fett"]').length === 2);
+    await page.waitForFunction(
+      () => document.querySelectorAll(':is([role="toolbar"], [data-k2b-editor-toolbar]) [aria-pressed="true"][aria-label^="Fett"]').length >= 2,
+    );
     // the toolbars ease their colours (150 ms): read them once no transition runs (the caret blinks on, an animation)
     const eased = () => page.waitForFunction(() => document.getAnimations().every((motion) => !(motion instanceof CSSTransition)));
     await eased();
@@ -331,18 +334,138 @@ test("both toolbars show a format that is on, and a button under the pointer, th
       probe.remove();
       return found;
     });
-    expect(await look('[data-editor="ui"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
-    expect(await look('[data-editor="shared"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    expect(await look('[data-editor="ui"] [role="toolbar"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    expect(await look('[data-editor="shared"] [data-k2b-editor-toolbar] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
     // a button under the pointer, in each toolbar
     const hovered: string[] = [];
-    for (const editor of ["ui", "shared"]) {
-      const button = page.locator(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`);
+    for (const bar of ['[data-editor="ui"] [role="toolbar"]', '[data-editor="shared"] [data-k2b-editor-toolbar]']) {
+      const button = page.locator(`${bar} button[aria-label^="Kursiv"]`);
       await hoverInPlace(button);
       await eased();
-      hovered.push(await look(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`));
+      hovered.push(await look(`${bar} button[aria-label^="Kursiv"]`));
     }
     expect(hovered[0]).toBe(hovered[1]);
   } finally {
     await page.close();
   }
 }, 30_000);
+
+/** The computed look of a v2 token on a probe in the v2 scope, as the engine resolves it. */
+const token = (page: Page, property: string, value: string) =>
+  page.evaluate(
+    ([name, of]) => {
+      const probe = document.createElement("span");
+      probe.style.setProperty(name, of);
+      document.querySelector(".k2-ui")?.append(probe);
+      const found = getComputedStyle(probe).getPropertyValue(name);
+      probe.remove();
+      return found;
+    },
+    [property, value] as const,
+  );
+
+test("inside v2 a menu of the toolbar is the v2 menu: its button in the bar's size, its entries and heading, a chosen entry runs in the note", async () => {
+  const page = await open(1440);
+  try {
+    const trigger = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    const box = await trigger.boundingBox();
+    expect({ width: box?.width, height: box?.height, v2: await trigger.evaluate((button) => button.classList.contains("k2-btn")) }).toEqual({
+      width: 28,
+      height: 28,
+      v2: true,
+    });
+    await page.locator('[data-editor="shared"] .cm-content').getByText("Familie Oswald").click();
+    await trigger.click();
+    const menu = page.locator(".k2-menu");
+    await menu.waitFor();
+    expect(await menu.locator(".k2-mi .k2-mi-label").allTextContents()).toEqual(["Zitat", "Code im Text", "Link", "Tabelle"]);
+    expect(await menu.locator(".k2-mh").allTextContents()).toEqual(["Einfügen"]);
+    expect(await menu.locator(".k2-mi").evaluateAll((items) => items.map((item) => Math.round(item.getBoundingClientRect().height)))).toEqual([
+      32, 32, 32, 32,
+    ]);
+    // the keys walk it; Enter runs the entry on the note, and the note has the focus again
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await menu.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => document.querySelector('[data-editor="shared"] .cm-content')?.textContent?.includes("Familie Oswald"));
+    expect(await page.evaluate(() => document.activeElement?.closest('[data-editor="shared"]') !== null)).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a v1 page keeps the v1 dropdown of the toolbar", async () => {
+  const page = await open(1440, "?v1");
+  try {
+    const trigger = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    expect(await trigger.evaluate((button) => button.classList.contains("k2-btn"))).toBe(false);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("inside v2 the slash menu has the look of the v2 menu: its surface, 32 px entries in the row role, one fill for the keys", async () => {
+  const page = await open(1440);
+  try {
+    await page.locator('[data-editor="shared"] .cm-content').getByText("Familie Oswald, Lindenweg 4").click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("/");
+    const popup = page.locator(".cm-tooltip-autocomplete");
+    await popup.waitFor();
+    await settled(page);
+    const look = await popup.evaluate((element) => {
+      const style = getComputedStyle(element);
+      const entries = [...element.querySelectorAll("li")];
+      const chosen = element.querySelector("li[aria-selected]");
+      return {
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        heights: entries.map((entry) => Math.round(entry.getBoundingClientRect().height)),
+        size: getComputedStyle(entries[0]!).fontSize,
+        icon: getComputedStyle(element.querySelector(".cm-slash-icon")!).fontSize,
+        chosen: chosen ? getComputedStyle(chosen).backgroundColor : "",
+      };
+    });
+    expect(look).toEqual({
+      radius: await token(page, "border-top-left-radius", "var(--k2-r-overlay)"),
+      background: await token(page, "background-color", "var(--k2-surface)"),
+      heights: [32, 32, 32],
+      size: "13px",
+      icon: "16px",
+      chosen: await token(page, "background-color", "var(--k2-n100)"),
+    });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("inside v2 the toolbar at a selection floats on the v2 menu surface with the bar's buttons", async () => {
+  const page = await open(1440);
+  try {
+    await page.evaluate(() => window.__k2Select?.("Familie"));
+    const bubble = page.locator(".k2b-selection-toolbar:popover-open");
+    await bubble.waitFor();
+    await settled(page);
+    const look = await bubble.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        radius: style.borderTopLeftRadius,
+        background: style.backgroundColor,
+        buttons: [...element.querySelectorAll("button")].map((button) => {
+          const box = button.getBoundingClientRect();
+          const icon = button.querySelector(".ti");
+          return `${button.getAttribute("aria-label")}: ${Math.round(box.width)}x${Math.round(box.height)} ${icon ? getComputedStyle(icon).fontSize : ""}`;
+        }),
+      };
+    });
+    expect(look).toEqual({
+      radius: await token(page, "border-top-left-radius", "var(--k2-r-overlay)"),
+      background: await token(page, "background-color", "var(--k2-surface)"),
+      buttons: ["Fett: 28x28 16px", "Kursiv: 28x28 16px", "Code im Text: 28x28 16px", "Link: 28x28 16px"],
+    });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+

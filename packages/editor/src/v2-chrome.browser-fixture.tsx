@@ -1,7 +1,16 @@
 import { Button, LocaleProvider, MarkdownEditor } from "@k2b/ui";
 import { Bar, Canvas, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
-import { createEditor, Editor, markdownActions, Toolbar } from "./index";
+import { EditorSelection } from "@codemirror/state";
+import { onMount } from "solid-js";
+import { BubbleMenu, createEditor, Editor, markdownActions, SlashMenu, Toolbar } from "./index";
+
+declare global {
+  interface Window {
+    /** Selects a span of the note, as a person who drags over words. */
+    __k2Select?: (word: string) => void;
+  }
+}
 
 // The two Markdown editors of Cloud inside a v2 screen, as Files, Tools and Notebooks place them: the editor of
 // `@k2b/ui` (`MarkdownEditor`, embedded) and the shared editor of `@k2b/editor` with its toolbar, each in a `Canvas`
@@ -22,6 +31,15 @@ if (root)
   render(() => {
     const editor = createEditor();
     const actions = markdownActions(editor, "de");
+    onMount(() => {
+      window.__k2Select = (word) => {
+        const view = editor.view();
+        const at = view?.state.doc.toString().indexOf(word) ?? -1;
+        if (!view || at < 0) return;
+        view.focus();
+        view.dispatch({ selection: EditorSelection.range(at, at + word.length) });
+      };
+    });
     return (
       <LocaleProvider locale="de">
         {/* `?v1` renders the same page without the v2 scope: the editors as a v1 page shows them */}
@@ -54,6 +72,20 @@ if (root)
                         { items: [actions.bold, actions.italic, actions.strikethrough, actions.code] },
                         { items: [actions.bulletList, actions.numberedList, actions.quote] },
                         { items: [actions.link, actions.table] },
+                        {
+                          items: [
+                            {
+                              kind: "menu",
+                              id: "more",
+                              icon: "ti-dots",
+                              label: "Mehr",
+                              sections: [
+                                { actions: [actions.quote, actions.code] },
+                                { label: "Einfügen", actions: [actions.link, actions.table] },
+                              ],
+                            },
+                          ],
+                        },
                       ]}
                       end={
                         // a labelled control of the host, as Notebooks puts its comments there
@@ -66,6 +98,15 @@ if (root)
                     {/* the host sets the text on the v2 edge, as a note column does */}
                     <div style={{ padding: "0 var(--k2-edge)", flex: "1", "min-height": "0" }}>
                       <Editor editor={editor} label="Notiz" initialValue={offer} maxLength={10000} toolbar={false} />
+                      <BubbleMenu editor={editor} groups={[[actions.bold, actions.italic, actions.code], [actions.link]]} />
+                      <SlashMenu
+                        editor={editor}
+                        actions={[
+                          { ...actions.table, name: "tabelle", description: "Tabelle mit Kopfzeile" },
+                          { ...actions.quote, name: "zitat", description: "Ein abgesetztes Zitat" },
+                          { ...actions.bulletList, name: "liste", description: "Eine Aufzählung" },
+                        ]}
+                      />
                     </div>
                   </div>
                 </Canvas>

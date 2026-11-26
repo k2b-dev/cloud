@@ -13,6 +13,7 @@ import {
   Toolbar as UiToolbar,
   useLocale,
 } from "@k2b/ui";
+import { Menu, type MenuEntry } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import { ariaShortcut, shortcutLabel } from "./actions";
 import { dictationTarget } from "./dictation";
@@ -101,6 +102,28 @@ export function ToolbarButton(props: { editor: EditorHandle; action: EditorActio
   );
 }
 
+/** A menu's actions as the entries of the v2 menu: a section with a label under its heading, others between lines. */
+const menuEntries = (editor: EditorHandle, menu: ToolbarMenu, locale: string): MenuEntry[] =>
+  menu.sections.flatMap((section, index): MenuEntry[] => {
+    const items = section.actions.map((action) => ({
+      icon: action.icon.replace(/^ti-/, ""),
+      label: action.label,
+      meta: action.shortcut ? shortcutLabel(action.shortcut, locale) : undefined,
+      disabled: !editor.isEnabled(action),
+      onClick: () => void editor.run(action),
+    }));
+    if (section.label) return [{ title: section.label, items }];
+    return index > 0 ? ["separator", ...items] : items;
+  });
+
+/** Inside a v2 screen a menu of the toolbar is the v2 menu of `@k2b/ui`: its surface, its entries, its keys. */
+function ToolbarMenuV2(props: { editor: EditorHandle; menu: ToolbarMenu }) {
+  const locale = useLocale();
+  return (
+    <Menu icon={props.menu.icon.replace(/^ti-/, "")} label={props.menu.label} items={menuEntries(props.editor, props.menu, locale())} />
+  );
+}
+
 function ToolbarMenuButton(props: { editor: EditorHandle; menu: ToolbarMenu; coarse: boolean }) {
   const locale = useLocale();
   // On touch screens a controlled menu opens on a tap without taking focus, so the note keeps focus and the keyboard.
@@ -137,6 +160,9 @@ export function Toolbar(props: ToolbarProps) {
   const locale = useLocale();
   const t = () => editorMessages.resolve([locale()]).t;
   const [coarse, setCoarse] = createSignal(false);
+  // Inside a v2 screen (`.k2-ui`) its menus are the v2 menu; a v1 page keeps the v1 dropdown. Known after mount, as
+  // the place of the toolbar in the page is.
+  const [v2, setV2] = createSignal(false);
   const [lift, setLift] = createSignal(0);
   let root!: HTMLDivElement;
   const dictation = createDictation({
@@ -157,6 +183,7 @@ export function Toolbar(props: ToolbarProps) {
   const dictating = () => Boolean(props.dictation) && dictationBarShown(dictation);
 
   onMount(() => {
+    setV2(root.closest(".k2-ui") !== null);
     const pointer = window.matchMedia("(pointer: coarse)");
     setCoarse(pointer.matches);
     const viewport = window.visualViewport;
@@ -220,7 +247,9 @@ export function Toolbar(props: ToolbarProps) {
                       isCustom(item) ? (
                         item.render()
                       ) : isMenu(item) ? (
-                        <ToolbarMenuButton editor={props.editor} menu={item} coarse={coarse()} />
+                        <Show when={v2()} fallback={<ToolbarMenuButton editor={props.editor} menu={item} coarse={coarse()} />}>
+                          <ToolbarMenuV2 editor={props.editor} menu={item} />
+                        </Show>
                       ) : (
                         <ToolbarButton editor={props.editor} action={item} />
                       )
