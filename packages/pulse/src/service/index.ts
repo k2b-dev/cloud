@@ -25,6 +25,7 @@ import {
   listSources,
   removeSource,
   removeSourceApiKey,
+  sourceFigures,
   updateSource,
 } from "./source-management";
 
@@ -64,6 +65,7 @@ export const pulseService = {
   source: {
     list: listSources,
     count: countSources,
+    figures: sourceFigures,
     get: getSource,
     scrapes: listSourceScrapes,
     apiKeys: {

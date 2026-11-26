@@ -1,3 +1,6 @@
+import { principalLabel } from "@k2b/cloud/access/ui";
+import type { Principal } from "@k2b/cloud/contracts";
+import type { ServiceAccountKind } from "@k2b/cloud/services";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Empty, Failed, Pane, Table, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
@@ -10,6 +13,9 @@ import { useScreenMessages } from "./messages";
 
 export const QUERIES_PER_PAGE = 50;
 
+/** Who changed a saved query, as `resolveDisplayNames` names a person or an agent. */
+export type QueryAuthor = { principal: Principal; displayName?: string; serviceAccountKind?: ServiceAccountKind };
+
 /** A saved query's mark: the SQL symbol in the colour Pulse gives queries. */
 const QUERY_MARK = { icon: "file-code", color: "#0d9488" };
 
@@ -20,8 +26,8 @@ export type QueriesScreenProps = {
   /** The page of saved queries the address names; null when it could not be read. */
   page: SavedQueriesPage | null;
   offset: number;
-  /** Names of the people and agents who changed the queries, by id. */
-  authors: Record<string, string>;
+  /** The people and agents who changed the queries, by id, named as the access lists name them. */
+  authors: Record<string, QueryAuthor>;
   dateConfig: { timeZone: string; locale: string };
 };
 
@@ -50,7 +56,8 @@ export default function QueriesScreen(props: QueriesScreenProps) {
   });
   const author = (query: SavedQuery) => {
     const id = query.updatedBy ?? query.createdBy;
-    return id ? props.authors[id] : undefined;
+    const entry = id ? props.authors[id] : undefined;
+    return entry ? principalLabel(entry, locale()) : undefined;
   };
   const newQuery = { label: t().sqlNewQuery, icon: "plus", href: baseHref(props.baseId, "sql") };
   return (

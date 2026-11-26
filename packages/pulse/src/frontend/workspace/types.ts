@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { PermissionLevel } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
-import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
+import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
 import type { WorkspaceRouteState } from "./routes";
 import type { SavedQuery, SqlClientError, SqlLimits } from "./sql-client";
@@ -32,6 +32,8 @@ export type PulseWorkspaceProps = {
   initialSourceScrapes: Record<string, PulseSourceScrape[]>;
   initialSourceApiKeys: Record<string, ResourceApiKey[]>;
   initialQueryCoverage: { bases: boolean; baseData: boolean; sourceDetail: boolean };
+  /** The figures of all sources of the base, read on the server for the sources view; null when they could not be read. */
+  initialFigures?: SourceFigures | null;
   initialDateConfig: DateContext;
   initialNow: string;
   initialOrigin: string;

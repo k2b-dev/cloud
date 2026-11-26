@@ -18,7 +18,10 @@ import {
   CreateSourceApiKeySchema,
   CreateSourceSchema,
   IngestBatchSchema,
+  SOURCE_PAGE_MAX,
   SourceApiKeySchema,
+  SourceFiguresSchema,
+  SourcePageQuerySchema,
   SourceSchema,
   SourceScrapeSchema,
   UpdateSourceSchema,
@@ -80,22 +83,48 @@ const routes = new Hono<AuthContext>()
     },
   )
   .get(
+    "/bases/:baseId/sources/figures",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read the figures of all of a base's sources",
+      responses: { 200: jsonResponse(SourceFiguresSchema, "Figures of all sources of the base") },
+    }),
+    async (c) => {
+      // Today's values can use the largest read profile (30 s) plus its HTTP margin.
+      setRequestTimeout(c, 40);
+      try {
+        const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+        if (!baseId.ok) return respond(c, baseId.result);
+        return await respond(c, await pulseService.source.figures(baseId.value, requestAccessScope(c), new Date(), c.req.raw.signal));
+      } finally {
+        setRequestTimeout(c, REQUEST_IDLE_TIMEOUT_SECONDS);
+      }
+    },
+  )
+  .get(
     "/bases/:baseId/sources",
     describeRoute({
       tags: ["Pulse"],
-      summary: "List Pulse sources for a base",
+      summary: "List Pulse sources for a base, one page at a time",
       responses: { 200: jsonResponse(z.array(SourceSchema), "Pulse sources") },
     }),
+    v("query", SourcePageQuerySchema),
     async (c) => {
       // Counts can use the largest read profile (30 s) plus its HTTP margin.
       setRequestTimeout(c, 40);
       try {
         const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
         if (!baseId.ok) return respond(c, baseId.result);
+        const page = c.req.valid("query");
         return await respond(
           c,
-          projectResult(pulseService.source.list(baseId.value, requestAccessScope(c), { signal: c.req.raw.signal }), (items) =>
-            projectSources(items),
+          projectResult(
+            pulseService.source.list(baseId.value, requestAccessScope(c), {
+              signal: c.req.raw.signal,
+              limit: page.limit ?? SOURCE_PAGE_MAX,
+              offset: page.offset,
+            }),
+            (items) => projectSources(items),
           ),
         );
       } finally {

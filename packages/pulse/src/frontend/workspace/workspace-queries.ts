@@ -1,7 +1,7 @@
 import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import { query } from "@k2b/stdlib/solid";
 import { type Accessor, createMemo } from "solid-js";
-import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
+import { type PulseBase, type PulseSource, type PulseSourceScrape, SOURCE_PAGE_MAX, type SourceFigures } from "../../contracts";
 import { jsonFetch } from "../http";
 import type { PulseWorkspaceProps } from "./types";
 
@@ -22,7 +22,15 @@ export const createPulseWorkspaceQueries = (
     enabled: () => loadSources?.() ?? props.initialRouteState.view === "sources",
     source: () => baseId,
     initial: props.initialQueryCoverage.baseData ? { source: baseId, data: props.initialSources } : undefined,
-    load: (id, { abortSignal }) => jsonFetch<PulseSource[]>(`/api/pulse/bases/${id}/sources`, { signal: abortSignal }),
+    // the list is bounded like every list read; the figures above it cover all sources
+    load: (id, { abortSignal }) =>
+      jsonFetch<PulseSource[]>(`/api/pulse/bases/${id}/sources?limit=${SOURCE_PAGE_MAX}`, { signal: abortSignal }),
+  });
+  const figures = query.create({
+    enabled: () => loadSources?.() ?? props.initialRouteState.view === "sources",
+    source: () => baseId,
+    initial: props.initialFigures ? { source: baseId, data: props.initialFigures } : undefined,
+    load: (id, { abortSignal }) => jsonFetch<SourceFigures>(`/api/pulse/bases/${id}/sources/figures`, { signal: abortSignal }),
   });
   const source = createMemo(() => ({
     baseId,
@@ -59,5 +67,5 @@ export const createPulseWorkspaceQueries = (
     const detail = sourceDetail.data();
     return detail?.baseId === baseId && detail.sourceId === selectedSourceId() ? detail : undefined;
   };
-  return { bases, baseData, sourceDetail, currentDetail };
+  return { bases, baseData, figures, sourceDetail, currentDetail };
 };

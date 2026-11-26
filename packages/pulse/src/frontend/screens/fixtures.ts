@@ -1,8 +1,9 @@
 import type { AccessEntry } from "@k2b/cloud/contracts";
-import type { PulseBase, PulseSource, PulseSourceScrape } from "../../contracts";
+import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
 import type { SavedQuery } from "../../service/saved-queries";
 import type { BaseStoreStatus } from "../../store/admin-contracts";
+import type { QueryAuthor } from "./QueriesScreen";
 import type { SourcesScreenProps } from "./SourcesScreen";
 
 /** Invented data for the v2 screens' tests and previews: no real names, hosts or values. */
@@ -36,8 +37,12 @@ const PEOPLE = ["Jana Petersen", "Jonas Wolf", "Mira Aydın", "Ole Brandt", "Lea
 
 export const fixtureBase = (patch: Partial<PulseBase> & Pick<PulseBase, "id" | "name">): PulseBase => ({
   memberCount: 4,
-  // a base's first three members by name, as the list reads them; rotated so the bases differ
-  members: [...PEOPLE.slice(patch.id.charCodeAt(0) % 5), ...PEOPLE].slice(0, Math.min(3, patch.memberCount ?? 4)),
+  // a base's first three members as an admin of it reads them, admins first; rotated so the bases differ
+  members: [...PEOPLE.slice(patch.id.charCodeAt(0) % 5), ...PEOPLE].slice(0, Math.min(3, patch.memberCount ?? 4)).map((name, index) => ({
+    principal: { type: "user" as const, userId: `00000000-0000-4000-9000-00000000000${PEOPLE.indexOf(name)}` },
+    permission: index === 0 ? ("admin" as const) : ("write" as const),
+    displayName: name,
+  })),
   store: store(),
   description: null,
   shortId: patch.id,
@@ -270,6 +275,19 @@ export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
 };
 
 /** The page props of a base on Sources, as the server builds them, from the invented data above. */
+/** The figures the server reads for a list of sources: the same sums over all of them. */
+export const figuresOf = (sources: PulseSource[]): SourceFigures => {
+  const failing = sources.filter((source) => source.enabled && source.status.lastError);
+  return {
+    total: sources.length,
+    active: sources.filter((source) => source.enabled).length,
+    failingCount: failing.length,
+    failing: failing.slice(0, 3).map((source) => ({ id: source.id, name: source.name })),
+    series: sources.reduce((sum, source) => sum + (source.seriesCount ?? 0), 0),
+    today: sources.reduce((sum, source) => sum + (source.todayCount ?? 0), 0),
+  };
+};
+
 export const sourcesProps = (
   options: { open?: string; sources?: PulseSource[]; alerts?: BaseAttention["alerts"]; storeDown?: boolean } = {},
 ): SourcesScreenProps => {
@@ -290,6 +308,7 @@ export const sourcesProps = (
     initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
     initialSourceApiKeys: {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },
+    initialFigures: figuresOf(sources),
     initialDateConfig: { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 },
     initialNow: FIXTURE_NOW,
     initialOrigin: "https://cloud.example.test",
@@ -424,13 +443,13 @@ export const fixtureQueries: SavedQuery[] = [
   },
 ];
 
-/** The people who changed the fixture queries, by id, as the page resolves their names. */
-export const fixtureAuthors: Record<string, string> = {
-  "00000000-0000-4000-8000-0000000000a1": "Jana Petersen",
-  "00000000-0000-4000-8000-0000000000a2": "Jonas Wolf",
-  "00000000-0000-4000-8000-0000000000a3": "Mira Aydın",
-  "00000000-0000-4000-8000-0000000000a4": "Ole Brandt",
-};
+/** The people who changed the fixture queries, by id, as the page names them. */
+export const fixtureAuthors: Record<string, QueryAuthor> = Object.fromEntries(
+  ["Jana Petersen", "Jonas Wolf", "Mira Aydın", "Ole Brandt"].map((name, index) => {
+    const id = `00000000-0000-4000-8000-0000000000a${index + 1}`;
+    return [id, { principal: { type: "user" as const, userId: id }, displayName: name }];
+  }),
+);
 
 /** Worst-case sources for break-ui: long and unbreakable names and endpoints, non-Latin text, emoji, huge counts. */
 export const worstSources: PulseSource[] = [

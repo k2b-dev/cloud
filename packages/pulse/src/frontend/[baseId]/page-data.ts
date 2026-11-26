@@ -1,5 +1,5 @@
 import { sql } from "@k2b/cloud";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, resolveDisplayNames } from "@k2b/cloud/server";
 import { get as getSetting } from "@k2b/cloud/services";
 import type { ServiceError } from "@k2b/stdlib";
 import type { Context } from "hono";
@@ -13,6 +13,7 @@ import { readBasePolicy } from "../../service/base-policy";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
+import type { QueryAuthor } from "../screens/QueriesScreen";
 import { navBases } from "../workspace/nav-bases";
 import { readWorkspacePathState } from "../workspace/routes";
 import { SOURCES_PAGE } from "../workspace/source-page";
@@ -83,9 +84,14 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   };
   // Sources renders the alerts that fired and the data store state on the server.
   if (route.view === "sources") {
-    const attention = await readBaseAttention({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId });
+    const [attention, figures] = await Promise.all([
+      readBaseAttention({ actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId }),
+      pulseService.source.figures(baseId, user, new Date(), c.req.raw.signal),
+    ]);
     if (!attention.ok) return { kind: "error", status: attention.error.status };
     props.initialAttention = attention.data;
+    // the figures cover all sources, while the list shows their first page
+    props.initialFigures = figures.ok ? figures.data : null;
   }
   if (route.view === "sql") {
     const identity = { actor: c.get("actor"), accessSubject: c.get("accessSubject"), baseId };
@@ -161,15 +167,21 @@ export async function loadPulseQueriesPageData<T extends AuthContext>(c: Context
   return { ...shell, offset, page: page.ok ? page.data : null, authors, dateConfig: getDateConfig(c) };
 }
 
-/** The names of the people and agents who wrote saved queries, by id; one read for the page, ids that are gone stay out. */
-const authorNames = async (ids: (string | null)[]): Promise<Record<string, string>> => {
+/**
+ * Who changed each saved query, by id, named as the access lists name people and agents (display names, code accounts,
+ * disabled accounts); an id is a person's or an agent's, so people are tried first. Ids that are gone stay out.
+ */
+const authorNames = async (ids: (string | null)[]): Promise<Record<string, QueryAuthor>> => {
   const unique = [...new Set(ids.filter((id): id is string => id !== null))];
   if (unique.length === 0) return {};
-  const rows = await sql<{ id: string; name: string }[]>`
-    SELECT id::text AS id, COALESCE(display_name, uid) AS name FROM auth.users WHERE id = ANY(${sql.array(unique, "UUID")})
-    UNION ALL
-    SELECT id::text AS id, name FROM auth.service_accounts WHERE id = ANY(${sql.array(unique, "UUID")})`;
-  return Object.fromEntries(rows.map((row) => [row.id, row.name]));
+  const people = await resolveDisplayNames(unique.map((id) => ({ principal: { type: "user" as const, userId: id } })));
+  const rest = unique.filter((_, index) => !people[index]?.displayName);
+  const agents = await resolveDisplayNames(rest.map((id) => ({ principal: { type: "service_account" as const, serviceAccountId: id } })));
+  const named = [
+    ...people.map((entry, index) => [unique[index], entry] as const),
+    ...agents.map((entry, index) => [rest[index], entry] as const),
+  ];
+  return Object.fromEntries(named.filter(([id, entry]) => id && entry.displayName));
 };
 
 /** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */

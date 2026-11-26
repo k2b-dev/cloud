@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
-import { FIXTURE_NOW, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
+import { FIXTURE_NOW, figuresOf, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
 import { type Crumb, renderPulseShell } from "./pulse-shell.browser-fixture";
 
 // The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
@@ -152,6 +152,7 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
   if (call.path === base && call.method === "GET")
     return route.fulfill({ json: { ...fixtureBases[0], outage: { unavailable: false, since: null } } });
   if (call.path === base && call.method === "PATCH") return route.fulfill({ json: { ...fixtureBases[0], ...(call.body as object) } });
+  if (call.path === `${base}/sources/figures`) return route.fulfill({ json: figuresOf(fixtureSources) });
   if (call.path === `${base}/sources` && call.method === "GET") return route.fulfill({ json: fixtureSources });
   if (call.path === `${base}/sources` && call.method === "POST")
     return route.fulfill({

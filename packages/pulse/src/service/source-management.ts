@@ -3,7 +3,7 @@ import type { RequestActor, ServiceAccount, ServiceAccountCredential, User } fro
 import { err, fail, ok, type PermissionLevel, type Result } from "@k2b/cloud/server";
 import { encryptSecret, serviceAccountCredentials, serviceAccounts } from "@k2b/cloud/services";
 import { SQL } from "bun";
-import type { PulseSource, PulseSourceScrape, SourceKind } from "../contracts";
+import type { PulseSource, PulseSourceScrape, SourceFigures, SourceKind } from "../contracts";
 import { withShortId } from "../lib/short-id";
 import { SourceConfigSchema } from "../metric-filters";
 import { type AccessScope, requireBaseAccess, requireBaseActive, type UserScope } from "./access-control";
@@ -237,6 +237,44 @@ export const countSources = async (baseId: string, user: AccessScope): Promise<R
     { count: number }[]
   >`SELECT count(*)::int AS count FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`;
   return ok(row?.count ?? 0);
+};
+
+/**
+ * The figures of all of a base's sources, while a list shows one page of them: how many, how many run, which fail
+ * (the first three by name, the newest failure first), their series and the values they delivered today. One aggregate
+ * over the sources and the base's cached count of today's values (null while the store cannot answer).
+ */
+export const sourceFigures = async (
+  baseId: string,
+  user: AccessScope,
+  now = new Date(),
+  signal?: AbortSignal,
+): Promise<Result<SourceFigures>> => {
+  const access = await requireBaseAccess(baseId, user, "read");
+  if (!access.ok) return fail(access.error);
+  const [totals, failing, live, counts] = await Promise.all([
+    sql<{ total: number; active: number; failing: number }[]>`
+      SELECT count(*)::int AS total,
+        count(*) FILTER (WHERE enabled)::int AS active,
+        count(*) FILTER (WHERE enabled AND last_error IS NOT NULL)::int AS failing
+      FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`,
+    sql<{ id: string; name: string }[]>`
+      SELECT short_id AS id, name FROM pulse.sources
+      WHERE NOT deleted AND enabled AND last_error IS NOT NULL AND base_id = ${baseId}::uuid
+      ORDER BY last_error_at DESC NULLS LAST, name LIMIT 3`,
+    sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE NOT deleted AND base_id = ${baseId}::uuid`,
+    sourceCounts(baseId, now, signal),
+  ]);
+  const ids = live.map((row) => row.id);
+  const known = counts.has("");
+  return ok({
+    total: totals[0]?.total ?? 0,
+    active: totals[0]?.active ?? 0,
+    failingCount: totals[0]?.failing ?? 0,
+    failing,
+    series: ids.reduce((sum, id) => sum + (counts.get(id)?.seriesCount ?? 0), 0),
+    today: known ? ids.reduce((sum, id) => sum + (counts.get(id)?.todayCount ?? 0), 0) : null,
+  });
 };
 
 export const getSource = async (sourceId: string, user: AccessScope, now = new Date()): Promise<Result<PulseSource>> => {

@@ -1,4 +1,5 @@
 import { sql } from "@k2b/cloud";
+import { type AccessMember, toAccessMember } from "@k2b/cloud/contracts";
 import {
   type AccessEntry,
   createAccess,
@@ -25,6 +26,7 @@ import type { baseStore } from "../store/base-store";
 import { RetentionStoreUnavailable, retentionPreview } from "../store/retention";
 import {
   type AccessScope,
+  adminBaseIdsAmong,
   listBaseIdsVisibleTo,
   PULSE_BASE_RESOURCE_TYPE,
   requireBaseAccess,
@@ -93,23 +95,15 @@ type BaseUpdateValues = {
 };
 
 const mapBase = async (row: BaseRow): Promise<PulseBase> => {
-  // Count configured members, not the people inside a group or a general access rule; the same read names the first
-  // three (admins first), so a list can show who works in the base.
-  const members = await sql<{ count: number; name: string }[]>`
-    SELECT count(*) OVER()::int AS count, COALESCE(u.display_name, sa.name, g.name, 'Member') AS name
-    FROM pulse.base_access b
+  // Count configured members, not the people inside a group or a general access rule.
+  const [membership] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM pulse.base_access b
     JOIN auth.access a ON a.id=b.access_id
-    LEFT JOIN auth.users u ON u.id=a.user_id
-    LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
-    LEFT JOIN auth.groups g ON g.id=a.group_id
     WHERE b.base_id=${row.id}::uuid AND a.permission<>'none'
       AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
-    ORDER BY (a.permission='admin') DESC, a.created_at
-    LIMIT 3
   `;
   return {
-    memberCount: members[0]?.count ?? 0,
-    members: members.map((member) => member.name),
+    memberCount: membership!.count,
     store: await baseStoreStatus(row.id),
     id: row.id,
     shortId: row.short_id,
@@ -149,6 +143,39 @@ const mapAccessRow = (row: AccessRow): AccessEntry => ({
   createdAt: iso(row.created_at),
 });
 
+/**
+ * The first three members of each base the scope administers, admins first, named as the access list names them.
+ * Who has access is the admins' list, so everyone else keeps only the member count.
+ */
+const withMembers = async (bases: PulseBase[], scope: AccessScope): Promise<PulseBase[]> => {
+  const administered = await adminBaseIdsAmong(
+    scope,
+    bases.map((base) => base.id),
+  );
+  if (administered.size === 0) return bases;
+  const rows = await sql<(AccessRow & { base_id: string })[]>`
+    SELECT ranked.base_id, ranked.id, ranked.user_id, ranked.group_id, ranked.service_account_id, ranked.authenticated_only,
+      ranked.permission, ranked.created_at
+    FROM (
+      SELECT ba.base_id, a.id, a.user_id, a.group_id, a.service_account_id, a.authenticated_only, a.permission, a.created_at,
+        row_number() OVER (PARTITION BY ba.base_id ORDER BY (a.permission = 'admin') DESC, a.created_at) AS rank
+      FROM pulse.base_access ba
+      JOIN auth.access a ON a.id = ba.access_id
+      WHERE ba.base_id = ANY(${sql.array([...administered], "UUID")}) AND a.permission <> 'none'
+        AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
+    ) ranked
+    WHERE ranked.rank <= 3
+    ORDER BY ranked.base_id, ranked.rank
+  `;
+  const named = await resolveDisplayNames(rows.map(mapAccessRow), { permission: "admin" });
+  const members = new Map<string, AccessMember[]>();
+  rows.forEach((row, index) => {
+    const entry = named[index];
+    if (entry) members.set(row.base_id, [...(members.get(row.base_id) ?? []), toAccessMember(entry)]);
+  });
+  return bases.map((base) => (administered.has(base.id) ? { ...base, members: members.get(base.id) ?? [] } : base));
+};
+
 const deleteBoundServiceAccounts = async (baseId: string, db: typeof sql = sql): Promise<void> => {
   await db`
     DELETE FROM auth.service_accounts
@@ -184,7 +211,7 @@ export const listBases = async (
       AND b.id = ANY(${toPgUuidArray(baseIds)}::uuid[])
     ORDER BY b.updated_at DESC, b.name ASC, b.id ASC
   `;
-  return ok(await Promise.all(rows.map(mapBase)));
+  return ok(await withMembers(await Promise.all(rows.map(mapBase)), user));
 };
 
 /** Bases the scope administers whose deletion still runs or failed; the overview keeps them until the deletion finishes. */
@@ -403,7 +430,7 @@ export const getBase = async (baseId: string, user: AccessScope): Promise<Result
     FROM pulse.bases
     WHERE id = ${baseId}::uuid
   `;
-  return row ? ok(await mapBase(row)) : fail(err.notFound("Pulse base"));
+  return row ? ok((await withMembers([await mapBase(row)], user))[0]!) : fail(err.notFound("Pulse base"));
 };
 
 const normalizeBaseName = (input: BaseUpdateInput, existing: BaseRow): string => input.name?.trim() || existing.name;

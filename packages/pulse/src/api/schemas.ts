@@ -1,7 +1,10 @@
-import { PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
+import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { METRIC_TYPES, SOURCE_KINDS } from "../contracts";
+import { METRIC_TYPES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
+
+export { SOURCE_PAGE_MAX };
+
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MetricFiltersSchema } from "../metric-filters";
 import { BaseStoreStatusSchema } from "../store/admin-schemas";
@@ -213,7 +216,7 @@ export const MessageSchema = z.object({ message: z.string() });
 
 export const BaseSchema = z.object({
   memberCount: z.number().int().nonnegative(),
-  members: z.array(z.string()).max(3).optional(),
+  members: z.array(AccessMemberSchema).max(3).optional(),
   store: BaseStoreStatusSchema,
   shortId: PulseShortIdSchema,
   icon: BaseIconSchema,
@@ -241,6 +244,33 @@ export const StoreOutageSchema = z.object({ unavailable: z.boolean(), since: z.s
 
 /** One base as its read route returns it: the list fields plus the live store outage the Sources tab re-checks. */
 export const BaseReadSchema = BaseSchema.extend({ outage: StoreOutageSchema });
+
+export const SourcePageQuerySchema = z.object({
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(SOURCE_PAGE_MAX)
+    .optional()
+    .describe(`Sources per page, ${SOURCE_PAGE_MAX} at most and by default`),
+  offset: z.coerce.number().int().min(0).optional().describe("Sources to skip, for the next page"),
+});
+export const SourceFiguresSchema = z.object({
+  total: z.number().int().nonnegative(),
+  active: z.number().int().nonnegative(),
+  failingCount: z.number().int().nonnegative(),
+  failing: z
+    .array(z.object({ id: z.string(), name: z.string() }))
+    .max(3)
+    .describe("The first three failing sources, newest failure first"),
+  series: z.number().int().nonnegative(),
+  today: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullable()
+    .describe("Values delivered today in the base's zone; null while the store cannot answer"),
+});
 
 export const SourceSchema = z.object({
   seriesCount: z.number().int().nonnegative().optional(),

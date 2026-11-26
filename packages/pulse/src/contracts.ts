@@ -1,3 +1,4 @@
+import type { AccessMember } from "@k2b/cloud/contracts";
 import type { BaseStoreStatus } from "./store/admin-contracts";
 export const SOURCE_KINDS = ["metrics", "http_ingest"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
@@ -7,8 +8,11 @@ export type MetricType = (typeof METRIC_TYPES)[number];
 
 export type PulseBase = {
   memberCount: number;
-  /** The first three members by name, admins first; older servers leave it out. */
-  members?: string[];
+  /**
+   * The first three members, admins first, as the access list names them; only for someone who administers the base
+   * (who has access is the admins' list), and left out by older servers.
+   */
+  members?: AccessMember[];
   store: BaseStoreStatus;
   id: string;
   name: string;
@@ -44,6 +48,19 @@ export type PulseBaseRead = PulseBase & { outage: PulseStoreOutage };
 
 /** `lastReason` names the first refused field or the refusal in words, never values from the batch. */
 export type PulseSourceRejections = { last24h: number; lastReason: string | null; lastAt: string | null };
+
+/** The most sources one list request returns; a base with more is read page by page with `offset`. */
+export const SOURCE_PAGE_MAX = 500;
+
+/** The figures of all of a base's sources; `failing` names the first three, `today` is null while the store cannot answer. */
+export type SourceFigures = {
+  total: number;
+  active: number;
+  failingCount: number;
+  failing: { id: string; name: string }[];
+  series: number;
+  today: number | null;
+};
 
 export type PulseSource = {
   seriesCount?: number;

@@ -131,6 +131,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const queries = createPulseWorkspaceQueries(props, selectedSourceId, () => true);
   const bases = () => queries.bases.data() ?? props.initialBases;
   const sources = () => queries.baseData.data() ?? props.initialSources;
+  // the figures of all sources, read with their own aggregate; the list below is one page of them
+  const figures = () => queries.figures.data() ?? props.initialFigures ?? null;
   const base = () => bases().find((entry) => entry.id === baseId) ?? null;
   const baseName = () => base()?.name ?? t().appName;
   const selected = () => sources().find((source) => source.id === selectedSourceId()) ?? null;
@@ -155,7 +157,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   installPeriodicRefresh({
     active: () => !loading(),
     refresh: async () => {
-      await Promise.all([queries.baseData.refresh(), ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : [])]);
+      await Promise.all([
+        queries.baseData.refresh(),
+        queries.figures.refresh(),
+        ...(selectedSourceId() ? [queries.sourceDetail.refresh()] : []),
+      ]);
       const error = [queries.baseData, queries.sourceDetail].find((query) => query.error())?.error();
       if (error) throw error;
     },
@@ -167,7 +173,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     watching: () => true,
     check: async () => (await jsonFetch<PulseBaseRead>(`/api/pulse/bases/${baseId}`)).outage,
     recovered: async () => {
-      await Promise.all([queries.bases.refresh(), queries.baseData.refresh()]);
+      await Promise.all([queries.bases.refresh(), queries.baseData.refresh(), queries.figures.refresh()]);
     },
   });
   const storeDownSince = () => store.since() ?? base()?.store.errorAt ?? null;
@@ -208,7 +214,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     });
 
   const listHref = () => `${baseHref(baseId)}${search().trim() ? `?q=${encodeURIComponent(search().trim())}` : ""}`;
-  const sourceHref = (source: PulseSource) =>
+  const sourceHref = (source: Pick<PulseSource, "id">) =>
     `${buildPulseWorkspaceHref({ baseId, state: { view: "sources", sourceId: source.id } })}${search().trim() ? `?q=${encodeURIComponent(search().trim())}` : ""}`;
   const controller = createSourceController({
     selectedBaseId: () => baseId,
@@ -221,7 +227,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       navigateTo(state.sourceId ? buildPulseWorkspaceHref({ baseId, state: { view: "sources", sourceId: state.sourceId } }) : listHref()),
     writeBlocked,
     refreshBaseData: async () => {
-      await queries.baseData.invalidate();
+      await Promise.all([queries.baseData.invalidate(), queries.figures.invalidate()]);
       if (queries.baseData.error()) throw queries.baseData.error();
     },
     refreshSourceDetail: async () => {
@@ -249,8 +255,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const openAdd = () => {
     if (controller.requireWritable()) setAdding(true);
   };
-  const paused = () => sources().filter((source) => !source.enabled).length;
-  const failingSources = () => sources().filter((source) => source.enabled && source.status.lastError);
+  const _paused = () => sources().filter((source) => !source.enabled).length;
+  const _failingSources = () => sources().filter((source) => source.enabled && source.status.lastError);
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const alerts = () => props.initialAttention?.alerts ?? [];
 
@@ -299,48 +305,50 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             ) : undefined
           }
         >
-          <Show when={!search().trim() && sources().length > 0}>
-            {/* k2b-ui gap: no history per day is stored for sources yet, so the cells carry no Spark (see the PR notes). */}
-            <Cells>
-              <Cells.Cell
-                icon="alert-circle"
-                color={failingSources().length ? "#dc2626" : "#059669"}
-                label={words().errorsCell}
-                value={String(failingSources().length)}
-                meta={
-                  failingSources().length
-                    ? failingSources()
-                        .map((source) => source.name)
-                        .join(", ")
-                    : words().sourcesFine
-                }
-                href={failingSources().length === 1 ? sourceHref(failingSources()[0]!) : undefined}
-                loading={refreshing()}
-              />
-              <Cells.Cell
-                icon="plug-connected"
-                label={words().activeCell}
-                value={String(sources().length - paused())}
-                meta={paused() ? `${paused()} ${words().pausedAfter}` : words().noneOff}
-                loading={refreshing()}
-              />
-              <Cells.Cell
-                icon="chart-dots"
-                color="#7c3aed"
-                label={words().seriesCell}
-                value={number(sources().reduce((sum, source) => sum + (source.seriesCount ?? 0), 0))}
-                meta={words().fromMetrics}
-                loading={refreshing()}
-              />
-              <Cells.Cell
-                icon="webhook"
-                color="#0891b2"
-                label={words().todayCell}
-                value={number(sources().reduce((sum, source) => sum + (source.todayCount ?? 0), 0))}
-                meta={words().sinceMidnight}
-                loading={refreshing()}
-              />
-            </Cells>
+          <Show when={!search().trim() && figures()}>
+            {(all) => (
+              // k2b-ui gap: no history per day is stored for sources yet, so the cells carry no Spark (see the PR notes).
+              <Cells>
+                <Cells.Cell
+                  icon="alert-circle"
+                  color={all().failingCount ? "#dc2626" : "#059669"}
+                  label={words().errorsCell}
+                  value={number(all().failingCount)}
+                  meta={
+                    all().failingCount
+                      ? all()
+                          .failing.map((source) => source.name)
+                          .join(", ")
+                      : words().sourcesFine
+                  }
+                  href={all().failingCount === 1 ? sourceHref(all().failing[0]!) : undefined}
+                  loading={refreshing()}
+                />
+                <Cells.Cell
+                  icon="plug-connected"
+                  label={words().activeCell}
+                  value={number(all().active)}
+                  meta={all().total > all().active ? `${number(all().total - all().active)} ${words().pausedAfter}` : words().noneOff}
+                  loading={refreshing()}
+                />
+                <Cells.Cell
+                  icon="chart-dots"
+                  color="#7c3aed"
+                  label={words().seriesCell}
+                  value={number(all().series)}
+                  meta={words().fromMetrics}
+                  loading={refreshing()}
+                />
+                <Cells.Cell
+                  icon="webhook"
+                  color="#0891b2"
+                  label={words().todayCell}
+                  value={all().today === null ? "—" : number(all().today!)}
+                  meta={words().sinceMidnight}
+                  loading={refreshing()}
+                />
+              </Cells>
+            )}
           </Show>
           <Show when={removedNotice()}>
             <Notice

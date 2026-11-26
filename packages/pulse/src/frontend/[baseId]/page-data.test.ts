@@ -9,7 +9,7 @@ import * as resources from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import * as sqlService from "../../service/sql-service";
 import { adminFixtureIdentity } from "../../store/admin-identity.test-fixture";
-import { fixtureBase, fixtureBases } from "../screens/fixtures";
+import { figuresOf, fixtureBase, fixtureBases } from "../screens/fixtures";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
 import { loadPulseQueriesPageData, loadPulseSettingsPageData, loadPulseWorkspacePageData } from "./page-data";
 
@@ -24,6 +24,7 @@ afterEach(() => {
 const stubBase = () => {
   const list = spyOn(pulseService.source, "list").mockResolvedValue(ok([]));
   const count = spyOn(pulseService.source, "count").mockResolvedValue(ok(4));
+  spies.push(spyOn(pulseService.source, "figures").mockResolvedValue(ok(figuresOf([]))));
   spies.push(
     list,
     count,

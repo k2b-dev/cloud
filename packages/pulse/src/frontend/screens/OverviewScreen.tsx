@@ -1,3 +1,4 @@
+import { principalLabel } from "@k2b/cloud/access/ui";
 import { navigateTo } from "@k2b/ssr/nav";
 import { text } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
@@ -172,7 +173,14 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   drop: true,
                   cell: (base) => (
                     <Inline>
-                      <Avatar.Stack people={(base.members ?? []).map((name) => ({ name }))} max={3} />
+                      {/* an admin of the base sees who works in it; everyone else sees the number only */}
+                      <Show when={base.members?.length}>
+                        <Avatar.Stack
+                          people={(base.members ?? []).map((member) => ({ name: principalLabel(member, locale()) }))}
+                          max={3}
+                          label={`${words().membersMeta({ count: base.memberCount })}: ${(base.members ?? []).map((member) => principalLabel(member, locale())).join(", ")}`}
+                        />
+                      </Show>
                       <Text type="meta" muted>
                         {words().membersMeta({ count: base.memberCount })}
                       </Text>

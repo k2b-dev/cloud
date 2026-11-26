@@ -111,6 +111,36 @@ export const requireBaseAccess = async (
   return PERMISSION_RANK[level] >= PERMISSION_RANK[required] ? ok(level) : fail(err.forbidden("Access denied"));
 };
 
+/**
+ * The bases among `baseIds` the scope administers, in one read: the same grants, binding and scope cap as
+ * `requireBaseAccess`, for a whole list at once.
+ */
+export const adminBaseIdsAmong = async (scope: AccessScope, baseIds: readonly string[]): Promise<Set<string>> => {
+  if (baseIds.length === 0 || !canRequestPermission(scope, "admin")) return new Set();
+  const bound = boundBaseShortId(scope);
+  if (missingBinding(scope, bound)) return new Set();
+  const principalMatch = buildAccessPrincipalCondition({
+    subject: subjectForScope(scope),
+    columns: {
+      userId: sql`a.user_id`,
+      groupId: sql`a.group_id`,
+      serviceAccountId: sql`a.service_account_id`,
+      authenticatedOnly: sql`a.authenticated_only`,
+    },
+  });
+  const rows = await sql<{ base_id: string; permission: PermissionLevel }[]>`
+    SELECT ba.base_id, MAX(a.permission)::text AS permission
+    FROM pulse.base_access ba
+    JOIN pulse.bases b ON b.id = ba.base_id
+    JOIN auth.access a ON a.id = ba.access_id
+    WHERE ba.base_id = ANY(${sql.array([...baseIds], "UUID")})
+      AND (${bound}::text IS NULL OR b.short_id = ${bound})
+      AND ${principalMatch}
+    GROUP BY ba.base_id
+  `;
+  return new Set(rows.filter((row) => row.permission === "admin").map((row) => row.base_id));
+};
+
 export const listBaseIdsVisibleTo = async (
   scope: AccessScope,
   /** `deleting` lists only bases in deletion that the scope administers, so their admin can follow or resume it. */
