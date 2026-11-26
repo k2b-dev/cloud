@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,9 @@ import { ADMIN, adminApp, BATCH_ID, BATCHES } from "../notifications/render-fixt
 import { DELETED, REMINDERS } from "./render-fixture";
 
 const root = mkdtempSync(join(tmpdir(), "accounts-activity-render-"));
+// the pages group and word dates by "today": one fixed day for every run (the samples' 20 Nov 2026)
+setSystemTime(new Date("2026-11-20T15:30:00.000Z"));
+afterAll(() => setSystemTime());
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: activityPage } = await import("./page");

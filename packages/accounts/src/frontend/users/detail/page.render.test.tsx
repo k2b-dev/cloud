@@ -6,6 +6,7 @@ import { type BaseGroup, type CloudRuntime, DEFAULT_ACCOUNT_CATEGORY_POLICY, typ
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
 import * as avatars from "@k2b/cloud/services/accounts/avatar";
+import { directoryShares } from "@k2b/cloud/services/accounts/directory-shares";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../../../ui/test/ssr-test-plugin";
@@ -126,6 +127,7 @@ const server = (options: Options = {}) => {
     }),
     spyOn(services.serviceAccounts, "get").mockResolvedValue(options.account ? serviceAccount(options.account.kind) : null),
     spyOn(avatars, "getServiceAccountAvatarState").mockResolvedValue(null),
+    spyOn(directoryShares, "list").mockResolvedValue({ ok: true, data: { items: [], total: 0, page: 1, perPage: 20 } }),
     spyOn(services.linuxIdentities, "get").mockResolvedValue({
       config,
       user: {
@@ -273,9 +275,9 @@ test("kinds the agent page refused and unknown ids stay a 404", async () => {
   expect((await render("/app/accounts/users/not-a-uuid")).status).toBe(404);
 });
 
-test("an agent's page from before leads to its record with order and open key", async () => {
+test("an agent's page from before leads to its record, whose key section opens the keys", async () => {
   const { status, location } = await render(`/app/accounts/agents/${AGENT}?sort=used&key=new&page=3`);
   expect(status).toBe(302);
-  expect(location).toBe(`/app/accounts/users/${AGENT}?sort=used&key=new`);
+  expect(location).toBe(`/app/accounts/users/${AGENT}`);
   expect((await render("/app/accounts/agents/nope")).status).toBe(404);
 });

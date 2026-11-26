@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from "bun:test";
+import { afterAll, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,9 @@ import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
 const root = mkdtempSync(join(tmpdir(), "accounts-notification-record-render-"));
+// the pages group and word dates by "today": one fixed day for every run (the samples' 20 Nov 2026)
+setSystemTime(new Date("2026-11-20T15:30:00.000Z"));
+afterAll(() => setSystemTime());
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { default: handler } = await import("./notification.page");

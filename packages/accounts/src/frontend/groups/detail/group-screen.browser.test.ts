@@ -49,6 +49,7 @@ const buildHarness = async (): Promise<string> => {
     format: "iife",
     // minified as the islands ship, so the huge group's timing measures the screen, not the parsing of test code
     minify: true,
+    define: { "process.env.NODE_ENV": '"production"' },
     conditions: ["browser"],
     plugins: [
       {

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -26,8 +26,10 @@ const { default: recordPage } = await import("./notification.page");
 
 const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
-// the samples are relative to now, so the log groups its events into "Heute" and "Gestern" as a person sees them
-const now = new Date();
+// One fixed "now" for the samples and for the page's own clock (its "Heute"/"Gestern" groups), so the pictures and
+// the test never depend on the day they run.
+const now = new Date("2026-11-20T15:30:00.000Z");
+setSystemTime(now);
 const batches = Array.from({ length: 12 }, (_, index) => batch(index));
 const recipients = Array.from({ length: 24 }, (_, index) => {
   const status = (["sent", "sent", "sent", "error", "sent", "pending", "sent", "skipped"] as const)[index % 8]!;
@@ -94,6 +96,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
   for (const spy of spies) spy.mockRestore();
+  setSystemTime();
 });
 
 const screens = [
