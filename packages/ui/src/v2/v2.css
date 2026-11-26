@@ -858,6 +858,10 @@
 .k2-ui .k2-sec > .k2-list > .k2-row {
   border-bottom: 0;
 }
+/* the phone form of a table keeps a line between its rows; its last row gives way to the line of its section */
+.k2-ui .k2-sec > .k2-table-phone > .k2-list > .k2-row:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-sec-summary {
   padding: 0 var(--k2-edge) 12px;
   overflow-wrap: anywhere;
