@@ -3,9 +3,19 @@ import { render } from "solid-js/web";
 import DocumentsScreen from "../documents/DocumentsScreen";
 import BasesOverview from "../overview/BasesOverview";
 import { basesQuery, parseBasesAddress } from "../overview/bases-query";
+import QueryScreen from "../query/QueryScreen";
+import QueryViewScreen from "../query/QueryViewScreen";
 import RecordsView from "../records-view/RecordsView";
 import BaseHome from "./BaseHome";
-import { baseHomeFixture, basesFixture, documentsFixture, type FixtureVariant, recordsFixture } from "./frame.browser-fixture";
+import {
+  baseHomeFixture,
+  basesFixture,
+  documentsFixture,
+  type FixtureVariant,
+  queryFixture,
+  queryViewFixture,
+  recordsFixture,
+} from "./frame.browser-fixture";
 import { homeTab, resourcesQuery } from "./resources-query";
 
 /**
@@ -20,7 +30,11 @@ const params = new URLSearchParams(location.search);
 render(
   () => (
     <LocaleProvider locale="de">
-      {location.pathname.endsWith("/documents") ? (
+      {location.pathname.endsWith("/query") ? (
+        <QueryScreen {...queryFixture(variant, params)} />
+      ) : location.pathname.endsWith("/view/V9") ? (
+        <QueryViewScreen {...queryViewFixture(variant)} />
+      ) : location.pathname.endsWith("/documents") ? (
         <DocumentsScreen {...documentsFixture(variant, params)} />
       ) : location.pathname.includes("/table/") ? (
         <RecordsView {...recordsFixture(variant, params)} />

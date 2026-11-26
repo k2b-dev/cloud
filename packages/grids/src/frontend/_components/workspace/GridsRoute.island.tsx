@@ -3,15 +3,12 @@ import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
 import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
-import QueryResultView from "../query/QueryResultView";
-import QueryWorkspace from "../query/QueryWorkspace";
 import { WorkflowRunDetailPanel } from "../workflows/WorkflowRunDetailPanel";
 import WorkflowsPage from "../workflows/WorkflowsPage";
 import { workspaceMainClass } from "./workspace-layout";
-import type { PublicOkWorkspaceState, PublicWorkspaceQueryResultViewRoute } from "./workspace-public-state-model";
+import type { PublicOkWorkspaceState } from "./workspace-public-state-model";
 
 type PublicWorkspaceDocumentTemplateRoute = Extract<PublicOkWorkspaceState["route"], { kind: "documentTemplate" }>;
-type PublicWorkspaceQueryRoute = Extract<PublicOkWorkspaceState["route"], { kind: "query" }>;
 type PublicWorkspaceWorkflowsRoute = Extract<PublicOkWorkspaceState["route"], { kind: "workflows" }>;
 
 export default function GridsRoute(props: { state: PublicOkWorkspaceState; userId?: string; now?: string }) {
@@ -58,7 +55,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
   });
 
   // Records render on v2 in records-view/RecordsScreen; this island serves the remaining kinds.
-  if (route.kind === "records" || route.kind === "documents") return null;
+  if (route.kind === "records" || route.kind === "documents" || route.kind === "query" || route.kind === "queryResultView") return null;
 
   return (
     <>
@@ -82,46 +79,6 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; userI
                   onWorkflowChanged={reloadRoute}
                   onSelectRun={updateWorkflowRun}
                   liveCursor={state.liveCursor}
-                />
-              );
-            })()}
-          </Match>
-          <Match when={route.kind === "query"}>
-            {(() => {
-              const query = route as PublicWorkspaceQueryRoute;
-              return (
-                <QueryWorkspace
-                  baseId={state.base.id}
-                  baseName={state.base.name}
-                  initialQuery={query.initialQuery}
-                  initialCursor={query.initialCursor}
-                  initialPreview={query.initialPreview}
-                  queryPath={query.queryPath}
-                  currentSource={query.currentSource}
-                  tables={state.catalog.tables}
-                  fieldsByTable={state.catalog.fieldsByTable}
-                  viewsByTable={state.catalog.viewsByTable}
-                />
-              );
-            })()}
-          </Match>
-          <Match when={route.kind === "queryResultView"}>
-            {(() => {
-              const queryResult = route as PublicWorkspaceQueryResultViewRoute;
-              return (
-                <QueryResultView
-                  baseId={state.base.id}
-                  route={queryResult}
-                  tables={
-                    state.catalog.tables.some((table) => table.id === queryResult.activeTable.id)
-                      ? state.catalog.tables
-                      : [...state.catalog.tables, queryResult.activeTable]
-                  }
-                  fieldsByTable={{
-                    ...state.catalog.fieldsByTable,
-                    [queryResult.activeTable.id]: queryResult.fields,
-                  }}
-                  editMode={state.adminModeRequested}
                 />
               );
             })()}

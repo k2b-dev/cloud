@@ -1,24 +1,25 @@
-import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
 import { Button, Check, Dialog, Field, Input, Notice } from "@k2b/ui/v2";
 import { createEffect, createSignal, on, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
-import type { ColumnSpec, RecordQuery } from "../../../contracts";
-import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
+import type { ColumnSpec } from "../../../contracts";
 import { toolbarMessages } from "../toolbar/messages";
 import { errorMessage } from "../utils/api-helpers";
 import { recordsScreenMessages } from "./screen-messages";
 
+/** What a new view is made of: its table, its GQL source and the columns it shows. */
+export type ViewDraft = { tableId: string; source: string; ui?: { columns?: ColumnSpec[] } };
+
 /**
- * Saves what the table shows now (search, filters, sort, computed columns) as a view of its own, private or shared
- * with everyone who can write to the table. The page reloads into the new view's tab.
+ * Saves a view of its own, private or shared with everyone who can write to the table: what a table shows now
+ * (search, filters, sort, computed columns) or a query. `draft` makes the view's source when the person saves (it
+ * throws with the reason a source cannot be one); `onSaved` gets the new view.
  */
 export default function SaveViewDialog(props: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  tableId: string;
-  query: () => RecordQuery;
-  columns: () => ColumnSpec[] | undefined;
+  draft: () => ViewDraft | Promise<ViewDraft>;
+  onSaved: (view: { id: string; tableId: string }) => void;
   canShare: boolean;
 }) {
   const locale = useLocale();
@@ -47,17 +48,15 @@ export default function SaveViewDialog(props: {
     setSaving(true);
     setError(null);
     try {
-      const computed = (props.columns() ?? []).some((column) => "kind" in column && column.kind === "computed");
-      const query = { ...props.query(), columns: computed ? props.columns() : undefined } satisfies RecordQuery;
-      const source = simpleQueryToGqlSource({ tableId: props.tableId, query });
-      if (!source.ok) throw new Error(source.reason);
+      const draft = await props.draft();
       const response = await apiClient.views["by-table"][":tableId"].$post({
-        param: { tableId: props.tableId },
-        json: { name: name().trim(), source: source.source, ui: { columns: query.columns }, shared: props.canShare && shared() },
+        param: { tableId: draft.tableId },
+        json: { name: name().trim(), source: draft.source, ...(draft.ui ? { ui: draft.ui } : {}), shared: props.canShare && shared() },
       });
       if (!response.ok) throw new Error(await errorMessage(response, t().saveViewFailed));
+      const view = await response.json();
       props.onOpenChange(false);
-      refreshCurrentPath();
+      props.onSaved({ id: view.id, tableId: view.tableId });
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : t().saveViewFailed);
     } finally {

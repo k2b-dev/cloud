@@ -3,13 +3,17 @@
  * small team's Grids, `worst` the break-ui catalogue (long and unbreakable names, one letter, non-Latin, emoji,
  * missing descriptions, huge counts), `huge` a Grids with 1,000 bases and a base with 1,000 tables.
  */
-import type { PublicBase, PublicTable } from "../../../api/public-dto";
+import type { PublicDslQueryPreviewResponse } from "../../../api/gql-public";
+import type { PublicBase, PublicTable, PublicView } from "../../../api/public-dto";
 import { documentCatalogIsFlat, parseDocumentCatalogUrlState } from "../documents/document-catalog-url-state";
 import type { BasesOverviewProps } from "../overview/BasesOverview";
+import type QueryScreen from "../query/QueryScreen";
+import type QueryViewScreen from "../query/QueryViewScreen";
 import { recordsFilterStatements } from "../records-view/filter-statements";
 import { parseRecordsState } from "../records-view/query-url";
 import type RecordsView from "../records-view/RecordsView";
 import { fields as tableFields, records as tableRecords } from "../table/database-table.fixture-data";
+import type { NavigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 
 export type FixtureVariant = "plain" | "worst" | "huge";
@@ -387,5 +391,127 @@ export const documentsFixture = (variant: FixtureVariant, params: URLSearchParam
           : [],
     },
     dateConfig: DATE_CONFIG,
+  };
+};
+
+const ORDERS = table("table", "Aufträge", "ti ti-clipboard-list");
+const QUERY_FIELDS = ["text", "status", "customer", "number", "date"] as const;
+
+/** The rows a query over the orders returns: a page of up to 100 of `total`, from `start` on. */
+export const queryResultFixture = (variant: FixtureVariant, start = 0): PublicDslQueryPreviewResponse => {
+  const total = variant === "huge" ? 1000 : variant === "worst" ? 4 : 10;
+  const size = Math.min(100, total - start);
+  const worst = (index: number) =>
+    index === 0
+      ? "Wartungsprotokolle-der-Hebebühnen-und-Druckluftanlagen-im-Werk-Süd-2026"
+      : index === 1
+        ? "X"
+        : index === 2
+          ? "物流センター東京"
+          : "🚚 Spedition 💥";
+  return {
+    ok: true,
+    mode: "rows",
+    limit: 100,
+    columns: QUERY_FIELDS.map((id) => {
+      const field = tableFields.find((each) => each.id === id)!;
+      return { key: id, label: field.name, type: field.type, sqlType: "text", tableId: "table", fieldId: id };
+    }),
+    rows: Array.from({ length: size }, (_, offset) => {
+      const index = start + offset;
+      const record = tableRecords[index % tableRecords.length]!;
+      return {
+        recordId: `record-${index}`,
+        values: {
+          ...Object.fromEntries(QUERY_FIELDS.map((id) => [id, record.data[id] ?? null])),
+          text: variant === "worst" ? worst(index) : `${record.data.text} ${index + 1}`,
+          ...(variant === "worst" && index === 3 ? { number: "987654321.99" } : {}),
+        },
+      };
+    }),
+    truncated: start + size < total,
+    page: { size: 100, start, returned: size, nextCursor: start + size < total ? `cursor-${start + size}` : null },
+  };
+};
+
+const queryFrame = (variant: FixtureVariant, kind: "query" | "records"): NavigationState => {
+  const frame = baseHomeFixture(variant, { edit: false, groups: false });
+  const tables = [ORDERS, ...frame.catalog.tables.slice(variant === "huge" ? 0 : 1)];
+  return { ...frame, catalog: { ...frame.catalog, tables }, route: { kind, activeKey: kind === "query" ? "query" : "view:V9" } };
+};
+
+const queryViews = (variant: FixtureVariant): PublicView[] =>
+  [
+    { id: "V1", tableId: "table", name: "Offene Aufträge", icon: null },
+    {
+      id: "V9",
+      tableId: "table",
+      name: variant === "worst" ? "Umsatz-pro-Monat-nach-Kundengruppe-und-Region-2026" : "Umsatz pro Monat",
+      icon: null,
+    },
+  ] as unknown as PublicView[];
+
+/** The query of the fixture base: the address's `q` stands in the editor, its first page of rows under it. */
+export const queryFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof QueryScreen>[0] => {
+  const frame = queryFrame(variant, "query");
+  const query = params.get("q") ?? "";
+  return {
+    frame,
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    baseName: frame.base.name,
+    initialQuery: query,
+    initialCursor: null,
+    initialPreview: query ? queryResultFixture(variant) : null,
+    queryPath: "/app/grids/Bas001/query",
+    tables: frame.catalog.tables,
+    fieldsByTable: { table: tableFields },
+    viewsByTable: { table: queryViews(variant) },
+  };
+};
+
+/** A saved view that aggregates: revenue by month, as the server renders its first page. */
+export const queryViewFixture = (variant: FixtureVariant): Parameters<typeof QueryViewScreen>[0] => {
+  const frame = queryFrame(variant, "records");
+  const months = variant === "huge" ? 100 : 12;
+  const views = queryViews(variant);
+  return {
+    frame,
+    revision: FIXTURE_REVISION,
+    baseId: "Bas001",
+    table: ORDERS,
+    view: views[1]!,
+    views,
+    fields: tableFields,
+    fieldsByTable: { table: tableFields },
+    canEditView: true,
+    initialCursor: null,
+    initialResult: {
+      ok: true,
+      mode: "groups",
+      limit: 100,
+      columns: [
+        { key: "month", label: "Monat", type: "text", sqlType: "text" },
+        { key: "customer", label: "Kunde", type: "text", sqlType: "text", tableId: "table", fieldId: "customer" },
+        {
+          key: "total",
+          label: variant === "worst" ? "Summe-aller-abgerechneten-Beträge-netto" : "Summe",
+          type: "aggregate",
+          sqlType: "numeric",
+          aggregate: "sum",
+        },
+        { key: "count", label: "Aufträge", type: "aggregate", sqlType: "integer", aggregate: "count" },
+      ],
+      rows: Array.from({ length: months }, (_, index) => ({
+        values: {
+          month: `2026-${String((index % 12) + 1).padStart(2, "0")}`,
+          customer: variant === "worst" && index === 0 ? "Bäckerei-Sonnenkorn-Filiale-Nordhausen-Hauptbahnhof" : "Bäckerei Sonnenkorn",
+          total: variant === "worst" && index === 1 ? 987654321.99 : 12_400 + index * 310,
+          count: 3 + (index % 7),
+        },
+      })),
+      truncated: false,
+      page: { size: 100, start: 0, returned: months, nextCursor: variant === "huge" ? "cursor-100" : null },
+    },
   };
 };

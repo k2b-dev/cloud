@@ -1,5 +1,6 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { publishPageContext } from "@k2b/cloud/browser/panel";
+import { refreshCurrentPath } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { dialogCore, prompts, useLocale } from "@k2b/ui";
 import {
@@ -40,6 +41,7 @@ import type {
   TableAuditPolicy,
   TableMutationPolicy,
 } from "../../../contracts";
+import { simpleQueryToGqlSource } from "../../../query-dsl/record-query-source";
 import { filterSearchableFields } from "../../../searchable-fields";
 import type { WorkspaceRevision } from "../../../service/workspace-revision";
 import { defaultTableAggregations } from "../../../table-defaults";
@@ -1368,9 +1370,15 @@ export default function RecordsView(props: Props) {
       <SaveViewDialog
         open={saveViewOpen()}
         onOpenChange={setSaveViewOpen}
-        tableId={props.tableId}
-        query={queryWithSearch}
-        columns={effectiveViewColumns}
+        draft={() => {
+          const columns = effectiveViewColumns();
+          const computed = (columns ?? []).some((column) => "kind" in column && column.kind === "computed");
+          const query = { ...queryWithSearch(), columns: computed ? columns : undefined } satisfies RecordQuery;
+          const source = simpleQueryToGqlSource({ tableId: props.tableId, query });
+          if (!source.ok) throw new Error(source.reason);
+          return { tableId: props.tableId, source: source.source, ui: { columns: query.columns } };
+        }}
+        onSaved={() => refreshCurrentPath()}
         canShare={props.canWrite}
       />
     </GridsFrame>

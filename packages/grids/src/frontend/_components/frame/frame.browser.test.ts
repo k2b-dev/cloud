@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
-import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
+import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant, queryResultFixture } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
 // rules of v2 hold at 1440, 1024 and 390 px, the worst-case data breaks nothing, and 1,000 bases or tables stay
@@ -87,7 +87,7 @@ const page = (variant: FixtureVariant) =>
   `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
-type Seen = { created: unknown[] };
+type Seen = { created: unknown[]; queries: Array<string | null> };
 
 /** Runs in the page: Date flows on from the pinned instant; timers and animation frames stay real. */
 const pinPageClock = (at: number) => {
@@ -120,7 +120,7 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
   const errors = pageErrors(tab);
-  const seen: Seen = { created: [] };
+  const seen: Seen = { created: [], queries: [] };
   // the live channel stays quiet: no change arrives while the test runs
   await tab.routeWebSocket(/\/api\/grids\/live/, () => {});
   await tab.route(`${origin}/**`, async (route) => {
@@ -132,6 +132,12 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
     if (url.pathname === "/api/grids/bases" && route.request().method() === "POST") {
       seen.created.push(route.request().postDataJSON());
       return route.fulfill({ status: 503, json: { message: "Base creation unavailable" } });
+    }
+    // the query answers with the orders, a page of 100 from the cursor on
+    if (url.pathname === "/api/grids/gql/by-base/Bas001/execute") {
+      const cursor = (route.request().postDataJSON() as { cursor?: string }).cursor;
+      seen.queries.push(cursor ?? null);
+      return route.fulfill({ json: queryResultFixture(variant, cursor ? Number(cursor.replace("cursor-", "")) : 0) });
     }
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
@@ -478,6 +484,78 @@ describe("all documents on v2", () => {
     try {
       const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
       console.info(`grids documents huge: ${await elements(tab)} elements, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
+});
+
+describe("the query of a base on v2", () => {
+  const query = `/app/grids/Bas001/query?q=${encodeURIComponent("from table Aufträge")}`;
+  const view = "/app/grids/Bas001/table/table/view/V9";
+  for (const variant of ["plain", "worst"] as const)
+    test(`keeps the v2 rules at 1440, 1024 and 390 px (${variant})`, async () => {
+      for (const each of [wide, narrow, phone])
+        for (const [name, address] of [
+          ["query", query],
+          ["query-empty", "/app/grids/Bas001/query"],
+          ["query-view", view],
+        ] as const) {
+          const { context, tab, errors } = await open(each, address, variant);
+          try {
+            await shoot(tab, `grids-${name}-${variant}-light-${each.name}`);
+            await expectClean(tab);
+            expect(errors).toEqual([]);
+          } finally {
+            await context.close();
+          }
+        }
+    }, 180_000);
+
+  test("a source puts its from line in the query, a field its name at the caret", async () => {
+    const { context, tab, errors } = await open(wide, "/app/grids/Bas001/query");
+    try {
+      const editor = tab.getByRole("textbox", { name: "GQL-Abfrage" });
+      await tab.locator("[aria-label=Quellen] [data-k2-part=Row]", { hasText: "Ersatzteile" }).locator(".k2-row-open").click();
+      await expect(editor.inputValue()).resolves.toBe("from table Ersatzteile");
+      await editor.fill("from table Aufträge\nlimit 5");
+      await editor.evaluate((element: HTMLTextAreaElement) => element.setSelectionRange(19, 19));
+      await tab.getByRole("button", { name: "Felder von Aufträge" }).click();
+      await tab.getByRole("menuitem", { name: /Status/ }).click();
+      await expect(editor.inputValue()).resolves.toBe("from table AufträgeStatus\nlimit 5");
+      // the query stays in the address, so reload shows the same
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("q")?.includes("limit 5"));
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("Next loads the next page of rows and keeps its cursor in the address", async () => {
+    const { context, tab, errors, seen } = await open(wide, query, "huge");
+    try {
+      // the toolbar over the rows says which rows came
+      const status = tab.locator("[aria-label=Abfrage] [data-k2-part=Bar]").first();
+      expect(await status.textContent()).toContain("Zeilen 1–100");
+      await tab.getByRole("button", { name: "Weiter", exact: true }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("cursor") === "cursor-100");
+      expect(await status.textContent()).toContain("Zeilen 101–200");
+      expect(seen.queries).toEqual(["cursor-100"]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("1,000 tables keep only the sources in view, 100 rows only those in view", async () => {
+    const { context, tab, errors, readyMs } = await open(wide, query, "huge");
+    try {
+      const sources = await tab.locator("[aria-label=Quellen] [data-k2-part=Row]").count();
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(`grids query huge: ${await elements(tab)} elements, ${sources} sources, ${rows} rows in the page, ready ${readyMs} ms`);
+      expect(sources).toBeLessThanOrEqual(60);
       expect(rows).toBeLessThanOrEqual(60);
       expect(errors).toEqual([]);
     } finally {

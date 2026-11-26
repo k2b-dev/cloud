@@ -7,6 +7,7 @@ import { ssr } from "../../config";
 import DocumentsScreen from "../_components/documents/DocumentsScreen.island";
 import BaseHome from "../_components/frame/BaseHome.island";
 import { homeTab, resourcesQuery } from "../_components/frame/resources-query";
+import QueryScreen from "../_components/query/QueryScreen.island";
 import RecordsScreen from "../_components/records-view/RecordsScreen.island";
 import { parseDocumentViewMode, parseNavigationExpansion } from "../_components/sidebar/GridsSettingsStore";
 import RememberGridsPath from "../_components/sidebar/RememberGridsPath.island";
@@ -101,6 +102,14 @@ export default ssr<AuthContext>(async (c) => {
       <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
         <RememberGridsPath />
         <DocumentsScreen state={state} />
+      </Layout>
+    );
+
+  if (state.route.kind === "query" || state.route.kind === "queryResultView")
+    return () => (
+      <Layout c={c} fullWidth ui="v2" title={state.title} context={{ scope }}>
+        <RememberGridsPath />
+        <QueryScreen state={state} />
       </Layout>
     );
 
