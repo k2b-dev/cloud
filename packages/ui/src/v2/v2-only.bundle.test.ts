@@ -19,7 +19,7 @@ const allowed: Record<string, number> = {
   "content/markdown-info-blocks.ts": 7_200,
   "content/markdown-links.ts": 3_600,
   "content/markdown-reference-messages.ts": 700,
-  "content/virtual-sizes.ts": 300, // indexAtOffset, prefixOffsets for the virtual `List` and `Table`
+  "content/virtual-sizes.ts": 300, // the size model of a window, shared with VirtualFeed
   "inputs/date-input.ts": 6_600, // formatDateInput, parseDateInput
   "inputs/date-picker.ts": 450, // dateKey, isCalendarDay, isDateKey
   "surfaces/notice-card-classes.ts": 370, // the notice classes of Markdown's info blocks

@@ -119,22 +119,39 @@ test("a large table's phone rows keep their date inside the row at 390 px, and t
       const past = await page.evaluate(() =>
         Array.from(document.querySelectorAll(".k2-table-phone .k2-row-time")).map((time) => {
           const row = time.closest(".k2-row")!.getBoundingClientRect();
-          const r = time.closest(".k2-row")!;
-          return {
-            over: Math.round(time.getBoundingClientRect().right - (row.right - 16)),
-            row: [Math.round(row.left), Math.round(row.right)],
-            cols: getComputedStyle(r).gridTemplateColumns,
-            pad: getComputedStyle(r).paddingRight,
-            kids: [...r.children].map(
-              (kid) => `${kid.className}:${Math.round(kid.getBoundingClientRect().left)}-${Math.round(kid.getBoundingClientRect().right)}`,
-            ),
-          };
+          // how far the date stands past the row's text edge (16 px in from its border)
+          return Math.round(time.getBoundingClientRect().right - (row.right - 16));
         }),
       );
-      expect(past.length).toBe(2);
-      for (const each of past) expect(each).toEqual(expect.objectContaining({ over: 0 }));
+      expect(past.length).toBe(3);
+      for (const over of past) expect(Math.abs(over)).toBe(0);
       const layout = await measureV2Layout(page, { root: "#root" });
       expect(layout.past).toEqual([]);
+    },
+    "table",
+  );
+});
+
+// DR (#4229): a table's phone rows lost the row's deeds, so a dialog's table could not be worked on the phone. A phone
+// row carries them at its end, inside the row, and they open.
+test("a large table's phone rows keep the row's deeds at 390 px", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const deeds = page.locator(".k2-table-phone .k2-row .k2-btn[aria-haspopup='menu']");
+      expect(await deeds.count()).toBe(3);
+      const inside = await deeds.evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const box = button.getBoundingClientRect();
+          const row = button.closest(".k2-row")!.getBoundingClientRect();
+          return box.width > 0 && box.left >= row.left && box.right <= row.right + 0.5;
+        }),
+      );
+      expect(inside).toEqual([true, true, true]);
+      await page.getByRole("button", { name: "Aktionen für Angebote" }).click();
+      await page.getByRole("menuitem", { name: "Umbenennen" }).waitFor();
+      await page.keyboard.press("Escape");
+      expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
     },
     "table",
   );
@@ -165,5 +182,158 @@ test("on the phone a crowded head keeps the open tab whole; its kept deeds wait 
       expect(layout.cut).toEqual([]);
     },
     "head",
+  );
+});
+
+// U2 (Tools #4235): a second line without a break (an address, JSON) ran under the marks and the deed and past the
+// row. A second line stays one line, ends in "…" before what stands beside it, and says all of it on hover.
+/** Where the visible text of each second line ends, and what of the row it lies under. */
+const secondLines = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>(".k2-row > .k2-row-l2"))
+      .filter((line) => line.getBoundingClientRect().width > 0)
+      .map((line) => {
+        const row = line.parentElement!;
+        const box = line.getBoundingClientRect();
+        const clips = getComputedStyle(line).overflowX !== "visible";
+        const right = clips ? box.right : box.left + line.scrollWidth;
+        const inner = row.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(row).paddingRight);
+        const under = Array.from(row.querySelectorAll(":scope > :is(.k2-row-marks, .k2-row-end, .k2-row-time)"))
+          .filter((part) => {
+            const other = part.getBoundingClientRect();
+            return (
+              other.width > 0 &&
+              right > other.left + 0.5 &&
+              box.left < other.right &&
+              box.bottom > other.top + 0.5 &&
+              box.top < other.bottom - 0.5
+            );
+          })
+          .map((part) => part.className);
+        return {
+          past: Math.max(0, Math.round(right - inner)),
+          under,
+          title: (line.getAttribute("title") ?? "").length > 200 || (line.textContent ?? "").length < 200,
+        };
+      }),
+  );
+
+for (const width of [1024, 390])
+  test(`a second line of 300 signs without a break stays one line beside the deed and the marks at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        for (const line of await secondLines(page)) expect(line).toEqual({ past: 0, under: [], title: true });
+        expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
+      },
+      "rows",
+    );
+  });
+
+test("a phone row of a large table cuts its second line before its marks", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      for (const line of await secondLines(page)) expect(line).toEqual({ past: 0, under: [], title: true });
+      expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
+    },
+    "table",
+  );
+});
+
+// Review r2 of #4210: a head with views, a kept deed with words and the app's own "…": one "…" only, which holds both
+// the app's deeds and the folded one; a pressed deed says so in the menu.
+test("on the phone a head with its own … folds its kept deeds into that one menu, a pressed deed checked", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const more = page.getByRole("button", { name: "Weitere Aktionen" });
+      const shown = await more.evaluateAll((buttons) => buttons.filter((button) => (button as HTMLElement).offsetWidth > 0).length);
+      expect(shown).toBe(1);
+      await more.filter({ visible: true }).click();
+      await page.getByRole("menuitem", { name: "Einstellungen" }).waitFor();
+      const folded = page.getByRole("menuitemcheckbox", { name: "Markiert" });
+      expect(await folded.getAttribute("aria-checked")).toBe("true");
+      await folded.click();
+      await settled(page);
+      // a ticked entry keeps the menu open; open it again only if it closed
+      if (!(await page.getByRole("menuitemcheckbox", { name: "Markiert" }).isVisible())) await more.filter({ visible: true }).click();
+      expect(await page.getByRole("menuitemcheckbox", { name: "Markiert" }).getAttribute("aria-checked")).toBe("false");
+    },
+    "headmenu",
+  );
+});
+
+/** The "…" buttons a person sees in the head. */
+const shownMenus = (page: Page) =>
+  page
+    .locator("[data-slot='head'] .k2-btn[data-icon-only][aria-haspopup='menu']")
+    .evaluateAll((buttons) =>
+      buttons.filter((button) => (button as HTMLElement).offsetWidth > 0).map((button) => button.getAttribute("aria-label")),
+    );
+
+// Review r3 of #4210: a kept icon button is no "…": beside it the bar's own "…" still shows and holds the folded deed.
+test("on the phone a kept icon button beside a folded deed leaves the bar's … to hold that deed", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      expect(await shownMenus(page)).toEqual(["Weitere Aktionen"]);
+      await page.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: "Freigeben" }).waitFor();
+    },
+    "headicon",
+  );
+});
+
+// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the first, and shows no third "…".
+test("on the phone a head with two … of its own folds its kept deed into the first only", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      expect(await shownMenus(page)).toEqual(["Weitere Aktionen", "Ansicht"]);
+      const entries = async (name: string) => {
+        await page.getByRole("button", { name }).click();
+        await page.getByRole("menu").waitFor();
+        const labels = await page.getByRole("menu").getByRole("menuitem").allTextContents();
+        await page.keyboard.press("Escape");
+        await page.getByRole("menu").waitFor({ state: "hidden" });
+        return labels.map((label) => label.trim());
+      };
+      expect(await entries("Weitere Aktionen")).toEqual(["Einstellungen", "Freigeben"]);
+      expect(await entries("Ansicht")).toEqual(["Kompakt"]);
+    },
+    "headtwo",
+  );
+});
+
+// Review r3 of #4210: a second line is cut in its own box, so a link in it draws its ring inside that box.
+test("a link in a cut second line shows its whole focus ring", async () => {
+  await withPage(
+    1024,
+    async (page) => {
+      const link = page.getByRole("link", { name: "Letzte Anfragen öffnen" });
+      for (let step = 0; step < 20 && !(await link.evaluate((element) => element === document.activeElement)); step++)
+        await page.keyboard.press("Tab");
+      await settled(page);
+      const ring = await link.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const grow =
+          style.outlineStyle === "none" ? 0 : Math.max(0, Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset));
+        const box = element.getBoundingClientRect();
+        const clip = element.closest(".k2-row-l2")!.getBoundingClientRect();
+        return {
+          focused: element.matches(":focus-visible"),
+          drawn: style.outlineStyle !== "none" || style.boxShadow !== "none",
+          inside:
+            box.left - grow >= clip.left - 0.5 &&
+            box.right + grow <= clip.right + 0.5 &&
+            box.top - grow >= clip.top - 0.5 &&
+            box.bottom + grow <= clip.bottom + 0.5 &&
+            !style.boxShadow.split("),").some((shadow) => shadow !== "none" && !shadow.includes("inset")),
+        };
+      });
+      expect(ring).toEqual({ focused: true, drawn: true, inside: true });
+    },
+    "rows",
   );
 });

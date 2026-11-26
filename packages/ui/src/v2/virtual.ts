@@ -9,7 +9,9 @@ import { indexAtOffset, prefixOffsets } from "../content/virtual-sizes";
  * uses (`virtual-sizes.ts`), measured once a row was shown and kept under its key.
  *
  * - **Server and first render:** the first rows that fill a tall screen (`SERVER_ROWS`), the rest as padding; the
- *   browser's first render is the same, then the window follows the column's scroll. Nothing moves on hydration.
+ *   browser's first render is the same, then the window follows the column's scroll. Nothing moves on hydration. A
+ *   list of at most `SERVER_ROWS` entries (group heads count) has no window: it stays whole, as the server sent it,
+ *   also where it stands far below the view.
  * - **Focus:** the row that holds the focus stays in the page while it scrolls out of the window, parked right beside
  *   it out of view, so the focus never falls to the page.
  */
@@ -41,10 +43,10 @@ export type VirtualWindow<T> = {
   reveal: (key: string) => HTMLElement | null;
 };
 
-/** What a person reaches with Tab inside a row. */
-/** How far Tab looks past entries without a stop (group heads) for the next one. */
+/** How far Tab looks past entries without a stop (group heads) for the next one; past that the browser decides. */
 const NEIGHBOURS = 20;
 
+/** What a person reaches with Tab inside a row. */
 const TABBABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
 /** What scrolls the list: a large table's own scroller, else the column's `.k2-scroll`, else the nearest scroller, else the page. */
@@ -179,15 +181,25 @@ export const createVirtualWindow = <T>(options: {
     // The place someone reads: the item at the top of the column and how far into it. Heights that change (a new
     // width wraps the rows anew) keep it where it is, also where the browser has no scroll anchoring (Safari).
     let anchor: { key: string; offset: number } | null = null;
+    const viewTop = () => (scroller ? scroller.getBoundingClientRect().top : 0);
+    /** The first row in view as the page shows it (not as the heights estimate it), and how far it starts above the top. */
+    const readAnchor = () => {
+      const top = viewTop();
+      for (const child of Array.from(list.children)) {
+        const key = nodes.get(child);
+        const box = child.getBoundingClientRect();
+        if (key !== undefined && box.bottom > top + 0.5) return { key, offset: top - box.top };
+      }
+      return null;
+    };
     update = () => {
       frame = 0;
       const top = scrolledIn();
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const count = keys.length;
-      if (count === 0) return setRange({ start: 0, end: 0 });
-      const first = indexAtOffset(offsets, count, Math.max(0, top));
-      anchor =
-        (scroller ? scroller.scrollTop : window.scrollY) > 0 && top > 0 ? { key: keys[first]!, offset: top - offsetOf(first) } : null;
+      // a list the server sent whole stays whole: the live page is what it sent, wherever the list stands
+      if (count <= SERVER_ROWS) return setRange({ start: 0, end: count });
+      anchor = (scroller ? scroller.scrollTop : window.scrollY) > 0 && top > 0 ? readAnchor() : null;
       const start = indexAtOffset(offsets, count, Math.max(0, top - OVERSCAN));
       const end = Math.min(count, indexAtOffset(offsets, count, Math.max(0, top + height + OVERSCAN)) + 1);
       setRange({ start, end });
@@ -195,11 +207,11 @@ export const createVirtualWindow = <T>(options: {
     const later = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
-    /** Puts the read place back where it was after heights changed. */
+    /** Puts the read place back where it was after heights changed: the row of the anchor at the same distance. */
     const keepAnchor = () => {
-      const index = anchor ? position.get(anchor.key) : undefined;
-      if (!anchor || index === undefined) return;
-      const moved = offsetOf(index) + anchor.offset - scrolledIn();
+      const node = anchor ? byKey.get(anchor.key) : undefined;
+      if (!anchor || !node?.isConnected) return;
+      const moved = anchor.offset - (viewTop() - node.getBoundingClientRect().top);
       if (Math.abs(moved) < 1) return;
       if (scroller) scroller.scrollTop += moved;
       else window.scrollBy(0, moved);

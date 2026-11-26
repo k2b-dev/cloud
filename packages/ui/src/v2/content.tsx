@@ -560,10 +560,11 @@ export const Row = (props: RowProps) => {
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
-  // a row of three lines cuts each line with "…": a line of words says all of them on hover
+  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover
   const cut = (index: number) => {
     const line = text()[index];
-    return lines() === 3 && typeof line === "string" && line.trim() ? line : undefined;
+    const cuts = lines() === 3 || (lines() === 2 && index === 1);
+    return cuts && typeof line === "string" && line.trim() ? line : undefined;
   };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
@@ -754,7 +755,8 @@ type TableBase<T> = {
   open?: (row: T) => OpenTarget;
   /**
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
-   * the second line, such as the state of the entry as a chip.
+   * the second line, such as the state of the entry as a chip; `end` holds the row's deeds (as `Row end`), such as its
+   * "…": what a column of deeds offers on the desktop.
    */
   phone?: (row: T) => {
     lines: readonly [JSX.Element, JSX.Element];
@@ -763,6 +765,7 @@ type TableBase<T> = {
     mark?: MarkProps;
     time?: JSX.Element;
     marks?: JSX.Element;
+    end?: JSX.Element;
   };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
@@ -1203,6 +1206,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                           mark={form.mark}
                           time={form.time}
                           marks={form.marks}
+                          end={form.end}
                           strong
                           href={target?.href}
                           onNavigate={target?.onNavigate}

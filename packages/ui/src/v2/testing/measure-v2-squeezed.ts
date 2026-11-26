@@ -49,11 +49,19 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
     const least = Math.min(4, fontSize / 3);
     let shownWidth = box.width;
+    // Text that wrapped wholly out of sight below (or above) a box that hides what wraps gave way whole on purpose (the
+    // key figures of a StatusRow): it is not pressed, it is gone as a whole.
+    let outOfSight = false;
     for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
       const style = getComputedStyle(ancestor);
-      if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
-      shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
+      if (style.display === "contents") continue;
+      const clip = ancestor.getBoundingClientRect();
+      if ((style.overflowY === "hidden" || style.overflowY === "clip") && (box.top >= clip.bottom - 0.5 || box.bottom <= clip.top + 0.5))
+        outOfSight = true;
+      if (style.overflowX !== "hidden" && style.overflowX !== "clip") continue;
+      shownWidth = Math.min(shownWidth, clip.width);
     }
+    if (outOfSight) continue;
     if ([...words].length >= 2 && shownWidth < least) {
       squeezed.push(
         `${name(parent)} "${labelOf(parent)}" is ${round(shownWidth)} px wide; its text is gone, give it room or cut it with "…"`,
@@ -108,6 +116,26 @@ export function measurePastInPage(options: SqueezedOptions): { past: string[] } 
       const own = part.getBoundingClientRect();
       if (own.width > 0 && own.right > box.right + 0.5)
         past.push(`${part.className} "${labelOf(part)}" stands ${round(own.right - box.right)} px past its row; it stays inside`);
+    }
+    // The words of a line as they show: a line that does not clip spills what has no break (an address, JSON) past
+    // its box, under what stands beside it (marks, a deed, the time) or past the row (U2 26.11.).
+    const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
+    const beside = Array.from(row.querySelectorAll(":scope > :is(.k2-row-marks, .k2-row-end, .k2-row-time)"));
+    for (const line of Array.from(row.querySelectorAll<HTMLElement>(":scope > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3)"))) {
+      const own = line.getBoundingClientRect();
+      if (own.width <= 0) continue;
+      const right = getComputedStyle(line).overflowX === "visible" ? own.left + line.scrollWidth : own.right;
+      if (right > inner + 0.5) {
+        past.push(`${line.className} "${labelOf(line)}" runs ${round(right - inner)} px past its row; it ends with "…"`);
+        continue;
+      }
+      for (const part of beside) {
+        const other = part.getBoundingClientRect();
+        // on the same line: more than the 2 px the marks reach into the line above them
+        const sameLine = Math.min(own.bottom, other.bottom) - Math.max(own.top, other.top) > 4;
+        if (other.width > 0 && right > other.left + 0.5 && own.left < other.right && sameLine)
+          past.push(`${line.className} "${labelOf(line)}" lies under ${part.className}; it ends with "…" before it`);
+      }
     }
   }
   return { past };

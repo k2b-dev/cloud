@@ -22,7 +22,7 @@ import { Cut, RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
-import { Menu, type MenuEntry } from "./menu";
+import { HeadFoldContext, Menu, type MenuEntry } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
@@ -618,25 +618,30 @@ export type BarProps = {
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  */
 export const Bar = (props: BarProps) => {
-  const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
   const inHead = useContext(HeadContext);
   const t = useOverlayMessages();
   // On the phone the open view never gives way to deeds that keep their words: in a head with views, those deeds fold
-  // into this menu (the stylesheet shows it only there), which runs each of them as the button itself would.
+  // into the head's own "…" (handed to it by context) or, without one, into this menu (the stylesheet shows it only
+  // there); each runs as the button itself would, a pressed one as a ticked entry.
   const [folded, setFolded] = createSignal<MenuEntry[]>([]);
+  const start = resolveChildren(() => props.start);
+  const end = resolveChildren(() => <HeadFoldContext.Provider value={inHead ? folded : undefined}>{props.end}</HeadFoldContext.Provider>);
   let bar: HTMLDivElement | undefined;
   onMount(() => {
     const deeds = inHead ? bar?.querySelector(":scope > .k2-bar-end") : null;
     if (!deeds) return;
+    // only a head with views folds (its start holds the tabs); a pressed deed is a ticked entry
     const read = () =>
-      setFolded(
-        Array.from(deeds.querySelectorAll<HTMLElement>(":scope > [data-keep]:not([data-icon-only])")).map((button) => ({
-          label: (button.textContent ?? "").replace(/\s+/g, " ").trim() || (button.getAttribute("aria-label") ?? ""),
-          disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
-          onClick: () => button.click(),
-        })),
-      );
+      !bar?.querySelector(":scope > .k2-bar-start > .k2-tabs-nav")
+        ? setFolded([])
+        : setFolded(
+            Array.from(deeds.querySelectorAll<HTMLElement>(":scope > [data-keep]:not([data-icon-only])")).map((button) => ({
+              label: (button.textContent ?? "").replace(/\s+/g, " ").trim() || (button.getAttribute("aria-label") ?? ""),
+              disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
+              onClick: () => button.click(),
+              checked: button.getAttribute("aria-pressed") === null ? undefined : button.getAttribute("aria-pressed") === "true",
+            })),
+          );
     read();
     const changes = new MutationObserver(read);
     changes.observe(deeds, {
@@ -644,7 +649,7 @@ export const Bar = (props: BarProps) => {
       subtree: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["disabled", "aria-disabled"],
+      attributeFilter: ["disabled", "aria-disabled", "aria-pressed"],
     });
     onCleanup(() => changes.disconnect());
   });

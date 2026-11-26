@@ -760,10 +760,10 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",
-    // A row of three lines cuts each line; in a row of one or two lines the title may wrap (it is what the row is about).
+    // A row of three lines cuts each line, a row of two its second; the title of one or two lines may wrap (the row is about it).
     oneLine:
       options.oneLine ??
-      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
+      ".k2-row[data-lines='3'] > :is(.k2-row-l1, .k2-row-l2, .k2-row-l3), .k2-row[data-lines='2'] > .k2-row-l2, .k2-row-meta, .k2-table[data-sized] .k2-cell-line:not([data-wrap])",
     sizes: roles.map((role) => role.size),
     lineHeights: [...new Set(roles.map((role) => role.lineHeight))],
     weights: [...fontWeights],
