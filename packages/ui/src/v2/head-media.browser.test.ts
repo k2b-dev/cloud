@@ -1314,6 +1314,19 @@ test("a bar that ends a section draws no line of its own: one line parts it from
           };
         });
         expect(found).toEqual({ bar: "0px", section: "1px" });
+        // a ghost button with words stands with its words, not its box, on the text edge at both ends of the bar (K5)
+        const words = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-sec > .k2-bar")!;
+          const pane = bar.closest(".k2-pane")!.getBoundingClientRect();
+          const text = (button: Element) => {
+            const range = document.createRange();
+            range.selectNodeContents(button);
+            return range.getBoundingClientRect();
+          };
+          const [start, end] = [...bar.querySelectorAll(".k2-btn")];
+          return [Math.round(text(start!).left - pane.left), Math.round(pane.right - text(end!).right)];
+        });
+        expect(words).toEqual(width === 390 ? [16, 16] : [20, 20]);
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },

@@ -347,7 +347,9 @@ lines instead of cutting a thing.
 ## Controls
 
 - `Button`: `variant` `primary` (one per page), default (framed), `ghost`,
-  `text` (quiet, in heads and at row ends); `icon`, `avatar` (a `Person`,
+  `text` (quiet, in heads and at row ends; a `ghost` or `text` button with
+  words first in a bar or last at the end of a bar, group head or row stands
+  with its words on the text edge, a framed one with its box); `icon`, `avatar` (a `Person`,
   such as the one a thread is assigned to), `href` (+ `onNavigate`),
   `onClick`, `menu` (chevron), `forward`, `disabled` (dimmed), `busy` (a
   turning sign over the label while its deed runs, such as a save: the

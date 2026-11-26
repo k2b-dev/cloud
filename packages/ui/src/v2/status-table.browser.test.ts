@@ -93,6 +93,12 @@ const statusRow = () => {
       clear: shape.right <= end,
     };
   });
+  const contentRight = (button: HTMLElement) => {
+    if (button.dataset.variant !== "ghost" && button.dataset.variant !== "text") return button.getBoundingClientRect().right;
+    const range = document.createRange();
+    range.selectNodeContents(button);
+    return range.getBoundingClientRect().right;
+  };
   const seen = figures.filter((figure) => figure.seen);
   const before = row.querySelector(".k2-status-busy")?.getBoundingClientRect() ?? lead;
   return {
@@ -104,7 +110,8 @@ const statusRow = () => {
     ),
     controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => ({
       name: button.textContent?.trim(),
-      inside: button.getBoundingClientRect().right <= inner + 0.5,
+      // a framed button keeps its box inside the edge; a borderless one stands with its words and signs on it (K5)
+      inside: contentRight(button) <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),

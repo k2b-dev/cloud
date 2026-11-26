@@ -496,7 +496,7 @@ export const SectionFootScreen = () => (
           <Row lines={["Fronten ölen"]} time="heute" />
           <Row lines={["Aufmaß Küche"]} time="morgen" />
         </List>
-        <Bar end={<Button variant="ghost">Alle anzeigen</Button>} />
+        <Bar start={<Button variant="ghost">Ältere laden</Button>} end={<Button variant="ghost">Alle anzeigen</Button>} />
       </Section>
       <Section title="Zuletzt" count={1}>
         <List label="Zuletzt">
