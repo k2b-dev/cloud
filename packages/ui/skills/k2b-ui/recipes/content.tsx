@@ -141,7 +141,10 @@ export default function IntakeGuide(props: Props) {
                   <text x="16" y="224" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
                     Lindenallee
                   </text>
-                  <path d="M520 200 V150 H430" style={{ fill: "none", stroke: "var(--k2-app)", "stroke-width": "3", "stroke-dasharray": "6 6" }} />
+                  <path
+                    d="M520 200 V150 H430"
+                    style={{ fill: "none", stroke: "var(--k2-app)", "stroke-width": "3", "stroke-dasharray": "6 6" }}
+                  />
                   <path d="M436 144 L428 150 L436 156" style={{ fill: "none", stroke: "var(--k2-app)", "stroke-width": "3" }} />
                   {/* Halle A with the safe */}
                   <rect x="40" y="24" width="220" height="150" rx="6" style={{ fill: "var(--k2-surface)", stroke: "var(--k2-n300)" }} />
@@ -151,7 +154,14 @@ export default function IntakeGuide(props: Props) {
                   <text x="56" y="66" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
                     Kunst, Schmuck
                   </text>
-                  <rect x="180" y="110" width="64" height="48" rx="4" style={{ fill: "color-mix(in srgb, #ca8a04 18%, var(--k2-surface))", stroke: "#ca8a04" }} />
+                  <rect
+                    x="180"
+                    y="110"
+                    width="64"
+                    height="48"
+                    rx="4"
+                    style={{ fill: "color-mix(in srgb, #ca8a04 18%, var(--k2-surface))", stroke: "#ca8a04" }}
+                  />
                   <text x="212" y="139" text-anchor="middle" style={{ font: "var(--k2-t-meta)", "font-weight": "600", fill: "#854d0e" }}>
                     Tresor
                   </text>
@@ -168,7 +178,14 @@ export default function IntakeGuide(props: Props) {
                     Tor 2
                   </text>
                   {/* parking for vans */}
-                  <rect x="590" y="24" width="100" height="150" rx="6" style={{ fill: "none", stroke: "var(--k2-n300)", "stroke-dasharray": "4 4" }} />
+                  <rect
+                    x="590"
+                    y="24"
+                    width="100"
+                    height="150"
+                    rx="6"
+                    style={{ fill: "none", stroke: "var(--k2-n300)", "stroke-dasharray": "4 4" }}
+                  />
                   <text x="640" y="104" text-anchor="middle" style={{ font: "var(--k2-t-meta)", fill: "var(--k2-subtle)" }}>
                     Transporter
                   </text>
