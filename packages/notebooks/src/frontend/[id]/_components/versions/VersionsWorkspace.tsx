@@ -291,6 +291,8 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
       <WorkspaceNavigationProvider navigation={sidebar.mobileNavigation} label={props.ctx.notebook.name} />
       <Workspace
         sidebar={<NotebookSidebarBody sidebar={sidebar} />}
+        detail={480}
+        detailEmpty={{ icon: "file-search", text: t().selectVersionDescription }}
         head={
           <Bar
             start={
@@ -359,14 +361,7 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
               </Show>
             </Show>
           </Pane>
-          <Show
-            when={selectedVersionId()}
-            fallback={
-              <Pane label={t().versionPreview}>
-                <Empty icon="file-search" text={t().selectVersionDescription} />
-              </Pane>
-            }
-          >
+          <Show when={selectedVersionId()}>
             <Pane
               detail
               label={t().versionPreview}
@@ -381,40 +376,22 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
               head={
                 <Bar
                   start={
-                    <Tabs
-                      label={t().versionPreview}
-                      items={[
-                        {
-                          label: t().content,
-                          icon: "file-text",
-                          current: previewMode() === "content",
-                          onClick: () => setPreviewMode("content"),
-                        },
-                        {
-                          label: t().changes,
-                          icon: "git-compare",
-                          current: previewMode() === "changes",
-                          onClick: () => setPreviewMode("changes"),
-                        },
-                      ]}
-                    />
+                    <Text weight="strong">{selectedVersionMeta() ? formatDate(selectedVersionMeta()!.createdAt) : t().versionPreview}</Text>
                   }
                   end={
                     <Show
                       when={!props.isLocked}
                       fallback={
-                        <>
-                          <Chip icon="lock">{t().locked}</Chip>
-                          <Button
-                            icon="copy"
-                            busy={restoreAsCopyMut.loading()}
-                            disabled={working()}
-                            title={t().restoreAsCopyHint}
-                            onClick={restoreAsCopy}
-                          >
-                            {t().restoreAsCopy}
-                          </Button>
-                        </>
+                        <Button
+                          icon="copy"
+                          busy={restoreAsCopyMut.loading()}
+                          disabled={working()}
+                          title={t().restoreAsCopyHint}
+                          keep
+                          onClick={restoreAsCopy}
+                        >
+                          {t().restoreAsCopy}
+                        </Button>
                       }
                     >
                       <Button
@@ -438,30 +415,39 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
                 />
               }
               status={
-                <Show when={previewMode() === "changes" && comparison()}>
-                  {(order) => (
-                    <Bar
-                      start={
-                        <>
-                          <Text type="meta">{t().comparing}</Text>
-                          <Text weight="medium">{order().from}</Text>
-                          <Text muted>→</Text>
-                          <Text weight="medium">{order().to}</Text>
-                          <Show when={!changesLoading() && diffSummary().hasChanges}>
-                            <Text type="meta">
-                              +{diffSummary().added} −{diffSummary().removed}
-                            </Text>
-                          </Show>
-                        </>
-                      }
-                      end={
+                <Bar
+                  start={
+                    <Tabs
+                      label={t().versionPreview}
+                      items={[
+                        {
+                          label: t().content,
+                          icon: "file-text",
+                          current: previewMode() === "content",
+                          onClick: () => setPreviewMode("content"),
+                        },
+                        {
+                          label: t().changes,
+                          icon: "git-compare",
+                          current: previewMode() === "changes",
+                          onClick: () => setPreviewMode("changes"),
+                        },
+                      ]}
+                    />
+                  }
+                  end={
+                    <>
+                      <Show when={props.isLocked}>
+                        <Chip icon="lock">{t().locked}</Chip>
+                      </Show>
+                      <Show when={previewMode() === "changes"}>
                         <Menu label={t().changeComparison} items={comparisonChoices()}>
                           {t().change}
                         </Menu>
-                      }
-                    />
-                  )}
-                </Show>
+                      </Show>
+                    </>
+                  }
+                />
               }
             >
               <Show
@@ -483,6 +469,28 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
                   </Show>
                 }
               >
+                {/* what is compared with what, standing before the diff while it loads, so nothing moves */}
+                <Show when={comparison()}>
+                  {(order) => (
+                    <Bar
+                      start={
+                        <>
+                          <Text type="meta">{t().comparing}</Text>
+                          <Text weight="medium">{order().from}</Text>
+                          <Text muted>→</Text>
+                          <Text weight="medium">{order().to}</Text>
+                        </>
+                      }
+                      end={
+                        <Show when={!changesLoading() && diffSummary().hasChanges}>
+                          <Text type="meta">
+                            +{diffSummary().added} −{diffSummary().removed}
+                          </Text>
+                        </Show>
+                      }
+                    />
+                  )}
+                </Show>
                 <Show when={!changesLoading()} fallback={<Loading rows={8} lines={1} />}>
                   <Show
                     when={!changesFailed()}

@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { delegateEvents, isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
-import { notesContext, sampleNotes } from "../../notes/notes-list.fixture";
 import { buildNoteUrl, buildVersionsUrl } from "../../../params";
+import { notesContext, sampleNotes } from "../../notes/notes-list.fixture";
 
 const navigateTo = mock((_href: string) => {});
 const load = async () => {
@@ -26,10 +26,9 @@ const PAGE_GLOBALS = ["NodeFilter", "HTMLInputElement", "CSS"] as const;
 /** The v2 toasts on the page, by their words. */
 const toasts = (document: Document) => [...document.querySelectorAll('[data-k2-part="Toast"] li')].map((toast) => toast.textContent ?? "");
 
+/** Waits for a condition; the test's own timeout bounds it. */
 const waitFor = async (condition: () => boolean) => {
-  const deadline = Date.now() + 2_000;
   while (!condition()) {
-    if (Date.now() >= deadline) throw new Error("Timed out waiting for version history");
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 };
@@ -227,7 +226,9 @@ describe("version history restore", () => {
     mount();
     await select();
     primary()!.click();
-    await waitFor(() => toasts(dom.document).some((text) => text.includes("Cannot restore locked note")) && !primary()!.hasAttribute("aria-busy"));
+    await waitFor(
+      () => toasts(dom.document).some((text) => text.includes("Cannot restore locked note")) && !primary()!.hasAttribute("aria-busy"),
+    );
     expect(primary()!.disabled).toBe(false);
     expect(posts().map((request) => new URL(request.url).pathname)).toEqual([`${path}/restore`]);
     expect(primary()!.hasAttribute("aria-busy")).toBe(false);
@@ -279,7 +280,9 @@ describe("version history restore", () => {
     expect(dom.root.textContent).toContain("Its saved content opens here");
     dom.root.querySelector<HTMLAnchorElement>('[data-k2-part="Row"] a')!.click();
     await select();
-    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(`${buildVersionsUrl("Book01", "Note01")}&version=Version01`);
+    expect(`${dom.window.location.pathname}${dom.window.location.search}`).toBe(
+      `${buildVersionsUrl("Book01", "Note01")}&version=Version01`,
+    );
     dom.window.history.back();
     await waitFor(() => !dom.root.querySelector("article"));
     expect(dom.window.location.search).not.toContain("version=");

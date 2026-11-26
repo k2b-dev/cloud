@@ -1,18 +1,19 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContextOptions, Page } from "playwright";
-import { browserName, hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
+import { hoverInPlace, launchBrowser } from "../../../../../../ui/test/browser";
 
+const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
 const buildHarness = async (): Promise<string> => {
-  const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
   const { transformAsync } = await import(Bun.resolveSync("@babel/core", ui));
   const typescript = (await import(Bun.resolveSync("@babel/preset-typescript", ui))).default;
   const solid = (await import(Bun.resolveSync("babel-preset-solid", ui))).default;
   const build = await Bun.build({
     entrypoints: [resolve(import.meta.dir, "version-history.browser-harness.tsx")],
     target: "browser",
-    format: "iife",
+    format: "esm",
     conditions: ["browser"],
     plugins: [
       {
@@ -34,7 +35,6 @@ const buildHarness = async (): Promise<string> => {
   if (!build.success) throw new AggregateError(build.logs, "Version history harness build failed");
   return build.outputs[0]!.text();
 };
-
 const buildCss = async (entry: string): Promise<string> => {
   const tailwind = (await import(Bun.resolveSync("bun-plugin-tailwind", `${resolve(import.meta.dir, "../../../../../../cloud")}/`)))
     .default;
@@ -43,267 +43,197 @@ const buildCss = async (entry: string): Promise<string> => {
   return build.outputs[0]!.text();
 };
 
-const harness = await buildHarness();
-const css =
-  (await buildCss(resolve(import.meta.dir, "../../../../../../../styles.css"))) +
-  (await buildCss(resolve(import.meta.dir, "../../../../styles/app.css")));
-const uiDist = resolve(import.meta.dir, "../../../../../../ui/dist");
-const fonts = (await Promise.all(["plex.css", "tabler.css"].map((file) => Bun.file(resolve(uiDist, file)).text())))
-  .map((sheet) => sheet.replace(/url\((["']?)(?:\.\/)?(?!data:|https?:)/g, "url($1/ui-fonts/"))
-  .join("\n");
-const fontFiles = new Map(
-  Array.from(new Bun.Glob("**/*.woff2").scanSync({ cwd: uiDist })).map((file) => [`/ui-fonts/${file}`, Bun.file(resolve(uiDist, file))]),
-);
 const restorePath = "/api/notebooks/Book01/notes/Note01/versions/Version01/restore";
 let restoreReceived = Promise.withResolvers<void>();
 let pendingRestore: { request: Request; release: (response: Response) => void } | undefined;
-const server = Bun.serve({
-  port: 0,
-  hostname: "127.0.0.1",
-  fetch(request) {
-    const path = new URL(request.url).pathname;
-    if (path === restorePath && request.method === "POST") {
-      return new Promise<Response>((release) => {
-        pendingRestore = { request, release };
-        restoreReceived.resolve();
-      });
-    }
-    if (/^\/api\/notebooks\/Book01\/notes\/Note01\/versions\/Version0[123]\/content$/.test(path))
-      return Response.json({ contentMd: "# Saved content\n\nA previous version of the runbook.", yjsSnapshot: "" });
-    if (path === "/harness.js") return new Response(harness, { headers: { "Content-Type": "text/javascript; charset=utf-8" } });
-    if (fontFiles.has(path)) return new Response(fontFiles.get(path)!);
-    if (path === "/styles.css") return new Response(`${css}\n${fonts}`, { headers: { "Content-Type": "text/css; charset=utf-8" } });
-    if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
-    return new Response(
-      '<!doctype html><html class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-        '<link rel="stylesheet" href="/styles.css"></head><body class="k2b-ui" style="margin:0;height:100vh;display:flex;flex-direction:column">' +
-        '<div id="root" style="display:flex;flex:1;min-height:0"></div><script src="/harness.js"></script></body></html>',
-      { headers: { "Content-Type": "text/html" } },
-    );
-  },
-});
-
+let server: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 beforeAll(async () => {
+  const harness = await buildHarness();
+  // the shipped page-head order and cascade: Cloud, the app, then v2
+  const css = [
+    "@layer properties, theme, base, components, utilities;",
+    await buildCss(resolve(import.meta.dir, "../../../../styles/app.css")),
+    await buildCss(resolve(import.meta.dir, "../../../../../../../styles.css")),
+    await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text(),
+  ].join("\n");
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(request) {
+      const path = new URL(request.url).pathname;
+      if (path === restorePath && request.method === "POST")
+        return new Promise<Response>((release) => {
+          pendingRestore = { request, release };
+          restoreReceived.resolve();
+        });
+      if (/^\/api\/notebooks\/Book01\/notes\/Note01\/versions\/Version0[123]\/content$/.test(path))
+        return Response.json({ contentMd: "# Saved content\n\nA previous version of the runbook.", yjsSnapshot: "" });
+      if (/^\/api\/accounts\/users\/[^/]+\/avatar$/.test(path))
+        return new Response(
+          '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#247b92"/></svg>',
+          { headers: { "content-type": "image/svg+xml" } },
+        );
+      if (/^\/(fonts\/)?[a-zA-Z0-9._-]+\.(woff2|css)$/.test(path)) return new Response(Bun.file(resolve(ui, "dist", path.slice(1))));
+      if (path === "/harness.js") return new Response(harness, { headers: { "content-type": "application/javascript; charset=utf-8" } });
+      if (path.startsWith("/api/")) return new Response("Not found", { status: 404 });
+      return new Response(
+        `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/plex.css"><link rel="stylesheet" href="/tabler.css"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" class="k2-ui" style="position:fixed;inset:0;display:flex"></div><script type="module" src="/harness.js"></script></body></html>`,
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    },
+  });
   browser = await launchBrowser();
-}, 30_000);
+}, 60_000);
 afterAll(async () => {
   await browser?.close();
-  server.stop(true);
+  server?.stop(true);
 });
 
 const viewports: { name: string; options: BrowserContextOptions }[] = [
-  { name: "desktop", options: { viewport: { width: 1280, height: 800 }, colorScheme: "light" } },
+  { name: "desktop", options: { viewport: { width: 1440, height: 900 }, colorScheme: "light" } },
   { name: "phone", options: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, colorScheme: "light" } },
 ];
 const labels = {
-  en: { primary: "Restore this version", copy: "Restore as copy", menu: "More restore options", locked: "Locked" },
+  en: { primary: "Restore this version", copy: "Restore as copy", menu: "More restore options", locked: "Locked", back: "Saved versions" },
   de: {
     primary: "Diese Version wiederherstellen",
     copy: "Als Kopie wiederherstellen",
     menu: "Weitere Optionen zum Wiederherstellen",
     locked: "Gesperrt",
+    back: "Gespeicherte Versionen",
   },
 };
-const open = async (options: BrowserContextOptions, locale: "en" | "de", locked = false) => {
-  const page = await (await browser.newContext(options)).newPage();
-  await page.goto(new URL("/app/notebooks/Book01/notes/Note01?mode=versions", server.url).href);
-  await page.evaluate(({ locale, locked }) => window.mountVersionHistory(locale, locked), { locale, locked });
-  await page.locator("button[aria-pressed]").first().waitFor();
+/** Pins only Date in the page (timers and frames stay real), from this instant on. */
+const pinPageDate = (at: number) => {
+  const RealDate = Date;
+  const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+  class PinnedDate extends RealDate {
+    constructor(...args: ConstructorParameters<DateConstructor> | []) {
+      if (args.length === 0)
+        super(RealDate.now() + offset); // real clock: flows from the pinned instant
+      else super(...(args as ConstructorParameters<DateConstructor>));
+    }
+    static override now() {
+      return RealDate.now() + offset; // real clock: flows from the pinned instant
+    }
+  }
+  globalThis.Date = PinnedDate as DateConstructor;
+};
+const listUrl = "/app/notebooks/Book01/notes/Note01?mode=versions";
+const open = async (options: BrowserContextOptions, locale: "en" | "de", locked = false, version: string | null = null) => {
+  const context = await browser.newContext(options);
+  // relative times ("yesterday") read the clock, so the page's Date starts at a fixed instant
+  await context.addInitScript(pinPageDate, Date.parse("2026-10-12T10:00:00.000Z"));
+  const page = await context.newPage();
+  await page.goto(new URL(version ? `${listUrl}&version=${version}` : listUrl, server.url).href);
+  await page.waitForFunction(() => typeof window.mountVersionHistory === "function");
+  await page.evaluate(({ locale, locked, version }) => window.mountVersionHistory(locale, locked, version), { locale, locked, version });
+  await page.locator('[data-k2-part="Pane.Split"]').waitFor();
   await page.evaluate(() => document.fonts.ready);
   return page;
 };
-const select = async (page: Page) => {
-  await page.locator("button[aria-pressed]").first().click();
-  await page.locator("article").getByRole("heading", { name: "Saved content" }).waitFor();
-};
-const primary = (page: Page) => page.locator(".k2b-split-button__primary");
-const menu = (page: Page) => page.locator(".k2b-split-button__menu-trigger");
-const header = (page: Page) => page.locator("header");
-const preview = (page: Page) => page.locator(".app-cols > div:last-child");
-const settle = async (page: Page) => {
-  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
-  await header(page).evaluate(async (head) => {
-    await Promise.all(
-      head
-        .getAnimations({ subtree: true })
-        .filter((animation) => animation.timeline === document.timeline)
-        .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
-        .map((animation) => animation.finished),
-    );
-  });
-};
-const boxes = async (page: Page) => {
-  await settle(page);
-  return {
-    header: await header(page).boundingBox(),
-    primary: await primary(page).boundingBox(),
-    menu: await menu(page).boundingBox(),
-    preview: await preview(page).boundingBox(),
-  };
-};
-type Box = { x: number; y: number; width: number; height: number };
-const sameBox = (before: Box | null, after: Box | null, name: string) => {
+const settle = (page: Page) => page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+const article = (page: Page) => page.locator("article").getByRole("heading", { name: "Saved content" });
+const head = (page: Page) => page.locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Bar"]').first();
+type Box = { x: number; y: number; width: number; height: number } | null;
+const sameBox = (before: Box, after: Box, name: string) => {
   expect(before, `${name} before`).not.toBeNull();
   expect(after, `${name} after`).not.toBeNull();
-  for (const axis of ["x", "y", "width", "height"] as const) {
-    const delta = after![axis] - before![axis];
-    expect(Math.abs(delta), `${name}.${axis} moved ${delta}px (${before![axis]} -> ${after![axis]})`).toBeLessThanOrEqual(0.5);
-  }
-};
-const shot = async (page: Page, name: string) => {
-  if (process.env.VERSION_HISTORY_SHOTS !== "1") return;
-  await mkdir("/tmp/restore-version-shots", { recursive: true });
-  await page.screenshot({ path: `/tmp/restore-version-shots/${browserName}-${name}.png`, fullPage: true });
-};
-
-const measureFit = (page: Page) =>
-  header(page).evaluate((head) => ({
-    width: innerWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-    // A closed menu keeps its items in the document; only the controls on screen count.
-    controls: Array.from(head.querySelectorAll<HTMLElement>("button, a"))
-      .filter((control) => control.checkVisibility())
-      .map((control) => {
-        const rect = control.getBoundingClientRect();
-        const label = control.querySelector<HTMLElement>(".k2b-button__label, span");
-        let left = 0;
-        let right = innerWidth;
-        for (let parent = control.parentElement; parent; parent = parent.parentElement) {
-          if (getComputedStyle(parent).overflowX !== "visible") {
-            const bounds = parent.getBoundingClientRect();
-            left = Math.max(left, bounds.left + parent.clientLeft);
-            right = Math.min(right, bounds.left + parent.clientLeft + parent.clientWidth);
-          }
-        }
-        return {
-          label: control.getAttribute("aria-label") ?? control.textContent?.trim(),
-          left: rect.left,
-          right: rect.right,
-          clipLeft: left,
-          clipRight: right,
-          labelWidth: label?.clientWidth ?? 0,
-          labelScrollWidth: label?.scrollWidth ?? 0,
-        };
-      }),
-  }));
-const fits = (measurements: Awaited<ReturnType<typeof measureFit>>, state: string) => {
-  expect(measurements.scrollWidth, `${state} document scrollWidth`).toBeLessThanOrEqual(measurements.width);
-  expect(measurements.controls.length).toBeGreaterThan(0);
-  for (const control of measurements.controls) {
-    expect(control.left, `${state} ${control.label} left edge`).toBeGreaterThanOrEqual(0);
-    expect(control.right, `${state} ${control.label} right edge`).toBeLessThanOrEqual(measurements.width);
-    expect(control.left, `${state} ${control.label} clipped on left`).toBeGreaterThanOrEqual(control.clipLeft);
-    expect(control.right, `${state} ${control.label} clipped on right`).toBeLessThanOrEqual(control.clipRight);
-    expect(control.labelScrollWidth, `${state} ${control.label} truncated label`).toBeLessThanOrEqual(control.labelWidth);
-  }
+  for (const axis of ["x", "y", "width", "height"] as const)
+    expect(Math.abs(after![axis] - before![axis]), `${name}.${axis} ${before![axis]} -> ${after![axis]}`).toBeLessThanOrEqual(0.5);
 };
 
 for (const viewport of viewports) {
   for (const locale of ["en", "de"] as const) {
     describe(`version history ${viewport.name} ${locale}`, () => {
-      test("header, restore controls and preview stay in place through selection, pending restore and error", async () => {
+      test("the list and the open version are a clean v2 workspace, and the open version is in the address", async () => {
         const page = await open(viewport.options, locale);
         try {
-          expect(await primary(page).isDisabled()).toBe(true);
-          expect(await menu(page).isDisabled()).toBe(true);
-          const before = await boxes(page);
-          const beforeFit = await measureFit(page);
-          await select(page);
-          const selected = await boxes(page);
-          const selectedFit = await measureFit(page);
-          if (viewport.name === "phone" || locale === "en") await shot(page, `${viewport.name}-${locale}-selected`);
+          await page.locator('[data-k2-part="Row"] a').first().click();
+          await article(page).waitFor();
+          expect(new URL(page.url()).searchParams.get("version")).toBe("Version01");
+          await settle(page);
+          const outline = await describeV2Page(page, "#root");
+          expect(outline.includes("Problems (") ? outline : "").toBe("");
+          // the panes; the sidebar keeps the v1 note tree (k2b-ui gap: Nav tree)
+          expect((await measureV2Layout(page, { root: '[data-k2-part="Pane.Split"]' })).problems).toEqual([]);
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+          if (viewport.name === "phone") {
+            // on the phone the open version is the page, and its way back returns to the list
+            await page.getByRole("link", { name: labels[locale].back }).click();
+            await page.locator("article").waitFor({ state: "detached" });
+            expect(new URL(page.url()).searchParams.get("version")).toBeNull();
+          } else {
+            await page.goBack();
+            await page.locator("article").waitFor({ state: "detached" });
+          }
+        } finally {
+          await page.context().close();
+        }
+      }, 60_000);
+
+      test("Restore stays in place while it runs and after it fails, and the failure says the server's reason", async () => {
+        const page = await open(viewport.options, locale, false, "Version01");
+        try {
+          await article(page).waitFor();
+          const restore = page.getByRole("button", { name: labels[locale].primary, exact: true });
+          const before = { head: await head(page).boundingBox(), restore: await restore.boundingBox() };
           restoreReceived = Promise.withResolvers<void>();
-          await primary(page).click();
+          await restore.click();
           await restoreReceived.promise;
-          await page.waitForFunction(() => document.querySelector(".k2b-split-button__primary")?.getAttribute("aria-busy") === "true");
-          expect(await primary(page).isDisabled()).toBe(true);
-          expect(await menu(page).isDisabled()).toBe(true);
-          const pending = await boxes(page);
-          const pendingFit = await measureFit(page);
-          expect(pendingRestore).toBeDefined();
+          await page.waitForFunction(() => document.querySelector('[data-k2-part="Button"][aria-busy="true"]') !== null);
+          sameBox(before.restore, await restore.boundingBox(), "pending restore");
           expect(new URL(pendingRestore!.request.url).pathname).toBe(restorePath);
           pendingRestore!.release(Response.json({ message: "Cannot restore locked note" }, { status: 403 }));
           pendingRestore = undefined;
-          await page.locator("[data-k2b-toast]:not([data-closing])").getByText("Cannot restore locked note", { exact: true }).waitFor();
-          await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>(".k2b-split-button__primary")?.disabled);
-          const failed = await boxes(page);
-          const failedFit = await measureFit(page);
-          for (const [state, measured] of [
-            ["selected", selected],
-            ["pending", pending],
-            ["error", failed],
-          ] as const) {
-            for (const key of ["header", "primary", "menu"] as const) sameBox(before[key], measured[key], `${state} ${key}`);
-            expect(before.preview, "preview before").not.toBeNull();
-            expect(measured.preview, `${state} preview`).not.toBeNull();
-            const delta = measured.preview!.y - before.preview!.y;
-            expect(Math.abs(delta), `${state} preview top moved ${delta}px`).toBeLessThanOrEqual(0.5);
-          }
-          for (const [state, measured] of [
-            ["initial", beforeFit],
-            ["selected", selectedFit],
-            ["pending", pendingFit],
-            ["error", failedFit],
-          ] as const)
-            fits(measured, state);
+          await page.locator('[data-k2-part="Toast"]').getByText("Cannot restore locked note").waitFor();
+          await page.waitForFunction(() => document.querySelector('[data-k2-part="Button"][aria-busy="true"]') === null);
+          await settle(page);
+          sameBox(before.head, await head(page).boundingBox(), "head after the failure");
+          sameBox(before.restore, await restore.boundingBox(), "restore after the failure");
         } finally {
           pendingRestore?.release(Response.json({ message: "Cancelled" }, { status: 403 }));
           pendingRestore = undefined;
           await page.context().close();
         }
-      }, 30_000);
+      }, 60_000);
 
-      test("actions fit the viewport with complete labels before and after selection", async () => {
-        const page = await open(viewport.options, locale);
+      test("Restore has its translated name, stays put on hover and its menu restores as a copy", async () => {
+        const page = await open(viewport.options, locale, false, "Version01");
         try {
-          fits(await measureFit(page), "initial");
-          await select(page);
-          fits(await measureFit(page), "selected");
-        } finally {
-          await page.context().close();
-        }
-      }, 30_000);
-
-      test("restore has its translated name, stays put on hover and opens the copy menu", async () => {
-        const page = await open(viewport.options, locale);
-        try {
-          await select(page);
-          expect(await page.getByRole("button", { name: labels[locale].primary, exact: true }).count()).toBe(1);
-          const before = await primary(page).boundingBox();
-          await hoverInPlace(primary(page));
+          await article(page).waitFor();
+          const restore = page.getByRole("button", { name: labels[locale].primary, exact: true });
+          const before = await restore.boundingBox();
+          await hoverInPlace(restore);
           await settle(page);
-          sameBox(before, await primary(page).boundingBox(), "hover primary");
-          expect(await page.getByRole("button", { name: labels[locale].menu, exact: true }).count()).toBe(1);
-          await menu(page).click();
-          await page
-            .getByRole("menu")
-            .getByRole("menuitem")
-            .filter({ has: page.getByText(labels[locale].copy, { exact: true }) })
-            .waitFor();
-          if (viewport.name === "phone") await shot(page, `phone-${locale}-menu`);
+          sameBox(before, await restore.boundingBox(), "hover restore");
+          await page.getByRole("button", { name: labels[locale].menu, exact: true }).click();
+          await page.getByRole("menuitem").filter({ hasText: labels[locale].copy }).waitFor();
         } finally {
           await page.context().close();
         }
-      }, 30_000);
+      }, 60_000);
 
-      test("locked notes have only the secondary copy action with a complete translated label", async () => {
-        const page = await open(viewport.options, locale, true);
+      test("a locked note offers only Restore as copy, and says Locked under the head", async () => {
+        const page = await open(viewport.options, locale, true, "Version01");
         try {
-          expect(await primary(page).count()).toBe(0);
-          expect(await menu(page).count()).toBe(0);
+          await article(page).waitFor();
           expect(await page.getByRole("button", { name: labels[locale].primary, exact: true }).count()).toBe(0);
-          await header(page).getByText(labels[locale].locked, { exact: true }).waitFor();
+          expect(await page.getByRole("button", { name: labels[locale].menu, exact: true }).count()).toBe(0);
+          // the state of the version stands under its head, beside the views
+          await page
+            .locator('[data-k2-part="Pane"][data-detail] [data-k2-part="Bar"]')
+            .nth(1)
+            .getByText(labels[locale].locked, { exact: true })
+            .waitFor();
           const copy = page.getByRole("button", { name: labels[locale].copy, exact: true });
-          expect(await copy.getAttribute("data-variant")).toBe("secondary");
-          expect(await copy.isDisabled()).toBe(true);
-          await select(page);
           expect(await copy.isEnabled()).toBe(true);
-          fits(await measureFit(page), "locked selected");
+          expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         } finally {
           await page.context().close();
         }
-      }, 30_000);
+      }, 60_000);
     });
   }
 }

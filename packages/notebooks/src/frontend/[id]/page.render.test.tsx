@@ -461,6 +461,10 @@ const renderEditorPage = async (
     snapshot?: string | null;
     locked?: boolean;
     historyIncomplete?: boolean;
+    /** Saved versions the server lists for version history; none (a failed list) by default. */
+    versions?: { id: string; createdAt: string }[];
+    /** More of the address, such as `&version=…`. */
+    query?: string;
   } = {},
 ) => {
   const note = {
@@ -495,7 +499,15 @@ const renderEditorPage = async (
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(spyOn(notebooksService.notebook, "graphView").mockResolvedValue({ nodes: [], edges: [] }));
-  spies.push(spyOn(notebooksService.note.versions, "list").mockRejectedValue(new Error("No saved versions in this fixture")));
+  const versionsList = spyOn(notebooksService.note.versions, "list");
+  spies.push(
+    options.versions
+      ? versionsList.mockResolvedValue({
+          versions: options.versions.map((version) => ({ ...version, noteId: note.id, createdBy: null, contributors: [] })),
+          total: options.versions.length,
+        })
+      : versionsList.mockRejectedValue(new Error("No saved versions in this fixture")),
+  );
   spies.push(
     spyOn(notebooksService.note.comments, "listPage").mockResolvedValue({ items: [], page: 1, perPage: 30, total: 0, hasNext: false }),
   );
@@ -521,9 +533,12 @@ const renderEditorPage = async (
   });
   app.get("/app/notebooks/:id/notes/:noteId", ...handler);
   const preferences = { notebooks: { book01: { richMode: options.richMode ?? "rich" } } };
-  const response = await app.request(`https://cloud.example.test/app/notebooks/book01/notes/note01?mode=${options.mode ?? "write"}`, {
-    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
-  });
+  const response = await app.request(
+    `https://cloud.example.test/app/notebooks/book01/notes/note01?mode=${options.mode ?? "write"}${options.query ?? ""}`,
+    {
+      headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
+    },
+  );
   expect(response.status).toBe(200);
   return response.text();
 };
@@ -564,6 +579,24 @@ test.each(["versions", "graph"] as const)("%s mode leaves the way back to its ow
     ).ancestors.map((level) => level.href);
   expect(up(await renderEditorPage({ mode }))).not.toContain("/app/notebooks/book01");
   expect(up(await renderEditorPage({}))).toContain("/app/notebooks/book01");
+});
+
+test("version history is a v2 workspace whose address names the open version", async () => {
+  const versions = [
+    { id: "Version01", createdAt: "2026-10-11T10:00:00.000Z" },
+    { id: "Version02", createdAt: "2026-10-10T10:00:00.000Z" },
+  ];
+  const list = await renderEditorPage({ mode: "versions", versions });
+  expect(await select(list, "[data-k2-workspace]")).toHaveLength(1);
+  const rows = await select(list, '[data-k2-part="Row"] a');
+  expect(rows.map((row) => row.attributes.href)).toEqual(
+    versions.map((version) => `/app/notebooks/book01/notes/note01?mode=versions&amp;version=${version.id}`),
+  );
+  // nothing is open: no detail, and its place says how to open one
+  expect(await select(list, '[data-k2-part="Pane"][data-detail]')).toEqual([]);
+  const opened = await renderEditorPage({ mode: "versions", versions, query: "&version=Version02" });
+  expect(await select(opened, '[data-k2-part="Pane"][data-detail]')).toHaveLength(1);
+  expect((await select(opened, '[data-k2-part="Row"][data-current]')).length).toBe(1);
 });
 
 test("Links from version history returns to version history", async () => {

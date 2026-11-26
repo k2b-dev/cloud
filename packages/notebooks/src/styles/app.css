@@ -809,62 +809,6 @@
   background: rgb(96 165 250);
 }
 
-/* Keep the version list stacked on small screens and reserve a stable
-   desktop column without relying on app-local responsive Tailwind tokens. */
-.notebooks-version-history-list {
-  width: 100%;
-  max-height: 12rem;
-  flex-shrink: 0;
-}
-
-@media (min-width: 64rem) {
-  .notebooks-version-history-list {
-    width: 14rem;
-    max-height: none;
-  }
-}
-
-/* The preview switch sits inline beside the restore action instead of filling the header row. On phones the
-   actions take a row of their own, the switch at the start and the restore action at the end, and the switch drops
-   its icons so both fit one row in every language. A locked note's label and copy action stay together and move
-   below the switch when a language needs more than the row. */
-.notebooks-version-actions {
-  display: flex;
-  width: 100%;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.notebooks-version-locked {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.k2b-ui .notebooks-version-preview-mode {
-  width: auto;
-}
-
-.k2b-ui .notebooks-version-preview-mode .k2b-segmented-control__option {
-  flex: none;
-  white-space: nowrap;
-}
-
-@media (max-width: 47.999rem) {
-  .k2b-ui .notebooks-version-preview-mode .k2b-segmented-control__option > i {
-    display: none;
-  }
-}
-
-@media (min-width: 48rem) {
-  .notebooks-version-actions {
-    width: auto;
-    justify-content: flex-end;
-  }
-}
-
 /* An attachment image in Book opens the lightbox. The inline link around it draws no visible ring of its own, so the
    image carries the focus ring of Book links. */
 .notebook-book-content a.notebook-book-image-link {
