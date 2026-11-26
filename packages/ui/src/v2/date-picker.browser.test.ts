@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Browser, Page } from "playwright";
+import type { Browser, Locator, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-dates.demo";
@@ -49,7 +49,13 @@ const withPage = async (
   bundle: () => string,
   path: string,
   run: (page: Page) => Promise<void>,
-  { width = 1440, height = 900, touch = false, timezoneId }: { width?: number; height?: number; touch?: boolean; timezoneId?: string } = {},
+  {
+    width = 1440,
+    height = 900,
+    touch = false,
+    timezoneId,
+    lang = "de",
+  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: "de" | "en-US" | "en-GB" } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch, timezoneId });
   page.setDefaultTimeout(2000);
@@ -58,7 +64,7 @@ const withPage = async (
   await page.route(`${origin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      body: `<!doctype html><html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     }),
   );
   try {
@@ -170,34 +176,272 @@ test("with a time a pressed day is only chosen until “Übernehmen”; days bef
       await moment.locator('[data-value="2026-11-26"]').click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T09:00");
       expect(await moment.locator('[data-value="2026-11-26"]').getAttribute("aria-selected")).toBe("true");
-      const time = moment.getByRole("textbox", { name: "Uhrzeit" });
-      // a text field in the locale's clock, not the browser's time field
-      expect(await time.getAttribute("type")).toBe("text");
-      expect(await time.inputValue()).toBe("09:00");
-      // typed digits are read when the field is left, written as the locale writes a time
-      await time.fill("1430");
-      await time.blur();
-      expect(await time.inputValue()).toBe("14:30");
-      // the arrows turn the part the caret stands in, round the clock
-      await time.press("Home");
-      await time.press("ArrowUp");
-      expect(await time.inputValue()).toBe("15:30");
-      await time.press("End");
-      await time.press("ArrowDown");
-      expect(await time.inputValue()).toBe("15:29");
+      // core's time input: hour and minute as spinbuttons on the German 24-hour clock, never the browser's time field
+      const time = moment.getByRole("group", { name: "Uhrzeit" });
+      const hour = time.getByRole("spinbutton", { name: "Stunde" });
+      const minute = time.getByRole("spinbutton", { name: "Minute" });
+      expect(await moment.locator('input[type="time"]').count()).toBe(0);
+      expect(await time.locator('[data-type="dayPeriod"]').count()).toBe(0);
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["09", "00"]);
+      // typed digits fill the hour, then the minute
+      await hour.focus();
+      await page.keyboard.type("1430");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["14", "30"]);
+      // the arrows step the segment that has the focus
+      await hour.press("ArrowUp");
+      await minute.press("ArrowDown");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["15", "29"]);
       await moment.getByRole("button", { name: "Übernehmen" }).click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:29");
-      // Enter in the time applies too; a time that is none marks the field and applies nothing
-      await time.fill("9.05");
-      await time.press("Enter");
-      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
-      expect(await time.inputValue()).toBe("09:05");
-      await time.fill("2:30 pm");
-      await time.press("Enter");
-      expect(await time.getAttribute("aria-invalid")).toBe("true");
-      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T09:05");
+      // Enter in a segment applies too
+      await minute.focus();
+      await page.keyboard.type("05");
+      await minute.press("Enter");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:05");
+      // an emptied segment is no time: "Übernehmen" is off and Enter gives nothing
+      await minute.press("Backspace");
+      await minute.press("Backspace");
+      expect(await minute.inputValue()).toBe("");
+      expect(await moment.getByRole("button", { name: "Übernehmen" }).isDisabled()).toBe(true);
+      await hour.press("Enter");
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-26T15:05");
       await moment.getByRole("button", { name: "Leeren" }).click();
       expect(await page.getByTestId("moment-value").textContent()).toBe("");
+    },
+  );
+});
+
+test("the time follows the @k2b/ui locale: American English has twelve hours and AM/PM", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const time = page.getByTestId("moment").getByRole("group", { name: "Time" });
+      const value = (type: string) => time.locator(`[data-type="${type}"]`).inputValue();
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["09", "00", "AM"]);
+      await time.locator(`[data-type="hour"]`).focus();
+      await page.keyboard.type("0230p");
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["02", "30", "PM"]);
+      await page.getByTestId("moment").getByRole("button", { name: "Apply" }).click();
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T14:30");
+    },
+    { lang: "en-US" },
+  );
+});
+
+// ── Delta review of #4224 (4005781): each test failed before its fix ───────────────────────────────────────────
+
+/** Pastes text into an element as the clipboard would. */
+const paste = (target: Locator, text: string) =>
+  target.evaluate((element, pasted) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", pasted);
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+
+test("Enter takes what was just typed into a segment, and never sends the form around the picker", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const picker = page.getByTestId("switch");
+      const minute = picker.getByRole("spinbutton", { name: "Minute" });
+      await minute.focus();
+      await page.keyboard.type("1");
+      await page.keyboard.press("Enter");
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:01");
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
+    },
+  );
+});
+
+test("a change between a 24-hour and a 12-hour locale shows the same time, also one just edited", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const picker = page.getByTestId("switch");
+      const value = (type: string) => picker.locator(`.k2-time [data-type="${type}"]`).inputValue();
+      const language = page.getByRole("button", { name: "Sprache wechseln" });
+      // German: 14:32, then American English: 2:32 PM
+      await picker.locator('.k2-time [data-type="hour"]').focus();
+      await page.keyboard.type("1432");
+      await language.click();
+      await picker.locator('.k2-time [data-type="dayPeriod"]').waitFor();
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["02", "32", "PM"]);
+      // edited in American English, back to German: the afternoon stays the afternoon
+      await picker.locator('.k2-time [data-type="minute"]').focus();
+      await page.keyboard.type("45");
+      await language.click();
+      await picker.locator('.k2-time [data-type="dayPeriod"]').waitFor({ state: "detached" });
+      expect([await value("hour"), await value("minute")]).toEqual(["14", "45"]);
+      await picker.getByRole("button", { name: "Übernehmen" }).click();
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T14:45");
+    },
+  );
+});
+
+test("a pasted time is read in the forms people write it; one that is no time says so and applies nothing", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const moment = page.getByTestId("moment");
+      const hour = moment.getByRole("spinbutton", { name: "Stunde" });
+      const minute = moment.getByRole("spinbutton", { name: "Minute" });
+      for (const [pasted, shown] of [
+        ["1430", ["14", "30"]],
+        ["9:30", ["09", "30"]],
+        ["17.05", ["17", "05"]],
+      ] as const) {
+        await paste(hour, pasted);
+        expect([await hour.inputValue(), await minute.inputValue()]).toEqual([...shown]);
+      }
+      await paste(hour, "abends");
+      await moment.getByRole("alert").waitFor();
+      expect(await moment.getByRole("alert").textContent()).toBe("Keine Uhrzeit. Schreib sie wie 14:30.");
+      expect(await moment.locator(".k2-time").getAttribute("data-invalid")).toBe("");
+      expect([await hour.inputValue(), await minute.inputValue()]).toEqual(["17", "05"]);
+      // the next time clears the mark
+      await paste(minute, "18:10");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+      await moment.getByRole("button", { name: "Übernehmen" }).click();
+      expect(await page.getByTestId("moment-value").textContent()).toBe("2026-11-24T18:10");
+    },
+  );
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const time = page.getByTestId("moment").locator(".k2-time");
+      await paste(time.locator('[data-type="hour"]'), "02:30 PM");
+      const value = (type: string) => time.locator(`[data-type="${type}"]`).inputValue();
+      expect([await value("hour"), await value("minute"), await value("dayPeriod")]).toEqual(["02", "30", "PM"]);
+    },
+    { lang: "en-US" },
+  );
+});
+
+test("an empty segment says so in the locale's words", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const minute = page.getByTestId("moment").getByRole("spinbutton", { name: "Minute" });
+      await minute.press("Backspace");
+      await minute.press("Backspace");
+      expect(await minute.inputValue()).toBe("");
+      expect(await minute.getAttribute("aria-valuetext")).toBe("leer");
+    },
+  );
+});
+// ── Delta review of #4224 (5510c42): each test failed before its fix ───────────────────────────────────────────
+
+/** Fails at once instead of waiting forever when the page no longer answers (a loop in its main thread). */
+const answers = (page: Page) =>
+  Promise.race([
+    page.evaluate(() => true),
+    new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), 1500);
+    }),
+  ]);
+
+test("an empty segment in English stays “Empty”, and the page goes on answering", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const minute = page.getByTestId("moment").locator('.k2-time [data-type="minute"]');
+      await minute.focus();
+      await page.keyboard.press("Backspace");
+      await page.keyboard.press("Backspace");
+      expect(await answers(page)).toBe(true);
+      expect(await minute.getAttribute("aria-valuetext")).toBe("Empty");
+    },
+    { lang: "en-US" },
+  );
+});
+
+test("a 24-hour English locale names its own example and reads a pasted day period", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const moment = page.getByTestId("moment");
+      const time = moment.locator(".k2-time");
+      await paste(time.locator('[data-type="hour"]'), "abends");
+      expect(await moment.getByRole("alert").textContent()).toBe("Not a time. Write it like 14:30.");
+      await paste(time.locator('[data-type="hour"]'), "2:30 PM");
+      expect(await time.locator('[data-type="dayPeriod"]').count()).toBe(0);
+      expect([await time.locator('[data-type="hour"]').inputValue(), await time.locator('[data-type="minute"]').inputValue()]).toEqual([
+        "14",
+        "30",
+      ]);
+    },
+    { lang: "en-GB" },
+  );
+});
+
+test("the mark of an unreadable paste goes with the next time, also the same time, and with typing", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const moment = page.getByTestId("moment");
+      const hour = moment.getByRole("spinbutton", { name: "Stunde" });
+      // an empty clipboard changes nothing and says nothing
+      await paste(hour, "");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+      await paste(hour, "abends");
+      await moment.getByRole("alert").waitFor();
+      // the time it already holds
+      await paste(hour, "09:00");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+      expect(await moment.locator(".k2-time").getAttribute("data-invalid")).toBeNull();
+      await paste(hour, "abends");
+      await moment.getByRole("alert").waitFor();
+      await hour.focus();
+      await page.keyboard.type("09");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+    },
+  );
+});
+
+test("Enter with Ctrl, Cmd or Alt applies nothing, as core takes nothing then", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      // a new day is chosen, so a pick would show: with a modifier Enter gives nothing
+      const picker = page.getByTestId("switch");
+      await picker.locator('[data-value="2026-11-26"]').click();
+      // a day is no submit button of the form around the picker
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
+      const minute = picker.getByRole("spinbutton", { name: "Minute" });
+      await minute.focus();
+      for (const chord of ["Control+Enter", "Meta+Enter", "Alt+Enter"]) await page.keyboard.press(chord);
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:00");
+      // nor does it send the form around the picker with the time it held before
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
+    },
+  );
+});
+
+test("Shift+Enter is Enter: it takes what was typed, inside a form too, and sends nothing", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const minute = page.getByTestId("switch").getByRole("spinbutton", { name: "Minute" });
+      await minute.focus();
+      await page.keyboard.type("1");
+      await page.keyboard.press("Shift+Enter");
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:01");
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
     },
   );
 });
@@ -268,7 +512,7 @@ test("a day outside `min` and `max` is never picked, also when it is the value a
       const moment = page.getByTestId("locked-moment");
       expect(await moment.locator('[data-value="2026-11-02"]').getAttribute("aria-selected")).toBe("true");
       expect(await moment.getByRole("button", { name: "Übernehmen" }).isDisabled()).toBe(true);
-      await moment.getByRole("textbox", { name: "Uhrzeit" }).press("Enter");
+      await moment.getByRole("spinbutton", { name: "Minute" }).press("Enter");
       // without a time: a press on the locked chosen day gives nothing either
       const day = page.getByTestId("locked-day");
       await day.locator('[data-value="2026-11-02"]').click({ force: true });

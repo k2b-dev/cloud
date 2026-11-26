@@ -20,7 +20,7 @@ import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
-import { Empty } from "./states";
+import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
@@ -587,6 +587,12 @@ export type CellProps = {
   href?: string;
   /** A short history beside the value, such as orders per day this week (`Spark`). */
   trend?: SparkProps;
+  /**
+   * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
+   * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
+   * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   */
+  loading?: boolean;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
@@ -607,6 +613,7 @@ Cells.Cell = (props: CellProps) => {
       class="k2-cell"
       data-k2-part="Cells.Cell"
       data-open={props.href !== undefined ? "" : undefined}
+      aria-busy={props.loading ? "true" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       <Icon name={props.icon} />
@@ -617,11 +624,17 @@ Cells.Cell = (props: CellProps) => {
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
       <span class="k2-cell-value">
-        {props.value}
-        <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
+        <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
+          {props.value}
+          <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
+        </Show>
       </span>
       <Show when={meta() !== undefined}>
-        <span class="k2-cell-meta">{meta()}</span>
+        <span class="k2-cell-meta">
+          <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
+            {meta()}
+          </Show>
+        </span>
       </Show>
     </div>
   );
