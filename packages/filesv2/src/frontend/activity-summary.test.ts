@@ -57,7 +57,7 @@ describe("the summary beside Activity", () => {
     ];
     const places = activitySummary(entries, t, env).places;
     expect(places).toHaveLength(1);
-    expect(places[0]!.key.startsWith("label:")).toBeTrue();
+    expect(places[0]!.key).toBe("place:Team Vertrieb › Kunden");
     expect(places[0]!.count).toBe(2);
   });
 });

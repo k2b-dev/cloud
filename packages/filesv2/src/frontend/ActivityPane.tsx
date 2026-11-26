@@ -153,12 +153,12 @@ export default function ActivityPane(props: ActivityPaneProps) {
   const summary = createMemo(() => activitySummary(entries(), h(), props.env));
   const KIND_ICONS = { added: "plus", changed: "pencil", moved: "arrows-move", removed: "trash", shared: "world-share", other: "dots" };
   // a single change would only say itself again
-  const showSummary = () => !!props.initial && !unavailable() && new Set(entries().map((entry) => entry.id)).size > 1;
+  const showSummary = () => !!props.initial && !unavailable() && summaryLines().length > 0;
   const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
   // the summary as one list: who (not under "Ich", where every change is the person's own), where, what kind
   const summaryLines = createMemo((): SummaryLine[] => {
     const shown = summary();
-    return [
+    const lines: SummaryLine[] = [
       ...(mine()
         ? []
         : shown.people.map((person) => ({
@@ -183,6 +183,10 @@ export default function ActivityPane(props: ActivityPaneProps) {
         icon: KIND_ICONS[kind.kind],
       })),
     ];
+    // a head says something only where one line counts more than one change: four people at one each, or the places
+    // the rows already name, are no summary
+    const telling = new Set(lines.filter((line) => line.count > 1).map((line) => line.group));
+    return lines.filter((line) => telling.has(line.group));
   });
   // Under the list and above its older pages (Valentin 26.11.: give the page structure; beside it, it squeezed the
   // list at 1024): one quiet section, its lines under the heads who, where and what kind of change. A search has it
@@ -211,7 +215,8 @@ export default function ActivityPane(props: ActivityPaneProps) {
             state={props.state}
             onChange={props.onChange}
             // "Zurücksetzen" leads back to where Activity starts: "Me".
-            base={props.query.parse("view=activity&who=me").state}
+            // a search has no reset of its own: the search field's × takes it back
+            base={props.filters.q ? props.state : props.query.parse("view=activity&who=me").state}
             icons={FILTER_ICONS}
             names={props.who ? { who: [props.who] } : undefined}
             timeZone={props.env.timeZone}

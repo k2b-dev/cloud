@@ -585,7 +585,9 @@ function ChainRow(props: {
     const count = result ? Math.max(0, result.visibleCount - 1) : batch ? 0 : props.loadedOthers;
     return count ? (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(count)) : undefined;
   };
-  const note = () => (batch?.loading() ? h().batchLoading : batch?.error() ? h().batchFailed : others());
+  // until the batch's answer is there the step says it is checking, on the server and in the browser alike: the read
+  // starts only in the browser, so "loading" would differ between the two first pictures
+  const note = () => (batch?.error() ? h().batchFailed : batch && !batch.data() ? h().batchLoading : others());
   return (
     <ActivityRow
       row={props.row}
