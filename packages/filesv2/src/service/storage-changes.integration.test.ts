@@ -41,8 +41,8 @@ const foreign: Binding = {
   identity_name: "privat",
   path: "groups/privat",
 };
-/** Every storage of the fixture: the service passes the ones the reader may read as a whole. */
-const every = [baseId, groupId, foreignId];
+/** The storages the service authorized (see `wholeStorages`), on the fixture's server. */
+const scope = (bindingIds: string[]) => ({ serverUrl: "http://filegate.test", bindingIds });
 const at = (minute: number) => new Date(`2030-05-15T12:${String(minute).padStart(2, "0")}:00.000Z`);
 
 suite("Files storage table: who changed each storage last", () => {
@@ -73,16 +73,9 @@ suite("Files storage table: who changed each storage last", () => {
     } = candidate(index, { action: "file.edit", path_before: `${home}/a.md`, path_after: `${home}/a.md`, ...patch });
     await sql`INSERT INTO filesv2.activity ${sql({ ...row, name: "Stored name" })}`;
   }
-  /** The reader as the service builds it, on the real statement; the member reads their home and the group. */
-  function reader(allowed = [baseId, groupId]) {
-    const f = historyFixture();
-    const context = f.deps.requestContext;
-    return createActivityReader({
-      ...f.deps,
-      data: activityReaderData,
-      displayNames: resolveDisplayNames,
-      requestContext: async (...args) => ({ ...(await context(...args)), allowedBindingIds: allowed }),
-    });
+  /** The reader on the real statement; the service passes it the bindings it authorized. */
+  function reader() {
+    return createActivityReader({ ...historyFixture().deps, data: activityReaderData, displayNames: resolveDisplayNames });
   }
 
   test("each storage names its newest finished content change, inside its own path, with the live name", async () => {
@@ -101,10 +94,10 @@ suite("Files storage table: who changed each storage last", () => {
       actor_user_id: otherId,
       finished_at: at(6),
     });
-    // a storage the reader is no member of says nothing
+    // a storage the service did not pass says nothing
     await seed({ base_id: foreignId, path_before: "groups/privat/x", path_after: "groups/privat/x", finished_at: at(7) });
 
-    const changes = await reader().storageChanges(call, every);
+    const changes = await reader().storageChanges(call, scope([baseId, groupId]));
     expect(changes.toSorted((a, b) => a.baseId.localeCompare(b.baseId))).toEqual([
       {
         baseId: `cloud:groups:${groupIdentity}`,
@@ -119,7 +112,9 @@ suite("Files storage table: who changed each storage last", () => {
   test("a storage the service does not pass says nothing, also where the reader is a member", async () => {
     await seed({ finished_at: at(1) });
     await seed({ base_id: groupId, path_before: "groups/werkstatt/x", path_after: "groups/werkstatt/x", finished_at: at(2) });
-    expect((await reader().storageChanges(call, [groupId])).map((change) => change.baseId)).toEqual([`cloud:groups:${groupIdentity}`]);
+    expect((await reader().storageChanges(call, scope([groupId]))).map((change) => change.baseId)).toEqual([
+      `cloud:groups:${groupIdentity}`,
+    ]);
   });
 
   test("a move into the storage counts for it by its new side", async () => {
@@ -131,7 +126,7 @@ suite("Files storage table: who changed each storage last", () => {
       path_after: "groups/werkstatt/Plan.pdf",
       finished_at: at(8),
     });
-    const changes = await reader([groupId]).storageChanges(call, every);
+    const changes = await reader().storageChanges(call, scope([groupId]));
     expect(changes.map((change) => [change.baseId, change.time])).toEqual([[`cloud:groups:${groupIdentity}`, at(8).toISOString()]]);
   });
 
@@ -140,7 +135,7 @@ suite("Files storage table: who changed each storage last", () => {
     await seed({ base_id: groupId, path_before: "groups/werkstatt/x", path_after: "groups/werkstatt/x", finished_at: at(30) });
     const meter = await meterSql();
     try {
-      const statements = await meter.during(() => reader().storageChanges(call, every));
+      const statements = await meter.during(() => reader().storageChanges(call, scope([baseId, groupId])));
       // one read of the activity in the reader's budget frame (BEGIN, its timeout, the read, COMMIT), one of names
       expect(statements).toHaveLength(5);
       expect(
@@ -156,7 +151,7 @@ suite("Files storage table: who changed each storage last", () => {
     await seed({ finished_at: at(1) });
     const meter = await meterSql();
     try {
-      const statements = await meter.during(async () => expect(await reader([]).storageChanges(call, every)).toEqual([]));
+      const statements = await meter.during(async () => expect(await reader().storageChanges(call, scope([]))).toEqual([]));
       expect(statements).toEqual([]);
     } finally {
       await meter.close();

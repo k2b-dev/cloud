@@ -591,20 +591,16 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
       });
     },
     /**
-     * Who changed each of the given storages last, and when: a column of the storage table. Only storages the reader
-     * may read as a whole are asked for (`only`, see the service's `wholeStorages`). One statement for all of them
-     * (`latestChanges`), then one read of the people's names. Without history it is empty.
+     * Who changed each of the given storages last, and when: a column of the storage table. The caller has authorized
+     * the bindings: the storages the reader may read as a whole (the service's `wholeStorages`), on its server. One
+     * statement for all of them (`latestChanges`), then one read of the people's names.
      */
-    async storageChanges(call: ActivityReadCall, only: readonly string[]): Promise<StorageLastChange[]> {
+    async storageChanges(
+      call: ActivityReadCall,
+      scope: { serverUrl: string; bindingIds: readonly string[] },
+    ): Promise<StorageLastChange[]> {
       return withActivityReadBudget(call.requestAbort, async (budget) => {
-        const current = await context(call, budget, { endpoint: "storageChanges" });
-        if (!current.historyAvailable) return [];
-        const rows = await budget.run(() =>
-          data.latestChanges(
-            { serverUrl: current.scope.serverUrl, bindingIds: current.scope.bindingIds.filter((id) => only.includes(id)) },
-            budget,
-          ),
-        );
+        const rows = await budget.run(() => data.latestChanges({ serverUrl: scope.serverUrl, bindingIds: [...scope.bindingIds] }, budget));
         const items = rows.map(
           (row): StorageLastChange => ({
             baseId: publicId(row),
@@ -614,7 +610,7 @@ export function createActivityReader(deps: ActivityReaderDependencies) {
           }),
         );
         await names(items, budget);
-        return current.finish(items);
+        return items;
       });
     },
     async shareAccess(call: ActivityReadCall, rawInput: ShareAccessInput): Promise<ShareAccessCounts> {

@@ -11,6 +11,7 @@ import { Hono } from "hono";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { useTestAppRegistry } from "../../../../scripts/fixtures/app-registry";
 import { uniqueCallerAddress } from "../../../../scripts/fixtures/caller-address";
+import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { activityFilegate } from "../../test/activity-filegate";
 import { testCall } from "../../test/files-call";
@@ -867,69 +868,156 @@ suite("Files machine storage through actual API tokens", () => {
     }, 60000);
   }
 
-  test("the storage table describes a machine storage only for a reader of its root, and only its route walks it", async () => {
-    // the history describes a storage only where the reader's area is available: local Linux on, as in production
+  /** Runs `run` with local Linux on, as in production: the history describes a storage only where its area is available. */
+  async function withLocalLinux(run: () => Promise<void>) {
     const [kept] = await sql<{ value: string }[]>`SELECT value FROM settings.entries WHERE key='linux.identity_config'`;
     const linux = { enabled: true, rangeStart: 200000, rangeEnd: 200100, homeTemplate: "/home/{username}", loginShell: "/bin/bash" };
     await sql`INSERT INTO settings.entries(key,value) VALUES('linux.identity_config',${await secrets.encrypt(JSON.stringify(linux))})
       ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value`;
     try {
-      const owner = await serviceAccounts.createStandalone({ name: "Storage table fixture", kind: "agent", createdBy: admin.user.id });
-      if (!owner.ok) throw new Error(owner.error.code);
-      const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
-      const [binding] = await sql<
-        { id: string; root: string; path: string }[]
-      >`SELECT id,root,path FROM filesv2.bases WHERE id=${storage.id}::uuid`;
-      const files = client.root("cloud");
-      for (const folder of ["sub", "rest"]) await files.mkdir(`${binding!.path}/${folder}`).catch(() => undefined);
-      await files.put(`${binding!.path}/rest/Plan.xlsx`, new Blob(["x".repeat(500)]));
-      await files.put(`${binding!.path}/sub/Notiz.txt`, new Blob(["y".repeat(20)]));
-      await sql`INSERT INTO filesv2.activity ${sql({
-        id: crypto.randomUUID(),
-        state: "done",
-        action: "file.upload",
-        server_url: gateway!.url,
-        root: binding!.root,
-        base_id: binding!.id,
-        directory: false,
-        name: "Plan.xlsx",
-        path_before: null,
-        path_after: `${binding!.path}/rest/Plan.xlsx`,
-        actor_kind: "user",
-        actor_user_id: admin.user.id,
-        via: "web",
-        finished_at: new Date(),
-      })}`;
-      const reader = async (name: string, path: string) => {
-        const id = crypto.randomUUID();
-        await sql`INSERT INTO auth.users(id,uid,provider,profile,admin,display_name) VALUES(${id}::uuid,${`${name}-${id.slice(0, 8)}`},'local','user',false,${name})`;
-        await service.grantStorage(call(), storage.id, { path, principal: { type: "user", userId: id }, permission: "read" });
-        const user = await accounts.users.get({ id });
-        if (!user) throw new Error("the reader fixture was not stored");
-        return testCall({ kind: "user" as const, user });
-      };
-      const ofStorage = <T extends { baseId: string }>(items: readonly T[] | null) => items?.find((item) => item.baseId === storage.baseId);
-
-      // a grant on a subfolder describes that folder, not the storage: no size and no last change, also on the route
-      const folderOnly = await service.storageFacts(await reader("Folder reader", "sub"), { walk: true });
-      expect(ofStorage(folderOnly.usage)).toBeUndefined();
-      expect(ofStorage(folderOnly.changes)).toBeUndefined();
-
-      // a reader of the root: the page shows only kept counts and says one is missing; the route counts it
-      const whole = await reader("Root reader", "");
-      const page = await service.storageFacts(whole, { walk: false });
-      expect(ofStorage(page.usage)).toBeUndefined();
-      expect(page.usagePending).toBe(true);
-      expect(ofStorage(page.changes)?.time).toBeDefined();
-      const route = await service.storageFacts(whole, { walk: true });
-      expect(ofStorage(route.usage)?.bytes).toBeGreaterThanOrEqual(520);
-      // the next page shows the count the route kept, without a walk
-      const again = await service.storageFacts(whole, { walk: false });
-      expect(ofStorage(again.usage)).toEqual(ofStorage(route.usage));
-      expect(again.usagePending).toBe(false);
+      await run();
     } finally {
       if (kept) await sql`UPDATE settings.entries SET value=${kept.value} WHERE key='linux.identity_config'`;
       else await sql`DELETE FROM settings.entries WHERE key='linux.identity_config'`;
     }
-  }, 60000);
+  }
+  /** A person of their own, for the storage table's readers. */
+  async function person(name: string) {
+    const id = crypto.randomUUID();
+    await sql`INSERT INTO auth.users(id,uid,provider,profile,admin,display_name) VALUES(${id}::uuid,${`${name.toLowerCase().replaceAll(" ", "-")}-${id.slice(0, 8)}`},'local','user',false,${name})`;
+    const user = await accounts.users.get({ id });
+    if (!user) throw new Error("the person fixture was not stored");
+    return { id, call: testCall({ kind: "user" as const, user }) };
+  }
+  /** A machine storage with its binding, and a change recorded in it. */
+  async function machineStorage(name: string) {
+    const owner = await serviceAccounts.createStandalone({ name, kind: "agent", createdBy: admin.user.id });
+    if (!owner.ok) throw new Error(owner.error.code);
+    const storage = await service.createMachineStorage(call(), { ownerId: owner.data.id, area: "cloud" });
+    const [binding] = await sql<
+      { id: string; root: string; path: string }[]
+    >`SELECT id,root,path FROM filesv2.bases WHERE id=${storage.id}::uuid`;
+    await sql`INSERT INTO filesv2.activity ${sql({
+      id: crypto.randomUUID(),
+      state: "done",
+      action: "file.upload",
+      server_url: gateway!.url,
+      root: binding!.root,
+      base_id: binding!.id,
+      directory: false,
+      name: "Plan.xlsx",
+      path_before: null,
+      path_after: `${binding!.path}/rest/Plan.xlsx`,
+      actor_kind: "user",
+      actor_user_id: admin.user.id,
+      via: "web",
+      finished_at: new Date(),
+    })}`;
+    return { storage, path: binding!.path };
+  }
+  const of = <T extends { baseId: string }>(items: readonly T[] | null, baseId: string) => items?.find((item) => item.baseId === baseId);
+
+  test(
+    "the storage table describes a machine storage only for a reader of its root, and only its route walks it",
+    () =>
+      withLocalLinux(async () => {
+        const { storage, path } = await machineStorage("Storage table fixture");
+        const files = client.root("cloud");
+        for (const folder of ["sub", "rest"]) await files.mkdir(`${path}/${folder}`).catch(() => undefined);
+        await files.put(`${path}/rest/Plan.xlsx`, new Blob(["x".repeat(500)]));
+        await files.put(`${path}/sub/Notiz.txt`, new Blob(["y".repeat(20)]));
+        const folderReader = await person("Folder reader");
+        await service.grantStorage(call(), storage.id, {
+          path: "sub",
+          principal: { type: "user", userId: folderReader.id },
+          permission: "read",
+        });
+        const rootReader = await person("Root reader");
+        await service.grantStorage(call(), storage.id, {
+          path: "",
+          principal: { type: "user", userId: rootReader.id },
+          permission: "read",
+        });
+
+        // a grant on a subfolder describes that folder, not the storage: no size and no last change, also on the route
+        const folderOnly = await service.storageFacts(folderReader.call, { walk: true });
+        expect(of(folderOnly.usage, storage.baseId)).toBeUndefined();
+        expect(of(folderOnly.changes, storage.baseId)).toBeUndefined();
+
+        // a reader of the root: the page shows only kept counts and says one is missing; the route counts it
+        const page = await service.storageFacts(rootReader.call, { walk: false });
+        expect(of(page.usage, storage.baseId)).toBeUndefined();
+        expect(page.usagePending).toBe(true);
+        expect(of(page.changes, storage.baseId)?.time).toBeDefined();
+        const route = await service.storageFacts(rootReader.call, { walk: true });
+        expect(of(route.usage, storage.baseId)?.bytes).toBeGreaterThanOrEqual(520);
+        // the next page shows the count the route kept, without a walk
+        const again = await service.storageFacts(rootReader.call, { walk: false });
+        expect(of(again.usage, storage.baseId)).toEqual(of(route.usage, storage.baseId));
+        expect(again.usagePending).toBe(false);
+        // the kept count never reaches the subfolder's reader
+        const folderLater = await service.storageFacts(folderReader.call, { walk: true });
+        expect(of(folderLater.usage, storage.baseId)).toBeUndefined();
+        expect(of(folderLater.changes, storage.baseId)).toBeUndefined();
+      }),
+    60000,
+  );
+
+  test(
+    "a storage whose folder is gone drops out of the table quietly and is not walked again soon",
+    () =>
+      withLocalLinux(async () => {
+        const { storage, path } = await machineStorage("Storage table gone fixture");
+        await client
+          .root("cloud")
+          .remove(path, true)
+          .catch(() => undefined);
+        const reader = await person("Gone reader");
+        await service.grantStorage(call(), storage.id, { path: "", principal: { type: "user", userId: reader.id }, permission: "read" });
+        // the walk fails: no size, no pending, the rest of the table stands
+        const route = await service.storageFacts(reader.call, { walk: true });
+        expect(of(route.usage, storage.baseId)).toBeUndefined();
+        expect(route.usagePending).toBe(false);
+        expect(of(route.changes, storage.baseId)?.time).toBeDefined();
+        // the failure is kept: the next page does not ask for this storage again
+        expect((await service.storageFacts(reader.call, { walk: false })).usagePending).toBe(false);
+      }),
+    60000,
+  );
+
+  test(
+    "the storage table costs the same statements for two group storages as for five",
+    () =>
+      withLocalLinux(async () => {
+        const member = await person("Group member");
+        let gid = 260000 + Math.floor(Math.random() * 10000);
+        const join = async (count: number) => {
+          for (let index = 0; index < count; index++) {
+            const name = `table-${member.id.slice(0, 8)}-${gid}`;
+            const [group] = await sql<
+              { id: string }[]
+            >`INSERT INTO auth.groups(cn,name,provider,gid_number) VALUES(${name},${name},'local',${gid}) RETURNING id`;
+            await sql`INSERT INTO auth.user_groups_v2(user_id,group_id) VALUES(${member.id}::uuid,${group!.id}::uuid)`;
+            await sql`INSERT INTO filesv2.bases(area,kind,identity_id,identity_name,root,path,uid_number,gid_number,lifecycle)
+            VALUES('cloud','groups',${group!.id}::uuid,${name},'cloud',${`${prefix}/groups/${name}`},NULL,${gid},'active')`;
+            gid++;
+          }
+        };
+        const count = async () => {
+          const meter = await meterSql();
+          try {
+            return (await meter.during(() => service.storageFacts(member.call, { walk: false }))).length;
+          } finally {
+            await meter.close();
+          }
+        };
+        await join(2);
+        const two = await count();
+        await join(3);
+        const five = await count();
+        expect((await service.storageFacts(member.call, { walk: false })).members?.length).toBe(5);
+        expect(five).toBe(two);
+      }),
+    60000,
+  );
 });

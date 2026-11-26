@@ -150,7 +150,13 @@ const USAGE_LOCK_SECONDS = 30;
 const USAGE_TTL_SECONDS = 300;
 /** The platform counts at most this many groups per call. */
 const MEMBER_COUNT_BATCH = 50;
-const UsageCacheSchema = z.object({ bytes: z.number().nonnegative(), complete: z.boolean() });
+const UsageCacheSchema = z.union([
+  z.object({ bytes: z.number().nonnegative(), complete: z.boolean() }),
+  // a walk that failed or ran out of time: the storage is not walked again until this runs out
+  z.object({ failed: z.literal(true) }),
+]);
+/** A failed walk is remembered this long, so a storage too big for the budget does not take the lock on every visit. */
+const USAGE_FAILED_SECONDS = 60;
 /** Covers a tab left open overnight; every WOPI call re-checks permissions, the token only names user and file. */
 const EDITOR_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 /** Collabora hands over whole documents; Cloud holds one in memory while forwarding it to Filegate. */
@@ -1742,10 +1748,20 @@ export function createFilesService(
     const state = await context(call.actor);
     const storages: { item: Candidate; binding: Binding; baseId: string }[] = [];
     if (state.config.unreadable) return { state, storages };
-    for (const item of state.candidates) {
-      if (item.area !== "cloud" || issueFor(state.config, item.area, state.self.availability)) continue;
-      if (item.kind === "groups" && state.personalGroupIds.has(item.identity_id)) continue;
-      const found = await deps.bindings.find(item);
+    const items = state.candidates.filter(
+      (item) =>
+        item.area === "cloud" &&
+        !issueFor(state.config, item.area, state.self.availability) &&
+        !(item.kind === "groups" && state.personalGroupIds.has(item.identity_id)),
+    );
+    // all bindings in one statement, picked per storage as `find` returns them
+    const rows = await deps.bindings.findAll(items);
+    for (const item of items) {
+      const found = rows.filter(
+        (row) =>
+          (row.root === item.root && row.path === item.path) ||
+          (row.area === item.area && row.kind === item.kind && row.identity_id === item.identity_id),
+      );
       const binding = found.length === 1 ? found[0]! : null;
       if (!binding || binding.lifecycle !== "active" || !sameBinding(binding, item)) continue;
       if (item.storage && !hasPermission(await storagePermission(call.actor, item.storage, ""), "read")) continue;
@@ -1775,19 +1791,20 @@ export function createFilesService(
         .get(key)
         .then((value) => (value ? UsageCacheSchema.parse(JSON.parse(value)) : null))
         .catch(() => null);
+      if (cached && "failed" in cached) continue;
       if (cached) counted.push({ baseId, ...cached });
       else missing.push({ key, path: item.path, baseId });
     }
     if (!options.walk || !missing.length) return { items: counted, pending: missing.length > 0 };
     const budget = AbortSignal.any([AbortSignal.timeout(USAGE_BUDGET_MS), ...(options.signal ? [options.signal] : [])]);
     const filegate = deps.connect(state.config, budget).root(state.config.cloud.root);
-    let walked = 0;
+    const walkedIds = new Set<string>();
     for (const storage of missing) {
-      if (walked >= USAGE_WALKS || budget.aborted) break;
+      if (walkedIds.size >= USAGE_WALKS || budget.aborted) break;
       const lock = `${storage.key}:walk`;
       const claimed = await redis.send("SET", [lock, call.requestId ?? "walk", "NX", "EX", String(USAGE_LOCK_SECONDS)]).catch(() => null);
       if (claimed !== "OK") continue;
-      walked++;
+      walkedIds.add(storage.baseId);
       try {
         const stats = await filegate.recursiveStats(storage.path, USAGE_SCAN_LIMIT, budget);
         const value = { bytes: stats.bytes, complete: stats.complete };
@@ -1796,18 +1813,19 @@ export function createFilesService(
       } catch (error) {
         if (options.signal?.aborted) throw error;
         usageLog.warn("Storage usage could not be counted", { baseId: storage.baseId, error });
+        await redis.send("SET", [storage.key, JSON.stringify({ failed: true }), "EX", String(USAGE_FAILED_SECONDS)]).catch(() => undefined);
       } finally {
         await redis.del(lock).catch(() => undefined);
       }
     }
-    return { items: counted, pending: counted.length < storages.length };
+    // pending: a storage this request did not walk, which a later one may count
+    return { items: counted, pending: missing.some((storage) => !walkedIds.has(storage.baseId)) };
   }
   /**
    * How many people belong to each of the reader's group storages, for the storage table: counts only, from the
    * platform, which counts a group only for its own members. In batches of the platform's limit.
    */
-  async function storageMembers(call: UserFilesCall): Promise<StorageMembers[]> {
-    const state = await context(call.actor);
+  async function storageMembers(call: UserFilesCall, state: Awaited<ReturnType<typeof context>>): Promise<StorageMembers[]> {
     if (state.machine) return [];
     const groups = state.candidates.filter((item) => item.kind === "groups" && !state.personalGroupIds.has(item.identity_id));
     const counted: { baseId: string; members: number }[] = [];
@@ -1843,18 +1861,19 @@ export function createFilesService(
           if (!call.requestAbort?.aborted) usageLog.warn("A storage fact could not be read", { part, error });
           return null;
         };
+      // the reader's storages once for every part: one context, one read of their bindings
       const whole = await wholeStorages(call).catch(failed("storages"));
       const [changes, usage, members] = await Promise.all([
         whole
           ? activityReader
-              .storageChanges(
-                call,
-                whole.storages.map((storage) => storage.binding.id),
-              )
+              .storageChanges(call, {
+                serverUrl: whole.state.config.url,
+                bindingIds: whole.storages.map((storage) => storage.binding.id),
+              })
               .catch(failed("changes"))
           : null,
         whole ? storageUsage(call, whole, { walk: options.walk, signal: call.requestAbort }).catch(failed("usage")) : null,
-        storageMembers(call).catch(failed("members")),
+        whole ? storageMembers(call, whole.state).catch(failed("members")) : null,
       ]);
       call.requestAbort?.throwIfAborted();
       return { changes, usage: usage?.items ?? null, usagePending: usage?.pending ?? false, members };

@@ -1,6 +1,6 @@
 import { sql } from "@k2b/cloud";
 import type { RequestActor } from "@k2b/cloud/server";
-import { audit } from "@k2b/cloud/services";
+import { audit, toPgTextArray } from "@k2b/cloud/services";
 import type { Area, BaseKind } from "../contracts";
 export type Binding = {
   id: string;
@@ -16,6 +16,19 @@ export type Binding = {
 };
 export type NewBinding = Omit<Binding, "id" | "lifecycle">;
 export const bindings = {
+  /**
+   * `find` for many candidates in one statement: every binding that shares a candidate's place or its identity. The
+   * caller picks each candidate's bindings from the rows as `find` would return them.
+   */
+  async findAll(candidates: readonly NewBinding[]): Promise<Binding[]> {
+    if (!candidates.length) return [];
+    const list = (pick: (candidate: NewBinding) => string) => toPgTextArray(candidates.map(pick));
+    return sql<
+      Binding[]
+    >`SELECT id,lifecycle,area,kind,identity_id,identity_name,root,path,uid_number::double precision AS uid_number,gid_number::double precision AS gid_number FROM filesv2.bases
+      WHERE (root,path) IN (SELECT * FROM unnest(${list((item) => item.root)}::text[],${list((item) => item.path)}::text[]))
+      OR (area,kind,identity_id::text) IN (SELECT * FROM unnest(${list((item) => item.area)}::text[],${list((item) => item.kind)}::text[],${list((item) => item.identity_id)}::text[]))`;
+  },
   async find(candidate: NewBinding): Promise<Binding[]> {
     return sql<
       Binding[]
