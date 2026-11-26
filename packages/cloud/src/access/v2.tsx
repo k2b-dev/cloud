@@ -4,6 +4,8 @@ import type { AccessDialogProps } from "./AccessDialog";
 import { AccessDialogV2 } from "./AccessDialogV2";
 
 export type { AccessDialogProps, FoundServiceAccount } from "./AccessDialog";
+export { AccessSummaryV2 as AccessSummary } from "./AccessSummaryV2";
+export type { AccessSummaryProps } from "./access-summary";
 export type { ResourceApiKey, ResourceApiKeyPermissionOption, ResourceApiKeysProps } from "./ResourceApiKeys";
 export { ResourceApiKeysV2 as ResourceApiKeys } from "./ResourceApiKeysV2";
 

@@ -15,19 +15,18 @@ import {
   Menu,
   type MenuEntry,
   Notice,
-  type Person,
   Row,
   Section,
   Text,
 } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
-import { cloudAvatarImage } from "../account/Avatar";
 import type { Principal } from "../contracts/shared";
 import type { AccessDialogProps, FoundServiceAccount } from "./AccessDialog";
 import { type AccessMark, createAccessDialogState, isApiKeyAccount, isCodeAccount } from "./access-dialog-state";
 import type { DraftRow } from "./access-draft";
 import { removeRow, restoreRow } from "./access-draft";
 import { levelKey } from "./PermissionEditor";
+import { principalFace } from "./principal-face";
 import { principalKey } from "./principal-key";
 import { type PrincipalSearchEntry, searchPrincipals } from "./principal-search";
 
@@ -142,17 +141,6 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
   };
 
   // ── Rows ──────────────────────────────────────────────────────────────
-  const person = (row: DraftRow): Person => {
-    const kind = row.principal.type === "service_account" ? "service_account" : "user";
-    const id =
-      row.principal.type === "user"
-        ? row.principal.userId
-        : row.principal.type === "service_account"
-          ? row.principal.serviceAccountId
-          : undefined;
-    const image = row.principal.type === "group" ? undefined : cloudAvatarImage({ kind, userId: id, avatarHash: row.display.avatarHash });
-    return { name: state.nameOf(row), ...(image ? { image } : {}) };
-  };
   // k2b-ui gap: a Menu choice option has no description line; a level's meaning shows only as the reason of a lock.
   const levelMenu = (row: DraftRow): MenuEntry[] => {
     const protectedRow = state.lastManagers().has(row.key);
@@ -182,7 +170,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     const row = () => rowProps.row;
     return (
       <Row
-        avatar={person(row())}
+        {...principalFace(row().principal, state.nameOf(row()), row().display)}
         lines={[state.nameOf(row()), state.kindLine(row()) || " "]}
         meta={state.isViewer(row()) ? t().you : undefined}
         href={row().display.serviceAccountHref}
@@ -233,7 +221,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     const row = () => state.generalRow(type);
     return (
       <Row
-        icon={type === "public" ? "world" : "building"}
+        {...principalFace({ type }, label, {})}
         lines={[label, state.loading() ? " " : state.generalDescription(type)]}
         end={
           <>
@@ -350,7 +338,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
                       const already = () => listedRow(entry.principal);
                       return (
                         <Row
-                          icon={entry.icon.replace(/^ti\s+ti-/, "")}
+                          {...principalFace(entry.principal, entry.label, entry)}
                           lines={entry.description ? [entry.label, entry.description] : [entry.label]}
                           meta={
                             already() ? t().alreadyHas({ level: state.levelLabel(already()!.principal, already()!.next) }) : entry.badge
@@ -461,7 +449,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
             <Show when={found()}>
               {(account) => (
                 <Row
-                  icon="code"
+                  {...principalFace(account().principal, account().display.displayName, account().display)}
                   lines={[account().display.displayName, account().description ?? t().serviceAccount]}
                   action={{
                     label: t().addServiceAccount,
