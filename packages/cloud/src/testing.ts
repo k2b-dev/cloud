@@ -88,7 +88,8 @@ export const loadShellAssets = async (app: { id: string; css: string; v2Page?: b
  *
  * `extra` puts a test's own script into the real page, such as a harness that renders the app's screen from invented
  * data into its island, so a dialog opens inside the shell's frame: `html` goes before `</body>`, and `files` answer
- * their paths (a script, or what an API returns for any method). The page then waits for `body[data-ready]`.
+ * their paths (a script, or what an API returns for any method; `"GET /path"` answers only that method). The page then
+ * waits for `body[data-ready]`.
  */
 export const openShellPage = async (
   browser: Browser,
@@ -116,7 +117,7 @@ export const openShellPage = async (
     if (url.origin !== SHELL_ORIGIN) return route.abort("blockedbyclient");
     if (url.pathname === new URL(page.path, SHELL_ORIGIN).pathname)
       return route.fulfill({ contentType: "text/html; charset=utf-8", body: html });
-    const file = page.extra?.files[url.pathname];
+    const file = page.extra?.files[`${route.request().method()} ${url.pathname}`] ?? page.extra?.files[url.pathname];
     if (file) return route.fulfill({ contentType: file.type, body: file.body });
     if (await assets.serve(route, url)) return;
     if (route.request().resourceType() === "script") return route.fulfill({ contentType: "text/javascript", body: "" });

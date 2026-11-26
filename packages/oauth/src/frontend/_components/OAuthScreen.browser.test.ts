@@ -5,7 +5,7 @@ import { loadShellAssets, type ShellAssets } from "@k2b/cloud/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { FAKE_SECRET } from "./oauth-fixture-data";
+import { FAKE_SECRET, fixtureClient, NORMAL } from "./oauth-fixture-data";
 
 // OAuth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with
 // normal, worst-case and no data; a client opens beside the list, and every deed sends the contract it sent before,
@@ -117,6 +117,14 @@ const open = async (view: View, address: string, state = "normal", answers: Answ
         },
       });
     if (url.pathname.startsWith(API)) {
+      // the list read again after a create: the clients and the new one, as the service returns them
+      if (method === "GET" && url.pathname === API)
+        return route.fulfill({
+          json: {
+            clients: [...NORMAL, fixtureClient(90, { name: "Wiki", clientId: "oc_wiki" })],
+            pagination: { page: 1, per_page: 50, total: NORMAL.length + 1, total_pages: 1, has_next: false },
+          },
+        });
       if (method === "POST" && url.pathname === API) {
         await answers.hold;
         return route.fulfill({ json: { clientId: "oc_wiki", clientSecret: FAKE_SECRET } });
@@ -198,7 +206,8 @@ describe("OAuth on v2", () => {
       expect(await secret.innerText()).toContain("oc_wiki");
       expect(await secret.innerText()).toContain("Speichere dieses Secret jetzt.");
       await shoot(tab, "oauth-dialog-secret-1440");
-      expect(calls).toEqual([`POST ${API}`]);
+      // the create, then the list read again behind the secret
+      expect(calls).toEqual([`POST ${API}`, `GET ${API}`]);
       expect(bodies[0]).toEqual({
         name: "Wiki",
         audiences: ["cloud"],

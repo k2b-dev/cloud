@@ -13,7 +13,7 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { FAKE_SECRET, NORMAL, WORST } from "./_components/oauth-fixture-data";
+import { FAKE_SECRET, fixtureClient, NORMAL, WORST } from "./_components/oauth-fixture-data";
 
 // The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
 // (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_OAUTH_SHELL_SHOTS=<dir>` also saves light
@@ -207,7 +207,18 @@ describe("OAuth in the Cloud shell", () => {
             },
             "/api/oauth/admin/clients": {
               type: "application/json",
-              body: JSON.stringify({ clientId: "oc_wiki", clientSecret: FAKE_SECRET }),
+              body: JSON.stringify({ clientId: "oc_handbuch", clientSecret: FAKE_SECRET }),
+            },
+            // the list read again after creating: the page's clients and the new one, as the service returns them
+            "GET /api/oauth/admin/clients": {
+              type: "application/json",
+              body: JSON.stringify({
+                clients: [
+                  ...NORMAL,
+                  fixtureClient(90, { name: "Handbuch", clientId: "oc_handbuch", description: "Anleitungen der Werkstatt" }),
+                ],
+                pagination: { page: 1, per_page: 50, total: NORMAL.length + 1, total_pages: 1, has_next: false },
+              }),
             },
           },
         },
@@ -215,7 +226,7 @@ describe("OAuth in the Cloud shell", () => {
       try {
         await tab.getByRole("button", { name: "Neuer Client" }).first().click();
         const dialog = tab.getByRole("dialog");
-        await dialog.getByRole("textbox", { name: "Name" }).fill("Wiki");
+        await dialog.getByRole("textbox", { name: "Name" }).fill("Handbuch");
         await dialog.getByRole("textbox", { name: "Weiterleitungs-URIs" }).fill("https://wiki.werkstatt.example/login/callback");
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
@@ -226,6 +237,8 @@ describe("OAuth in the Cloud shell", () => {
         if (shots) await tab.screenshot({ path: join(shots, `dialog-zugriff-${width}.png`) });
         await dialog.getByRole("button", { name: "Erstellen" }).click();
         await tab.getByRole("dialog", { name: "Client erstellt" }).getByText(FAKE_SECRET).waitFor();
+        // the list behind the dialog was read again from the server and holds the new client
+        await tab.locator("[data-k2-workspace]").getByText("Handbuch", { exact: true }).first().waitFor({ state: "attached" });
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-secret-${width}.png`) });
         expect(errors).toEqual([]);

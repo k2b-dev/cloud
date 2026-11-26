@@ -1,4 +1,4 @@
-import { groupDisplayName } from "@k2b/cloud/shared";
+import { formatDate, groupDisplayName } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
@@ -29,6 +29,7 @@ import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { OAuthClient, OAuthScope } from "@/contracts";
+import { CLIENTS_PER_PAGE } from "../clients-page";
 import { oauthMessages } from "../messages";
 import { clientEditorUpdate, clientEditorValues, type ProfileChoice, profileChoice, profilesForChoice } from "./client-editor";
 
@@ -280,16 +281,39 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     setEditing(null);
     if (target !== "new") return location.reload();
     const body = await response.json();
-    if ("clientId" in body)
+    if ("clientId" in body) {
       setSecret({
         title: t().clientCreated,
         clientId: body.clientId,
         value: "clientSecret" in body ? body.clientSecret || null : null,
         reload: true,
       });
+      // the list behind the dialog reads this page again from the same service, so the new client stands with all
+      // its data; the secret stays in the dialog until it is closed
+      await refreshList();
+    }
   };
 
-  const dynamicClients = () => props.clients.filter((client) => client.registrationKind === "dynamic");
+  // ── The list as the server has it now ─────────────────────────────────────────────────────────────────────────
+  const [listed, setListed] = createSignal<{ clients: ClientRow[]; total: number } | null>(null);
+  const rows = () => listed()?.clients ?? props.clients;
+  const total = () => listed()?.total ?? props.figures.total;
+  const refreshList = async () => {
+    const response = await apiClient.index
+      .$get({
+        query: { page: String(props.paging.page), per_page: String(CLIENTS_PER_PAGE), ...(props.search ? { search: props.search } : {}) },
+      })
+      .catch(() => null);
+    // a list that cannot be read keeps what the page showed; closing the dialog reloads the page anyway
+    if (!response?.ok) return;
+    const body = await response.json();
+    setListed({
+      clients: body.clients.map((client) => ({ ...client, created: formatDate(client.createdAt, { locale: locale() }) })),
+      total: body.pagination.total,
+    });
+  };
+
+  const dynamicClients = () => rows().filter((client) => client.registrationKind === "dynamic");
 
   // ── Deeds on an open client ───────────────────────────────────────────────────────────────────────────────────
   // A retry repeats what the person already agreed to; it does not ask again.
@@ -419,7 +443,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     <Pane
       label={t().clients}
       scrollKey="oauth-clients"
-      status={<StatusRow lead={props.figures.total === 0 ? t().emptyLead : t().clientCount({ count: props.figures.total })} />}
+      status={<StatusRow lead={total() === 0 ? t().emptyLead : t().clientCount({ count: total() })} />}
     >
       {/* clients that registered themselves are the ones to check: said once, with their colour and sign; while a
           client is open, its own head says what it is */}
@@ -434,7 +458,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       </Show>
       <Table
         label={t().clients}
-        rows={props.clients}
+        rows={rows()}
         rowKey={(client) => client.id}
         sticky
         current={props.open?.id}
