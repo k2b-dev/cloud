@@ -196,6 +196,15 @@ Nicht jede GQL-Abfrage funktioniert als verschachtelte Quelle. So ist eine gespe
 - Nutze öffentliche IDs in geschweiften Klammern, wenn eine erzeugte Konfiguration oder eine Migration einen unveränderlichen Verweis braucht.
 - Verwende keine entfernten `#field`-Aliasse.
 
+Zum Beispiel eine Tabelle und Felder, deren Namen Leerzeichen enthalten, gefiltert nach einem Textwert:
+
+```gql
+from table "Line Items"
+select "Item name", "Net amount"
+where "Approval status" = 'Approved'
+sort "Net amount" desc
+```
+
 Ein Alias nach `as` muss mit einem Buchstaben oder Unterstrich beginnen. Danach kann er Buchstaben, Zahlen und Unterstriche enthalten, bis zu 64 Zeichen. Ein Alias darf kein GQL-Schlüsselwort, kein logischer Operator und kein reserviertes Literal sein. Spätere Verweise auf einen Alias ignorieren Groß- und Kleinschreibung.
 
 Hat ein Abfrageeditor einer Tabelle oder Ansicht kein `from`, kann die aktuelle Seite die Quelle liefern. Schreibe `from` ausdrücklich, wenn die Abfrage auch außerhalb dieser Seite verständlich bleiben muss.

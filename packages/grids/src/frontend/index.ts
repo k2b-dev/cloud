@@ -6,8 +6,6 @@ import documentTemplatePage from "./[baseId]/document/[documentTableId]/[documen
 import documentsPage from "./[baseId]/documents/page";
 import baseDetailPage from "./[baseId]/page";
 import queryWorkspacePage from "./[baseId]/query/page";
-import queryReferencePage from "./[baseId]/query-reference/page";
-import formulaReferencePage from "./[baseId]/table/[tableId]/formula-reference/page";
 import tableRecordsPage from "./[baseId]/table/[tableId]/page";
 import viewRecordsPage from "./[baseId]/table/[tableId]/view/[viewId]/page";
 import adminPage from "./admin";
@@ -17,6 +15,7 @@ import { publicDocumentLinkDownload } from "./public/documents/[token]/download"
 import publicDocumentPage from "./public/documents/[token]/page";
 import publicFormPage from "./public/forms/[token]/page";
 import recordEventFailuresPage from "./record-event-failures";
+import { helpTopicHref } from "./reference-redirects";
 
 /** Admin pages mounted at `/admin/grids` — platform-admin only. */
 export const adminRoutes = new Hono<AuthContext>()
@@ -53,7 +52,7 @@ export const customAppRoutes = new Hono<AuthContext>()
  *   /:base/table/:table/view/:view       → records page scoped to view
  *   /:base/table/:table                  → table records page
  *   /:base/document/:table/:template     → document template workspace
- *   /:base/reference/...                 → reference window
+ *   /:base/reference/..., query-reference → Help topics (the reference windows were retired with v2)
  *   /:base/query                         → GQL query explorer
  *   /:base/workflows[/workflow]          → workflow overview/detail
  *   /:base                               → workspace shell/default redirect
@@ -71,17 +70,20 @@ export default new Hono<AuthContext>()
   // View paths.
   .get("/:baseId/table/:tableId/view/:viewId/query", auth.requireRole("user", ssr.access), ...baseDetailPage)
   .get("/:baseId/table/:tableId/view/:viewId", auth.requireRole("user", ssr.access), ...viewRecordsPage)
-  .get("/:baseId/table/:tableId/formula-reference", auth.requireRole("user", ssr.access), ...formulaReferencePage)
+  .get("/:baseId/table/:tableId/formula-reference", auth.requireRole("user", ssr.access), (c) => c.redirect(helpTopicHref("formulas"), 302))
   // Table paths.
   .get("/:baseId/table/:tableId/query", auth.requireRole("user", ssr.access), ...baseDetailPage)
   .get("/:baseId/table/:tableId", auth.requireRole("user", ssr.access), ...tableRecordsPage)
   // Document template paths.
   .get("/:baseId/document/:documentTableId/:documentTemplateId", auth.requireRole("user", ssr.access), ...documentTemplatePage)
   .get("/:baseId/documents", auth.requireRole("user", ssr.access), ...documentsPage)
-  .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", ssr.access), ...queryReferencePage)
-  .get("/:baseId/reference/:tab", auth.requireRole("user", ssr.access), ...queryReferencePage)
-  .get("/:baseId/reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
-  .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), ...queryReferencePage)
+  // the base's tables, views and fields stand beside its query; the rest of the reference is Help
+  .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", ssr.access), (c) =>
+    c.redirect(`/app/grids/${encodeURIComponent(c.req.param("baseId"))}/query`, 302),
+  )
+  .get("/:baseId/reference/:tab", auth.requireRole("user", ssr.access), (c) => c.redirect(helpTopicHref(c.req.param("tab")), 302))
+  .get("/:baseId/reference", auth.requireRole("user", ssr.access), (c) => c.redirect(helpTopicHref(c.req.query("defaultTab")), 302))
+  .get("/:baseId/query-reference", auth.requireRole("user", ssr.access), (c) => c.redirect(helpTopicHref(c.req.query("defaultTab")), 302))
   .get("/:baseId/query", auth.requireRole("user", ssr.access), ...queryWorkspacePage)
   .get("/:baseId/apps/:customAppId", auth.requireRole("user", ssr.access), ...baseDetailPage)
   .get("/:baseId/workflows/:workflowId", auth.requireRole("user", ssr.access), ...baseDetailPage)
