@@ -10,6 +10,7 @@ import {
   Group,
   Icon,
   Input,
+  Menu,
   Nav,
   Notice,
   Pane,
@@ -72,7 +73,15 @@ const RecordFrame = (props: { tab: "overview" | "deliveries"; children: JSX.Elem
           <>
             <Button variant="ghost" icon="search" label="In der Akte suchen" />
             <Button variant="ghost" icon="star" label="Favorit" pressed />
-            <Button variant="ghost" icon="dots" label="Weitere Aktionen" />
+            {/* the head's "…": on the phone the search and the favourite go into it */}
+            <Menu
+              label="Weitere Aktionen"
+              items={[
+                { label: "Akte drucken", icon: "printer" },
+                { label: "Akte exportieren", icon: "download" },
+                { label: "Akte archivieren", icon: "archive" },
+              ]}
+            />
             <Button variant="primary" icon="plus" menu>
               Neu
             </Button>
