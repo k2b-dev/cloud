@@ -450,6 +450,20 @@ test("stepwise dialog: when the foot's last action leaves with the focus and onl
   });
 });
 
+test("dialog: a focused part that only moves (its list changes order) keeps the focus", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await page.evaluate(() => window.__k2Tools?.());
+    await dialog.getByRole("button", { name: "Code kopieren" }).focus();
+    await page.evaluate(() => window.__k2Reorder?.());
+    await page.waitForFunction(() => document.querySelector(".k2-dialog-body .k2-bar-end .k2-btn")?.textContent === "Code kopieren");
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Code kopieren");
+  });
+});
+
 test("stepwise dialog: a focus the person put away stays away when the content changes", async () => {
   await withPage(async (page) => {
     await page.evaluate(() => window.__k2Pair?.());

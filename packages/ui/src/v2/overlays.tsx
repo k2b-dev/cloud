@@ -151,10 +151,19 @@ export const Dialog = (props: DialogProps) => {
     const hold = (event: FocusEvent) => {
       if (event.target instanceof Element) held = event.target;
     };
-    const focus = new MutationObserver(() => {
+    const focus = new MutationObserver((records) => {
       const popup = element.parentElement;
-      if (!popup?.isConnected || !held || held.isConnected) return;
+      const was = held;
+      if (!popup?.isConnected || !was) return;
       if (document.activeElement && document.activeElement !== document.body) return;
+      // only a part that was taken out (itself or a part around it) is repaired; a part that was only moved (a list
+      // that changed its order takes it out and puts it back) gets its focus back
+      const takenOut = records.some((record) => [...record.removedNodes].some((node) => node === was || node.contains(was)));
+      if (!takenOut) return;
+      if (was.isConnected && popup.contains(was) && was instanceof HTMLElement) {
+        was.focus();
+        if (document.activeElement === was) return;
+      }
       held = undefined;
       const next = first(foot) ?? first(element) ?? popup.querySelector<HTMLElement>('[data-slot="head"] .k2-btn');
       if (next) next.focus();

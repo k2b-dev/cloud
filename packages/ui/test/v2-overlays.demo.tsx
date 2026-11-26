@@ -18,6 +18,9 @@ declare global {
     __k2Waiting?: () => void;
     /** Adds a line to the content of "Gerät koppeln", a change that has nothing to do with the focus. */
     __k2Note?: () => void;
+    /** Shows two deeds in the content of "Gerät koppeln"; `__k2Reorder` swaps their order (the elements move). */
+    __k2Tools?: () => void;
+    __k2Reorder?: () => void;
     /** Asks a dangerous question ("Gerät entfernen?") from the page. */
     __k2AskDanger?: () => void;
   }
@@ -75,6 +78,9 @@ function Order() {
   };
   window.__k2Waiting = () => setStep(3);
   window.__k2Note = () => setNote(true);
+  const [tools, setTools] = createSignal<string[]>([]);
+  window.__k2Tools = () => setTools(["Code zeigen", "Code kopieren"]);
+  window.__k2Reorder = () => setTools([...tools()].reverse());
   window.__k2AskDanger = () =>
     void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
       document.body.dataset.answer = String(answer);
@@ -192,6 +198,9 @@ function Order() {
       >
         <Show when={note()}>
           <Text>Der Code gilt noch vier Minuten.</Text>
+        </Show>
+        <Show when={tools().length}>
+          <Bar end={<For each={tools()}>{(label) => <Button>{label}</Button>}</For>} />
         </Show>
         <Show when={step() !== 3} fallback={<Text>Wartet auf das Gerät …</Text>}>
           <Show when={step() === 1} fallback={<Text>Gekoppelt.</Text>}>
