@@ -3654,9 +3654,59 @@ export function ChatWorkspaceView(
         )),
         drawing: false,
       };
-    // k2b-ui gap: a chat's threads page (the phone's) and the no-access page still draw v1 inside the v2 pane.
     const threads = threadsPageOpen();
-    if (threads) return { ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => threadsPageView(threads)) };
+    // k2b-ui gap: the directory of a place's discussions (its filter and pages) still draws v1 inside the v2 pane.
+    if (threads?.kind === "system")
+      return { ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => threadsPageView(threads)) };
+    if (threads)
+      return {
+        key: `threads:${threads.id}`,
+        label: t().threadsIn({ title: threads.title }),
+        head: {
+          name: threads.title,
+          avatar: threads.channel ? undefined : { name: threads.title },
+          ids: [{ value: t().members({ count: threads.memberCount }) }],
+        },
+        back: { label: t().chats, href: listHref(), onNavigate: backToList },
+        buttons: [
+          ...(canCreateThread()
+            ? [
+                {
+                  label: t().newThread,
+                  icon: "plus",
+                  words: true,
+                  keep: true,
+                  disabled: creatingThread(),
+                  onClick: () => void createThread(),
+                },
+              ]
+            : []),
+          {
+            label: t().chatInfo,
+            icon: "info-circle",
+            keep: true,
+            pressed: panel() === "info",
+            href: listHref(`${threadsPageHref(threads.id)}${panel() === "info" ? "" : "?panel=info"}`),
+            onNavigate: (navigation: LinkNavigateEvent) =>
+              navigation.url.searchParams.get("panel") === "info" ? openInfo(navigation) : closeInfo(navigation),
+          },
+        ],
+        content: () => (
+          <V2.ThreadsPaneV2
+            conversation={threads}
+            basePath={basePath}
+            threads={openChat()?.threads ?? null}
+            status={openChat()?.threadsStatus ?? "loading"}
+            viewerId={props.viewerId}
+            dateConfig={props.dateConfig}
+            now={now}
+            onOpen={(view, navigation) => openView(threads.id, view, navigation)}
+            onRetry={() => void store?.refreshThreads()}
+          />
+        ),
+        drawing: false,
+      };
+    // k2b-ui gap: the no-access page still draws v1 inside the v2 pane.
     const current = conversation();
     if (openChat()?.id && current) return chatDetail(current);
     if (noAccess()) return pageDetail("no-access", t().noAccessTitle, noAccessView);

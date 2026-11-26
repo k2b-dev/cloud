@@ -1,12 +1,19 @@
+import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
-import { Band, Empty, Failed, Input, List, Loading, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
+import { Band, Disclosure, Empty, Failed, Input, List, Loading, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
 import { For, type JSX, Match, Show, Switch } from "solid-js";
+import type { z } from "zod";
 import { chatMessages } from "../../messages";
+import type { ConversationSchema } from "../../service/contracts";
 import { channelLine } from "../ChatList";
+import { viewIcon } from "../ChatThreads";
 import { listTime } from "../chat-format";
 import { createChannelCatalog, type DiscoverChannelsProps } from "../DiscoverChannels";
 import { createForYouList, type ForYouItem, forYouPlace, forYouTitle } from "../ForYou";
-import { threadHref } from "../threads";
+import { activeThreads, archivedThreads, type Thread, type ThreadList, type ThreadView, threadHref } from "../threads";
+
+type Conversation = z.infer<typeof ConversationSchema>;
+
 import { CHAT_COLOR, iconName } from "./ChatListV2";
 
 /**
@@ -66,6 +73,70 @@ export function ForYouV2(props: {
             </For>
           </List>
         </Section>
+      </Match>
+    </Switch>
+  );
+}
+
+/**
+ * A chat's threads as the phone's page between the chats and one thread (v1's threads page): "All threads",
+ * "General", the threads by last activity with their last message, and the archived ones folded away at the end.
+ */
+export function ThreadsPageV2(props: {
+  conversation: Conversation;
+  basePath: string;
+  threads: ThreadList | null;
+  status: "loading" | "ready" | "failed";
+  viewerId: string;
+  dateConfig: DateContext;
+  now: () => Date;
+  onOpen: (view: ThreadView, navigation: LinkNavigateEvent) => void | Promise<void>;
+  onRetry: () => void;
+}): JSX.Element {
+  const locale = useLocale();
+  const t = () => chatMessages.resolve([locale()]).t;
+  const config = () => ({ ...props.dateConfig, locale: locale() });
+  const preview = (message: Thread["lastMessage"], fallback: string) => {
+    if (!message) return fallback;
+    const name = message.author.id === props.viewerId ? t().you : (message.author.name.trim().split(/\s+/u)[0] ?? "");
+    return `${name}: ${message.preview}`;
+  };
+  const row = (view: ThreadView, name: string, unread: number, last: Thread["lastMessage"], fallback: string) => (
+    <Row
+      icon={iconName(viewIcon(view, props.threads))}
+      color={CHAT_COLOR}
+      lines={[name, preview(last, fallback)]}
+      meta={unread > 0 ? unread.toLocaleString(locale()) : undefined}
+      unread={unread > 0}
+      time={last ? listTime(last.createdAt, props.now(), config()) : undefined}
+      href={threadHref(props.conversation.id, view, null, props.basePath)}
+      onNavigate={(navigation) => props.onOpen(view, navigation)}
+    />
+  );
+  const thread = (entry: Thread) => row(entry.id, entry.name, entry.unread, entry.lastMessage, entry.description ?? t().noMessagesYet);
+  return (
+    <Switch>
+      <Match when={props.status === "failed"}>
+        <Failed text={t().threadsLoadFailed} onRetry={props.onRetry} />
+      </Match>
+      <Match when={true}>
+        <List label={t().threadsIn({ title: props.conversation.title })}>
+          {row("all", t().allThreads, props.conversation.unread, props.conversation.lastMessage, t().allThreadsHint)}
+          {row("general", t().general, props.threads?.general.unread ?? 0, props.threads?.general.lastMessage ?? null, t().generalHint)}
+          <For each={activeThreads(props.threads)}>{thread}</For>
+        </List>
+        <Show when={props.status === "ready" && activeThreads(props.threads).length === 0}>
+          <Empty icon="hash" text={props.conversation.permission === "admin" ? t().noThreadsYetAdmin : t().noThreadsYet} />
+        </Show>
+        <Show when={archivedThreads(props.threads).length > 0}>
+          <Section title={t().archive}>
+            <Disclosure title={t().archivedThreads({ count: archivedThreads(props.threads).length })}>
+              <List label={t().archivedThreads({ count: archivedThreads(props.threads).length })}>
+                <For each={archivedThreads(props.threads)}>{thread}</For>
+              </List>
+            </Disclosure>
+          </Section>
+        </Show>
       </Match>
     </Switch>
   );

@@ -82,3 +82,8 @@ export const DiscoverChannelsPaneV2 = (props: DiscoverProps) => {
     />
   );
 };
+
+type ThreadsProps = ComponentProps<typeof import("./ChatPagesV2").ThreadsPageV2>;
+const loadThreads = () => import("./ChatPagesV2").then((module) => module.ThreadsPageV2);
+/** A chat's threads as the phone's page, loaded when it opens, as v1's is. */
+export const ThreadsPaneV2 = (props: ThreadsProps) => <DeferredV2 load={loadThreads} contentProps={props} />;

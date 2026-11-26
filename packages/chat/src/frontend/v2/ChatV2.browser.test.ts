@@ -240,6 +240,26 @@ test("Discover channels lists the channels, and Subscribe subscribes in place", 
   }
 }, 60_000);
 
+test("on the phone a chat with threads opens its threads first, and a thread opens from there", async () => {
+  const { page, errors, close } = await load("/app/chat", 390, 844);
+  try {
+    await page.locator('[data-k2-part="Row"]', { hasText: "Lieferung KW 49" }).first().locator("a").click();
+    await page.waitForURL(new RegExp(`/app/chat/c/${open}/threads`));
+    const thread = page.locator('[data-k2-part="Row"]', { hasText: "Rechnung 4471" });
+    await thread.waitFor();
+    expect(await page.locator('[data-k2-part="Row"]', { hasText: "Abholung Montag" }).count()).toBeGreaterThan(0);
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await shoot(page, "07-threads-light-390");
+    await thread.locator("a").click();
+    await page.waitForURL(new RegExp(`/app/chat/c/${open}/t/`));
+    await page.locator(".chat-conversation__composer").waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
+
 // break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
 // leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.
 test("the list keeps its shape with the worst names and counts", async () => {
