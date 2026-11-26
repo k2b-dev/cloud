@@ -99,7 +99,8 @@ export default function OverviewPane(props: {
               <Row
                 mark={storageMark(base)}
                 lines={[baseLabel(base, b(), locale())]}
-                meta={base.kind === "users" ? b().onlyYou : t().group}
+                // a storage is a group's as a rule; only the personal one says so
+                meta={base.kind === "users" ? b().onlyYou : undefined}
                 href={filesUrl(base.id)}
                 onNavigate={props.onNavigate}
                 end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}

@@ -471,8 +471,13 @@ export const browserMessages = i18n.define({
         `The ${values.area} storages could not be read right now, so they are missing here. Try again later.`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
         `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "link" : "links"}`,
-      v2SharesLead: (values: { count: number; more: string; active: number }) =>
-        `${values.count}${values.more} ${values.count === 1 && !values.more ? "link" : "links"} · ${values.active} active`,
+      v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
+        [
+          `${values.count}${values.more} ${values.count === 1 && !values.more ? "link" : "links"}`,
+          [values.expired ? `${values.expired} expired` : "", values.revoked ? `${values.revoked} revoked` : ""].filter(Boolean).join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · "),
       v2Accesses: "Opened",
       v2EntriesSize: (values: { count: number; more: string; size: string }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "entry" : "entries"} · ${values.size}`,
@@ -958,8 +963,15 @@ export const browserMessages = i18n.define({
         `Die ${values.area}-Ablagen konnten gerade nicht gelesen werden und fehlen deshalb hier. Versuch es später noch einmal.`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
         `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "Link" : "Links"}`,
-      v2SharesLead: (values: { count: number; more: string; active: number }) =>
-        `${values.count}${values.more} ${values.count === 1 && !values.more ? "Link" : "Links"} · ${values.active} aktiv`,
+      v2SharesLead: (values: { count: number; more: string; expired: number; revoked: number }) =>
+        [
+          `${values.count}${values.more} ${values.count === 1 && !values.more ? "Link" : "Links"}`,
+          [values.expired ? `${values.expired} abgelaufen` : "", values.revoked ? `${values.revoked} widerrufen` : ""]
+            .filter(Boolean)
+            .join(", "),
+        ]
+          .filter(Boolean)
+          .join(" · "),
       v2Accesses: "Geöffnet",
       v2EntriesSize: (values: { count: number; more: string; size: string }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "Eintrag" : "Einträge"} · ${values.size}`,

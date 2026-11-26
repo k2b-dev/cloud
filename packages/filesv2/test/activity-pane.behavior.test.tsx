@@ -647,6 +647,33 @@ describe("Activity on UI v2", () => {
     expect(reads).toBe(1);
   });
 
+  test("a batch's context is read only for the steps in view, and once for all steps of one batch", async () => {
+    const steps = Array.from({ length: 60 }, (_, index) =>
+      entry({
+        // the newest step moved the folder away, so the search leads with it and lists its history
+        action: index === 0 ? "item.move" : "share.create",
+        // two steps per batch: the batch is read once for both
+        batchId: `00000000-0000-4000-8000-${String(Math.floor(index / 2)).padStart(12, "0")}`,
+        time: new Date(Date.parse("2026-10-14T14:40:00.000Z") - index * 60_000).toISOString(),
+        before: index === 0 ? gone("vertrieb/Kunden/Angebote 2025") : current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+        after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+      }),
+    );
+    const read: string[] = [];
+    await search(steps, {
+      loadBatch: async (value) => {
+        read.push(value.batchId!);
+        return { visibleCount: 2, complete: true };
+      },
+    });
+    expect(historyList()!.querySelectorAll('[data-k2-part="Row"]').length).toBeLessThan(60);
+    // every batch at most once, and only batches whose steps the list's window has shown (its first page is bounded),
+    // never all 30
+    expect(new Set(read).size).toBe(read.length);
+    expect(read.length).toBeGreaterThan(0);
+    expect(read.length).toBeLessThan(30);
+  });
+
   test("the history stands newest first under one head per day, also where a hop is older than the item's steps", async () => {
     const moved = entry({
       action: "item.move",

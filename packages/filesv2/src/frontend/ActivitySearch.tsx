@@ -1,7 +1,7 @@
 import { query } from "@k2b/stdlib/solid";
 import { toast, useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text } from "@k2b/ui/v2";
-import { createMemo, type JSX, mapArray, Show } from "solid-js";
+import { createMemo, getOwner, type JSX, mapArray, runWithOwner, Show } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { entryMark } from "./entry-mark";
 import {
@@ -466,18 +466,25 @@ function MissingHit(props: {
   const known = createMemo(() => new Set(props.hit.entries.map((entry) => entry.id)));
   const hops = createMemo(() => (chain.data()?.hops ?? []).filter((hop) => !known().has(hop.activityId) && visible(hop.after)).reverse());
   const rows = createMemo(() => historyRows(props.hit.entries, { batches: false }));
-  // the hops and the item's own steps, each under its day. One object per step for as long as the step stands, with
-  // its batch read: a hop arriving later makes no step anew, and a row the list makes anew keeps what its step read.
+  // the hops and the item's own steps, each under its day. One object per step for as long as the step stands, so a
+  // hop arriving later makes no step anew.
   const hopSteps = createMemo(mapArray(hops, (hop) => ({ kind: "hop" as const, key: `hop:${hop.activityId}`, time: hop.time, hop })));
-  const rowSteps = createMemo(
-    mapArray(rows, (row) => ({
-      kind: "row" as const,
-      key: `row:${row.key}`,
-      time: row.lead.time,
-      row,
-      batch: batchRead(row, props.loadBatch),
-    })),
-  );
+  const rowSteps = createMemo(mapArray(rows, (row) => ({ kind: "row" as const, key: `row:${row.key}`, time: row.lead.time, row })));
+  // A batch's context is read when a step of it first shows, once for every step of that batch. It lives with the hit:
+  // a row the list's window makes anew keeps what was read, and steps that never show read nothing.
+  const hitOwner = getOwner();
+  const batchReads = new Map<string, BatchRead>();
+  const batchOf = (row: HistoryRowModel): BatchRead | null => {
+    const id = row.lead.batchId;
+    const load = props.loadBatch;
+    if (!id || !load) return null;
+    const known = batchReads.get(id);
+    if (known) return known;
+    const read = runWithOwner(hitOwner, () => batchRead(row, load));
+    if (!read) return null;
+    batchReads.set(id, read);
+    return read;
+  };
   // sorted by time, as a list's days must stand together: a hop is not always newer than every step of the item
   const steps = createMemo(() => [...hopSteps(), ...rowSteps()].sort((a, b) => Date.parse(b.time) - Date.parse(a.time)));
   const mark = () => entryMark({ name: itemName(), directory: directory() !== false });
@@ -547,7 +554,7 @@ function MissingHit(props: {
                 env={props.env}
                 actions={props.actions}
                 loadedOthers={props.batchOthers(step.row)}
-                batch={step.batch}
+                batch={batchOf(step.row)}
               />
             )
           }
@@ -557,18 +564,9 @@ function MissingHit(props: {
   );
 }
 
-/**
- * A step's batch context, read once for as long as the step stands. It is made beside the step, not in its row: a
- * virtual list makes a row anew when it leaves its window and comes back, and the row would read the batch again.
- */
-const batchRead = (row: HistoryRowModel, load?: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>) => ({
-  context: query.create({
-    source: () => row.lead.id,
-    enabled: () => !!row.lead.batchId && !!load,
-    load: (_id, { abortSignal }) => load!(row.lead, abortSignal),
-  }),
-  reads: !!load,
-});
+/** The read of a batch's context, anchored on one of its steps (see `batchOf`). */
+const batchRead = (row: HistoryRowModel, load: (entry: ActivityEntry, signal: AbortSignal) => Promise<ActivityBatchContext>) =>
+  query.create({ source: () => row.lead.id, load: (_id, { abortSignal }) => load(row.lead, abortSignal) });
 type BatchRead = ReturnType<typeof batchRead>;
 
 /** A step of the hit's history; the hit above owns the deeds. A batched step counts its freshly authorized peers. */
@@ -577,16 +575,17 @@ function ChainRow(props: {
   env: HistoryEnvironment;
   actions?: HistoryActions;
   loadedOthers: number;
-  batch: BatchRead;
+  /** The batch's read; null for a step of no batch, or where the server is not asked. */
+  batch: BatchRead | null;
 }) {
   const h = useHistoryMessages();
-  const batch = props.batch.context;
+  const batch = props.batch;
   const others = () => {
-    const result = batch.data();
-    const count = result ? Math.max(0, result.visibleCount - 1) : props.batch.reads ? 0 : props.loadedOthers;
+    const result = batch?.data();
+    const count = result ? Math.max(0, result.visibleCount - 1) : batch ? 0 : props.loadedOthers;
     return count ? (result?.complete ? h().withOthers : h().withAtLeastOthers).replace("{count}", String(count)) : undefined;
   };
-  const note = () => (batch.loading() ? h().batchLoading : batch.error() ? h().batchFailed : others());
+  const note = () => (batch?.loading() ? h().batchLoading : batch?.error() ? h().batchFailed : others());
   return (
     <ActivityRow
       row={props.row}
@@ -597,7 +596,7 @@ function ChainRow(props: {
       dated={false}
       note={note()}
       deedless
-      deed={batch.error() ? { label: h().retry, icon: "refresh", onClick: () => void batch.refresh() } : undefined}
+      deed={batch?.error() ? { label: h().retry, icon: "refresh", onClick: () => void batch.refresh() } : undefined}
     />
   );
 }
