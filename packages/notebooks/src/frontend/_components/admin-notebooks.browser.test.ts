@@ -121,7 +121,9 @@ for (const width of [1440, 390]) {
       // the one nobody can reach stands out
       expect(await page.locator('[data-k2-part="Chip"][data-status="bad"]').filter({ visible: true }).count()).toBe(1);
       // every notebook carries its sign, also in the phone's rows (plain until Mark gives it the Notebooks colour)
-      const signs = page.locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-name]').filter({ visible: true });
+      const signs = page
+        .locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-name]:not([data-name="dots"])')
+        .filter({ visible: true });
       expect(await signs.count()).toBeGreaterThanOrEqual(10);
       if (width > 600) {
         expect(await page.locator('[data-k2-part="Table"] tbody tr').count()).toBe(24);

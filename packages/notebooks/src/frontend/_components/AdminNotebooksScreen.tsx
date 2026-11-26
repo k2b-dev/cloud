@@ -28,7 +28,7 @@ export type AdminNotebooksScreenProps = {
   permissions: number;
 };
 
-/** A notebook's sign: its own icon, or the notebooks' one; it stands in the app's colour (notebooks have none of their own). */
+/** A notebook's sign: its own icon, or the notebooks' one; plain until Mark gives it the Notebooks colour (#4208). */
 const notebookSign = (row: AdminNotebookRow) => (row.icon ?? "ti ti-notebook").replace(/^ti ti-/, "");
 
 /** The address of a page of the notebooks, with the search. */
@@ -141,7 +141,12 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
                 </>
               ),
             },
-            { title: t().description, cell: (row) => row.description || t().noDescription, drop: true },
+            {
+              title: t().description,
+              // a notebook without one says so in the muted ink, so it does not read as a description
+              cell: (row) => row.description || <Text muted>{t().noDescription}</Text>,
+              drop: true,
+            },
             {
               title: t().permissions,
               // the column's head names the number; nobody can reach a notebook without access entries: the exception
@@ -154,8 +159,8 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
             {
               title: t().actions,
               align: "end",
-              // the last column: its width draws no grip, and the menu needs no more
-              width: { min: 72, default: 88 },
+              // k2b-ui gap (lane QW): the table keeps no width for its last column, so this one takes an equal share
+              // beside the description until the Table keeps it (and offers a narrow column without a grip)
               cell: (row) => actions(row),
             },
           ]}
@@ -164,7 +169,7 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
               <>
                 <Icon name={notebookSign(row)} /> {row.name}
               </>,
-              row.description || t().noDescription,
+              row.description || <Text muted>{t().noDescription}</Text>,
             ],
             // the phone's rows have no columns, so the deeds stand among their marks
             marks: (
