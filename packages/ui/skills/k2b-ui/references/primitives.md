@@ -254,7 +254,7 @@ One line of things with the one gap of 8 px, such as chips after a count
 in a `Bar start`. In a column narrower than 480 px it wraps onto more
 lines instead of cutting a thing.
 
-### Icon, Avatar, Chip, Progress
+### Icon, Avatar, Chip, Progress, Ticks
 
 - `Icon`: `name`, `label` (without one it is decoration), `tone`.
 - `Avatar`: a `Person`; the place sets the size. With `image` the picture
@@ -267,6 +267,12 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first),
+  `label` (one sentence: "postgres-haupt: 30 Abrufe, 3 fehlgeschlagen"),
+  `color` (the data colour of what it belongs to; default the app),
+  `stretch` (the width of its place, in a detail). Ok is soft, a failure red
+  and taller, an empty slot nothing; 140 × 20 px in a table cell. The one
+  column of a list that shows its data over time; never decoration.
 
 ## Controls
 

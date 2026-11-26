@@ -60,6 +60,12 @@ The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is
 
 <Props of="Canvas" />
 
+### Ticks
+
+One tick per time slot, such as the scrapes of the last 30 minutes: ok in the soft colour of what it belongs to, a failure red and taller, an empty slot nothing. It is the one column of a list that shows its data over time, 140 × 20 px in a cell; `stretch` takes the width of a detail. Its `label` says in one sentence what the ticks show, such as "30 Abrufe, 3 fehlgeschlagen".
+
+<Props of="Ticks" />
+
 ### Disclosure
 
 Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.

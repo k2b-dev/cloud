@@ -170,7 +170,7 @@ a `Notice` that names the deed.
 - **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
+  `Ticks`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
   `CodeInput`, `Slider`, `ColorInput`.
