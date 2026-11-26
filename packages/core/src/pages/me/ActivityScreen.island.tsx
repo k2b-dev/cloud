@@ -50,16 +50,22 @@ export default function ActivityScreen(props: ActivityScreenProps) {
         ? t().deliveryCount({ count: content.total })
         : t().activityCount({ count: content.total });
   };
-  const hasEntries = () => (props.content.kind === "open" ? props.content.approvals.items.length > 0 : props.content.total > 0);
+  // A state is shown where it is an exception; what went as expected carries no chip.
+  const exceptional = (row: ActivityRow) => row.state.tone !== "ok";
+  const problems = () => entries()?.rows.filter((row) => row.state.tone === "bad" || row.state.tone === "warn").length ?? 0;
+  // The status row stands only for what needs the person: open approvals, or entries that went wrong.
+  const needsYou = () => (props.content.kind === "open" ? props.content.approvals.items.length > 0 : problems() > 0);
   const lead = () => {
     const content = props.content;
     if (content.kind === "open") return t().waitingForYou({ count: content.approvals.items.length });
-    const problems = content.rows.filter((row) => row.state.tone === "bad" || row.state.tone === "warn").length;
-    if (content.kind === "deliveries") return problems > 0 ? t().notDelivered({ count: problems }) : t().allDelivered;
-    return problems > 0 ? t().deniedAttempts({ count: problems }) : t().nothingUnusual;
+    return content.kind === "deliveries" ? t().notDelivered({ count: problems() }) : t().deniedAttempts({ count: problems() });
   };
   const chip = (row: ActivityRow) =>
-    row.state.tone ? <Chip status={row.state.tone}>{row.state.label}</Chip> : <Chip>{row.state.label}</Chip>;
+    !exceptional(row) ? undefined : row.state.tone ? (
+      <Chip status={row.state.tone}>{row.state.label}</Chip>
+    ) : (
+      <Chip>{row.state.label}</Chip>
+    );
   return (
     <AccountWorkspace user={props.user} place="activity">
       <Pane
@@ -79,7 +85,7 @@ export default function ActivityScreen(props: ActivityScreenProps) {
               }}
             />
             {/* with nothing to show the empty state speaks alone, so the lead never says it a second time */}
-            <Show when={hasEntries()}>
+            <Show when={needsYou()}>
               <StatusRow lead={lead()} facts={[{ value: count() }]} />
             </Show>
           </>
@@ -127,7 +133,9 @@ export default function ActivityScreen(props: ActivityScreenProps) {
                   },
                   { title: t().status, width: { min: 110, default: 130 }, cell: chip },
                   // why a delivery failed or where it went; on the phone the row keeps its state
-                  { title: t().details, wrap: true, cell: (row) => row.detail ?? "–", drop: true },
+                  ...(list().kind === "deliveries"
+                    ? [{ title: t().details, wrap: true, cell: (row: ActivityRow) => row.detail ?? "", drop: true }]
+                    : []),
                 ]}
               />
               <Show when={list().pages > 1}>

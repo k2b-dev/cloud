@@ -100,17 +100,18 @@ export const accountEvents = [
   ["09-30T09:12", "webauthn_credential.authenticate", "Arbeitslaptop"],
   ["09-30T08:02", "service_account_credential.authenticate", "Laptop-Skripte"],
   ["09-28T07:55", "webauthn_credential.authenticate", "iPhone"],
+  ["09-27T23:14", "webauthn_credential.authenticate", "Unbekannter Sicherheitsschlüssel", "denied"],
   ["09-24T14:31", "accounts.user.update", "Telefonnummer"],
   ["09-21T20:05", "auth.pwa.device.enroll", "iPad Air"],
   ["09-15T11:40", "service_account_credential.create", "Backup-Job Fachschaft"],
   ["09-09T16:12", "webauthn_credential.delete", "Alter Laptop"],
   ["09-02T08:47", "accounts.user.change_own_password", null],
-].map(([time, action, context], index) => ({
+].map(([time, action, context, outcome], index) => ({
   id: index + 1,
   createdAt: at(time as string),
   action: action as string,
   label: action as string,
-  outcome: "allowed" as const,
+  outcome: (outcome ?? "allowed") as "allowed" | "denied",
   context: context ?? null,
 }));
 
