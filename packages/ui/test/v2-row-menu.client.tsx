@@ -12,6 +12,8 @@ declare global {
     __k2Opened?: string[];
     /** The menu entries chosen, in order. */
     __k2Chosen?: string[];
+    /** The rows opened in the table that stands inside a popover. */
+    __k2PopoverOpened?: string[];
   }
 }
 
@@ -24,6 +26,7 @@ const RowMenu = () => {
   const [, setTick] = createSignal(0);
   window.__k2Opened = [];
   window.__k2Chosen = [];
+  window.__k2PopoverOpened = [];
   return (
     <Workspace>
       <Pane label="Freigaben">
@@ -53,6 +56,16 @@ const RowMenu = () => {
           ]}
         />
       </Pane>
+      {/* a table inside a popover (as in a dialog): its rows still open */}
+      <div id="pop" popover="manual">
+        <Table
+          label="Auswahl"
+          rows={rows}
+          rowKey={(row) => row.id}
+          open={(row) => ({ onOpen: () => window.__k2PopoverOpened!.push(row.id) })}
+          columns={[{ title: "Name", cell: (row) => `Im Fenster: ${row.name}` }]}
+        />
+      </div>
     </Workspace>
   );
 };

@@ -22,7 +22,7 @@ afterAll(async () => {
   await browser?.close();
 });
 
-test("a choice in a row's menu is the menu's alone: the row does not open, and a click on the row still does", async () => {
+test("a choice in a row's menu is the menu's alone; the row and a table inside a popover still open on a click", async () => {
   const page = await browser.newPage({ viewport: { width: 1024, height: 700 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
@@ -40,6 +40,10 @@ test("a choice in a row's menu is the menu's alone: the row does not open, and a
     // the row itself still opens on a click outside its controls
     await page.getByRole("cell", { name: "Fotos Baustelle" }).first().click();
     expect(await page.evaluate(() => window.__k2Opened)).toEqual(["b"]);
+    // a table that stands inside a popover or dialog still opens its rows: only what lies inside the row is the row's
+    await page.evaluate(() => (document.getElementById("pop") as HTMLElement).showPopover());
+    await page.getByRole("cell", { name: "Im Fenster: Fotos Baustelle" }).first().click();
+    expect(await page.evaluate(() => window.__k2PopoverOpened)).toEqual(["b"]);
     expect(errors).toEqual([]);
   } finally {
     await page.close();
