@@ -1327,6 +1327,22 @@ test("a bar that ends a section draws no line of its own: one line parts it from
           return [Math.round(text(start!).left - pane.left), Math.round(pane.right - text(end!).right)];
         });
         expect(words).toEqual(width === 390 ? [16, 16] : [20, 20]);
+        // a space without a symbol: its first letter in the symbol's size and place, in the middle of its mark
+        const initial = await page.evaluate(() => {
+          const letter = document.querySelector<HTMLElement>(".k2-mk-initial")!;
+          const mark = letter.parentElement!.getBoundingClientRect();
+          const box = letter.getBoundingClientRect();
+          const symbol = getComputedStyle(document.querySelectorAll(".k2-row-lead > .k2-mk")[1]!.querySelector(".k2-icon")!);
+          return {
+            text: letter.textContent,
+            size: [getComputedStyle(letter).fontSize, getComputedStyle(letter).fontWeight],
+            symbol: symbol.fontSize,
+            centred:
+              Math.abs(box.left + box.width / 2 - (mark.left + mark.width / 2)) <= 1 &&
+              Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) <= 1,
+          };
+        });
+        expect(initial).toEqual({ text: "W", size: [initial.symbol, "600"], symbol: "18px", centred: true });
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },

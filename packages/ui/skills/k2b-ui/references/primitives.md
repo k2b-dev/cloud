@@ -321,7 +321,9 @@ lines instead of cutting a thing.
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
 - `Mark`: what a thing looks like. `icon` + `color` (its data colour, or
-  the colour of its kind: table, form, PDF), `image` (a thumbnail over the
+  the colour of its kind: table, form, PDF); `initial` in place of `icon`
+  for a thing without a symbol of its own (its name: a space "Werkstatt"
+  shows "W" on its colour, in the symbol's size), `image` (a thumbnail over the
   symbol; while it loads and when it fails the symbol shows), `kind` (the
   type on its corner: `PDF`), `label` (without one it is decoration beside
   its name). The place sets the size: 20 in the sidebar and in a sentence,

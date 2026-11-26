@@ -11,7 +11,7 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Preview } = await import("./marks");
+const { Mark, Preview } = await import("./marks");
 const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
@@ -156,4 +156,13 @@ test("a value with a limit shows a meter inside the limit, says the value in wor
   expect(part).toContain("--k2-p:50%");
   expect(part).not.toContain("data-full");
   expect(html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "0 h", meter: { value: 0, of: 0 } })).not.toContain('role="meter"');
+});
+
+test("a thing without a symbol shows the first letter of its name on its colour, a whole letter or emoji", () => {
+  const letter = (initial: string) => html(Mark, { initial, color: "#0284c7" }).match(/k2-mk-initial[^>]*>([^<]*)</)?.[1];
+  expect(letter("werkstatt")).toBe("W");
+  expect(letter("  Ärzte Nord")).toBe("Ä");
+  expect(letter("🎨 Atelier")).toBe("🎨");
+  // the letter stands in the symbol's place: no symbol beside it
+  expect(html(Mark, { initial: "Werkstatt" })).not.toContain("ti-");
 });

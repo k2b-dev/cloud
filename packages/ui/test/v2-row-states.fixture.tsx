@@ -493,8 +493,8 @@ export const SectionFootScreen = () => (
     <Pane label="Werkstatt">
       <Section title="Anstehend" count={2}>
         <List label="Anstehend">
-          <Row lines={["Fronten ölen"]} time="heute" />
-          <Row lines={["Aufmaß Küche"]} time="morgen" />
+          <Row mark={{ initial: "Werkstatt", color: "#0284c7" }} lines={["Fronten ölen"]} time="heute" />
+          <Row mark={{ icon: "ruler", color: "#0284c7" }} lines={["Aufmaß Küche"]} time="morgen" />
         </List>
         <Bar start={<Button variant="ghost">Ältere laden</Button>} end={<Button variant="ghost">Alle anzeigen</Button>} />
       </Section>

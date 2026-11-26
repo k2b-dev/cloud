@@ -2371,6 +2371,11 @@
 .k2-ui .k2-mk > .k2-icon {
   font-size: 15px;
 }
+/* the first letter of a thing without a symbol: in the symbol's place and size, set as a glyph */
+.k2-ui .k2-mk-initial {
+  font-family: var(--k2-font);
+  font-weight: 600;
+}
 /* a picture lies over the symbol; while it loads and when it fails the symbol shows, and nothing moves */
 .k2-ui .k2-mk > img {
   position: absolute;
