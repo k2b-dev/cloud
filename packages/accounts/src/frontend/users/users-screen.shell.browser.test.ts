@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -14,7 +14,7 @@ import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { parseUsersAddress, USERS_PER_PAGE, usersQuery } from "./query";
-import { FIXTURE_ACCOUNTS, FIXTURE_GROUPS, fixtureDirectory, fixtureSummary } from "./users-screen.fixture";
+import { FIXTURE_ACCOUNTS, FIXTURE_GROUPS, FIXTURE_NOW, fixtureDirectory, fixtureSummary } from "./users-screen.fixture";
 
 // The account list as the server sends it, inside the Cloud shell: the real page with the real `Layout` (icon rail,
 // tinted page, the app's v2 sidebar), rendered on the server from the invented sample and shown without its islands, as
@@ -110,6 +110,8 @@ let browser: Browser;
 let css: string;
 let icons: { css: string; font: string };
 beforeAll(async () => {
+  // the page reads "now" for its dates and "today" on the server: the sample's day, whatever day the test runs
+  setSystemTime(new Date(FIXTURE_NOW));
   const styles = [resolve(import.meta.dir, "../../../../../styles.css"), resolve(import.meta.dir, "../../styles/app.css")];
   const built = await Promise.all(styles.map((entry) => Bun.build({ entrypoints: [entry], plugins: [tailwind] })));
   for (const build of built) if (!build.success) throw new AggregateError(build.logs, "Could not compile the stylesheets.");
@@ -125,6 +127,7 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
+  setSystemTime();
   await browser?.close();
   for (const spy of spies) spy.mockRestore();
 });
@@ -202,6 +205,8 @@ describe("the account list inside the Cloud shell", () => {
       const summary = fixtureSummary(FIXTURE_ACCOUNTS);
       const chip = page.locator("[data-status-row] a", { hasText: `${summary.invited} eingeladen` });
       expect(await chip.getAttribute("href")).toBe("/app/accounts/users?view=invited&status=invited");
+      // dates count from the sample's day, the same on every day the test runs
+      expect(await page.locator("[data-k2-part=Table] tbody tr", { hasText: "Ada Renz" }).textContent()).toContain("vor 11 Tagen");
     } finally {
       await page.close();
     }
