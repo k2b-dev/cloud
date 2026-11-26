@@ -543,8 +543,18 @@ const ChoiceGroup = (props: ChoiceProps) => {
   const options = () => props.options.map((option) => (typeof option === "string" ? { value: option, label: option } : option));
   const [own, setOwn] = createSignal(props.value);
   const value = () => (props.onChange ? props.value : own());
+  let group: HTMLDivElement | undefined;
+  /**
+   * The browser ticks a clicked point before the page decides. A page that keeps its value, or decides later (after a
+   * question), would leave the wrong point ticked, so every point shows the value again; an accepted change ticks its
+   * point through `checked` as soon as the value arrives.
+   */
+  const showValue = () => {
+    for (const input of group?.querySelectorAll<HTMLInputElement>("input[type=radio]") ?? []) input.checked = input.value === value();
+  };
   return (
     <div
+      ref={group}
       class="k2-choices"
       data-k2-part="Choice"
       role="radiogroup"
@@ -568,6 +578,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 onChange={() => {
                   setOwn(option.value);
                   props.onChange?.(option.value);
+                  showValue();
                 }}
               />
               <span class="k2-radio" data-checked={option.value === value() ? "" : undefined} data-k2-mark="" />

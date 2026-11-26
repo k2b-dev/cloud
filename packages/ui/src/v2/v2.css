@@ -3442,6 +3442,10 @@
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
   }
+  /* the end of the page scrolls past the floating main action, so its last control ("Load more") can be pressed */
+  .k2-ui [data-k2-workspace]:has(.k2-fab) .k2-pane:last-child > .k2-scroll {
+    padding-bottom: 72px;
+  }
   .k2-ui .k2-notice {
     grid-template-columns: 16px minmax(0, 1fr);
   }
