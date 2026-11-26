@@ -131,13 +131,19 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { pageStylesheetLinks } from "./page-stylesheets";
+import { pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
 import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityRegistryRecord, capabilityRegistry, getApp } from "./registry";
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
-import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
+import {
+  ensureRuntimeWatcher,
+  getCurrentRuntime,
+  registeredCoreRelease,
+  registeredCoreRoutes,
+  stopRuntimeWatcher,
+} from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
 import { publicFileVersion, servePublicAsset, sharedStylesheetVersion } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
@@ -674,7 +680,7 @@ export const defineApp = <
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     ${FONT_PRELOAD_LINKS}
-    ${pageStylesheetLinks({ appStylesheet, appVersion, sharedVersion, stylesheets })}${head.styles}
+    ${pageStylesheetLinks({ appStylesheet, appVersion, sharedVersion, stylesheets: servedStylesheets(stylesheets, registeredCoreRoutes()) })}${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">

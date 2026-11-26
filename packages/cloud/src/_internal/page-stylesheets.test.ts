@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pageStylesheetLinks } from "./page-stylesheets";
+import { pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
 
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
 const input = { appStylesheet: "/public/venue/app.css", appVersion: "abc", sharedVersion: "sha-1" };
@@ -29,4 +29,16 @@ test("without versions the hrefs stay plain", () => {
       pageStylesheetLinks({ appStylesheet: "/public/venue/app.css", appVersion: undefined, sharedVersion: undefined, stylesheets: "v2" }),
     ),
   ).toEqual(["/public/fonts.css", "/public/tabler-icons.css", "/public/venue/app.css", "/public/v2.css"]);
+});
+
+test("v2.css only when the registered Core serves it; an older Core keeps global.css", () => {
+  const core = ["/public/fonts.css", "/public/global.css", "/public/v2.css"];
+  const olderCore = ["/public/fonts.css", "/public/global.css"];
+  expect(servedStylesheets("v2", core)).toBe("v2");
+  // A rolling update: this app is newer than the Core that serves the sheets.
+  expect(servedStylesheets("v2", olderCore)).toBeUndefined();
+  // Before the registry is read, nothing is known: stay on the sheet every Core serves.
+  expect(servedStylesheets("v2", [])).toBeUndefined();
+  expect(servedStylesheets(undefined, core)).toBeUndefined();
+  expect(hrefs(pageStylesheetLinks({ ...input, stylesheets: servedStylesheets("v2", olderCore) }))).toContain("/public/global.css?v=sha-1");
 });

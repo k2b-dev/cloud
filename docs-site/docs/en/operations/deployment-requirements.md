@@ -125,6 +125,16 @@ TLS port 443, including through hairpin NAT or split DNS where required.
 See [Public site](/en/docs/build/public-surface#assign-and-check-domains) and
 [App domains](/en/docs/operations/app-domains).
 
+## Upgrade Core before v2 visitor pages
+
+Visitor pages built with `MinimalLayout ui="v2"` link Core's `/public/v2.css`
+instead of `global.css`. Core serves it from this release on and declares the
+route beside `/public/global.css`, with the same caching. Deploy Core first in
+a rolling upgrade. An application on this `@k2b/cloud` that finds an older
+Core in the registry, which does not declare `/public/v2.css`, keeps linking
+`global.css`; that sheet holds the same v2 rules, so its visitor pages stay
+styled. Nothing else changes: no environment variable, no external service.
+
 ## App-paid capabilities
 
 Upgrade Core before deploying callers that use `appCaller()` or providers that

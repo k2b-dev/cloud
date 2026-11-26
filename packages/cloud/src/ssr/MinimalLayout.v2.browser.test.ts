@@ -72,6 +72,9 @@ describe("MinimalLayout ui v2", () => {
     expect(page.stylesheets).toBe("v2");
     expect(html).toContain('<footer class="minimal-layout-footer" data-ui="v2"');
     expect(html).not.toMatch(/k2b-button|k2b-dropdown/);
+    // The appearance menu names the current choice, not what a press would switch to.
+    expect(html).toMatch(/>(Automatic|Automatisch)</);
+    expect(html).not.toMatch(/Switches to|Wechselt zu/);
     expect(html).toContain('<div class="k2-ui minimal-layout" data-ui="v2"');
     expect(html).toContain('<main class="minimal-layout-main"');
     expect(html).toContain('data-k2-part="Workspace"');

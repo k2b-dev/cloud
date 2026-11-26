@@ -43,7 +43,7 @@ export default function MinimalLayoutPreferencesV2(props: { initialTheme: CloudT
         {languageName()}
       </Menu>
       <Menu
-        label={preferences.themeCycleLabel()}
+        label={t().appearance({ current: theme().label })}
         icon={iconName(theme().icon)}
         variant="ghost"
         items={[
