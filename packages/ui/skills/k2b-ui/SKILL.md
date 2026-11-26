@@ -44,15 +44,13 @@ screen, recipe, test screen and documentation example:
    (title and count), not grey bands; no line under the last row.
 5. **No empty half.** A detail pane only while something is open; a side
    column only when it is full of useful things (activity, rules, people).
-6. **People are visible:** avatars, `Avatar.Stack` with "+n", and
-   activity as a sentence with avatar, verb and the thing's mark
-   (`Digest activity`).
+6. **People are visible:** avatars, `Avatar.Stack` with "+n", activity as
+   a sentence of avatar, verb and the thing's mark (`Digest activity`).
 7. **Four type sizes, dense.** 12 meta, 13 row, 14 title, 18 statement,
    set by the primitives; more information per screen than a classic
    admin page. Dense is not busy and never says a thing twice.
 8. **Real dense sample data** in recipes, fixtures and tests: German
-   names, colours, people, states, ten rows and more. Never "Tabelle 1",
-   never four rows on a white page.
+   names, colours, people, states, ten rows and more; never "Tabelle 1".
 9. **The page head has at most two full-width rows** above list and
    detail: path or views with the actions, then filters with count, order
    and view. Never four rows of head.
@@ -60,10 +58,8 @@ screen, recipe, test screen and documentation example:
     the value at a fixed width beside it, its current state visible at a
     glance; never full-width fields stacked one under the other.
 
-Prove it before you show it: `v2-preview` draws the screen in the frame
-of its host (icon rail, tinted page); put your 1440 and 390 px pictures
-beside the matching recipe's and fix every difference in faces, density
-and hierarchy.
+Prove it before you show it: put your `v2-preview` pictures (1440, 390 px)
+beside the recipe's and fix every difference in faces, density, hierarchy.
 
 ## Start here
 
@@ -99,7 +95,11 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
+- A screen is a component that returns one `Workspace`, rendered on the
+  server; only parts that need the browser (a button's action, a field, a
+  filter bar) are islands (`.island.tsx`), each where its primitive stands:
+  v2.css and `describeV2` look through the `<solid-island>` and
+  `<solid-client>` wrappers. Never make the whole screen one island.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
 - A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
