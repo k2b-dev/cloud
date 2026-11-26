@@ -40,6 +40,11 @@ export type StateTimelineChartOptions = {
   xAxis?: { format?: (value: number) => string; label?: string };
   legend?: boolean;
   interactive?: boolean;
+  /**
+   * Starts the ids of the drawing's own definitions (the clip of the lane names), so two drawings on one page never
+   * share one; `Chart` gives each instance its own. Without it the ids come from the geometry.
+   */
+  idPrefix?: string;
 };
 
 const ROW_HEIGHT = 24;
@@ -144,9 +149,10 @@ export const renderStateTimelineSvg = (
   // A host stretches the drawing to its box while text keeps its pixel size, so the room a lane name has in pixels is
   // known only in the browser. Each name starts at the left edge and the gutter cuts it off with a short fade: in the
   // drawing's own units, the cut scales with the box and always ends before the plot. The full name stays in the
-  // link's title and accessible name. Equal geometry gives equal ids, so two charts never disagree about a shared id.
+  // link's title and accessible name. Each drawing of `Chart` has ids of its own: an id that two drawings share points
+  // into the first, and a hidden first one clips nothing. A drawing without a prefix takes ids from its geometry.
   const labelRight = Math.max(8, plotLeft - 8);
-  const lanesId = `stdlib-chart-lanes-${fmt(labelRight)}-${fmt(height)}`;
+  const lanesId = opts.idPrefix ? `${opts.idPrefix}-lanes` : `stdlib-chart-lanes-${fmt(labelRight)}-${fmt(height)}`;
 
   rows.forEach((row, rowIndex) => {
     const y = TOP + rowIndex * ROW_HEIGHT;
@@ -209,7 +215,8 @@ export const renderStateTimelineSvg = (
         `<mask id="${lanesId}" maskUnits="userSpaceOnUse" x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}">` +
         `<rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}" fill="url(#${lanesId}-fade)"/></mask>` +
         `<clipPath id="${lanesId}-clip"><rect x="0" y="0" width="${fmt(labelRight)}" height="${fmt(height)}"/></clipPath></defs>`,
-      `<g class="stdlib-chart-state-labels" mask="url(#${lanesId})" clip-path="url(#${lanesId}-clip)">${lanes.join("")}</g>`,
+      // a name starts at the left edge in a page written right to left too: `start` would be the right edge there
+      `<g class="stdlib-chart-state-labels" direction="ltr" mask="url(#${lanesId})" clip-path="url(#${lanesId}-clip)">${lanes.join("")}</g>`,
     );
   }
 

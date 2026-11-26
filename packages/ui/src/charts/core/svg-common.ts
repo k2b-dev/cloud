@@ -944,7 +944,7 @@ export const formatNumberValue = (value: number, format: ((value: number) => str
  */
 export const seriesPaint = (color: string | undefined, index: number, className?: string): string => {
   const classes = [className, color ? undefined : `stdlib-chart-series-${index % 8}`].filter(Boolean).join(" ");
-  return `class="${classes}"${color ? ` fill="${escapeXml(color)}"` : ""}`;
+  return [classes ? `class="${classes}"` : "", color ? `fill="${escapeXml(color)}"` : ""].filter(Boolean).join(" ");
 };
 
 export const thresholdStrokeAttr = (color: string | undefined): string => (color ? ` stroke="${escapeXml(color)}"` : "");

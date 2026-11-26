@@ -9,12 +9,16 @@ import { Bar, Button, Canvas, Nav, Pane, Section, StatusRow, Workspace } from ".
 declare global {
   interface Window {
     __k2Mounted?: boolean;
+    /** Draws a second timeline of the same lanes first, hidden, as a closed tab or a folded section would. */
+    __k2Twin?: boolean;
+    /** Gives every state a long name, so the legend needs more lines than the chart has room for. */
+    __k2LongStates?: boolean;
   }
 }
 
 const HOUR = 3_600_000;
 const start = Date.UTC(2026, 10, 26, 6);
-const states = [
+const named = [
   { state: "ok", label: "Erfolgreich", color: "#10b981" },
   { state: "error", label: "Fehlgeschlagen", color: "#ef4444" },
   { state: "running", label: "Läuft", color: "#3b82f6" },
@@ -24,6 +28,7 @@ const states = [
   { state: "retried", label: "Wiederholt", color: "#0ea5e9" },
   { state: "skipped", label: "Übersprungen", color: "#a3a3a3" },
 ];
+const states = window.__k2LongStates ? named.map((state) => ({ ...state, label: `${state.label} seit dem Lauf am Morgen` })) : named;
 const lanes = [
   "worker:files:thumbnails",
   "worker-pool-eu-central:media-thumbnails-regeneration",
@@ -78,6 +83,18 @@ render(
       >
         <Section icon="timeline" title="Zeitstrahl">
           <Canvas label="Zeitstrahl der Jobs" height={Math.max(160, 96 + rows.length * 24)}>
+            {window.__k2Twin ? (
+              <div data-twin="" style={{ display: "none" }}>
+                <Chart
+                  kind="stateTimeline"
+                  rows={rows}
+                  states={states}
+                  domain={[start, start + 12 * HOUR]}
+                  xAxis={{ format: time }}
+                  legend
+                />
+              </div>
+            ) : null}
             <Chart
               kind="stateTimeline"
               rows={rows}

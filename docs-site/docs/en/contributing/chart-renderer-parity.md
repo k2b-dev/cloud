@@ -18,10 +18,8 @@ sparkline gradient IDs are normalized. Runtime renderer code never generates the
 expected output during a test.
 
 A frozen drawing changes only with a fix for a defect that the drawing itself
-recorded, and the fix names it. The state timeline and threshold bar gauge
-drawings changed this way: a mark with its own colour also had a series class,
-and the class's CSS `fill` hid that colour; the state timeline's lane names
-could also run out of a stretched box.
+recorded. The lesson of that fix names the defect and every drawing it
+changes.
 
 Covered means the named proof exists and the compatibility drawing matches its
 frozen SVG. It does not mean every browser or consumer proof ran locally.

@@ -171,8 +171,9 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     // Pareto's labels name its two measures; other kinds use labels only for host controls.
     if (props.kind === "pareto") return props;
     const [, drawing] = splitProps(props, ["class", "style", "labels", "interactive", "selected", "onSelect", "tooltip", "cursor"]);
-    // A state timeline names its states in the HTML legend below the drawing.
-    return drawing.kind === "stateTimeline" ? { ...drawing, legend: false } : drawing;
+    // A state timeline names its states in the HTML legend below the drawing, and its definitions get the ids of this
+    // instance (the same on the server and in the browser).
+    return drawing.kind === "stateTimeline" ? { ...drawing, legend: false, idPrefix: `${chartTooltipId}-drawing` } : drawing;
   };
   const messages = useUiMessages();
   const chartMessages = useChartMessages();
@@ -608,7 +609,8 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     props.style ??
     (props.kind === "stateTimeline"
       ? {
-          height: `${stateTimelineHeight(props.rows.length, props.legend !== false)}px`,
+          // the drawing and one line of the HTML legend (30 px with its air)
+          height: `${stateTimelineHeight(props.rows.length, false) + (stateLegend().length > 0 ? 30 : 0)}px`,
         }
       : undefined);
 

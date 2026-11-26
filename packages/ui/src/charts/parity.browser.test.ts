@@ -73,11 +73,12 @@ test("all registered kinds match server SVG and geometry on the first client ren
     const errors = pageErrors(page);
     await page.setContent(`<html><body>${html}</body></html>`);
     // @k2b/ssr mounts islands afresh. Compare exact drawing markup and logical geometry;
-    // Solid's HTML comment markers, attribute order and generated tooltip IDs differ by runtime.
+    // Solid's HTML comment markers, attribute order and generated IDs (the tooltip's, and the ids of a drawing's own
+    // definitions, which start with it) differ by runtime.
     const drawing = () =>
       page.locator(".k2b-chart__svg").evaluateAll((charts) =>
         charts.map((chart) => ({
-          svg: chart.innerHTML,
+          svg: chart.innerHTML.replace(/k2b-chart-tooltip-[\w-]+?-drawing/g, "k2b-chart-tooltip-ID-drawing"),
           style: chart
             .getAttribute("style")
             ?.split(";")

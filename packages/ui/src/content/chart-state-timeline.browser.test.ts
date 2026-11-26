@@ -23,17 +23,22 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+/** `dir`: the page is written right to left; `twin`: a hidden timeline of the same lanes stands first on the page. */
+type PageOptions = { dir?: "rtl"; twin?: boolean; longStates?: boolean };
+
+const withPage = async (width: number, run: (page: Page) => Promise<void>, options: PageOptions = {}) => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"${options.dir ? ` dir="${options.dir}"` : ""}><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
+    if (options.twin) await page.evaluate(() => Reflect.set(window, "__k2Twin", true));
+    if (options.longStates) await page.evaluate(() => Reflect.set(window, "__k2LongStates", true));
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
-    await page.locator(".k2b-chart__svg > svg").waitFor();
+    await page.locator(".k2-canvas > .k2b-chart > .k2b-chart__svg > svg").waitFor();
     await settled(page);
     await run(page);
     expect(errors).toEqual([]);
@@ -46,7 +51,7 @@ for (const width of [1440, 390])
   test(`at ${width}: a state's own colour fills its regions and its swatch in the legend`, async () => {
     await withPage(width, async (page) => {
       const fills = await page.evaluate(() => {
-        const chart = document.querySelector(".k2b-chart__svg > svg")!;
+        const chart = document.querySelector(".k2-canvas > .k2b-chart > .k2b-chart__svg > svg")!;
         const region = (state: string) =>
           [...chart.querySelectorAll(".stdlib-chart-state-region")].find((rect) =>
             rect.closest("[aria-label]")?.getAttribute("aria-label")?.endsWith(state),
@@ -66,60 +71,100 @@ for (const width of [1440, 390])
     });
   });
 
+/**
+ * Where the lane names and the legend of the visible timeline stand: names that leave the chart or reach into the
+ * plot, other text outside the chart, legend entries outside the chart or out of reach of its scroll, the pitch of
+ * the lanes, and whether the clip of the names is the timeline's own (an id the page resolves to another drawing is
+ * not).
+ */
+const measure = (page: Page) =>
+  page.evaluate(() => {
+    const host = document.querySelector(".k2-canvas > .k2b-chart")!;
+    const box = host.getBoundingClientRect();
+    const svg = host.querySelector(".k2b-chart__svg > svg")!;
+    const at = (rect: DOMRect) => `${Math.round(rect.left - box.left)}..${Math.round(rect.right - box.left)} of ${Math.round(box.width)}`;
+    const plotLeft = Math.min(...[...svg.querySelectorAll(".stdlib-chart-state-region")].map((rect) => rect.getBoundingClientRect().left));
+    // The clip the page applies to the names: the element its id resolves to, which must stand in this drawing.
+    const group = svg.querySelector(".stdlib-chart-state-labels");
+    const clipId = /url\(#([^)]+)\)/.exec(group?.getAttribute("clip-path") ?? "")?.[1];
+    const clip = clipId ? document.getElementById(clipId) : null;
+    const ownClip = clip !== null && svg.contains(clip);
+    const shape = clip?.querySelector("rect");
+    const matrix = group instanceof SVGGraphicsElement ? group.getScreenCTM() : null;
+    const clipRight =
+      shape instanceof SVGRectElement && matrix
+        ? new DOMPoint(shape.x.baseVal.value + shape.width.baseVal.value, 0).matrixTransform(matrix).x
+        : Number.POSITIVE_INFINITY;
+    const lanes = [...svg.querySelectorAll(".stdlib-chart-state-label")];
+    const lanesOutside = lanes
+      .map((text) => ({ text: text.textContent ?? "", rect: text.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.left < box.left - 0.5 || Math.min(rect.right, clipRight) > plotLeft + 0.5)
+      .map(
+        ({ text, rect }) =>
+          `${text} ${at(rect)}, clipped at ${Math.round(clipRight - box.left)}, plot from ${Math.round(plotLeft - box.left)}`,
+      );
+    const centres = lanes.map((text) => {
+      const rect = text.getBoundingClientRect();
+      return rect.top + rect.height / 2;
+    });
+    const pitch = Math.min(...centres.slice(1).map((centre, index) => centre - centres[index]!));
+    const outside = [...svg.querySelectorAll("text:not(.stdlib-chart-state-label)")]
+      .map((text) => ({ text: text.textContent ?? "", rect: text.getBoundingClientRect() }))
+      .filter(({ rect }) => rect.width > 0 && (rect.left < box.left - 0.5 || rect.right > box.right + 0.5))
+      .map(({ text, rect }) => `${text} ${at(rect)}`);
+    // The legend's entries, wherever the chart draws them: each whole in the chart, and in its legend's reach (a legend
+    // with more lines than room scrolls, and takes the focus for that).
+    const legend = [...host.querySelectorAll(".k2b-chart__legend-item, .stdlib-chart-legend text")];
+    const list = host.querySelector<HTMLElement>(".k2b-chart__legend");
+    const reach = list ? list.getBoundingClientRect().top + list.scrollHeight : box.bottom;
+    const legendOutside = legend
+      .map((entry) => ({ text: entry.textContent ?? "", rect: entry.getBoundingClientRect() }))
+      .filter(
+        ({ rect }) =>
+          rect.left < box.left - 0.5 ||
+          rect.right > box.right + 0.5 ||
+          rect.top < (list?.getBoundingClientRect().top ?? box.top) - 0.5 ||
+          rect.bottom > reach + 0.5,
+      )
+      .map(({ text, rect }) => `${text} ${at(rect)}`);
+    const scrolls = list ? list.scrollHeight > list.clientHeight + 1 : false;
+    return {
+      lanesOutside,
+      outside,
+      legendOutside,
+      ownClip,
+      pitch: Math.round(pitch * 10) / 10,
+      legendReachable: !scrolls || list?.tabIndex === 0,
+      lanes: lanes.length,
+      legend: legend.length,
+    };
+  });
+
+const inside = (found: Awaited<ReturnType<typeof measure>>) => {
+  expect(found.lanesOutside).toEqual([]);
+  expect(found.outside).toEqual([]);
+  expect(found.legendOutside).toEqual([]);
+  expect(found.ownClip).toBe(true);
+  // a lane keeps 18 px at least (three quarters of its 24); a legend that needs more room scrolls
+  expect(found.pitch).toBeGreaterThanOrEqual(17.9);
+  expect(found.legendReachable).toBe(true);
+  expect(found.lanes).toBe(6);
+  expect(found.legend).toBe(8);
+};
+
 for (const width of [1440, 390])
   test(`at ${width}: lane names and the legend stay inside the chart, every lane and every state shown`, async () => {
-    await withPage(width, async (page) => {
-      const found = await page.evaluate(() => {
-        const host = document.querySelector(".k2b-chart")!;
-        const box = host.getBoundingClientRect();
-        const svg = host.querySelector(".k2b-chart__svg > svg")!;
-        const at = (rect: DOMRect) =>
-          `${Math.round(rect.left - box.left)}..${Math.round(rect.right - box.left)} of ${Math.round(box.width)}`;
-        const plotLeft = Math.min(
-          ...[...svg.querySelectorAll(".stdlib-chart-state-region")].map((rect) => rect.getBoundingClientRect().left),
-        );
-        // The right edge of what a lane name paints: its own end, or the clip of the group it stands in.
-        const paintedRight = (text: Element) => {
-          let right = text.getBoundingClientRect().right;
-          for (let node = text.parentElement; node && node !== svg; node = node.parentElement) {
-            const id = /url\(#([^)]+)\)/.exec(node.getAttribute("clip-path") ?? "")?.[1];
-            const shape = id ? svg.querySelector<SVGRectElement>(`[id="${id}"] rect`) : null;
-            const matrix = node instanceof SVGGraphicsElement ? node.getScreenCTM() : null;
-            if (shape && matrix)
-              right = Math.min(right, new DOMPoint(shape.x.baseVal.value + shape.width.baseVal.value, 0).matrixTransform(matrix).x);
-          }
-          return right;
-        };
-        const lanes = [...svg.querySelectorAll(".stdlib-chart-state-label")];
-        const lanesOutside = lanes
-          .filter((text) => text.getBoundingClientRect().left < box.left - 0.5 || paintedRight(text) > plotLeft + 0.5)
-          .map(
-            (text) =>
-              `${text.textContent} ${at(text.getBoundingClientRect())}, painted to ${Math.round(paintedRight(text) - box.left)}, plot from ${Math.round(plotLeft - box.left)}`,
-          );
-        const outside = [...svg.querySelectorAll("text:not(.stdlib-chart-state-label)")]
-          .map((text) => ({ text: text.textContent ?? "", rect: text.getBoundingClientRect() }))
-          .filter(({ rect }) => rect.width > 0 && (rect.left < box.left - 0.5 || rect.right > box.right + 0.5))
-          .map(({ text, rect }) => `${text} ${at(rect)}`);
-        // The legend's entries, wherever the chart draws them, each whole in the chart and in view.
-        const legend = [...host.querySelectorAll(".k2b-chart__legend-item, .stdlib-chart-legend text")];
-        const scrollport = host.querySelector(".k2b-chart__legend")?.getBoundingClientRect() ?? box;
-        const legendOutside = legend
-          .map((entry) => ({ text: entry.textContent ?? "", rect: entry.getBoundingClientRect() }))
-          .filter(
-            ({ rect }) =>
-              rect.left < box.left - 0.5 ||
-              rect.right > box.right + 0.5 ||
-              rect.top < scrollport.top - 0.5 ||
-              rect.bottom > Math.min(scrollport.bottom, box.bottom) + 0.5,
-          )
-          .map(({ text, rect }) => `${text} ${at(rect)}`);
-        return { lanesOutside, outside, legendOutside, lanes: lanes.length, legend: legend.length };
-      });
-      expect(found.lanesOutside).toEqual([]);
-      expect(found.outside).toEqual([]);
-      expect(found.legendOutside).toEqual([]);
-      expect(found.lanes).toBe(6);
-      expect(found.legend).toBe(8);
-    });
+    await withPage(width, async (page) => inside(await measure(page)));
   });
+
+test("at 390, in a page written right to left: lane names start at the left edge of the chart and stay in their column", async () => {
+  await withPage(390, async (page) => inside(await measure(page)), { dir: "rtl" });
+});
+
+test("at 1440, with a hidden timeline of the same lanes first on the page: the names are clipped by this timeline's own clip", async () => {
+  await withPage(1440, async (page) => inside(await measure(page)), { twin: true });
+});
+
+test("at 390, with eight long state names: the lanes keep 18 px each and the legend scrolls instead", async () => {
+  await withPage(390, async (page) => inside(await measure(page)), { longStates: true });
+});

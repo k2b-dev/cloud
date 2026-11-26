@@ -59,7 +59,7 @@ const baseline: Record<string, string> = {
   lineWithGap: "613b883fc561e8dd0e80f5a77e864d0665abaf40eb1f9833372f7b0b0a447ce3",
   // Lane names start at the left edge and the label gutter cuts them off (a clip and a fade), so they never leave a
   // stretched box.
-  stateTimeline: "c5d8829178838c4be3676bcb448360243d42156a915c93c0f9c4068b0b237690",
+  stateTimeline: "9b35f042e14bc95fd5e5f95ebcd0262fe2e86cef204e5c7a3495b8c29f0aa550",
   map: "b96c033465c52175be2931f841db4651607c22dcaf5cf8b7a49e52cd15cab3d7",
   heatmap: "906ba7ad5595af0e22eb493bba013e616223615bc245c8dc37820943fb2801c8",
   stat: "65dc9c0738e3d14ca9ec4077743d01205c7118035ec26cb65c9b9e7f792b8b04",
