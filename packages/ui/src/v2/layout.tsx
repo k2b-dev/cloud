@@ -416,6 +416,8 @@ export const Pane = (props: PaneProps) => {
       aria-label={props.label}
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
+      // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
+      data-back={props.detail && props.back ? "" : undefined}
       data-side={props.side ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${props.width.default}px` : undefined,

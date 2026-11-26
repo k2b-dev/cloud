@@ -56,6 +56,45 @@ export type MenuEntry = MenuItem | MenuSection | "separator";
 
 const isSection = (entry: MenuEntry): entry is MenuSection => entry !== "separator" && "title" in entry;
 
+/** A menu's button carries its entries, so the "…" of its head can show them while the menu gives way. */
+const itemsKey = Symbol.for("k2b.ui.v2.menuItems");
+
+/**
+ * The actions of a head that gave way (on the phone, or in a head without room), as entries of the head's "…": the
+ * same names, symbols and deeds. A button runs its own click, a link opens its address, a menu with words becomes a
+ * submenu. What is not a button or a link (the people of a Space) and the main action that floats as the round button
+ * on the phone stay away. Nothing of a head vanishes unseen.
+ */
+const foldedActions = (trigger: HTMLElement): MenuEntry[] => {
+  const end = trigger.closest('[data-slot="head"] > .k2-bar > .k2-bar-end');
+  if (!end) return [];
+  const fab = end.closest("[data-k2-workspace]")?.querySelector(".k2-fab");
+  const floating = fab !== null && fab !== undefined && fab.getClientRects().length > 0;
+  const entries: MenuEntry[] = [];
+  const visit = (node: Element) => {
+    // an island's wrapper draws no box; its parts stand in the head
+    if (node.localName === "solid-island" || node.localName === "solid-client") {
+      for (const child of node.children) visit(child);
+      return;
+    }
+    if (!(node instanceof HTMLElement) || node === trigger || !node.matches("button, a[href]") || node.getClientRects().length > 0) return;
+    if (floating && node.dataset.variant === "primary") return;
+    const label = node.getAttribute("aria-label") ?? node.textContent?.trim() ?? "";
+    if (!label) return;
+    const icon = [...(node.querySelector(".ti")?.classList ?? [])]
+      .find((name) => name.startsWith("ti-") && name !== "ti-chevron-down")
+      ?.slice(3);
+    const disabled = node.matches(":disabled, [aria-disabled='true']");
+    const items: unknown = Reflect.get(node, itemsKey);
+    const href = node.getAttribute("href");
+    if (typeof items === "function") entries.push({ label, icon, disabled, items: items() });
+    else if (href !== null) entries.push({ label, icon, href });
+    else entries.push({ label, icon, disabled, onClick: () => node.click() });
+  };
+  for (const child of end.children) visit(child);
+  return entries;
+};
+
 type Variant = "primary" | "secondary" | "ghost" | "text";
 
 /** How a menu's or popover's button looks: the same props as `Button`. */
@@ -334,19 +373,26 @@ const MenuRoot = (props: MenuProps) => {
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");
+  // the actions of its head that gave way, as the "…" opens
+  const [folded, setFolded] = createSignal<readonly MenuEntry[]>([]);
   const level = useMenuLevels(() => ({
     onOpenChange: (open: boolean) => {
-      if (open) setAlign(alignTo(trigger));
+      if (!open) return;
+      setAlign(alignTo(trigger));
+      setFolded(iconOnly() && trigger ? foldedActions(trigger) : []);
     },
   }));
+  const entries = () => (folded().length > 0 ? [...folded(), "separator" as const, ...props.items] : props.items);
   return (
     <>
       <level.Trigger
         ref={(element: HTMLElement) => {
           trigger = element;
+          Reflect.set(element, itemsKey, () => props.items);
         }}
         disabled={props.disabled}
-        class="k2-btn"
+        // the "…" of a head takes in the buttons that give way beside it; a class, so the head's rule asks for it cheaply
+        class={iconOnly() ? "k2-btn k2-more" : "k2-btn"}
         data-k2-part="Button"
         data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
         data-icon-only={iconOnly() ? "" : undefined}
@@ -359,7 +405,7 @@ const MenuRoot = (props: MenuProps) => {
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+        <Entries level={level} entries={entries()} />
       </level.Popup>
     </>
   );

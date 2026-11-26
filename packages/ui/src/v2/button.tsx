@@ -42,8 +42,8 @@ type ButtonBase = {
   /** `submit` sends the form the button stands in; `button` by default. */
   type?: "button" | "submit";
   /**
-   * Stays in a head on the phone and in a head without room (below 800 px of its own width), where the other actions
-   * move into the head's "…" menu.
+   * Stays in a head on the phone and in a head with a title without room (below 1100 px of its own width), where the
+   * other buttons move into the head's "…" (an icon-only `Menu`), which lists them by itself.
    */
   keep?: boolean;
   /**

@@ -34,18 +34,21 @@ The working surface of an app: one per screen.
   none is open, so nothing moves when it opens. Keep the list's `width`.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves. In a head with a "…" (an
+  icon-only `Menu`), the buttons without `keep` give way, and the "…"
+  lists them by itself, with their names and deeds; a head without a "…"
+  keeps them. The main action floats as the round button (`primary`), and
+  the × of a detail with `back` gives way to its `Back`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape.
-- A head without room (below 800 px of its own width, such as a tablet
-  beside its sidebar) gives way in this order. First its actions fold as
-  on the phone: the search keeps its symbol, and the actions without `keep`
-  leave for the head's "…" menu (an icon-only `Menu` stays by itself),
-  while the one main action stays. Then the tabs give way, whole tab by
-  whole tab. The title (`Text` in `Bar start`) is cut with "…" last. Put
-  every deed of a head action into the "…" menu too, so it stays reachable
-  where the action leaves.
+- A head with a title (`Text` in `Bar start`, such as a Space's name)
+  gives way in this order below 1100 px of its own width (a laptop beside
+  its sidebar): first its actions fold as on the phone, the search to its
+  symbol while it holds no words (with words it stays open, so a filtered
+  list says so) and the buttons without `keep` into the "…", while the
+  main action stays. Then its tabs give way, whole tab by whole tab. Its
+  title is cut with "…" last. A head of tabs alone keeps its actions.
 
 ### Pane
 

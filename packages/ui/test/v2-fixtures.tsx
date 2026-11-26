@@ -18,6 +18,7 @@ import {
   Inline,
   Input,
   List,
+  Menu,
   Nav,
   Notice,
   Pane,
@@ -123,7 +124,8 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
               end={
                 <>
                   <Button icon="check">Erledigt</Button>
-                  <Button variant="ghost" icon="dots" label="Weitere Aktionen" keep />
+                  {/* the head's "…": on the phone it takes in "Erledigt", which gives way there */}
+                  <Menu label="Weitere Aktionen" items={[{ label: "Weiterleiten", icon: "share" }]} />
                   <Button variant="ghost" icon="x" label="Schließen" href="#posteingang" />
                 </>
               }
