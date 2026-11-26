@@ -24,12 +24,12 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
 
 /**
  * Loads the notebook's access, as stored now, and opens its dialog. Resolves once the dialog opens, not when it closes,
- * so the menu that asked closes; a failure to load throws its reason.
+ * so the menu that asked closes; a failure to load (also of the network) rejects, and the caller says so in a toast.
  */
 export const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: string, signal: AbortSignal) => {
   const t = notebooksAdminMessages.resolve([locale]).t;
   const response = await apiClient[":id"].access.$get({ param: { id: props.notebookId } }, { init: { signal } });
-  if (!response.ok) throw new Error(await readErrorMessage(response, t.loadPermissionsFailed));
+  if (!response.ok) throw new Error(t.loadPermissionsFailed);
   const initialEntries = (await response.json()) as AccessEntry[];
   // The page may have changed while the list loaded; never open the dialog over another page.
   if (signal.aborted) return;
@@ -62,7 +62,7 @@ export const openPermissionDialog = async (props: AdminNotebookActionsProps, loc
   });
 };
 
-/** Deletes the notebook after asking; the toast says what happened, a failure with the server's reason. */
+/** Deletes the notebook after asking; the toast says what happened in a few fixed words, also when the network fails. */
 export const deleteNotebook = async (props: AdminNotebookActionsProps, locale: string, toast: ShowToast) => {
   const t = notebooksAdminMessages.resolve([locale]).t;
   const confirmed = await confirm({
@@ -72,11 +72,13 @@ export const deleteNotebook = async (props: AdminNotebookActionsProps, locale: s
     cancel: t.cancel,
   });
   if (!confirmed) return;
-  const response = await apiClient[":id"].$delete({
-    param: { id: props.notebookId },
-  });
-  if (!response.ok) {
-    toast(await readErrorMessage(response, t.deleteFailed), { status: "bad" });
+  // k2b-ui gap: confirm has no danger tone yet (#4275); the question asks with its plain primary button meanwhile.
+  const deleted = await apiClient[":id"]
+    .$delete({ param: { id: props.notebookId } })
+    .then((response) => response.ok)
+    .catch(() => false);
+  if (!deleted) {
+    toast(t.deleteFailed, { status: "bad" });
     return;
   }
   toast(t.deleted, { status: "ok" });

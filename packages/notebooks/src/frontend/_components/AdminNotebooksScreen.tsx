@@ -60,11 +60,13 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
         {
           label: t().permissions,
           icon: "shield",
-          // the menu stays busy while the access loads and closes as the dialog opens; a failure says why
+          // the menu stays busy while the access loads and closes as the dialog opens; a failure says so in fixed words,
+          // and a load the leaving page cut short says nothing
           onClick: () =>
-            openPermissionDialog({ notebookId: row.shortId, notebookName: row.name }, locale(), leaving.signal).catch(
-              (error: Error) => void toast(error.message, { status: "bad" }),
-            ),
+            openPermissionDialog({ notebookId: row.shortId, notebookName: row.name }, locale(), leaving.signal).catch(() => {
+              if (leaving.signal.aborted) return;
+              toast(t().loadPermissionsFailed, { status: "bad" });
+            }),
         },
         {
           label: t().delete,
@@ -84,6 +86,8 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
           start={<Text weight="strong">{t().notebooks}</Text>}
           end={
             <>
+              {/* k2b-ui gap: a head search that also works before the island runs (Input send, #4279); and on the phone
+                  one search place (#4255) */}
               <Input
                 type="search"
                 icon="search"
@@ -108,8 +112,8 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
       <Pane
         label={t().notebooks}
         status={
-          // k2b-ui gap: StatusRow takes no toned chip, and its facts leave on the phone; the notebooks nobody can reach
-          // therefore stand in the lead, which stays. Nothing found has no figures to state.
+          // k2b-ui gap: StatusRow takes no toned chip yet (its marks, #4259), and its facts leave on the phone; the
+          // notebooks nobody can reach therefore stand in the lead, which stays. Nothing found has no figures to state.
           <StatusRow
             lead={
               props.orphaned > 0
@@ -127,34 +131,36 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
           columns={[
             {
               title: t().notebook,
+              // k2b-ui gap: Mark (#4208) – a notebook's sign in the Notebooks colour; plain until then, since the app's
+              // tone here would be the administration's colour
               cell: (row) => (
                 <>
-                  <Icon name={notebookSign(row)} tone="app" /> {row.name}
+                  <Icon name={notebookSign(row)} /> {row.name}
                 </>
               ),
-              width: { min: 200, default: 280 },
             },
             { title: t().description, cell: (row) => row.description || t().noDescription, drop: true },
             {
               title: t().permissions,
-              // nobody can reach a notebook without access entries: that one is the exception
-              cell: (row) =>
-                row.permissionCount === 0 ? (
-                  <Chip status="bad">{t().accessCount({ count: 0 })}</Chip>
-                ) : (
-                  t().accessCount({ count: row.permissionCount })
-                ),
+              // the column's head names the number; nobody can reach a notebook without access entries: the exception
+              align: "end",
+              // k2b-ui gap: a fixed narrow column without a grip; a width is the one way to leave the description the
+              // room (table-layout fixed shares it equally), and it draws a grip before the actions' column
+              width: { min: 96, default: 128 },
+              cell: (row) => (row.permissionCount === 0 ? <Chip status="bad">0</Chip> : String(row.permissionCount)),
             },
             {
               title: t().actions,
               align: "end",
+              // the last column: its width draws no grip, and the menu needs no more
+              width: { min: 72, default: 88 },
               cell: (row) => actions(row),
             },
           ]}
           phone={(row) => ({
             lines: [
               <>
-                <Icon name={notebookSign(row)} tone="app" /> {row.name}
+                <Icon name={notebookSign(row)} /> {row.name}
               </>,
               row.description || t().noDescription,
             ],
@@ -166,7 +172,15 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
               </>
             ),
           })}
-          empty={{ icon: "notebook", text: props.search ? t().noMatching({ search: props.search }) : t().noNotebooks }}
+          empty={
+            props.search
+              ? {
+                  icon: "notebook",
+                  text: t().noMatching({ search: props.search }),
+                  action: { label: t().resetSearch, icon: "x", href: pageHref("", 1) },
+                }
+              : { icon: "notebook", text: t().noNotebooks }
+          }
         />
         <Show when={props.pages > 1}>
           <Bar

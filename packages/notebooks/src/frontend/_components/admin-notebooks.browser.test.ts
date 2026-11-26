@@ -120,12 +120,20 @@ for (const width of [1440, 390]) {
       expect(await page.locator('[data-k2-part="StatusRow"]').getByText("1 ohne Zugriff").isVisible()).toBe(true);
       // the one nobody can reach stands out
       expect(await page.locator('[data-k2-part="Chip"][data-status="bad"]').filter({ visible: true }).count()).toBe(1);
-      // every notebook carries its sign in the app's colour, also in the phone's rows
-      const signs = page.locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-tone="app"]').filter({ visible: true });
+      // every notebook carries its sign, also in the phone's rows (plain until Mark gives it the Notebooks colour)
+      const signs = page.locator('[data-k2-part="Pane"] [data-k2-part="Icon"][data-name]').filter({ visible: true });
       expect(await signs.count()).toBeGreaterThanOrEqual(10);
       if (width > 600) {
         expect(await page.locator('[data-k2-part="Table"] tbody tr').count()).toBe(24);
         expect(await page.getByRole("columnheader", { name: "Aktionen" }).count()).toBe(1);
+        // the description takes the room, the access is a number under its head, and no column offers a grip
+        const width = (name: string) =>
+          page.getByRole("columnheader", { name, exact: true }).evaluate((cell) => cell.getBoundingClientRect().width);
+        expect(await width("Beschreibung")).toBeGreaterThan(2 * (await width("Berechtigungen")));
+        const cell = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" }).locator("td").nth(2);
+        expect((await cell.textContent())?.trim()).toBe("6");
+        // the description's head has no grip; the one before the actions' column comes with the number column's width (k2b-ui gap)
+        expect(await page.getByRole("columnheader", { name: "Beschreibung", exact: true }).locator(".k2-cgrip").count()).toBe(0);
       }
     } finally {
       await page.close();
@@ -146,14 +154,15 @@ test("the search goes into the address, and an empty result says so", async () =
   const empty = await open("/admin/notebooks?empty=1&search=Zeppelin");
   try {
     await empty.getByText("Keine Notizbücher passen zu „Zeppelin“.").waitFor();
-    // nothing found has no figures to state
+    // nothing found has no figures to state, and the search can be reset
     expect((await empty.locator('[data-k2-part="StatusRow"]').textContent())?.trim()).toBe("0 Notizbücher");
+    expect(await empty.getByRole("link", { name: "Suche zurücksetzen" }).getAttribute("href")).toBe("/admin/notebooks");
   } finally {
     await empty.close();
   }
 }, 60_000);
 
-test("a row's menu deletes after asking, and a refused delete names the reason", async () => {
+test("a row's menu deletes after asking, and a refused delete says so in a few fixed words", async () => {
   const page = await open("/admin/notebooks");
   try {
     const row = (name: string) => page.locator('[data-k2-part="Table"] tbody tr', { hasText: name });
@@ -165,10 +174,29 @@ test("a row's menu deletes after asking, and a refused delete names the reason",
     // the menu has closed: the question stands alone
     expect(await page.getByRole("menu").filter({ visible: true }).count()).toBe(0);
     await page.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
-    await page.locator('[data-k2-part="Toast"]').getByText("Das Notizbuch ist gesperrt.").waitFor();
+    await page.locator('[data-k2-part="Toast"]').getByText("Notizbuch nicht gelöscht").waitFor();
+    // the server's words stay out of the toast
+    expect(await page.locator('[data-k2-part="Toast"]').getByText("Das Notizbuch ist gesperrt.").count()).toBe(0);
     expect(deletes).toEqual(["nb0004"]);
   } finally {
     deletes.length = 0;
+    await page.close();
+  }
+}, 60_000);
+
+test("a network that fails says so in fixed words, for the access and for deleting", async () => {
+  const page = await open("/admin/notebooks");
+  try {
+    await page.route("**/api/notebooks/**", (route) => route.abort("internetdisconnected"));
+    const row = page.locator('[data-k2-part="Table"] tbody tr', { hasText: "Handbuch Lager" });
+    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    await page.getByRole("menuitem", { name: "Berechtigungen" }).click();
+    await page.locator('[data-k2-part="Toast"]').getByText("Zugriff nicht geladen").waitFor();
+    await row.getByRole("button", { name: "Aktionen für Handbuch Lager" }).click();
+    await page.getByRole("menuitem", { name: "Löschen" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
+    await page.locator('[data-k2-part="Toast"]').getByText("Notizbuch nicht gelöscht").waitFor();
+  } finally {
     await page.close();
   }
 }, 60_000);
