@@ -534,6 +534,8 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
   const store = () => baseStoreMessages.resolve([locale()]).t;
   const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  const words = useScreenMessages();
+  const seconds = (value: number) => new Intl.NumberFormat(locale(), { style: "unit", unit: "second", unitDisplay: "short" }).format(value);
   const share = (used: number, limit: number) =>
     t().settingsShareUsed({
       share: new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(limit > 0 ? used / limit : 0),
@@ -623,14 +625,9 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
         <Facts
           items={[
             { label: store().state, value: state().label },
-            {
-              label: store().limits,
-              value: store().limitsSummary({
-                values: text.pprintNumber(props.base.store.limits.valuesPerMinute, { locale: locale() }),
-                series: text.pprintNumber(props.base.store.limits.maxSeries, { locale: locale() }),
-                profile: profile(props.base.store.profile),
-              }),
-            },
+            // one limit per line; values per minute stand in the cells above
+            { label: words().queryProfile, value: profile(props.base.store.profile) },
+            { label: words().maxSeries, value: number(props.base.store.limits.maxSeries) },
           ]}
         />
       </Section>
@@ -638,17 +635,22 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
         <Show when={props.limits} fallback={<Failed text={t().settingsSqlFailed} onRetry={() => location.reload()} />}>
           {(limits) => (
             <Facts
+              // each limit on its own line with its name; this hour's queries stand in the cells above
               items={[
-                { label: t().settingsSqlInput, value: "16 KiB · 32 × 2 KiB" },
-                {
-                  label: t().settingsSqlLimits,
-                  value: `${profile(limits().profile)} · ${bytes(limits().memoryBytes)} · ${limits().timeSeconds} s · ${number(limits().maxRows)} · ${bytes(limits().maxResultBytes)}`,
-                },
+                { label: words().queryProfile, value: profile(limits().profile) },
+                { label: words().sqlMemory, value: bytes(limits().memoryBytes) },
+                { label: words().sqlTime, value: seconds(limits().timeSeconds) },
+                { label: words().sqlRows, value: number(limits().maxRows) },
+                { label: words().sqlAnswer, value: bytes(limits().maxResultBytes) },
+                { label: t().settingsSqlInput, value: words().sqlInputValue },
                 {
                   label: t().settingsSqlConcurrency,
-                  value: `${limits().baseSlots} / ${limits().cloudSlots} · ${limits().maxWaiting} · ${limits().waitMs / 1000} s`,
+                  value: words().sqlSlotsValue({ base: limits().baseSlots, cloud: limits().cloudSlots }),
                 },
-                { label: t().settingsQueriesPerHour, value: `${limits().queriesUsed} / ${limits().queriesPerHour}` },
+                {
+                  label: words().sqlQueue,
+                  value: words().sqlQueueValue({ waiting: limits().maxWaiting, seconds: seconds(limits().waitMs / 1000) }),
+                },
               ]}
             />
           )}
