@@ -351,7 +351,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
             />
           </Canvas>
         </Setting>
-        <Setting name="logo" label={t().logo}>
+        <Setting name="logo" label={t().logo} was={was("logoBase64", (value) => (value ? words().otherImage : words().noImage))}>
           <Canvas label={t().logo}>
             <ImageInput
               aria-label={t().logo}
@@ -361,7 +361,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
             />
           </Canvas>
         </Setting>
-        <Setting name="banner" label={t().bannerImage}>
+        <Setting name="banner" label={t().bannerImage} was={was("bannerBase64", (value) => (value ? words().otherImage : words().noImage))}>
           <Canvas label={t().bannerImage}>
             <ImageInput
               aria-label={t().bannerImage}

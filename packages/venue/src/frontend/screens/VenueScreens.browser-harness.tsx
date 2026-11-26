@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
-import { fixtureDashboard, fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps } from "./fixtures";
+import { fixtureDashboard, fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps, worstDashboard } from "./fixtures";
 import VenueOverviewScreen from "./VenueOverviewScreen";
 import VenueScreen from "./VenueScreen";
 import VenueSettingsScreen from "./VenueSettingsScreen";
@@ -57,7 +57,7 @@ const screen = () => {
   return (
     <VenueScreen
       {...base}
-      dashboard={{ ...base.dashboard, venue }}
+      dashboard={{ ...(variant === "worst" ? worstDashboard() : base.dashboard), venue }}
       initialView={view}
       initialCalendarView={parseCalendarView(params.get("cv")) ?? "week"}
       initialCalendarDate={params.get("cd") ?? base.initialCalendarDate}

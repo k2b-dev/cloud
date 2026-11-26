@@ -4,7 +4,17 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { evening, FIXTURE_NOW, fixtureDashboard, fixturePreview, fixtureSettings, fixtureVenues, lunch, SHIFT_DAY } from "./fixtures";
+import {
+  evening,
+  FIXTURE_NOW,
+  fixtureDashboard,
+  fixturePreview,
+  fixtureSettings,
+  fixtureVenues,
+  lunch,
+  SHIFT_DAY,
+  worstDashboard,
+} from "./fixtures";
 import { type Crumb, renderVenueShell } from "./venue-shell.browser-fixture";
 
 // The main paths of Venue on v2: find and create a venue, open a shift from the calendar, join it with the following
@@ -139,7 +149,7 @@ const answer = async (route: Route, calls: Call[]) => {
   const call: Call = { method: request.method(), path: url.pathname, body: request.postData() ? JSON.parse(request.postData()!) : null };
   calls.push(call);
   if (call.method === "POST" && call.path === "/api/venue/venues") return route.fulfill({ status: 201, json: { id: "New001" } });
-  if (call.path.endsWith("/dashboard")) return route.fulfill({ json: fixtureDashboard() });
+  if (call.path.endsWith("/dashboard")) return route.fulfill({ json: variant === "worst" ? worstDashboard() : fixtureDashboard() });
   if (call.method === "POST" && call.path.includes("/signup-weeks")) return route.fulfill({ status: 201, json: [{}, {}, {}] });
   if (call.method === "POST" && call.path.endsWith("/signup")) return route.fulfill({ status: 201, json: {} });
   if (call.method === "DELETE") return route.fulfill({ json: { message: "Shift cancelled" } });
@@ -154,7 +164,10 @@ const answer = async (route: Route, calls: Call[]) => {
   return route.fulfill({ status: 404, json: { message: "Not found" } });
 };
 
+/** The data the API answers with: the page's variant decides, as the harness does for the first picture. */
+let variant = "normal";
 const open = async (view: View, address: string, options: { variant?: string; permission?: string } = {}) => {
+  variant = options.variant ?? "normal";
   const context: BrowserContext = await browser.newContext({
     viewport: { width: view.width, height: view.height },
     deviceScaleFactor: 1,

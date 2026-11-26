@@ -418,3 +418,27 @@ export const fixturePreview = (): PublicStatus => {
     sections: dashboard.sections.filter((section) => section.enabled),
   };
 };
+
+/** Worst-case data for the schedule and an open shift: an endless title, many people with long and non-Latin names. */
+export const worstDashboard = (): VenueDashboard => {
+  const dashboard = fixtureDashboard();
+  const names = [
+    "Maximiliane Theodora von Hohenstein-Liebenfels",
+    "李小龍",
+    "Ö",
+    "Jean-Baptiste Emmanuel Zorg-Montgomery-Wellington",
+    "Ada 🧁 Lovelace",
+    "Bartholomäus Aloysius Wenzeslaus Prinz",
+  ];
+  const title = "Mittagstheke mit Kaffeeausschank, Kuchenverkauf, Pfandrücknahme und Fundsachen im Erdgeschoss Nordflügel";
+  const crowded: UpcomingSlot = {
+    ...lunch,
+    template: { ...lunch.template, title, maxPeople: 12, minPeople: 10 },
+    minPeople: 10,
+    maxPeople: 12,
+    assignedCount: names.length,
+    missingPeople: 10 - names.length,
+    assignments: names.map((name, index) => person(`Wst${index}`, `user-w${index}`, name, lunchTimes, "Temp01", title)),
+  };
+  return { ...dashboard, slots: dashboard.slots.map((slot) => (slot.template.id === "Temp01" ? crowded : slot)) };
+};
