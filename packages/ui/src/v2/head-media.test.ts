@@ -12,7 +12,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Preview } = await import("./marks");
-const { Tiles } = await import("./layout");
+const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
 const { checkSettingMessages } = await import("./setting-messages");
@@ -141,4 +141,18 @@ test("among media the place to make one is the last tile: a dashed picture with 
   });
   expect(markup).toMatch(/data-create[^>]*>.*k2-tile-make.*Neuer Ordner.*oder Dateien hierher ziehen/s);
   expect(markup.indexOf("Aufmaß")).toBeLessThan(markup.indexOf("Neuer Ordner"));
+});
+
+test("a value with a limit shows a meter inside the limit, says the value in words, and a limit of nothing shows none", () => {
+  const over = html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "4 von 3 h", meter: { value: 4, of: 3 } });
+  expect(over).toContain('role="meter"');
+  expect(over).toContain('aria-valuenow="3"');
+  expect(over).toContain('aria-valuemax="3"');
+  expect(over).toContain('aria-valuetext="4 von 3 h"');
+  expect(over).toContain("data-full");
+  expect(over).toContain("--k2-p:100%");
+  const part = html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "1,5 von 3 h", meter: { value: 1.5, of: 3 } });
+  expect(part).toContain("--k2-p:50%");
+  expect(part).not.toContain("data-full");
+  expect(html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "0 h", meter: { value: 0, of: 0 } })).not.toContain('role="meter"');
 });

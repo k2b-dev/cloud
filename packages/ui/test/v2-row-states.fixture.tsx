@@ -103,6 +103,17 @@ export const CellsScreen = (props: { narrow?: boolean }) => {
         <Cells.Cell icon="users" label="Konten" value="192" meta="23 Gäste" />
         <Cells.Cell icon="clock" label="Letzte Sicherung" value={<Chip status="ok">heute 03:00</Chip>} meta="nächste 03:00" />
       </Cells>
+      {/* five and six: rows of three in a narrow pane, two to a row on the phone, never one tall cell alone */}
+      <Cells>
+        {["Offen", "In Arbeit", "Wartet", "Fertig", "Abgeholt"].map((label, index) => (
+          <Cells.Cell icon="circle" label={label} value={String(12 + index * 7)} meta="diese Woche" />
+        ))}
+      </Cells>
+      <Cells>
+        {["Mo", "Di", "Mi", "Do", "Fr", "Sa"].map((label, index) => (
+          <Cells.Cell icon="calendar" label={label} value={`${31 + index} Termine`} />
+        ))}
+      </Cells>
     </Pane>
   );
   return (

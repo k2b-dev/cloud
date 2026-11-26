@@ -257,7 +257,9 @@ export default function Folder(props: Props) {
     const bytes = chosen().reduce((sum, entry) => sum + sizeInBytes(entry.size), 0);
     const all = chosen().every((entry) => entry.kind === "photo");
     const one = chosen().length === 1;
-    return `${formatSize(bytes)} · ${chosen().length} ${all ? (one ? "Bild" : "Bilder") : one ? "Eintrag" : "Einträge"}`;
+    const count = `${chosen().length} ${all ? (one ? "Bild" : "Bilder") : one ? "Eintrag" : "Einträge"}`;
+    // folders bring no size of their own: then the count alone, never "0 KB"
+    return bytes > 0 ? `${formatSize(bytes)} · ${count}` : count;
   };
   const tile = (entry: Entry) => ({
     key: entry.key,

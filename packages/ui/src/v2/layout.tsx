@@ -635,20 +635,23 @@ Cells.Cell = (props: CellProps) => {
         </Show>
         <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
-      <Show when={props.meter}>
+      {/* a limit of nothing is no limit: no bar */}
+      <Show when={props.meter && props.meter.of > 0 ? props.meter : undefined}>
         {(meter) => {
-          const share = () => (meter().of > 0 ? Math.max(0, Math.min(1, meter().value / meter().of)) : 0);
+          // the bar and what assistive technology hears stay inside the limit; the cell's words say the value itself
+          const now = () => Math.max(0, Math.min(meter().of, meter().value));
           return (
             <span
               class="k2-cell-meter"
               role="meter"
               aria-valuemin={0}
               aria-valuemax={meter().of}
-              aria-valuenow={meter().value}
+              aria-valuenow={now()}
+              aria-valuetext={typeof props.value === "string" ? props.value : undefined}
               aria-label={meter().label ?? props.label}
-              data-full={meter().of > 0 && meter().value >= meter().of ? "" : undefined}
+              data-full={meter().value >= meter().of ? "" : undefined}
             >
-              <i style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })} />
+              <i style={custom({ "--k2-p": `${Math.round((now() / meter().of) * 1000) / 10}%` })} />
             </span>
           );
         }}

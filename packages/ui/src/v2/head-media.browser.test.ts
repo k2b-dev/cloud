@@ -533,6 +533,33 @@ test("on the phone the floating actions of a selection cover nothing of the list
   );
 });
 
+test("on the phone the column of settings that scrolls ends above the floating main action; the panes of its split keep no room of their own (review r6)", async () => {
+  await withPage(
+    "settings",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
+        const scrolls = [...document.querySelectorAll<HTMLElement>(".k2-pane > .k2-scroll")].map((scroll) => ({
+          inner: !!scroll.parentElement!.closest(".k2-split"),
+          margin: getComputedStyle(scroll).marginBottom,
+          bottom: scroll.getBoundingClientRect().bottom,
+        }));
+        const outer = scrolls.find((scroll) => !scroll.inner)!;
+        const panes = [...document.querySelectorAll(".k2-split > .k2-pane")].map((pane) => pane.getBoundingClientRect());
+        return {
+          outer: outer.margin,
+          above: outer.bottom <= fab.top,
+          inner: scrolls.filter((scroll) => scroll.inner).map((scroll) => scroll.margin),
+          // the panes of the split follow each other without a gap (only the seam's line between them)
+          gap: Math.round(panes[1]!.top - panes[0]!.bottom),
+        };
+      });
+      expect(found).toEqual({ outer: "72px", above: true, inner: ["0px", "0px"], gap: 1 });
+    },
+    390,
+  );
+});
+
 test("a setting stands with its value beside its name, and an unsaved change says what it was", async () => {
   await withPage("settings", async (page) => {
     const setting = page.locator("[data-k2-part='Setting']").first();
@@ -646,11 +673,32 @@ test("key numbers in a pane of about 600 px beside a side column stay whole: fou
     expect(found.pane).toBeGreaterThan(560);
     expect(found.pane).toBeLessThan(640);
     expect(found.cut).toEqual([]);
-    // four cells stand two by two and keep the statement's 18 px; three of about 200 px take 14 px
+    // four cells stand two by two and keep the statement's 18 px; three of about 200 px take 14 px; five and six stand
+    // in rows of three
     const [four, three] = found.sizes;
     expect(four![1]).toBe("18px");
     expect(three![1]).toBe("14px");
-    expect(found.rows).toEqual([2, 1]);
+    expect(found.rows).toEqual([2, 1, 2, 2]);
+    // each layout draws its own lines, also the rows of three (review r6)
+    const lines = await page.evaluate(() =>
+      [...document.querySelectorAll(".k2-cells")].flatMap((cells, block) => {
+        const items = [...cells.querySelectorAll<HTMLElement>(":scope > .k2-cell")];
+        const boxes = items.map((cell) => cell.getBoundingClientRect());
+        const top = Math.min(...boxes.map((box) => box.top));
+        return items
+          .map((cell, index) => {
+            const box = boxes[index]!;
+            const style = getComputedStyle(cell);
+            const after = boxes.some((other) => Math.round(other.top) === Math.round(box.top) && other.right <= box.left + 1);
+            const under = Math.round(box.top) > Math.round(top);
+            const left = style.borderLeftWidth !== "0px";
+            const up = style.borderTopWidth !== "0px";
+            return left === after && up === under ? "" : `block ${block} cell ${index + 1}: left ${left}/${after} top ${up}/${under}`;
+          })
+          .filter(Boolean);
+      }),
+    );
+    expect(lines).toEqual([]);
   });
 });
 
@@ -699,6 +747,32 @@ test("key numbers never stand alone as a tall cell: four in a row or two by two,
           expect(Math.min(...four!.widths)).toBeGreaterThanOrEqual(220);
         }
         for (const cells of found) expect(cells.values).toEqual([]);
+        // five and six: in one row where the pane is 880 px or wider, two to a row on the phone (the odd last one a line
+        // across); rows of three in a narrow pane (the test beside a side column)
+        const [, , five, six] = found;
+        expect([five!.rows, six!.rows]).toEqual(width === 390 ? [3, 3] : [1, 1]);
+        if (width === 390) expect(five!.alone).toEqual([true]);
+        // every layout draws its own lines: a line on the left only after a cell in the same row, one on top only under
+        // a row (none doubled, none missing)
+        const lines = await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-cells")].flatMap((cells, block) => {
+            const items = [...cells.querySelectorAll<HTMLElement>(":scope > .k2-cell")];
+            const boxes = items.map((cell) => cell.getBoundingClientRect());
+            const top = Math.min(...boxes.map((box) => box.top));
+            return items
+              .map((cell, index) => {
+                const box = boxes[index]!;
+                const style = getComputedStyle(cell);
+                const after = boxes.some((other) => Math.round(other.top) === Math.round(box.top) && other.right <= box.left + 1);
+                const under = Math.round(box.top) > Math.round(top);
+                const left = style.borderLeftWidth !== "0px";
+                const up = style.borderTopWidth !== "0px";
+                return left === after && up === under ? "" : `block ${block} cell ${index + 1}: left ${left}/${after} top ${up}/${under}`;
+              })
+              .filter(Boolean);
+          }),
+        );
+        expect(lines).toEqual([]);
         // a value is the cell's statement (18 px) where cells stand side by side, 14 px in half a phone
         expect(
           await page
