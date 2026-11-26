@@ -465,6 +465,9 @@ export const browserMessages = i18n.define({
       v2Close: "Close",
       v2SearchShort: "Search",
       v2EmptyDrop: "Drop files here or upload them.",
+      v2RecentlyOpened: "Recently opened",
+      v2RevokeLink: "Revoke link",
+      otherStorage: "another storage",
       v2AreaUnread: (values: { area: string }) =>
         `The ${values.area} storages could not be read right now, so they are missing here. Try again later.`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
@@ -954,6 +957,10 @@ export const browserMessages = i18n.define({
       v2Close: "Schließen",
       v2SearchShort: "Suchen",
       v2EmptyDrop: "Zieh Dateien hierher oder lade sie hoch.",
+      v2RecentlyOpened: "Zuletzt geöffnet",
+      // the deed, apart from the state "Widerrufen" of a revoked link in the same column
+      v2RevokeLink: "Link widerrufen",
+      otherStorage: "andere Ablage",
       v2AreaUnread: (values: { area: string }) =>
         `Die ${values.area}-Ablagen konnten gerade nicht gelesen werden und fehlen deshalb hier. Versuch es später noch einmal.`,
       v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>

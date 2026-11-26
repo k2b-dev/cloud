@@ -17,8 +17,8 @@ export function DirectoryStatus(props: { status: InventoryState }) {
   return <StatusBadge tone={tones[props.status]} label={t()[props.status]} />;
 }
 
-/** The sentence for a stable storage or access code. */
-export function issueText(t: ReturnType<ReturnType<typeof useFilesMessages>>, code: string | null): string {
+/** The sentence for a stable storage or access code; a code without a sentence of its own reads as `fallback`. */
+export function issueText(t: ReturnType<ReturnType<typeof useFilesMessages>>, code: string | null, fallback = t.unavailable): string {
   switch (code) {
     case "local_linux_disabled":
       return t.linuxDisabled;
@@ -52,7 +52,7 @@ export function issueText(t: ReturnType<ReturnType<typeof useFilesMessages>>, co
     case "conflict":
       return t.conflictDescription;
     default:
-      return t.unavailable;
+      return fallback;
   }
 }
 

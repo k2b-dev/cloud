@@ -584,6 +584,14 @@
   user-select: none;
 }
 
+/* On a v2 page the counts read as the page's meta text: 12 px in its typeface, the smallest text of its look rules
+   (v1 pages keep their 10 px mono). */
+.k2-ui .k2b-markdown-editor__stats {
+  font: var(--k2-t-meta);
+  letter-spacing: normal;
+  color: var(--k2-subtle);
+}
+
 .k2b-ui .k2b-markdown-editor__stats[data-empty="true"] {
   visibility: hidden;
 }

@@ -190,7 +190,7 @@ export function EntryHistory(props: {
       <Show when={props.history}>
         {(history) => (
           <>
-            <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} />
+            <ShareHistory env={history().env} shares={links()} period={period()} load={loadAccess} onRevoke={revoke} networks={false} />
             <Show when={shares.loading() || shareFailed() || shares.hasMore()}>
               <div role="group" aria-label={h().publicLink}>
                 <Show when={shares.loading() && !shareRetrying() && itemShares().length === 0}>

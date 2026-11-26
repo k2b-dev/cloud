@@ -266,7 +266,9 @@ export function ActivityRow(props: ActivityRowProps) {
     const error = versions.error();
     return error ? (error instanceof Error && error.message ? error.message : h().historyFailed) : "";
   };
-  const sentenceLine = () => <SentenceText parts={linked()} />;
+  // rule 6: the person leads, the sentence carries the verb and the thing's mark beside its name; notes (where the
+  // place names the person) lead with the thing's mark instead
+  const sentenceLine = () => <SentenceText parts={linked()} mark={props.notes ? null : mark()} />;
   // The web is how most changes come; only another channel (the API, an app, the Assistant) is worth a word.
   const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
   // A row with a deed keeps its end for the deed: the time moves into its quiet line, so the two never overlap.
@@ -285,8 +287,8 @@ export function ActivityRow(props: ActivityRowProps) {
   return (
     <Row
       lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
-      // one row everywhere: the thing's mark leads, the sentence names who did it (in "Me" it is the person)
-      mark={mark()?.mark ?? { icon: "history" }}
+      avatar={props.notes ? undefined : personOf(actor())}
+      mark={props.notes ? (mark()?.mark ?? { icon: "history" }) : undefined}
       time={crowded() ? undefined : time()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
@@ -328,7 +330,7 @@ export function RunRow(props: {
         <SentenceText parts={runSentence(props.rows, h(), props.env, locale())} />,
         h().changesCount.replace("{count}", String(props.rows.length)),
       ]}
-      mark={{ icon: "stack-2" }}
+      avatar={personOf(actorOf(lead(), h(), props.env))}
       time={span()}
       onOpen={props.onToggle}
     />

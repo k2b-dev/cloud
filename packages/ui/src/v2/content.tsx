@@ -691,8 +691,11 @@ export type Column<T> = {
   align?: "start" | "end";
   /** The cell leads with the thing's mark: a file's thumbnail or type, a base's symbol (24 px, rule: each thing its mark). */
   mark?: (row: T) => MarkProps;
-  /** The cell leads with a person, such as the owner; the name in the cell names the avatar. */
-  avatar?: (row: T) => Person;
+  /**
+   * The cell leads with a person, such as the owner; the name in the cell names the avatar. A row without a person
+   * (an author the history hides) has no lead, and its cell says so in words.
+   */
+  avatar?: (row: T) => Person | undefined;
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.

@@ -8,7 +8,6 @@ import { navigate as commitHistory, type LinkNavigateEvent, listenPopState } fro
 import { cookies } from "@k2b/stdlib/browser";
 import { formatFileViewSize, toast, useLocale } from "@k2b/ui";
 import {
-  Avatar,
   Bar,
   Button,
   Chip,
@@ -38,7 +37,7 @@ import {
   type TwoActions,
   Workspace,
 } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, mapArray, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
 import { ErrorSchema, type FileEntry } from "../contracts";
@@ -94,6 +93,7 @@ import { filesPageScope } from "./page-scope";
 import { openShareDialog } from "./ShareDialog";
 import SharesPane from "./SharesPane";
 import { searchRequest } from "./search-state";
+import { createSeenTiles } from "./seen-tiles";
 import TrashPane from "./TrashPane";
 import { snapshotTitle } from "./trail";
 import { activityUrl, editorUrl, filesUrl, parseActivityFilters, screenViewOf } from "./urls";
@@ -697,6 +697,47 @@ export default function FilesScreen(props: {
     entry.facts?.links ? b().v2Links({ count: entry.facts.links }) : selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
   const fresh = () => actions.fresh();
   const rows = createMemo((): FolderRow[] => entries().map((entry) => ({ key: entry.path, entry, fresh: fresh().has(entry.path) })));
+  // Previews of the open folder share one signal: leaving the folder cancels those still waiting, so the next folder
+  // and an opened file's large preview do not queue behind them.
+  const previews = createMemo(
+    on(
+      () => `${selected()?.id}\u0000${folder()}`,
+      () => {
+        const controller = new AbortController();
+        onCleanup(() => controller.abort());
+        return controller.signal;
+      },
+    ),
+  );
+  const thumbnail = (entry: FileEntry, variant: "small" | "large") => entryThumbnail(selected()?.id, entry, variant, previews());
+  // The grid keeps every tile in the page: a photo asks for its preview once its tile comes near the view.
+  const seenTile = createSeenTiles(
+    () => t().files,
+    () => entries().map((entry) => entry.path),
+    () => grid() && rows().length > 0,
+  );
+  // One tile object per entry for as long as the entry stands: an arriving preview changes the tile's picture, it does
+  // not make every tile anew.
+  const tiles = createMemo(
+    mapArray(entries, (entry) => ({
+      key: entry.path,
+      ...entryMark(entry),
+      get image() {
+        return seenTile(entry.path) ? thumbnail(entry, "large") : undefined;
+      },
+      title: entry.name,
+      get meta() {
+        return fresh().has(entry.path) ? b().justCreated : when(entry.modified);
+      },
+      people: entry.facts?.author ? [{ name: entry.facts.author.name }] : [],
+      get sign() {
+        return { icon: entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock", label: sharing(entry) };
+      },
+      get href() {
+        return openTarget(entry).href;
+      },
+    })),
+  );
   const placeOf = (entry: FileEntry) => {
     const within = folder() ? entry.path.slice(folder().length + 1) : entry.path;
     return parentPath(within) || folderName(folder());
@@ -1371,7 +1412,7 @@ export default function FilesScreen(props: {
                             .filter(Boolean)
                             .join(" · "),
                         ],
-                        mark: { ...entryMark(row.entry), image: entryThumbnail(selected()?.id, row.entry, "small") },
+                        mark: { ...entryMark(row.entry), image: thumbnail(row.entry, "small") },
                         time: row.fresh ? b().justCreated : day().format(new Date(row.entry.modified)),
                       })}
                       columns={[
@@ -1380,7 +1421,7 @@ export default function FilesScreen(props: {
                           width: { min: 160, default: 220 },
                           sort: sortTarget("name"),
                           // a photo shows itself as its mark, once the preview service has drawn it
-                          mark: (row) => ({ ...entryMark(row.entry), image: entryThumbnail(selected()?.id, row.entry, "small") }),
+                          mark: (row) => ({ ...entryMark(row.entry), image: thumbnail(row.entry, "small") }),
                           cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
                         },
                         {
@@ -1388,19 +1429,8 @@ export default function FilesScreen(props: {
                           title: b().v2From,
                           width: { min: 110, default: 120 },
                           drop: true,
-                          // k2b-ui gap: `Column avatar` takes no row without a person (an author the history hides); the cell
-                          // draws the avatar beside the name meanwhile.
-                          cell: (row) => {
-                            const author = row.entry.facts?.author;
-                            return author ? (
-                              <Inline>
-                                <Avatar name={author.name} />
-                                <Text>{author.name}</Text>
-                              </Inline>
-                            ) : (
-                              ""
-                            );
-                          },
+                          avatar: (row) => (row.entry.facts?.author ? { name: row.entry.facts.author.name } : undefined),
+                          cell: (row) => row.entry.facts?.author?.name ?? "",
                         },
                         {
                           // Who reaches it: its own download links, else the team of a group storage or only you.
@@ -1432,7 +1462,6 @@ export default function FilesScreen(props: {
                     />
                   }
                 >
-                  {/* k2b-ui gap: the listing has no thumbnail address yet, so a tile shows its type's mark. */}
                   <Show when={rows().length} fallback={<Empty {...emptyState()} />}>
                     <Tiles
                       variant="media"
@@ -1441,19 +1470,7 @@ export default function FilesScreen(props: {
                         selected: chosen(),
                         onChange: (key, on) => setChosen((now) => (on ? [...now, key] : now.filter((each) => each !== key))),
                       }}
-                      items={rows().map((row) => ({
-                        key: row.key,
-                        ...entryMark(row.entry),
-                        image: entryThumbnail(selected()?.id, row.entry, "large"),
-                        title: row.entry.name,
-                        meta: row.fresh ? b().justCreated : when(row.entry.modified),
-                        people: row.entry.facts?.author ? [{ name: row.entry.facts.author.name }] : [],
-                        sign: {
-                          icon: row.entry.facts?.links ? "link" : selected()?.kind === "groups" ? "users" : "lock",
-                          label: sharing(row.entry),
-                        },
-                        href: openTarget(row.entry).href,
-                      }))}
+                      items={tiles()}
                     />
                   </Show>
                 </Show>
@@ -1479,14 +1496,9 @@ export default function FilesScreen(props: {
           onNavigate,
         },
       };
-    // an empty folder leads to its first files: dropped anywhere on the page, or chosen with "Hochladen"
-    return canCreate()
-      ? {
-          icon: "upload",
-          text: `${b().emptyTitle}. ${b().v2EmptyDrop}`,
-          action: { label: b().upload, icon: "upload", onClick: actions.pickFiles },
-        }
-      : { icon: "folder", text: b().emptyTitle };
+    // an empty folder says how its first files come: dropped anywhere on the page, or with the one "Hochladen" of the
+    // head (the phone's button), so the page offers it once
+    return canCreate() ? { icon: "upload", text: `${b().emptyTitle}. ${b().v2EmptyDrop}` } : { icon: "folder", text: b().emptyTitle };
   }
 
   /** A search waits in its shape while it runs, so the old results never stand under new words. */

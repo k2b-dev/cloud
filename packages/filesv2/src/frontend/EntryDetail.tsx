@@ -28,7 +28,7 @@ import { ENTRY_TYPE, entryRefId, FOLDER_TYPE } from "../resource-ref";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { createVersions, EntryHistory, type InspectorHistory } from "./entry-history";
-import { entryIcon } from "./entry-icon";
+import { entryMark } from "./entry-mark";
 import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
@@ -260,8 +260,6 @@ function Loaded(
   };
   // who changed it last: the history's exact state when it is read, else what the listing says
   const changedBy = () => currentAuthor() ?? props.item.facts?.author?.name ?? props.listed?.facts?.author?.name ?? null;
-  // The count of versions, once the list of this exact file state is known; the versions section says the rest.
-  const versionCount = () => (versions.state() === "ready" ? String((versions.items()?.length ?? 0) + 1) : null);
   const open = () => {
     if (props.item.directory) return;
     if (editable()) props.onEdit(props.item);
@@ -273,7 +271,8 @@ function Loaded(
       <Show when={hasPreview()}>
         {/* The preview leads the detail; a press on it opens it large. Its own viewers keep their behaviour. */}
         <Band>
-          <Canvas label={t().expand} height={240}>
+          {/* a picture takes its 240 px; a text preview is as tall as its lines, so no gap stands under it */}
+          <Canvas label={t().expand} height={pictured() ? 240 : undefined}>
             <Show
               when={pictured()}
               fallback={
@@ -338,7 +337,6 @@ function Loaded(
             { label: t().location, value: `${baseLabel(props.base, t(), locale())} / ${props.item.path}` },
             { label: f().modified, value: changedBy() ? `${modified()} · ${changedBy()}` : modified() },
             ...(!props.item.directory ? [{ label: f().size, value: formatFileViewSize(props.item.size, locale()) }] : []),
-            ...(versionCount() ? [{ label: t().versions, value: versionCount()! }] : []),
           ]}
         />
       </Section>
@@ -426,7 +424,8 @@ export function FolderContents(props: {
             <List label={t().contents}>
               {shown().map((entry) => (
                 <Row
-                  icon={entryIcon(entry)}
+                  // the entry's coloured type mark, as the folder shows it
+                  mark={entryMark(entry)}
                   lines={[entry.name, meta(entry)]}
                   href={href(entry)}
                   onNavigate={props.onNavigate}

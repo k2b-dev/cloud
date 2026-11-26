@@ -230,7 +230,8 @@ describe("the detail of the v2 folder screen", () => {
         confirmEntry(newer);
         await flush();
         expect(titles()[0]).toBe("Version 4 · current");
-        expect(fact(detail(), "Versions")).toBe("4");
+        // the versions are named once, in their own section; the properties carry no second count (review 26.11.)
+        expect(fact(detail(), "Versions")).toBeUndefined();
         // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.
         expect(button(detail(), "Restore version 3")).toBeUndefined();
         expect(button(detail(), "Restore version 2")).toBeUndefined();

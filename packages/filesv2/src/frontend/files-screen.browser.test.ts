@@ -18,6 +18,7 @@ import {
   fixtureListing,
   fixtureMarkdown,
   fixtureMine,
+  fixtureOpened,
   fixturePage,
   fixtureSearch,
   fixtureShareAccess,
@@ -249,7 +250,7 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
       });
     if (url.pathname.startsWith(`${api}/shares/`) && url.pathname.endsWith("/access"))
       return route.fulfill({ json: fixtureShareAccess(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") });
-    if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
+    if (url.pathname === `${api}/recent`) return route.fulfill({ json: fixture === "plain" ? fixtureOpened() : [] });
     // a photo's preview is an invented picture in its own colours; other kinds have none here
     if (url.pathname.startsWith(`${api}/bases/demo/preview`)) {
       const path = url.searchParams.get("path") ?? "";
@@ -530,6 +531,25 @@ describe("a folder of Files on v2", () => {
       }
     });
 
+  test("the grid asks for the preview of a photo only once its tile comes into view", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/filesv2?base=demo", "huge");
+    try {
+      await tab.locator("[data-k2-part=FilterBar]").getByRole("button", { name: /Liste/ }).click();
+      await tab.getByRole("menuitemradio", { name: "Raster" }).click();
+      await tab.locator("[data-k2-part=Tiles] > [role=listitem]").first().waitFor();
+      const previews = () => seen.api.filter((request) => request.includes("/preview?"));
+      // the first page starts with 40 folders: its photos stand below the view
+      await tab.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
+      expect(previews()).toEqual([]);
+      await tab.locator("[data-k2-part=Tiles] > [role=listitem]").last().scrollIntoViewIfNeeded();
+      await tab.waitForFunction(() => document.querySelector("[data-k2-part=Tiles] img") !== null);
+      expect(previews().some((request) => request.includes("Beleg+0041.jpg") || request.includes("Beleg%200041.jpg"))).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("the grid shows the folder as pictures and chooses entries as the list does", async () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo");
     try {
@@ -740,7 +760,7 @@ describe("the views beside the folders on v2", () => {
 
       await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Freigaben" }).click();
       await tab.getByText("Unterlagen Lindqvist").first().waitFor();
-      await tab.getByRole("button", { name: "Widerrufen" }).first().click();
+      await tab.getByRole("button", { name: "Link widerrufen" }).first().click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Widerrufen" }).click();
       await tab.waitForFunction(() => document.body.textContent?.includes("Freigabe widerrufen."));
       expect(seen.posts.at(-1)?.path).toMatch(/^\/shares\/.+\/revoke$/);
@@ -758,6 +778,12 @@ describe("the views beside the folders on v2", () => {
       await tab.getByText("Alles gespeichert").first().waitFor();
       await shoot(tab, "16-editor-1440");
       await expectClean(tab);
+      // on a v2 page the editor's counts read as its meta text: 12 px in the page's typeface, not 10 px mono
+      const stats = await tab
+        .locator(".k2b-markdown-editor__stats")
+        .evaluate((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).fontFamily]);
+      expect(stats[0]).toBe("12px");
+      expect(stats[1]).toContain("IBM Plex Sans");
       // saving and closing are the deeds of the title row; saving waits for a change
       const save = tab.locator("[data-slot=status]").getByRole("button", { name: "Speichern" });
       expect(await save.isDisabled()).toBe(true);
@@ -811,6 +837,16 @@ describe("the views beside the folders on v2", () => {
       const { context, tab, errors } = await open(phone, address);
       try {
         await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
+        if (address.includes("view=edit")) {
+          // the editor's title, its state and "Speichern" stand in one line on the phone
+          const status = tab.locator("[data-slot=status]");
+          const tops = await Promise.all(
+            [status.getByText("Notizen.md"), status.getByRole("button", { name: "Speichern" })].map(async (part) =>
+              Math.round((await part.boundingBox())!.y),
+            ),
+          );
+          expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThan(8);
+        }
         await expectClean(tab);
         expect(errors).toEqual([]);
       } finally {

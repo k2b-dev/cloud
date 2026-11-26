@@ -1,5 +1,5 @@
 import { MarkdownEditor, prompts, toast } from "@k2b/ui";
-import { Bar, Button, Canvas, Chip, Failed, Inline, Loading, Notice, Pane, Text } from "@k2b/ui/v2";
+import { Bar, Button, Canvas, Chip, Failed, Loading, Notice, Pane, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkdownLaunch } from "../contracts";
@@ -211,11 +211,13 @@ export default function MarkdownPane(props: {
       // filters leave there, the state of an open entry stays). Saving and closing are the deeds of this row.
       status={
         <Bar
+          // title and state stand in the bar itself, not in an Inline (which wraps in a status place): the row stays one
+          // line on the phone, and the title gives way with "…" before the state and the deeds
           start={
-            <Inline>
+            <>
               <Text type="lead">{props.launch.entry.name}</Text>
               <Chip status={dirty() ? "warn" : "ok"}>{state()}</Chip>
-            </Inline>
+            </>
           }
           end={
             <>

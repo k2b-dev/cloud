@@ -65,7 +65,8 @@ export default function OverviewPane(props: {
   const recent = createMemo((): ActivityListLine[] => {
     const shown = props.recent;
     if (!shown) return [];
-    const days = activityDays(historyRows(shown.page.items, { batches: true, merge: true }), shown.opened, {
+    // the opened files stand on the left as tiles of their own; the right column keeps the changes
+    const days = activityDays(historyRows(shown.page.items, { batches: true, merge: true }), [], {
       complete: !shown.page.next,
       locale: locale(),
       t: h(),
@@ -94,7 +95,7 @@ export default function OverviewPane(props: {
           <Notice tone="warn" title={t()[issue.area]}>
             {/* an area that could not be read has no storage of its own in the list: the notice speaks of the area,
                 not of "the storage", so it never seems to mean a storage the list shows */}
-            {issueText(t(), issue.code) === t().unavailable ? b().v2AreaUnread({ area: t()[issue.area] }) : issueText(t(), issue.code)}
+            {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
           </Notice>
         ))}
         <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length}>
@@ -147,6 +148,26 @@ export default function OverviewPane(props: {
             )}
           </Show>
         </Section>
+        <Show when={props.recent?.opened.length}>
+          {/* what this person opened last, as tiles beside the favorites: the way back to the work of the last days */}
+          <Section
+            icon="clock"
+            color={FILES_COLOR}
+            title={b().v2RecentlyOpened}
+            count={props.recent!.opened.slice(0, FAVORITES_PREVIEW).length}
+          >
+            <Tiles
+              label={b().v2RecentlyOpened}
+              items={props.recent!.opened.slice(0, FAVORITES_PREVIEW).map((item) => ({
+                ...entryMark(item.entry),
+                title: item.entry.name,
+                meta: favoritePlace(item, labels()),
+                href: favoriteHref(item),
+                onNavigate: props.onNavigate,
+              }))}
+            />
+          </Section>
+        </Show>
       </Pane>
       <Pane label={b().recentByYou} side width={{ min: 320, default: 400 }} scrollKey="filesv2-overview-recent">
         <Section

@@ -80,7 +80,11 @@ const worst: FileEntry[] = [
 
 const huge: FileEntry[] = Array.from({ length: 1000 }, (_, index) => {
   const number = String(index + 1).padStart(4, "0");
-  return index < 40 ? entry(`Ordner ${number}`, true, 0, index) : entry(`Beleg ${number}.pdf`, false, 10_000 + index * 37, index);
+  if (index < 40) return entry(`Ordner ${number}`, true, 0, index);
+  // every tenth file a photo: the grid asks for the previews of those in view only
+  return index % 10 === 0
+    ? entry(`Beleg ${number}.jpg`, false, 2_400_000 + index, index)
+    : entry(`Beleg ${number}.pdf`, false, 10_000 + index * 37, index);
 });
 
 const entries = (fixture: FixtureCase) => (fixture === "worst" ? worst : fixture === "huge" ? huge : fixture === "empty" ? [] : plain);
@@ -432,4 +436,11 @@ export const fixtureMine = (limit?: number): ActivityPage => {
   return { ...fixtureActivity("plain"), items: shown, visibleCount: shown.length };
 };
 /** "Recently by you" on all storage: the first five of this person's own changes. */
-export const fixtureRecent = () => ({ page: fixtureMine(5), opened: [] });
+/** The files Mira opened in the last days, newest first, as the overview shows them beside her favorites. */
+export const fixtureOpened = (): MarkedEntry[] =>
+  ["Ansicht Front Eiche.jpg", "Materialliste.xlsx", "Lieferplan.pdf", "Notizen.md"].map((name, index) => ({
+    base: { id: fixtureBase.id, name: fixtureBase.name, kind: fixtureBase.kind, area: fixtureBase.area },
+    entry: plain.find((item) => item.path === name)!,
+    markedAt: hoursAgo(3 + index * 7),
+  }));
+export const fixtureRecent = () => ({ page: fixtureMine(5), opened: fixtureOpened() });

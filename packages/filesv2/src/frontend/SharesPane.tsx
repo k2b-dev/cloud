@@ -1,5 +1,5 @@
 import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Dialog, Failed, Icon, Inline, type OnNavigate, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Dialog, Failed, Icon, Inline, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, SharePage, ShareView } from "../contracts";
@@ -92,10 +92,11 @@ export default function SharesPane(props: {
   const expires = (share: ShareView) => (share.expiresAt ? date().format(new Date(share.expiresAt)) : b().noExpiry);
   // In the column a link without an end is a dash: its head says what the column holds, and the row on the phone says it in words.
   const expiresCell = (share: ShareView) => (share.expiresAt ? expires(share) : "—");
+  // an active link is the rule and says nothing; only an expired or revoked one wears its state
   const state = (share: ShareView) => (
-    <Chip status={STATE[share.state]}>
-      {share.state === "active" ? b().stateActive : share.state === "expired" ? b().stateExpired : b().stateRevoked}
-    </Chip>
+    <Show when={share.state !== "active"}>
+      <Chip status={STATE[share.state]}>{share.state === "expired" ? b().stateExpired : b().stateRevoked}</Chip>
+    </Show>
   );
   const active = () => page()?.items.filter((share) => share.state === "active").length ?? 0;
 
@@ -104,12 +105,15 @@ export default function SharesPane(props: {
       label={b().sharesTitle}
       scrollKey="filesv2-shares"
       status={
-        <StatusRow
-          // the lead counts the rows it stands over; the active ones are its fact
-          lead={
-            page() ? b().v2SharesLead({ count: page()!.items.length, more: page()!.next ? "+" : "", active: active() }) : b().sharesTitle
+        // the count is quiet words over the table, as the folder and Activity say theirs
+        <Bar
+          start={
+            <Text type="meta">
+              {page()
+                ? b().v2SharesLead({ count: page()!.items.length, more: page()!.next ? "+" : "", active: active() })
+                : b().sharesTitle}
+            </Text>
           }
-          loading={loading()}
         />
       }
     >
@@ -161,7 +165,7 @@ export default function SharesPane(props: {
                       <Show when={share.state === "active"}>
                         {/* the deed says its word: a crossed link beside "Aktiv" read as a second state */}
                         <Button variant="ghost" busy={busy() === share.id} disabled={Boolean(busy())} onClick={() => void revoke(share)}>
-                          {b().revoke}
+                          {b().v2RevokeLink}
                         </Button>
                       </Show>
                     </Inline>
