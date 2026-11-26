@@ -10,5 +10,4 @@ packages/contacts/src/frontend/_components/ContactsList.tsx | display | xl:flex
 packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | display | lg:hidden
 packages/core/src/pages/admin/outgoing-mail/OutgoingMail.island.tsx | display | lg:hidden
 packages/core/src/pages/admin/outgoing-mail/SendLog.tsx | display | lg:hidden
-packages/notebooks/src/styles/app.css | media | @media (min-width: 64rem)
 packages/ui/src/styles/surfaces-widgets-parity.css | media | @media (min-width: 80rem)

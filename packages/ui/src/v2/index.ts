@@ -10,6 +10,8 @@
  *   enforce this.
  */
 
+// The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
+export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {
@@ -74,6 +76,8 @@ export {
   type SelectOption,
   type SelectProps,
 } from "./controls";
+// A month of days to pick one from (with a time for points in time); DateInput opens it.
+export { DatePicker, type DatePickerProps } from "./date-picker";
 export { type DescribeV2Options, describeV2 } from "./describe";
 // Lists people filter, sort and group: the statements of a `defineListQuery` declaration, and values that load.
 export { FilterBar, type FilterBarProps, type FilterBarViews, ListOrder, type ListOrderProps, viewIcon } from "./filter-bar";

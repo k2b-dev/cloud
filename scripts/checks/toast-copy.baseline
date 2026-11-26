@@ -210,26 +210,6 @@ packages/grids/src/frontend/custom-app/document-preview.ts | untitled | reason
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostAdded
 packages/ipa-hosts/src/frontend/EditHost.island.tsx | untitled | t().hostRemoved
 packages/ipa-hosts/src/frontend/HostSettings.island.tsx | untitled | t().scheduleUpdated
-packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | message
-packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
-packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().downloadStarted
 packages/mail/src/frontend/_components/MailAdminKeptActions.island.tsx | untitled | t().stopKeepingDone
 packages/mail/src/frontend/_components/MailAdminKeptTable.island.tsx | untitled | t().downloadStarted
@@ -275,12 +255,30 @@ packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
 packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
+packages/mail/src/frontend/mail-workspace.tsx | title | report.conversationCount === 1 ? t().changeNotApplied : t().changesNotApplied({ failed: report.failures.length, total: report.conversationCount })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | context?.keep === false ? conversationText().stopKeepingDone : conversationText().keepSaved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | error instanceof Error ? error.message : t().updateConversationsFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | message
+packages/mail/src/frontend/mail-workspace.tsx | untitled | remainingText().bulkLaterFailed({ failed, total: items.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | result.updatedConversationIds.length === 0 ? t().tagsAlreadyPresent : t().tagsAdded({ count: result.updatedConversationIds.length })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().actionMoved({ actionId, count, messages: messageRows, folder })
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().changeListViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().closeConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().healthRefreshFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().listWidthSaveFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().messageMoved
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openConversationFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().openViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().restoreViewFailed
+packages/mail/src/frontend/mail-workspace.tsx | untitled | t().settingsRefreshFailed
 packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | error instanceof CommentRequestError ? error.message : options.t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().undoFailed
-packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | error.message
-packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | t().commentSavedReloadFailed
 packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.ts | untitled | err.message
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateReplaced({ name: saved.name })
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateSaved({ name: saved.name })
