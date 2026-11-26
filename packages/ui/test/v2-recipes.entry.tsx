@@ -13,6 +13,7 @@ import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
+import * as tree from "../skills/k2b-ui/recipes/tree";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
@@ -34,6 +35,7 @@ const recipes: Record<string, Recipe> = {
   "record.tsx": record,
   "states.tsx": states,
   "table.tsx": table,
+  "tree.tsx": tree,
 };
 
 declare global {

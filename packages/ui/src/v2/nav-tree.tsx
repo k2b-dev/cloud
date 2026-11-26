@@ -1,10 +1,10 @@
 import { createComputed, createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show, untrack } from "solid-js";
-import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
 import { announceText } from "./behavior/treegrid";
 import { Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, PointerMenu } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { useTreeMessages } from "./tree-messages";
 import type { OnNavigate, Status } from "./types";
 
 // ── Tree ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -103,7 +103,7 @@ const TreeMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
 
 /** The tree of a `Nav` group: places of 32 px, one level 12 px further in, the arrow before the symbol. */
 export const NavTreeView = (props: NavTree) => {
-  const t = useUiMessages();
+  const t = useTreeMessages();
   const overlay = useOverlayMessages();
   const nodes = createMemo(() => {
     const all = new Map<string, NavTreeNode>();
