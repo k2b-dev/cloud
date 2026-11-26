@@ -50,7 +50,7 @@ type Customer = {
   kinds: string[];
   ids: { label?: string; icon?: string; value: string; copy?: boolean }[];
   customers: string;
-  counts: { deliveries: number; money: number };
+  counts: { deliveries: string; money: string };
   note: { text: string; meta: string };
   money: { amount: string; meta: string };
   deliveries: { value: string; meta: string };
@@ -64,7 +64,7 @@ type Customer = {
     time: string;
     chip?: { status: "ok" | "warn"; label: string };
   }[];
-  itemCount: number;
+  itemCount: string;
   contact: { phone: string; email: string; address: string; language: string };
   team: { person: Person; role: string }[];
   activity: { person: Person; text: JSX.Element; time: string }[];
@@ -77,7 +77,7 @@ const ottilie = (): Customer => ({
   kinds: ["Privat"],
   ids: [{ label: "Kunde", value: "7K4QX", copy: true }],
   customers: "412",
-  counts: { deliveries: 4, money: 12 },
+  counts: { deliveries: "4", money: "12" },
   note: { text: "Ruft lieber an, als Mails zu schreiben. Abholung nur samstags.", meta: "Ada Renz, 12. Nov." },
   money: { amount: "532,30 €", meta: "1 Rechnung offen" },
   deliveries: { value: "2 laufen", meta: "Abrechnung am 15. Dez." },
@@ -135,7 +135,7 @@ const ottilie = (): Customer => ({
     },
     { mark: category.silver, name: "Silberbesteck, 84 Teile", meta: "EL-2611-00009 · abholbereit", time: "verkauft 2.100 €" },
   ],
-  itemCount: 8,
+  itemCount: "8",
   contact: { phone: "+49 30 5550 142", email: "o.brandner@example.de", address: "Lindenallee 14, 77933 Lahr", language: "Deutsch" },
   team: [
     { person: people.ada, role: "Beratung und Verträge" },
@@ -384,7 +384,7 @@ const worst = (): Customer => ({
     { icon: "phone", value: "+49 (0) 7821 555 0142-3189" },
   ],
   customers: "12.840",
-  counts: { deliveries: 1284, money: 1 },
+  counts: { deliveries: "1.284", money: "1" },
   note: {
     text: "Ansprechpartnerin ist ليلى عبد الرحمن, sie spricht Arabisch und Deutsch. Rechnungen nur an bartholomew.fitzgerald@northwind-industries-holdings.example.com.",
     meta: "Aleksandra Wiśniewska-Kowalczyk, 12. Nov. 2026, 23:59",
@@ -431,7 +431,7 @@ const worst = (): Customer => ({
     },
     { mark: category.clock, name: "X", meta: "—", time: "0 €" },
   ],
-  itemCount: 53007,
+  itemCount: "53.007",
   contact: {
     phone: "+49 (0) 7821 555 0142-3189 (Durchwahl Buchhaltung)",
     email: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
