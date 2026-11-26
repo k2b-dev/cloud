@@ -446,6 +446,18 @@ for (const touch of [false, true])
     );
   });
 
+test("Dialog.confirm on a page whose history takes no entries: the answer still arrives, and leaves no marker", async () => {
+  // a page set from markup: WebKit keeps no history entries for it, Chromium does
+  await withPage(async (page) => {
+    await (await askFrom(page, "page", "Weiter?")).getByRole("button", { name: "Ja" }).click();
+    expect(await answerOf(page, "page")).toBe("true");
+    await page.waitForFunction(() => (history.state as { k2bDialog?: number } | null)?.k2bDialog === undefined);
+    await askFrom(page, "page", "Weiter?");
+    await page.keyboard.press("Escape");
+    expect(await answerOf(page, "page")).toBe("false");
+  });
+});
+
 test("Dialog.confirm with two Workspaces: the first answers, the other takes over, without one it brings its own", async () => {
   await withPage(
     async (page) => {

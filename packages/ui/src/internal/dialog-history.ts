@@ -168,6 +168,13 @@ export const createDialogHistory = () => {
     const detail: unknown = "detail" in event ? event.detail : undefined;
     if (isPopState(detail)) onPopState(detail);
   };
+  /** The page leaves while a synthetic Back is on its way: no popstate comes, and nothing waits for one any more. */
+  const onPageHide = () => {
+    const done = resolveReturning;
+    resolveReturning = undefined;
+    syntheticFrom = undefined;
+    done?.();
+  };
   const onNavigate = (event: NavigateEvent) => {
     if (event.navigationType === "traverse") traversalFrom = { href: location.href, marker: historyMarker() };
   };
@@ -178,11 +185,13 @@ export const createDialogHistory = () => {
     listening?.window.removeEventListener("popstate", onPopState, { capture: true });
     listening?.window.removeEventListener("ssr:nav-popstate", onHiddenPopState, { capture: true });
     listening?.window.removeEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
+    listening?.window.removeEventListener("pagehide", onPageHide);
     listening?.navigation?.removeEventListener("navigate", onNavigate);
     window.addEventListener("popstate", onPopState, { capture: true });
     window.addEventListener("ssr:nav-popstate", onHiddenPopState, { capture: true });
     // Capture opens the disposal window before target listeners can release history holders.
     window.addEventListener("ssr:island-dispose", onIslandDispose, { capture: true });
+    window.addEventListener("pagehide", onPageHide);
     const current = typeof navigation !== "undefined" ? navigation : undefined;
     current?.addEventListener("navigate", onNavigate);
     listening = { window, navigation: current };
@@ -207,7 +216,20 @@ export const createDialogHistory = () => {
     if (resume) history.replaceState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "");
     else {
       if (stale) history.replaceState(previous, "");
+      const kept = history.state;
+      const alone = history.length === 1;
       history.pushState({ ...previous, [HISTORY_MARKER]: entry.historyId }, "", url);
+      // A page whose history takes no entries (WebKit for a page set from markup) stays at its one entry. A history of
+      // one has nothing ahead that a push could cut, so it took no entry: Back has nothing to close, and no Back is sent
+      // at the end or waited for. (A longer history may keep its length while it takes one, over cut Forward entries.)
+      if (alone && history.length === 1) {
+        history.replaceState(kept, "");
+        historyIds.pop();
+        issued.delete(entry.historyId);
+        entry.historyId = undefined;
+        seen = historySnapshot();
+        return here;
+      }
     }
     if (url !== undefined) ownUrls.set(entry.historyId, location.href);
     seen = historySnapshot();

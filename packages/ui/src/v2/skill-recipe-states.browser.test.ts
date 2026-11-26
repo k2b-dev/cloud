@@ -29,9 +29,11 @@ const open = async (width: number, recipe?: { name: string; state?: string }): P
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: width < 768, isMobile: width < 768 });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
-  await page.setContent(
-    `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
-  );
+  // a page at an address of its own, whose history takes entries as an app's does (WebKit keeps none for a page set
+  // from markup): a recipe's `Dialog.confirm` holds one while it asks
+  const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`;
+  await page.route("http://recipes.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
+  await page.goto("http://recipes.test/");
   await page.addScriptTag({ content: `window.__recipe = ${JSON.stringify(recipe ?? null)};` });
   await page.addScriptTag({ content: bundle });
   await page.waitForFunction(() => window.__mounted === true);
