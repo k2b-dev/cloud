@@ -14,6 +14,7 @@ import {
   Menu,
   Pane,
   Path,
+  Prose,
   Row,
   Section,
   StatusRow,
@@ -331,6 +332,27 @@ export const StructureScreen = () => (
         </Section>
       </Section.Columns>
       <Bar end={<Button variant="primary">Speichern</Button>} />
+    </Pane>
+  </Workspace>
+);
+
+// Code in prose: a word in code, a block of code, and a CodeBlock's line (`.k2-code`), which draws its own lines.
+export const ProseCodeScreen = () => (
+  <Workspace>
+    <Pane label="Anleitung">
+      <Prose>
+        <p>
+          Setze <code>AUTH_URL</code> auf die Adresse der Cloud.
+        </p>
+        <pre>
+          <code>{"curl -H 'Authorization: Bearer …' https://cloud.example.org/api/me"}</code>
+        </pre>
+        <div class="k2-code">
+          <div class="k2-code-line">
+            <code>bun run dev</code>
+          </div>
+        </div>
+      </Prose>
     </Pane>
   </Workspace>
 );

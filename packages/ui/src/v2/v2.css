@@ -2105,6 +2105,26 @@
 .k2-ui .k2-prose :where(ol) {
   list-style: decimal;
 }
+/* code in the mono face; a block stands on its own quiet surface, keeps its lines and scrolls sideways. A CodeBlock in
+   prose (`.k2-code`) draws its own lines: these rules leave it alone. */
+.k2-ui .k2-prose :where(code:not(.k2-code code)) {
+  font-family: var(--k2-font-mono);
+  font-size: 13px;
+}
+.k2-ui .k2-prose :where(pre:not(.k2-code pre)) {
+  padding: 12px 16px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-canvas);
+  color: var(--k2-text);
+  overflow-x: auto;
+  overflow-wrap: normal;
+}
+.k2-ui .k2-prose :where(:not(pre) > code:not(.k2-code code)) {
+  padding: 1px 4px;
+  border-radius: var(--k2-r-mark);
+  background: var(--k2-n100);
+}
 
 /* ── Inline: one line of things with a fixed gap ────────────────────────────────────────────────────────────── */
 .k2-ui .k2-inline {

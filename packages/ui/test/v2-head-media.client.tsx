@@ -8,6 +8,7 @@ import {
   CellsScreen,
   DeepPathScreen,
   LongAddressScreen,
+  ProseCodeScreen,
   RowStatesScreen,
   StructureScreen,
 } from "./v2-row-states.fixture";
@@ -34,6 +35,7 @@ declare global {
       | "long"
       | "areas"
       | "structure"
+      | "prose"
       | "split-list-canvas";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
@@ -51,6 +53,8 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "prose" ? (
+        <ProseCodeScreen />
       ) : which === "structure" ? (
         <StructureScreen />
       ) : which === "areas" ? (

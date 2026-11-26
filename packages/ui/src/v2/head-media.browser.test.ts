@@ -32,6 +32,7 @@ type Case =
   | "long"
   | "areas"
   | "structure"
+  | "prose"
   | "split-list-canvas";
 
 let browser: Browser;
@@ -956,6 +957,23 @@ test("on the phone a deep path gives way to the shell's bar, and the head keeps 
 });
 
 // From DR's look pass (#4229), each in the primitive that owns it.
+test("code in prose: a word in the mono face on a quiet tint, a block on its own surface that scrolls sideways; a CodeBlock's lines stay its own (#4246, #4244)", async () => {
+  await withPage("prose", async (page) => {
+    const found = await page.evaluate(() => {
+      const style = (selector: string) => getComputedStyle(document.querySelector(selector)!);
+      const word = style(".k2-prose p > code");
+      const block = style(".k2-prose pre");
+      const line = style(".k2-prose .k2-code code");
+      return {
+        word: [word.fontFamily.includes("monospace"), word.backgroundColor !== "rgba(0, 0, 0, 0)"],
+        block: [block.borderTopWidth, block.overflowX],
+        line: [line.backgroundColor, line.paddingLeft, line.fontSize === word.fontSize ? "same" : "own"],
+      };
+    });
+    expect(found).toEqual({ word: [true, true], block: ["1px", "auto"], line: ["rgba(0, 0, 0, 0)", "0px", "own"] });
+  });
+});
+
 test("a home of sections: side by side where both get 360 px, a group head as text, the time at the end of a sentence without a place, a foot without a line under it", async () => {
   for (const width of [1440, 390])
     await withPage(
