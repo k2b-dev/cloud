@@ -22,7 +22,6 @@ import {
   toggleHeadingLevel,
   toggleInlineMark,
 } from "./editor-actions";
-import { DetailsButton, NavigationButton } from "./workspace-buttons";
 
 type Props = {
   connected: boolean;
@@ -337,7 +336,6 @@ export default function EditorToolbar(props: Props) {
         },
       ]}
       dictation={props.dictation ? { source: props.dictation } : undefined}
-      start={<NavigationButton />}
       end={
         <div class="k2b-pill notebooks-editor-pill notebooks-editor-pill--page">
           <Show when={showDisconnected()}>
@@ -366,19 +364,6 @@ export default function EditorToolbar(props: Props) {
               </Tooltip.Anchor>
             )}
           </Show>
-          {/* Detail panel toggle */}
-          <Tooltip.Anchor content={bookMessages.resolve([locale()]).t.openBook}>
-            <IconButtonLink
-              href={buildNoteUrl(props.notebookId, props.noteId, "book")}
-              label={bookMessages.resolve([locale()]).t.openBook}
-              tooltip={false}
-              size="xs"
-              class="text-dimmed"
-            >
-              <i class="ti ti-book" aria-hidden="true" />
-            </IconButtonLink>
-          </Tooltip.Anchor>
-          <DetailsButton />
         </div>
       }
     />

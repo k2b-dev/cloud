@@ -2,7 +2,7 @@ import { EditorView } from "@codemirror/view";
 import { listSharedTextOfflineGenerations } from "@k2b/cloud/browser/shared-text";
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
-import NoteEditor from "../../[id]/_components/editor/NoteEditor.client";
+import NoteEditor from "../../[id]/_components/editor/NoteEditor";
 import type { NotebookDeviceState } from "./offline";
 import { notebookDevice } from "./offline.browser-controller";
 

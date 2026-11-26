@@ -1,6 +1,6 @@
 /**
  * Page templates in the notebook workspace: the real sidebar with its "New note" menu, and a note editor with the
- * empty-note offer, composed as in NoteEditor.client.tsx. The test serves the notebook API with invented data.
+ * empty-note offer, composed as in NoteEditor.tsx. The test serves the notebook API with invented data.
  */
 import { EditorView } from "@codemirror/view";
 import { createEditor } from "@k2b/editor";

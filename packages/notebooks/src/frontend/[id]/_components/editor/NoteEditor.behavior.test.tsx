@@ -9,7 +9,7 @@ import { NOTE_EDITOR_MAX_LENGTH } from "./table-structure";
 const load = async () => {
   const dom = createDomTestHarness();
   try {
-    const { default: NoteEditor } = await import("./NoteEditor.client");
+    const { default: NoteEditor } = await import("./NoteEditor");
     const { LocaleProvider } = await import("@k2b/ui");
     const { yjs } = await import("../../../lib/yjs");
     const offline = await import("../../../lib/yjs/offline");

@@ -50,7 +50,7 @@ const load = async () => {
         },
       },
     }));
-    const { default: NoteEditor } = await import("./NoteEditor.client");
+    const { default: NoteEditor } = await import("./NoteEditor");
     const { yjs } = await import("../../../lib/yjs");
     const offline = await import("../../../lib/yjs/offline");
     const softNavigation = await import("../../../lib/soft-navigation");
