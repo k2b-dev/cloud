@@ -9,6 +9,15 @@ test keeps every recipe free of findings, so code and picture always match.
 Read the recipe file next to its picture: each part in the code is one
 thing you can point at in the image.
 
+Every recipe shows a real screen in the look of the skill ("The look"):
+a sidebar with the app's places, each thing with its mark or avatar,
+states as colour and word, people beside what they did, ten rows and
+more of dense German sample data. The export `app` (`{ color, icon }`)
+names the app the screen belongs to; the pictures, Fibel and the tests
+draw every recipe in the frame of its host (a tinted page with a rail of
+apps, the app marked in it). A browser test fails a recipe whose rows,
+table rows or tiles show a thing without its `Mark` or `Avatar`.
+
 Most recipes also export `states`: the same screen empty, loading, failed
 or in another state that fits it (a form while it saves). Fibel's examples
 switch between them, and the browser test checks each one. A state stands
@@ -27,7 +36,11 @@ in order, to open it.
 with `Tabs` (a menu tab "Weitere") and the one primary, mirrored as
 `Workspace primary`; a list `Pane` with `width`, `scrollKey` and a
 `StatusRow`; the open entry as `Pane detail` with `back`, a head `Bar`
-and a status `Bar` with `Inline` chips.
+with the thing's `Mark` before its name, a status `Bar` with `Inline`
+chips, `Cells` with its figures, `Facts` with the person in charge as an
+avatar, its parts as rows with marks and state chips, and its history as
+`Digest activity`. Every order leads with the mark of its machine; only a
+state that is not "in plan" speaks up as a chip in `marks`.
 
 - What is open comes from the address. Without an open entry the detail is
   not rendered (`undefined`, never `false`), and `detailEmpty` holds its
@@ -42,9 +55,13 @@ and a status `Bar` with `Inline` chips.
 ![list with detail at 390 px](../images/list-detail-390.png)
 
 `Workspace` with `Nav`, a head `Bar` with `Tabs` and the main action;
-`Pane.Split` with the list (`StatusRow`, `List` of two-line `Row`s, the open
-one `current`) and a `Pane detail` (head `Bar` with the name and actions,
-`Notice tone="bad"` with a way out, `Section`s with `Facts` and `Row`s).
+`Pane.Split` with the list (`StatusRow` with what counts today and a
+toned chip, `List` of two-line `Row`s with the mark of their kind, a state
+chip only where something is wrong, the open one `current`) and a
+`Pane detail` (head `Bar` with mark, name and actions, `Notice tone="bad"`
+with a way out, `Cells` with a `trend`, `Facts` with the person in
+charge, the latest events as rows with marks, and who changed it as
+`Digest activity`).
 
 - On the phone the detail pane leaves. Open an entry as its own route there.
 - An error of the open entry is a `Notice` at the top of the detail, not a
@@ -55,13 +72,18 @@ one `current`) and a `Pane detail` (head `Bar` with the name and actions,
 ![form at 1440 px](../images/form-1440.png)
 ![form at 390 px](../images/form-390.png)
 
-`Notice tone="warn"` for a conflict that blocks saving; `Band`s of `Field`s
-(`Field.Row` for fields side by side); a server error goes into the `error`
-of its field; `Choice` and `Check switch` for options; a `Bar` at the end
-with "Cancel" and the one primary "Save", disabled while the conflict lasts.
+A `Path` with the thing's mark in the head and "Abbrechen" with the one
+primary "Speichern" at its end (mirrored as `Workspace primary`), disabled
+while the conflict lasts; `Notice tone="warn"` for a conflict that blocks
+saving; `Section`s of `Field`s (`Field.Row` for fields side by side); a
+server error goes into the `error` of its field; `Choice` and `Check
+switch` for options; a `Pane side` with what the thing feeds (rows with
+marks and a state chip) and who changed it (`Digest activity`).
 
 - Validation and server answers live in the app's state; the primitives
   only show `error`.
+- Settings are not a form: they stand as rows of label and hint with the
+  value at a fixed width beside them (rule 10 of "The look").
 - A long form stands in its own pane or route; a short task above the page
   is a `Dialog` (see `dialogs.tsx`).
 - States: `fresh` (nothing sent yet), `errors` ("Pflichtfeld." and the
@@ -72,8 +94,9 @@ with "Cancel" and the one primary "Save", disabled while the conflict lasts.
 ![form beside a list at 1440 px](../images/form-detail-1440.png)
 ![form beside a list at 390 px](../images/form-detail-390.png)
 
-The page's one primary "Neuer Termin" stays in the head; the form is a
-`Pane detail` beside the list, so the list stays in view while it is
+The page's one primary "Neuer Termin" stays in the head; the list shows
+each appointment with the mark of its kind and the fitter in its second
+line, and a clash as a chip; the form is a `Pane detail` beside the list, so the list stays in view while it is
 filled in, with `Select`, `DateInput`, `Input`, `Choice` inside a `Field`, a
 multiline `Input`, and `Check`s, one of them `disabled` with the reason
 in its words. Its footer `Bar` saves with a default button.
@@ -90,9 +113,11 @@ in its words. Its footer `Bar` saves with a default button.
 `RecordHead` in the head `Bar`; `Tabs` as the head of the record's `Pane`.
 Across both columns: a pinned `Notice tone="note"` and `Cells` with the key
 statements. Below them a `Pane.Split`: the main column with
-`Section "Anstehend"` (`Row yours`, row actions) and a `Section` with a
-`Digest` and a `more` link; a `Pane side` with a `Canvas` (map) and
-`Section` + `Facts`.
+`Section "Anstehend"` (`Row yours` with marks, row actions), a `Section`
+with a `Digest` and a `more` link, and the customer's articles as rows
+with the mark of their category, price and state; a `Pane side` with the
+contact `Facts`, the people who look after the customer as rows with
+avatars, and `Digest activity`.
 
 - What needs a person comes first; history comes after.
 - Area colours (`color`) mark the same area in cells, sections and groups
@@ -108,8 +133,10 @@ statements. Below them a `Pane.Split`: the main column with
 A `Band tone="note"` with the one statement of the tab; one `Section` for
 the area with a `summary`; one `Group` per delivery with
 `meta`, a `state` chip and actions. Inside a group: a strong sentence, its
-way as `Steps`, a `Table` with two-line cells and `Progress`, `Facts inline`
-with a print button. A finished group is `folded`.
+way as `Steps`, its articles as rows with their marks and a state chip, a
+`Table` with two-line cells and `Progress`, `Facts inline` with a print
+button. A finished group is `folded`. The sidebar holds the app's places
+and lists with their marks.
 
 - Never a `Group` inside a `Group`, never a line inside one.
 - "You are next" is `Chip yours`, not a red badge.
@@ -120,11 +147,13 @@ with a print button. A finished group is `folded`.
 ![mail at 1440 px](../images/mail-1440.png)
 ![mail at 390 px](../images/mail-390.png)
 
-Three-line `Row`s (sender, subject, preview) with `unread`, `meta` count,
-`time` and `marks`; `StatusRow` with select-all. The reader: head `Bar`
+Three-line `Row`s (sender, subject, preview) with the sender's `avatar`,
+`unread`, `meta` count, `time` and `marks`; mailboxes and shared mailboxes
+in the `Nav` with their colours; `StatusRow` with select-all. The reader: head `Bar`
 with the subject as `Text type="lead"` and actions; a `Bar` with `Inline`
 chips; `Notice tone="ai"` for the summary; one `Band` per message with a
-sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles`.
+sender `Row` (avatar, icon buttons in `end`), `Prose`, `Tiles` with the
+colour of each file type.
 
 - A colleague's internal note in the thread is a `Notice tone="note"` with
   `title` and `meta` (who, when).
@@ -170,16 +199,23 @@ chip in `marks`; then `Digest activity` under "Zuletzt geändert".
 ![table at 1440 px](../images/table-1440.png)
 ![table at 390 px](../images/table-390.png)
 
-`StatusRow` with the lead ("3 offen"), facts (sum, overdue) and a filter
-button at the end; `Table` with widths, a status `Chip`, an amount column
-`align: "end"`, one text button per row, `drop` on the columns that matter
+A `Nav` with the app's places and accounts; `StatusRow` with the lead
+("33.000,20 € offen"), a count as fact and toned chips at the end (overdue,
+reminders due); `Table` with widths, the invoice's `Mark` before its
+number (in `Inline`), the person in charge as `Avatar`,
+a status `Chip`, an amount column `align: "end"`, a quiet icon button with
+its name only where the deed is due, `drop` on the columns that matter
 least, and `phone(row)` so the phone shows two-line rows instead of a cut
 table. `open(row)` gives each row the address of its invoice (on the phone
 too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 `loading` would hold its place while the rows load.
 
 - The lead says the one thing; the rest are facts, which leave on the phone.
-- A deed per row is a `Button variant="text"` in its own last column.
+- On the phone the rows keep the mark, and a state that needs a person
+  stays as a chip in `marks`.
+- A deed per row is a `Button` in its own last column: `variant="text"`
+  with words where the table has room, a `ghost` icon with its `label`
+  where the widths must fit beside a sidebar at 1024 px.
 
 ## filtered-table.tsx: a table people filter, sort and group
 
@@ -190,7 +226,8 @@ too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 the search, the sorts and the grouping once; `FilterBar` shows the active
 filters as statements in `Pane status` above the `StatusRow`, and
 `ListOrder` shows the sort and the grouping in its `filters`. The `Table`
-shows what the server found for the address.
+shows what the server found for the address: each order with the mark of
+its kind, the team as `Avatar` or `Avatar.Stack`, the state as a chip.
 
 - The server reads the same address with `orderQuery.parse(...)` and filters
   its own data; `@k2b/ui` filters nothing.
@@ -208,8 +245,8 @@ The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
 `Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the phone),
 a `Menu` with a choice section and toggles, and the
 one primary as a `Menu` with a submenu. Each `Row` stands in a
-`Menu.Context` and has a `Button pressed` star and a "…" `Menu` with the
-same entries in its `end`. The offer the address names opens in a
+`Menu.Context`, leads with the mark of its kind and has a `Button pressed`
+star and a "…" `Menu` with the same entries in its `end`. The offer the address names opens in a
 `Pane detail` with its own deeds; `Button busy` while it sends, and a
 `Notice` with a `disabled` action that says why.
 
@@ -221,7 +258,9 @@ same entries in its `end`. The offer the address names opens in a
 ![dialogs at 1440 px](../images/dialogs-1440.png)
 ![dialogs at 390 px](../images/dialogs-390.png)
 
-Members of a space in `Section`s. "Einladen" opens a `Dialog` with
+Members of a space (its `Mark` in the head, the spaces with theirs in the
+`Nav`) as rows with avatars, their role and last activity in the second
+line; open invitations with a mark. "Einladen" opens a `Dialog` with
 `Field`s and its own primary in the foot (a sheet on the phone);
 `Workspace primary` opens the same dialog. Removing a member asks with
 `Dialog.confirm`, then a toast offers "Rückgängig"; "Erneut senden"
@@ -237,7 +276,8 @@ answers with a toast with `status` `ok` or `bad`.
 ![states at 1440 px](../images/states-1440.png)
 ![states at 390 px](../images/states-390.png)
 
-A list with a `StatusRow` and its states in the place of the rows:
+A list of deliveries, each with the mark of its goods and a state chip,
+with a `StatusRow` and its states in the place of the rows:
 `Empty` for nothing yet and another `Empty` for nothing behind a
 filter, `Loading` with the rows and lines that usually come, `Failed`
 with "Erneut versuchen". A `Notice tone="bad"` names the deed for a
@@ -251,11 +291,15 @@ the `StatusRow` facts.
 ![content at 1440 px](../images/content-1440.png)
 ![content at 390 px](../images/content-390.png)
 
-A head `Bar` with the title as `Text type="lead"`, a ghost "Teilen" and
-the one primary "Bearbeiten" (mirrored as `Workspace primary`); a `Band`
+A `Nav` with the areas of the handbook and their marks; a head `Bar`
+with the page's `Mark` and its title as `Text type="lead"` in `Inline`, a
+ghost "Teilen" and the one primary "Bearbeiten" (mirrored as `Workspace
+primary`); a status `Bar` with the writers as `Avatar.Stack` and who
+changed it last; a `Band`
 with the text as `Prose markdown` (rendered safely: no raw HTML, no images,
 only web and mail links); a `Section` with a key in `Facts` (`mono`,
-`copy`); the files as `Tiles` in a `Section` with a count; a plan of its own
+`copy`); the files as `Tiles` with the colour of their type in a
+`Section` with a count; a plan of its own
 in a `Canvas` with `height`, directly in its `Section`. `states` exports
 empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 (`Failed`), each in place of the text below the head.

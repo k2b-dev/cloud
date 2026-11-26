@@ -7,10 +7,11 @@ import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-recipes.entry";
 import { describeV2Page, measureV2Layout } from "./testing";
 
-// Every state of every k2b-ui recipe, mounted in the browser as Fibel's Example shows it. A state with `press` opens an
-// overlay (a menu, a panel, a dialog, a toast) by pressing the buttons and menu entries it names, as a person would;
-// then the page and each open surface keep the v2 rules at 1440 and 390 px, so a picture of an open menu never teaches
-// a mistake either.
+// Every state of every k2b-ui recipe, mounted in the browser as Fibel's Example shows it: in the frame of a host. A
+// state with `press` opens an overlay (a menu, a panel, a dialog, a toast) by pressing the buttons and menu entries it
+// names, as a person would; then the page and each open surface keep the v2 rules at 1440, 1024 and 390 px, so a
+// picture of an open menu never teaches a mistake either. Every thing a recipe lists carries its sign (a mark, a
+// thumbnail or a person), because agents copy recipes: a bare row here becomes a bare screen in an app.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -38,6 +39,22 @@ const open = async (width: number, recipe?: { name: string; state?: string }): P
   await settled(page);
   return { page, errors };
 };
+
+/**
+ * The things a page lists without their sign: rows of a list, rows of a table (desktop and phone) and tiles that carry
+ * no `Mark` (symbol in its colour, or a thumbnail) and no `Avatar`. Places that wait for data (`Loading`) list nothing.
+ */
+const faceless = (page: Page) =>
+  page.evaluate(() => {
+    const face = "[data-k2-part='Mark'], [data-k2-part='Avatar'], [data-k2-part='Avatar.Stack']";
+    const things = document.querySelectorAll(
+      "[data-k2-part='Row'], [data-k2-part='Table'] tbody tr:not([data-group], [data-loading]), [data-k2-part='Tiles'] .k2-tile:not([data-create])",
+    );
+    return [...things]
+      .filter((thing) => thing.getClientRects().length > 0 && !thing.closest("[data-k2-part='Loading'], [data-k2-part='Menu']"))
+      .filter((thing) => !thing.querySelector(face))
+      .map((thing) => (thing.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 48));
+  });
 
 /** Presses the visible button, link or menu entry with exactly this name. */
 const press = async (page: Page, name: string) => {
@@ -74,7 +91,7 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
       const exportsStates = /^export const states\b/m.test(readFileSync(resolve(recipesDir, name), "utf8"));
       expect(states.length > 0).toBe(exportsStates);
       for (const state of states)
-        for (const width of [1440, 390]) {
+        for (const width of [1440, 1024, 390]) {
           const { page, errors } = await open(width, { name, state });
           try {
             const where = `${name} ${state} at ${width} px`;
@@ -83,9 +100,15 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
                 throw new Error(`${where}: could not press \"${step}\"`, { cause: error });
               });
 
+            // the screen stands in the frame of a host (tinted page, rail), never on a bare white page
+            expect([where, await page.locator("[data-k2-frame] > .k2-sf-card > [data-k2-workspace]").count()]).toEqual([where, 1]);
+            expect([where, await faceless(page)]).toEqual([where, []]);
+
             const outline = await describeV2Page(page, "body");
             expect(`${where}\n${outline}`).not.toContain("Problems");
-            const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+            // under an open dialog the page's grips lie behind its backdrop, so no pill shows; the dialog is measured below
+            const modal = await page.locator("[data-k2-part='Dialog']").locator("visible=true").count();
+            const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", ...(modal ? { grips: "[data-k2-no-grip]" } : {}) });
             expect([where, layout.problems]).toEqual([where, []]);
             if ((listed[name]?.[state] ?? []).length > 0) {
               // what the presses opened stands above the page: a surface, or a toast

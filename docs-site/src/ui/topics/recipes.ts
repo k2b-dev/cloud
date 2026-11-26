@@ -14,6 +14,7 @@ import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
+import type { ScreenApp } from "../../../../packages/ui/src/v2/screen-frame";
 
 /**
  * One state a recipe offers beside its default screen, such as `empty`, `loading` or `failed`.
@@ -36,6 +37,8 @@ export type RecipeModule = {
   states?: Readonly<Record<string, RecipeState>>;
   /** The language of the recipe's sample text, so the library's own words ("Erneut versuchen") match it. */
   locale?: string;
+  /** The app the screen belongs to (its colour and symbol); its frame marks it in the rail and tints the page. */
+  app?: ScreenApp;
 };
 
 /** Recipes write their sample text in German (see the skill), so German is the default for the library's words. */
@@ -71,6 +74,12 @@ export const recipeNames: readonly RecipeName[] = Object.keys(recipes).filter(is
 export const recipeStates = (name: RecipeName): Readonly<Record<string, RecipeState>> => {
   const recipe: RecipeModule = recipes[name];
   return recipe.states ?? {};
+};
+
+/** The app a recipe's frame shows: its own `app`, else none (v2's blue, nothing marked in the rail). */
+export const recipeApp = (name: RecipeName): ScreenApp | undefined => {
+  const recipe: RecipeModule = recipes[name];
+  return recipe.app;
 };
 
 /** The language a recipe renders in: its own `locale`, else German. */

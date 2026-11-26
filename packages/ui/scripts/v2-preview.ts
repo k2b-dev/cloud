@@ -4,8 +4,10 @@
  * a text outline from `describeV2`, the layout rules measured in Chromium at 1440 and 390 px, and on request a
  * screenshot. Used by the `k2b-ui` skill (packages/ui/skills/k2b-ui) and to draw its recipe pictures.
  *
- * The screen is a `.tsx` file whose default export is a component without props. `@k2b/ui/v2` resolves to the source
- * of this checkout, so no build is needed.
+ * The screen is a `.tsx` file whose default export is a component without props; an optional `app` export
+ * (`{ color, icon }`) names the app it belongs to. It stands in the frame of a host (`ScreenFrame`: tinted page, rail
+ * of apps), so no picture is a bare white page. `@k2b/ui/v2` resolves to the source of this checkout, so no build is
+ * needed.
  */
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +16,9 @@ import ts from "@typescript/typescript6";
 
 const HELP = `Usage: bun packages/ui/scripts/v2-preview.ts <screen.tsx> [options]
 
-Checks one v2 screen and prints what it shows. The file's default export is a component without props.
+Checks one v2 screen and prints what it shows. The file's default export is a component without props; optional
+exports \`app\` ({ color, icon }) name its app and \`locale\` the language of its words (de by default). The screen
+stands in the frame of a host: a tinted page with a rail of apps at 768 px and wider, the screen alone on a phone.
 
 Steps, cheapest first; each prints its findings and the run goes on:
   1. types     TypeScript errors in the screen (wrong props, a missing label)
@@ -131,13 +135,29 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 const { createComponent } = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const { describeV2 } = await import("../src/v2/describe");
+const { ScreenFrame } = await import("../src/v2/screen-frame");
+const { LocaleProvider } = await import("../src/intl/locale");
 
 let markup = "";
 try {
-  const screen = (await import(file)) as { default?: () => unknown };
+  const screen = (await import(file)) as { default?: () => unknown; app?: { color: string; icon: string }; locale?: string };
   if (typeof screen.default !== "function") throw new Error("the file has no default export that is a component");
   const component = screen.default as Parameters<typeof createComponent>[0];
-  markup = renderToString(() => createComponent(component, {}));
+  // the screen stands in the frame of a host (tinted page, rail), as a person sees it: never a bare white page. The
+  // library's own words follow the screen's `locale`, else German like the page and the recipes' sample text.
+  markup = renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale: screen.locale ?? "de",
+      get children() {
+        return createComponent(ScreenFrame, {
+          app: screen.app,
+          get children() {
+            return createComponent(component, {});
+          },
+        });
+      },
+    }),
+  );
 } catch (error) {
   // A screen that does not render is a finding of the screen (exit 1), not a failure of the tool.
   section("render", [`- ${error instanceof Error ? error.message : String(error)}`]);
@@ -172,7 +192,8 @@ if (textOnly) {
   const { Window } = await import("happy-dom");
   const window = new Window();
   window.document.body.innerHTML = `<div class="k2-ui">${markup}</div>`;
-  const outline = describeV2(window.document.body.firstElementChild as unknown as Element);
+  // the screen in the frame's card; the rail is a picture of the host
+  const outline = describeV2(window.document.querySelector(".k2-sf-card") as unknown as Element);
   if (outline.includes("\nProblems (")) failed = true;
   section("outline (server markup)", outline.split("\n"));
   await window.happyDOM.close();
@@ -192,7 +213,7 @@ try {
     try {
       await tab.setContent(page(true));
       await settled(tab);
-      const outline = await describeV2Page(tab, ".frame");
+      const outline = await describeV2Page(tab, ".k2-sf-card");
       if (outline.includes("\nProblems (")) failed = true;
       section(`outline at ${width} px`, outline.split("\n"));
       const layout = await measureV2Layout(tab, { root: "[data-k2-workspace], .frame" });

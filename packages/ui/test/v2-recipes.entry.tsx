@@ -15,12 +15,13 @@ import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
+import { type ScreenApp, ScreenFrame } from "../src/v2/screen-frame";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
 // states before this bundle runs; the bundle mounts it in #root. The test then presses what a `press` state names.
 
 type State = (() => JSX.Element) | { render: () => JSX.Element; press: string | readonly string[] };
-type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?: Record<string, State> };
+type Recipe = { default: (props: Record<string, never>) => JSX.Element; states?: Record<string, State>; app?: ScreenApp };
 
 const recipes: Record<string, Recipe> = {
   "actions.tsx": actions,
@@ -66,6 +67,16 @@ if (chosen && root) {
   const state = chosen.state ? recipe.states?.[chosen.state] : undefined;
   if (chosen.state && !state) throw new Error(`v2-recipes: ${chosen.name} has no state ${chosen.state}`);
   const view = !state ? recipe.default : typeof state === "function" ? state : state.render;
-  render(() => createComponent(view, {}), root);
+  // in the frame of a host, as Fibel and the skill's pictures show every recipe
+  render(
+    () =>
+      createComponent(ScreenFrame, {
+        app: recipe.app,
+        get children() {
+          return createComponent(view, {});
+        },
+      }),
+    root,
+  );
 }
 window.__mounted = true;

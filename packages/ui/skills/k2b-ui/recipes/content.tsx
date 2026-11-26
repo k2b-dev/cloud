@@ -1,7 +1,32 @@
 // Recipe: a page to read. The text in Prose (Markdown, rendered safely), a token to copy in Facts mono, the files as
 // Tiles, and a drawing of its own in a Canvas inside its Section. What has no v2 primitive yet is a k2b-ui gap.
 // Empty, loading and failed stand where the text would stand; the head with its deeds stays (see `states` at the end).
-import { Band, Bar, Button, Canvas, Empty, Facts, Failed, Loading, Pane, Prose, Section, Text, Tiles, Workspace } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Band,
+  Bar,
+  Button,
+  Canvas,
+  Empty,
+  Facts,
+  Failed,
+  Inline,
+  Loading,
+  Mark,
+  Nav,
+  Pane,
+  Prose,
+  Section,
+  Text,
+  Tiles,
+  Workspace,
+} from "@k2b/ui/v2";
+
+// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
+export const app = { color: "#7c3aed", icon: "notebook" };
+
+const page = { icon: "file-text", color: "#7c3aed" };
+const people = [{ name: "Ada Renz" }, { name: "Lena Hartwig" }, { name: "Felix Thal" }];
 
 const guide = `## Was wir annehmen
 
@@ -20,9 +45,37 @@ export default function IntakeGuide(props: Props) {
   const text = () => props.text ?? guide;
   return (
     <Workspace
+      sidebar={
+        <Nav
+          title="Handbuch"
+          icon="notebook"
+          groups={[
+            {
+              items: [
+                { label: "Start", icon: "home", href: "#start" },
+                { label: "Zuletzt geändert", icon: "clock", count: 4, href: "#zuletzt" },
+              ],
+            },
+            {
+              label: "Bereiche",
+              items: [
+                { label: "Annahme", icon: "package-import", color: "#7c3aed", current: true },
+                { label: "Werkstatt", icon: "tool", color: "#c2410c", href: "#werkstatt" },
+                { label: "Versand", icon: "truck", color: "#0e7490", href: "#versand" },
+                { label: "Büro", icon: "briefcase", color: "#2563eb", href: "#buero" },
+              ],
+            },
+          ]}
+        />
+      }
       head={
         <Bar
-          start={<Text type="lead">Leitfaden Annahme</Text>}
+          start={
+            <Inline>
+              <Mark {...page} />
+              <Text type="lead">Leitfaden Annahme</Text>
+            </Inline>
+          }
           end={
             <>
               <Button variant="ghost" icon="share" label="Teilen" />
@@ -35,7 +88,19 @@ export default function IntakeGuide(props: Props) {
       }
       primary={{ label: "Bearbeiten", icon: "pencil" }}
     >
-      <Pane label="Leitfaden Annahme">
+      <Pane
+        label="Leitfaden Annahme"
+        status={
+          <Bar
+            start={
+              <Inline>
+                <Avatar.Stack people={people} label="Ada Renz, Lena Hartwig und Felix Thal schreiben mit" />
+                <Text type="meta">Ada Renz hat ihn vor 2 Tagen geändert · 3 schreiben mit</Text>
+              </Inline>
+            }
+          />
+        }
+      >
         {props.failed ? (
           <Failed text="Der Leitfaden konnte nicht geladen werden. Es wurde nichts geändert." onRetry={() => location.reload()} />
         ) : props.loading ? (
@@ -60,9 +125,9 @@ export default function IntakeGuide(props: Props) {
               <Tiles
                 label="Anhänge"
                 items={[
-                  { icon: "file-type-pdf", title: "Annahmeschein.pdf", meta: "84 KB", href: "#annahmeschein" },
-                  { icon: "photo", title: "Hof-Plan.jpg", meta: "1,2 MB", href: "#hof-plan" },
-                  { icon: "video", title: "Tresor-Ablauf.mp4", meta: "38 MB", href: "#tresor" },
+                  { icon: "file-type-pdf", color: "#dc2626", title: "Annahmeschein.pdf", meta: "84 KB", href: "#annahmeschein" },
+                  { icon: "photo", color: "#0e7490", title: "Hof-Plan.jpg", meta: "1,2 MB", href: "#hof-plan" },
+                  { icon: "video", color: "#7c3aed", title: "Tresor-Ablauf.mp4", meta: "38 MB", href: "#tresor" },
                 ]}
               />
             </Section>
