@@ -171,7 +171,9 @@ test("colour: a swatch press sets it, a typed CSS colour becomes its code, the h
     await code.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
     expect(await accent.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
-    const hue = accent.getByRole("slider", { name: "Farbton" });
+    // area and hue stand on a panel behind the swatch, so a settings row stays one line
+    await accent.getByRole("button", { name: "Farbe wählen" }).click();
+    const hue = page.getByRole("slider", { name: "Farbton" });
     const before = await hue.getAttribute("aria-valuenow");
     await hue.focus();
     await page.keyboard.press("ArrowRight");
@@ -558,13 +560,52 @@ test("slider held by the page: after a form reset the input, the number shown an
 
 test("colour on black: a hue step says the hue core holds, not the black of the code", async () => {
   await withPage(async (page) => {
-    const hue = field(page, "Ton").getByRole("slider", { name: "Farbton" });
+    await field(page, "Ton").getByRole("button", { name: "Farbe wählen" }).click();
+    const hue = page.getByRole("slider", { name: "Farbton" });
     await hue.focus();
     await page.keyboard.press("ArrowRight");
     await page.waitForFunction(() =>
       [...document.querySelectorAll('#sent [aria-label="Farbton"]')].some((thumb) => thumb.getAttribute("aria-valuenow") === "1"),
     );
     expect(await hue.getAttribute("aria-valuetext")).toBe("1 Grad");
+  });
+});
+
+test("colour: the swatch opens area and hue on a panel and says so; Escape closes it and gives the swatch the focus", async () => {
+  await withPage(async (page) => {
+    const accent = field(page, "Akzentfarbe");
+    const swatch = accent.getByRole("button", { name: "Farbe wählen" });
+    // closed, the row is one line: swatch and code, no area and no hue in the page
+    expect(await page.getByRole("slider", { name: "Farbton" }).count()).toBe(0);
+    expect(await swatch.getAttribute("aria-expanded")).toBe("false");
+    await swatch.click();
+    await page.getByRole("slider", { name: "Farbton" }).waitFor();
+    expect(await swatch.getAttribute("aria-expanded")).toBe("true");
+    await page.getByRole("slider", { name: "Farbton" }).focus();
+    await page.keyboard.press("Escape");
+    await page.getByRole("slider", { name: "Farbton" }).waitFor({ state: "detached" });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Farbe wählen");
+  });
+});
+
+test("a form reads down one column: a field in a wide pane is at most 600 px wide", async () => {
+  await withPage(async (page) => {
+    const widths = await page.evaluate(() =>
+      [...document.querySelectorAll(".k2-pane .k2-field")].map((element) => Math.round(element.getBoundingClientRect().width)),
+    );
+    expect(widths.length).toBeGreaterThan(5);
+    expect(widths.filter((width) => width > 600)).toEqual([]);
+  });
+});
+
+test("a disclosure head is a plain line: no frame, no fill, no padding of a native button", async () => {
+  await withPage(async (page) => {
+    const head = page.locator(".k2-disc-head").first();
+    const look = await head.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { border: style.borderTopWidth, background: style.backgroundColor, appearance: style.appearance };
+    });
+    expect(look).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", appearance: "none" });
   });
 });
 

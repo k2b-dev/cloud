@@ -289,8 +289,9 @@
   color: inherit;
   text-decoration: none;
 }
-/* entries that are a link with an address and a button without one: the button keeps the look of the link */
-.k2-ui :where(.k2-ni, .k2-tab, .k2-sec-link, .k2-fab) {
+/* entries that are a link with an address and a button without one: the button keeps the look of the link; the head
+   of a disclosure is a button that draws no frame of its own */
+.k2-ui :where(.k2-ni, .k2-tab, .k2-sec-link, .k2-fab, .k2-disc-head) {
   appearance: none;
   background: none;
   border: 0;
@@ -2698,6 +2699,10 @@
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
 }
+/* a form reads down one column of a fixed width: its fields never run across a wide pane (settings stand as rows) */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-field:not([data-setting]), .k2-frow) {
+  max-width: 600px;
+}
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {
   margin-inline: var(--k2-edge);
@@ -3089,11 +3094,33 @@
 }
 .k2-ui .k2-color-swatch {
   flex: none;
+  appearance: none;
+  padding: 3px;
   width: var(--k2-h-control);
   height: var(--k2-h-control);
   border-radius: var(--k2-r-control);
   border: var(--k2-hairline);
+  background: var(--k2-surface);
+  cursor: default;
+}
+.k2-ui .k2-color-swatch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-color-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--k2-r-control) - 3px);
   background: var(--color-picker-color);
+}
+/* the picker on its panel: area over hue, as wide as the panel */
+.k2-ui .k2-color-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 12px;
 }
 .k2-ui .k2-color-head > .k2-input {
   flex: 1;
