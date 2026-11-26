@@ -2,7 +2,23 @@ import type { AdminMailProfile } from "@k2b/cloud/contracts";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Dialog, Field, Input, Menu, type NavProps, Notice, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Chip,
+  Dialog,
+  Field,
+  Inline,
+  Input,
+  Menu,
+  type NavProps,
+  Notice,
+  Pane,
+  StatusRow,
+  Table,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { outgoingMailMessages } from "./messages";
 import ProfileForm from "./ProfileForm";
@@ -129,7 +145,11 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
           label={t().profiles}
           width={{ min: 420, default: 640 }}
           scrollKey="admin-outgoing-mail-profiles"
-          status={<StatusRow lead={t().profileCount({ count: props.profiles.length })} />}
+          status={
+            // k2b-ui gap: the hero band comes with DP. Its figure, the recipients of the last 24 hours, exists per profile in the
+            // mail service (MailProfile.quota) but not in the admin contract yet, so the count of profiles stands in
+            <StatusRow lead={t().profileCount({ count: props.profiles.length })} />
+          }
         >
           <Text muted>{t().profilesDescription}</Text>
           <Table
@@ -142,32 +162,35 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
             phone={(row) => ({
               lines: [row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name, row.fromAddress],
             })}
+            // one line per row (identity rule 4); the server, the pace and the bounce mailbox are in the open profile
             columns={[
               {
                 title: t().profile,
                 width: { min: 180, default: 220 },
-                cell: (row) => ({ lines: [row.isDefault ? `${row.name} · ${t().defaultBadge}` : row.name, row.key] }),
+                mark: () => ({ icon: "mail-cog" }),
+                cell: (row) => (
+                  <Inline>
+                    <Text>{row.name}</Text>
+                    <Show when={row.isDefault}>
+                      <Chip>{t().defaultBadge}</Chip>
+                    </Show>
+                  </Inline>
+                ),
               },
-              {
-                title: t().sender,
-                width: { min: 180, default: 220 },
-                cell: (row) => ({ lines: [row.fromAddress, row.fromName ?? t().fromAppName] }),
-              },
-              {
-                title: t().server,
-                width: { min: 180, default: 220 },
-                drop: true,
-                cell: (row) => ({ lines: [`${row.smtpHost}:${row.smtpPort}`, row.bounceText] }),
-              },
+              { title: t().sender, width: { min: 180, default: 240 }, cell: (row) => row.fromAddress },
               {
                 title: t().limits,
                 drop: true,
-                cell: (row) => ({
-                  lines: [
+                cell: (row) =>
+                  [
                     t().perMinute({ count: row.pacePerMinute }),
                     row.dailyRecipientLimit ? t().perDay({ count: row.dailyRecipientLimit }) : t().unlimited,
-                  ],
-                }),
+                  ].join(" · "),
+              },
+              {
+                title: t().state,
+                drop: true,
+                cell: (row) => (row.bounceFailed ? <Chip status="bad">{t().bounceProblem}</Chip> : ""),
               },
             ]}
           />
