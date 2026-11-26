@@ -20,8 +20,21 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: FilteredOrders } = await import("../../skills/k2b-ui/recipes/filtered-table");
-const { LongPath, longPhoto, NamedPlace, SearchWithWords, ToolbarInHead, TwoCreates } = await import("../../test/v2-head-block.fixture");
-type Head = "list" | "toolbar" | "creates" | "named" | "named-drawer" | "search" | "path";
+const { LongPath, longPhoto, NamedPlace, OpenItem, SearchAndAction, SearchWithWords, ToolbarInHead, TwoCreates } = await import(
+  "../../test/v2-head-block.fixture"
+);
+type Head =
+  | "list"
+  | "toolbar"
+  | "creates"
+  | "named"
+  | "named-drawer"
+  | "search"
+  | "path"
+  | "item"
+  | "item-alone"
+  | "hollow"
+  | "hollow-words";
 const screens = {
   list: () => createComponent(FilteredOrders, {}),
   toolbar: () => createComponent(ToolbarInHead, {}),
@@ -30,6 +43,10 @@ const screens = {
   "named-drawer": () => createComponent(NamedPlace, { detail: 600 }),
   search: () => createComponent(SearchWithWords, {}),
   path: () => createComponent(LongPath, {}),
+  item: () => createComponent(OpenItem, {}),
+  "item-alone": () => createComponent(OpenItem, { path: false }),
+  hollow: () => createComponent(SearchAndAction, {}),
+  "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
 };
 const markup = (head: Head) => renderToString(screens[head]);
 const bundle = await demoBundle("head-block");
@@ -131,6 +148,17 @@ for (const width of [1440, 1024])
       // in a field "/" is a letter
       await page.keyboard.type("A/1");
       expect(await page.locator('.k2-ws-main > [data-slot="head"] .k2-input[data-search] input').inputValue()).toBe("A/1");
+      // while a modal dialog is open, "/" belongs to it (Cloud's help searches with it): the head's search stays shut
+      await page.locator('.k2-ws-main > [data-slot="head"] .k2-input[data-search] input').fill("");
+      await page.locator('.k2-ws-main > [data-slot="head"] .k2-input[data-search] input').blur();
+      await page.evaluate(() => {
+        const dialog = document.body.appendChild(document.createElement("dialog"));
+        dialog.append(document.createElement("button"));
+        dialog.showModal();
+      });
+      await page.keyboard.press("/");
+      await settled(page);
+      expect(await page.evaluate(() => document.activeElement?.closest(".k2-input[data-search]") ?? null)).toBeNull();
     } finally {
       await page.close();
     }
@@ -329,6 +357,111 @@ test("a step of the path to the page itself is no link, so a press there never l
       { name: "Ablage", href: "#ablage", current: null },
       { name: "Fotos 2026", href: null, current: "page" },
     ]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+/** The detail's head: the size of its title, and where its way back and its title stand. */
+const detail = (page: Page) =>
+  page.evaluate(() => {
+    const pane = document.querySelector(".k2-pane[data-detail]")!;
+    const title = pane.querySelector<HTMLElement>(':scope > [data-slot="head"] .k2-bar-start > .k2-text')!;
+    const back = pane.querySelector(':scope > [data-k2-part="Back"] .k2-btn');
+    const head = pane.querySelector(':scope > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+    const box = (element: Element | null) => (element ? element.getBoundingClientRect() : undefined);
+    const backBox = box(back);
+    const titleBox = title.getBoundingClientRect();
+    return {
+      size: getComputedStyle(title).fontSize,
+      backShown: !!backBox && backBox.width > 2,
+      oneRow: !!backBox && backBox.top >= head.top - 1 && backBox.bottom <= head.bottom + 1,
+      titleAfterBack: !!backBox && titleBox.left >= backBox.right,
+      backName: back?.getAttribute("aria-label") ?? back?.textContent?.trim() ?? "",
+    };
+  });
+
+test("1440 px: after a path the open item's name is small; alone it is the detail's lead title", async () => {
+  const withPath = await open(1440, "item");
+  const alone = await open(1440, "item-alone");
+  try {
+    const small = (await detail(withPath)).size;
+    const lead = (await detail(alone)).size;
+    expect(small).toBe(await withPath.evaluate(() => getComputedStyle(document.querySelector(".k2-path > b")!).fontSize));
+    expect(Number.parseFloat(lead)).toBeGreaterThan(Number.parseFloat(small));
+  } finally {
+    await withPath.close();
+    await alone.close();
+  }
+}, 30_000);
+
+test("390 px: the open item's way back and its title stand in one row, the list's name its accessible name", async () => {
+  const page = await open(390, "item-alone");
+  try {
+    const seen = await detail(page);
+    expect({ backShown: seen.backShown, oneRow: seen.oneRow, titleAfterBack: seen.titleAfterBack }).toEqual({
+      backShown: true,
+      oneRow: true,
+      titleAfterBack: true,
+    });
+    expect(seen.backName).toContain("Beschaffung");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+/** The phone's head of a search and the main action: its height, where the list starts, and the search. */
+const hollowHead = (page: Page) =>
+  page.evaluate(() => {
+    const bar = document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+    const main = document.querySelector(".k2-ws-main")!.getBoundingClientRect();
+    const row = document.querySelector('[data-k2-part="Row"]')!.getBoundingClientRect();
+    const field = document.querySelector('.k2-ws-main > [data-slot="head"] .k2-input[data-search]')!.getBoundingClientRect();
+    return { head: Math.round(bar.height), row: Math.round(row.top - main.top), field: Math.round(field.width) };
+  });
+
+test("the server's markup marks a head of a search and the main action alone", () => {
+  expect(markup("hollow")).toMatch(/class="k2-bar"[^>]*data-hollow="search"/);
+  // a head with a title or views is no such head
+  expect(markup("list")).not.toContain("data-hollow");
+});
+
+test("390 px in a host: a head of a search and the main action takes no room, from the server's page on", async () => {
+  const first = await open(390, "hollow", { host: true, island: false });
+  try {
+    expect(await hollowHead(first)).toMatchObject({ head: 0, row: 0 });
+  } finally {
+    await first.close();
+  }
+  const page = await open(390, "hollow", { host: true });
+  try {
+    expect(await hollowHead(page)).toMatchObject({ head: 0, row: 0 });
+    // the host opens the search: its field lies over the first row, and nothing below moves
+    await page.locator('.k2-ws-main > [data-slot="head"] .k2-input[data-search] input').focus();
+    await settled(page);
+    expect(await hollowHead(page)).toEqual({ head: 0, row: 0, field: 390 - 32 });
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("390 px in a host: with words from the address the head shows them", async () => {
+  const page = await open(390, "hollow-words", { host: true, island: false });
+  try {
+    const seen = await hollowHead(page);
+    expect(seen.head).toBeGreaterThan(40);
+    expect(seen.field).toBe(390 - 32);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("390 px without a host: the head keeps its search's symbol", async () => {
+  const page = await open(390, "hollow");
+  try {
+    const seen = await hollowHead(page);
+    expect(seen.head).toBeGreaterThan(40);
+    expect(seen.field).toBe(36);
   } finally {
     await page.close();
   }

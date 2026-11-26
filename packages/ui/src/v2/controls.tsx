@@ -15,7 +15,7 @@ import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
-import { BarPlaceContext } from "./bar-place";
+import { BarPlaceContext, markBarPlace } from "./bar-place";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
@@ -266,8 +266,11 @@ const typingIn = (target: EventTarget | null) =>
   (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='combobox']") !== null);
 
 /**
- * "/" opens the search of a workspace's head, as in most apps: where the person is not typing, the first head search
- * on the page takes the focus and opens over the head. Known in the browser only.
+ * "/" opens the search of a workspace's head, as in most apps: where the person is not typing, and not in a dialog,
+ * a menu or a list (nor while a modal dialog is open, whose own search may take "/", such as Cloud's help), the
+ * first head search on the page takes the focus and opens over the head. "/" with Shift counts (German: Shift+7);
+ * Shift+/ is "?", which Cloud's shell keeps for its shortcuts. One owner: a handler that took the key first
+ * (`preventDefault`) wins. Known in the browser only.
  */
 const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
   onMount(() => {
@@ -276,6 +279,12 @@ const useSlashToHeadSearch = (input: () => HTMLInputElement | undefined, search:
     const open = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.defaultPrevented || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
       if (typingIn(event.target) || field.getClientRects().length === 0) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("dialog, [role='dialog'], [role='alertdialog'], [role='menu'], [role='listbox']")
+      )
+        return;
+      if (document.querySelector("dialog[open]:modal, [aria-modal='true']")) return;
       event.preventDefault();
       field.focus();
     };
@@ -312,6 +321,8 @@ export const Input = (props: InputProps) => {
     () => input,
     () => props.type === "search",
   );
+  // a search at the end of a bar: where it and the main action are all a head holds, the phone's head may take no room
+  if (props.type === "search") markBarPlace("end", "search");
   let box: HTMLElement | undefined;
   useHeldOpen(
     () => box,

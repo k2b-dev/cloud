@@ -452,7 +452,7 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
-      data-back={props.detail && props.back ? "" : undefined}
+      data-back={props.detail && props.back ? (head() !== undefined ? "head" : "") : undefined}
       data-side={props.side ? "" : undefined}
       style={custom({
         "--k2-pane-w": props.width ? `${props.width.default}px` : undefined,
@@ -578,12 +578,19 @@ export const Bar = (props: BarProps) => {
   const [title, setTitle] = createSignal(0);
   const [toolbar, setToolbar] = createSignal(0);
   const [path, setPath] = createSignal(0);
+  const [search, setSearch] = createSignal(0);
   const [more, setMore] = createSignal(0);
   const counter = (set: (change: (count: number) => number) => void) => () => {
     set((count) => count + 1);
     return () => set((count) => count - 1);
   };
-  const marks = { title: counter(setTitle), toolbar: counter(setToolbar), path: counter(setPath), more: counter(setMore) };
+  const marks = {
+    title: counter(setTitle),
+    toolbar: counter(setToolbar),
+    path: counter(setPath),
+    more: counter(setMore),
+    search: counter(setSearch),
+  };
   // the main actions at its end; more than one become one "+" menu (one create action at a head's end)
   const [creates, setCreates] = createSignal<readonly (() => MenuEntry)[]>([]);
   const create = (entry: () => MenuEntry) => {
@@ -598,10 +605,19 @@ export const Bar = (props: BarProps) => {
   const end = resolveChildren(() => (
     <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), create }}>{props.end}</BarPlaceContext.Provider>
   ));
+  // A bar whose start is empty and whose end holds only its search and its main actions: on the phone the main action
+  // floats as the round button and a host's bar opens the search, so such a head may show nothing (`data-hollow`).
+  const hollow = () => {
+    if (start() !== undefined) return undefined;
+    const parts = end.toArray().filter((part) => part !== undefined && part !== null && typeof part !== "boolean").length;
+    if (parts === 0 || parts !== search() + creates().length) return undefined;
+    return search() > 0 ? "search" : "";
+  };
   return (
     <div
       class="k2-bar"
       data-k2-part="Bar"
+      data-hollow={hollow()}
       data-title={title() > 0 ? "" : undefined}
       data-toolbar={toolbar() > 0 ? "" : undefined}
       data-path={path() > 0 ? "" : undefined}

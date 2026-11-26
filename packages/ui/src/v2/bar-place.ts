@@ -1,8 +1,8 @@
 import { createContext, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
-/** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" at its end. */
-export type BarMark = "title" | "toolbar" | "path" | "more";
+/** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" or a search at its end. */
+export type BarMark = "title" | "toolbar" | "path" | "more" | "search";
 
 /** A place of a `Bar`, its start or its end, which hears what stands in it. */
 type BarPlace = {

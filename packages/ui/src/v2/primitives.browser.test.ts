@@ -241,9 +241,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
           });
           if (width >= textEdge.phoneBelow) expect(shown).toMatchObject({ list: true, head: true, back: 0 });
           else {
-            // the detail takes the whole workspace: the head of the workspace gives way, and its way back is the one bar
-            // of 44 px above its head, at the top
-            expect(shown).toEqual({ list: false, head: false, detail: 0, back: heights.tabs, top: 0 });
+            // the detail takes the whole workspace: the head of the workspace gives way, and its way back is the chevron
+            // at the start of its head's row (W3: way back and title in one row), at the top
+            expect(shown).toEqual({ list: false, head: false, detail: 0, back: heights.status, top: 0 });
             expect(await page.getByRole("link", { name: "Posteingang" }).getAttribute("href")).toBe("#posteingang");
           }
           expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
@@ -366,28 +366,25 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       TEST_TIMEOUT,
     );
 
-  // A long name of the list (a search) is cut with "…" on one line: the way back never leaves its bar, and the whole
-  // name stays its accessible name and its hint under the pointer.
+  // A long name of the list (a search) never takes the row: the way back is the chevron at the start of the title's row,
+  // and the whole name is its accessible name and its hint under the pointer (W3).
   test(
-    "390 px: the way back to a list with a long name stays on one line in its bar, ending in …",
+    "390 px: the way back to a list with a long name is the chevron in the title's row, its whole name its name",
     async () => {
       const name = "Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern";
       const page = await open("longBack", { width: 390 });
       try {
         const found = await page.evaluate(() => {
-          const bar = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"]')!;
-          const button = bar.querySelector(".k2-btn")!;
-          const label = button.querySelector<HTMLElement>(".k2-btn-label")!;
-          const box = bar.getBoundingClientRect();
-          const right = box.right - Number.parseFloat(getComputedStyle(bar).paddingRight);
+          const button = document.querySelector('.k2-pane[data-detail] > [data-k2-part="Back"] .k2-btn')!;
+          const head = document.querySelector('.k2-pane[data-detail] > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+          const box = button.getBoundingClientRect();
           return {
-            inside: button.getBoundingClientRect().right <= right + 0.5,
-            lines: Math.round(label.getBoundingClientRect().height / 20),
-            ellipsis: getComputedStyle(label).textOverflow === "ellipsis" && label.scrollWidth > label.clientWidth,
+            small: box.width <= 40,
+            inRow: box.top >= head.top - 1 && box.bottom <= head.bottom + 1,
             title: button.getAttribute("title"),
           };
         });
-        expect(found).toEqual({ inside: true, lines: 1, ellipsis: true, title: name });
+        expect(found).toEqual({ small: true, inRow: true, title: name });
         expect(await page.getByRole("link", { name, exact: true }).count()).toBe(1);
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.cut).toEqual([]);

@@ -173,3 +173,69 @@ export function LongPath() {
     </Workspace>
   );
 }
+
+/**
+ * An open item of a Space (W3): the detail's head shows where it stands (a path) and its name small after it, with an
+ * action; `path: false` gives the detail its name alone, as the page's only title.
+ */
+export function OpenItem(props: { path?: boolean }) {
+  return (
+    <Workspace detail>
+      <Pane.Split>
+        <Pane label="Aufgaben">
+          <List label="Aufgaben">
+            <Row icon="circle" lines={["Lieferanten anschreiben"]} />
+          </List>
+        </Pane>
+        <Pane
+          detail
+          label="Aufgabe"
+          back={{ label: "Beschaffung", href: "#space" }}
+          head={
+            <Bar
+              start={
+                <>
+                  {props.path !== false && <Path label="Ort" items={[{ label: "Beschaffung", href: "#space" }, { label: "Offen" }]} />}
+                  <Text>Lieferanten anschreiben</Text>
+                </>
+              }
+              end={<Button icon="check">Erledigt</Button>}
+            />
+          }
+        >
+          <List label="Angaben">
+            <Row icon="calendar" lines={["Fällig am 2. Dezember"]} />
+          </List>
+        </Pane>
+      </Pane.Split>
+    </Workspace>
+  );
+}
+
+/** A head of a search and the main action alone (W5: Pulse's bases); `words` gives the search words from the address. */
+export function SearchAndAction(props: { words?: string }) {
+  return (
+    <Workspace
+      head={
+        <Bar
+          end={
+            <>
+              <Input type="search" icon="search" label="Basen durchsuchen" value={props.words} />
+              <Button variant="primary" icon="plus">
+                Neue Basis
+              </Button>
+            </>
+          }
+        />
+      }
+      primary={{ label: "Neue Basis", icon: "plus", href: "#neu" }}
+    >
+      <Pane label="Basen">
+        <List label="Basen">
+          <Row icon="database" lines={["Kundenkartei"]} />
+          <Row icon="database" lines={["Inventar"]} />
+        </List>
+      </Pane>
+    </Workspace>
+  );
+}

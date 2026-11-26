@@ -1,12 +1,23 @@
 import { createComponent, type JSX } from "solid-js";
 import FilteredOrders from "../../skills/k2b-ui/recipes/filtered-table";
-import { LongPath, NamedPlace, SearchWithWords, ToolbarInHead, TwoCreates } from "../v2-head-block.fixture";
+import { LongPath, NamedPlace, OpenItem, SearchAndAction, SearchWithWords, ToolbarInHead, TwoCreates } from "../v2-head-block.fixture";
 import { mount } from "./mount";
 
 declare global {
   interface Window {
     /** Which head the page shows. */
-    __head?: "list" | "toolbar" | "creates" | "named" | "named-drawer" | "search" | "path";
+    __head?:
+      | "list"
+      | "toolbar"
+      | "creates"
+      | "named"
+      | "named-drawer"
+      | "search"
+      | "path"
+      | "item"
+      | "item-alone"
+      | "hollow"
+      | "hollow-words";
   }
 }
 
@@ -18,6 +29,10 @@ const heads: Record<string, () => JSX.Element> = {
   "named-drawer": () => createComponent(NamedPlace, { detail: 600 }),
   search: () => createComponent(SearchWithWords, {}),
   path: () => createComponent(LongPath, {}),
+  item: () => createComponent(OpenItem, {}),
+  "item-alone": () => createComponent(OpenItem, { path: false }),
+  hollow: () => createComponent(SearchAndAction, {}),
+  "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
 };
 
 // A head as its island renders it over the server's markup: a list with its toolbar rows, a toolbar in the head, or a
