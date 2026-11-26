@@ -406,11 +406,12 @@ lines instead of cutting a thing.
   one shows its first 8 (note) or 4 (summary) lines and "Mehr anzeigen".
   Use it for errors with a way out instead of "try again"
   buttons of your own.
-- `NoticeStack`: `tabBar?` (the page has a `TabBar` on the phone),
-  children are `Notice`s of a state of the whole app that lasts
-  ("Offline", a new version). They float at the bottom, above the safe
-  area and, with `tabBar`, above the bar from the server's page on; the panes keep the room they cover free at
-  their end. On the phone each deed is a framed button of at least 44 px in
+- `NoticeStack`: children are `Notice`s of a state of the whole app that
+  lasts ("Offline", a new version). They float at the bottom, above the
+  safe area and, on a page with a `TabBar`, above the bar from the server's
+  page on; the panes keep the room they cover free at their end (measured
+  in the browser: a notice the server renders gets it once the page comes
+  alive). On the phone each deed is a framed button of at least 44 px in
   the end column. Give each notice a deed that hides it.
 - `TabBar`: `label`, `items: { label, icon, href, onNavigate?, current?,
   unread? }[]`; the places of an installed app on the phone, at the bottom

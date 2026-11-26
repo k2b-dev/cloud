@@ -4624,8 +4624,9 @@
 }
 
 /* Notices that float above the tab bar and the safe area; the panes keep their height free (`--k2-notice-stack`,
-   measured in the browser). Where they stand comes from the stylesheet alone, so the server's page shows them in
-   place: a stack that says the page has a tab bar (`data-tab-bar`) stands above its known height on the phone. */
+   measured in the browser, so a notice the server renders gets that room once the page comes alive). Where they stand
+   comes from the stylesheet alone, so the server's page shows them in place: on a v2 scope that holds a tab bar, the
+   stack stands above the bar's known height on the phone, without a prop to forget. */
 .k2-ui .k2-notice-stack {
   position: fixed;
   right: max(24px, calc(env(safe-area-inset-right) + 24px));
@@ -4668,7 +4669,7 @@
     width: auto;
   }
   /* above the tab bar: its row of the head's height, its line, and the bottom safe area it holds */
-  .k2-ui .k2-notice-stack[data-tab-bar] {
+  .k2-ui:has(.k2-tabbar) .k2-notice-stack {
     bottom: calc(var(--k2-h-head) + 1px + env(safe-area-inset-bottom) + 12px);
   }
   /* a floating notice keeps its deeds in the end column, each a framed button of at least 44 px */

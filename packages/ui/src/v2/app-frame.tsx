@@ -76,7 +76,7 @@ const TabLink = (props: { item: TabBarItem }) => (
  * app's colour, a count that calls for attention as a filled figure on its symbol. It takes the bottom safe area into
  * its own height. With more than five places, "More" opens a sheet with the others; while one of them is the open
  * place, "More" is the current one. From 768 px it leaves, and the app's `Nav` takes its place. Its height is known to
- * the stylesheet (the head's height, its line and the safe area), so a `NoticeStack tabBar` stands above it from the
+ * the stylesheet (the head's height, its line and the safe area), so a `NoticeStack` on the page stands above it from the
  * server's page on.
  */
 export const TabBar = (props: TabBarProps) => {
@@ -136,8 +136,6 @@ export const TabBar = (props: TabBarProps) => {
 // ── NoticeStack ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type NoticeStackProps = {
-  /** The page has a `TabBar` on the phone: the stack stands above it, from the server's page on. */
-  tabBar?: boolean;
   /** `Notice`s that stay until their state ends or the person hides them, such as "Offline" or a new version. */
   children: JSX.Element;
 };
@@ -175,7 +173,7 @@ export const NoticeStack = (props: NoticeStackProps) => {
     });
   });
   return (
-    <div ref={stack} class="k2-notice-stack" data-k2-part="NoticeStack" data-tab-bar={props.tabBar ? "" : undefined} aria-live="polite">
+    <div ref={stack} class="k2-notice-stack" data-k2-part="NoticeStack" aria-live="polite">
       {props.children}
     </div>
   );
