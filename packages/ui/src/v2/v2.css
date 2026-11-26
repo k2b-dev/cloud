@@ -4116,11 +4116,11 @@
     white-space: nowrap;
   }
   /* a finger hits 44 px of such a deed, around its symbol; nothing in the layout moves */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child ~ .k2-btn-label) {
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child):has(> .k2-btn-label) {
     position: relative;
     overflow: visible;
   }
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child ~ .k2-btn-label)::after {
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child):has(> .k2-btn-label)::after {
     content: "";
     position: absolute;
     top: 50%;
