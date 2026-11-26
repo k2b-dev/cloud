@@ -178,6 +178,45 @@ for (const viewport of [
     }
   }, 30_000);
 
+test(`${browserName}: Book's live updates arrive in the list and survive a switch to the drawing`, async () => {
+  const page = await open(graphPath("hand01", "&list=1"));
+  const changed = () =>
+    page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: {
+            cursor: null,
+            event: { type: "note.updated", notebookId: "hand01" },
+            cover: (coverage: Promise<void>) => coverage.catch(() => {}),
+          },
+        }),
+      ),
+    );
+  try {
+    await page.getByRole("table").waitFor();
+    // a rename reaches the navigation while the list shows
+    await page.request.get(new URL("/__fixture/book-name?name=Lagerhandbuch", server.url).href);
+    await changed();
+    await page.waitForFunction(() => document.querySelector("[data-k2-workspace]")?.textContent?.includes("Lagerhandbuch"));
+    await display(page, "Network").click();
+    await labelsPlaced(page);
+    expect(await page.locator("[data-k2-workspace]").textContent()).toContain("Lagerhandbuch");
+    // a failed update says so in the list, and its notice stays when the drawing comes back
+    await page.request.get(new URL("/__fixture/book-name", server.url).href);
+    await page.getByRole("button", { name: "As list" }).click();
+    await page.getByRole("table").waitFor();
+    await changed();
+    const notice = page.locator(".notebook-graph-live-notice").getByRole("alert");
+    await notice.waitFor();
+    await page.getByRole("button", { name: "As list" }).click();
+    await labelsPlaced(page);
+    expect(await notice.isVisible()).toBe(true);
+  } finally {
+    await page.request.get(new URL("/__fixture/book-name", server.url).href);
+    await close(page);
+  }
+}, 30_000);
+
 test(`${browserName}: the graph is one tab stop with arrows, Home and Enter inside`, async () => {
   const page = await open(graphPath("hand01"));
   try {
