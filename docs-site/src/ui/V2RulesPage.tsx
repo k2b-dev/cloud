@@ -104,7 +104,8 @@ const rules: readonly V2Rule[] = [
       },
       { src: "/assets/ui-v2/group-frame.png", alt: "A framed group with a tinted head and two rows", width: 522, height: 139 },
     ],
-    checked: "measureV2Layout reports two lines that lie at most 1 px apart, also when a pseudo-element under display: contents draws one.",
+    checked:
+      "measureV2Layout reports two lines that lie at most 1 px apart, also when a pseudo-element under display: contents draws one, and two dividers less than 12 px apart across 160 px or more, such as a last row's line above its section's.",
     limits:
       "It measures what is on screen after the page settled. A pseudo-element whose stand-in would change a neighbour (a :last-child rule, for example) is reported as not measurable, never passed.",
     code: {
