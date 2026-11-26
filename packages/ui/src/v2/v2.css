@@ -2477,11 +2477,33 @@
 }
 .k2-ui .k2-color-swatch {
   flex: none;
+  appearance: none;
+  padding: 3px;
   width: var(--k2-h-control);
   height: var(--k2-h-control);
   border-radius: var(--k2-r-control);
   border: var(--k2-hairline);
+  background: var(--k2-surface);
+  cursor: default;
+}
+.k2-ui .k2-color-swatch:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-color-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: calc(var(--k2-r-control) - 3px);
   background: var(--color-picker-color);
+}
+/* the picker on its panel: area over hue, as wide as the panel */
+.k2-ui .k2-color-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 280px;
+  padding: 12px;
 }
 .k2-ui .k2-color-head > .k2-input {
   flex: 1;
