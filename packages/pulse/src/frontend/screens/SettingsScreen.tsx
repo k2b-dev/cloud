@@ -189,7 +189,8 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             <Section icon="alert-triangle" title={words().irreversible} summary={t().destructiveBaseActions}>
               <List label={t().settingsDanger}>
                 <Row
-                  icon="eraser"
+                  // what cannot be undone carries its warning colour
+                  mark={{ icon: "eraser", color: "#d97706" }}
                   lines={[t().clearTelemetry, base().store.writeBlockReason ? store().clearBlockedText : t().clearTelemetryDescription]}
                   action={{
                     label: words().clear,
@@ -199,7 +200,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                   }}
                 />
                 <Row
-                  icon="trash"
+                  mark={{ icon: "trash", color: "#dc2626" }}
                   lines={[t().deletePulseBase, t().deletePulseBaseDescription]}
                   action={{
                     label: words().delete,

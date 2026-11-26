@@ -6,6 +6,7 @@ import {
   Avatar,
   Bar,
   Button,
+  Chip,
   Dialog,
   Empty,
   Field,
@@ -287,10 +288,17 @@ function DeletingBase(props: { base: PulseBase }) {
   const text = () => (deleted() ? t().deletedText : failed() ? t().failedDelete : followed.failed() ? t().staleText : t().deletingText);
   return (
     <Row
-      icon={failed() ? "alert-circle" : deleted() ? "check" : "trash"}
+      // a failed deletion in red, a running one in amber, a finished one in green: colour, symbol and word
+      mark={
+        failed()
+          ? { icon: "alert-circle", color: "#dc2626" }
+          : deleted()
+            ? { icon: "check", color: "#059669" }
+            : { icon: "trash", color: "#d97706" }
+      }
       lines={[base().name, text()]}
       // under "Wird gelöscht" a running deletion needs no word of its own; a failed or finished one does
-      meta={failed() || deleted() ? state() : undefined}
+      meta={failed() || deleted() ? <Chip status={failed() ? "bad" : "ok"}>{state()}</Chip> : undefined}
       // retrying is offered where it can help: a failed deletion, or a follow-up that stopped answering
       action={
         failed() || followed.failed() || retrying()

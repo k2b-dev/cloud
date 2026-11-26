@@ -29,7 +29,7 @@ import {
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AlertRule } from "../../alert-contracts";
-import type { PulseBaseRead, PulseSource } from "../../contracts";
+import type { PulseBaseRead, PulseSource, PulseSourceScrape } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import type { AlertAttention } from "../../service/base-attention";
 import { jsonFetch } from "../http";
@@ -68,6 +68,19 @@ const statusChip = (source: PulseSource, t: Words) => {
       </Text>
     );
   return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
+};
+
+/** Fetches newest first, with failures of the same kind in a row folded into one run. */
+const scrapeRuns = (scrapes: readonly PulseSourceScrape[]) => {
+  const runs: { first: PulseSourceScrape; last: PulseSourceScrape; count: number }[] = [];
+  for (const scrape of scrapes) {
+    const previous = runs.at(-1);
+    if (previous && !scrape.success && !previous.first.success && previous.first.errorMessage === scrape.errorMessage) {
+      previous.last = scrape;
+      previous.count += 1;
+    } else runs.push({ first: scrape, last: scrape, count: 1 });
+  }
+  return runs;
 };
 
 /** An address that may break after each of its slashes, so it wraps at its segments and never inside a word. */
@@ -639,7 +652,10 @@ function SourceDetail(props: {
     // an error stands once, in its notice above the facts
     ...(status().lastError ? [] : [{ label: words().sourceStatusColumn, value: statusChip(source(), t()) }]),
     { label: t().newestData, value: status().newestDataAt ? props.when(status().newestDataAt!) : t().noDataYet },
-    { label: t().lastSeen, value: source().lastSeenAt ? props.when(source().lastSeenAt!) : t().waiting },
+    // the last contact is worth a line only where it differs from the newest data
+    ...(source().lastSeenAt && source().lastSeenAt !== status().newestDataAt
+      ? [{ label: t().lastSeen, value: props.when(source().lastSeenAt!) }]
+      : []),
     ...(source().kind === "metrics"
       ? [
           { label: t().interval, value: t().scrapeEvery({ seconds: source().scrapeIntervalSeconds ?? 60 }) },
@@ -738,17 +754,26 @@ function SourceDetail(props: {
         <Section icon="history" title={words().scrapesTitle} count={props.scrapes.length || undefined}>
           <Show when={props.scrapes.length > 0} fallback={<Empty icon="history" text={t().noScrapes} />}>
             <List label={words().scrapesTitle}>
-              <For each={props.scrapes}>
-                {(scrape) => (
+              {/* fetches that failed the same way in a row stand once, with how many and since when */}
+              <For each={scrapeRuns(props.scrapes)}>
+                {(run) => (
                   <Row
-                    icon={scrape.success ? "circle-check" : "alert-circle"}
+                    mark={run.first.success ? { icon: "circle-check", color: "#059669" } : { icon: "alert-circle", color: "#dc2626" }}
                     lines={[
-                      scrape.success ? `${t().success} · ${t().ingestCounts(scrape)}` : t().error,
-                      scrape.errorMessage
-                        ? (localizedSourceError(scrape.errorMessage, t()) ?? scrape.errorMessage)
-                        : `${scrape.durationMs} ms`,
+                      run.first.success
+                        ? `${t().success} · ${t().ingestCounts(run.first)}`
+                        : run.count > 1
+                          ? words().failedFetches({ count: run.count })
+                          : t().error,
+                      run.first.errorMessage
+                        ? (localizedSourceError(run.first.errorMessage, t()) ?? run.first.errorMessage)
+                        : `${run.first.durationMs} ms`,
                     ]}
-                    time={props.when(scrape.finishedAt)}
+                    time={
+                      run.count > 1
+                        ? `${props.when(run.last.finishedAt)} – ${props.when(run.first.finishedAt)}`
+                        : props.when(run.first.finishedAt)
+                    }
                   />
                 )}
               </For>
