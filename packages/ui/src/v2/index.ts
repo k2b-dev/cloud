@@ -10,6 +10,8 @@
  *   enforce this.
  */
 
+// The page's language, as in the rest of @k2b/ui, without the v1 entry: a v2 island imports it from here.
+export { useLocale } from "../intl/locale";
 export { Button, type ButtonProps } from "./button";
 // Code to read and copy: a config, a key, a command.
 export { CodeBlock, type CodeBlockProps, type CodeLanguage, codeLinesShown } from "./code";
