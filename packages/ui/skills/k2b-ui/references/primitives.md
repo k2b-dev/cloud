@@ -283,6 +283,13 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
   `type="number"` is a text field with the decimal keyboard and no spinner
   that reads and shows the locale's numbers ("1.500,5" in German); `value`
   and `onInput` carry the plain number ("1500.5"), the form sends it, and
@@ -306,12 +313,16 @@ lines instead of cutting a thing.
   writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
   text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
   the calendar symbol opens `DatePicker` below the field. A form gets the
-  date key under `name`.
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
 - `DatePicker`: one month of days to pick from (a calendar grid: arrows,
   PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
   the week; six weeks, so its height never changes). `value`, `onPick`,
   `min`, `max`, `timeZone` (which day is today), `label`, `error`,
-  `onClear` ("Leeren"), `autoFocus`; `time` adds hour and minute, applied
+  `onClear` ("Leeren"), `autoFocus`; `time` adds hour and minute as text in
+  the locale's clock (24 hours in German; arrows turn the part under the
+  caret; never the browser's time field), applied
   with "Übernehmen". Use it inside a popover or sheet; a form field is
   `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,

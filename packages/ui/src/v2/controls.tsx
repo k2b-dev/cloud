@@ -15,7 +15,7 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
-import { dateKey, isDateKey } from "../inputs/date-picker";
+import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { usePopover } from "./behavior/overlays";
@@ -215,6 +215,19 @@ export type InputProps = {
   end?: JSX.Element;
   /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
   disabled?: boolean;
+  /**
+   * What the browser and a password manager may fill in, such as `username`, `current-password`, `new-password`,
+   * `one-time-code` or `off`. It stands in the server's markup, where a password manager reads it.
+   */
+  autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
+  /** The most characters the field takes. */
+  maxLength?: number;
+  /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
+  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
+  spellcheck?: boolean;
+  /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
+  autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -252,6 +265,12 @@ export const Input = (props: InputProps) => {
     "aria-describedby": field?.described,
     required: field?.required || undefined,
     disabled: props.disabled,
+    // written as attributes, so the first markup from the server already carries them (password managers read it)
+    autocomplete: props.autocomplete,
+    maxlength: props.maxLength,
+    inputmode: props.inputMode,
+    spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
+    autocapitalize: props.autocapitalize,
   });
   return (
     <span
@@ -519,10 +538,15 @@ export type DateInputProps = {
   onInput?: (value: string) => void;
   /** A quiet example date while the field is empty. */
   placeholder?: string;
-  /** The name a form sends the date key under. */
+  /** The name a form sends the date key under; the field's name by default. */
   name?: string;
   /** A name when the date stands without a Field. */
   label?: string;
+  /**
+   * The zone that says which day today is, for words such as "heute" or "+3" and the calendar's today; "UTC" by
+   * default. Give the person's zone, the same on the server and in the island, as for `FilterBar`.
+   */
+  timeZone?: string;
 };
 
 /**
@@ -533,18 +557,16 @@ export const DateInput = (props: DateInputProps) => {
   const field = useField();
   const locale = useLocale();
   const t = useDateMessages();
-  const today = () => dateKey(new Date());
-  /** A date key for a value, or `undefined` when it is no readable date. */
+  // today in one zone on the server and in the browser, so "heute" names the same day on both sides
+  const today = () => dateKey(new Date(), { timeZone: props.timeZone ?? "UTC" });
+  /** A date key for a value, or `undefined` when it is no readable date (also a key of a day that does not exist). */
   const keyOf = (value: string | undefined): string | undefined => {
     if (!value) return undefined;
-    if (isDateKey(value)) return value;
+    if (isDateKey(value)) return isCalendarDay(value) ? value : undefined;
     const read = parseDateInput(value, { today: today(), locale: locale() });
     return read.kind === "date" ? read.date : undefined;
   };
-  const shown = (value: string | undefined) => {
-    const key = isDateKey(value ?? "") ? value : undefined;
-    return key ? formatDateInput(key, locale()) : (value ?? "");
-  };
+  const shown = (value: string | undefined) => (value && isCalendarDay(value) ? formatDateInput(value, locale()) : (value ?? ""));
   // Without `onInput` the field keeps what was picked or typed itself, so it always shows the date it holds.
   const [own, setOwn] = createSignal(props.value);
   createRenderEffect(() => setOwn(props.value));
@@ -578,6 +600,12 @@ export const DateInput = (props: DateInputProps) => {
   };
   const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
   const invalid = () => field?.invalid || unreadable();
+  // text that is no date makes the form invalid too, so it never sends the date the field held before
+  // (the message is read before the element is there, so the effect follows it from the start)
+  createRenderEffect(() => {
+    const message = unreadable() ? t().unreadable : "";
+    input?.setCustomValidity(message);
+  });
   return (
     <span class="k2-input" data-k2-part="DateInput" data-invalid={invalid() ? "" : undefined}>
       <input
@@ -619,6 +647,7 @@ export const DateInput = (props: DateInputProps) => {
       <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="bottom" align="end" sideOffset={4} collisionPadding={8}>
         <DatePicker
           value={keyOf(own())}
+          timeZone={props.timeZone ?? "UTC"}
           label={props.label}
           autoFocus
           onPick={(key) => {
