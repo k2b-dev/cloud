@@ -261,6 +261,22 @@ export default function HostsScreen(props: HostsScreenProps) {
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
   const place = (host: IpaHost) => [host.locality, host.location].filter(Boolean).join(" · ");
+  /** A phone row's second line in one short line: cut by grapheme, the open record says it whole. */
+  const PHONE_LINE = 48;
+  /** The room of a key figure's quiet line, which does not cut itself (k2b-ui gap). */
+  const STRIP_LINE = 24;
+  const short = (text: string, room = PHONE_LINE) => {
+    const graphemes = [...new Intl.Segmenter(locale(), { granularity: "grapheme" }).segment(text)].map((part) => part.segment);
+    return graphemes.length > room
+      ? `${graphemes
+          .slice(0, room - 1)
+          .join("")
+          .trimEnd()}…`
+      : text;
+  };
+  /** Names in one short line: the first, then how many more. */
+  const firstAndMore = (names: readonly string[]) =>
+    names.length <= 1 ? (names[0] ?? "") : t().nameAndMore({ name: names[0]!, count: number(names.length - 1) });
   /** A host marks only the exception, as dot and word: its client stored no SSH keys yet. */
   const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip status="warn">{t().noKeys}</Chip> : undefined);
   /** The second line of a host: what the mirror holds, else how many groups it is in, so every row has one height. */
@@ -339,7 +355,7 @@ export default function HostsScreen(props: HostsScreenProps) {
               sticky
               current={props.host?.fqdn}
               open={(host) => ({ href: href({ host: host.fqdn }) })}
-              phone={(host) => ({ lines: [host.fqdn, hostLine(host)], marks: hostState(host) })}
+              phone={(host) => ({ lines: [host.fqdn, short(hostLine(host))], marks: hostState(host) })}
               columns={[
                 { title: t().host, width: { min: 200, default: 260 }, cell: (host) => host.fqdn },
                 { title: t().state, width: { min: 130, default: 130 }, cell: (host: IpaHost) => hostState(host) ?? "" },
@@ -393,15 +409,7 @@ export default function HostsScreen(props: HostsScreenProps) {
             open={(group) => ({ href: href({ group: group.cn }) })}
             phone={(group) => ({
               // without words of its own, a group names its first hosts; the number stands right already
-              lines: [
-                group.cn,
-                groupLine(group) ||
-                  group.hostDetails
-                    .slice(0, 3)
-                    .map((host) => host.fqdn)
-                    .join(", ") ||
-                  t().noHostsInGroup,
-              ],
+              lines: [group.cn, short(groupLine(group) || firstAndMore(group.hostDetails.map((host) => host.fqdn)) || t().noHostsInGroup)],
               time: t().hostCount({ count: group.hostDetails.length }),
             })}
             columns={[
@@ -570,7 +578,7 @@ export default function HostsScreen(props: HostsScreenProps) {
             icon="folders"
             label={t().memberOf}
             value={number(host.memberofHostgroup.length)}
-            meta={host.memberofHostgroup.slice(0, 2).join(", ") || t().noGroupYet}
+            meta={firstAndMore(host.memberofHostgroup.map((name) => short(name, STRIP_LINE))) || t().noGroupYet}
           />
           <Cells.Cell
             icon="key"
@@ -797,14 +805,14 @@ export default function HostsScreen(props: HostsScreenProps) {
                   label: t().hostgroups,
                   icon: "folders",
                   href: href({ tab: "groups", group: null, host: null }),
-                  count: props.figures.groupsAll,
+                  count: number(props.figures.groupsAll),
                   current: props.tab === "groups",
                 },
                 {
                   label: t().ungrouped,
                   icon: "server-off",
                   href: href({ tab: "ungrouped", group: null, host: null }),
-                  count: props.figures.ungroupedAll,
+                  count: number(props.figures.ungroupedAll),
                   current: props.tab === "ungrouped",
                 },
               ]}
