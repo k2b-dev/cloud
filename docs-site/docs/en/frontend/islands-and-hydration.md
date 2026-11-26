@@ -57,9 +57,10 @@ ignore the wrapper, but CSS selectors do not: `.list > .row`, `:last-child`,
 and `+` see the wrapper as the child or the sibling. `@k2b/ui/v2.css` ships
 each such rule also through one wrapper, so a v2 primitive in an island keeps
 the layout of its place, and `describeV2` outlines it as if there were no
-island. An island that renders nothing changes no layout either:
-`:first-child`, `:last-child` and `:only-child` skip empty wrappers, and `+`
-steps over one. Your own CSS must allow for the wrapper in the same way, or select by
+island. An island that renders nothing changes no layout either, however many
+stand together: `:first-child`, `:last-child` and `:only-child` skip empty
+wrappers, and v2.css relates neighbouring primitives with `~`, never with `+`.
+Your own CSS must allow for the wrapper in the same way, or select by
 descendant.
 
 A v2 `Workspace` renders on the server as plain markup: its frame, columns,

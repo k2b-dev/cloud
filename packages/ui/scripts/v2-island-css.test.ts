@@ -11,20 +11,26 @@ describe("transparentIslands", () => {
     expect(transparentIslands(".k2-ui .a > .b{x:1}")).toBe(`.k2-ui :is(.a>.b,.a>${W}>.b){x:1}`);
   });
 
-  test("a sibling relation holds with either side, or both, in a wrapper, and steps over one empty wrapper", () => {
-    const a = [".a", `${W}:has(>.a:where(:last-child))`];
-    const b = [".b", `${W}>.b:where(:first-child)`];
-    const chains = a.flatMap((left) => b.flatMap((right) => [`${left}+${right}`, `${left}+${E}+${right}`]));
-    expect(transparentIslands(".a + .b{x:1}")).toBe(`:is(${chains.join(",")}){x:1}`);
+  test("a sibling relation holds with either side, or both, in a wrapper", () => {
+    const later = [`.a~.b`, `.a~${W}>.b`, `${W}:has(>.a)~.b`, `${W}:has(>.a)~${W}>.b`];
+    expect(transparentIslands(".a ~ .b{x:1}")).toBe(`:is(${later.join(",")}){x:1}`);
+    // `+` only between two parts of one primitive, marked as such: there it keeps first and last in the wrapper
+    const next = [
+      `.a+.b`,
+      `.a+${W}>.b:where(:first-child)`,
+      `${W}:has(>.a:where(:last-child))+.b`,
+      `${W}:has(>.a:where(:last-child))+${W}>.b:where(:first-child)`,
+    ];
+    expect(transparentIslands("/* one primitive: a and b */.a + .b{x:1}")).toBe(`/* one primitive: a and b */:is(${next.join(",")}){x:1}`);
   });
 
-  test("a sibling chain keeps both adjacencies of an element in a wrapper between them", () => {
-    const out = transparentIslands(".a + .b + .c{x:1}");
-    expect(out).toContain(`.a+${W}:has(>.b:where(:first-child):where(:last-child))+.c`);
-    // b last in a wrapper after a, without being first in it, is not next to a.
-    expect(out).not.toContain(`.a+${W}:has(>.b:where(:last-child))+.c`);
-    // Inside one wrapper there is no other wrapper.
-    expect(out).not.toContain(`:where(:first-child)+${E}`);
+  test("`+` between primitives and two sibling relations in a row fail the build", () => {
+    // an empty island between two primitives would break `+`; `~` passes any number of them
+    expect(() => transparentIslands(".a + .b{x:1}")).toThrow("between primitives");
+    expect(() => transparentIslands("/* a group */.a + .b{x:1}")).toThrow("between primitives");
+    expect(() => transparentIslands(".a:has(+ .b){x:1}")).toThrow("between primitives");
+    expect(() => transparentIslands("/* one primitive: x */.a + .b + .c{x:1}")).toThrow("two sibling relations");
+    expect(() => transparentIslands(".a ~ .b ~ .c{x:1}")).toThrow("two sibling relations");
   });
 
   test("first and last child count the wrapper's place and skip empty wrappers; a pseudo-element stays at the end", () => {

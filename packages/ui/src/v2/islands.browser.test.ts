@@ -79,8 +79,9 @@ const modes = {
 };
 
 /**
- * `wrap` puts each outermost match in an island of its own, as an application would write it; `empty` adds an island
- * that renders nothing before and after it (one between two neighbours); `remove` takes it away, as the page would stand without it.
+ * `wrap` puts each outermost match in an island of its own, as an application would write it; `empty` adds islands
+ * that render nothing before and after it (three between two neighbours); `remove` takes it away, as the page would
+ * stand without it.
  */
 type Islands = { selector: string; as: "wrap" | "empty" | "remove" };
 
@@ -104,9 +105,11 @@ const page = async (css: string, html: string, width: number, islands?: Islands)
           return made;
         };
         if (as === "empty") {
-          // One empty island between two neighbours, as `+` steps over one.
-          if (!/^solid-(?:island|client)$/.test(element.previousElementSibling?.localName ?? "")) element.before(island("-before"));
-          element.after(island("-after"));
+          // two before and one after: three empty islands stand between two neighbours. A Table is two siblings, its
+          // large and its phone form, which no island can stand between: its islands stand around both.
+          const last = element.nextElementSibling?.classList.contains("k2-table-phone") ? element.nextElementSibling : element;
+          element.before(island("-before-1"), island("-before-2"));
+          last.after(island("-after"));
           return;
         }
         const wrapper = island("");
@@ -216,6 +219,28 @@ beforeAll(async () => {
 afterAll(async () => {
   await browser?.close();
 });
+
+// The relations between primitives (`~`) pass any number of islands that render nothing, and an island with content.
+test("groups and cells keep their spacing and lines with 0 to 3 empty islands between them, and in an island", async () => {
+  const empty = (count: number) => "<solid-island></solid-island>".repeat(count);
+  for (const count of [0, 1, 2, 3])
+    for (const wrapped of [false, true]) {
+      const second = (html: string) => (wrapped ? `<solid-client>${html}</solid-client>` : html);
+      const html =
+        `<div class="k2-sec"><div class="k2-sh"><h3>Titel</h3></div><section class="k2-group" id="g1"></section>${empty(count)}${second('<section class="k2-group" id="g2"></section>')}</div>` +
+        `<div class="k2-cells"><div class="k2-cell" id="c1"></div>${empty(count)}${second('<div class="k2-cell" id="c2"></div>')}</div>`;
+      const opened = await page(shipped, `<div style="display:block">${html}</div>`, 1440);
+      try {
+        const look = await opened.evaluate(() => {
+          const style = (id: string) => getComputedStyle(document.getElementById(id)!);
+          return [style("g1").marginTop, style("g2").marginTop, style("c1").borderLeftWidth, style("c2").borderLeftWidth];
+        });
+        expect(look, `${count} empty, ${wrapped ? "in an island" : "plain"}`).toEqual(["0px", "12px", "0px", "1px"]);
+      } finally {
+        await opened.close();
+      }
+    }
+}, 60_000);
 
 describe("a small island inside a v2 container keeps the container's layout", () => {
   test("there are recipes", () => {
