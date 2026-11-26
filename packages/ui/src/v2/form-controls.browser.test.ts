@@ -57,6 +57,32 @@ test("server markup: the code is one named input under drawn boxes, the folded g
   expect(markup).not.toContain("Sie gelten bis zu ihrem Ende weiter.");
 });
 
+test("text with a limit: the count shows once the text nears it, a screen reader hears it, the field takes no more", async () => {
+  await withPage(async (page) => {
+    const input = page.getByRole("textbox", { name: "Titel der Seite" });
+    const count = page.locator('[data-k2-part="Input"]:has(input[name="title"]) .k2-input-count');
+    // far from the limit: no count, nothing described
+    expect(await count.count()).toBe(0);
+    expect(await input.getAttribute("aria-describedby")).toBeNull();
+    // in the last fifth (16 of 20): the count shows, and the field is described by it
+    await input.fill("Anmeldung per Code");
+    await settled(page);
+    expect(await count.locator('[aria-hidden="true"]').textContent()).toBe("18 / 20");
+    const described = await input.getAttribute("aria-describedby");
+    expect(await page.evaluate((id) => document.getElementById(id ?? "")?.textContent, described)).toContain("18 von 20 Zeichen");
+    // the browser takes no more than the limit
+    await input.press("End");
+    await input.pressSequentially("xyzxyz");
+    await settled(page);
+    expect(await input.inputValue()).toHaveLength(20);
+    expect(await count.locator('[aria-hidden="true"]').textContent()).toBe("20 / 20");
+    // the field keeps its height with the count
+    expect(
+      await page.locator('[data-k2-part="Input"]:has(input[name="title"])').evaluate((field) => field.getBoundingClientRect().height),
+    ).toBe(36);
+  });
+});
+
 test("field action: in the 20 px label line, the field keeps its height, a press runs it", async () => {
   await withPage(async (page) => {
     const session = field(page, "Sitzungsdauer");

@@ -7,6 +7,7 @@ import {
   Field,
   Group,
   ImageInput,
+  Input,
   Pane,
   Section,
   Select,
@@ -57,6 +58,10 @@ export function Demo() {
             }}
           >
             <Select options={["8 Stunden", "24 Stunden", "7 Tage"]} value={session()} onChange={setSession} />
+          </Field>
+          {/* a field with a limit says how much is left once the text nears it */}
+          <Field name="title" label="Titel der Seite">
+            <Input maxLength={20} count value="Anmeldung" />
           </Field>
           <Field name="method" label="Verfahren" hint="Legt der Betreiber fest.">
             <Select options={["Passwort", "Passkey"]} value="Passwort" disabled onChange={() => did("method")} />

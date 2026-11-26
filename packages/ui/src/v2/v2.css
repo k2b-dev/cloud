@@ -2141,6 +2141,16 @@
   color: var(--k2-subtle);
   opacity: 1;
 }
+/* how much a field with a limit holds, once the text nears it: quiet, at its end, the numbers in one width */
+.k2-ui .k2-input-count {
+  flex: none;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-input[data-multiline] > .k2-input-count {
+  align-self: flex-end;
+}
 .k2-ui .k2-input[data-multiline] {
   height: 80px;
   align-items: flex-start;

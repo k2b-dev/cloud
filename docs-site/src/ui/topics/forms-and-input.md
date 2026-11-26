@@ -58,7 +58,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit, or
 
 ### Input
 
-A text field of one line or several (`multiline`), a number, an address or a search.
+A text field of one line or several (`multiline`), a number, an address or a search. With `maxLength` and `count` it shows how much it holds once the text nears the limit.
 
 <Props of="Input" />
 

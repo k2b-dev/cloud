@@ -235,6 +235,12 @@ type InputBase = {
   autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
   /** The most characters the field takes. */
   maxLength?: number;
+  /**
+   * With `maxLength`: once the text nears the limit (its last fifth) the field shows how many characters it holds,
+   * such as "18 / 20", at its end, and a screen reader hears it with the field. For text a person writes, such as a
+   * title or a message; a code needs none.
+   */
+  count?: boolean;
   /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
   inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
   /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
@@ -318,6 +324,16 @@ export const Input = (props: InputProps) => {
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
+  const t = useControlMessages();
+  // the length of the text, for the count near the limit: the given value, then each change in the field
+  const [length, setLength] = createSignal((props.value ?? "").length);
+  createRenderEffect(() => setLength((props.value ?? "").length));
+  const counted = (event: { currentTarget: { value: string } }) => setLength(event.currentTarget.value.length);
+  const near = () => {
+    const max = props.maxLength;
+    return props.count === true && max !== undefined && length() >= max - Math.max(1, Math.ceil(max / 5));
+  };
+  const countId = createUniqueId();
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
@@ -325,7 +341,7 @@ export const Input = (props: InputProps) => {
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
     "aria-invalid": field?.invalid ? ("true" as const) : undefined,
-    "aria-describedby": field?.described,
+    "aria-describedby": [field?.described, near() ? countId : undefined].filter(Boolean).join(" ") || undefined,
     required: field?.required || undefined,
     disabled: props.disabled,
     // written as attributes, so the first markup from the server already carries them (password managers read it)
@@ -377,7 +393,10 @@ export const Input = (props: InputProps) => {
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
-            onInput={(event) => props.onInput?.(event.currentTarget.value)}
+            onInput={(event) => {
+              counted(event);
+              props.onInput?.(event.currentTarget.value);
+            }}
             onKeyDown={(event) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);
@@ -391,11 +410,23 @@ export const Input = (props: InputProps) => {
         <textarea
           {...shared()}
           ref={(element) => forwardRef(props.ref, element)}
-          onInput={(event) => props.onInput?.(event.currentTarget.value)}
+          onInput={(event) => {
+            counted(event);
+            props.onInput?.(event.currentTarget.value);
+          }}
           onKeyDown={(event) => props.onKeyDown?.(event)}
         >
           {isServer ? `\n${props.value ?? ""}` : undefined}
         </textarea>
+      </Show>
+      {/* the count near the limit: seen as "18 / 20", heard as "18 von 20 Zeichen" */}
+      <Show when={near()}>
+        <span class="k2-input-count" id={countId}>
+          <span aria-hidden="true">
+            {length()} / {props.maxLength}
+          </span>
+          <span class="k2-hidden-text">{t().characters({ count: length(), max: props.maxLength ?? 0 })}</span>
+        </span>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>

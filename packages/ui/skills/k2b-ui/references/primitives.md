@@ -316,7 +316,10 @@ lines instead of cutting a thing.
   `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
   phone keyboard, such as `numeric` for a code), `spellcheck` and
   `autocapitalize` (`false` and `off` for names, codes and keys). Never set
-  them through `ref` after hydration.
+  them through `ref` after hydration. `count` with `maxLength`: once the
+  text nears the limit (its last fifth) the field shows "18 / 20" at its
+  end and a screen reader hears it; for text a person writes (a title, a
+  message), not for a code.
 - `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
   `onChange`, `placeholder`, `disabled` (a grey well, the value still
   shown, while it cannot be changed).
