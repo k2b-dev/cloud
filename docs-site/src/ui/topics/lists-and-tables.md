@@ -18,6 +18,12 @@ Sources of Pulse: two-line rows, the open one tinted, its detail beside the list
 
 <Example recipe="list-detail" height="560" default="Open" />
 
+## Folders as a tree
+
+Files with its folder tree: the sidebar's `Nav` group takes a `tree`, the table takes `tree` for rows in levels. The open folder comes from the address, so the way to it stands open on the server's page. The arrow, or Right and Left, folds a folder without opening it; a press on its name opens it. Load only what opens: a folder loads its children the first time it opens (`load`), a level with thousands of entries ends in "Weitere laden", and a folder that failed to load shows a red mark until opening it again works.
+
+<Example recipe="tree" height="560" />
+
 ## List or table?
 
 ### List
@@ -54,6 +60,12 @@ Columns of like things: fixed widths, cut text, dropped columns and two-line row
 
 <Props of="Table Column" />
 
+### Trees
+
+Places in levels: a `Nav` group's `tree` (each place a `NavTreeNode`) and a table's `tree` (rows whose children stand under them). Both are one Tab stop with the keys of the tree pattern; on the phone a table shows its top level.
+
+<Props of="NavTree NavTreeNode TableTree" />
+
 ### StatusRow
 
 Above the rows: the one statement, key figures and filters; a selection bar while rows are selected.
@@ -74,7 +86,7 @@ The states, in the place of the rows; their rules are in [States and notices](/e
 
 ## Not in v2 yet
 
-Reorder by dragging, and a tree. Until they ship, use the nearest part and write `// k2b-ui gap: …` at that place.
+Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui gap: …` at that place.
 
 ## Do and don't
 

@@ -16,6 +16,7 @@ import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/rec
 import * as settingsPage from "../../../../packages/ui/skills/k2b-ui/recipes/settings-page";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
+import * as tree from "../../../../packages/ui/skills/k2b-ui/recipes/tree";
 import type { ScreenApp } from "../../../../packages/ui/src/v2/screen-frame";
 
 /**
@@ -65,6 +66,7 @@ export const recipes = {
   "settings-page": settingsPage,
   states,
   table,
+  tree,
 } satisfies Record<string, RecipeModule>;
 
 export type RecipeName = keyof typeof recipes;

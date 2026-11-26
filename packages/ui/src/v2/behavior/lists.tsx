@@ -3,9 +3,11 @@
  * active descendant, arrows, Home, End, typeahead, selection, expanding and collapsing, `aria-current` are core's.
  * Ours: the item context a tree needs (each item names its parent) and the announcements in the render locale.
  */
+
+import { Link } from "@k2b/ssr/nav";
 import { listbox as listboxPrimitive } from "@ui-sdk/core/listbox";
-import { tree as treePrimitive } from "@ui-sdk/core/tree";
-import { createContext, type JSX, splitProps, useContext } from "solid-js";
+import { createTreeController, type TreeController, tree as treePrimitive } from "@ui-sdk/core/tree";
+import { createContext, type JSX, splitProps, useContext, type ValidComponent } from "solid-js";
 import { type Handle, type PartProps, part, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 import { type BehaviorMessages, useBehaviorMessages } from "./messages";
 
@@ -69,7 +71,7 @@ export type TreeOptions = {
    */
   current?: string | null;
   /** A press or Enter on an item, like opening a folder. A Promise marks the item pending until it settles. */
-  onAction?: (value: string) => unknown;
+  onAction?: (value: string, details: { event?: Event }) => unknown;
   /** Loads a branch's children the first time it expands while it has none. */
   loadChildren?: (value: string, details: { signal: AbortSignal }) => void | Promise<unknown>;
 };
@@ -104,16 +106,30 @@ export type TreeParts = {
   Indicator: SlotComponent;
   /** The children of a branch; present only while it is expanded. */
   Group: SlotComponent;
+  /**
+   * The row's text as a link (`href`, `onNavigate`), in the place of `Label`: core leaves the tab order to the item
+   * and Enter on the item follows the link.
+   */
+  Link: (props: PartProps & { href: string; onNavigate?: unknown }) => JSX.Element;
+  /** Drives the tree from outside: expand, collapse, focus an item (core's `createTreeController`). */
+  controller: TreeController;
 };
 
 /** A tree: levels, expanding and collapsing, arrows, Home, End and typeahead come from core. */
 export function useTree(options: () => TreeOptions = () => ({})): TreeParts {
   const t = useBehaviorMessages();
   const announcement = treeAnnouncement(t);
+  const controller = createTreeController();
   const handle = usePrimitive(treePrimitive, () => {
     const given = options();
     const onAction = given.onAction;
-    return { ...given, onAction: onAction && ((value: string) => onAction(value)), announcement, pendingAnnouncement: t().loading };
+    return {
+      ...given,
+      controller,
+      onAction: onAction && ((value: string, details: { event?: Event }) => onAction(value, details)),
+      announcement,
+      pendingAnnouncement: t().loading,
+    };
   });
   return {
     Root: slotComponent(handle, "root", "div"),
@@ -132,12 +148,14 @@ export function useTree(options: () => TreeOptions = () => ({})): TreeParts {
     Label: itemPart(handle, "label", "span"),
     Indicator: itemPart(handle, "indicator", "span"),
     Group: itemPart(handle, "group", "div"),
+    Link: itemPart(handle, "label", Link),
+    controller,
   };
 }
 
 /** A part of the tree item around it: it takes that item's value; a group also takes `keepMounted`, `hiddenUntilFound`. */
 const itemPart =
-  (handle: Handle<typeof treePrimitive>, slot: "label" | "indicator" | "group", tag: string): SlotComponent =>
+  (handle: Handle<typeof treePrimitive>, slot: "label" | "indicator" | "group", tag: ValidComponent): SlotComponent =>
   (props) => {
     const item = useContext(ItemContext);
     if (!item) throw new Error(`A tree ${slot} must be inside a tree item.`);

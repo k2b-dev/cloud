@@ -1,5 +1,5 @@
 import { createNavigation, type NavigationItem } from "@k2b/ui";
-import type { MenuEntry, NavGroup, NavItem, OnNavigate } from "@k2b/ui/v2";
+import type { MenuEntry, NavGroup, NavItem, NavTree, NavTreeNode, OnNavigate } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
 import WorkspaceNavigationProvider from "./WorkspaceNavigationProvider";
 
@@ -17,6 +17,8 @@ type V2Navigation = {
  * - an entry `nested` stands under the entry before it, always open and without a toggle, as the sidebar shows it;
  * - a folding entry (`items`) folds the same way, open while it holds the open entry;
  * - an entry's own "…" (`menu`) becomes its row's menu;
+ * - a tree (`tree`) keeps its loaded places: a place with children folds them, its own link first, open on the way to
+ *   the open place;
  * - symbols, counts, the open one and "something new" carry over.
  * Deeds are found by id (`click`), links by their address as written (`navigate`).
  */
@@ -86,9 +88,34 @@ const fromNav = (groups: readonly NavGroup[], foot: readonly NavItem[]): V2Navig
     // nested entries stay open and have no toggle, as the sidebar always shows them
     return top.map(({ item, children }) => (children.length === 0 ? item : { ...item, children, disclosure: false as const }));
   };
+  const place = (tree: NavTree, node: NavTreeNode): NavigationItem => {
+    const id = node.href ?? `tree:${node.key}`;
+    const common = {
+      id,
+      label: node.label,
+      ...(node.icon ? { icon: `ti ti-${node.icon}` } : {}),
+      ...(node.count !== undefined ? { badge: node.count } : {}),
+      ...(node.key === tree.current ? { active: true } : {}),
+      ...(node.dot ? { unread: true } : {}),
+      ...(node.menu ? { actions: deeds(node.menu, `${id}:menu`) } : {}),
+    };
+    const self: NavigationItem =
+      node.href !== undefined
+        ? (() => {
+            if (node.onNavigate) navigate.set(node.href, node.onNavigate);
+            return { ...common, href: node.href, ...(node.onNavigate ? { navigation: "enhanced" as const } : {}) };
+          })()
+        : { ...common, action: id, disabled: true };
+    const loaded = node.children ?? [];
+    if (loaded.length === 0) return self;
+    const children = [...(node.href !== undefined ? [{ ...self, id: `${id}:self` }] : []), ...loaded.map((child) => place(tree, child))];
+    const { active: _active, ...fold } = common;
+    return { ...fold, children, defaultExpanded: children.some(holdsCurrent) };
+  };
   const items = groups.flatMap((group, index): NavigationItem[] => {
     const own = group.action && "items" in group.action ? deeds(group.action.items, `group:${index}:menu`) : [];
-    const children = [...rows(group.items, `${index}`), ...own];
+    const entries = group.tree === undefined ? rows(group.items, `${index}`) : group.tree.items.map((node) => place(group.tree, node));
+    const children = [...entries, ...own];
     return group.label ? [{ id: `group:${index}`, label: group.label, section: true, children }] : children;
   });
   return { items: [...items, ...rows(foot, "foot")], navigate, click };

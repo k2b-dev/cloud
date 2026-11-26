@@ -20,6 +20,7 @@ import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon, Mark } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
+import { type NavTree, NavTreeView } from "./nav-tree";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
@@ -88,9 +89,18 @@ export type NavGroup = {
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
-  /** The entries of the group. */
-  items: readonly NavItem[];
-};
+} & (
+  | {
+      /** The entries of the group. */
+      items: readonly NavItem[];
+      tree?: undefined;
+    }
+  | {
+      /** Places in levels, such as the folders of Files or the pages of a notebook, in the place of `items`. */
+      tree: NavTree;
+      items?: undefined;
+    }
+);
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
@@ -218,7 +228,9 @@ export const Nav = (props: NavProps) => (
               <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
             </div>
           </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
+          <Show when={group().tree} fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}>
+            {(tree) => <NavTreeView {...tree()} />}
+          </Show>
         </>
       )}
     </Index>

@@ -1714,6 +1714,78 @@
   vertical-align: middle;
 }
 /* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
+/* Rows in levels (Table tree): the first cell starts 20 px further in per level, at most eight levels, so deep rows
+   keep their names; the arrow stands before the name. The row takes the focus (one Tab stop), with the ring inside. */
+.k2-ui .k2-table[data-tree] {
+  --k2-tree-level: 1;
+}
+.k2-ui .k2-table td[data-tree-cell] {
+  position: relative;
+  padding-left: calc(var(--k2-edge) + 24px + min(var(--k2-tree-level, 1) - 1, 8) * 20px);
+}
+.k2-ui .k2-table tr[data-tree-row] {
+  outline: none;
+}
+.k2-ui .k2-table tr[data-tree-row]:focus-visible > td {
+  box-shadow: inset 0 2px 0 var(--k2-blue), inset 0 -2px 0 var(--k2-blue);
+}
+.k2-ui .k2-table tr[data-tree-row]:focus-visible > td:first-child {
+  box-shadow: inset 2px 2px 0 var(--k2-blue), inset 0 -2px 0 var(--k2-blue);
+}
+.k2-ui .k2-table tr[data-tree-row]:focus-visible > td:last-child {
+  box-shadow: inset -2px 2px 0 var(--k2-blue), inset 0 -2px 0 var(--k2-blue);
+}
+.k2-ui .k2-table tr[data-tree-row]:focus-visible > td:only-child {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-tree-chev {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--k2-edge) + min(var(--k2-tree-level, 1) - 1, 8) * 20px);
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  display: grid;
+  place-items: center;
+  color: var(--k2-subtle);
+  font-size: 14px;
+  border-radius: var(--k2-r-control);
+}
+.k2-ui .k2-table[data-lines="2"] .k2-tree-chev {
+  top: 18px;
+}
+.k2-ui .k2-tree-chev[data-branch]:hover {
+  background: var(--k2-n100);
+}
+.k2-ui .k2-tree-chev > .k2-icon:not(:first-child),
+.k2-ui .k2-tree-chev:is([data-loading], [data-failed]) > .k2-icon:first-child,
+.k2-ui .k2-table tr[data-more] .k2-tree-chev > .k2-icon {
+  display: none;
+}
+.k2-ui .k2-tree-chev > .k2-icon:first-child {
+  transition: transform 120ms ease;
+}
+.k2-ui .k2-tree-chev[data-expanded] > .k2-icon:first-child {
+  transform: rotate(90deg);
+}
+.k2-ui .k2-tree-chev[data-loading] > .k2-icon:nth-child(2),
+.k2-ui .k2-table tr[data-more] .k2-tree-chev[data-loading] > .k2-icon {
+  display: inline-block;
+  animation: k2-spin 900ms linear infinite;
+}
+.k2-ui .k2-tree-chev[data-failed] > .k2-icon:nth-child(3) {
+  display: inline-block;
+  color: var(--k2-bad);
+}
+.k2-ui .k2-table tr[data-more] > td {
+  color: var(--k2-subtle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-tree-chev > .k2-icon {
+    animation: none !important;
+    transition: none;
+  }
+}
 .k2-ui .k2-table-phone {
   display: none;
 }
@@ -2940,6 +3012,146 @@
 }
 .k2-ui .k2-nav-quota[data-status="bad"] > .k2-nav-quota-track > i {
   background: var(--k2-bad-dot);
+}
+
+/* Nav tree: places in levels (folders, pages). The tree scrolls on its own inside the sidebar, so a long level never
+   pushes the foot away; each level stands 12 px further in, at most six steps, so a deep tree keeps its names.
+   The arrow before the symbol folds a place open and shut; the row itself is the place's link. */
+.k2-ui .k2-nt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  /* room for the focus ring, which the scroller would cut */
+  margin: -4px;
+  padding: 4px;
+}
+.k2-ui :is(.k2-nt-item, .k2-nt-group) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.k2-ui .k2-nt-item {
+  outline: none;
+}
+.k2-ui .k2-nt-row {
+  position: relative;
+  gap: 4px;
+  padding-left: calc(4px + min(var(--tree-level, 1) - 1, 6) * 12px);
+}
+/* the name keeps room before its count, also deep in the tree */
+.k2-ui .k2-nt-row > .k2-ni-name {
+  min-width: 64px;
+}
+.k2-ui .k2-nt-row > .k2-icon {
+  margin-right: 4px;
+}
+.k2-ui .k2-nt-item:focus-visible > .k2-nt-row {
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-nt-item[aria-current] > .k2-nt-row {
+  background: var(--k2-app-tint);
+  color: var(--k2-app-text);
+  font-weight: 500;
+}
+.k2-ui .k2-nt-item[aria-current] > .k2-nt-row > :is(.k2-icon, .k2-ni-count, .k2-nt-chev) {
+  color: var(--k2-app-text);
+}
+.k2-ui .k2-nt-row > .k2-ni-name {
+  color: inherit;
+  text-decoration: none;
+}
+/* the link fills the row, so a press anywhere on it opens the place; the arrow and the "…" stand above it */
+.k2-ui .k2-nt-row > a.k2-ni-name::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.k2-ui .k2-nt-chev {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--k2-subtle);
+  font-size: 14px;
+}
+.k2-ui .k2-nt-chev > .k2-icon:not(:first-child),
+.k2-ui .k2-nt-chev:is([data-loading], [data-failed]) > .k2-icon:first-child,
+.k2-ui .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon {
+  display: none;
+}
+.k2-ui .k2-nt-chev > .k2-icon:first-child {
+  transition: transform 120ms ease;
+}
+.k2-ui .k2-nt-chev[data-expanded] > .k2-icon:first-child {
+  transform: rotate(90deg);
+}
+.k2-ui .k2-nt-chev[data-loading] > .k2-icon:nth-child(2),
+.k2-ui .k2-nt-item[data-pending] > .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon {
+  display: inline-block;
+  animation: k2-spin 900ms linear infinite;
+}
+.k2-ui .k2-nt-chev[data-failed]:not([data-loading]) > .k2-icon:nth-child(3) {
+  display: inline-block;
+  color: var(--k2-bad);
+}
+.k2-ui .k2-nt-row[data-more] {
+  color: var(--k2-subtle);
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui :is(.k2-nt-chev > .k2-icon, .k2-nt-row[data-more] > .k2-nt-chev > .k2-icon) {
+    animation: none !important;
+    transition: none;
+  }
+}
+/* the "…" of a place stands over its end, like an entry's "…" in the nav, and shows under the pointer */
+.k2-ui .k2-nt-menu {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  opacity: 0;
+}
+.k2-ui .k2-nt-menu > .k2-btn {
+  width: 24px;
+  height: 24px;
+}
+.k2-ui .k2-nt-row:is(:hover, :has(.k2-btn[aria-expanded="true"])) > .k2-nt-menu,
+.k2-ui .k2-nt-item:focus-visible > .k2-nt-row > .k2-nt-menu {
+  opacity: 1;
+}
+.k2-ui .k2-nt-row[data-has-menu]:is(:hover, :has(.k2-btn[aria-expanded="true"])),
+.k2-ui .k2-nt-item:focus-visible > .k2-nt-row[data-has-menu] {
+  padding-right: 32px;
+}
+.k2-ui .k2-nt-row[data-has-menu]:is(:hover, :has(.k2-btn[aria-expanded="true"])) > .k2-ni-count,
+.k2-ui .k2-nt-item:focus-visible > .k2-nt-row[data-has-menu] > .k2-ni-count {
+  display: none;
+}
+@media (hover: none) {
+  .k2-ui .k2-nt-menu {
+    opacity: 1;
+    top: 2px;
+  }
+  .k2-ui .k2-nt-menu > .k2-btn {
+    width: 28px;
+    height: 28px;
+  }
+  .k2-ui .k2-nt-row[data-has-menu] {
+    padding-right: 32px;
+  }
+  .k2-ui .k2-nt-row[data-has-menu] > .k2-ni-count {
+    display: none;
+  }
 }
 
 /* Tabs: the views of a head or of an object; the active one stands on the line of its bar */
