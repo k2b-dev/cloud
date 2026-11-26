@@ -79,7 +79,6 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
 | who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
 | several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
-| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -100,6 +99,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -167,30 +170,27 @@ a `Notice` that names the deed.
 
 ## How a screen looks: dense, clear, with faces
 
-The target (design pass 26.11.): dense, clear, space-efficient, tailored
-and appealing. Dense is not busy: show more, never the same thing twice.
-
-- **Each thing carries its mark**: its `Mark` (colour and symbol, or
-  thumbnail) or a person's `Avatar` leads it, never grey.
+Dense is not busy: show more, never the same thing twice (design pass 26.11.).
+- **Each thing carries its mark** (`Mark`, or a person's `Avatar`), never grey.
 - **The first line says what counts today** (`StatusRow` lead, `Cells`).
 - **A state is colour, symbol and word**; a limit a bar, a history `Spark`.
-- **Space structures, lines separate groups**; no box in a card.
-- **No empty half**: a detail only while open, a side column only if full.
+- **Space structures, lines separate groups**; no box in a card, no empty half.
 - **People beside what they did**: avatars, stacks, `Digest activity`.
 - **Four type sizes** (12, 13, 14, 18); sample data dense and real.
-- **Two head rows at most**: path and deeds, then `FilterBar`.
-- **Settings are `Setting` rows**: the value beside its name.
+- **Two head rows at most**; **settings are `Setting` rows**.
 
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
+  `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
-  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`. **Media:** `Preview`.
+  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
+  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

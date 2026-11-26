@@ -510,7 +510,10 @@ export type StatusFact = {
 };
 
 export type StatusRowProps = {
-  /** The one main statement, such as "7 unread". */
+  /**
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   */
   lead: string;
   /**
    * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
@@ -527,7 +530,11 @@ export type StatusRowProps = {
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
-  /** Filters or a segment at the end; they leave on the phone. */
+  /**
+   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
+   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   */
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
