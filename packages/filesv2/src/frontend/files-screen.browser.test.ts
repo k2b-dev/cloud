@@ -370,16 +370,20 @@ describe("a folder of Files on v2", () => {
 
       await rowLink(tab, "Notizen.md").click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Notizen.md");
-      await tab.getByText("Eigenschaften", { exact: true }).waitFor();
+      await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
       expect(await tab.getByRole("button", { name: "Herunterladen", exact: true }).count()).toBeGreaterThan(0);
-      // the public link is a row: how often it was used in quiet words, no big figures; revoking is its row's deed
-      const links = tab.locator("[data-k2-part=List][aria-label='Öffentlicher Link']");
-      await links
-        .getByText(/Aufrufe?, \d+ Downloads? in \d+ Tagen/)
+      // who reaches it, as the Files recipe: the team, then each link with how often it was opened and when it was
+      // made; no big figures and no copy deed (a link's address is shown only once), the links are managed on the
+      // shares page
+      const sharing = tab.locator("[data-k2-part=List][aria-label='Freigabe']");
+      await sharing
+        .getByText(/\d+× geöffnet/)
         .first()
         .waitFor();
       expect(await tab.getByText("Seitenaufrufe").count()).toBe(0);
-      expect(await links.getByRole("button", { name: /^Aktionen für / }).count()).toBeGreaterThan(0);
+      expect(await sharing.getByRole("button", { name: "Link kopieren" }).count()).toBe(0);
+      expect(await sharing.locator("[data-k2-part=Row] time").count()).toBeGreaterThan(0);
+      expect(await tab.getByRole("link", { name: /Verwalten/ }).count()).toBeGreaterThan(0);
       await shoot(tab, "02-detail-1440");
       await expectClean(tab);
       await tab.getByRole("link", { name: "Details schließen", exact: true }).first().click();
@@ -416,7 +420,7 @@ describe("a folder of Files on v2", () => {
       expect(before.every(Boolean)).toBe(true);
       expect(await head.getByRole("button", { name: "Zu Favoriten hinzufügen" }).isDisabled()).toBe(true);
       answer();
-      await tab.getByText("Eigenschaften").waitFor();
+      await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
       expect(await head.getByRole("button", { name: "Zu Favoriten hinzufügen" }).isDisabled()).toBe(false);
       expect(await places()).toEqual(before);
       expect(errors).toEqual([]);
@@ -607,7 +611,7 @@ describe("a folder of Files on v2", () => {
       await expectClean(tab);
       await tab.getByRole("link", { name: "Notizen.md", exact: true }).click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Notizen.md");
-      await tab.getByText("Eigenschaften", { exact: true }).waitFor();
+      await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
       await shoot(tab, "06-detail-390");
       await expectClean(tab);
       await tab.locator("[data-k2-part=Back]").getByRole("link").first().click();
@@ -636,7 +640,7 @@ describe("a folder of Files on v2", () => {
 
       await tab.getByRole("link", { name: "Budget 2027.xlsx" }).first().click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Budget 2027.xlsx");
-      await tab.getByText("Eigenschaften", { exact: true }).waitFor();
+      await tab.locator("[data-k2-part=Pane][data-detail] [data-k2-part=Facts]").waitFor();
       // Every step stayed on the first page load.
       expect(seen.pages).toHaveLength(1);
       expect(errors).toEqual([]);

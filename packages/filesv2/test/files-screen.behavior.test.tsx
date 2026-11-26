@@ -182,10 +182,9 @@ describe("the detail of the v2 folder screen", () => {
           }),
         );
         const detail = () => dom.root;
-        // the versions' own section, its rows on v2: the title is each row's first line
+        // the versions' own section, its rows on v2: the first line of each row with its quiet note
         const section = () => sectionTitled(dom.root, "Versions")!;
-        const titles = () =>
-          [...section().querySelectorAll('[data-k2-part="Row"] .k2-row-title')].map((title) => title.textContent?.trim());
+        const titles = () => [...section().querySelectorAll('[data-k2-part="Row"] .k2-row-l1')].map((title) => title.textContent?.trim());
         await flush();
         answerIf("shares", () => Response.json({ items: [], next: null }));
         // R4 was written after the details were read: the list now saves R3 as v-3.
@@ -231,7 +230,9 @@ describe("the detail of the v2 folder screen", () => {
         await flush();
         confirmEntry(newer);
         await flush();
-        expect(titles()[0]).toBe("Version 4 · current");
+        // confirmed for R4: four versions, the file as it is now first and "current"
+        expect(section().querySelector(".k2-sh-count")?.textContent).toBe("4");
+        expect(titles()[0]).toContain("current");
         // the versions are named once, in their own section; the properties carry no second count (review 26.11.)
         expect(fact(detail(), "Versions")).toBeUndefined();
         // The overwrite that produced R3 no longer names the current file, so it restores no predecessor.

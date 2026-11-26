@@ -169,8 +169,8 @@ export default function EntryDetail(props: EntryDetailProps) {
         <Bar
           start={
             <Inline>
-              {/* 14/600 as the mockup's detail head: the name is small, never a big title of its own (Valentin 26.11.) */}
-              <Text weight="strong">{head()?.name ?? props.path.split("/").at(-1)}</Text>
+              {/* the name as the Files recipe's detail head: the record's title, with its star */}
+              <Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>
               {/* the star and "…" keep their place while the entry reads again; they wait until it is there */}
               <Button
                 variant="ghost"
@@ -310,10 +310,11 @@ function Loaded(
           </Canvas>
         </Band>
       </Show>
-      {/* the one action row of the entry, under its preview; the rarer deeds wait behind "…" in the head */}
+      {/* the one action row of the entry, under its preview; the rarer deeds wait behind "…" in the head. As an Inline
+          the row wraps in a narrow detail instead of running into what the file is */}
       <Bar
         start={
-          <>
+          <Inline>
             <Show
               when={props.item.directory}
               fallback={
@@ -334,23 +335,27 @@ function Loaded(
                 {t().share}
               </Button>
             </Show>
-          </>
+          </Inline>
         }
         end={
-          <Show when={readOnly()}>
-            <Chip icon="lock">{t().readOnly}</Chip>
+          // what the file is, at the end of its deeds, as the recipe has it; a file only read says so instead
+          <Show when={!readOnly()} fallback={<Chip icon="lock">{t().readOnly}</Chip>}>
+            <Show when={!props.item.directory}>
+              <Text type="meta">{`${fileKindLabel({ name: props.item.name }, locale())} · ${formatFileViewSize(props.item.size, locale())}`}</Text>
+            </Show>
           </Show>
         }
       />
-      <Section icon="list-details" title={t().properties}>
-        <Facts
-          items={[
-            { label: t().location, value: `${baseLabel(props.base, t(), locale())} / ${props.item.path}` },
-            { label: f().modified, value: changedBy() ? `${modified()} · ${changedBy()}` : modified() },
-            ...(!props.item.directory ? [{ label: f().size, value: formatFileViewSize(props.item.size, locale()) }] : []),
-          ]}
-        />
-      </Section>
+      {/* the facts without a head of their own: who changed it last and when, and where it lies */}
+      <Facts
+        items={[
+          { label: f().modified, value: changedBy() ? `${changedBy()} · ${modified()}` : modified() },
+          {
+            label: t().location,
+            value: [baseLabel(props.base, t(), locale()), ...props.item.path.split("/").slice(0, -1)].join(" › "),
+          },
+        ]}
+      />
       <Show when={props.item.directory}>
         <FolderContents
           base={props.base}
@@ -360,7 +365,11 @@ function Loaded(
           env={props.history?.env}
         />
       </Show>
-      <Show when={props.history}>{(history) => <EntryLinksSection links={links} env={history().env} />}</Show>
+      <Show when={props.history}>
+        {(history) => (
+          <EntryLinksSection links={links} env={history().env} base={props.base} writable={!readOnly()} onNavigate={props.onNavigate} />
+        )}
+      </Show>
       <Show when={!props.item.directory}>
         <EntryVersions
           base={props.base}
@@ -371,7 +380,7 @@ function Loaded(
           locale={locale()}
           env={props.history?.env}
           versions={versions}
-          currentAuthor={currentAuthor()}
+          currentAuthor={changedBy()}
         />
       </Show>
       {/* the item's history, its changes and the links' use as one list */}

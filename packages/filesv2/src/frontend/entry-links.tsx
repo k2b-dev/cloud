@@ -1,27 +1,52 @@
-import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Dialog, List, Menu, Notice, Row, Section, Text } from "@k2b/ui/v2";
+import { useLocale } from "@k2b/ui";
+import { Bar, Button, Chip, List, Notice, type OnNavigate, Row, Section, Text } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
-import type { ShareView } from "../contracts";
+import type { BaseSummary, ShareView } from "../contracts";
+import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import type { EntryLinks } from "./entry-history";
-import { isHistoryUnavailable } from "./HistoryUnavailable";
+import { storageMark } from "./entry-mark";
 import { formatDate, type HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
-import type { ShareAccess } from "./ShareHistory";
+import { filesUrl } from "./urls";
 
 /**
- * The detail's public links on v2: one row per link, its state and how often it was used as quiet words, never as big
- * figures; revoking is the row's deed behind its "…". The list's own state (its first page, a failed page, more
- * pages) stands under the rows.
+ * Who reaches the entry, as the Files recipe shows it: the storage's team, then each public link with who made it, how
+ * it may be used, when it ends and how often it was opened, and when it was made or why it no longer opens. Links are
+ * managed (and revoked) on the shares page the head leads to. The team is one line with what it may do on the right;
+ * a link has two, as the recipe's rows do.
  */
-export function EntryLinksSection(props: { links: EntryLinks; env: HistoryEnvironment }) {
+export function EntryLinksSection(props: {
+  links: EntryLinks;
+  env: HistoryEnvironment;
+  base: BaseSummary;
+  /** The reader may change the entry: the team row says "Bearbeiten", else "Ansehen". */
+  writable: boolean;
+  onNavigate: OnNavigate;
+}) {
   const h = useHistoryMessages();
+  const b = useBrowserMessages();
+  const locale = useLocale();
   const list = () => props.links.list();
+  const team = () => props.base.kind === "groups";
+  const count = () => props.links.items().length + (team() ? 1 : 0);
   return (
-    <Show when={props.links.items().length > 0 || list().loading || list().failed}>
-      <Section icon="world-share" title={h().publicLink} count={props.links.items().length || undefined}>
-        <List label={h().publicLink}>
-          <For each={props.links.items()}>{(item) => <LinkRow item={item} env={props.env} links={props.links} />}</For>
+    <Show when={count() > 0 || list().loading || list().failed}>
+      <Section
+        icon="share"
+        title={b().v2Sharing}
+        count={count() || undefined}
+        actions={[{ label: b().v2Manage, href: `${filesUrl(props.base.id)}&view=shares`, onNavigate: props.onNavigate }]}
+      >
+        <List label={b().v2Sharing}>
+          <Show when={team()}>
+            <Row
+              mark={storageMark(props.base)}
+              lines={[b().v2TeamOf({ name: baseLabel(props.base, b(), locale()) })]}
+              time={props.writable ? b().edit : b().v2CanView}
+            />
+          </Show>
+          <For each={props.links.items()}>{(item) => <LinkRow share={item.share} creator={item.creatorName} env={props.env} />}</For>
         </List>
         <Show when={list().loading}>
           <Bar start={<Text type="meta">{h().accessLoading}</Text>} />
@@ -45,65 +70,38 @@ export function EntryLinksSection(props: { links: EntryLinks; env: HistoryEnviro
   );
 }
 
-function LinkRow(props: { item: ShareAccess; env: HistoryEnvironment; links: EntryLinks }) {
-  const h = useHistoryMessages();
+function LinkRow(props: { share: ShareView; creator: string | null; env: HistoryEnvironment }) {
   const b = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
-  const share = () => props.item.share;
-  const data = () => props.item.access.pages()[0];
-  const days = () => {
-    const period = props.links.period();
-    return Math.round((Date.parse(period.to) - Date.parse(period.from)) / 86_400_000) + 1;
-  };
-  // how often it was used, in words; a link without counts says why
-  const use = () => {
-    const counts = data();
-    if (counts) return h().v2LinkUse({ pages: counts.pages, downloads: counts.downloads, days: days() });
-    const error = props.item.access.error();
-    if (error) return isHistoryUnavailable(error) ? "" : h().accessFailed;
-    return h().accessLoading;
-  };
-  // an active link without an end is the rule and says nothing about it
-  const ends = () =>
-    share().state === "active" && share().expiresAt
-      ? h().validUntil.replace("{date}", formatDate(share().expiresAt!, locale(), props.env))
-      : "";
-  const by = () => (props.item.creatorName ? h().byCreator.replace("{name}", props.item.creatorName) : "");
-  const revoke = async (link: ShareView) => {
-    const confirmed = await Dialog.confirm({
-      title: b().v2RevokeTitle({ name: link.title }),
-      description: b().revokeQuestion,
-      confirm: b().revoke,
-    });
-    if (!confirmed) return;
-    try {
-      await props.links.revoke(link);
-      toast.success(b().revoked);
-    } catch (error) {
-      toast.error(error instanceof Error && error.message ? error.message : b().revokeFailed);
-    }
-  };
+  const facts = () =>
+    [
+      props.share.kind === "inbox" ? b().upload : b().v2CanView,
+      props.share.state === "active" && props.share.expiresAt
+        ? b().v2EndsOn({ date: formatDate(props.share.expiresAt, locale(), props.env) })
+        : "",
+      b().v2OpenedTimes({ count: props.share.accessCount }),
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  // the right column says when an active link was made, or the state of one that no longer opens; a link's address is
+  // only shown once, when it is made, so there is nothing to copy here
   return (
     <Row
-      mark={{ icon: share().kind === "inbox" ? "inbox" : "link" }}
-      lines={[share().title, [by(), ends(), use()].filter(Boolean).join(" · ")]}
-      action={
-        props.item.access.error() && !isHistoryUnavailable(props.item.access.error())
-          ? { label: h().retry, icon: "refresh", onClick: () => void props.item.access.refresh() }
-          : undefined
+      avatar={props.creator ? { name: props.creator } : undefined}
+      mark={props.creator ? undefined : { icon: "link" }}
+      lines={[props.creator ? b().v2LinkBy({ name: props.creator }) : b().shareLink, facts()]}
+      time={
+        props.share.state === "active" ? (
+          <time dateTime={props.share.createdAt}>{formatDate(props.share.createdAt, locale(), props.env)}</time>
+        ) : undefined
       }
       end={
-        <Show
-          when={share().state === "active"}
-          fallback={
-            <Chip status={share().state === "expired" ? "warn" : "bad"}>{share().state === "expired" ? h().expired : h().revoked}</Chip>
-          }
-        >
-          <Menu
-            label={b().v2DeedsFor({ name: share().title })}
-            items={[{ label: h().revokeLink, icon: "link-off", danger: true, onClick: () => void revoke(share()) }]}
-          />
-        </Show>
+        props.share.state === "active" ? undefined : (
+          <Chip status={props.share.state === "expired" ? "warn" : "bad"}>
+            {props.share.state === "expired" ? h().expired : h().revoked}
+          </Chip>
+        )
       }
     />
   );

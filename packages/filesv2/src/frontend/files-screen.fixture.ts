@@ -369,7 +369,13 @@ export function fixtureShares(fixture: FixtureCase): SharePage {
 /** The one link of an open file, as its detail lists it: active, made by Mira, opened a few times. */
 export const fixtureItemShares = (path: string): SharePage => ({
   items: [
-    link(0, { title: path.split("/").at(-1) ?? path, scope: path.split("/").slice(0, -1).join("/"), items: [path], state: "active" }),
+    link(0, {
+      title: path.split("/").at(-1) ?? path,
+      scope: path.split("/").slice(0, -1).join("/"),
+      items: [path],
+      state: "active",
+      accessCount: 3,
+    }),
   ],
   next: null,
 });

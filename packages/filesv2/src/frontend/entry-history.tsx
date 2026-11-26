@@ -375,28 +375,23 @@ export function EntryVersions(props: {
         </Match>
         <Match when={props.versions.items() !== null}>
           <List label={t().versions}>
-            {/* the file as it is now, numbered after the saved versions as the history counts it */}
+            {/* as the Files recipe: one line each, who saved it and when, its size (and "aktuell" or its comment) as
+                the quiet note; the right column holds the deeds, as a row of one line has room for one thing there */}
             <Row
-              mark={{ icon: "file" }}
-              lines={[
-                props.versions.state() === "ready"
-                  ? `${h().versionN.replace("{n}", String(items().length + 1))} · ${h().versionCurrent}`
-                  : h().versionCurrent,
-                [props.currentAuthor, when(props.entry.modified)].filter(Boolean).join(" · "),
-              ]}
+              avatar={props.currentAuthor ? { name: props.currentAuthor } : undefined}
+              mark={props.currentAuthor ? undefined : { icon: "file" }}
+              lines={[when(props.entry.modified)]}
+              meta={`${formatFileViewSize(props.entry.size, props.locale)} · ${h().versionCurrent}`}
               onOpen={props.busy ? undefined : () => props.onOpen(props.entry)}
             />
             <For each={listed()}>
               {(version) => (
                 <Row
-                  mark={{ icon: "history" }}
                   // Filegate's author metadata names the comment editor, not the content author.
-                  lines={[
-                    label(version),
-                    [version.comment, version.author, formatFileViewSize(version.size, props.locale), when(version.created)]
-                      .filter(Boolean)
-                      .join(" · "),
-                  ]}
+                  avatar={version.author ? { name: version.author } : undefined}
+                  mark={version.author ? undefined : { icon: "history" }}
+                  lines={[when(version.created)]}
+                  meta={[formatFileViewSize(version.size, props.locale), version.comment].filter(Boolean).join(" · ")}
                   onOpen={
                     busy() || props.busy || !canAct()
                       ? undefined
