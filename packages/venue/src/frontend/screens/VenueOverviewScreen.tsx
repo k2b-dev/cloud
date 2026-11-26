@@ -1,4 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
@@ -14,6 +15,7 @@ import {
   Pane,
   Row,
   StatusRow,
+  Table,
   Text,
   useToast,
   Workspace,
@@ -21,12 +23,19 @@ import {
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { apiClient } from "../../api/client";
-import type { Venue, VenueTemplateSummary } from "../../contracts";
+import type { MyNextShift, Venue, VenueTemplateSummary } from "../../contracts";
+import { formatVenueSpan } from "../../time-format";
 import { readError } from "../_components/venue-workspace/utils";
 import { slugFromName, venueSlugError } from "../venue-slug";
 import { useVenueWords } from "./messages";
 
-export type VenueOverviewProps = { venues: Venue[]; templates: VenueTemplateSummary[]; initialQuery: string };
+export type VenueOverviewProps = {
+  venues: Venue[];
+  /** The viewer's next shift per venue (by the venue's id), where they have one. */
+  nextShifts: Record<string, MyNextShift>;
+  templates: VenueTemplateSummary[];
+  initialQuery: string;
+};
 
 /** v1 icon classes ("ti ti-building") to v2 Tabler names ("building"). */
 export const iconName = (classes: string | null | undefined, fallback = "building-carousel") =>
@@ -57,6 +66,10 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
     else url.searchParams.delete("q");
     history.replaceState(history.state, "", `${url.pathname}${url.search}`);
   };
+  const locale = useLocale();
+  const next = (venue: Venue) => props.nextShifts[venue.id];
+  const nextLine = (venue: Venue, shift: MyNextShift) =>
+    `${formatVenueSpan(shift.startsAt, shift.endsAt, venue.timezone, locale())} · ${shift.title ?? t().freeTime}`;
   const role = (permission: Venue["permission"]) => (permission === "admin" ? t().admin : permission === "write" ? t().staff : t().viewer);
   const signup = (mode: Venue["signupMode"]) =>
     mode === "templates" ? t().shiftSignup : mode === "both" ? t().shiftAndFreeSignup : t().freeSignup;
@@ -143,27 +156,65 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
             when={shown().length > 0}
             fallback={<Empty icon="search" text={t().noMatchingVenues} action={{ label: t().clearSearch, onClick: () => search("") }} />}
           >
-            {/* k2b-ui gap: v2 lists do not virtualize yet (lane MW); a person sees the venues they belong to. */}
-            <List label={t().yourVenues}>
-              <For each={shown().slice(0, visible())}>
-                {(venue) => (
-                  <Row
-                    mark={{ icon: iconName(venue.icon), color: venue.accentColor }}
-                    lines={[venue.name, venue.description || signup(venue.signupMode)]}
-                    meta={role(venue.permission)}
-                    // only a public page is worth a word: most venues are internal, and a chip in every row says nothing
-                    end={
-                      venue.publicEnabled ? (
-                        <Text tone="ok" weight="medium">
-                          <Icon name="world" /> {words().publicShort}
-                        </Text>
-                      ) : undefined
-                    }
-                    href={`/app/venue/${venue.id}`}
-                  />
-                )}
-              </For>
-            </List>
+            {/* k2b-ui gap: v2 tables do not virtualize yet (lane MW); a person sees the venues they belong to. */}
+            <Table
+              label={t().yourVenues}
+              rows={shown().slice(0, visible())}
+              rowKey={(venue) => venue.id}
+              open={(venue) => ({ href: `/app/venue/${venue.id}` })}
+              phone={(venue) => ({
+                mark: { icon: iconName(venue.icon), color: venue.accentColor },
+                lines: [venue.name, next(venue) ? nextLine(venue, next(venue)!) : venue.description || signup(venue.signupMode)],
+              })}
+              columns={[
+                {
+                  title: words().venueColumn,
+                  width: { min: 240, default: 360 },
+                  mark: (venue) => ({ icon: iconName(venue.icon), color: venue.accentColor }),
+                  cell: (venue) => ({ lines: [venue.name, venue.description || signup(venue.signupMode)] }),
+                },
+                { title: words().roleColumn, width: { min: 110, default: 130 }, drop: true, cell: (venue) => role(venue.permission) },
+                {
+                  title: words().nextShiftColumn,
+                  width: { min: 220, default: 300 },
+                  drop: true,
+                  // the own next shift there, with how many more follow; staff without one see a quiet line, readers nothing
+                  cell: (venue) => {
+                    const shift = next(venue);
+                    return shift ? (
+                      {
+                        lines: [
+                          formatVenueSpan(shift.startsAt, shift.endsAt, venue.timezone, locale()),
+                          shift.upcoming > 1
+                            ? words().titleAndMore({ title: shift.title ?? t().freeTime, count: shift.upcoming - 1 })
+                            : (shift.title ?? t().freeTime),
+                        ],
+                      }
+                    ) : venue.permission === "write" || venue.permission === "admin" ? (
+                      <Text type="meta" muted>
+                        {words().noShiftYet}
+                      </Text>
+                    ) : (
+                      ""
+                    );
+                  },
+                },
+                {
+                  title: words().publicColumn,
+                  width: { min: 110, default: 130 },
+                  drop: true,
+                  // only a public page is worth a word: most venues are internal, and a chip in every row says nothing
+                  cell: (venue) =>
+                    venue.publicEnabled ? (
+                      <Text tone="ok" weight="medium">
+                        <Icon name="world" /> {words().publicShort}
+                      </Text>
+                    ) : (
+                      ""
+                    ),
+                },
+              ]}
+            />
             <Show when={shown().length > visible()}>
               <Bar
                 start={

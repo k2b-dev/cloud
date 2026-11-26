@@ -40,6 +40,7 @@ import type {
   FeedbackInputSchema,
   FeedbackSummary,
   FreeSignupInputSchema,
+  MyNextShift,
   OpeningRule,
   OpeningRuleInput,
   PublicSection,
@@ -1813,6 +1814,31 @@ const countMyShifts = async (venue: Venue, user: UserLike | null) =>
     `.then((rows) => rows[0]?.count ?? 0)
     : 0;
 
+/**
+ * Each venue's next shift of this person that has not ended, and how many they have there from now on: one read over
+ * all given venues, keyed by venue id, so a list of venues does not ask once per row.
+ */
+const myNextShifts = async (venueIds: readonly string[], user: UserLike, now: Date): Promise<Map<string, MyNextShift>> => {
+  if (venueIds.length === 0) return new Map();
+  const rows = await sql<{ venue_id: string; starts_at: Date; ends_at: Date; title: string | null; upcoming: number }[]>`
+    SELECT DISTINCT ON (sa.venue_id)
+      sa.venue_id, sa.starts_at, sa.ends_at, st.title,
+      COUNT(*) OVER (PARTITION BY sa.venue_id)::int AS upcoming
+    FROM venue.shift_assignments sa
+    LEFT JOIN venue.shift_templates st ON st.id = sa.template_id
+    WHERE sa.user_id = ${user.id}::uuid
+      AND sa.venue_id = ANY(${sql.array([...venueIds], "UUID")})
+      AND sa.ends_at > ${now}
+    ORDER BY sa.venue_id, sa.starts_at
+  `;
+  return new Map(
+    rows.map((row) => [
+      row.venue_id,
+      { startsAt: row.starts_at.toISOString(), endsAt: row.ends_at.toISOString(), title: row.title, upcoming: row.upcoming },
+    ]),
+  );
+};
+
 /** The figures a venue's sidebar shows on every page (my shifts, feedback), without the schedule a dashboard loads. */
 const navFacts = async (venue: Venue, user: UserLike | null) => {
   const [myShiftCount, feedback] = await Promise.all([
@@ -1989,6 +2015,7 @@ export const venueService = {
   publicStatus,
   dashboard,
   navFacts,
+  myNextShifts,
   publicResources: { resolve: resolvePublicId, resolveMany: resolvePublicIds, resolveOwned: resolveVenuePublicId, ...publicProjection },
   ical: {
     getOrCreateToken: getOrCreateIcalToken,

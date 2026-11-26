@@ -1,4 +1,5 @@
 import type {
+  MyNextShift,
   PublicStatus,
   ShiftAssignment,
   ShiftTemplate,
@@ -437,4 +438,11 @@ export const worstDashboard = (): VenueDashboard => {
     assignments: names.map((name, index) => person(`Wst${index}`, `user-w${index}`, name, lunchTimes, "Temp01", title)),
   };
   return { ...dashboard, slots: dashboard.slots.map((slot) => (slot.template.id === "Temp01" ? crowded : slot)) };
+};
+
+/** The viewer's next shift at some of the venues: the café this week (five in all), the bar and the garden next week. */
+export const fixtureNextShifts: Record<string, MyNextShift> = {
+  Cafe01: { startsAt: "2026-11-25T13:00:00.000Z", endsAt: "2026-11-25T16:00:00.000Z", title: "Inventur", upcoming: 5 },
+  Bar002: { startsAt: "2026-11-27T19:00:00.000Z", endsAt: "2026-11-27T23:00:00.000Z", title: "Theke", upcoming: 1 },
+  Gar005: { startsAt: "2026-12-02T15:00:00.000Z", endsAt: "2026-12-02T17:00:00.000Z", title: null, upcoming: 2 },
 };

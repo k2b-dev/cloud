@@ -2,7 +2,16 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
-import { fixtureDashboard, fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps, worstDashboard } from "./fixtures";
+import {
+  fixtureDashboard,
+  fixtureNextShifts,
+  fixtureSettings,
+  fixtureTemplates,
+  fixtureVenue,
+  fixtureVenues,
+  venueProps,
+  worstDashboard,
+} from "./fixtures";
 import VenueOverviewScreen from "./VenueOverviewScreen";
 import VenueScreen from "./VenueScreen";
 import VenueSettingsScreen from "./VenueSettingsScreen";
@@ -36,7 +45,14 @@ const screen = () => {
   const path = location.pathname;
   const params = new URLSearchParams(location.search);
   if (path === "/app/venue")
-    return <VenueOverviewScreen venues={venues} templates={fixtureTemplates} initialQuery={params.get("q") ?? ""} />;
+    return (
+      <VenueOverviewScreen
+        venues={venues}
+        nextShifts={fixtureNextShifts}
+        templates={fixtureTemplates}
+        initialQuery={params.get("q") ?? ""}
+      />
+    );
   const view = (path.split("/")[4] ?? "shifts") as VenueView | "settings";
   if (view === "settings") {
     const tab =

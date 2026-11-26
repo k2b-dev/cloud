@@ -30,6 +30,9 @@ export const VenueSchema = z.object({
 });
 export type Venue = z.infer<typeof VenueSchema>;
 
+/** A person's next shift at one venue, with how many shifts they have there from now on. */
+export type MyNextShift = { startsAt: string; endsAt: string; title: string | null; upcoming: number };
+
 /** A venue slug: 2 to 80 lowercase letters or digits, with single dashes between them. */
 export const VENUE_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const VENUE_SLUG_MIN_LENGTH = 2;
