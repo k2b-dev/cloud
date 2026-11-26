@@ -333,17 +333,18 @@ the child is mounted catches it.
 Each island and client component instance mounts inside its own error
 boundary. When it throws while it mounts, while its props are read, or during a
 later update, for example a list row that cannot render new query data, Cloud
-replaces only that instance with a short notice: "This section could not be
-displayed." and a **Try again** button, in the reader's language. Every other
+replaces only that instance with the v2 `Failed` state: "This section could not
+be displayed." and a **Retry** button, in the reader's language. Every other
 island on the page keeps working, including islands updated by the same signal
 write.
 
-**Try again** mounts the island again from its original props, as on page
-load. The error still appears in the browser console, reported through
+**Retry** mounts the island again from its original props, as on page load.
+The error still appears in the browser console, reported through
 `reportError()` like any uncaught error.
 
-The notice has the same compact size wherever it appears, so a failing small
-island, such as a control in the header, takes more room than the control did.
+The notice has the same size wherever it appears, so a failing small island,
+such as a control in the header, takes more room than the control did. It loads
+no v1 code, so a v2 island carries none for it.
 
 `defineApp` sets this for every application. Do not wrap an island's root in an
 `ErrorBoundary` for protection. Add one inside an island only when a part of it

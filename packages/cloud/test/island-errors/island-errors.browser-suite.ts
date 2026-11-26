@@ -116,9 +116,9 @@ describe(`island error fallback in ${browserName}`, () => {
       await next(page, 4);
       await showsRevision(page, "steady", 4);
 
-      // Once the data is fine again, "Try again" remounts the island, which loads the current revision.
+      // Once the data is fine again, "Retry" remounts the island, which loads the current revision.
       flakyBroken = false;
-      await alert.getByRole("button", { name: "Try again" }).click();
+      await alert.getByRole("button", { name: "Retry" }).click();
       await showsRevision(page, "flaky", 4);
       expect(await page.getByRole("alert").count()).toBe(0);
       expect(reported).toHaveLength(1);
