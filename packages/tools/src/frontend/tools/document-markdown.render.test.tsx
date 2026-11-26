@@ -29,7 +29,9 @@ describe("Document to Markdown tool", () => {
     expect(html).toContain("PDF, Word, PowerPoint, spreadsheets, RTF, EPUB, or CSV");
     expect(html).toContain("sent to this Cloud server for conversion");
     expect(html).toContain("Neither the upload nor the Markdown result is stored");
-    expect(html).toContain("No document converted yet");
+    expect(html).toContain("Choose one supported document");
+    // one head row: no status row under it
+    expect(html).not.toContain('data-k2-part="StatusRow"');
     expect(html).not.toContain('data-k2-part="Loading"');
   });
 
@@ -38,7 +40,8 @@ describe("Document to Markdown tool", () => {
 
     expect(html).toContain("Converting handbook.pdf…");
     expect(html).toContain("Cancel");
-    expect(html).toContain('role="status"');
+    // the document on its way is the last step of the path
+    expect(html.slice(html.indexOf('data-k2-part="Path"'))).toContain("handbook.pdf");
   });
 
   test("keeps extracted Markdown plain and exposes copy and download actions", () => {
@@ -60,7 +63,8 @@ describe("Document to Markdown tool", () => {
     expect(html).not.toContain("<script>alert");
     expect(html).toContain("Copy Markdown");
     expect(html).toContain("Download .md");
-    expect(html).toContain("Conversion complete for quarterly-report.docx.");
+    expect(html.slice(html.indexOf('data-k2-part="Path"'))).toContain("quarterly-report.docx");
+    expect(html).not.toContain('data-k2-part="StatusRow"');
   });
 
   test("shows typed errors and output truncation without hiding either state", () => {

@@ -17,6 +17,8 @@ export const toolIcon = (icon: string) => icon.replace(/^ti ti-/, "");
 export default function ToolsScreen(props: {
   /** The open tool; none on the overview. */
   tool?: ToolId;
+  /** What the tool has open, such as a photo: the last step of the path, so it needs no row of its own. */
+  item?: string;
   /** The head's end: the tool's own deeds, or the overview's search. */
   end?: JSX.Element;
   /** The page's main deed, mirrored for the phone. */
@@ -63,7 +65,15 @@ export default function ToolsScreen(props: {
           <Bar
             start={
               open() ? (
-                <Path label={t().appName} items={[{ label: t().appName, href: "/tools" }, { label: open()!.name }]} />
+                <Path
+                  label={t().appName}
+                  items={[
+                    { label: t().appName, href: "/tools" },
+                    ...(props.item
+                      ? [{ label: open()!.name, href: `/tools/${open()!.id}` }, { label: props.item }]
+                      : [{ label: open()!.name }]),
+                  ]}
+                />
               ) : (
                 <Text type="body">{t().appName}</Text>
               )

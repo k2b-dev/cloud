@@ -1,6 +1,6 @@
 import { showFileDialog } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Empty, Notice, Pane, Section, StatusRow, Text, useToast } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Empty, Notice, Pane, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type DocumentMarkdownMessages, documentMarkdownMessages } from "@/api/document-markdown-messages";
@@ -194,45 +194,29 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
       () => toast(t().copied, { status: "ok" }),
       () => toast(t().copyFailed, { status: "bad" }),
     );
-  const lead = () =>
-    busy()
-      ? t().convertingFile({ filename: selectedFilename() })
-      : dragging()
-        ? t().dropToConvert
-        : error()
-          ? t().conversionFailedTitle
-          : result()
-            ? t().conversionComplete({ filename: result()!.filename })
-            : t().noDocument;
+  /** What the place of the result says while there is none: converting, a drop on its way, or how to start. */
+  const waiting = () =>
+    busy() ? t().convertingFile({ filename: selectedFilename() }) : dragging() ? t().dropToConvert : t().previewDescription;
 
   return (
     <ToolsScreen
       tool="document-markdown"
+      item={result()?.filename ?? (busy() ? selectedFilename() : undefined)}
       primary={{ label: t().chooseDocument, icon: "file-upload", onClick: choose, disabled: busy() }}
       end={
-        <Button variant="primary" icon="file-upload" busy={busy()} onClick={choose}>
-          {t().chooseDocument}
-        </Button>
+        <>
+          <Show when={busy()}>
+            <Button variant="ghost" icon="x" onClick={cancel}>
+              {t().cancel}
+            </Button>
+          </Show>
+          <Button variant="primary" icon="file-upload" busy={busy()} onClick={choose}>
+            {t().chooseDocument}
+          </Button>
+        </>
       }
     >
-      <Pane
-        label={t().previewTitle}
-        scrollKey="tools-document-markdown"
-        status={
-          <StatusRow
-            lead={lead()}
-            loading={busy()}
-            facts={[{ after: t().dropSubtitle }, { after: t().dropHint }]}
-            filters={
-              <Show when={busy()}>
-                <Button variant="ghost" icon="x" onClick={cancel}>
-                  {t().cancel}
-                </Button>
-              </Show>
-            }
-          />
-        }
-      >
+      <Pane label={t().previewTitle} scrollKey="tools-document-markdown">
         <Show when={refusal()}>
           {(refused) => (
             <Notice tone="warn" title={refused().title} actions={[{ label: t().hide, onClick: () => setRefusal(null) }]}>
@@ -253,8 +237,8 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
             <Show when={!error()}>
               <Empty
                 icon="markdown"
-                text={t().previewDescription}
-                action={{ label: t().chooseDocument, icon: "file-upload", onClick: choose }}
+                text={waiting()}
+                action={busy() ? undefined : { label: t().chooseDocument, icon: "file-upload", onClick: choose }}
               />
             </Show>
           }
@@ -268,7 +252,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
               </Show>
               <Section
                 icon="markdown"
-                title={resolved().filename}
+                title={t().previewTitle}
                 summary={t().resultMeta({
                   format: resolved().format.toUpperCase(),
                   input: formatBytes(resolved().inputBytes),
@@ -302,7 +286,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
         </Show>
         <Band>
           <Text type="meta" muted>
-            {t().serverNotice}
+            {`${t().dropSubtitle} · ${t().dropHint}. ${t().serverNotice}`}
           </Text>
         </Band>
       </Pane>
