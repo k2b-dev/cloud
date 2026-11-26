@@ -12,7 +12,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-identity-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Avatar, Mark, Spark } = await import("./marks");
-const { Tiles } = await import("./layout");
+const { Cells, Tiles } = await import("./layout");
 const { Digest } = await import("./components");
 const { Row } = await import("./content");
 
@@ -129,4 +129,16 @@ test("initials come from the first and the last word of a name, skip suffixes, a
   expect(of("🦊 Fuchs Bau")).toBe("🦊B");
   expect(of("👩‍🔧 Jana Berger")).toBe("👩‍🔧B");
   expect(initialsOf({ name: "Felix Thal", initials: "FX" })).toBe("FX");
+});
+
+test("a key number with its history that is loading: the bar on the value, the history keeps its place", () => {
+  const trend = { values: [3, 5, 8], label: "Änderungen: von 3 auf 8 gestiegen" };
+  const loading = html(Cells.Cell, { icon: "table", label: "Änderungen", value: "8", trend, loading: true });
+  expect(loading).toContain('aria-busy="true"');
+  expect(loading).toContain("k2-spark");
+  // the value lies under the bar, not beside it
+  expect(loading).not.toMatch(/<span class="k2-cell-value">8</);
+  const shown = html(Cells.Cell, { icon: "table", label: "Änderungen", value: "8", trend });
+  expect(shown).not.toContain("aria-busy");
+  expect(shown).toContain("k2-spark");
 });
