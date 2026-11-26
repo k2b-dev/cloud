@@ -202,7 +202,7 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
       }
     >
       <Pane.Split>
-        <Pane label={t().markdownLabel} scrollKey="tools-markdown-pdf">
+        <Pane label={t().markdownLabel} width={{ min: 360, default: 600 }} scrollKey="tools-markdown-pdf">
           <Show when={error()}>
             {(message) => (
               <Notice tone="bad" title={t().generationFailedTitle}>
