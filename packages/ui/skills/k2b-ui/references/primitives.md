@@ -333,6 +333,9 @@ lines instead of cutting a thing.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
+  `meta` (a quiet second line under the words, such as the place of a chat:
+  one line, cut with "…", part of the entry's name; the phone menu shows it
+  as the entry's description),
   `menu` (its deeds, such as pin and hide: a "…" over its count that shows
   under the pointer and with the focus; Tab always reaches it),
   `nested`, `dot` (`"ok"` for something new, `"warn"`/`"bad"` for a
