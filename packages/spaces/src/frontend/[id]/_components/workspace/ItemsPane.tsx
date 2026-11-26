@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, FilterBar, ListOrder, Menu, Notice, Pane, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemGroupBy, ItemListResult, SpaceDetail, SpaceItem } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -119,7 +119,7 @@ export default function ItemsPane(props: Props) {
             tags: "tag",
             activity: "activity",
           }}
-          results={t.itemCount({ count: total() })}
+          results={view.failedElsewhere() ? undefined : t.itemCount({ count: total() })}
           end={
             <>
               <ListOrder query={query()} state={state()} onChange={change} />
@@ -147,66 +147,75 @@ export default function ItemsPane(props: Props) {
         />
       }
     >
-      <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
-      <Show
-        when={!empty()}
-        fallback={
-          hasActiveFilters(filter()) ? (
-            <Empty
-              icon="filter-off"
-              text={t.noMatchingItemsDescription}
-              action={{ label: t.clearFiltersButton, icon: "filter-off", onClick: () => change(base()) }}
-            />
-          ) : (
-            // The page's one "New task" (head, and the floating button on the phone) creates the first task; a second one
-            // here would say the same twice (design review 26.11.).
-            // k2b-ui gap: Empty stands at the text edge; an empty list with nothing else on the page wants it centred.
-            <Empty icon="checkbox" text={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription} />
-          )
-        }
-      >
+      {/* A failed load stands once, red, at the head of the rows; rows of another address leave instead of passing for its result. */}
+      <Show when={view.error()}>
+        {(error) => (
+          <Notice tone="bad" actions={[{ label: t.retry, icon: "refresh", onClick: () => void view.refresh() }]}>
+            {error().message}
+          </Notice>
+        )}
+      </Show>
+      <Show when={!view.failedElsewhere()}>
         <Show
-          when={props.currentView === "table"}
+          when={!empty()}
           fallback={
-            <ItemList
-              items={result().items}
-              groupCounts={result().groupCounts}
-              columns={props.space.columns}
-              tags={props.space.tags}
-              spaceId={props.space.id}
-              selectedItemId={selectedItemId()}
-              groupBy={filter().groupBy}
-              baseUrl={view.current().source}
-              dateConfig={props.dateConfig}
-              canWrite={props.canWrite}
-              currentUserId={props.currentUserId}
-              leaving={leaving}
-              host={pane}
-            />
+            hasActiveFilters(filter()) ? (
+              <Empty
+                icon="filter-off"
+                text={t.noMatchingItemsDescription}
+                action={{ label: t.clearFiltersButton, icon: "filter-off", onClick: () => change(base()) }}
+              />
+            ) : (
+              // The page's one "New task" (head, and the floating button on the phone) creates the first task; a second one
+              // here would say the same twice (design review 26.11.).
+              // k2b-ui gap: Empty stands at the text edge; an empty list with nothing else on the page wants it centred.
+              <Empty icon="checkbox" text={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription} />
+            )
           }
         >
-          <ItemsTable
-            items={result().items}
-            columns={props.space.columns}
-            selectedItemId={selectedItemId()}
-            baseUrl={view.current().source}
-            dateConfig={props.dateConfig}
-          />
-        </Show>
-        <Show when={pages() > 1}>
-          <Bar
-            start={<Text type="meta">{t.pageOf({ page: number(page()), pages: number(pages()) })}</Text>}
-            end={
-              <>
-                <Button icon="chevron-left" disabled={page() <= 1} onClick={() => view.open(hrefWith({ page: page() - 1 }))}>
-                  {t.previousPage}
-                </Button>
-                <Button forward disabled={page() >= pages()} onClick={() => view.open(hrefWith({ page: page() + 1 }))}>
-                  {t.nextPage}
-                </Button>
-              </>
+          <Show
+            when={props.currentView === "table"}
+            fallback={
+              <ItemList
+                items={result().items}
+                groupCounts={result().groupCounts}
+                columns={props.space.columns}
+                tags={props.space.tags}
+                spaceId={props.space.id}
+                selectedItemId={selectedItemId()}
+                groupBy={filter().groupBy}
+                baseUrl={view.current().source}
+                dateConfig={props.dateConfig}
+                canWrite={props.canWrite}
+                currentUserId={props.currentUserId}
+                leaving={leaving}
+                host={pane}
+              />
             }
-          />
+          >
+            <ItemsTable
+              items={result().items}
+              columns={props.space.columns}
+              selectedItemId={selectedItemId()}
+              baseUrl={view.current().source}
+              dateConfig={props.dateConfig}
+            />
+          </Show>
+          <Show when={pages() > 1}>
+            <Bar
+              start={<Text type="meta">{t.pageOf({ page: number(page()), pages: number(pages()) })}</Text>}
+              end={
+                <>
+                  <Button icon="chevron-left" disabled={page() <= 1} onClick={() => view.open(hrefWith({ page: page() - 1 }))}>
+                    {t.previousPage}
+                  </Button>
+                  <Button forward disabled={page() >= pages()} onClick={() => view.open(hrefWith({ page: page() + 1 }))}>
+                    {t.nextPage}
+                  </Button>
+                </>
+              }
+            />
+          </Show>
         </Show>
       </Show>
     </Pane>

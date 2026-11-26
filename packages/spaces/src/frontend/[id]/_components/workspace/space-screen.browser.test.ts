@@ -11,7 +11,8 @@ beforeAll(screen.start, launchHookMs);
 afterAll(screen.stop);
 
 type Seen = { views: string[]; completed: unknown[] };
-const open = (view: View, address: string, state: SpaceFixtureState = "usual") => {
+/** `failSearch`: the server answers 503 to every list or board load that searches. */
+const open = (view: View, address: string, state: SpaceFixtureState = "usual", options: { failSearch?: boolean } = {}) => {
   const seen: Seen = { views: [], completed: [] };
   const page = screen.open(view, address, {
     pages: ["/app/spaces/Space1"],
@@ -21,6 +22,7 @@ const open = (view: View, address: string, state: SpaceFixtureState = "usual") =
       if (url.pathname === "/api/spaces/workspace/view") {
         const href = url.searchParams.get("href") ?? "";
         seen.views.push(href);
+        if (options.failSearch && href.includes("q=")) return Response.json({ message: "Service unavailable" }, { status: 503 });
         const props = spaceScreenProps(href, state).state;
         const viewName = props.currentView;
         return viewName === "kanban"
@@ -157,6 +159,34 @@ describe("a Space on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  // A failed load for a new address: the rows of the old one must not pass for its result, and the problem stands once.
+  for (const address of ["/app/spaces/Space1?view=list", "/app/spaces/Space1?view=table", "/app/spaces/Space1?view=kanban"])
+    test(`${address.split("?")[1]}: a search that fails hides the rows of the old address and names the failure at the top`, async () => {
+      const { context, tab, errors } = await open(wide, address, "usual", { failSearch: true });
+      try {
+        const pane = tab.locator('[data-k2-workspace] [data-k2-part="Pane"]:not([data-detail])').first();
+        const rows = pane.locator('a[href*="item="]');
+        expect(await rows.count()).toBeGreaterThan(0);
+        const search = tab.getByRole("searchbox", { name: "Search items" });
+        await search.fill("shelf");
+        await search.press("Enter");
+        const problem = pane.locator('[data-k2-part="Notice"][data-tone="bad"]');
+        await problem.waitFor();
+        await settled(tab);
+        expect(await problem.textContent()).toContain("Service unavailable");
+        expect(await problem.getByRole("button", { name: "Retry" }).count()).toBe(1);
+        expect(await rows.count()).toBe(0);
+        // One statement of the problem, directly under the pane's filter row, not a second block above the rows.
+        expect(await pane.locator('[data-k2-part="Failed"]').count()).toBe(0);
+        const bar = await pane.locator('[data-k2-part="FilterBar"]').first().boundingBox();
+        const box = await problem.boundingBox();
+        expect(bar && box && box.y >= bar.y + bar.height - 1 && box.y - (bar.y + bar.height) < 32).toBe(true);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
 
   test("New task offers the blank task and opens its form", async () => {
     const { context, tab, errors } = await open(wide, "/app/spaces/Space1?view=list");
