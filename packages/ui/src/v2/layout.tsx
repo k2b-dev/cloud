@@ -820,7 +820,8 @@ const openMenuOf = (tile: Element) => tile.querySelector<HTMLElement>(":scope > 
 
 /**
  * The "…" of a media tile: a shortcut for the pointer only, out of the tab order and hidden from assistive technology,
- * which opens the same menu with Shift+F10 on the tile. The focus a closing menu gives back goes to the tile.
+ * which opens the same menu with Shift+F10 on the tile and a long press (`Menu.Context`). The focus a closing menu gives
+ * back goes to the tile.
  */
 const TileMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
   const back = (event: FocusEvent) => {
@@ -849,7 +850,7 @@ const TileMedia = (props: {
   const title = createUniqueId();
   const selected = () => props.select?.selected.includes(keyOf(props.tile)) ?? false;
   const owner = () => props.tile.people?.[0];
-  return (
+  const tile = (
     <props.grid.Item
       value={keyOf(props.tile)}
       {...props.drag.attrs}
@@ -861,11 +862,8 @@ const TileMedia = (props: {
       aria-labelledby={title}
       data-open={props.tile.href !== undefined ? "" : undefined}
       data-selected={selected() ? "" : undefined}
-      onContextMenu={(event: MouseEvent) => {
-        if (!props.tile.menu || !(event.currentTarget instanceof Element)) return;
-        event.preventDefault();
-        openMenuOf(event.currentTarget);
-      }}
+      // its deeds open from Shift+F10 on the tile (the "…" is for the pointer only)
+      aria-keyshortcuts={props.tile.menu ? "Shift+F10" : undefined}
       onKeyDown={(event: KeyboardEvent) => {
         if (event.target !== event.currentTarget || !(event.currentTarget instanceof HTMLElement)) return;
         if (props.tile.menu && asksForMenu(event)) {
@@ -912,6 +910,12 @@ const TileMedia = (props: {
       </span>
     </props.grid.Item>
   );
+  // a right-click and a long press open the tile's deeds (a phone, also with VoiceOver, has no keys)
+  return (
+    <Show when={props.tile.menu} fallback={tile}>
+      {(menu) => <Menu.Context items={menu()}>{tile}</Menu.Context>}
+    </Show>
+  );
 };
 
 /** Media tiles: one roving Tab stop over the grid (core's spatial move), the drag of the list and its zone. */
@@ -935,8 +939,9 @@ const MediaTiles = (props: TilesProps) => {
         <For each={props.items}>
           {(tile) => <TileMedia tile={tile} select={props.select} grid={grid} drag={dragging.entry(keyOf(tile))} />}
         </For>
-        <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
       </grid.Root>
+      {/* the deed after the tiles is no tile: outside the list (a listbox holds only its options) */}
+      <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
       {dragging.zone()}
     </>
   );

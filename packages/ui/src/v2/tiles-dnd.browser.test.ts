@@ -401,3 +401,25 @@ test("arrows follow the screen in a right-to-left page", async () => {
     await page.waitForFunction((second) => document.activeElement?.querySelector(".k2-tile-title")?.textContent === second, names[1]);
   });
 });
+
+// ── Review r3 (Opus, 26.11.) ─────────────────────────────────────────────────────────────────────────────────────
+
+test("server markup: a tile with deeds names Shift+F10", () => {
+  expect(markup).toMatch(/<div[^>]*aria-keyshortcuts="Shift\+F10"[^>]*role="option"|role="option"[^>]*aria-keyshortcuts="Shift\+F10"/);
+});
+
+test("tiles: a long press opens a tile's deeds (a phone, also with VoiceOver, has no Shift+F10)", async () => {
+  await withPage(async (page) => {
+    // core's long press binding marks the area with its delay in every engine
+    expect(await tile(page, "Angebot.pdf").evaluate((element) => (element as HTMLElement).style.getPropertyValue("--hold-delay"))).toBe(
+      "500ms",
+    );
+  });
+});
+
+test("tiles: the deed after the tiles stands outside the listbox, which holds only its options", async () => {
+  await withPage(async (page) => {
+    expect(await page.getByRole("button", { name: "Alle laden" }).count()).toBe(1);
+    expect(await tiles(page).getByRole("button", { name: "Alle laden" }).count()).toBe(0);
+  });
+});

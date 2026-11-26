@@ -111,6 +111,7 @@ export function Demo() {
             onChange: (key, on) => setSelected(on ? [...selected(), key] : selected().filter((other) => other !== key)),
           }}
           drag={drag}
+          more={{ label: "Alle laden", icon: "download", onClick: did("more") }}
         />
         <Tiles
           variant="media"
