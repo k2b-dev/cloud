@@ -1,29 +1,14 @@
 import { useLocale } from "@k2b/ui";
-import {
-  Bar,
-  Button,
-  Chip,
-  FilterBar,
-  Icon,
-  Inline,
-  Input,
-  ListOrder,
-  Notice,
-  Pane,
-  StatusRow,
-  Table,
-  Tabs,
-  Text,
-  Workspace,
-} from "@k2b/ui/v2";
+import { Bar, Button, Chip, FilterBar, Inline, Input, ListOrder, Mark, Notice, Pane, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
+import { groupDetailMessages } from "./detail/messages";
+import { groupTags, markOf } from "./group-mark";
 import NewGroupDialog from "./NewGroupDialog";
 import { useGroupCreated } from "./new-group";
 import { GROUPS_PAGE_PATH, type GroupScope, type GroupsState, groupsHref, groupsQuery } from "./query";
-import { RELATIONS_PATH } from "./relations/relations-view";
 
 /** One group as the list shows it; the server words the name and builds the link with the list's context. */
 export type GroupListEntry = {
@@ -33,6 +18,8 @@ export type GroupListEntry = {
   provider: "ipa" | "local";
   posix: boolean;
   managed: boolean;
+  /** A personal Linux group that belongs to one user. */
+  personal?: boolean;
   href: string;
 };
 
@@ -63,6 +50,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
   // the form lives while the dialog is open: a new dialog starts empty
   const [creating, setCreating] = createSignal(false);
   const query = createMemo(() => groupsQuery(locale(), props.defaultScope));
+  const personal = () => groupDetailMessages.resolve([locale()]).t.personal;
   const [state, setState] = createSignal<GroupsState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
   const [refreshing, setRefreshing] = createSignal(false);
@@ -95,19 +83,8 @@ export default function GroupsScreen(props: GroupsScreenProps) {
       sidebar={<AccountsNav active="groups" pendingRequests={props.pendingRequests} isAdmin={props.isAdmin} />}
       head={
         <Bar
-          start={
-            props.isAdmin ? (
-              <Tabs
-                label={t().views}
-                items={[
-                  { label: t().list, icon: "list", href: GROUPS_PAGE_PATH, current: true },
-                  { label: t().relations, icon: "hierarchy-3", href: RELATIONS_PATH },
-                ]}
-              />
-            ) : (
-              <Text type="body">{t().groups}</Text>
-            )
-          }
+          // the relations of groups are a view inside each group's record now
+          start={<Text type="body">{t().groups}</Text>}
           end={
             <>
               <Input
@@ -163,6 +140,11 @@ export default function GroupsScreen(props: GroupsScreenProps) {
             <StatusRow
               lead={t().groupsCount({ count: number(props.total) })}
               loading={refreshing()}
+              // what the page shows at a glance: the groups this person manages, and the POSIX groups
+              facts={[
+                { value: props.groups.filter((group) => group.managed).length, after: t().managedByMe },
+                { value: props.groups.filter((group) => group.posix).length, after: "POSIX" },
+              ]}
               filters={<ListOrder query={query()} state={state()} onChange={change} />}
             />
           </>
@@ -188,7 +170,8 @@ export default function GroupsScreen(props: GroupsScreenProps) {
           }
           phone={(group) => ({
             lines: [group.name, group.description || t().noDescription],
-            marks: group.managed ? <Chip>{t().managed}</Chip> : undefined,
+            mark: markOf(group),
+            marks: group.managed ? <Chip yours>{t().managed}</Chip> : undefined,
           })}
           columns={[
             {
@@ -196,7 +179,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
               width: { min: 180, default: 260 },
               cell: (group) => (
                 <Inline>
-                  <Icon name={group.managed ? "user-edit" : "users-group"} />
+                  <Mark icon={markOf(group).icon} color={markOf(group).color} />
                   <Text weight="strong">{group.name}</Text>
                 </Inline>
               ),
@@ -204,20 +187,32 @@ export default function GroupsScreen(props: GroupsScreenProps) {
             { title: t().description, width: { min: 180, default: 320 }, cell: (group) => group.description || "–", drop: true },
             {
               title: t().managedBy,
-              width: { min: 110, default: 130 },
-              cell: (group) => <Chip>{group.provider === "ipa" ? "FreeIPA" : t().local}</Chip>,
+              width: { min: 100, default: 120 },
+              cell: (group) => (group.provider === "ipa" ? "FreeIPA" : t().local),
               drop: true,
             },
             {
               title: t().flags,
-              width: { min: 120, default: 160 },
+              width: { min: 180, default: 200 },
+              // at most two chips: yours, then what the group is (personal, else POSIX)
               cell: (group) => (
                 <Inline>
                   <Show when={group.managed}>
-                    <Chip>{t().managed}</Chip>
+                    <Chip yours>{t().managed}</Chip>
                   </Show>
-                  <Show when={group.posix}>
-                    <Chip>POSIX</Chip>
+                  <Show
+                    when={group.personal}
+                    fallback={
+                      <Show when={group.posix}>
+                        <Chip tag icon={groupTags.posix.icon} color={groupTags.posix.color}>
+                          POSIX
+                        </Chip>
+                      </Show>
+                    }
+                  >
+                    <Chip tag icon={groupTags.personal.icon} color={groupTags.personal.color}>
+                      {personal()}
+                    </Chip>
                   </Show>
                 </Inline>
               ),

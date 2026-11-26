@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CloudRuntime, GroupRelations, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
-import { accountsAppService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
+import { accountsAppService, coreSettings } from "@k2b/cloud/services";
 import { session } from "@k2b/cloud/services/session";
 import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../../../tests/fixtures/rail-snapshot";
@@ -37,49 +37,25 @@ const user = {
 
 const all = "00000000-0000-4000-8000-000000000001";
 const tech = "00000000-0000-4000-8000-000000000002";
-const relations: GroupRelations = {
-  focus: tech,
+const relations = (focus: string | null): GroupRelations => ({
+  focus,
   depth: 2,
   managers: false,
   groupCount: 2,
-  nodes: [
-    { id: all, name: "All staff", provider: "local", members: 3, contains: 1, inCycle: false },
-    { id: tech, name: "Engineering", provider: "ipa", members: 4, contains: 0, inCycle: false },
-  ],
-  columns: [{ key: "u1", items: [{ id: all, via: tech }], backs: [], hidden: 0 }],
+  nodes: [],
+  columns: [],
   roots: null,
-  selected: {
-    id: tech,
-    parents: { ids: [all], total: 1 },
-    children: { ids: [], total: 0 },
-    manages: null,
-    managedBy: null,
-    cycle: null,
-    managerCycle: null,
-  },
+  selected: null,
   cycles: { count: 0, first: null },
   truncated: false,
   cyclesComplete: true,
   managerCyclesComplete: true,
-};
+});
 
 type App = Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>;
 
 const serve = async (result: () => ReturnType<typeof accountsAppService.group.relations>, run: (app: App) => Promise<void>) => {
   const relationsSpy = spyOn(accountsAppService.group, "relations").mockImplementation(result);
-  const spies = [
-    stubRailSnapshot(),
-    relationsSpy,
-    spyOn(coreSettings, "get").mockResolvedValue(false),
-    spyOn(linuxIdentities, "configuration").mockResolvedValue({
-      enabled: false,
-      rangeStart: 10000,
-      rangeEnd: 20000,
-      homeTemplate: "/home/{uid}",
-      loginShell: "/bin/bash",
-    }),
-    spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
-  ];
   const app: App = new Hono();
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
@@ -90,66 +66,65 @@ const serve = async (result: () => ReturnType<typeof accountsAppService.group.re
   app.get("/app/accounts/groups/relations", ...handler);
   try {
     await run(app);
-    // Read before the spies are restored, which clears their calls.
     return relationsSpy.mock.calls.map(([config]) => config);
   } finally {
-    for (const spy of spies) spy.mockRestore();
+    relationsSpy.mockRestore();
   }
 };
 
-const html = async (app: App, path: string) => (await app.request(path, { headers: { "Accept-Language": "en" } })).text();
-
-test("the server renders levels, details, and links that keep the URL state", async () => {
-  await serve(
-    async () => ({ ok: true, data: relations }),
-    async (app) => {
-      const page = await html(app, `/app/accounts/groups/relations?focus=${tech}&depth=3&managers=1`);
-      expect(page).toContain("Contained in · level 1");
-      expect(page).toContain("Focus");
-      expect(page).toContain('aria-current="page"');
-      // Choosing a group keeps focus, depth, and managers.
-      expect(page).toContain(`href="/app/accounts/groups/relations?focus=${tech}&amp;sel=${all}&amp;depth=3&amp;managers=1"`);
-      expect(page).toContain(`href="/app/accounts/groups/${tech}"`);
-      expect(page).toContain("No cycles");
-    },
-  );
-});
-
-test("the page passes the URL state to the one admin-checked service", async () => {
+test("an old relations address leads to the focus group's record with the relations view and every parameter", async () => {
   const calls = await serve(
-    async () => ({ ok: true, data: relations }),
+    async () => ({ ok: true, data: relations(tech) }),
     async (app) => {
-      await html(app, `/app/accounts/groups/relations?focus=${tech}&sel=${all}&depth=9&view=list&expand=d1,x2`);
-    },
-  );
-  expect(calls[0]).toMatchObject({ focus: tech, selected: all, depth: 2, view: "list", expand: ["d1"], actor: { userId: user.id } });
-});
-
-test("an old link to a missing group starts again at the default focus", async () => {
-  await serve(
-    async () => ({ ok: false, error: { code: "NOT_FOUND", message: "Group not found", status: 404 } }),
-    async (app) => {
-      const response = await app.request(`/app/accounts/groups/relations?focus=${tech}&depth=3`);
+      const response = await app.request(`/app/accounts/groups/relations?focus=${tech}&sel=${all}&depth=3&view=list&managers=1`);
       expect(response.status).toBe(302);
-      expect(response.headers.get("location")).toBe("/app/accounts/groups/relations?depth=3");
+      expect(response.headers.get("location")).toBe(`/app/accounts/groups/${tech}?tab=relations&sel=${all}&depth=3&view=list&managers=1`);
+    },
+  );
+  // A named focus needs no reading.
+  expect(calls).toEqual([]);
+});
+
+test("without a focus the service's default group is the record; without any relation the list opens", async () => {
+  const calls = await serve(
+    async () => ({ ok: true, data: relations(all) }),
+    async (app) => {
+      const response = await app.request("/app/accounts/groups/relations?depth=3&managers=1");
+      expect(response.headers.get("location")).toBe(`/app/accounts/groups/${all}?tab=relations&depth=3&managers=1`);
+    },
+  );
+  expect(calls[0]).toMatchObject({ actor: { userId: user.id }, depth: 2, managers: false, view: "graph", expand: [] });
+  expect(calls[0]).not.toHaveProperty("focus");
+  await serve(
+    async () => ({ ok: true, data: relations(null) }),
+    async (app) => {
+      const response = await app.request("/app/accounts/groups/relations");
+      expect(response.headers.get("location")).toBe("/app/accounts/groups");
+    },
+  );
+  await serve(
+    async () => {
+      throw new Error("database unavailable");
+    },
+    async (app) => {
+      const response = await app.request("/app/accounts/groups/relations?depth=3");
+      expect(response.headers.get("location")).toBe("/app/accounts/groups");
     },
   );
 });
 
-test("people without the admin role get no relations page and no Relations tab", async () => {
+test("people without the admin role get no relations address and no Relations tab", async () => {
   const { default: accountsPages } = await import("../../index");
   const person = { ...user, roles: ["user"] } satisfies User;
   const relationsSpy = spyOn(accountsAppService.group, "relations");
-  const signIn = (roles: User["roles"]) =>
-    spyOn(session, "authenticateRequest").mockResolvedValue({
-      user: { ...person, roles },
-      data: { userId: person.id, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
-    });
   const spies = [
     stubRailSnapshot(),
     relationsSpy,
     spyOn(session, "getToken").mockReturnValue("test-session"),
-    signIn(person.roles),
+    spyOn(session, "authenticateRequest").mockResolvedValue({
+      user: person,
+      data: { userId: person.id, sid: "test-session", authEpoch: 0, kind: "web", expiresAt: "2099-01-01T00:00:00Z" },
+    }),
     spyOn(coreSettings, "get").mockResolvedValue(false),
     spyOn(accountsAppService.accountRequest, "countPending").mockResolvedValue(0),
     spyOn(accountsAppService.group, "list").mockResolvedValue({ items: [], page: 1, perPage: 100, total: 0, hasNext: false }),
@@ -172,25 +147,4 @@ test("people without the admin role get no relations page and no Relations tab",
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
-});
-
-test("no relations and a failed read each say what happened and lead back to the list", async () => {
-  await serve(
-    async () => ({ ok: true, data: { ...relations, focus: null, columns: [], selected: null } }),
-    async (app) => {
-      const page = await html(app, "/app/accounts/groups/relations");
-      expect(page).toContain("No relations yet");
-      expect(page).toContain('href="/app/accounts/groups"');
-    },
-  );
-  await serve(
-    async () => {
-      throw new Error("database unavailable");
-    },
-    async (app) => {
-      const page = await html(app, "/app/accounts/groups/relations?depth=3");
-      expect(page).toContain("Could not load relations");
-      expect(page).toContain('href="/app/accounts/groups/relations?depth=3"');
-    },
-  );
 });

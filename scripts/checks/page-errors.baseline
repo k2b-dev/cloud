@@ -1,8 +1,6 @@
 # Known page-errors findings, one per file: <file> | <count>.
 # Migrations lower counts and remove entries; the rule never raises counts or adds lines.
 # `bun scripts/check.ts page-errors --fix` lowers counts whose findings are gone.
-packages/accounts/src/directory-shares.browser.test.ts | 1
-packages/accounts/src/machine-key.browser.test.ts | 1
 packages/assistant/src/frontend/AssistantWaitingStrip.browser.test.ts | 1
 packages/cloud/src/ai/chat/action-question.browser.test.ts | 1
 packages/cloud/src/ssr/LayoutHelp.hydration.browser.test.ts | 1

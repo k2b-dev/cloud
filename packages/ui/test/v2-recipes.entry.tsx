@@ -7,8 +7,10 @@ import * as filteredTable from "../skills/k2b-ui/recipes/filtered-table";
 import * as form from "../skills/k2b-ui/recipes/form";
 import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
 import * as frame from "../skills/k2b-ui/recipes/frame";
+import * as home from "../skills/k2b-ui/recipes/home";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
+import * as overview from "../skills/k2b-ui/recipes/overview";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as states from "../skills/k2b-ui/recipes/states";
@@ -28,8 +30,10 @@ const recipes: Record<string, Recipe> = {
   "form-detail.tsx": formDetail,
   "form.tsx": form,
   "frame.tsx": frame,
+  "home.tsx": home,
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
+  "overview.tsx": overview,
   "record-groups.tsx": recordGroups,
   "record.tsx": record,
   "states.tsx": states,

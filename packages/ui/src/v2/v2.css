@@ -254,6 +254,7 @@
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
+  --k2-v: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
@@ -746,6 +747,14 @@
   text-overflow: ellipsis;
   margin-top: 4px;
 }
+.k2-ui .k2-cell-value:has(> .k2-spark) {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+.k2-ui .k2-cell-value > .k2-spark {
+  margin-left: auto;
+}
 .k2-ui .k2-cell-meta {
   grid-column: 2 / -1;
   font: var(--k2-t-meta);
@@ -791,6 +800,132 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.k2-ui .k2-tile-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-tile-meta {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Cards: each thing a card in a grid, at least 240 px; its mark, name and history on top, figures, then people. The
+   card is pressed, so it is round with one hairline and no shadow; hover darkens its surface only. */
+.k2-ui .k2-tiles[data-variant="card"] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: stretch;
+  padding: 4px var(--k2-edge) 12px;
+}
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile {
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 12px;
+}
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-open]:hover {
+  background: var(--k2-n50);
+}
+.k2-ui .k2-tile > .k2-tile-top {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.k2-ui .k2-tile-top > .k2-tile-name {
+  flex: 1;
+}
+.k2-ui .k2-tiles[data-variant="card"] .k2-tile-title {
+  font: var(--k2-t-body);
+  font-weight: 600;
+}
+.k2-ui .k2-tile-top > .k2-tile-name > .k2-tile-title > .k2-row-open::after,
+.k2-ui .k2-tile-name > .k2-tile-title > .k2-row-open::after {
+  border-radius: var(--k2-r-control);
+}
+.k2-ui .k2-tile > .k2-tile-stats {
+  display: flex;
+  flex-direction: row;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+}
+.k2-ui .k2-tile-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.k2-ui .k2-tile-stat > .k2-icon {
+  font-size: 14px;
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-tile-stat[data-status] {
+  font-weight: 500;
+}
+.k2-ui .k2-tile-stat[data-status="ok"],
+.k2-ui .k2-tile-stat[data-status="ok"] > .k2-icon {
+  color: var(--k2-ok);
+}
+.k2-ui .k2-tile-stat[data-status="warn"],
+.k2-ui .k2-tile-stat[data-status="warn"] > .k2-icon {
+  color: var(--k2-warn-ink);
+}
+.k2-ui .k2-tile-stat[data-status="bad"],
+.k2-ui .k2-tile-stat[data-status="bad"] > .k2-icon {
+  color: var(--k2-bad);
+}
+.k2-ui .k2-tile-stat[data-yours] {
+  height: 20px;
+  margin-block: -2px;
+  padding: 0 8px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-blue-tint);
+  color: var(--k2-blue-ink);
+  font-weight: 500;
+}
+.k2-ui .k2-tile > .k2-tile-foot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  margin-top: auto;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  min-width: 0;
+}
+.k2-ui .k2-tile-foot-text {
+  margin-left: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* the card that makes a new thing: dashed, on the page itself, its choices as round chips above its stretch */
+.k2-ui .k2-tiles[data-variant="card"] > .k2-tile[data-create] {
+  border-style: dashed;
+  border-color: var(--k2-line-control);
+}
+.k2-ui .k2-tile > .k2-tile-choices {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.k2-ui .k2-tile[data-open] :is(a, button):not(.k2-row-open) {
+  position: relative;
+  z-index: 1;
 }
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */
@@ -1864,6 +1999,134 @@
   background: var(--k2-ok);
 }
 
+/* ── Mark: what a thing looks like. Its symbol on a tint of its colour, or its picture, in one square place; the
+   place sets the size (20 sidebar and sentence, 24 row of one line, 32 row of two or three lines, 36 tile) ──── */
+.k2-ui .k2-mk {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 13%, var(--k2-surface));
+  color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix));
+  vertical-align: middle;
+}
+.k2-ui .k2-mk > .k2-icon {
+  font-size: 15px;
+}
+/* a picture lies over the symbol; while it loads and when it fails the symbol shows, and nothing moves */
+.k2-ui .k2-mk > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.k2-ui .k2-mk[data-image="shown"] {
+  background: var(--k2-n100);
+  box-shadow: inset 0 0 0 1px var(--k2-card-edge);
+}
+.k2-ui .k2-mk[data-image="shown"] > img {
+  /* the frame of a picture stays on top of it, so a white page still has an edge */
+  z-index: 0;
+}
+.k2-ui .k2-mk-kind {
+  position: absolute;
+  left: 2px;
+  bottom: 2px;
+  z-index: 1;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--k2-c, var(--k2-n600)) 90%, var(--k2-ink-mix));
+  color: var(--k2-white);
+  font: 600 7px/8px var(--k2-font);
+  letter-spacing: 0.02em;
+}
+/* sidebar entry and sentence: 20 */
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.k2-ui :is(.k2-ni, .k2-row-l1, .k2-text, .k2-sh) .k2-mk > .k2-icon {
+  font-size: 13px;
+}
+/* in the words of a sentence the mark sits on their middle, with a little room on each side */
+.k2-ui :is(.k2-row-l1, .k2-text) .k2-mk {
+  margin: -2px 2px 0;
+}
+/* leading a row of two or three lines: 32 */
+.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk > .k2-icon {
+  font-size: 18px;
+}
+.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk > .k2-mk-kind {
+  font-size: 8px;
+  line-height: 9px;
+}
+.k2-ui .k2-row[data-mark] {
+  column-gap: 12px;
+}
+/* on a tile: 36 */
+.k2-ui .k2-tiles[data-variant="card"] .k2-mk {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+}
+.k2-ui .k2-tiles[data-variant="card"] .k2-mk > .k2-icon {
+  font-size: 20px;
+}
+
+/* ── Avatar.Stack: people over each other with a ring of the surface, "+n" for the rest ─────────────────────── */
+.k2-ui .k2-avs {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  vertical-align: middle;
+}
+.k2-ui .k2-avs > .k2-av {
+  box-shadow: 0 0 0 2px var(--k2-surface);
+}
+.k2-ui .k2-avs > .k2-av + .k2-av {
+  margin-left: -6px;
+}
+.k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+.k2-ui .k2-avs-rest {
+  margin-left: 6px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+
+/* ── Spark: a few bars of a short history, the last in full colour; 20 px high ─────────────────────────────── */
+.k2-ui .k2-spark {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+  flex: none;
+  vertical-align: middle;
+}
+.k2-ui .k2-spark > i {
+  width: 4px;
+  height: var(--k2-v);
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) 45%, var(--k2-surface));
+}
+.k2-ui .k2-spark > i:last-child {
+  background: var(--k2-c, var(--k2-app, var(--k2-blue)));
+}
+
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
   height: var(--k2-h-control);
@@ -2292,9 +2555,17 @@
   font-weight: 600;
   flex: none;
 }
+/* the app as a solid mark in its colour: the one fully coloured square of the sidebar */
 .k2-ui .k2-nav-title > .k2-icon {
-  color: var(--k2-app-text);
-  font-size: 18px;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  background: var(--k2-app, var(--k2-blue));
+  color: var(--k2-white);
+  font-size: 17px;
 }
 .k2-ui .k2-nav-label {
   font: var(--k2-t-meta);
@@ -2728,6 +2999,26 @@
 .k2-ui .k2-row[data-digest] > .k2-digest-go {
   grid-area: go;
   color: var(--k2-n400);
+}
+
+/* an activity: who (avatar), a sentence that may wrap, then where and when, quiet */
+.k2-ui .k2-digest > .k2-row[data-activity] {
+  align-items: start;
+  column-gap: 12px;
+}
+.k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-lead {
+  align-self: start;
+  height: 20px;
+}
+.k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l1 {
+  display: block;
+}
+.k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l2 {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Record: the identity in a head */

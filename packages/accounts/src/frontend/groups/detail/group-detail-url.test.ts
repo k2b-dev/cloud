@@ -1,10 +1,8 @@
-// fallow-ignore-file unused-file
 import { describe, expect, test } from "bun:test";
 import type { GroupsListState } from "../../lib/url-state";
 import {
   buildGroupDetailPageBaseUrl,
   createGroupDetailHrefBuilder,
-  getGroupsBackLabel,
   getVisibleGroupDetailTabs,
   parseGroupDetailTab,
 } from "./group-detail-url";
@@ -40,20 +38,16 @@ describe("group detail URL helpers", () => {
     );
   });
 
-  test("guards member-of tab for non-admin users", () => {
+  test("guards the administrators' tabs for everyone else", () => {
     expect(parseGroupDetailTab("member-of", false)).toBe("members");
     expect(parseGroupDetailTab("member-of", true)).toBe("member-of");
     expect(parseGroupDetailTab("unknown", true)).toBe("members");
+    expect(parseGroupDetailTab("relations", false)).toBe("members");
+    expect(parseGroupDetailTab("relations", true)).toBe("relations");
   });
 
-  test("hides member-of tab for non-admin users", () => {
+  test("hides the administrators' tabs from everyone else", () => {
     expect(getVisibleGroupDetailTabs(false)).toEqual(["members", "managers"]);
-    expect(getVisibleGroupDetailTabs(true)).toEqual(["members", "managers", "member-of"]);
-  });
-
-  test("formats list back labels", () => {
-    expect(getGroupsBackLabel("managed")).toBe("Managed Groups");
-    expect(getGroupsBackLabel("member")).toBe("My Groups");
-    expect(getGroupsBackLabel("all")).toBe("All Groups");
+    expect(getVisibleGroupDetailTabs(true)).toEqual(["members", "managers", "member-of", "relations"]);
   });
 });

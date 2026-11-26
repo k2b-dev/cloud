@@ -408,13 +408,19 @@ export const createAdminIdentityRoutes = (
     )
     .get(
       "/service-accounts/:id/api-keys",
-      describeRoute({ tags: ["Service accounts"], summary: "List API key metadata of a standalone service account without secrets" }),
+      describeRoute({
+        tags: ["Service accounts"],
+        summary: "List API key metadata of a standalone or resource-bound service account without secrets",
+      }),
       v("param", ServiceAccountParamsSchema),
       v("query", WorkloadCredentialListQuerySchema),
       async (c) =>
         respond(c, async () => {
           const account = await service.serviceAccounts.get({ id: c.req.valid("param").id });
-          if (!account || !(account.kind === "standalone" || account.kind === "agent")) return fail(err.notFound("Service account"));
+          // An agent's keys, and an API key account's (resource-bound, such as an app's rotating keys) for its record;
+          // a person's own keys stay with the person, and only agents get new keys here.
+          if (!account || !(account.kind === "standalone" || account.kind === "agent" || account.kind === "resource_bound"))
+            return fail(err.notFound("Service account"));
           return ok(
             await service.credentials.listOverview({
               pagination: c.req.valid("query"),

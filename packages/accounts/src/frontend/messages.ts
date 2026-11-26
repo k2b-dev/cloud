@@ -97,6 +97,7 @@ export const accountsMessages = i18n.define({
       agentPictureFailed: "The picture could not be saved.",
       notifications: "Notifications",
       auditLog: "Audit log",
+      activity: "Activity",
       deletedAccounts: "Deleted accounts",
       reminderHistory: "Reminder history",
       admin: "Admin",
@@ -533,7 +534,7 @@ export const accountsMessages = i18n.define({
       replaceKeyLater: "Later",
       replaceKeyFailed: "The new API key could not be created.",
       replaceKeyUncertain: "The answer was lost, so the new API key may exist. Close this dialog and check the list before trying again.",
-      replaceKeyCreated: "New API key created. Copy it now.",
+      replaceKeyCreated: "New key created",
       legacyLimitedKeyHint:
         "Created before keys acted as their account. It keeps its limit; to replace it, create a new key and revoke this one.",
       noGroupMemberships: "This user is not a member of a group.",
@@ -1023,6 +1024,7 @@ export const accountsMessages = i18n.define({
       agentPictureFailed: "Das Bild konnte nicht gespeichert werden.",
       notifications: "Benachrichtigungen",
       auditLog: "Audit-Protokoll",
+      activity: "Aktivität",
       deletedAccounts: "Gelöschte Konten",
       reminderHistory: "Erinnerungsverlauf",
       admin: "Administration",
@@ -1466,7 +1468,7 @@ export const accountsMessages = i18n.define({
       replaceKeyFailed: "Der neue API Key konnte nicht erstellt werden.",
       replaceKeyUncertain:
         "Die Antwort ging verloren, der neue API Key kann also schon existieren. Schließe den Dialog und prüfe die Liste, bevor du es erneut versuchst.",
-      replaceKeyCreated: "Neuer API Key erstellt. Kopiere ihn jetzt.",
+      replaceKeyCreated: "Neuer Key erstellt",
       legacyLimitedKeyHint:
         "Erstellt, bevor Schlüssel wie ihr Konto handelten. Er behält seine Grenze; zum Ersetzen erstelle einen neuen Schlüssel und widerrufe diesen.",
       noGroupMemberships: "Dieser Benutzer ist kein Mitglied einer Gruppe.",

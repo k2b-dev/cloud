@@ -4,38 +4,41 @@ import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { User } from "@/contracts";
 import { showAccountActionNotice } from "../action-notice";
-import { useAccountsMessages } from "../messages";
+import { type AccountsMessages, useAccountsMessages } from "../messages";
 
-type DeleteTarget = Pick<User, "id" | "uid" | "mail" | "givenname" | "sn" | "displayName" | "provider" | "profile">;
+export type DeleteTarget = Pick<User, "id" | "uid" | "mail" | "givenname" | "sn" | "displayName" | "provider" | "profile">;
 
+/** Deletes the account and shows the follow-up notice; throws an Error with the server's message or the fallback. */
+export const deleteUserRequest = async (user: DeleteTarget, t: AccountsMessages, signal?: AbortSignal) => {
+  const res = await apiClient.users[":id"].$delete({ param: { id: user.id } }, { init: { signal } });
+  if (!res.ok) {
+    // Only a JSON body carries a message; anything else (proxy or framework error page) gets the localized fallback.
+    const body = res.headers.get("content-type")?.includes("application/json") ? await res.json().catch(() => null) : null;
+    throw new Error(body?.message ?? t.deleteUserFailed);
+  }
+  await showAccountActionNotice(
+    {
+      action: "user.delete",
+      id: user.id,
+      uid: user.uid,
+      name: user.uid,
+      email: user.mail ?? "",
+      firstName: user.givenname,
+      lastName: user.sn,
+      provider: user.provider,
+      profile: user.profile,
+      category: user.provider === "ipa" ? "freeipa" : user.profile === "guest" ? "guest" : "login",
+    },
+    t,
+  );
+};
+
+/** The v1 deletion with a confirmation and a toast, for the duplicate email list. */
 export function createDeleteUserAction(props: { user: DeleteTarget; onDeleted: () => void }) {
   const messages = useAccountsMessages();
   const [confirming, setConfirming] = createSignal(false);
   const destroy = mutation.create<void, void>({
-    mutation: async (_, { abortSignal }) => {
-      const res = await apiClient.users[":id"].$delete({ param: { id: props.user.id } }, { init: { signal: abortSignal } });
-      if (!res.ok) {
-        // Only a JSON body carries a message; anything else (proxy or framework error page) gets the localized fallback.
-        const body = res.headers.get("content-type")?.includes("application/json") ? await res.json().catch(() => null) : null;
-        throw new Error(body?.message ?? messages().deleteUserFailed);
-      }
-      const user = props.user;
-      await showAccountActionNotice(
-        {
-          action: "user.delete",
-          id: user.id,
-          uid: user.uid,
-          name: user.uid,
-          email: user.mail ?? "",
-          firstName: user.givenname,
-          lastName: user.sn,
-          provider: user.provider,
-          profile: user.profile,
-          category: user.provider === "ipa" ? "freeipa" : user.profile === "guest" ? "guest" : "login",
-        },
-        messages(),
-      );
-    },
+    mutation: (_, { abortSignal }) => deleteUserRequest(props.user, messages(), abortSignal),
     onSuccess: () => {
       toast.success(messages().userDeleted);
       props.onDeleted();

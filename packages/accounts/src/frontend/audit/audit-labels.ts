@@ -1,5 +1,7 @@
-import type { FilterChipSection } from "@k2b/ui";
 import type { AccountsMessages } from "../messages";
+
+/** One section of actions: its heading and its actions, each with its code, label and Tabler icon class. */
+export type ActionSection = { label: string; options: { value: string; label: string; icon: string }[] };
 
 const actionSections = [
   {
@@ -77,7 +79,7 @@ export const actionLabel = (action: string, messages: AccountsMessages): string 
   return key ? messages[key] : action;
 };
 
-export const actionOptions = (messages: AccountsMessages): FilterChipSection[] =>
+export const actionOptions = (messages: AccountsMessages): ActionSection[] =>
   actionSections.map((section) => ({
     label: messages[section.label],
     options: section.entries.map((entry) => option(entry, messages)),

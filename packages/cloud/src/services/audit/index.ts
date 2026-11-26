@@ -413,6 +413,44 @@ const list = async (config: {
   };
 };
 
+/**
+ * The newest events in one statement, without a count: for a short "latest activity" that links to the full log
+ * instead of paging. Automatic app keys stay out, as with `automatic: "hide"`. At most 50.
+ *
+ * Every condition is exact, never the log's search: a record's activity names its `target` (type and id), which
+ * `idx_audit_events_target (target_type, target_id, created_at DESC)` serves, so a record never scans the log;
+ * `actions` and `outcome` narrow it further. Without a target the newest events of the whole log come from
+ * `idx_audit_events_created_at`.
+ */
+export type AuditLatest = {
+  limit: number;
+  target?: { type: string; id: string };
+  actions?: readonly string[];
+  outcome?: AuditOutcome;
+};
+
+/** The one statement of `latest`, also for a test that reads its plan. */
+export const auditLatestQuery = (config: AuditLatest) => {
+  const limit = Math.max(1, Math.min(Math.floor(config.limit), 50));
+  // Remove this predicate when runtime keys are no longer issued (step 8), as in `list`.
+  const conditions: SQL.Query<unknown>[] = [
+    sql`NOT ((metadata->>'provenance' = 'system' AND metadata->>'service' = 'app-workload') IS TRUE)`,
+  ];
+  if (config.target) conditions.push(sql`target_type = ${config.target.type} AND target_id = ${config.target.id}`);
+  if (config.actions?.length) conditions.push(sql`action = ANY(${toPgTextArray([...config.actions])}::text[])`);
+  if (config.outcome) conditions.push(sql`outcome = ${config.outcome}`);
+  const where = conditions.reduce((acc, condition) => sql`${acc} AND ${condition}`);
+  return sql<DbAuditRow[]>`
+    SELECT *
+    FROM audit.events
+    WHERE ${where}
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit}
+  `;
+};
+
+const latest = async (config: AuditLatest): Promise<AuditEvent[]> => (await auditLatestQuery(config)).map(mapRow);
+
 const listSelfServiceActivity = async (config: {
   userId: string;
   pagination?: PageParams;
@@ -452,5 +490,6 @@ export const audit = {
   recordResultAfterSideEffect,
   deny,
   list,
+  latest,
   listSelfServiceActivity,
 };

@@ -63,11 +63,11 @@ describe("compression boundaries", () => {
       expect(response.headers.get("Cache-Control") ?? "").toContain("no-transform");
     });
   }
-  test("the old API key list path moves permanently, with sub-path and query", async () => {
+  test("the old API key list paths move permanently to the account list, with search and kind", async () => {
     for (const [from, to] of [
-      ["/service-accounts", "/app/accounts/api-keys"],
-      ["/service-accounts?kind=agent&search=bot", "/app/accounts/api-keys?kind=agent&search=bot"],
-      ["/service-accounts/extra", "/app/accounts/api-keys/extra"],
+      ["/service-accounts", "/app/accounts/users"],
+      ["/service-accounts?kind=agent&search=bot", "/app/accounts/users?kind=agent&q=bot"],
+      ["/service-accounts/extra", "/app/accounts/users"],
     ] as const) {
       const response = await pages.request(from);
       expect(response.status).toBe(301);

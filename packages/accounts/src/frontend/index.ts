@@ -1,6 +1,8 @@
 import { type AuthContext, auth, middleware } from "@k2b/cloud/server";
 import { type Context, Hono } from "hono";
 import { ssr } from "../config";
+import notificationRecordPage from "./activity/notification.page";
+import activityPage from "./activity/page";
 import agentDetailPage from "./agents/detail.page";
 import agentsPage from "./agents/page";
 import auditPage from "./audit/page";
@@ -14,17 +16,16 @@ import notificationsPage from "./notifications/page";
 import landingPage from "./page";
 import remindersPage from "./reminders/page";
 import requestsPage from "./requests/page";
-import serviceAccountsPage from "./service-accounts/page";
+import { legacyApiKeysHref } from "./service-accounts/query";
 import userDetailPage from "./users/detail/page";
 import usersNewPage from "./users/new/page";
 import usersPage from "./users/page";
 
-/** Permanent move of the API key list, with any sub-path and the query kept. */
-const movedToApiKeys = (c: Context<AuthContext>) => {
-  const url = new URL(c.req.url);
-  const rest = url.pathname.slice(url.pathname.indexOf("/service-accounts") + "/service-accounts".length);
-  return c.redirect(`/app/accounts/api-keys${rest}${url.search}`, 301);
-};
+/**
+ * The API key list is gone: the account list lists the accounts and each record shows its keys. Its addresses (and the
+ * older `/service-accounts` ones, with any sub-path) move permanently to the account list with the same search and kind.
+ */
+const movedToAccountList = (c: Context<AuthContext>) => c.redirect(legacyApiKeysHref(new URL(c.req.url).searchParams), 301);
 
 export default new Hono<AuthContext>()
   .use("/", middleware.noTransform())
@@ -47,6 +48,8 @@ export default new Hono<AuthContext>()
   .use("/requests", middleware.noTransform())
   .use("/requests/*", middleware.noTransform())
   .use("/notifications/*", middleware.noTransform())
+  .use("/activity", middleware.noTransform())
+  .use("/activity/*", middleware.noTransform())
   .get("/", auth.requireRole("user", ssr.access), ...landingPage)
   .get("/duplicate-emails", auth.requireRole("admin", ssr.access), ...duplicateEmailsPage)
   .get("/users", auth.requireRole("admin", ssr.access), ...usersPage)
@@ -54,12 +57,16 @@ export default new Hono<AuthContext>()
   .get("/users/:id", auth.requireRole("admin", ssr.access), ...userDetailPage)
   .get("/requests", auth.requireRole("admin", ssr.access), ...requestsPage)
   .get("/audit", auth.requireRole("admin", ssr.access), ...auditPage)
-  .get("/api-keys", auth.requireRole("admin", ssr.access), ...serviceAccountsPage)
-  // The API key list moved from /service-accounts; old bookmarks and links keep working.
-  .get("/service-accounts", movedToApiKeys)
-  .get("/service-accounts/*", movedToApiKeys)
+  // The API key list's addresses, old bookmarks and links lead to the account list.
+  .get("/api-keys", movedToAccountList)
+  .get("/api-keys/*", movedToAccountList)
+  .get("/service-accounts", movedToAccountList)
+  .get("/service-accounts/*", movedToAccountList)
   .get("/agents", auth.requireRole("admin", ssr.access), ...agentsPage)
   .get("/agents/:id", auth.requireRole("admin", ssr.access), ...agentDetailPage)
+  // Aktivität: the audit log, notifications, reminders and deleted accounts as one list; their old pages redirect here.
+  .get("/activity", auth.requireRole("admin", ssr.access), ...activityPage)
+  .get("/activity/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationRecordPage)
   .get("/notifications", auth.requireRole("admin", ssr.access), ...notificationsPage)
   .get("/notifications/:id", auth.requireRole("admin", ssr.access), ...notificationDetailPage)
   .get("/deleted-accounts", auth.requireRole("admin", ssr.access), ...deletedAccountsPage)

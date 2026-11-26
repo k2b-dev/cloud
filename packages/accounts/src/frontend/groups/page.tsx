@@ -59,6 +59,7 @@ export default ssr<AuthContext>(async (c) => {
     provider: group.provider,
     posix: Boolean(group.gidnumber),
     managed: sessionUser.managesGroupIds.includes(group.id),
+    personal: group.personalOwner !== null,
     href: buildGroupDetailUrl(group.id, listState, { defaultScope }),
   }));
 
