@@ -16,7 +16,6 @@ const rules = {
   accounts: "signedIn",
   "api-docs": "signedIn",
   assistant: "signedIn",
-  capabilities: "signedIn",
   chat: "signedIn",
   contacts: "noGuests",
   dashboard: "signedIn",

@@ -11,6 +11,7 @@ import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
+import * as settings from "../skills/k2b-ui/recipes/settings";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
 
@@ -31,6 +32,7 @@ const recipes: Record<string, Recipe> = {
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
   "record-groups.tsx": recordGroups,
+  "settings.tsx": settings,
   "record.tsx": record,
   "states.tsx": states,
   "table.tsx": table,
