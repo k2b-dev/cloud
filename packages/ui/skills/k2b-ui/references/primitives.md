@@ -158,7 +158,10 @@ with a text `Button` after the list. Write rows out only for a few fixed
 ones. A row that is not in the page now (the row to give the focus back
 to after a detail closes) is reached through `controller`: its `reveal(key)`
 brings the row into view and gives it back. Tab out of a focused row that
-scrolled away goes to its neighbour in the list.
+scrolled away goes to its neighbour in the list. `group(item) => { key,
+label, count? }` puts a head before the first item of each group (a day):
+its words in 600 and a quiet count, no band and no line; heads are no rows
+and do not count as one.
 
 A `Row`:
 
@@ -325,6 +328,8 @@ lines instead of cutting a thing.
 ## Components
 
 - `Nav`: `title`, `icon`, `groups: { label?, action?, items }[]`, `foot`.
+  The groups scroll between the title and the foot; a group of more than 40
+  entries keeps only the entries in view in the page.
   A group's `action` is one quiet icon button, or `{ label, items }`: a "…"
   with the group's deeds ("Neues Postfach", "Gelöschte Postfächer").
   An item: `label`, `icon`, `href` or `onClick`, `count`, `current`,
