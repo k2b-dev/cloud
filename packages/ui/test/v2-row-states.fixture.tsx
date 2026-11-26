@@ -47,7 +47,8 @@ export const RowStatesScreen = () => (
 );
 
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
-export const CanvasFillScreen = (props: { split?: boolean }) => {
+// `list`: a long list stands in the split too, one under the other on the phone; it must not squeeze the drawing.
+export const CanvasFillScreen = (props: { split?: boolean; list?: boolean }) => {
   const pane = () => (
     <Pane
       label="Vorlage"
@@ -69,7 +70,27 @@ export const CanvasFillScreen = (props: { split?: boolean }) => {
       </Canvas>
     </Pane>
   );
-  return <Workspace>{props.split ? <Pane.Split>{pane()}</Pane.Split> : pane()}</Workspace>;
+  const list = () => (
+    <Pane label="Seiten">
+      <List label="Seiten">
+        {Array.from({ length: 40 }, (_, index) => (
+          <Row lines={[`Seite ${index + 1}`]} />
+        ))}
+      </List>
+    </Pane>
+  );
+  return (
+    <Workspace>
+      {props.split ? (
+        <Pane.Split>
+          {props.list ? list() : undefined}
+          {pane()}
+        </Pane.Split>
+      ) : (
+        pane()
+      )}
+    </Workspace>
+  );
 };
 
 // A folder twelve levels deep, the last two with long names, in a head that also has a search and its deeds.
@@ -107,7 +128,16 @@ export const DeepPathScreen = () => (
       />
     }
   >
-    <Pane label="Fotos" status={<StatusRow lead="14 Dateien" />}>
+    <Pane
+      label="Fotos"
+      // a short path: names narrower than the 48 px a long one shortens to keep their own width
+      head={
+        <Bar
+          start={<Path label="Quartal" items={[{ label: "Werkstatt", href: "#w" }, { label: "2026", href: "#j" }, { label: "Q1" }]} />}
+        />
+      }
+      status={<StatusRow lead="14 Dateien" />}
+    >
       <Section title="Fotos" count={1}>
         <List label="Fotos">
           <Row lines={["Front_01.jpg"]} />

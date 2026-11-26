@@ -435,21 +435,36 @@ type PathItem = PathProps["items"][number];
 
 /** How many places a path shows before the places between its first and its last two fold into a menu. */
 const PATH_SHOWN = 4;
+/** The longest name that stays narrower than the 48 px a long name shortens to (six letters of 14 px type). */
+const PATH_SHORT = 6;
 
 export const Path = (props: PathProps) => {
   const t = useOverlayMessages();
   const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -2) : []);
+  // a short name ("2026", "Q1") is narrower than the 48 px a long one shortens to, so it stays whole as it is
+  const short = (item: PathItem) => (item.label.length <= PATH_SHORT ? "" : undefined);
   const step = (item: PathItem, last: boolean, near: boolean) =>
     last ? (
-      <b aria-current="page" title={item.label}>
+      <b aria-current="page" title={item.label} data-short={short(item)}>
         {item.label}
       </b>
     ) : item.href !== undefined ? (
-      <a class="k2-path-step" href={item.href} data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+      <a
+        class="k2-path-step"
+        href={item.href}
+        data-near={near ? "" : undefined}
+        data-short={near ? short(item) : undefined}
+        title={near ? item.label : undefined}
+      >
         {item.label}
       </a>
     ) : (
-      <span class="k2-path-step" data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+      <span
+        class="k2-path-step"
+        data-near={near ? "" : undefined}
+        data-short={near ? short(item) : undefined}
+        title={near ? item.label : undefined}
+      >
         {item.label}
       </span>
     );

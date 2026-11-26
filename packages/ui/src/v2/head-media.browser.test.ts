@@ -16,7 +16,19 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "long" | "areas";
+type Case =
+  | "list"
+  | "closed"
+  | "grid"
+  | "selecting"
+  | "settings"
+  | "states"
+  | "canvas"
+  | "path"
+  | "split-canvas"
+  | "split-list-canvas"
+  | "long"
+  | "areas";
 
 let browser: Browser;
 let client: string;
@@ -551,12 +563,34 @@ for (const which of ["canvas", "split-canvas"] as const)
       );
   });
 
+test("on the phone a long list beside a drawing in a split does not squeeze the drawing below its 240 px (review r3)", async () => {
+  await withPage(
+    "split-list-canvas",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const element = document.querySelector(".k2-canvas[data-fill]")!;
+        const canvas = element.getBoundingClientRect();
+        // what its pane shows of it, wherever the page is scrolled: cut by every box up to its pane that clips
+        const pane = element.closest(".k2-pane")!;
+        let bottom = canvas.bottom;
+        for (let box: Element | null = element.parentElement; box && pane.contains(box); box = box.parentElement)
+          if (getComputedStyle(box).overflowY !== "visible") bottom = Math.min(bottom, box.getBoundingClientRect().bottom);
+        const rows = document.querySelectorAll(".k2-pane[aria-label='Seiten'] .k2-row").length;
+        return { height: Math.round(bottom - canvas.top), rows };
+      });
+      expect(found.rows).toBe(40);
+      expect(found.height).toBeGreaterThanOrEqual(240);
+    },
+    390,
+  );
+});
+
 for (const width of [1440, 1024])
   test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
     await withPage(
       "path",
       async (page) => {
-        const path = page.locator(".k2-path");
+        const path = page.locator(".k2-path[aria-label='Ort']");
         // the first place, the menu, the place before the page and the page: one line in the head
         expect(await path.locator(".k2-path-step, b").allTextContents()).toEqual([
           "Werkstatt",
@@ -568,9 +602,18 @@ for (const width of [1440, 1024])
           .evaluateAll((steps) => steps.map((step) => [Math.round(step.getBoundingClientRect().top), step.getClientRects().length]));
         expect(new Set(lines.map(([top]) => top)).size).toBe(1);
         expect(lines.every(([, boxes]) => boxes === 1)).toBe(true);
-        const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start");
+        const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start:has(> .k2-path[aria-label='Ort'])");
         const end = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-end");
         expect(start.right).toBeLessThanOrEqual(end.left);
+        // where room runs out the place before the page shortens first; the page keeps its name while it can
+        const [near, shown] = await path
+          .locator(".k2-path-step[data-near], b")
+          .evaluateAll((steps) =>
+            steps.map((step) => ({ cut: step.scrollWidth > step.clientWidth + 1, width: Math.round(step.getBoundingClientRect().width) })),
+          );
+        // the page is cut only once the place before it has shortened to its 48 px
+        if (shown!.cut) expect(near).toEqual({ cut: true, width: 48 });
+        if (width === 1024) expect(near!.cut).toBe(true);
         // the first place stays whole; the page keeps its whole name for those who hover or listen
         const first = await path
           .locator(".k2-path-step")
@@ -579,9 +622,14 @@ for (const width of [1440, 1024])
         expect(first).toBe(true);
         const current = path.locator("b[aria-current='page']");
         expect(await current.getAttribute("title")).toBe("Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht");
-        // the places between, in their order, as links in the menu
-        await path.getByRole("button", { name: "Übergeordnete Ebenen" }).click();
+        // the places between, in their order, as links in the menu; it opens from the keys, and Escape gives the focus
+        // back to its button
+        const fold = path.getByRole("button", { name: "Übergeordnete Ebenen" });
+        await fold.focus();
+        await page.keyboard.press("Enter");
         await settled(page);
+        await page.keyboard.press("ArrowDown");
+        expect(await page.evaluate(() => document.activeElement?.getAttribute("role"))).toBe("menuitem");
         const entries = page.getByRole("menu").getByRole("menuitem");
         expect(await entries.allTextContents()).toEqual([
           "Projekte",
@@ -597,6 +645,22 @@ for (const width of [1440, 1024])
         expect(await entries.first().getAttribute("href")).toBe("#level-1");
         await page.keyboard.press("Escape");
         await settled(page);
+        expect(await fold.evaluate((button) => button === document.activeElement)).toBe(true);
+        // a short path: names narrower than 48 px keep their own width
+        const short = await page
+          .locator(".k2-path[aria-label='Quartal']")
+          .locator(".k2-path-step[data-near], b")
+          .evaluateAll((steps) =>
+            steps.map((step) => {
+              const text = document.createRange();
+              text.selectNodeContents(step);
+              return { name: step.textContent, wider: step.getBoundingClientRect().width > text.getBoundingClientRect().width + 1 };
+            }),
+          );
+        expect(short).toEqual([
+          { name: "2026", wider: false },
+          { name: "Q1", wider: false },
+        ]);
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
@@ -608,7 +672,7 @@ test("on the phone a deep path gives way to the shell's bar, and the head keeps 
   await withPage(
     "path",
     async (page) => {
-      expect(await page.locator(".k2-path").isVisible()).toBe(false);
+      expect(await page.locator(".k2-path[aria-label='Ort']").isVisible()).toBe(false);
       expect(await page.getByRole("searchbox", { name: "In diesem Ordner" }).isVisible()).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
