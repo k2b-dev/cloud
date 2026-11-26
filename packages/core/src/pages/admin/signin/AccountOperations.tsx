@@ -37,7 +37,7 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceIpaBackfill,
         logs: "/admin/observability/logs?source=auth:ipa:backfill",
         confirm: m().startIpaBackfill,
-        done: m().ipaBackfillStarted,
+        startedText: m().ipaBackfillStarted,
         description: m().ipaBackfillDescription,
       },
       {
@@ -45,7 +45,7 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalUserBackfill,
         logs: "/admin/observability/logs?source=auth:local-user:backfill",
         confirm: m().startLocalUserBackfill,
-        done: m().localUserBackfillStarted,
+        startedText: m().localUserBackfillStarted,
         description: m().localUserBackfillDescription,
       },
       {
@@ -53,7 +53,7 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         label: m().forceLocalGuestBackfill,
         logs: "/admin/observability/logs?source=auth:guest:backfill",
         confirm: m().startLocalGuestBackfill,
-        done: m().localGuestBackfillStarted,
+        startedText: m().localGuestBackfillStarted,
         description: m().localGuestBackfillDescription,
       },
     ].filter((operation) => props.freeIpaEnabled || operation.key !== "ipa-backfill");
@@ -75,7 +75,7 @@ export default function AccountOperations(props: { freeIpaEnabled: boolean }) {
         const data = (await response.json().catch(() => null)) as { message?: string } | null;
         throw new Error(data?.message ?? m().jobStartFailed);
       }
-      toast(operation.done, { status: "ok" });
+      toast(operation.startedText, { status: "ok" });
     } catch (error) {
       toast(error instanceof Error ? error.message : m().jobStartFailed, { status: "bad" });
     } finally {
