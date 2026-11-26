@@ -238,3 +238,34 @@ test(
   },
   TEST_TIMEOUT,
 );
+
+// W4 (Grids): a base with 1,000 tables put 3,043 elements into its sidebar, which showed only the first screen of
+// them. The entries scroll between the title and the foot, and a long group keeps only the entries in view.
+test(
+  "a sidebar group of 1,000 entries scrolls between title and foot and keeps only the entries in view",
+  async () => {
+    await withPage(
+      async (page) => {
+        const entries = page.locator('[data-k2-part="Nav"] [data-k2-part="Nav.Item"]');
+        expect(await entries.count()).toBeLessThan(120);
+        const scroller = await page.evaluate(() => {
+          const nav = document.querySelector('[data-k2-part="Nav"]')!;
+          const first = nav.querySelector('[data-k2-part="Nav.Item"]')!;
+          let node = first.parentElement;
+          while (node && node !== nav && getComputedStyle(node).overflowY !== "auto") node = node.parentElement;
+          return node && node !== nav ? true : getComputedStyle(nav).overflowY === "auto";
+        });
+        expect(scroller).toBe(true);
+        await page.locator('[data-k2-part="Nav"] [data-k2-part="Nav.Item"]').first().hover();
+        for (let step = 0; step < 60; step++) await page.mouse.wheel(0, 2000);
+        await page.locator('[data-k2-part="Nav.Item"]', { hasText: "Tabelle 1000" }).waitFor();
+        expect(await page.locator('[data-k2-part="Nav.Item"]', { hasText: "Tabelle 1000" }).isVisible()).toBe(true);
+        expect(await page.locator('[data-k2-part="Nav.Item"]', { hasText: "Papierkorb" }).isVisible()).toBe(true);
+        expect(await entries.count()).toBeLessThan(120);
+      },
+      1200,
+      "nav",
+    );
+  },
+  TEST_TIMEOUT,
+);

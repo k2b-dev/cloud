@@ -25,6 +25,7 @@ import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
+import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
 
@@ -191,27 +192,67 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
-/** The sidebar of an app: its name, groups of round entries with counts, entries at the foot. */
+/**
+ * The entries of a long group (a base with 1,000 tables): only those in view and a margin around them are in the
+ * page, in the same window as a list of items (`createVirtualWindow`); the server renders the first of them.
+ */
+const NavWindow = (props: { items: readonly NavItem[] }) => {
+  let box: HTMLDivElement | undefined;
+  // one place per position, kept while the list changes, so an entry's place is made once
+  const places: { index: number }[] = [];
+  const at = createMemo(() => {
+    for (let index = places.length; index < props.items.length; index++) places.push({ index });
+    return places.slice(0, props.items.length);
+  });
+  const view = createVirtualWindow({ items: at, key: (place) => String(place.index) });
+  onMount(() => {
+    if (box) view.mount(box);
+  });
+  return (
+    <div ref={box} class="k2-nav-window" style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}>
+      <For each={view.shown()}>
+        {(place) => {
+          const node = resolveChildren(() => <NavEntry item={props.items[place.index]!} />);
+          const element = node.toArray().find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
+          if (element) view.observe(element, place);
+          return node();
+        }}
+      </For>
+    </div>
+  );
+};
+
+/**
+ * The sidebar of an app: its name, groups of round entries with counts, entries at the foot. The groups scroll
+ * between the name and the foot; a group longer than a screen keeps only the entries in view in the page.
+ */
 export const Nav = (props: NavProps) => (
   <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
     <div class="k2-nav-title">
       <Icon name={props.icon} />
       {props.title}
     </div>
-    <Index each={props.groups}>
-      {(group) => (
-        <>
-          <Show when={group().label}>
-            <div class="k2-nav-label">
-              {group().label}
-              <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-              <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-            </div>
-          </Show>
-          <Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>
-        </>
-      )}
-    </Index>
+    <div class="k2-nav-scroll">
+      <Index each={props.groups}>
+        {(group) => (
+          <>
+            <Show when={group().label}>
+              <div class="k2-nav-label">
+                {group().label}
+                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+              </div>
+            </Show>
+            <Show
+              when={group().items.length > SERVER_ROWS}
+              fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}
+            >
+              <NavWindow items={group().items} />
+            </Show>
+          </>
+        )}
+      </Index>
+    </div>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
         <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>

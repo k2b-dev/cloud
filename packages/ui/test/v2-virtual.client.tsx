@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { List, type ListController, Pane, Row, Table, Workspace } from "../src/v2";
+import { List, type ListController, Nav, Pane, Row, Table, Workspace } from "../src/v2";
 
 // A list of 1,000 entries whose titles wrap at narrow widths, and a table of 200 rows whose cells read a live value:
 // the virtual window of v2 (review of #4211) under scrolling, resizing, Tab and a reveal by key.
@@ -30,7 +30,38 @@ const root = document.getElementById("root");
 if (!root) throw new Error("virtual: #root is missing");
 // `<body data-case="groups">`: the same entries, seven a day under a head of their day, in a list and in a table
 const day = (index: number) => Math.floor(index / 7) + 1;
-if (document.body.dataset.case === "groups")
+// `<body data-case="nav">`: a sidebar whose group holds 1,000 entries (a base with 1,000 tables), and a foot
+if (document.body.dataset.case === "nav")
+  render(
+    () => (
+      <Workspace
+        sidebar={
+          <Nav
+            title="Grids"
+            icon="table"
+            groups={[
+              {
+                label: "Tabellen",
+                items: entries.map((entry, index) => ({
+                  label: `Tabelle ${index + 1}`,
+                  icon: "table",
+                  href: `#t${index + 1}`,
+                  current: index === 699,
+                })),
+              },
+            ]}
+            foot={[{ label: "Papierkorb", icon: "trash", href: "#trash" }]}
+          />
+        }
+      >
+        <Pane label="Inhalt">
+          <Row lines={["Inhalt"]} />
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (document.body.dataset.case === "groups")
   render(
     () => (
       <Workspace>

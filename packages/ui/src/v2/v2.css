@@ -2435,6 +2435,37 @@
   color: var(--k2-app-text);
   font-size: 18px;
 }
+/* The groups scroll between the app's name and the foot, so a long group (1,000 tables) reaches its end; the area
+   reaches to the sidebar's edges, so the ring of a focused entry is never cut */
+.k2-ui .k2-nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-inline: -12px;
+  padding-inline: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.k2-ui .k2-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+.k2-ui .k2-nav-scroll > *,
+.k2-ui .k2-nav-window > * {
+  flex: none;
+}
+/* a long group keeps only the entries in view; its padding holds the place of the others */
+.k2-ui .k2-nav-window {
+  --k2-before: 0px;
+  --k2-after: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
+}
 .k2-ui .k2-nav-label {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
