@@ -55,7 +55,7 @@ export default function OpenInvoices(props: Props) {
               time: row.amount,
             })}
             columns={[
-              { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true, truncate: "middle" },
+              { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true },
               { title: "Kunde", width: { min: 160, default: 240 }, cell: (row) => row.customer },
               { title: "Fällig", width: { min: 100, default: 120 }, numeric: true, cell: (row) => row.due, drop: true },
               {

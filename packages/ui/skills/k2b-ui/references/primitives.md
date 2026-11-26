@@ -184,8 +184,7 @@ returning one value, `{ lines: [line, quietLine] }`, or a person with lines
 `Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
 `numeric` for a time or date column at the start (both: tabular figures,
 never cut, the column at least as wide as its longest text value),
-`truncate: "middle"` for IDs and file names (cut in the middle, the end that
-tells them apart stays), `width={{ min, default }}` (exactly that wide, cut
+`width={{ min, default }}` (exactly that wide, cut
 text never widens it, grip in the head), `wrap` (one text column may take 3
 lines), `drop` (leaves when the table has no room for it: one by one from
 the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:

@@ -161,7 +161,7 @@ export default function FilteredOrders(props: Props) {
           empty={{ icon: "filter-off", text: "Kein Auftrag passt zu diesen Filtern." }}
           phone={(row) => ({ lines: [row.title, `${row.number} · ${row.customer} · fällig ${row.due}`], time: euro(row.amount) })}
           columns={[
-            { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true, truncate: "middle" },
+            { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true },
             { title: "Auftrag", width: { min: 160, default: 220 }, cell: (row) => row.title },
             { title: "Kunde", width: { min: 140, default: 200 }, cell: (row) => row.customer, drop: true },
             {

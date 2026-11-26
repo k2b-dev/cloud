@@ -476,11 +476,6 @@ export type Column<T> = {
    */
   numeric?: boolean;
   /**
-   * Where a text value too long for the column is cut: at its end (the default), or in its middle for IDs and file
-   * names, whose end tells them apart ("A-1042-NACHL…SONNENHALDE"). The whole value stays in its tip.
-   */
-  truncate?: "end" | "middle";
-  /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
    */
@@ -593,29 +588,6 @@ const signsOf = (value: CellValue): number => {
 /** The room a column without a width needs before its table drops columns, and a figure's width for that sum. */
 const flexibleColumn = 160;
 const figureWidth = 8;
-
-/**
- * A text cut in its middle: the start gives way with "…", the end that tells IDs and files apart stays. Read whole,
- * it is the same text (both parts follow each other), and the tip holds it.
- */
-const Middle = (props: { text: string }) => {
-  const signs = () => [...props.text];
-  const end = () => Math.min(12, Math.floor(signs().length / 2));
-  return (
-    <span class="k2-mid" title={props.text}>
-      <span class="k2-mid-start">
-        {signs()
-          .slice(0, signs().length - end())
-          .join("")}
-      </span>
-      <span class="k2-mid-end">
-        {signs()
-          .slice(signs().length - end())
-          .join("")}
-      </span>
-    </span>
-  );
-};
 
 /**
  * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
@@ -743,14 +715,14 @@ export const Table = <T,>(props: TableProps<T>) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
-        {column.truncate === "middle" && typeof content === "string" ? <Middle text={content} /> : content}
+        {content}
       </span>
     );
     const first = (content: JSX.Element) =>
       line(
         target ? (
           <RowOpen href={target.href} onNavigate={target.onNavigate} onOpen={target.onOpen}>
-            {column.truncate === "middle" && typeof content === "string" ? <Middle text={content} /> : content}
+            {content}
           </RowOpen>
         ) : (
           content

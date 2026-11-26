@@ -7,7 +7,7 @@ import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
 // What the server sends for the worst case (break-ui, 25.11.): numbers that are never cut, columns that drop by the
-// table's room, IDs cut in the middle, a person in a cell, counts in the locale's figures, progress beyond its whole and
+// table's room, a person in a cell, counts in the locale's figures, progress beyond its whole and
 // text a machine wrote. The browser test of the recipes measures the result; this pins the server's markup it rests on.
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-worst-case-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -39,7 +39,7 @@ const table = () =>
       label: "Rechnungen",
       rows,
       columns: [
-        { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true, truncate: "middle" },
+        { title: "Nummer", width: { min: 120, default: 140 }, cell: (row) => row.number, drop: true },
         { title: "Kunde", width: { min: 160, default: 240 }, cell: (row) => ({ avatar: { name: row.customer }, lines: [row.customer] }) },
         { title: "Fällig", width: { min: 100, default: 120 }, cell: () => "31.12.2026", numeric: true, drop: true },
         { title: "Betrag", width: { min: 100, default: 120 }, align: "end", cell: (row) => row.amount },
@@ -71,12 +71,6 @@ test("drop columns leave one by one from the last, by a container query on the t
   );
   // the column leaves with its cells, so the remaining columns keep their widths
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);
-});
-
-test("an ID is cut in its middle: its start and its end follow each other, the end whole, the tip holds all of it", () => {
-  const markup = table();
-  expect(markup).toContain('title="RE-2611-0042-NACHLASS-SONNENHALDE"');
-  expect(markup).toMatch(/<span class="k2-mid-start">RE-2611-0042-NACHLASS<\/span><span class="k2-mid-end">-SONNENHALDE<\/span>/);
 });
 
 test("a person in a cell is a picture beside lines, the picture without a name of its own", () => {

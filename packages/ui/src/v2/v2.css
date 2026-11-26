@@ -1354,27 +1354,6 @@
   white-space: nowrap;
   overflow-wrap: normal;
 }
-/* An ID or a file name cut in its middle: the start gives way with "…", the end stays */
-.k2-ui .k2-mid {
-  display: inline-flex;
-  max-width: 100%;
-  min-width: 0;
-  vertical-align: top;
-  white-space: nowrap;
-}
-/* the start gives way first; only in a column too narrow for the end alone is the end cut too, with "…" */
-.k2-ui .k2-mid-start {
-  flex: 0 1000 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.k2-ui .k2-mid-end {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /* A person with their lines in a cell: the picture, then the lines, each cut with "…" (never in the middle of a sign);
    24 px beside one line, 32 px beside two. */
 .k2-ui .k2-cell-person {
