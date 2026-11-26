@@ -187,7 +187,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     }
     if (name === "FileInput") {
       const names = [...element.querySelectorAll(".k2-files-name")].map((file) => clip(file.textContent ?? "", 30));
-      return `FileInput${names.length ? `: ${names.join(", ")}` : " empty"}${element.querySelector(".k2-files-refused") ? " refused" : ""}`;
+      return `FileInput${names.length ? `: ${names.join(", ")}` : " empty"}${element.querySelector(".k2-files-hint[data-refused]") ? " refused" : ""}`;
     }
     if (name === "ImageInput") {
       const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");

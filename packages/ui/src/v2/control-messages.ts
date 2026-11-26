@@ -29,6 +29,8 @@ const controlMessages = i18n.define({
       fileType: ({ name }: { name: string }) => `${name} is not a type this field takes.`,
       fileTooLarge: ({ name, max }: { name: string; max: string }) => `${name} is larger than ${max}.`,
       tooManyFiles: "This field takes one file only.",
+      folder: "This field takes files, not folders. Choose the files in it.",
+      filesRemoved: ({ count }: { count: number }) => `${count} files removed`,
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -54,6 +56,8 @@ const controlMessages = i18n.define({
       fileType: ({ name }: { name: string }) => `${name} hat keinen Dateityp, den dieses Feld nimmt.`,
       fileTooLarge: ({ name, max }: { name: string; max: string }) => `${name} ist größer als ${max}.`,
       tooManyFiles: "Dieses Feld nimmt nur eine Datei.",
+      folder: "Dieses Feld nimmt Dateien, keine Ordner. Wähle die Dateien darin.",
+      filesRemoved: ({ count }: { count: number }) => `${count} Dateien entfernt`,
     },
   },
 });

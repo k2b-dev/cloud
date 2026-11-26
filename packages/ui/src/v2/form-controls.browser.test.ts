@@ -239,6 +239,12 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
     form = await sent(page);
     expect(entriesOf(form.entries, "banner")).toEqual(["data:text/plain,b"]);
     expect(files(form.entries.filter((entry) => entry.name === "banner"))).toEqual([]);
+    // with the documents the form asks for, the form is complete
+    await field(page, "Unterlagen")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "a.pdf", mimeType: "application/pdf", buffer: Buffer.from("a") });
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 1);
+    expect((await sent(page)).valid).toBe(true);
     // the picker said nothing in English
     expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/accepted|rejected/i);
   });
@@ -332,7 +338,7 @@ test("files: chosen files are listed with type and size, sent with the form, req
     const rows = docs.getByRole("listitem");
     await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 2);
     expect(await rows.locator(".k2-files-name").allTextContents()).toEqual(["angebot.pdf", "brief.docx"]);
-    expect(await rows.locator(".k2-files-size").allTextContents()).toEqual(["3 B", "3 B"]);
+    expect(await rows.locator(".k2-files-size").allTextContents()).toEqual(["3 Byte", "3 Byte"]);
     expect(await rows.locator(".k2-icon").evaluateAll((icons) => icons.map((icon) => icon.getAttribute("data-name")))).toEqual([
       "file-type-pdf",
       "x",
@@ -340,9 +346,10 @@ test("files: chosen files are listed with type and size, sent with the form, req
       "x",
     ]);
     expect(entriesOf((await sent(page)).entries, "docs")).toEqual(["file:angebot.pdf", "file:brief.docx"]);
-    // a press on the remove button, then Delete on the focused row
+    // a press on the remove button: the form sends the other file only, then Delete on the focused row
     await docs.getByRole("button", { name: "angebot.pdf entfernen" }).click();
     await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 1);
+    expect(entriesOf((await sent(page)).entries, "docs")).toEqual(["file:brief.docx"]);
     await rows.first().focus();
     await page.keyboard.press("Delete");
     await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 0);
@@ -359,13 +366,64 @@ test("files: a file of the wrong type or too large is refused with a sentence at
   await withPage(async (page) => {
     const source = field(page, "Dokument");
     const input = source.locator('input[type="file"]');
+    const hint = source.locator(".k2-files-hint");
+    const trigger = source.getByRole("button", { name: "Datei wählen" });
+    const before = await source.boundingBox();
     await input.setInputFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
-    expect(await source.getByRole("alert").textContent()).toBe("setup.exe hat keinen Dateityp, den dieses Feld nimmt.");
+    await source.locator(".k2-files-hint[data-refused]").waitFor();
+    expect(await hint.textContent()).toBe("setup.exe hat keinen Dateityp, den dieses Feld nimmt.");
+    // the sentence describes the button, marks it invalid, stands in the hint's place (nothing moves) and is heard once
+    expect(await trigger.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
+      "setup.exe hat keinen Dateityp, den dieses Feld nimmt.",
+    );
+    expect(await trigger.getAttribute("aria-invalid")).toBe("true");
+    expect((await source.boundingBox())?.height).toBe(before?.height);
+    expect(await source.getByRole("alert").count()).toBe(0);
     await input.setInputFiles({ name: "gross.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(4096) });
-    expect(await source.getByRole("alert").textContent()).toBe("gross.pdf ist größer als 2 KB.");
+    await page.waitForFunction(() => document.querySelector("#sent .k2-files-hint[data-refused]")?.textContent?.startsWith("gross.pdf"));
+    expect(await hint.textContent()).toBe("gross.pdf ist größer als 2 kB.");
     await input.setInputFiles({ name: "notiz.md", mimeType: "text/markdown", buffer: Buffer.from("# x") });
-    await source.getByRole("alert").waitFor({ state: "detached" });
+    await source.locator(".k2-files-hint[data-refused]").waitFor({ state: "detached" });
     expect(await source.locator(".k2-files-name").allTextContents()).toEqual(["notiz.md"]);
+    expect(await trigger.getAttribute("aria-invalid")).toBeNull();
+  });
+});
+
+test("files: two files of the same name stay two rows; a dropped folder is refused with a sentence", async () => {
+  await withPage(async (page) => {
+    const docs = field(page, "Unterlagen");
+    await docs.locator('input[type="file"]').setInputFiles([
+      { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("1") },
+      { name: "scan.pdf", mimeType: "application/pdf", buffer: Buffer.from("2") },
+    ]);
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 2);
+    // a folder dropped on the field: the browser hands over an entry that is a folder, with files inside
+    await docs.locator(".k2-files-drop").evaluate((zone) => {
+      const file = new File(["x"], "beleg.pdf", { type: "application/pdf" });
+      const fileEntry = { isFile: true, isDirectory: false, fullPath: "/Belege/beleg.pdf", file: (done: (f: File) => void) => done(file) };
+      let read = false;
+      const folder = {
+        isFile: false,
+        isDirectory: true,
+        fullPath: "/Belege",
+        createReader: () => ({
+          readEntries: (done: (entries: unknown[]) => void) => {
+            done(read ? [] : [fileEntry]);
+            read = true;
+          },
+        }),
+      };
+      const items = [{ kind: "file", type: "", getAsFile: () => null, webkitGetAsEntry: () => folder }];
+      const transfer = { items, files: [], types: ["Files"], dropEffect: "copy", effectAllowed: "all" };
+      for (const type of ["dragenter", "dragover", "drop"]) {
+        const event = new DragEvent(type, { bubbles: true, cancelable: true });
+        Object.defineProperty(event, "dataTransfer", { value: transfer });
+        zone.dispatchEvent(event);
+      }
+    });
+    await page.waitForFunction(() => document.querySelector("#sent .k2-files-hint[data-refused]"));
+    expect(await docs.locator(".k2-files-hint").textContent()).toBe("Dieses Feld nimmt Dateien, keine Ordner. Wähle die Dateien darin.");
+    expect(await docs.locator(".k2-files-name").allTextContents()).toEqual(["scan.pdf", "scan.pdf"]);
   });
 });
 

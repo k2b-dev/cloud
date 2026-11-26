@@ -26,7 +26,7 @@ The sign-in settings of an app: a field that goes back to its default through th
 
 ## Files to send
 
-A tool that turns a document into Markdown: the field is where the document is dropped or chosen, the chosen file stands under it with its type and size, and a file of another type or too large is refused with a sentence at the field. Switch the state to see the field before a file is chosen.
+A tool that turns a document into Markdown: the field is where the document is dropped or chosen, the chosen file stands under it with its type and size, and a file of another type, too large or a folder is refused with a sentence in the field. A signal holds the files (`value` and `onChange`), so the head's "Umwandeln" waits for a document. Switch the state to see the field before a file is chosen.
 
 <Example recipe="upload" height="640" />
 

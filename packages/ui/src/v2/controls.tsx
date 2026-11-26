@@ -14,7 +14,7 @@ import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
-import { useFilePick, useFiles } from "./behavior/files";
+import { fileSize, relativePathOf, useFilePick, useFiles } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
 import { type ChoiceItem, useCombobox, useSelect } from "./behavior/select";
@@ -665,7 +665,8 @@ export const ImageInput = (props: ImageInputProps) => {
     required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
     onReject: () => setFailed(true),
-    announcement: (change) => (change.added.length ? t().imageChosen : change.rejected.length ? t().imageFailed : null),
+    // heard once: the refusal speaks through its alert at the field, a chosen image through the core
+    announcement: (change) => (change.added.length ? t().imageChosen : null),
   }));
   const name = () => props.name ?? field?.name;
   return (
@@ -714,15 +715,18 @@ export const ImageInput = (props: ImageInputProps) => {
 };
 
 export type FileInputProps = {
-  /** The chosen files. With `onChange` the caller holds them; without, the field keeps them (and a form's reset empties it). */
+  /**
+   * The chosen files. Given, the caller holds them and sets them from `onChange`; left out, the field keeps them itself
+   * (`onChange` still reports each change) and a form's reset empties it.
+   */
   value?: readonly File[];
-  /** Called with all chosen files after a pick, a drop, a paste or a removal. */
+  /** Called with all chosen files after a pick, a drop, a paste, a removal or a form's reset. */
   onChange?: (files: File[]) => void;
   /** The file types to take, like the `accept` attribute: `.pdf,.docx` or `image/*`. */
   accept?: string;
   /** Takes several files; one by default (a new one replaces it). */
   multiple?: boolean;
-  /** The largest file in bytes; a larger one is refused with a sentence at the field. */
+  /** The largest file in bytes; a larger one is refused with a sentence in the field. */
   maxSize?: number;
   /** The name the files are sent under in a form; the field's name by default. */
   name?: string;
@@ -745,58 +749,70 @@ const fileIcon = (file: File) => {
   return "file";
 };
 
-/** A size as people read it, in the page's language: "820 B", "12,4 KB", "3,1 MB". */
-const fileSize = (bytes: number, locale: string) => {
-  const units = ["B", "KB", "MB", "GB"];
-  let value = bytes;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
+/** One key per chosen file object, the same while it stays chosen; two files of the same name and size stay two. */
+const fileKeys = new WeakMap<File, string>();
+let fileCount = 0;
+const fileKey = (file: File) => {
+  let key = fileKeys.get(file);
+  if (!key) {
+    fileCount += 1;
+    key = `file-${fileCount}`;
+    fileKeys.set(file, key);
   }
-  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit === 0 ? 0 : 1 }).format(value)} ${units[unit]}`;
+  return key;
 };
-
-/** One key per chosen file, the same while it stays chosen. */
-const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
 
 /**
  * Files to send, such as a document to convert or attachments: the field itself is where files are dropped (it shows
  * when files are over it), with a button that opens the device's dialog; the chosen files stand under it as rows with
- * their type, size and a remove button (arrows move between them, Delete removes). A file of the wrong type or size is
- * refused with a sentence at the field. The behaviour layer on the ui-sdk core sends the files with the form, makes the
- * field required and puts it back on a form's reset.
+ * their type, size and a remove button (arrows move between them, Delete removes). A file of the wrong type or size,
+ * or a folder, is refused with a sentence in the field, where its hint stood, so nothing moves. The behaviour layer on
+ * the ui-sdk core sends the files with the form, makes the field required and puts it back on a form's reset.
  */
 export const FileInput = (props: FileInputProps) => {
   const field = useField();
   field?.group();
   const t = useControlMessages();
   const locale = useLocale();
+  const controlled = () => props.value !== undefined;
   const [own, setOwn] = createSignal<File[]>([...(props.value ?? [])]);
-  const files = () => (props.onChange ? [...(props.value ?? [])] : own());
+  const files = () => (controlled() ? [...(props.value ?? [])] : own());
   const [refused, setRefused] = createSignal<string>();
-  const sentence = (rejected: { file: File; reasons: string[] }) =>
-    rejected.reasons.includes("too-many-files")
-      ? t().tooManyFiles
-      : rejected.reasons.includes("file-too-large")
-        ? t().fileTooLarge({ name: rejected.file.name, max: fileSize(props.maxSize ?? 0, locale()) })
-        : t().fileType({ name: rejected.file.name });
+  const refusedId = createUniqueId();
+  const sentence = (rejected: readonly { file: File; reasons: string[] }[]) => {
+    const first = rejected[0];
+    if (!first) return undefined;
+    if (first.reasons.includes("folder")) return t().folder;
+    if (first.reasons.includes("too-many-files")) return t().tooManyFiles;
+    if (first.reasons.includes("file-too-large"))
+      return t().fileTooLarge({ name: first.file.name, max: fileSize(props.maxSize ?? 0, locale()) });
+    return t().fileType({ name: first.file.name });
+  };
   const pick = useFiles(() => ({
-    ...(props.onChange ? { value: [...(props.value ?? [])] } : { defaultValue: [...(props.value ?? [])] }),
+    ...(controlled() ? { value: [...(props.value ?? [])] } : { defaultValue: [...(props.value ?? [])] }),
     onValueChange: (next: File[]) => {
       setOwn(next);
       setRefused(undefined);
       props.onChange?.(next);
     },
-    onReject: (rejected) => setRefused(rejected[0] ? sentence(rejected[0]) : undefined),
-    announcement: (change) =>
-      change.rejected[0]
-        ? sentence(change.rejected[0])
-        : change.added.length
-          ? t().filesChosen({ count: change.added.length })
-          : change.removed[0]
-            ? t().fileRemoved({ name: change.removed[0].name })
-            : null,
+    onReject: (rejected) => setRefused(sentence(rejected)),
+    // A folder is refused as a whole: its files would arrive one by one, read from all its folders.
+    validate: (file: File) => (relativePathOf(file).includes("/") ? "folder" : undefined),
+    // What assistive technology hears, once: the core's account of the change in the page's language, nothing on a
+    // form's reset (the field returns to where it started).
+    announcement: (change) => {
+      if (change.reason === "reset") return null;
+      const parts = [
+        change.added.length ? t().filesChosen({ count: change.added.length }) : "",
+        change.rejected.length ? (sentence(change.rejected) ?? "") : "",
+        change.removed.length && !change.added.length
+          ? change.removed.length === 1
+            ? t().fileRemoved({ name: change.removed[0]?.name ?? "" })
+            : t().filesRemoved({ count: change.removed.length })
+          : "",
+      ].filter(Boolean);
+      return parts.length ? parts.join(" ") : null;
+    },
     accept: props.accept,
     multiple: props.multiple ?? false,
     maxSize: props.maxSize,
@@ -804,6 +820,7 @@ export const FileInput = (props: FileInputProps) => {
     required: field?.required,
     name: props.name ?? field?.name,
   }));
+  const described = () => [field?.described, refused() ? refusedId : undefined].filter(Boolean).join(" ") || undefined;
   return (
     <pick.Root
       class="k2-files"
@@ -813,10 +830,18 @@ export const FileInput = (props: FileInputProps) => {
       aria-label={field ? undefined : props.label}
     >
       <pick.Dropzone class="k2-files-drop" data-invalid={field?.invalid || refused() ? "" : undefined}>
-        <Icon name="upload" />
-        <span class="k2-files-hint">{props.multiple ? t().dropFiles : t().dropFile}</span>
+        <Icon name={refused() ? "alert-circle" : "upload"} />
+        {/* the hint, or in its place the sentence that says why a file was refused (heard once, through the core) */}
+        <span class="k2-files-hint" id={refusedId} data-refused={refused() ? "" : undefined}>
+          {refused() ?? (props.multiple ? t().dropFiles : t().dropFile)}
+        </span>
         <span class="k2-files-end">
-          <pick.Trigger class="k2-btn" data-k2-part="Button" aria-describedby={field?.described}>
+          <pick.Trigger
+            class="k2-btn"
+            data-k2-part="Button"
+            aria-describedby={described()}
+            aria-invalid={field?.invalid || refused() ? "true" : undefined}
+          >
             <span class="k2-btn-label">{props.multiple ? t().chooseFiles : t().chooseFile}</span>
           </pick.Trigger>
         </span>
@@ -845,13 +870,6 @@ export const FileInput = (props: FileInputProps) => {
             )}
           </For>
         </pick.List>
-      </Show>
-      <Show when={refused()}>
-        {(text) => (
-          <span class="k2-files-refused" role="alert">
-            {text()}
-          </span>
-        )}
       </Show>
     </pick.Root>
   );

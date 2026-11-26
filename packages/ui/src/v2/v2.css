@@ -2531,11 +2531,14 @@
 }
 /* files: the field is where files are dropped (a quiet dashed edge that turns blue while files are over it), the
    chosen ones stand under it as rows of 40 px with their type, name, size and a remove button */
+/* a field for files stays as wide as a long file name needs, not the whole column: a wide empty drop zone reads as
+   nothing there */
 .k2-ui .k2-files {
   display: flex;
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  max-width: 640px;
 }
 .k2-ui .k2-files-drop {
   display: flex;
@@ -2608,8 +2611,12 @@
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
 }
-.k2-ui .k2-files-refused {
-  font: var(--k2-t-meta);
+.k2-ui .k2-files-hint {
+  min-width: 0;
+}
+/* the sentence of a refused file stands where the hint stood, so nothing below moves */
+.k2-ui .k2-files-hint[data-refused],
+.k2-ui .k2-files-drop[data-invalid] > .k2-icon {
   color: var(--k2-bad);
 }
 /* something that opens in place: a 44 px row with the title and a chevron, the content under it on the text edge */
