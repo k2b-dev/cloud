@@ -690,3 +690,33 @@ test("an inline lookup with one choice: Enter chooses the highlighted place, the
     expect(await tickPlaces(page, '.k2-lookup [role="option"]')).toEqual(["end", "none"]);
   });
 });
+
+test("LookupSelect: each match carries its sign before its words; one without keeps the place, so the words line up", async () => {
+  await withPage(pickBundle, "", async (page) => {
+    const customer = page.getByRole("combobox", { name: "Kunde", exact: true });
+    await customer.focus();
+    await page.keyboard.press("ArrowDown");
+    await page.locator(".k2-lpick[data-open]").waitFor();
+    await page.evaluate(() => window.__picks?.answer());
+    await page.locator(".k2-lpick[data-open] .k2-mi").nth(4).waitFor();
+    await settled(page);
+    const rows = await page.locator(".k2-lpick[data-open] .k2-mi").evaluateAll((entries) =>
+      entries.map((entry) => {
+        const lead = entry.querySelector<HTMLElement>(".k2-opt-lead");
+        const label = entry.querySelector<HTMLElement>(".k2-mi-label")!;
+        return {
+          sign: !lead
+            ? "no place"
+            : lead.querySelector(".k2-av")
+              ? "person"
+              : lead.querySelector(".ti, .k2-icon")
+                ? getComputedStyle(lead).color
+                : "empty",
+          start: Math.round(label.getBoundingClientRect().left),
+        };
+      }),
+    );
+    expect(rows.map((row) => row.sign)).toEqual(["person", "rgb(67, 56, 202)", "rgb(180, 83, 9)", "rgb(190, 18, 60)", "empty"]);
+    expect(new Set(rows.map((row) => row.start)).size).toBe(1);
+  });
+});

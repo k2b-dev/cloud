@@ -53,6 +53,12 @@ export type LookupItem = {
   readonly label: string;
   /** Optional second line, such as an email address or a number. */
   readonly meta?: string;
+  /** Its sign before the words, as its row leads elsewhere: a Tabler symbol (a host, a group) … */
+  readonly icon?: string;
+  /** … in its data colour … */
+  readonly color?: string;
+  /** … or a person: a picture, else initials on a colour. */
+  readonly avatar?: { readonly name: string; readonly initials?: string; readonly color?: string; readonly image?: string };
 };
 
 /** What `load` of a lookup returns for one search. */

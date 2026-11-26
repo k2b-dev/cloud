@@ -324,7 +324,9 @@ lines instead of cutting a thing.
   optional single one offers "Auswahl entfernen". In a `Field` it takes the
   label, name, hint, error and `required`; the form gets each chosen code,
   nothing while disabled. Never a `Select` with a few of many entries, never
-  free text for a person.
+  free text for a person. Give each `LookupItem` the sign its
+  rows carry (`icon` + `color` for a host or group, `avatar` for a
+  person); the list shows it before the words.
 - `TagsInput`: several short values as chips in one field (domains,
   server addresses): `value`, `onChange`, `suggestions` (values to pick
   while typing; any other text is taken on Enter), `placeholder`,

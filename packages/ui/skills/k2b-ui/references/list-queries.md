@@ -33,7 +33,7 @@ The one way to let people filter, sort or group a list or table. Recipe:
 | Kind | Statement | Editor |
 | --- | --- | --- |
 | `choice` | "Status ist Eingeliefert oder Fotografiert" | listbox with a box first per value (one choice: `multiple: false`, its tick at the row's end), counts with `counts: true` |
-| `lookup` | "Einlieferer ist Haus Bergmann" | `Lookup`: search, 200 ms wait, abort, placeholders, empty, failed with retry |
+| `lookup` | "Einlieferer ist Haus Bergmann" | `Lookup`: search, 200 ms wait, abort, placeholders, empty, failed with retry; each match with its sign (`LookupItem` `icon` + `color`, or `avatar`); a limit note only when a search filled the limit |
 | `numberRange` | "Preis ab 500 €", "500 € bis 2.000 €" | presets as a list with one tick, then "Ab …" and "Bis …" with their values; each opens a number entry beside the editor like a submenu (a sheet step on the phone). The entry reads and shows numbers in the locale ("1.500" in German), the unit at its end, no spinner; Enter or "Anwenden" applies, an empty entry takes the bound out |
 | `dateRange`, `timeRange` | "Eingang letzte 30 Tage" | presets, then "Von …" and "Bis …" with their values; each opens a `DatePicker` beside the editor like a submenu (to the left where the right has no room; a sheet step on the phone). `timeRange` adds hour and minute, applied with "Übernehmen" |
 | `bool` | "2FA ist aus" | yes or no |

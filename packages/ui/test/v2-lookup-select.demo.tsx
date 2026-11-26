@@ -7,11 +7,12 @@ import type { LookupItem } from "../src/v2/list-query";
 // load while the person types. Every load waits for the test (`window.__picks`), so a test decides when it answers,
 // fails or is aborted.
 
+// a customer carries its sign: a family as people, a company its symbol in its colour; one has none
 const CUSTOMERS: readonly LookupItem[] = [
-  { value: "k-17", label: "Familie Oswald", meta: "Freiburg" },
-  { value: "k-23", label: "Architekturbüro Winter", meta: "Lahr" },
-  { value: "k-31", label: "Stadtwerke Auental", meta: "Kehl" },
-  { value: "k-44", label: "Haus Bergmann", meta: "Offenburg" },
+  { value: "k-17", label: "Familie Oswald", meta: "Freiburg", avatar: { name: "Familie Oswald", color: "#0f766e" } },
+  { value: "k-23", label: "Architekturbüro Winter", meta: "Lahr", icon: "building", color: "#4338ca" },
+  { value: "k-31", label: "Stadtwerke Auental", meta: "Kehl", icon: "building-factory", color: "#b45309" },
+  { value: "k-44", label: "Haus Bergmann", meta: "Offenburg", icon: "building-store", color: "#be123c" },
   { value: "k-58", label: "Bergmann & Söhne", meta: "Emmendingen" },
 ];
 

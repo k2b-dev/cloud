@@ -38,13 +38,14 @@ const LOCATIONS = [
   { value: "shop", label: "Laden" },
   { value: "workshop", label: "Werkstatt" },
 ] as const;
+// each consignor carries its sign, as its rows do elsewhere: a house its symbol in its colour, a person a picture
 const CONSIGNORS: readonly LookupItem[] = [
-  { value: "c-1001", label: "Haus Bergmann", meta: "Freiburg" },
-  { value: "c-1002", label: "Bergmann & Söhne", meta: "Offenburg" },
-  { value: "c-1003", label: "Haus am Bergsee", meta: "Titisee" },
-  { value: "c-1004", label: "Antik Weber KG", meta: "Kehl" },
-  { value: "c-1005", label: "Nachlass Kessler", meta: "Waldkirch" },
-  { value: "c-1006", label: "Gräfin von Thal", meta: "Lahr" },
+  { value: "c-1001", label: "Haus Bergmann", meta: "Freiburg", icon: "building-store", color: "#0f766e" },
+  { value: "c-1002", label: "Bergmann & Söhne", meta: "Offenburg", icon: "building-store", color: "#b45309" },
+  { value: "c-1003", label: "Haus am Bergsee", meta: "Titisee", icon: "building-store", color: "#4338ca" },
+  { value: "c-1004", label: "Antik Weber KG", meta: "Kehl", icon: "building-store", color: "#be123c" },
+  { value: "c-1005", label: "Nachlass Kessler", meta: "Waldkirch", avatar: { name: "Jan Kessler", color: "#7c3aed" } },
+  { value: "c-1006", label: "Gräfin von Thal", meta: "Lahr", avatar: { name: "Frieda von Thal", color: "#c2410c" } },
 ];
 
 const articles: Article[] = [

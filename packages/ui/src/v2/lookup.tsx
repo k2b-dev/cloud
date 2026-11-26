@@ -4,7 +4,7 @@ import { createAsyncOptions } from "./behavior/async-options";
 import { useCommand } from "./behavior/command";
 import { useFilterMessages } from "./filter-messages";
 import type { LookupItem } from "./list-query";
-import { Icon } from "./marks";
+import { Avatar, custom, Icon } from "./marks";
 import { Empty, Failed } from "./states";
 
 /**
@@ -59,12 +59,26 @@ type Phase = "idle" | "loading" | "done" | "error";
  * jumps. What is chosen stands on top under "Gewählt" in every state. The focus stays in the search while the arrows
  * move the highlight; Enter or a press ticks the highlighted entry.
  */
+/** Whether a match has a sign of its own. */
+export const hasSign = (item: LookupItem | undefined) => !!(item?.icon || item?.avatar);
+
+/** The sign of a match before its words: its symbol in its colour, or the person; empty where it has none. */
+export const LookupLead = (props: { item?: LookupItem }) => (
+  <span class="k2-opt-lead" aria-hidden="true" style={custom({ "--k2-c": props.item?.color })}>
+    <Show when={props.item?.avatar} fallback={<Show when={props.item?.icon}>{(name) => <Icon name={name()} />}</Show>}>
+      {(person) => <Avatar {...person()} decorative />}
+    </Show>
+  </span>
+);
+
 export const Lookup = (props: LookupProps) => {
   const t = useFilterMessages();
   const limit = () => Math.min(Math.max(props.limit ?? 8, 1), 50);
   const [query, setQuery] = createSignal("");
   const [slow, setSlow] = createSignal(false);
   const [counts, setCounts] = createSignal<Readonly<Record<string, number>>>({});
+  // whether the last answer filled the limit
+  const [hit, setHit] = createSignal(false);
   const [names, setNames] = createSignal<ReadonlyMap<string, LookupItem>>(new Map((props.known ?? []).map((item) => [item.value, item])));
   const [missing, setMissing] = createSignal<ReadonlySet<string>>(new Set());
   const remember = (list: readonly LookupItem[]) => {
@@ -81,7 +95,10 @@ export const Lookup = (props: LookupProps) => {
   const options = createAsyncOptions<LookupItem>(
     async (text, context) => {
       const result = await props.load(text, { signal: context.signal, limit: limit() });
-      if (!context.signal.aborted) setCounts(result.counts ?? {});
+      if (!context.signal.aborted) {
+        setCounts(result.counts ?? {});
+        setHit(result.items.length >= limit());
+      }
       return result.items.slice(0, limit());
     },
     { debounce: lookupTiming.debounce, immediate: !isServer && (props.minChars ?? 0) === 0, minLength: props.minChars ?? 0 },
@@ -174,6 +191,8 @@ export const Lookup = (props: LookupProps) => {
   const chosenGroup = createUniqueId();
   const offeredGroup = createUniqueId();
 
+  // when any entry has a sign, every entry keeps its place, so the words line up
+  const signed = () => [...chosen(), ...offered()].some(hasSign);
   // each entry names its group, as a renderer of core does; without it core takes the group for empty and hides it
   const Option = (group: string) => (item: LookupItem) => (
     <list.Item
@@ -189,6 +208,9 @@ export const Lookup = (props: LookupProps) => {
             <Icon name="check" />
           </Show>
         </span>
+      </Show>
+      <Show when={signed()}>
+        <LookupLead item={item} />
       </Show>
       <span class="k2-opt-label">
         {item.label}
@@ -253,7 +275,10 @@ export const Lookup = (props: LookupProps) => {
           </Show>
         </div>
       </Show>
-      <p class="k2-lookup-hint">{t().limitHint({ limit: limit() })}</p>
+      {/* only when the matches shown filled the limit: there may be more, and a more exact search finds them */}
+      <Show when={showList() && hit()}>
+        <p class="k2-lookup-hint">{t().limitHit({ limit: limit() })}</p>
+      </Show>
     </list.Root>
   );
 };

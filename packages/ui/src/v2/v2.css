@@ -4515,6 +4515,8 @@
   width: 300px;
   padding: 0;
   gap: 0;
+  /* the editor stands inside its statement in the page, whose words keep one line; the editor's own text wraps */
+  white-space: normal;
 }
 /* LookupSelect: core's select list with a search field on top, at least as wide as its field and never narrower than
    a filter's editor; what the list says (loading, failed, nothing found) and "Auswahl entfernen" follow the matches.
@@ -4717,6 +4719,21 @@
   flex: none;
   width: 16px;
   color: var(--k2-blue);
+}
+/* The sign of a match (a host's symbol in its colour, a person's picture), 20 px before its words, as a row leads */
+.k2-ui .k2-opt-lead {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--k2-c, var(--k2-subtle));
+}
+.k2-ui .k2-opt-lead > .k2-av {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
 }
 .k2-ui .k2-opt-label {
   flex: 1;

@@ -78,7 +78,7 @@ One choice from many options, in a list that opens.
 
 ### LookupSelect
 
-One value, or several, from values the app loads while the person types: closed it reads like a `Select`, open it searches over the matches (a sheet on a small touch screen). In a `Field` it takes the label, name, hint, error and `required`; the form gets each chosen code, nothing while disabled.
+One value, or several, from values the app loads while the person types: closed it reads like a `Select`, open it searches over the matches (a sheet on a small touch screen), each with its sign (`icon` and `color`, or `avatar`, on the `LookupItem`). In a `Field` it takes the label, name, hint, error and `required`; the form gets each chosen code, nothing while disabled.
 
 <Props of="LookupSelect" />
 
