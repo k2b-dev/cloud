@@ -812,35 +812,45 @@ export type RecordHeadProps = {
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];
   /**
-   * Identifiers and contact at a glance. They give way when the head has no room (cut, then out of sight; always on
-   * the phone), before the name is cut with "…"; the head's actions keep their place.
+   * Identifiers and contact at a glance. They give way whole when the head has no room (out of sight, the last first;
+   * always on the phone), before the name is cut with "…"; the name then says them on hover, and the head's actions
+   * keep their place.
    */
   ids?: readonly RecordId[];
 };
+
+/** The name of a record and its identifiers in words, for the hint of a name whose identifiers may give way. */
+const idsHint = (name: string, ids: readonly RecordId[] | undefined) =>
+  ids?.length ? [name, ...ids.map((id) => [id.label, id.value].filter(Boolean).join(" "))].join(" · ") : undefined;
 
 /** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
 export const RecordHead = (props: RecordHeadProps) => (
   <>
     <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
-    <h1 class="k2-record-name" data-k2-part="RecordHead">
+    {/* identifiers that give way are out of sight, not gone: the name says them on hover */}
+    <h1 class="k2-record-name" data-k2-part="RecordHead" title={idsHint(props.name, props.ids)}>
       {props.name}
     </h1>
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
-    <For each={props.ids}>
-      {(id) => (
-        <span class="k2-record-id">
-          <Show when={id.icon && !id.label}>
-            <Icon name={id.icon!} />
-          </Show>
-          <Show when={id.label}>{id.label} </Show>
-          <Show when={id.label} fallback={id.value}>
-            <b>{id.value}</b>
-          </Show>
-          <Show when={id.copy}>
-            <Icon name="copy" />
-          </Show>
-        </span>
-      )}
-    </For>
+    <Show when={props.ids?.length}>
+      <span class="k2-record-ids">
+        <For each={props.ids}>
+          {(id) => (
+            <span class="k2-record-id">
+              <Show when={id.icon && !id.label}>
+                <Icon name={id.icon!} />
+              </Show>
+              <Show when={id.label}>{id.label} </Show>
+              <Show when={id.label} fallback={id.value}>
+                <b>{id.value}</b>
+              </Show>
+              <Show when={id.copy}>
+                <Icon name="copy" />
+              </Show>
+            </span>
+          )}
+        </For>
+      </span>
+    </Show>
   </>
 );

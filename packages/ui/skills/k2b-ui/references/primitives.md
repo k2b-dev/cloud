@@ -447,8 +447,9 @@ lines instead of cutting a thing.
   filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
   copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
-  ids give way first (always on the phone), then the name is cut with "…";
-  the head's actions keep their place.
+  ids give way first, each whole and the last first (always on the phone),
+  then the name is cut with "…"; the name says the ids on hover, and the
+  head's actions keep their place.
 
 ## Overlays: Dialog, Menu, Popover, Toast
 
