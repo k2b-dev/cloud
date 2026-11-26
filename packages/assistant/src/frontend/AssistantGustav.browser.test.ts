@@ -515,10 +515,12 @@ const open = async (view: View, scenario: Scenario, options: { theme?: "light" |
             }
           : {}),
       };
+      // The page is v2 and its main area is the v2 scope (Layout ui="v2"); the panel keeps v1's frame.
+      const scope = scenario.panel ? "" : "k2-ui";
       const outer = view.column ? "display:flex;justify-content:flex-end;height:100vh" : "display:flex;height:100vh";
       const inner = view.column
-        ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
-        : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
+        ? `<div id="root" class="${scope}" style="width:${view.column};display:flex;height:100vh"></div>`
+        : `<div id="root" class="${scope}" style="display:flex;width:100%;height:100vh"></div>`;
       const panelContext = scenario.panel
         ? `<script type="application/json" id="cloud-panel-context">${JSON.stringify({ v: 1, seq: 1, pageId: "88888888-8888-4888-8888-888888888888", app: "mail", scope: mailbox })}</script>`
         : "";
@@ -791,10 +793,10 @@ describe("Gustav", () => {
         expect(cards[2]).toContain("Letzter Lauf fehlgeschlagen");
         expect(cards[3]).toContain("Pausiert");
         if (view === desktop) {
-          const footer = await h.page
-            .locator('footer[data-sidebar-mode="expanded"] .k2b-app-workspace__sidebar-item-label-text')
-            .allTextContents();
-          expect(footer).toEqual(["Wartet auf dich", "Meine Apps & Automationen", "Projekte", "Personalisieren"]);
+          // The v2 sidebar leads with what waits and the person's own Code; Personalize stands at its foot.
+          const entries = await h.page.locator('[data-k2-part="Nav"] .k2-ni-name').allTextContents();
+          expect(entries.slice(0, 3)).toEqual(["Wartet auf dich", "Meine Apps & Automationen", "Alle Chats"]);
+          expect(entries.at(-1)).toBe("Personalisieren");
         }
         await shot(h.page, `a-meine-apps-${view.name}-${theme}`);
         expect(h.errors).toEqual([]);
@@ -1212,14 +1214,12 @@ describe("Gustav", () => {
         expect(await back.getAttribute("href")).toBe("/app/assistant?code=1");
         if (view === phone) expect((await back.textContent())?.trim()).toBe("Meine Apps & Automationen");
         if (view === desktop)
-          expect(
-            await h.page.locator('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?code=1"]').getAttribute("aria-current"),
-          ).toBe("page");
+          expect(await h.page.locator('[data-k2-part="Nav"] a[href="/app/assistant?code=1"]').getAttribute("aria-current")).toBe("page");
         await shot(h.page, `c-code-detail-${view.name}-light`);
         expect(h.errors).toEqual([]);
         if (view === desktop) {
           // The marked sidebar entry leads back to the list.
-          await h.page.locator('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?code=1"]').click();
+          await h.page.locator('[data-k2-part="Nav"] a[href="/app/assistant?code=1"]').click();
           await h.page.waitForURL((url) => url.pathname === "/app/assistant" && url.searchParams.get("code") === "1");
         }
       } finally {
@@ -1261,18 +1261,19 @@ describe("Gustav", () => {
     for (const view of [desktop, phone]) {
       const h = await open(view, { waiting: true }, { path: "/app/assistant?approvals=1" });
       try {
-        const versions = h.page.locator('section[aria-labelledby="assistant-waiting-versions"]');
+        // Waiting for you on v2: one section per kind, each entry a row with its one action.
+        const versions = h.page.locator('[data-k2-part="Section"]', { has: h.page.getByRole("heading", { name: "Versionen" }) });
         await versions.getByText("Version 2 einschalten").waitFor();
-        expect(await h.page.getByRole("heading", { name: "Freigaben 1" }).count()).toBe(1);
-        expect(await h.page.getByRole("heading", { name: "Versionen 1" }).count()).toBe(1);
+        expect(await h.page.getByRole("heading", { name: "Freigaben" }).count()).toBe(1);
         expect(await versions.getByText("in Lieferungen eintragen").count()).toBe(1);
-        expect(await versions.getByRole("button", { name: "Ansehen: Version 2 einschalten" }).count()).toBe(1);
+        // k2b-ui gap: a Row's action is named by its words only ("Ansehen"), not with the row's title as v1's was.
+        expect(await versions.getByRole("button", { name: "Ansehen" }).count()).toBe(1);
         // The page shows as many entries as the sidebar counts, and Code of places is no entry of its own.
-        const entries = (await h.page.locator(".cloud-approval").count()) + (await versions.locator("li").count());
+        const entries = (await h.page.locator(".cloud-approval").count()) + (await versions.locator('[data-k2-part="Row"]').count());
         if (view === desktop)
-          expect(
-            await h.page.locator('a[href="/app/assistant?approvals=1"] .k2b-app-workspace__sidebar-status-count').first().textContent(),
-          ).toBe(String(entries));
+          expect(await h.page.locator('[data-k2-part="Nav"] a[href="/app/assistant?approvals=1"] .k2-ni-count').textContent()).toBe(
+            String(entries),
+          );
         expect(entries).toBe(waitingQuestions.count);
         expect(await h.page.getByText("du verwaltest").count()).toBe(0);
         await shot(h.page, `d-wartet-auf-dich-${view.name}-light`);

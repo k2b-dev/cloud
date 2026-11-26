@@ -113,7 +113,9 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
                   onKeyDown={searchKey}
                 />
                 <Show when={props.openChat()}>{(chat) => <Menu label={v2().chatActions} items={nav.chatMenu(chat())} />}</Show>
-                {/* The one way to create; it stays on the phone, where no button floats over the composer. */}
+                {/* The one way to create; it stays on the phone, where no button floats over the composer.
+                    k2b-ui gap: v2's primary is always blue; Gustav's primary is plum (appearance.primary "ai", rule
+                    assistant-no-blue). Lane Y brings it as a platform token; until then no colour of our own. */}
                 <Button variant="primary" icon="plus" keep disabled={props.newChat().disabled} onClick={() => props.newChat().onClick?.()}>
                   {props.newChat().label}
                 </Button>

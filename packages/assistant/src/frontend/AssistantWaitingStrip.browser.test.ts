@@ -373,13 +373,14 @@ const open = async (
       // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
       // the navigation cancelled always opens again while the page waits, and WebKit refuses it.
       if (options.slowMessageDocument && url.searchParams.has("message")) await new Promise((done) => setTimeout(done, slowDocumentMs));
-      const harness = { locale: state.locale, props: propsOf(state, url) };
+      // The panel column is the real panel (v1 frame); the page is v2 and its main area is the v2 scope, as Layout ui="v2".
+      const harness = { locale: state.locale, props: { ...propsOf(state, url), ...(view.column ? { embedded: true } : {}) } };
       const column = view.column
         ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
         : "display:flex;height:100vh";
       const inner = view.column
         ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
-        : `<div id="root" style="display:flex;width:100%;height:100vh"></div>`;
+        : `<div id="root" class="k2-ui" style="display:flex;width:100%;height:100vh"></div>`;
       return route.fulfill({
         contentType: "text/html",
         body:
@@ -616,19 +617,17 @@ describe("Waiting for you", () => {
           // The row lies over the timeline's free end: the timeline keeps its size whether the row is there or not.
           const timeline = () => rect(page, ".k2b-chat-timeline__viewport");
           const timelineBefore = await timeline();
-          // Both chats with an open question carry the dot in the list, the other chat none.
+          // Both chats with an open question carry the amber dot in the v2 sidebar, the other chat none.
           if (view === desktop)
             expect(
-              await page.locator(".assistant-chat-sidebar-item").evaluateAll((rows) =>
-                rows.map((row) => {
-                  const dot = row.querySelector(".assistant-chat-waiting");
-                  const box = dot?.getBoundingClientRect();
-                  return [row.querySelector("a")?.getAttribute("href"), box ? [Math.round(box.width), Math.round(box.height)] : null];
-                }),
-              ),
+              await page
+                .locator('[data-k2-part="Nav"] a.k2-ni[href*="conversation="]')
+                .evaluateAll((rows) =>
+                  rows.map((row) => [row.getAttribute("href"), row.querySelector(".k2-dot")?.getAttribute("data-status") ?? null]),
+                ),
             ).toEqual([
-              ["/app/assistant?conversation=Wart42", [8, 8]],
-              ["/app/assistant?conversation=Tops42", [8, 8]],
+              ["/app/assistant?conversation=Wart42", "warn"],
+              ["/app/assistant?conversation=Tops42", "warn"],
               ["/app/assistant?conversation=Urlb42", null],
             ]);
 
