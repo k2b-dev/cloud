@@ -301,20 +301,25 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
   const phone = usePhone();
   const [open, setOpenState] = createSignal(false);
   const [entry, setEntry] = createSignal<HTMLElement>();
-  // Where the panel stands on a wide screen: on the corner of its menu that the menu grew from, taken when it opens
-  // (before the menu gives way). A menu that opened to the left, or that stands at the end of its button, grows to the
-  // left; every other one, also a context menu at the pointer or a menu turned upwards, to the right.
-  const [place, setPlace] = createSignal<{ x: number; y: number; toLeft: boolean }>();
+  // Where the panel stands on a wide screen: on the corner of its menu that the menu grew from, taken once when it
+  // opens (before the menu gives way). It grows the way the menu grew: to the left for a submenu that opened to the
+  // left or a menu at the right edge of its button (the end in left-to-right, the start in right-to-left), to the right
+  // for every other one, also a context menu at the pointer or a menu turned upwards.
+  const [place, setPlace] = createSignal<{ x: number; top: number; growLeft: boolean; rtl: boolean }>();
   // Closing gives the menu its place back at once, before the focus returns to the entry in it (a hidden entry takes
   // no focus); the focus then stands on the entry unless something else took it.
   const setOpen = (next: boolean) => {
     if (next && !open()) {
       const menu = entry()?.closest<HTMLElement>(".k2-menu");
-      const box = menu?.getBoundingClientRect();
-      const toLeft =
-        menu?.getAttribute("data-side") === "left" ||
-        (menu?.getAttribute("data-side") !== "right" && menu?.getAttribute("data-align") === "end");
-      setPlace(box ? { x: toLeft ? box.right : box.left, y: box.top, toLeft } : undefined);
+      if (menu) {
+        const box = menu.getBoundingClientRect();
+        const side = menu.getAttribute("data-side");
+        const rtl = getComputedStyle(menu).direction === "rtl";
+        // a submenu's side is physical; a menu under or over its button lines up with its start or end, which the
+        // page's direction turns into left or right
+        const growLeft = side === "left" || (side !== "right" && (menu.getAttribute("data-align") === "end") !== rtl);
+        setPlace({ x: growLeft ? box.right : box.left, top: box.top, growLeft, rtl });
+      } else setPlace(undefined);
     }
     if (!next && open()) {
       entry()?.closest(".k2-menu")?.removeAttribute("data-covered");
@@ -386,6 +391,11 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
     onCleanup(() => menu.removeAttribute("data-covered"));
   });
   const corner = () => (phone() ? undefined : place());
+  /** The edge of the panel that stands on the corner, in the reading direction that core places by. */
+  const panelAlign = () => {
+    const at = corner();
+    return at && at.growLeft !== at.rtl ? "end" : "start";
+  };
   const close = () => {
     setOpen(false);
     props.level.close();
@@ -405,10 +415,20 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           aria-label={props.item.label}
           {...(() => {
             const at = corner();
-            return at ? { anchor: { x: at.x, y: at.y } } : {};
+            if (!at) return {};
+            // The corner is taken once, when the panel opens. Read on every check, its height keeps the panel inside
+            // the window: in a short one it moves up, never past the top (taller than the window, it scrolls inside).
+            const anchor = {
+              getBoundingClientRect: () => {
+                const tall = panel?.offsetHeight ?? 0;
+                return new DOMRect(at.x, Math.max(8, Math.min(at.top, window.innerHeight - tall - 8)), 0, 0);
+              },
+            };
+            return { anchor };
           })()}
           side="bottom"
-          align={corner()?.toLeft ? "end" : "start"}
+          // the edge of the panel that stands on the corner, in the reading direction core places by
+          align={panelAlign()}
           sideOffset={corner() ? 0 : 4}
           collisionPadding={8}
         >

@@ -33,13 +33,21 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, height = 900, touch = false } = {}) => {
+const withPage = async (
+  run: (page: Page) => Promise<void>,
+  {
+    width = 1440,
+    height = 900,
+    touch = false,
+    dir = "ltr",
+  }: { width?: number; height?: number; touch?: boolean; dir?: "ltr" | "rtl" } = {},
+) => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel</title><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de" dir="${dir}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Panel</title><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: bundle });
     await page.waitForFunction(() => window.__mounted === true);
@@ -366,3 +374,89 @@ for (const [where, height] of [
       { height },
     );
   });
+
+type Box = { x: number; y: number; width: number; height: number };
+/** Whether the panel took the menu's place: it shares one of the menu's side edges and its top, and stays on screen. */
+const tookPlace = (menu: Box, placed: Box, width: number, height: number) =>
+  (Math.abs(placed.x - menu.x) <= 1 || Math.abs(placed.x + placed.width - (menu.x + menu.width)) <= 1) &&
+  placed.x >= 0 &&
+  placed.x + placed.width <= width &&
+  placed.y >= 0 &&
+  placed.y + placed.height <= height;
+
+// Review of #4249 (r2): the corner a menu grew from is physical, read from its box and the page's direction. Under
+// right-to-left a menu at the start of the bar grows to the right, and a submenu may open to the left or right.
+test("right to left: a panel takes the place of a button menu, of a submenu and of a context menu", async () => {
+  const width = 1440;
+  const height = 900;
+  await withPage(
+    async (page) => {
+      // the button menu
+      await page.getByRole("button", { name: "Später" }).click();
+      const root = page.locator('[role="menu"]').first();
+      await root.waitFor();
+      await settled(page);
+      const rootBox = await root.boundingBox();
+      await entry(page).click();
+      await panel(page).waitFor();
+      await settled(page);
+      const one = await panel(page).boundingBox();
+      expect(!!rootBox && !!one && tookPlace(rootBox, one, width, height)).toBe(true);
+      await page.keyboard.press("Escape");
+      await panel(page).waitFor({ state: "detached" });
+      // the submenu: it takes the submenu's place and never lies over the menu it came from
+      await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+      const submenu = page.locator('[role="menu"]').nth(1);
+      await submenu.waitFor();
+      await settled(page);
+      const [rootAgain, sub] = [await root.boundingBox(), await submenu.boundingBox()];
+      await page.getByRole("menuitem", { name: "Andere Zeit …" }).click();
+      const other = page.getByRole("dialog", { name: "Andere Zeit …" });
+      await other.waitFor();
+      await settled(page);
+      const two = await other.boundingBox();
+      expect(!!sub && !!two && tookPlace(sub, two, width, height)).toBe(true);
+      const apart = !!rootAgain && !!two && (two.x + two.width <= rootAgain.x + 1 || two.x >= rootAgain.x + rootAgain.width - 1);
+      expect(apart).toBe(true);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+      // the context menu
+      const row = await page.getByText("Auftrag", { exact: true }).boundingBox();
+      if (!row) throw new Error("no row");
+      await page.mouse.click(row.x + row.width - 4, row.y + 4, { button: "right" });
+      const context = page.locator('[role="menu"]');
+      await context.waitFor();
+      await settled(page);
+      const contextBox = await context.boundingBox();
+      await page.getByRole("menuitem", { name: "Notiz zur Zeile …" }).click();
+      const note = page.getByRole("dialog", { name: "Notiz zur Zeile …" });
+      await note.waitFor();
+      await settled(page);
+      const three = await note.boundingBox();
+      expect(!!contextBox && !!three && tookPlace(contextBox, three, width, height)).toBe(true);
+    },
+    { dir: "rtl", width, height },
+  );
+});
+
+// Review of #4249 (r2): in a short window a panel taller than the room above and below the menu stays on screen.
+test("in a short window a panel taller than the room above and below the menu stays on screen", async () => {
+  const height = 240;
+  await withPage(
+    async (page) => {
+      await page.mouse.click(300, height / 2, { button: "right" });
+      const context = page.locator('[role="menu"]');
+      await context.waitFor();
+      await page.getByRole("menuitem", { name: "Notiz zur Zeile …" }).click();
+      const note = page.getByRole("dialog", { name: "Notiz zur Zeile …" });
+      await note.waitFor();
+      await settled(page);
+      const placed = await note.boundingBox();
+      expect(!!placed && placed.height > height / 2).toBe(true);
+      expect(!!placed && placed.y >= 0 && placed.y + placed.height <= height).toBe(true);
+    },
+    { height },
+  );
+});
