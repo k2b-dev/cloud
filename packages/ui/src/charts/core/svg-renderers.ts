@@ -27,9 +27,9 @@ import {
   renderReferenceLines,
   renderXAxisCategorical,
   renderYAxis,
+  seriesPaint,
   smoothPathD,
   svgRoot,
-  thresholdFillAttr,
 } from "./svg-common";
 
 /**
@@ -430,7 +430,7 @@ export const stateTimeline = (opts: StateTimelineOptions): string => {
       const color = stateStyles.get(interval.state)?.color;
       body.push(
         chartDatumSvg(
-          `<rect class="stdlib-chart-state-region stdlib-chart-series-${idx % 8}"${thresholdFillAttr(color)} x="${fmt(x)}" y="${fmt(y + 3)}" width="${fmt(Math.max(1, x2 - x))}" height="${fmt(rowHeight - 6)}" rx="2"/>`,
+          `<rect ${seriesPaint(color, idx, "stdlib-chart-state-region")} x="${fmt(x)}" y="${fmt(y + 3)}" width="${fmt(Math.max(1, x2 - x))}" height="${fmt(rowHeight - 6)}" rx="2"/>`,
           {
             index,
             seriesIndex: rowIdx,
