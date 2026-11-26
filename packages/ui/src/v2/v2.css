@@ -3181,8 +3181,18 @@
   flex: 0 1 auto;
 }
 /* a path gives way before the deeds at the end: they keep their words while the path can still shorten */
-.k2-ui .k2-bar-start:has(> .k2-path) {
+.k2-ui .k2-bar-start:has(> .k2-path),
+.k2-ui .k2-bar-start:has(> .k2-inline > .k2-path) {
   flex-shrink: 1000;
+}
+/* a path or a title with a chip after it (a folder's sharing, a draft's state): the words give way, the chip is read
+   whole (W1b #4206) */
+.k2-ui .k2-bar-start > .k2-inline > :is(.k2-path, .k2-text) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-path > .k2-path-step,
 .k2-ui .k2-path > b {

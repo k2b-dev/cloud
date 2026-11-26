@@ -18,6 +18,7 @@ declare global {
       | "states"
       | "canvas"
       | "path"
+      | "path-chip"
       | "split-canvas"
       | "split-list-canvas"
       | "long"
@@ -42,8 +43,8 @@ render(
         <AreasMenuScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
-      ) : which === "path" ? (
-        <DeepPathScreen />
+      ) : which === "path" || which === "path-chip" ? (
+        <DeepPathScreen chip={which === "path-chip"} />
       ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
         <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
       ) : (

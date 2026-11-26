@@ -25,6 +25,7 @@ type Case =
   | "states"
   | "canvas"
   | "path"
+  | "path-chip"
   | "split-canvas"
   | "split-list-canvas"
   | "long"
@@ -667,6 +668,24 @@ for (const width of [1440, 1024])
       width,
     );
   });
+
+test("a deep path with a chip after it gives way before the deeds; the chip is read whole (W1b #4206)", async () => {
+  await withPage(
+    "path-chip",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const chip = document.querySelector<HTMLElement>("[data-slot='head'] .k2-inline > .k2-chip")!;
+        const start = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-start")!.getBoundingClientRect();
+        const end = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-end")!.getBoundingClientRect();
+        return { chip: chip.scrollWidth <= chip.clientWidth + 1, apart: start.right <= end.left };
+      });
+      expect(found).toEqual({ chip: true, apart: true });
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    1024,
+  );
+});
 
 test("on the phone a deep path gives way to the shell's bar, and the head keeps only its search", async () => {
   await withPage(

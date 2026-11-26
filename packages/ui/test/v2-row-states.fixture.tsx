@@ -1,5 +1,22 @@
 import { createSignal } from "solid-js";
-import { Bar, Button, Canvas, Chip, FilterBar, Input, List, Menu, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import {
+  Bar,
+  Button,
+  Canvas,
+  Chip,
+  FilterBar,
+  Inline,
+  Input,
+  List,
+  Menu,
+  Pane,
+  Path,
+  Row,
+  Section,
+  StatusRow,
+  Text,
+  Workspace,
+} from "../src/v2";
 import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
@@ -111,11 +128,21 @@ const levels = [
 
 export const deepPath = levels.map((label, index) => (index < levels.length - 1 ? { label, href: `#level-${index}` } : { label }));
 
-export const DeepPathScreen = () => (
+// `chip`: the path stands in an `Inline` with a chip after it (the folder's sharing, W1b #4206).
+export const DeepPathScreen = (props: { chip?: boolean }) => (
   <Workspace
     head={
       <Bar
-        start={<Path label="Ort" items={deepPath} />}
+        start={
+          props.chip ? (
+            <Inline>
+              <Path label="Ort" items={deepPath} />
+              <Chip icon="users">Mit 4 Personen geteilt</Chip>
+            </Inline>
+          ) : (
+            <Path label="Ort" items={deepPath} />
+          )
+        }
         end={
           <>
             <Input type="search" icon="search" label="In diesem Ordner" placeholder="In diesem Ordner" />
