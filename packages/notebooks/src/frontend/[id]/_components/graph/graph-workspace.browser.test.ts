@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Page } from "playwright";
-import { launchBrowser } from "../../../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../../../ui/test/browser";
 import { HANDBOOK_IDS } from "./graph.fixtures";
 
 const ui = `${resolve(import.meta.dir, "../../../../../../ui")}/`;
@@ -79,9 +79,15 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const errors: string[] = [];
+// every page's errors; a view transition that a navigation away cuts short is the browser's, not the page's
+const errors: string[][] = [];
 afterEach(() => {
-  expect(errors.splice(0)).toEqual([]);
+  expect(
+    errors
+      .splice(0)
+      .flat()
+      .filter((message) => !message.includes("ViewTransition")),
+  ).toEqual([]);
 });
 const open = async (path: string, width = 1440) => {
   const page = await browser.newPage({
@@ -90,10 +96,7 @@ const open = async (path: string, width = 1440) => {
     hasTouch: width < 1024,
   });
   // an error in the page fails the test that opened it, with its message
-  // (a view transition that a navigation away cuts short is the browser's, not the page's)
-  page.on("pageerror", (error) => {
-    if (!error.message.includes("ViewTransition")) errors.push(error.message);
-  });
+  errors.push(pageErrors(page));
   await page.goto(new URL(path, server.url).href);
   await page.locator("[data-k2-workspace]").waitFor();
   await page.evaluate(() => document.fonts.ready);
