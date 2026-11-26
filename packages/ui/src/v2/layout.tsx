@@ -870,8 +870,13 @@ export const Tiles = (props: TilesProps) => (
 export type CanvasProps = {
   /** What the drawing shows, for assistive technology. */
   label: string;
-  /** The height of the drawing in px; the width comes from its place. */
-  height?: number;
+  /**
+   * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
+   * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
+   * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
+   * it scrolls itself, and below 240 px the pane scrolls instead.
+   */
+  height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
@@ -889,7 +894,8 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
+    data-fill={props.height === "fill" ? "" : undefined}
+    style={custom({ "--k2-canvas-h": typeof props.height === "number" ? `${props.height}px` : undefined })}
   >
     {props.children}
   </div>

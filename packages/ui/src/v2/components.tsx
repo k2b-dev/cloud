@@ -638,8 +638,10 @@ export type ActivityEntry = {
   time: string;
   /** Where, quiet before the time, such as the base "Werkstatt". */
   place?: string;
-  /** The page of the thing that changed: the sentence becomes the link. */
+  /** The page of the thing that changed: the sentence becomes the link … */
   href?: string;
+  /** … which opens in place on a plain click, while it still opens in a new tab (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
 };
 
 export type DigestProps =
@@ -694,7 +696,9 @@ export const Digest = (props: DigestProps) => {
                   <Avatar {...entry.person} />
                 </span>
                 <span class="k2-row-l1">
-                  <RowOpen href={entry.href}>{entry.text}</RowOpen>
+                  <RowOpen href={entry.href} onNavigate={entry.onNavigate}>
+                    {entry.text}
+                  </RowOpen>
                 </span>
                 <span class="k2-row-l2">{entry.place ? `${entry.place} · ${entry.time}` : entry.time}</span>
               </div>

@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
+import { CanvasFillScreen, RowStatesScreen } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
 // runs: the list with the open file, the grid, the grid with three photos selected, or the settings page.
@@ -9,7 +10,9 @@ import { LocaleProvider } from "../src/intl/locale";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "list" | "grid" | "selecting" | "settings";
+    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
+    /** The height of the drawing right after the first render, before anything could measure it. */
+    __k2FirstCanvas?: number;
   }
 }
 
@@ -22,6 +25,10 @@ render(
     <LocaleProvider locale="de">
       {which === "settings" ? (
         <SigninSettings />
+      ) : which === "states" ? (
+        <RowStatesScreen />
+      ) : which === "canvas" ? (
+        <CanvasFillScreen />
       ) : (
         <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
       )}
@@ -29,4 +36,7 @@ render(
   ),
   root,
 );
+// read synchronously after the first render: a drawing that fills its pane has its height before any script measures
+const canvas = document.querySelector<HTMLElement>(".k2-canvas[data-fill]");
+if (canvas) window.__k2FirstCanvas = canvas.getBoundingClientRect().height;
 window.__k2Mounted = true;

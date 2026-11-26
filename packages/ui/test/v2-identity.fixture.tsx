@@ -12,7 +12,7 @@ export const broken = "data:image/png;base64,AAAA";
 const table = { icon: "table", color: "#008f4c" };
 const form = { icon: "forms", color: "#c2410c" };
 
-export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCreate?: () => void }) => (
+export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCreate?: () => void; onOpen?: (hash: string) => void }) => (
   <Workspace
     sidebar={
       <Nav
@@ -111,6 +111,8 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
               place: "Werkstatt",
               time: "09:42",
               href: "#auftraege",
+              // the thing opens in place, as a page with islands does; the link still works before the page is live
+              onNavigate: (event) => props.onOpen?.(new URL(event.href, location.href).hash),
             },
             {
               person: { name: "Webformular", initials: "W", color: "#475569" },

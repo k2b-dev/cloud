@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "grid" | "selecting" | "settings";
+type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
 
 let browser: Browser;
 let client: string;
@@ -232,7 +232,11 @@ test("in rows of two lines a file keeps its thumbnail beside its box", async () 
         .evaluate((element) => {
           const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
           const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
-          return { side: mark.left > box.right, mark: `${mark.width}x${mark.height}`, middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1 };
+          return {
+            side: mark.left > box.right,
+            mark: `${mark.width}x${mark.height}`,
+            middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
+          };
         });
       expect(lead).toEqual({ side: true, mark: "32x32", middle: true });
     },
@@ -287,6 +291,66 @@ test("a setting stands with its value beside its name, and an unsaved change say
     },
     390,
   );
+});
+
+test("the states of an entry stand whole under its lines and wrap; rows without states keep their height", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "states",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const rows = [...document.querySelectorAll<HTMLElement>(".k2-list > .k2-row")];
+          const states = rows[1]!.querySelector(".k2-row-states")!;
+          const title = rows[1]!.querySelector(".k2-row-title")!.getBoundingClientRect();
+          const chips = [...states.querySelectorAll(".k2-chip")];
+          const row = rows[1]!.getBoundingClientRect();
+          return {
+            heights: [Math.round(rows[0]!.getBoundingClientRect().height), Math.round(rows[3]!.getBoundingClientRect().height)],
+            edge: Math.round(states.getBoundingClientRect().left - title.left),
+            under: states.getBoundingClientRect().top >= title.bottom,
+            whole: chips.every((chip) => chip.scrollWidth <= chip.clientWidth + 1 && chip.getBoundingClientRect().right <= row.right),
+            lines: new Set(chips.map((chip) => Math.round(chip.getBoundingClientRect().top))).size,
+            long: (() => {
+              const chip = rows[2]!.querySelector(".k2-row-states .k2-chip")!;
+              return (
+                chip.getBoundingClientRect().right <= rows[2]!.getBoundingClientRect().right && chip.scrollWidth <= chip.clientWidth + 1
+              );
+            })(),
+          };
+        });
+        // without states the rows keep their heights: 40 for one line, 52 for two (in a section no line between rows);
+        // on the phone a row of one line takes its 60
+        expect(found.heights).toEqual(width === 1440 ? [40, 52] : [60, 52]);
+        expect(found.edge).toBe(0);
+        expect(found.under).toBe(true);
+        expect(found.whole).toBe(true);
+        expect(found.long).toBe(true);
+        // on the phone the six states take more lines than on the desktop, none is cut
+        if (width === 390) expect(found.lines).toBeGreaterThan(1);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("a drawing that is the whole pane has its final height from the first render, and keeps it", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "canvas",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
+          const scroll = document.querySelector(".k2-canvas[data-fill]")!.parentElement!.getBoundingClientRect();
+          return { first: window.__k2FirstCanvas, now: canvas.height, bottom: Math.round(scroll.bottom - canvas.bottom) };
+        });
+        expect(found.first).toBe(found.now);
+        expect(found.now).toBeGreaterThan(240);
+        // it reaches the bottom of its pane: nothing is left under it
+        expect(found.bottom).toBe(0);
+      },
+      width,
+    );
 });
 
 for (const which of ["list", "grid", "selecting", "settings"] as const)
