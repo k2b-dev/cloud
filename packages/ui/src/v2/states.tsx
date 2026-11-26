@@ -1,4 +1,4 @@
-import { For, Index, Show } from "solid-js";
+import { For, Index, type JSX, children as resolveChildren, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton, Button } from "./button";
 import { Icon } from "./marks";
@@ -13,18 +13,28 @@ export type EmptyProps = {
   icon: string;
   /** One sentence that says what is the matter: "Noch keine Einlieferung." is not "Keine Treffer mit diesem Filter." */
   text: string;
-  /** The one way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
+  /** The way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
   action?: Action;
+  /** A second, quieter way out after the first, such as "Ganzes Notizbuch zeigen"; a text button. */
+  secondary?: Action;
 };
 
-/** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
+/**
+ * Nothing here: a round sign, one sentence, a way out, without a box (mockup: Notice · Empty). A second way out stands
+ * after the first, quieter; the first stays first, so it is the one a focus that comes to the state reaches.
+ */
 export const Empty = (props: EmptyProps) => (
   <div class="k2-state" data-k2-part="Empty">
     <span class="k2-sign">
       <Icon name={props.icon} />
     </span>
     <span class="k2-state-text">{props.text}</span>
-    <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+    <Show when={props.action || props.secondary}>
+      <span class="k2-state-ways">
+        <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+        <Show when={props.secondary}>{(secondary) => <ActionButton action={secondary()} variant="text" />}</Show>
+      </span>
+    </Show>
   </div>
 );
 
@@ -132,6 +142,38 @@ export const LoadingStatus = () => {
     <span class="k2-hidden-text" role="status">
       {t().loading}
     </span>
+  );
+};
+
+/**
+ * A value still on its way (internal: a loading `Facts` and `Cells.Cell`): a quiet bar exactly one line of the value
+ * high, so nothing moves when the value comes; assistive technology hears "loading" at its place.
+ */
+export const PlaceholderValue = (props: {
+  /** The value the place holds while a newer one comes (a refresh): it keeps its room, unseen, under the bar. */
+  children?: JSX.Element;
+  /** `false`: no words for assistive technology, for a second line of the same value (a cell's meta). */
+  said?: boolean;
+}) => {
+  const t = useUiMessages();
+  const held = resolveChildren(() => props.children);
+  const holds = () => {
+    const value = held();
+    return value !== undefined && value !== null && value !== false && value !== "" && !(Array.isArray(value) && value.length === 0);
+  };
+  return (
+    <>
+      {/* a value that is there keeps its exact room (lines, chips, wrapping); only a value not yet there is one line */}
+      <Show when={holds()} fallback={<span class="k2-skel" aria-hidden="true" />}>
+        <span class="k2-held" aria-hidden="true">
+          {held()}
+        </span>
+        <span class="k2-skel" data-over="" aria-hidden="true" />
+      </Show>
+      <Show when={props.said !== false}>
+        <span class="k2-hidden-text">{t().loading}</span>
+      </Show>
+    </>
   );
 };
 

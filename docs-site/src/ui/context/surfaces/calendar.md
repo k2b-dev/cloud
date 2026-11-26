@@ -654,10 +654,9 @@ Defaults: `view="month"`, week starts Monday unless overridden, `visibleStartHou
 value into `data` under the camelCase name of the attribute you read:
 
 ```ts
-// before
-{ id, title, start, dataSpaceItemId: itemId }
-// after: the entry still carries data-space-item-id="…"
-{ id, title, start, data: { spaceItemId: itemId } }
+const before = { id, title, start, dataSpaceItemId: itemId };
+// the entry still carries data-space-item-id="…"
+const after = { id, title, start, data: { spaceItemId: itemId } };
 ```
 
 Read it back from `event.data?.spaceItemId` in callbacks. Selectors such as

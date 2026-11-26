@@ -236,6 +236,7 @@ type Props = { grid?: boolean; selected?: readonly string[] };
 export default function Folder(props: Props) {
   const [state, setState] = createSignal<ListQueryStateOf<typeof fileQuery>>(fileQuery.parse("owner=felix,mira").state);
   const [selected, setSelected] = createSignal<readonly string[]>(props.selected ?? []);
+  const [grid, setGrid] = createSignal(props.grid ?? false);
   const toggle = (key: string, on: boolean) => setSelected((now) => (on ? [...now, key] : now.filter((each) => each !== key)));
   const files = entries.filter((entry) => !entry.folder);
   return (
@@ -301,7 +302,7 @@ export default function Folder(props: Props) {
                 actions: [
                   { label: "Teilen", icon: "share" },
                   { label: "Verschieben", icon: "folder-symlink" },
-                  { label: "Laden", icon: "download" },
+                  { label: "Als ZIP laden", icon: "download" },
                   { label: "Löschen", icon: "trash" },
                 ],
                 clear: { label: "Auswahl aufheben", onClick: () => setSelected([]) },
@@ -319,8 +320,8 @@ export default function Folder(props: Props) {
               display={[
                 {
                   title: "Darstellung",
-                  choice: props.grid ? "grid" : "list",
-                  onChoose: () => {},
+                  choice: grid() ? "grid" : "list",
+                  onChoose: (value) => setGrid(value === "grid"),
                   items: [
                     { label: "Liste", icon: "list", value: "list" },
                     { label: "Raster", icon: "layout-grid", value: "grid" },
@@ -331,7 +332,7 @@ export default function Folder(props: Props) {
           )
         }
       >
-        {props.grid ? (
+        {grid() ? (
           <Pane label="Dateien">
             <Tiles
               variant="media"

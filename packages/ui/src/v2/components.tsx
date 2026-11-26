@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -30,7 +31,7 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
-  /** A count at the end, such as unread mails. */
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -108,18 +109,27 @@ export type NavProps = {
   quota?: { label: string; value: number; of: number; text: string };
 };
 
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
+
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
-);
+const NavEnd = (props: { item: NavItem }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -263,7 +273,7 @@ export type Tab = {
   label: string;
   /** A Tabler icon before the name. */
   icon?: string;
-  /** A quiet count after the name. */
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -289,21 +299,24 @@ export type TabsProps = {
 };
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -332,6 +345,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -376,7 +390,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -425,35 +439,40 @@ export const Tabs = (props: TabsProps) => {
  * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
  *
  * A deep path folds by its length, the same on the server and in the browser, so nothing moves: from five places on,
- * the first and the last two stand, and the places between go into a menu "…" in their order. Where the room runs
- * out, the place before the page shortens with "…" first, then the page itself; their whole names stay in the page
- * and show on hover.
+ * the first and the page stand, and every place between goes into a menu "…" in its order. The page keeps its whole
+ * name: where the room runs out the places between shorten with "…" first, then the first; the page only when
+ * nothing else is left. Every shortened name shows whole on hover.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
 type PathItem = PathProps["items"][number];
 
-/** How many places a path shows before the places between its first and its last two fold into a menu. */
+/** How many places a path shows before the places between its first and its page fold into a menu. */
 const PATH_SHOWN = 4;
+/** The longest name that stays narrower than the 48 px a long name shortens to (six letters of 14 px type). */
+const PATH_SHORT = 6;
 
 export const Path = (props: PathProps) => {
   const t = useOverlayMessages();
-  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -2) : []);
-  const step = (item: PathItem, last: boolean, near: boolean) =>
+  // a deep path shows its first place and the page; every place between goes into the menu "…"
+  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -1) : []);
+  // a short name ("2026", "Q1") is narrower than the 48 px a long one shortens to, so it stays whole as it is
+  const short = (item: PathItem) => (item.label.length <= PATH_SHORT ? "" : undefined);
+  const step = (item: PathItem, last: boolean, between: boolean) =>
     last ? (
-      <b aria-current="page" title={item.label}>
+      <b aria-current="page" title={item.label} data-short={short(item)}>
         {item.label}
       </b>
     ) : item.href !== undefined ? (
-      <a class="k2-path-step" href={item.href} data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+      <a class="k2-path-step" href={item.href} data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
         {item.label}
       </a>
     ) : (
-      <span class="k2-path-step" data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+      <span class="k2-path-step" data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
         {item.label}
       </span>
     );
-  const shown = () => (folded().length ? [props.items[0]!, ...props.items.slice(-2)] : props.items);
+  const shown = () => (folded().length ? [props.items[0]!, props.items.at(-1)!] : props.items);
   return (
     <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
       <For each={shown()}>
@@ -470,7 +489,7 @@ export const Path = (props: PathProps) => {
               />
               <Icon name="chevron-right" />
             </Show>
-            {step(item, index() === shown().length - 1, index() === shown().length - 2 && index() > 0)}
+            {step(item, index() === shown().length - 1, index() > 0 && index() < shown().length - 1)}
           </>
         )}
       </For>
@@ -491,7 +510,10 @@ export type StatusFact = {
 };
 
 export type StatusRowProps = {
-  /** The one main statement, such as "7 unread". */
+  /**
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   */
   lead: string;
   /**
    * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
@@ -508,7 +530,11 @@ export type StatusRowProps = {
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
-  /** Filters or a segment at the end; they leave on the phone. */
+  /**
+   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
+   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   */
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
@@ -517,9 +543,14 @@ export type StatusRowProps = {
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
+/** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
+const SELECTION_SHOWN = 3;
+
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
+
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
+  const overlay = useOverlayMessages();
   const filters = resolveChildren(() => props.filters);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
@@ -575,7 +606,32 @@ export const StatusRow = (props: StatusRowProps) => {
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
-              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+              <For
+                each={
+                  selection().actions.length > SELECTION_SHOWN + 1 ? selection().actions.slice(0, SELECTION_SHOWN) : selection().actions
+                }
+              >
+                {(action) => <ActionButton action={action} titled />}
+              </For>
+              <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
+                <Menu
+                  icon="dots"
+                  titled
+                  items={selection()
+                    .actions.slice(SELECTION_SHOWN)
+                    .map((action) => ({
+                      label: action.label,
+                      icon: action.icon,
+                      meta: action.meta,
+                      href: action.href,
+                      onNavigate: action.onNavigate,
+                      onClick: action.onClick,
+                      disabled: action.disabled,
+                    }))}
+                >
+                  {overlay().more}
+                </Menu>
+              </Show>
             </span>
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
