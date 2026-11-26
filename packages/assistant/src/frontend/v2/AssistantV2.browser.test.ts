@@ -626,6 +626,19 @@ describe("Assistant on v2", () => {
       const back = page.locator('[data-k2-part="Back"]').filter({ visible: true });
       expect(await back.count()).toBe(1);
       expect(await page.locator(".artifact-mobile-toggle").filter({ visible: true }).count()).toBe(0);
+      // Said once: the tab chip names "Kontext"; its content is v2's sections of rows (the chat's Project first).
+      const detail = page.locator('[data-k2-part="Pane"][data-detail]');
+      await detail.locator('[data-k2-part="Section"]').first().waitFor();
+      // The pane's own heading stays for assistive technology only (1 px), so the eye reads "Kontext" once.
+      const seen = await detail.evaluate(
+        (pane) =>
+          [...pane.querySelectorAll("*")].filter(
+            (element) =>
+              element.childElementCount === 0 && element.textContent?.trim() === "Kontext" && element.getBoundingClientRect().width > 2,
+          ).length,
+      );
+      expect(seen).toBe(1);
+      expect(await detail.locator('[data-k2-part="Row"]', { hasText: "Projektanweisungen" }).count()).toBe(1);
       await shoot(page, "390-in-this-chat");
       await back.getByRole("button").or(back.getByRole("link")).first().click();
       await page.locator('[data-k2-part="Pane"][data-detail]').waitFor({ state: "detached" });

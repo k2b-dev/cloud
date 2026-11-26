@@ -54,6 +54,7 @@ import { type AssistantLiveHub, type AssistantLiveInvalidation, matchesAssistant
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
+import ChatContextDetailsV2 from "./v2/ChatContextDetailsV2";
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -717,6 +718,8 @@ export function AssistantChatContextContent(
     /** Jumps to a message in the chat; the Files tab offers it for results. */
     onJump?: (target: ChatSidebarJump) => void;
     onOpenSecrets?: () => void;
+    /** The v2 page: the tab "Kontext" shows its sections in v2's rows instead of v1's details. */
+    v2?: boolean;
   },
 ) {
   const state = createAssistantChatContextState(props);
@@ -733,6 +736,19 @@ export function AssistantChatContextContent(
       onOpenWebPage: props.onOpenWebPage,
     });
   // The tab "Context": what the chat works with, open, with its secrets.
+  if (props.category === "context" && props.v2)
+    return (
+      <Show when={state.snapshot()}>
+        {(snapshot) => (
+          <ChatContextDetailsV2
+            snapshot={snapshot()}
+            project={props.project ?? null}
+            state={state}
+            actions={actions(props.onOpenView ?? (() => undefined))}
+          />
+        )}
+      </Show>
+    );
   if (props.category === "context")
     return (
       <div class="assistant-context-tab">
