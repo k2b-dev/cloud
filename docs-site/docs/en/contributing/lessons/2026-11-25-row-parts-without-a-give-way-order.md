@@ -13,7 +13,7 @@
   width).
 - **Guard:** `packages/ui/src/v2/status-table.browser.test.ts` measures the status row at 760, 600, 400 and 320 px
   with a short and a long lead: no control overlaps the lead, a cut lead ends in "…" and keeps about a word, and below
-  480 px the controls keep only their symbols with their words as names. The same file draws the row as the operations
+  600 px the controls keep only their symbols with their words as names. The same file draws the row as the operations
   log does (large counts, the live switch, sort and grouping in words) from 1440 down to 320 px, the narrow widths
   standing for the list column beside an open entry. There a switch, which has no symbol to fold to, leaves the lead
   less than a word at 320 px; the test still requires "…" and no overlap.

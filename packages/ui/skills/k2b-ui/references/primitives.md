@@ -331,7 +331,7 @@ lines instead of cutting a thing.
   `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`, each with an `icon`; below 480 px of row
+  `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
   they keep only their symbols, the words stay their names; leave on the
   phone),
   `selection: { count, actions, clear }` (while rows are selected the row

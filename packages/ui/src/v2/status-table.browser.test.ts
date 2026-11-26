@@ -10,8 +10,8 @@ import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
 // column, lets its key figures and then its lead give way so the order controls keep their words, folds those controls
-// to their symbols below 480 px, and holds a place for its loading mark; the large table with a sticky first column starts body, head and group rows on one text edge; a phone row ends
-// in the state of its entry.
+// to their symbols below 600 px, and holds a place for its loading mark; the large table with a sticky first column
+// starts body, head and group rows on one text edge; a phone row ends in the state of its entry.
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -160,7 +160,7 @@ for (const column of [1440, 1024, 900, 760, 400])
   });
 
 // A lead and worded controls that do not fit beside each other: the lead is cut with "…" first, the controls keep
-// their words; below 480 px the controls keep only their symbols and the words stay their names (#4166).
+// their words; below 600 px the controls keep only their symbols and the words stay their names (#4166).
 for (const long of [false, true])
   for (const column of [760, 600, 400, 320])
     test(`a status row ${column} px wide with a ${long ? "long" : "short"} lead: lead and controls never overlap`, async () => {
@@ -171,7 +171,7 @@ for (const long of [false, true])
           const found = await page.evaluate(statusRow);
           expect(found.width).toBe(column);
           expectHeld(found);
-          const folded = column < 480;
+          const folded = column <= 600;
           expect(found.words).toEqual([!folded, !folded]);
           if (long && !folded) expect(found.lead.cut).toBe(true);
           for (const name of ["Neueste zuerst", "Nach Minute"])
@@ -195,7 +195,7 @@ for (const column of [1440, 1024, 760, 600, 520, 400, 320])
         // at 320 px the switch, which has no symbol to fold to, and two menus leave the lead less than a word
         expectHeld(found, column > 320);
         expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
-        expect(found.words).toEqual(column < 500 ? [false, false] : [true, true]);
+        expect(found.words).toEqual(column <= 600 ? [false, false] : [true, true]);
         if (column >= 1024) expect(found.shown).toEqual([true, true]);
       },
       { column },

@@ -4133,10 +4133,10 @@
 .k2-ui .k2-order .k2-btn > .k2-icon {
   font-size: 14px;
 }
-/* A narrow status row (below 480 px): every control at its end that has a symbol keeps only the symbol, as the head's
-   controls on the phone, sort and group included; the words stay its name. A menu keeps its chevron. A control with
-   words alone keeps them, and the lead gives way to it. */
-@container k2-status (max-width: 479px) {
+/* A narrow status row (below 600 px, as for the bar of a selection): every control at its end that has a symbol
+   keeps only the symbol, as the head's controls on the phone, sort and group included; the words stay its name. A
+   menu keeps its chevron. A control with words alone keeps them, and the lead gives way to it. */
+@container k2-status (max-width: 599px) {
   .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
