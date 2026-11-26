@@ -3,6 +3,7 @@ import { dates } from "@k2b/stdlib";
 import {
   buildDays,
   type CalendarDayHours,
+  capBands,
   clockAt,
   type DayEntry,
   type DayGeometry,
@@ -10,7 +11,6 @@ import {
   dayHeight,
   dayHeightTerms,
   dayKeyOf,
-  capLanes,
   dayLanes,
   dayMinuteAt,
   dayTopY,
@@ -307,23 +307,35 @@ describe("lanes and geometry", () => {
     ]);
   });
 
-  test("beyond the cap an overlap keeps its first lanes and collapses the rest into one +n", () => {
+  test("at most two side by side: an entry takes a free place as soon as one is free, the rest go to the +n of their hour", () => {
     const band = (item: string, start: number, end: number) => ({ item, start, end });
-    const lanes = dayLanes(
-      [band("a", 600, 720), band("b", 600, 720), band("c", 610, 720), band("d", 620, 720), band("e", 670, 720), band("f", 800, 860)],
+    const { shown, more } = capBands(
+      [
+        band("a", 600, 720),
+        band("b", 600, 660),
+        band("c", 610, 700),
+        band("d", 620, 680),
+        // b's place is free again at 11:00: e takes it instead of collapsing
+        band("e", 660, 720),
+        band("f", 670, 690),
+        band("g", 800, 860),
+      ],
       20,
+      2,
     );
-    const { shown, more } = capLanes(lanes, 3);
     expect(shown.map((entry) => [entry.item, entry.lane, entry.lanes, entry.more ?? false])).toEqual([
-      ["a", 0, 3, true],
-      ["b", 1, 3, true],
-      ["c", 2, 3, true],
-      // a band alone keeps the whole width and no "+n"
-      ["f", 0, 1, false],
+      ["a", 0, 2, true],
+      ["b", 1, 2, true],
+      ["e", 1, 2, true],
+      // alone, with the whole width and no +n beside it
+      ["g", 0, 1, false],
     ]);
-    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([[620, ["d", "e"]]]);
+    expect(more.map((entry) => [entry.minute, entry.bands.map((each) => each.item)])).toEqual([
+      [610, ["c", "d"]],
+      [670, ["f"]],
+    ]);
     // within the cap nothing collapses
-    expect(capLanes(lanes, 5).more).toEqual([]);
+    expect(capBands([band("a", 600, 660), band("b", 610, 670)], 20, 2).more).toEqual([]);
   });
 
   test("deadlines whose pills would cover each other share the width; one alone keeps it", () => {

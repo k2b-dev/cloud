@@ -150,7 +150,8 @@ for (const view of ["week", "day"] as const)
         }
         // at most a few columns side by side; the rest are counted in "+n" buttons, and together they are all 30
         const columns = new Set(shown.map((band) => band.left)).size;
-        expect(columns).toBeLessThanOrEqual(2);
+        // two side by side, one in the narrow days of a phone's week
+        expect(columns).toBeLessThanOrEqual(view === "week" && width < 768 ? 1 : 2);
         const more = page.locator(".k2b-calendar-more");
         expect(await more.count()).toBeGreaterThan(0);
         const counts = await more.evaluateAll((buttons) => buttons.map((button) => Number(button.textContent?.replace("+", "") ?? 0)));

@@ -986,6 +986,8 @@ export const CalendarWeekView = (props: TimeViewProps) => {
                   dayKey={key}
                   column={indexOf(key)}
                   expanded={nightsOpen()}
+                  // a phone shows a few narrow days: one entry side by side, the rest in "+n"
+                  maxLanes={visibleCount() < 7 ? 1 : 2}
                   tabOf={tabOf}
                   lastPointer={() => lastPointer}
                   setLastPointer={(value) => {
@@ -1017,6 +1019,8 @@ const WeekColumn = (props: {
   dayKey: string;
   column: number;
   expanded: boolean;
+  /** How many entries stand side by side before the rest collapse into "+n". */
+  maxLanes: number;
   tabOf: (id: string) => number;
   lastPointer: () => string;
   setLastPointer: (value: string) => void;
@@ -1025,7 +1029,7 @@ const WeekColumn = (props: {
   const view = props.view;
   const model = createMemo(() => view.dayOf(props.dayKey));
   const wake = () => view.wake();
-  const bands = createMemo(() => dayBands(view, props.dayKey, props.expanded));
+  const bands = createMemo(() => dayBands(view, props.dayKey, props.expanded, props.maxLanes));
   const gaps = createMemo(() => dayGaps(view, props.dayKey));
   const markers = () => model().markers.filter((marker) => marker.minute < (props.expanded ? DAY_MINUTES : wake()));
   /** Deadlines whose pills would cover each other share the width; keyed by marker, so rows keep their elements. */

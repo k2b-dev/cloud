@@ -6,7 +6,7 @@ import {
   addDayKeys,
   buildDays,
   type CalendarDayHours,
-  capLanes,
+  capBands,
   clockAt,
   DAY_MINUTES,
   type DayEntry,
@@ -17,7 +17,6 @@ import {
   type DayMore,
   type DaySpan,
   dayKeyOf,
-  dayLanes,
   dayMinuteAt,
   dayTopTerms,
   dayYTerms,
@@ -1013,22 +1012,27 @@ export const TimeMore = (props: {
           if (!opened && list?.contains(document.activeElement)) button?.focus({ preventScroll: true });
         }}
       >
-        <h2>{label()}</h2>
-        <ul>
-          <For each={props.more.bands}>
-            {(band) => (
-              <li>
-                <EventChip
-                  event={view.normalized(band.item, props.dayKey)}
-                  owner={view.props.owner}
-                  href={eventHref(view.props.owner, band.item)}
-                  compact
-                  leadingTime={`${view.clock(band.start)}–${view.clock(band.end)}`}
-                />
-              </li>
-            )}
-          </For>
-        </ul>
+        {/* the month view's list of a day, for the entries the "+n" stands for */}
+        <div class="k2b-calendar-day-list">
+          <div class="k2b-calendar-day-list__title">{label()}</div>
+          <ul class="k2b-calendar-day-list__events">
+            <For each={props.more.bands}>
+              {(band) => (
+                <li>
+                  <EventChip
+                    event={view.normalized(band.item, props.dayKey)}
+                    owner={view.props.owner}
+                    href={eventHref(view.props.owner, band.item)}
+                    compact
+                    leadingTime={view.clock(band.start)}
+                    faces={1}
+                    linkCount
+                  />
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
       </div>
     </>
   );
@@ -1278,11 +1282,14 @@ export const dayGaps = (view: TimeView, key: string) => freeGaps(view.dayOf(key)
 /** How many entries stand side by side in a day's timeline; from the third overlapping one on, they collapse into "+n". */
 export const MAX_LANES = 2;
 
-/** The bands of a day with their lanes, cut to what its timeline draws; an overlap beyond two lanes gives a "+n". */
-export const dayBands = (view: TimeView, key: string, expanded: boolean) => {
+/**
+ * The bands of a day with their lanes, cut to what its timeline draws; what finds no place among `max` (two, one in
+ * the narrow days of a phone's week) gives a "+n".
+ */
+export const dayBands = (view: TimeView, key: string, expanded: boolean, max = MAX_LANES) => {
   const limit = expanded ? DAY_MINUTES : view.wake();
   const visible = view.dayOf(key).bands.filter((band) => Math.min(limit, band.end) > Math.max(0, band.start));
-  return capLanes(dayLanes(visible, LANE_MINUTES), MAX_LANES);
+  return capBands(visible, LANE_MINUTES, max);
 };
 
 /** Entries the folded night hides, as chips with their time. */

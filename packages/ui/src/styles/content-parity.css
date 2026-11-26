@@ -2541,25 +2541,9 @@
 
 .k2b-ui .k2b-calendar-more:focus-visible {
   outline: var(--k2b-focus-width) solid var(--k2b-focus-ring);
-  outline-offset: 1px;
+  outline-offset: var(--k2b-focus-offset);
 }
 
-.k2b-ui .k2b-calendar-popover[data-kind="more"] ul {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  margin: 0;
-  padding: 0.5rem;
-  list-style: none;
-}
-
-.k2b-ui .k2b-calendar-popover[data-kind="more"] h2 {
-  margin: 0;
-  padding: 0.5rem 0.75rem 0;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--k2b-text-secondary);
-}
 
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__meta {
   margin: 0;

@@ -270,30 +270,40 @@ export const dayLanes = <T>(bands: readonly DayBand<T>[], minimum: number): DayL
     ({ item, lane, lanes, groupId }) => ({ ...item, lane, lanes, group: groupId }),
   );
 
-/** The entries of an overlap that do not fit side by side: one "+n" for them, at the first one's start. */
-export type DayMore<T> = { group: number; minute: number; bands: DayLane<T>[] };
+/** Entries that found no free place side by side, by the hour they start in: one "+n" for them, at the first start. */
+export type DayMore<T> = { minute: number; bands: DayBand<T>[] };
 
 /**
- * At most `max` bands side by side: in an overlap with more lanes, the bands of the first `max` lanes stay (with room
- * for "+n" beside them), and the others collapse into one "+n" per overlap, which stands at their first start.
+ * At most `max` bands side by side. In time order each entry takes a free place among the first `max`, as soon as one
+ * is free again, so a long crowded day stays filled over its hours; an entry that finds none collapses into the "+n" of
+ * the hour it starts in. The bands that stay take their lanes among themselves; a band beside a "+n" leaves it room.
  */
-export const capLanes = <T>(lanes: readonly DayLane<T>[], max: number): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
-  const shown: DayLane<T>[] = [];
+export const capBands = <T>(bands: readonly DayBand<T>[], minimum: number, max: number): { shown: DayLane<T>[]; more: DayMore<T>[] } => {
+  const end = (band: DayBand<T>) => Math.max(band.end, band.start + minimum);
+  const sorted = [...bands].sort((left, right) => left.start - right.start || end(right) - end(left));
+  const taken: { end: number; lane: number }[] = [];
+  const kept: DayBand<T>[] = [];
+  const hidden: DayBand<T>[] = [];
+  for (const band of sorted) {
+    for (let index = taken.length - 1; index >= 0; index -= 1) if (taken[index]!.end <= band.start) taken.splice(index, 1);
+    const lane = Array.from({ length: max }, (_, each) => each).find((each) => !taken.some((entry) => entry.lane === each));
+    if (lane === undefined) {
+      hidden.push(band);
+      continue;
+    }
+    taken.push({ end: end(band), lane });
+    kept.push(band);
+  }
   const more = new Map<number, DayMore<T>>();
-  for (const band of lanes) {
-    if (band.lanes <= max) {
-      shown.push(band);
-      continue;
-    }
-    if (band.lane < max) {
-      shown.push({ ...band, lanes: max, more: true });
-      continue;
-    }
-    const entry = more.get(band.group) ?? { group: band.group, minute: Math.max(0, band.start), bands: [] };
+  for (const band of hidden) {
+    const hour = Math.floor(Math.max(0, band.start) / 60) * 60;
+    const entry = more.get(hour) ?? { minute: Math.max(0, band.start), bands: [] };
     entry.bands.push(band);
     entry.minute = Math.min(entry.minute, Math.max(0, band.start));
-    more.set(band.group, entry);
+    more.set(hour, entry);
   }
+  const beside = (band: DayBand<T>) => hidden.some((other) => other.start < end(band) && end(other) > band.start);
+  const shown = dayLanes(kept, minimum).map((band) => (beside(band) ? { ...band, more: true } : band));
   return { shown, more: [...more.values()].sort((left, right) => left.minute - right.minute) };
 };
 
