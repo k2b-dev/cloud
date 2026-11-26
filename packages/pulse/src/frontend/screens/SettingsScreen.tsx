@@ -6,6 +6,7 @@ import { text } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { DEFAULT_ICON_OPTIONS, useLocale } from "@k2b/ui";
 import {
+  Avatar,
   Bar,
   Button,
   Cells,
@@ -146,73 +147,76 @@ export default function SettingsScreen(props: SettingsScreenProps) {
           />
         }
       >
-        <Pane label={words().settingsTitle({ base: base().name })} scrollKey="pulse-settings">
-          <Show when={!props.canAdmin}>
-            <Notice tone="note" icon="lock" title={t().settingsNotAdmin}>
-              {props.admins.join(", ")}
-            </Notice>
-          </Show>
-          <Show when={refreshFailed()}>
-            <Notice
-              tone="bad"
-              icon="alert-circle"
-              title={t().pulseDataRefreshFailed}
-              actions={[{ label: words().reload, icon: "refresh", onClick: () => void refreshBase().catch(() => undefined) }]}
-            >
-              {t().refreshBeforeChanges}
-            </Notice>
-          </Show>
-          <Show when={props.tab === "general" || props.tab === "retention"}>
-            <BaseForm
-              base={base()}
-              tab={props.tab === "retention" ? "retention" : "general"}
-              canAdmin={props.canAdmin}
-              maxRawRetentionDays={props.maxRawRetentionDays}
-              loading={loading()}
-              form={form}
-            />
-          </Show>
-          <Show when={props.tab === "members"}>
-            <Members base={base()} canAdmin={props.canAdmin} initial={props.access} refreshBase={refreshBase} />
-          </Show>
-          <Show when={props.tab === "usage"}>
-            <Usage
-              base={base()}
-              limits={props.limits}
-              canAdmin={props.canAdmin}
-              busy={loading()}
-              retry={() => void controller.retryStore(base()).then((next) => next && setBase(next))}
-            />
-          </Show>
-          <Show when={props.tab === "danger"}>
-            {/* the tab says "Leeren und löschen"; the section says what these deeds have in common */}
-            <Section icon="alert-triangle" title={words().irreversible} summary={t().destructiveBaseActions}>
-              <List label={t().settingsDanger}>
-                <Row
-                  // what cannot be undone carries its warning colour
-                  mark={{ icon: "eraser", color: "#d97706" }}
-                  lines={[t().clearTelemetry, base().store.writeBlockReason ? store().clearBlockedText : t().clearTelemetryDescription]}
-                  action={{
-                    label: words().clear,
-                    icon: "eraser",
-                    disabled: !props.canAdmin || loading() || Boolean(base().store.writeBlockReason),
-                    onClick: () => void controller.clearData(base()),
-                  }}
-                />
-                <Row
-                  mark={{ icon: "trash", color: "#dc2626" }}
-                  lines={[t().deletePulseBase, t().deletePulseBaseDescription]}
-                  action={{
-                    label: words().delete,
-                    icon: "trash",
-                    disabled: !props.canAdmin || loading(),
-                    onClick: () => void controller.deleteBase(base()),
-                  }}
-                />
-              </List>
-            </Section>
-          </Show>
-        </Pane>
+        <Pane.Split>
+          <Pane label={words().settingsTitle({ base: base().name })} scrollKey="pulse-settings">
+            <Show when={!props.canAdmin}>
+              <Notice tone="note" icon="lock" title={t().settingsNotAdmin}>
+                {props.admins.join(", ")}
+              </Notice>
+            </Show>
+            <Show when={refreshFailed()}>
+              <Notice
+                tone="bad"
+                icon="alert-circle"
+                title={t().pulseDataRefreshFailed}
+                actions={[{ label: words().reload, icon: "refresh", onClick: () => void refreshBase().catch(() => undefined) }]}
+              >
+                {t().refreshBeforeChanges}
+              </Notice>
+            </Show>
+            <Show when={props.tab === "general" || props.tab === "retention"}>
+              <BaseForm
+                base={base()}
+                tab={props.tab === "retention" ? "retention" : "general"}
+                canAdmin={props.canAdmin}
+                maxRawRetentionDays={props.maxRawRetentionDays}
+                loading={loading()}
+                form={form}
+              />
+            </Show>
+            <Show when={props.tab === "members"}>
+              <Members base={base()} canAdmin={props.canAdmin} initial={props.access} refreshBase={refreshBase} />
+            </Show>
+            <Show when={props.tab === "usage"}>
+              <Usage
+                base={base()}
+                limits={props.limits}
+                canAdmin={props.canAdmin}
+                busy={loading()}
+                retry={() => void controller.retryStore(base()).then((next) => next && setBase(next))}
+              />
+            </Show>
+            <Show when={props.tab === "danger"}>
+              {/* the tab says "Leeren und löschen"; the section says what these deeds have in common */}
+              <Section icon="alert-triangle" title={words().irreversible} summary={t().destructiveBaseActions}>
+                <List label={t().settingsDanger}>
+                  <Row
+                    // what cannot be undone carries its warning colour
+                    mark={{ icon: "eraser", color: "#d97706" }}
+                    lines={[t().clearTelemetry, base().store.writeBlockReason ? store().clearBlockedText : t().clearTelemetryDescription]}
+                    action={{
+                      label: words().clear,
+                      icon: "eraser",
+                      disabled: !props.canAdmin || loading() || Boolean(base().store.writeBlockReason),
+                      onClick: () => void controller.clearData(base()),
+                    }}
+                  />
+                  <Row
+                    mark={{ icon: "trash", color: "#dc2626" }}
+                    lines={[t().deletePulseBase, t().deletePulseBaseDescription]}
+                    action={{
+                      label: words().delete,
+                      icon: "trash",
+                      disabled: !props.canAdmin || loading(),
+                      onClick: () => void controller.deleteBase(base()),
+                    }}
+                  />
+                </List>
+              </Section>
+            </Show>
+          </Pane>
+          <BaseOverview base={base()} tab={props.tab} />
+        </Pane.Split>
       </Workspace>
     </>
   );
@@ -651,5 +655,83 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
         </Show>
       </Section>
     </>
+  );
+}
+
+/**
+ * Beside every settings tab, the base at a glance: whether its store takes data and how full it is, who
+ * administers it, and since when it exists. A part the open tab already shows in full stays out of the column.
+ */
+function BaseOverview(props: { base: PulseBase; tab: PulseSettingsTab }) {
+  const t = usePulseMessages();
+  const words = useScreenMessages();
+  const locale = useLocale();
+  const store = () => baseStoreMessages.resolve([locale()]).t;
+  const state = () => storeState(props.base.store, store());
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
+  const people = () => props.base.members ?? [];
+  return (
+    <Pane side label={words().overview} width={{ min: 280, default: 340 }}>
+      <Section title={words().overview}>
+        <List label={words().overview}>
+          <Show when={props.tab !== "usage"}>
+            <Row
+              mark={{
+                icon: "database",
+                color: state().status === "bad" ? "#dc2626" : state().status === "warn" ? "#d97706" : "#059669",
+              }}
+              lines={[
+                state().label,
+                props.base.store.usage
+                  ? `${bytes(props.base.store.usage.bytes)} / ${bytes(props.base.store.limits.storageBytes)}`
+                  : store().notMeasured,
+              ]}
+              end={
+                props.base.store.usage ? (
+                  <Progress
+                    value={props.base.store.usage.bytes}
+                    of={props.base.store.limits.storageBytes}
+                    label={t().settingsShareUsed({
+                      share: new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(
+                        props.base.store.usage.bytes / Math.max(1, props.base.store.limits.storageBytes),
+                      ),
+                    })}
+                  />
+                ) : undefined
+              }
+            />
+          </Show>
+          <Show when={props.tab !== "members" && people().length > 0}>
+            <Row
+              mark={{ icon: "users", color: "var(--k2-muted)" }}
+              lines={[words().membersMeta({ count: props.base.memberCount })]}
+              end={
+                <Avatar.Stack
+                  people={people().map((member) => ({ name: principalLabel(member, locale()) }))}
+                  max={3}
+                  label={people()
+                    .map((member) => principalLabel(member, locale()))
+                    .join(", ")}
+                />
+              }
+            />
+          </Show>
+        </List>
+      </Section>
+      <Section title={words().facts}>
+        <Facts
+          items={[
+            {
+              label: words().created,
+              value: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(props.base.createdAt)),
+            },
+            ...(props.tab === "general" ? [] : [{ label: t().settingsTimezone, value: props.base.timezone }]),
+            ...(props.tab === "retention"
+              ? []
+              : [{ label: t().rawDataRetention, value: words().retentionDays({ days: props.base.rawRetentionDays }) }]),
+          ]}
+        />
+      </Section>
+    </Pane>
   );
 }
