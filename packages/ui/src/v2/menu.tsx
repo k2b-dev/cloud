@@ -31,7 +31,8 @@ export type MenuItem = {
   meta?: string;
   /**
    * The value set now through this entry's submenu or panel, such as the time a reminder is due: it stands at the end
-   * in the app's colour, as a filter shows a bound that is set.
+   * in the app's colour, as a filter shows a bound that is set, and is part of the entry's name. It takes the place
+   * of `meta`, which does not show beside it.
    */
   current?: string;
   /** An entry that toggles: `onClick` flips it. */
@@ -50,10 +51,14 @@ export type MenuItem = {
 /**
  * Entries under a heading, such as "Antwortart". With `choice` the section is one choice: its entries are options,
  * the one whose `value` (or `label`) is `choice` carries the tick, and choosing one closes the menu and calls
- * `onChoose` with its value. The menu draws a line between a section and what stands around it.
+ * `onChoose` with its value; choosing the ticked one only closes it. The menu draws a line between a section and what
+ * stands around it.
  */
 export type MenuSection = {
-  /** The quiet heading over the entries, such as "Sortieren nach". */
+  /**
+   * The quiet heading over the entries, such as "Sortieren nach". "" leaves it out, for a choice whose entries say
+   * enough by themselves (offered times, with the one set now ticked).
+   */
   title: string;
   /** The entries under the heading. */
   items: readonly MenuItem[];
@@ -186,9 +191,17 @@ const Section = (props: { level: MenuLevelParts; section: MenuSection; name: str
   // misses that moment, so the heading's id is handed to it here, once the heading is there.
   const [headingId, setHeadingId] = createSignal<string>();
   const heading = (
-    <props.level.GroupLabel group={props.name} class="k2-mh" ref={(element: HTMLElement) => queueMicrotask(() => setHeadingId(element.id))}>
-      {props.section.title}
-    </props.level.GroupLabel>
+    <Show when={props.section.title}>
+      {(title) => (
+        <props.level.GroupLabel
+          group={props.name}
+          class="k2-mh"
+          ref={(element: HTMLElement) => queueMicrotask(() => setHeadingId(element.id))}
+        >
+          {title()}
+        </props.level.GroupLabel>
+      )}
+    </Show>
   );
   if (untrack(() => props.section.choice) === undefined) {
     return (
@@ -281,6 +294,7 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
  * menu's data changes (a clock that moved on keeps what was typed in it). On the phone it is a sheet of its own.
  */
 const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Record<string, unknown>; lead: boolean }) => {
+  const t = useOverlayMessages();
   const phone = usePhone();
   const [open, setOpen] = createSignal(false);
   const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
@@ -364,6 +378,7 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
             <button
               type="button"
               class="k2-mi k2-panel-back"
+              aria-label={t().backTo({ name: props.item.label })}
               onClick={() => {
                 setOpen(false);
                 entry()?.focus();

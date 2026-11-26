@@ -44,7 +44,11 @@ const Panel = (props: { close: () => void }) => {
   );
 };
 
+const whenLabels: Record<string, string> = { today: "Heute", tomorrow: "Morgen" };
+
 export function Demo() {
+  // a value set through a submenu that is one choice without a heading, shown at its entry's end
+  const [when, setWhen] = createSignal("tomorrow");
   return (
     <Workspace
       head={
@@ -59,6 +63,25 @@ export function Demo() {
                 "separator",
                 { label: "Notiz und Zeit …", panel: (close) => <Panel close={close} /> },
                 { label: "Gesperrt …", disabled: true, panel: (close) => <Panel close={close} /> },
+                {
+                  label: "Wann",
+                  current: whenLabels[when()],
+                  meta: "⌘ W",
+                  items: [
+                    {
+                      title: "",
+                      items: [
+                        { label: "Heute", value: "today" },
+                        { label: "Morgen", value: "tomorrow" },
+                      ],
+                      choice: when(),
+                      onChoose: (value) => {
+                        setWhen(value);
+                        did(`when:${value}`);
+                      },
+                    },
+                  ],
+                },
               ]}
             />
           }

@@ -314,6 +314,39 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
 
   // Design check of #4157: what is set shows where it is changed. The entry names the time at its end in the app's
   // colour, the offered time that is it carries the tick, and the reminder's entries say that only you get it.
+  // Review of #4157 (r2): with a time set, the offered times are one choice. Another time closes the menu and sends
+  // it once; the ticked time closes the menu and sends nothing.
+  test("with a reminder set, another offered time replaces it at once; the ticked one sends nothing", async () => {
+    const { page, errors, sent } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: /^Morgen, 8:00/ }).click();
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      // another time: the menu closes and the new time is sent once
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: /^Erinnerung ändern/ }).hover();
+      const monday = page.getByRole("menuitemradio", { name: /^Montag, 8:00/ });
+      expect(await page.getByRole("menuitemradio", { name: /^Morgen, 8:00/ }).getAttribute("aria-checked")).toBe("true");
+      expect(await monday.getAttribute("aria-checked")).toBe("false");
+      await monday.click();
+      await openMenus(page, 0);
+      await calls(sent, 2);
+      expect(sent[1]).toMatchObject({ method: "PUT", body: { dueAt: "2026-11-30T08:00:00.000Z" } });
+      // the ticked time: the menu closes, nothing is sent again
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: /^Erinnerung ändern/ }).hover();
+      await page.getByRole("menuitemradio", { name: /^Montag, 8:00/ }).click();
+      await openMenus(page, 0);
+      await Bun.sleep(300);
+      expect(sent.length).toBe(2);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test('a reminder that is set shows at its entry, its offered time carries the tick, under "only you"', async () => {
     const { page, errors, sent } = await open();
     try {
@@ -328,8 +361,8 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       const value = change.locator(".k2-mi-meta[data-set]");
       expect((await value.textContent())?.replace(/\u202f/g, " ")).toBe("Sa., 28. Nov., 8:00");
       await change.hover();
-      expect(await page.getByRole("menuitemcheckbox", { name: /^Morgen, 8:00/ }).getAttribute("aria-checked")).toBe("true");
-      expect(await page.getByRole("menuitemcheckbox", { name: /^Montag, 8:00/ }).getAttribute("aria-checked")).toBe("false");
+      expect(await page.getByRole("menuitemradio", { name: /^Morgen, 8:00/ }).getAttribute("aria-checked")).toBe("true");
+      expect(await page.getByRole("menuitemradio", { name: /^Montag, 8:00/ }).getAttribute("aria-checked")).toBe("false");
       expect(errors).toEqual([]);
     } finally {
       await page.close();

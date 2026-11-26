@@ -216,3 +216,61 @@ test("a disabled panel entry opens its panel neither on a click nor on Enter, Sp
     expect(await page.locator('[role="menu"]').count()).toBe(1);
   });
 });
+
+// Review of #4157 (r2): `current` is the value set through an entry; it stands at the end in the app's colour, is part
+// of the entry's name, and takes the place of `meta`.
+test("an entry's current value stands at its end, set apart, in its name, in place of its meta", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    const when = page.getByRole("menuitem", { name: /^Wann/ });
+    expect(await when.locator(".k2-mi-meta[data-set]").textContent()).toBe("Morgen");
+    expect((await when.textContent())?.includes("⌘ W")).toBe(false);
+    expect(await page.getByRole("menuitem", { name: "Wann Morgen" }).count()).toBe(1);
+    const look = await when.locator(".k2-mi-meta[data-set]").evaluate((element) => getComputedStyle(element).fontWeight);
+    expect(Number(look)).toBeGreaterThanOrEqual(600);
+  });
+});
+
+// Review of #4157 (r2): a choice without a heading: another option closes the menu and is chosen once; the ticked one
+// only closes it.
+test("a choice without a heading: another option is chosen once and closes the menu, the ticked one only closes it", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+    const today = page.getByRole("menuitemradio", { name: "Heute" });
+    await today.waitFor();
+    expect(await page.locator('[role="menu"]').nth(1).locator(".k2-mh").count()).toBe(0);
+    expect(await page.getByRole("menuitemradio", { name: "Morgen" }).getAttribute("aria-checked")).toBe("true");
+    await today.click();
+    await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+    expect(await deeds(page)).toEqual(["when:today"]);
+    await page.getByRole("button", { name: "Später" }).click();
+    await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+    await page.getByRole("menuitemradio", { name: "Heute" }).click();
+    await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+    expect(await deeds(page)).toEqual(["when:today"]);
+  });
+});
+
+// Review of #4157 (r2): the head of a panel's sheet leads back, and says so to a screen reader.
+test("on the phone the head of a panel's sheet is named as the way back", async () => {
+  await withPage(
+    async (page) => {
+      await page.getByRole("button", { name: "Später" }).tap();
+      await sheetAtRest(page);
+      await entry(page).tap();
+      await panel(page).waitFor();
+      // the panel's own sheet has slid in (a tap while it moves scrolls it)
+      await page.waitForFunction(
+        () =>
+          document.querySelector<HTMLElement>('.k2-pop[data-presentation="sheet"]')?.style.getPropertyValue("--drawer-progress") === "1",
+      );
+      const back = panel(page).getByRole("button", { name: "Zurück zu Notiz und Zeit …" });
+      expect(await back.textContent()).toContain("Notiz und Zeit …");
+      await back.tap();
+      await panel(page).waitFor({ state: "detached" });
+      expect(await page.locator('[role="menu"]').count()).toBe(1);
+    },
+    { width: 390, touch: true },
+  );
+});

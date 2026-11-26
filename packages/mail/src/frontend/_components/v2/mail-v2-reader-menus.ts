@@ -83,17 +83,15 @@ export function createMailV2ReaderMenus(props: {
       if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast);
       choose(at);
     };
-    // with a time set, the offered time that is it carries the tick
+    const offered = mailV2LaterTimes(props.dateConfig, v2Text(), Date.now()).map(
+      (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), value: time.at, onClick: () => pick(time.at) }),
+    );
+    // With a time set, the offered times are one choice: the one that is set carries the tick, another replaces it
+    // and closes the menu, the ticked one only closes it.
     const set = current && Date.parse(current) > Date.now() ? Date.parse(current) : null;
+    const chosen = set === null ? undefined : offered.find((time) => time.value && Date.parse(time.value) === set)?.value;
     return [
-      ...mailV2LaterTimes(props.dateConfig, v2Text(), Date.now()).map(
-        (time): MenuItem => ({
-          label: time.label,
-          ...(time.meta ? { meta: time.meta } : {}),
-          ...(set === null ? {} : { checked: Date.parse(time.at) === set }),
-          onClick: () => pick(time.at),
-        }),
-      ),
+      ...(set === null ? offered : [{ title: "", items: offered, choice: chosen ?? "", onChoose: (at: string) => pick(at) }]),
       "separator",
       {
         label: v2Text().laterPick,
