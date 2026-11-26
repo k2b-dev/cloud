@@ -2,6 +2,7 @@ import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
+  createSignal,
   createUniqueId,
   For,
   type JSX,
@@ -14,13 +15,14 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
-import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
+import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type OnNavigate, type Person, type Status, type Width, widthRange } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -149,6 +151,14 @@ export type FactsProps = {
   inline?: boolean;
   /** At the end of the inline line, such as "Print". */
   end?: JSX.Element;
+  /**
+   * The values are on their way: a quiet bar lies on each, while labels, hints and copy buttons (not yet usable) stay.
+   * A value that is there (a refresh) keeps its exact room unseen under the bar, its lines, chips and wrapping; a value
+   * not there yet (`""`, `undefined`) is a bar of one line. So nothing moves when they come. Assistive technology
+   * hears "Wird geladen…" at each value. Give the labels the values will have, and `copy` (an empty string is
+   * enough) where a value will have it.
+   */
+  loading?: boolean;
 };
 
 /**
@@ -158,19 +168,24 @@ export type FactsProps = {
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
-    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined}>
+    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
       <For each={props.items}>
         {(item) => (
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                {item.value}
+                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
+                  {item.value}
+                </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
-              <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
+              {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
+              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
+                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              </Show>
             </dd>
           </div>
         )}
@@ -488,8 +503,8 @@ export type Column<T> = {
   /**
    * The width of the column, its minimum and default in px: a column that can be dragged wider or narrower (a grip in
    * its head); in a small table it is its default wide where the row has room and shares the room left with the other
-   * columns that can give way; where the row has less, it gives way down to its minimum. With `fixed` it is its default
-   * wide without a grip, such as a narrow column of numbers or deeds; it neither gives way nor grows. Columns without a
+   * columns that can give way; where the row has less, it gives way down to its minimum. `{ fixed }` is that width
+   * without a grip, such as a narrow column of numbers or deeds; it neither gives way nor grows. Columns without a
    * width take the rest of the row when no column can give way. Cut text never widens a column.
    */
   width?: Width;
@@ -584,6 +599,35 @@ const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
   <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
 );
 
+/**
+ * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
+ * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
+ */
+const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+  const grip = useGrip({
+    label: () => props.label,
+    value: () => props.value,
+    onChange: (px) => props.onChange(px),
+    min: () => props.width.min,
+    reset: () => props.width.default,
+    direction: () => 1,
+    measure: (element) => {
+      const head = element.parentElement?.previousElementSibling;
+      const scroller = element.closest(".k2-table-scroll");
+      const now = head?.getBoundingClientRect().width;
+      if (!now || !scroller) return undefined;
+      return { now, max: scroller.clientWidth };
+    },
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
+  });
+  return <span class="k2-cgrip" {...grip} />;
+};
+
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
   typeof value === "object" &&
@@ -593,7 +637,7 @@ const isPair = (value: CellValue): value is CellLines =>
   "lines" in value;
 
 /** The range of a column that can be dragged; a `fixed` width or none has no grip. */
-const resizable = <T,>(column: Column<T>) => (column.width && !column.width.fixed ? column.width : undefined);
+const resizable = <T,>(column: Column<T>) => (column.width && !("fixed" in column.width) ? column.width : undefined);
 
 /** A column of numbers, amounts or times: never cut. */
 const isNumeric = <T,>(column: Column<T>) => column.numeric ?? column.align === "end";
@@ -666,12 +710,24 @@ export const Table = <T,>(props: TableProps<T>) => {
   );
   // What each column needs, in px: at least `lo` (its minimum; a numeric one its longest value) and at most `hi` (its
   // default). A column without a width counts with 96 and 160 px.
-  // A `fixed` width is its minimum and its default at once.
+  // A `fixed` width is its minimum and its default at once; so is a width a person dragged with the grip (`sizes`).
+  // The widths the grips gave columns, by index; a column keeps its own width until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const held = (index: number) =>
+    sizes()[index] !== undefined || (props.columns[index]?.width ? "fixed" in props.columns[index]!.width! : false);
   const need = createMemo(() =>
     props.columns.map((column, index) => {
       const fit = (signs()[index] ?? 0) > 0 ? (signs()[index] ?? 0) * figureWidth + 32 : 0;
-      const width = column.width;
-      const span = width?.fixed ? { min: width.default, default: width.default } : width;
+      const dragged = sizes()[index];
+      // once a person has dragged a column, the columns hold their widths (the table scrolls instead of squeezing them)
+      const arranged = Object.keys(sizes()).length > 0;
+      const range = column.width ? widthRange(column.width) : undefined;
+      const span =
+        dragged !== undefined
+          ? { min: dragged, default: dragged }
+          : range && arranged
+            ? { min: range.default, default: range.default }
+            : range;
       const lo = Math.max(span?.min ?? flexibleMin, fit);
       return { lo, hi: Math.max(span?.default ?? flexibleColumn, lo) };
     }),
@@ -686,26 +742,25 @@ export const Table = <T,>(props: TableProps<T>) => {
   // no air on the right. A column without a width (a deed, a note) keeps its 160 px.
   const round = (value: number) => Math.round(value * 10000) / 10000;
   const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
-    const shown = need().filter((_, at) => !gone.has(at));
     const { lo, hi } = need()[index]!;
-    const least = shown.reduce((sum, each) => sum + each.lo, box);
-    const most = shown.reduce((sum, each) => sum + each.hi, box);
+    // a column without a width only fills what is left, so it counts with its minimum: the others reach their default
+    // as soon as the row holds them and that minimum
+    const reach = (at: number) => (props.columns[at]!.width === undefined ? need()[at]!.lo : need()[at]!.hi);
+    const least = need().reduce((sum, each, at) => (gone.has(at) ? sum : sum + each.lo), box);
+    const most = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + reach(at)), box);
     const below =
       hi === lo || most <= least
         ? `${lo}px`
         : `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
-    // What grows: the columns that can give way, in the measure they do; without such columns, the ones without a width
-    // (below); when every column is fixed, the last one, so there is always one that takes the rest of the row.
-    const span = (at: number) => {
-      const width = props.columns[at]!.width;
-      return width && !width.fixed ? need()[at]!.hi - need()[at]!.lo : 0;
-    };
+    // What grows: the columns without a width (below); without them, the columns that can give way, in the measure they
+    // do; when every column is fixed, the last one, so there is always one that takes the rest of the row.
+    const span = (at: number) => (props.columns[at]!.width && !held(at) ? need()[at]!.hi - need()[at]!.lo : 0);
     const spans = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + span(at)), 0);
     const free = need().filter((_, at) => !gone.has(at) && props.columns[at]!.width === undefined).length;
-    // Without columns that can give way, the columns without a width fill the whole rest of the row together, each in
-    // the measure of its text: a column cuts its text only when the row has no room left for both.
+    // The columns without a width fill the whole rest of the row together, each in the measure of its text: a column
+    // cuts its text only when the row has no room left for both.
     const isFree = (at: number) => !gone.has(at) && props.columns[at]!.width === undefined;
-    if (spans === 0 && free > 0 && isFree(index)) {
+    if (free > 0 && isFree(index)) {
       const fixedSum = need().reduce((sum, each, at) => (gone.has(at) || isFree(at) ? sum : sum + each.hi), box);
       // the room a text takes: its signs at about 7 px and the padding of its cell
       const room = (at: number) => lengths()[at]! * 7 + 32;
@@ -713,7 +768,7 @@ export const Table = <T,>(props: TableProps<T>) => {
       return `max(${lo}px, calc((100cqw - ${fixedSum}px) * ${round(room(index) / textSum)}))`;
     }
     const lastShown = props.columns.findLastIndex((_, at) => !gone.has(at));
-    const weight = spans > 0 ? span(index) / spans : free > 0 ? 0 : index === lastShown ? 1 : 0;
+    const weight = free > 0 ? 0 : spans > 0 ? span(index) / spans : index === lastShown ? 1 : 0;
     if (weight === 0) return below;
     return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(weight)}))`;
   };
@@ -721,7 +776,7 @@ export const Table = <T,>(props: TableProps<T>) => {
     const count = signs()[index] ?? 0;
     const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
     // a small table with widths sizes every column, also one without a width of its own; a large table keeps defaults
-    const fixed = column.width?.default;
+    const fixed = sizes()[index] ?? (column.width ? widthRange(column.width).default : undefined);
     const base = grid() ? (fixed !== undefined ? `${fixed}px` : undefined) : sized() ? shrink(index, gone) : undefined;
     return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
@@ -915,14 +970,11 @@ export const Table = <T,>(props: TableProps<T>) => {
                     {/* a grip only where the column before can be dragged; a fixed width has none */}
                     <Show when={index() > 0 ? resizable(props.columns[index() - 1]!) : undefined}>
                       {(width) => (
-                        <span
-                          class="k2-cgrip"
-                          role="separator"
-                          aria-orientation="vertical"
-                          aria-label={props.columns[index() - 1]!.title}
-                          aria-valuemin={width().min}
-                          aria-valuenow={width().default}
-                          tabindex="0"
+                        <ColumnGrip
+                          label={props.columns[index() - 1]?.title ?? ""}
+                          width={width()}
+                          value={sizes()[index() - 1] ?? width().default}
+                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
                         />
                       )}
                     </Show>

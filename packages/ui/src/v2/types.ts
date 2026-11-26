@@ -10,10 +10,15 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
 
 /**
- * The width of a column: its minimum and its default, in CSS px. It can be dragged; `fixed` keeps it at its default
- * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen).
+ * The width of a column, in CSS px: `{ min, default }` can be dragged between its minimum and wider; `{ fixed }` keeps
+ * that width without a grip, for a page to read rather than to arrange (a visitor page, a wall screen) or a narrow
+ * column of numbers or deeds.
  */
-export type Width = { min: number; default: number; fixed?: boolean };
+export type Width = { min: number; default: number } | { fixed: number };
+
+/** A width as minimum and default, and whether it is fixed (a fixed width is both, and has no grip). */
+export const widthRange = (width: Width): { min: number; default: number; fixed: boolean } =>
+  "fixed" in width ? { min: width.fixed, default: width.fixed, fixed: true } : { min: width.min, default: width.default, fixed: false };
 
 /**
  * An action as data. The primitive decides whether it becomes a button, an icon button or a text button, so the

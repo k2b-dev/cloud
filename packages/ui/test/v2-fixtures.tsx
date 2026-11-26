@@ -600,10 +600,10 @@ export const fixtures = {
           columns={[
             { title: "Notizbuch", cell: (row) => row.name },
             { title: "Besitzer", cell: (row) => row.owner },
-            { title: "Seiten", width: { min: 100, default: 100, fixed: true }, align: "end", cell: (row) => row.pages },
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
             {
               title: "Aktion",
-              width: { min: 56, default: 56, fixed: true },
+              width: { fixed: 56 },
               cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.name}`} />,
             },
           ]}
@@ -624,12 +624,12 @@ export const fixtures = {
             { pages: "18", name: "Messen", place: "Halle 2" },
           ]}
           columns={[
-            { title: "Seiten", width: { min: 100, default: 100, fixed: true }, align: "end", cell: (row) => row.pages },
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
             { title: "Name", cell: (row) => row.name },
             { title: "Ort", cell: (row) => row.place },
             {
               title: "Aktionen",
-              width: { min: 72, default: 72, fixed: true },
+              width: { fixed: 72 },
               cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für Notizbuch ${row.pages}`} />,
             },
           ]}
@@ -651,7 +651,7 @@ export const fixtures = {
           ]}
           columns={[
             { title: "Führung", width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.title, row.host] }) },
-            { title: "Zeit", width: { min: 80, default: 80, fixed: true }, numeric: true, cell: (row) => row.time },
+            { title: "Zeit", width: { fixed: 80 }, numeric: true, cell: (row) => row.time },
           ]}
         />
       </Pane>,

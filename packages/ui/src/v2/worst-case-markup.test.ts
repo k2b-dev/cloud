@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
+import type { Width } from "./types";
 
 // What the server sends for the worst case (break-ui, 25.11.): numbers that are never cut, columns that drop by the
 // table's room, a person in a cell, counts in the locale's figures, progress beyond its whole and
@@ -17,6 +18,7 @@ const { Tabs } = await import("./components");
 const { Section } = await import("./structure");
 const { Progress } = await import("./marks");
 const { LocaleProvider } = await import("../intl/locale");
+const { Pane } = await import("./layout");
 
 type Invoice = { number: string; customer: string; amount: string };
 const rows: Invoice[] = [
@@ -71,12 +73,13 @@ test("drop columns leave one by one from the last, by a container query on the t
     `@container k2-table (width < 558px) { .k2-ui [data-k2-table="${id}"] [data-drop-step="2"] { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`,
   );
   // each step shares the room anew among the columns still shown (delta review r4): without the date the customer
-  // gives way between 160 and 240 px over 558 to 722 px, without the number too over 438 to 582 px
+  // gives way between 160 and 240 px over 558 to 658 px, without the number too over 438 to 518 px (the note, without a
+  // width, counts with its minimum and takes what is left)
   expect(markup).toContain(
-    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 558px) * 0.4878), 240px), calc(240px + (100cqw - 722px) * 0.8)); }`,
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: clamp(160px, calc(160px + (100cqw - 558px) * 0.8), 240px); }`,
   );
   expect(markup).toContain(
-    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: max(clamp(160px, calc(160px + (100cqw - 438px) * 0.5556), 240px), calc(240px + (100cqw - 582px) * 1)); }`,
+    `[data-k2-table="${id}"] col:nth-child(2) { --k2-col-w: clamp(160px, calc(160px + (100cqw - 438px) * 1), 240px); }`,
   );
   // the column leaves with its cells, so the remaining columns keep their widths
   expect(markup).toMatch(/<col data-drop="" data-drop-step="1"/);
@@ -114,14 +117,32 @@ test("fixed widths carry no grip; when every column is fixed, the last one takes
       label: "Rechnungen",
       rows,
       columns: [
-        { title: "Kunde", width: { min: 200, default: 200, fixed: true }, cell: (row) => row.customer },
-        { title: "Nummer", width: { min: 160, default: 160, fixed: true }, cell: (row) => row.number },
+        { title: "Kunde", width: { fixed: 200 }, cell: (row) => row.customer },
+        { title: "Nummer", width: { fixed: 160 }, cell: (row) => row.number },
       ],
     }),
   );
   expect(markup).not.toContain("k2-cgrip");
   expect(markup).toContain("--k2-col-base:200px");
   expect(markup).toContain("--k2-col-base:max(160px, calc(160px + (100cqw - 360px) * 1))");
+});
+
+test("a pane of fixed width stands at that width without a grip on its seam", () => {
+  const split = (width: Width) =>
+    renderToString(() =>
+      createComponent(Pane.Split, {
+        get children() {
+          return [
+            createComponent(Pane, { label: "Liste", width, children: "Liste" }),
+            createComponent(Pane, { label: "Eintrag", children: "Eintrag" }),
+          ];
+        },
+      }),
+    );
+  expect(split({ min: 320, default: 400 })).toContain("k2-grip");
+  const fixed = split({ fixed: 360 });
+  expect(fixed).not.toContain("k2-grip");
+  expect(fixed).toContain("--k2-pane-w:360px");
 });
 
 test("a person in a cell is a picture beside lines, the picture without a name of its own", () => {

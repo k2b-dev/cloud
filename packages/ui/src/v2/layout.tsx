@@ -1,4 +1,5 @@
 import {
+  type Accessor,
   createContext,
   createEffect,
   createSignal,
@@ -9,19 +10,21 @@ import {
   onMount,
   children as resolveChildren,
   Show,
+  splitProps,
   useContext,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
+import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
-import { Empty } from "./states";
+import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type OnNavigate, type Person, type Status, type Width, widthRange } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -90,29 +93,51 @@ const centerGrip = (grip: HTMLElement) => {
   });
 };
 
-/**
- * The seam between two columns: the one 1 px line, and on a line that moves its grip. The grip is the shape only;
- * dragging and the keyboard come with the behaviour layer.
- */
-const Seam = (props: { grip?: { label: string; width: Width } }) => (
+/** A grip on a seam: its name and the one column it moves. */
+type SeamGrip = Omit<GripOptions, "label" | "min" | "reset" | "observe"> & { label: string; width: { min: number; default: number } };
+
+/** The grip of a seam: a pointer drag or the keys move the width of its column (`useGrip`). */
+const SeamGrip = (props: { grip: SeamGrip }) => {
+  const grip = useGrip({
+    label: () => props.grip.label,
+    value: () => props.grip.value(),
+    onChange: (px) => props.grip.onChange(px),
+    min: () => props.grip.width.min,
+    reset: () => props.grip.width.default,
+    direction: () => props.grip.direction(),
+    measure: (element) => props.grip.measure(element),
+    // the row of columns around the seam and every column in it
+    observe: (element) => {
+      const row = element.parentElement?.parentElement;
+      return row ? [row, ...row.children] : [];
+    },
+  });
+  const [ref, attrs] = splitProps(grip, ["ref"]);
+  return (
+    <span
+      ref={(element) => {
+        ref.ref(element);
+        centerGrip(element);
+      }}
+      class="k2-grip"
+      data-k2-grip=""
+      {...attrs}
+    />
+  );
+};
+
+/** The seam between two columns: the one 1 px line, and on a line that moves its grip. */
+const Seam = (props: { grip?: SeamGrip }) => (
   <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"}>
-    <Show when={props.grip}>
-      {(grip) => (
-        <span
-          ref={centerGrip}
-          class="k2-grip"
-          data-k2-grip=""
-          role="separator"
-          tabindex="0"
-          aria-orientation="vertical"
-          aria-label={grip().label}
-          aria-valuemin={grip().width.min}
-          aria-valuenow={grip().width.default}
-        />
-      )}
-    </Show>
+    <Show when={props.grip}>{(grip) => <SeamGrip grip={grip()} />}</Show>
   </div>
 );
+
+/** How much `element` can give: its rendered width above its own minimum. */
+const slackOf = (element: Element) => {
+  const width = element.getBoundingClientRect().width;
+  return Math.max(0, width - (Number.parseFloat(getComputedStyle(element).minWidth) || 0));
+};
 
 // ── Workspace ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -176,7 +201,7 @@ const ColumnsContext = createContext<Columns | undefined>();
  */
 export const Workspace = (props: WorkspaceProps) => {
   const t = useUiMessages();
-  const width = () => props.sidebarWidth ?? sidebarDefault;
+  const width = () => widthRange(props.sidebarWidth ?? sidebarDefault);
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
@@ -205,8 +230,10 @@ export const Workspace = (props: WorkspaceProps) => {
   const id = createUniqueId();
   // Below that room (from 768 px on; the phone has its own pages) the sidebar is a drawer: one container query on
   // this workspace's width. It is the one rule here that is made per workspace, since the room is the workspace's own.
+  // A sidebar its grip made wider gives way first when the window narrows, so the columns keep their minimum.
   const drawerRule = () =>
-    `@media (min-width: 768px) { @container k2-ws-${id} (width < ${room()}px) { ` +
+    `@media (min-width: 768px) { .k2-ui [data-k2-ws="${id}"] > .k2-ws-side { max-width: calc(100% - ${room() - width().default}px); } ` +
+    `@container k2-ws-${id} (width < ${room()}px) { ` +
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);
@@ -215,6 +242,26 @@ export const Workspace = (props: WorkspaceProps) => {
   let toggle: HTMLElement | undefined;
   let aside: HTMLElement | undefined;
   let panel: HTMLElement | undefined;
+  // The sidebar's width while its grip has moved it; its default until then. It gives the columns at most what they
+  // need beyond their minimum (the room above without the sidebar's default).
+  const [side, setSide] = createSignal<number>();
+  const sideWidth = () => side() ?? width().default;
+  // a fixed sidebar has no grip
+  const sideGrip = (): SeamGrip | undefined =>
+    width().fixed
+      ? undefined
+      : {
+          label: props.sidebarLabel ?? "Sidebar",
+          width: width(),
+          value: sideWidth,
+          onChange: setSide,
+          direction: () => 1,
+          measure: () => {
+            const now = aside?.getBoundingClientRect().width;
+            if (!now || !element) return undefined;
+            return { now, max: element.clientWidth - room() + width().default };
+          },
+        };
   // When the window grows while the drawer is open, the sidebar is a column again and the drawer closes. Its button is
   // gone then, so a focus inside the drawer goes to the column's current entry instead.
   createEffect(() => {
@@ -257,7 +304,7 @@ export const Workspace = (props: WorkspaceProps) => {
       data-k2-part="Workspace"
       data-k2-ws={id}
       style={custom({
-        "--k2-ws-side": `${width().default}px`,
+        "--k2-ws-side": `${sideWidth()}px`,
         "--k2-ws-side-min": `${width().min}px`,
         "container-name": sidebar() ? `k2-ws-${id}` : undefined,
       })}
@@ -266,7 +313,7 @@ export const Workspace = (props: WorkspaceProps) => {
         <aside ref={aside} class="k2-ws-side" data-k2-column="">
           {sidebar()}
         </aside>
-        <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
+        <Seam grip={sideGrip()} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
         <Show when={head() || sidebar()}>
@@ -325,7 +372,14 @@ export const Workspace = (props: WorkspaceProps) => {
 
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
-type SplitEntry = { readonly width?: Width; readonly label?: string; element?: HTMLElement };
+type SplitEntry = {
+  readonly width?: Width;
+  readonly label?: string;
+  element?: HTMLElement;
+  /** The pane's width in px while its grip has moved it. */
+  size?: Accessor<number | undefined>;
+  resize?: (px: number) => void;
+};
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 
@@ -369,6 +423,8 @@ export type PaneProps = {
 
 /** A column that scrolls. It has no padding and no gutter, so every band in it reaches both edges. */
 export const Pane = (props: PaneProps) => {
+  // the width the grip beside it gave it; its default until then
+  const [size, setSize] = createSignal<number>();
   const entry: SplitEntry = {
     get width() {
       return props.width;
@@ -376,12 +432,14 @@ export const Pane = (props: PaneProps) => {
     get label() {
       return props.label;
     },
+    size,
+    resize: setSize,
   };
   useContext(SplitContext)?.(entry);
   // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
   useContext(ColumnsContext)?.register({
     get need() {
-      return props.width?.min ?? flexibleMin;
+      return props.width ? widthRange(props.width).min : flexibleMin;
     },
     get detail() {
       return props.detail === true;
@@ -418,8 +476,8 @@ export const Pane = (props: PaneProps) => {
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
       style={custom({
-        "--k2-pane-w": props.width ? `${props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-w": props.width ? `${size() ?? widthRange(props.width).default}px` : undefined,
+        "--k2-pane-min": props.width ? `${widthRange(props.width).min}px` : undefined,
       })}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
@@ -489,12 +547,33 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
   };
   // The seam after pane `index`: the pane on its right moves it if it has a width, else the pane on its left. The place
   // of a detail that is not open counts as a pane without a width, so the grip stays where it is when it opens.
-  const grip = (index: number) => {
+  const grip = (index: number): SeamGrip | undefined => {
     const left = entryOf(index);
     const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
-    return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
+    // a column of fixed width has no grip
+    const width = moving?.width ? widthRange(moving.width) : undefined;
+    if (!moving || !width || width.fixed) return undefined;
+    return {
+      label: moving.label ?? "Column",
+      width,
+      value: () => moving.size?.() ?? width.default,
+      onChange: (px) => moving.resize?.(px),
+      direction: () => (moving === right ? -1 : 1),
+      measure: () => {
+        const pane = moving.element;
+        const split = pane?.parentElement;
+        const rendered = pane?.getBoundingClientRect().width;
+        if (!pane || !split || !rendered) return undefined;
+        // a fixed pane after a line includes it in its width (v2.css)
+        const now = rendered + (pane.previousElementSibling?.classList.contains("k2-seam") ? 1 : 0);
+        // the flexible panes beside it give way down to their minimum (a pane with a width keeps it)
+        let slack = 0;
+        for (const other of split.children) if (other.matches(".k2-pane:not([data-width])")) slack += slackOf(other);
+        return { now, max: now + slack };
+      },
+    };
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
@@ -586,6 +665,12 @@ export type CellProps = {
   href?: string;
   /** A short history beside the value, such as orders per day this week (`Spark`). */
   trend?: SparkProps;
+  /**
+   * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
+   * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
+   * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   */
+  loading?: boolean;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
@@ -606,6 +691,7 @@ Cells.Cell = (props: CellProps) => {
       class="k2-cell"
       data-k2-part="Cells.Cell"
       data-open={props.href !== undefined ? "" : undefined}
+      aria-busy={props.loading ? "true" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       <Icon name={props.icon} />
@@ -616,11 +702,17 @@ Cells.Cell = (props: CellProps) => {
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
       <span class="k2-cell-value">
-        {props.value}
+        <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
+          {props.value}
+        </Show>
         <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
       <Show when={meta() !== undefined}>
-        <span class="k2-cell-meta">{meta()}</span>
+        <span class="k2-cell-meta">
+          <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
+            {meta()}
+          </Show>
+        </span>
       </Show>
     </div>
   );
