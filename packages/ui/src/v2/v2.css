@@ -1753,6 +1753,15 @@
   background: var(--k2-bad-tint);
   color: var(--k2-bad);
 }
+/* a quiet state: its dot and its word in the ink of the text, without the tinted round, for a column of states in a
+   dense table or list; the height stays, so a chip and a quiet state stand on one line */
+.k2-ui .k2-chip[data-quiet] {
+  gap: 6px;
+  padding: 0;
+  background: none;
+  color: var(--k2-text);
+  font-weight: 400;
+}
 .k2-ui .k2-chip[data-kind="ai"] {
   background: var(--k2-ai-tint);
   color: var(--k2-ai);
