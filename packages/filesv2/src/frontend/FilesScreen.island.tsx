@@ -944,13 +944,10 @@ export default function FilesScreen(props: {
     if (screen() === "edit") {
       const launch = snapshot().editor;
       const folders = launch ? ancestors(parentPath(launch.entry.path)) : [];
-      // k2b-ui gap: Path never gives way in the middle, so a deep folder pushed the head's "Close" out. The storage, the
-      // file's own folder and the file stand; the folders between are one "…" that leads to the folder above.
+      // the file itself is the editor's title, in its status row: the path ends at its folder (Path folds a deep one)
       return [
         ...(base ? [{ label: label(base), href: filesUrl(base.id) }] : []),
-        ...(folders.length > 1 ? [{ label: "…", href: filesUrl(base?.id, folders.at(-2)!) }] : []),
-        ...folders.slice(-1).map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
-        // the file itself is the editor's title, in its status row: the path ends at its folder
+        ...folders.map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
       ];
     }
     const moved = snapshot().moved;

@@ -238,6 +238,15 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
         json: url.searchParams.get("path") ? fixtureItemShares(url.searchParams.get("path")!) : fixtureShares(fixture),
       });
     if (url.pathname === `${api}/bases/demo/versions`) return route.fulfill({ json: fixtureVersions() });
+    // the trashed file of the search can come back from the trash, as the server checks it now
+    if (url.pathname.startsWith(`${api}/activity/`) && url.pathname.endsWith("/recovery"))
+      return route.fulfill({
+        json: {
+          oldLocation: { baseId: fixtureBase.id, path: "Angebote" },
+          trash: { baseId: fixtureBase.id, id: "t-1", canRestore: true },
+          canMoveBack: false,
+        },
+      });
     if (url.pathname.startsWith(`${api}/shares/`) && url.pathname.endsWith("/access"))
       return route.fulfill({ json: fixtureShareAccess(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") });
     if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
@@ -448,6 +457,23 @@ describe("a folder of Files on v2", () => {
       await context.close();
     }
   });
+
+  for (const view of [wide, narrow, phone])
+    test(`a deep folder folds its path and keeps the head's deeds at ${view.name}px`, async () => {
+      const deep = ["Projekte", "Küche Lindqvist", "Angebote", "2026", "Entwürfe", "Alte Stände"].join("/");
+      const { context, tab, errors } = await open(view, `/app/filesv2?base=demo&path=${encodeURIComponent(deep)}`);
+      try {
+        const path = tab.locator("[data-slot=head] [data-k2-part=Path]");
+        await path.getByText("Alte Stände").waitFor();
+        // the places between fold into one "…" menu; the first place and the last two stand
+        if (view !== phone) expect(await path.getByRole("button", { name: "Übergeordnete Ebenen" }).count()).toBe(1);
+        await shoot(tab, `22-deep-folder-${view.name}`);
+        await expectClean(tab);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
 
   test("the grid shows the folder as pictures and chooses entries as the list does", async () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo");

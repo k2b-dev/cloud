@@ -3395,7 +3395,8 @@
   flex: 0 1 auto;
 }
 /* a path gives way before the deeds at the end: they keep their words while the path can still shorten */
-.k2-ui .k2-bar-start:has(> .k2-path) {
+.k2-ui .k2-bar-start:has(> .k2-path),
+.k2-ui .k2-bar-start:has(> .k2-inline > .k2-path) {
   flex-shrink: 1000;
 }
 .k2-ui .k2-path > .k2-path-step,
