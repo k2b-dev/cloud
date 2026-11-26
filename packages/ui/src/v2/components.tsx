@@ -204,9 +204,17 @@ const NavWindow = (props: { items: readonly NavItem[] }) => {
     for (let index = places.length; index < props.items.length; index++) places.push({ index });
     return places.slice(0, props.items.length);
   });
-  const view = createVirtualWindow({ items: at, key: (place) => String(place.index) });
+  // the current page (or the fold that holds it) always stays in the page, and the sidebar shows it on load
+  const current = () => {
+    const index = props.items.findIndex((item) => item.current || item.items?.some((inner) => inner.current));
+    return index < 0 ? undefined : String(index);
+  };
+  const view = createVirtualWindow({ items: at, key: (place) => String(place.index), pinned: current });
   onMount(() => {
-    if (box) view.mount(box);
+    if (!box) return;
+    view.mount(box);
+    const shown = current();
+    if (shown !== undefined) view.reveal(shown);
   });
   return (
     <div ref={box} class="k2-nav-window" style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}>

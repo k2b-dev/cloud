@@ -167,6 +167,16 @@ label, count? }` puts a head before the first item of each group (a day):
 its words in 600 and a quiet count, no band and no line; heads are no rows
 and do not count as one.
 
+What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
+finds only rows in the page, so a list people search in needs its own
+search; Shift+Tab from below the list (a foot) lands on the last row in the
+page, not the last item; a group head is no entry of the list for a screen
+reader (as the group rows of a table on the phone), its rows say their place
+in the whole list; a `Nav` group that grows past 40 entries is made anew
+once (the focus in it is lost then), and its entries are known by their
+position, so an entry put in above a parked one moves the parking to its
+neighbour.
+
 A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines

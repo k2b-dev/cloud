@@ -269,3 +269,54 @@ test(
   },
   TEST_TIMEOUT,
 );
+
+// Review of #4211: the neighbour of a parked row across a group head is the next row, never the head.
+test(
+  "Tab and Shift+Tab out of a parked row cross a group head to the next row",
+  async () => {
+    await withPage(
+      async (page) => {
+        const list = '.k2-pane[aria-label="Liste"] > .k2-scroll';
+        const focused = () => page.evaluate(() => document.activeElement?.getAttribute("href") ?? document.activeElement?.tagName);
+        await page.locator('a[href="#e7"]').focus();
+        await scrollTo(page, list, 30000);
+        await settled(page);
+        await page.keyboard.press("Tab");
+        await settled(page);
+        expect(await focused()).toBe("#e8");
+        await scrollTo(page, list, 30000);
+        await settled(page);
+        await page.keyboard.press("Shift+Tab");
+        await settled(page);
+        expect(await focused()).toBe("#e7");
+      },
+      1200,
+      "groups",
+    );
+  },
+  TEST_TIMEOUT,
+);
+
+// Review of #4211: the current page of a long sidebar group is always in the page, and shown on load.
+test(
+  "the current entry of a long sidebar group is in the page and in view from the start",
+  async () => {
+    await withPage(
+      async (page) => {
+        const current = page.locator('[data-k2-part="Nav"] [aria-current="page"]');
+        await current.waitFor();
+        expect(await current.textContent()).toContain("Tabelle 700");
+        expect(await current.isVisible()).toBe(true);
+        const inView = await current.evaluate((element) => {
+          const scroller = element.closest(".k2-nav-scroll")!.getBoundingClientRect();
+          const box = element.getBoundingClientRect();
+          return box.top >= scroller.top - 1 && box.bottom <= scroller.bottom + 1;
+        });
+        expect(inView).toBe(true);
+      },
+      1200,
+      "nav",
+    );
+  },
+  TEST_TIMEOUT,
+);

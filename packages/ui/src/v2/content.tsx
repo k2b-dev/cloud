@@ -259,7 +259,8 @@ export type ListGroup = { key: string; label: string; count?: string };
 
 /** What an app may ask of a list of items: a row that is not in the page now, such as the row to give the focus back to. */
 export type ListController = {
-  /** Brings the item with this key into view and gives back its row; null for a key the list does not hold. */
+  /** Brings the item with this key into view and gives back its row; null for a key the list does not hold. Call it from
+   * an event or `onMount`: inside a reactive batch or effect the new rows are not in the page yet. */
   reveal: (key: string) => HTMLElement | null;
 };
 
