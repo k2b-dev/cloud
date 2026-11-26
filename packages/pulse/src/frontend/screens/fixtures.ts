@@ -219,7 +219,16 @@ export const fixtureSources: PulseSource[] = [
     status: status({ newestDataAt: "2026-11-24T17:20:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
     lastError: TIMEOUT,
   }),
-  fixtureSource({ id: "s0Gg1Hh2", name: "Wechselrichter", enabled: false, seriesCount: 42, todayCount: 0 }),
+  fixtureSource({
+    id: "s0Gg1Hh2",
+    name: "Wechselrichter",
+    enabled: false,
+    seriesCount: 42,
+    todayCount: 0,
+    // paused since Monday, so its newest data are from then
+    status: status({ newestDataAt: "2026-11-23T16:05:00.000Z" }),
+    lastSeenAt: "2026-11-23T16:05:00.000Z",
+  }),
   fixtureSource({
     id: "s3Jj4Kk5",
     name: "Switch Halle 1",

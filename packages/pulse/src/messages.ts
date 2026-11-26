@@ -194,6 +194,7 @@ export const pulseMessages = i18n.define({
       appName: "Pulse",
       scrapeTargetBlocked:
         "is an internal server and not released for this base. A Cloud admin can release it under Administration -> Pulse -> Internal targets.",
+      scrapeTimedOut: ({ seconds }: { seconds: string }) => `The endpoint did not answer within ${seconds} seconds.`,
       start: "Start",
       backToPulse: "Back to Pulse",
       publicLinkRemovedTitle: "This link is no longer valid",
@@ -647,6 +648,7 @@ export const pulseMessages = i18n.define({
       appName: "Pulse",
       scrapeTargetBlocked:
         "ist ein interner Server und für diese Basis nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
+      scrapeTimedOut: ({ seconds }) => `Der Endpunkt hat nicht innerhalb von ${seconds} Sekunden geantwortet.`,
       start: "Start",
       backToPulse: "Zurück zu Pulse",
       publicLinkRemovedTitle: "Dieser Link gilt nicht mehr",
@@ -910,7 +912,16 @@ export const pulseMessages = i18n.define({
 
 export const resolvePulseMessages = (locale?: string) => pulseMessages.resolve(locale ? [locale] : []);
 
-export const localizedSourceError = (value: string | null, t: { scrapeTargetBlocked: string }): string | null =>
-  value?.endsWith(resolvePulseMessages("en").t.scrapeTargetBlocked)
+/** The scraper's stored timeout, "Metrics scrape timed out after 15 seconds", read back into words of the locale. */
+const SCRAPE_TIMEOUT = /^Metrics scrape timed out after (\d+) seconds$/;
+
+export const localizedSourceError = (
+  value: string | null,
+  t: { scrapeTargetBlocked: string; scrapeTimedOut: (input: { seconds: string }) => string },
+): string | null => {
+  const timeout = value ? SCRAPE_TIMEOUT.exec(value) : null;
+  if (timeout?.[1]) return t.scrapeTimedOut({ seconds: timeout[1] });
+  return value?.endsWith(resolvePulseMessages("en").t.scrapeTargetBlocked)
     ? value.slice(0, -resolvePulseMessages("en").t.scrapeTargetBlocked.length) + t.scrapeTargetBlocked
     : value;
+};

@@ -164,7 +164,16 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   title: words().baseColumn,
                   width: { min: 220, default: 360 },
                   mark: (base) => ({ icon: iconName(base.icon), color: baseColor(base.color) }),
-                  cell: (base) => (base.description ? { lines: [base.name, base.description] } : base.name),
+                  // the raw data's retention is worth a word only where it differs from the usual 30 days
+                  cell: (base) => {
+                    const second = [
+                      base.description,
+                      base.rawRetentionDays === 30 ? null : words().retentionDays({ days: base.rawRetentionDays }),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ");
+                    return second ? { lines: [base.name, second] } : base.name;
+                  },
                 },
                 {
                   title: words().membersColumn,
@@ -204,13 +213,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                         {words().notMeasured}
                       </Text>
                     ),
-                },
-                {
-                  title: words().retentionColumn,
-                  width: { min: 100, default: 120 },
-                  drop: true,
-                  align: "end",
-                  cell: (base) => words().retentionDays({ days: base.rawRetentionDays }),
                 },
               ]}
             />
@@ -298,8 +300,12 @@ function DeletingBase(props: { base: PulseBase }) {
       lines={[base().name, text()]}
       // under "Wird gelöscht" a running deletion needs no word of its own; a failed or finished one does
       meta={failed() || deleted() ? state() : undefined}
-      // The action keeps its place after a retry, so the row does not change height.
-      action={{ label: t().retry, icon: "refresh", disabled: retrying() || (!failed() && !followed.failed()), onClick: () => void retry() }}
+      // retrying is offered where it can help: a failed deletion, or a follow-up that stopped answering
+      action={
+        failed() || followed.failed() || retrying()
+          ? { label: t().retry, icon: "refresh", disabled: retrying(), onClick: () => void retry() }
+          : undefined
+      }
     />
   );
 }

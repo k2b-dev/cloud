@@ -12,6 +12,7 @@ import {
   Empty,
   Facts,
   Icon,
+  Inline,
   Input,
   List,
   Menu,
@@ -414,7 +415,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             }
             phone={(source) => ({
               mark: sourceMark(source),
-              lines: [source.name, source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet],
+              lines: [source.name, sourceLine(source, t())],
               // a healthy source needs no word; a failing or paused one shows its state in colour, symbol and word
               states: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
@@ -425,12 +426,21 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 mark: sourceMark,
                 cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }),
               },
-              { title: words().sourceStatusColumn, width: { min: 110, default: 120 }, cell: (source) => statusChip(source, t()) },
               {
-                title: words().newestColumn,
-                width: { min: 140, default: 160 },
-                drop: true,
-                cell: (source) => (source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet),
+                title: words().sourceStatusColumn,
+                width: { min: 150, default: 220 },
+                // a healthy source says so once in a quiet word; only a failing or paused one tells since when data are missing
+                cell: (source) =>
+                  sourceStatus(source, t()).tone === "ok" ? (
+                    statusChip(source, t())
+                  ) : (
+                    <Inline>
+                      {statusChip(source, t())}
+                      <Text type="meta" muted>
+                        {source.status.newestDataAt ? words().lastData({ time: when(source.status.newestDataAt) }) : t().noDataYet}
+                      </Text>
+                    </Inline>
+                  ),
               },
               {
                 title: words().dataColumn,
