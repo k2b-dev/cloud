@@ -83,6 +83,12 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /**
+   * The button is a shortcut for the pointer only, such as the "…" on a row of a tree or a tile of a grid whose deeds
+   * the thing itself opens with Shift+F10: out of the tab order and hidden from assistive technology, from the first
+   * markup on.
+   */
+  pointerOnly?: boolean;
 };
 
 /**
@@ -355,6 +361,8 @@ const MenuRoot = (props: MenuProps) => {
         data-keep={iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
         title={iconOnly() ? name() : undefined}
+        tabindex={props.pointerOnly ? -1 : undefined}
+        aria-hidden={props.pointerOnly ? "true" : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>

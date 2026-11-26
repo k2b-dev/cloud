@@ -25,6 +25,8 @@ declare global {
     __loadAll?: () => void;
     __selected?: readonly string[];
     __refresh?: () => void;
+    __rename?: (key: string, name: string) => void;
+    __reverse?: () => void;
   }
 }
 
@@ -84,6 +86,10 @@ export function Demo() {
     window.__open = setCurrent;
     // the app loads the same folders again: new objects with the same keys, as a refetch gives
     window.__refresh = () => setFolders(JSON.parse(JSON.stringify(folders())));
+    // a refetch after a rename elsewhere: a new object with the same key and a new name
+    window.__rename = (key, name) => setFolders(update(folders(), key, (folder) => ({ ...folder, name })));
+    // a refetch in another order: the same keys, new objects, the top level reversed
+    window.__reverse = () => setFolders(JSON.parse(JSON.stringify([...folders()].reverse())));
     window.__loadAll = () =>
       setFolders(
         update(folders(), "fotos", (folder) => ({ ...folder, children: Array.from({ length: PHOTOS }, (_, index) => photo(index)) })),
@@ -171,7 +177,8 @@ export function Demo() {
           rowKey={(folder) => folder.key}
           select={{ selected: selected(), onChange: choose, all: "Alle Dateien", row: (folder) => folder.name }}
           current={tableCurrent()}
-          open={(folder) => ({ onOpen: () => setTableCurrent(folder.key) })}
+          // the address follows the name, so a renamed row must lead to its new address
+          open={(folder) => ({ href: `#datei-${folder.name}`, onOpen: () => setTableCurrent(folder.key) })}
           phone={(folder) => ({ lines: [folder.name, folder.size ?? "Ordner"] })}
           tree={{
             children: (folder) => folder.children,

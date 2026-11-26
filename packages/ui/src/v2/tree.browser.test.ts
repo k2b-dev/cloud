@@ -463,3 +463,37 @@ test("table and nav tree: the same rows loaded again as new objects keep their e
     expect(await page.evaluate(() => (document.activeElement as (HTMLElement & { __mark?: boolean }) | null)?.__mark === true)).toBe(true);
   });
 });
+
+test("table tree: a row renamed by a refetch (same key, new object) shows its new name and address, also on the phone", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__rename?.("notiz", "Umbenannt.txt"));
+    await rowState(page, "Umbenannt.txt", "aria-level", "1");
+    expect(await row(page, "Umbenannt.txt").locator("a.k2-row-open").getAttribute("href")).toBe("#datei-Umbenannt.txt");
+    await page.setViewportSize({ width: 390, height: 800 });
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-table-phone .k2-row")].some((row) => row.textContent?.includes("Umbenannt.txt")),
+    );
+    const phoneLink = page.locator(".k2-table-phone .k2-row", { hasText: "Umbenannt.txt" }).locator("a.k2-row-open");
+    expect(await phoneLink.getAttribute("href")).toBe("#datei-Umbenannt.txt");
+    expect(await page.locator(".k2-table-phone .k2-row", { hasText: "Notiz.txt" }).count()).toBe(0);
+  });
+});
+
+test("table tree: a focused row that a refetch moves keeps the focus", async () => {
+  await withPage(async (page) => {
+    await row(page, "Notiz.txt").focus();
+    await page.evaluate(() => window.__reverse?.());
+    await page.waitForFunction(() => document.querySelector("tr[data-tree-row]")?.textContent?.includes("Notiz.txt") === true);
+    await rowFocused(page, "Notiz.txt");
+  });
+});
+
+test("server markup: a place's '…' is out of the tab order and hidden from screen readers before the page is live", () => {
+  const nav = markup.slice(markup.indexOf('role="tree"'), markup.indexOf('role="treegrid"'));
+  const triggers = [...nav.matchAll(/<span class="k2-nt-menu"[^>]*><button([^>]*)>/g)].map((match) => match[1] ?? "");
+  expect(triggers.length).toBeGreaterThan(0);
+  for (const trigger of triggers) {
+    expect(trigger).toContain('tabindex="-1"');
+    expect(trigger).toContain('aria-hidden="true"');
+  }
+});

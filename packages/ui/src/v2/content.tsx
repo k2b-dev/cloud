@@ -1,5 +1,6 @@
 import { Link } from "@k2b/ssr/nav";
 import {
+  createComputed,
   createContext,
   createMemo,
   createSelector,
@@ -7,6 +8,7 @@ import {
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -861,6 +863,21 @@ export const Table = <T,>(props: TableProps<T>) => {
     setFocused(rowKey);
     rowElements.get(rowKey)?.focus();
   };
+  // New rows from the app (a refetch, another order) move row elements; a moved element loses the focus. The focused
+  // key is noted before the rows change and gets the focus back once they are drawn.
+  createComputed(
+    on(
+      flat,
+      () => {
+        const kept = body?.contains(document.activeElement) ? focused() : undefined;
+        if (kept === undefined) return;
+        requestAnimationFrame(() => {
+          if (!body?.contains(document.activeElement)) focusRow(kept);
+        });
+      },
+      { defer: true },
+    ),
+  );
   const rowLabel = (element: Element | null | undefined) =>
     element?.querySelector(":scope > td:not([data-select]) .k2-cell-line")?.textContent?.trim() ?? "";
   const expand = (rowKey: string, label: string) => {
@@ -1213,7 +1230,8 @@ export const Table = <T,>(props: TableProps<T>) => {
                   })()
                 ) : (
                   (() => {
-                    const target = props.open?.(item.row);
+                    // read again when the row's object changes (a refetch hands a new one for the same key)
+                    const target = createMemo(() => props.open?.(item.row));
                     const rowKey = key(item.row, item.index);
                     // in a tree: the row's place now, read by its key (the element stays while the row stays)
                     const inTree = item.tree !== undefined;
@@ -1222,10 +1240,10 @@ export const Table = <T,>(props: TableProps<T>) => {
                     return (
                       <tr
                         {...drag.attrs}
-                        data-open={target ? "" : undefined}
+                        data-open={target() ? "" : undefined}
                         data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
                         aria-current={props.current !== undefined && props.current === rowKey ? "true" : undefined}
-                        onClick={target ? openRow : undefined}
+                        onClick={openRow}
                         data-tree-row={inTree ? "" : undefined}
                         ref={(element: HTMLTableRowElement) => {
                           drag.ref(element);
@@ -1288,7 +1306,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                                   </span>
                                 )}
                               </Show>
-                              {cell(column, cellsOf(item)[columnIndex()]!, columnIndex() === 0 ? target : undefined, item.row, inTree)}
+                              {cell(column, cellsOf(item)[columnIndex()]!, columnIndex() === 0 ? target() : undefined, item.row, inTree)}
                             </td>
                           )}
                         </For>
@@ -1344,19 +1362,20 @@ export const Table = <T,>(props: TableProps<T>) => {
                       </div>
                     ) : (
                       (() => {
-                        const form = phone()(item.row);
-                        const target = props.open?.(item.row);
+                        // read again when the row's object changes (a refetch hands a new one for the same key)
+                        const form = createMemo(() => phone()(item.row));
+                        const target = createMemo(() => props.open?.(item.row));
                         return (
                           <Row
-                            lines={form.lines}
-                            avatar={form.avatar}
-                            mark={form.mark}
-                            time={form.time}
-                            marks={form.marks}
+                            lines={form().lines}
+                            avatar={form().avatar}
+                            mark={form().mark}
+                            time={form().time}
+                            marks={form().marks}
                             strong
-                            href={target?.href}
-                            onNavigate={target?.onNavigate}
-                            onOpen={target?.onOpen}
+                            href={target()?.href}
+                            onNavigate={target()?.onNavigate}
+                            onOpen={target()?.onOpen}
                             current={props.current !== undefined && props.current === key(item.row, item.index)}
                             select={
                               props.select
