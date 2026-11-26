@@ -26,6 +26,8 @@ export default function Feed(props: FeedProps) {
           </ul>
         )}
       </Show>
+      {/* something to focus: "Retry" hands the focus on to it once the list is back */}
+      <a href={`#${props.feed}`}>Alle</a>
     </section>
   );
 }

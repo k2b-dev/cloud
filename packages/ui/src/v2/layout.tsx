@@ -585,14 +585,15 @@ export type CellProps = {
   meta?: JSX.Element;
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
+  /** A short history beside the value, such as orders per day this week (`Spark`). */
+  trend?: SparkProps;
   /**
    * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
    * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
    * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   * A `trend` keeps its place unseen meanwhile.
    */
   loading?: boolean;
-  /** A short history beside the value, such as orders per day this week (`Spark`). */
-  trend?: SparkProps;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
@@ -626,8 +627,8 @@ Cells.Cell = (props: CellProps) => {
       <span class="k2-cell-value">
         <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
           {props.value}
-          <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
         </Show>
+        <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
       </span>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">

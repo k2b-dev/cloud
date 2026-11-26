@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { safeColor } from "./colors";
 import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -17,7 +18,8 @@ export type MenuItem = {
   icon?: string;
   /**
    * A data colour of what the entry stands for (an area of a notebook, a calendar): a dot in the place of the symbol,
-   * or the symbol in that colour. Hex, `oklch()` or `var(--name)`; anything else leaves the entry neutral.
+   * or the symbol in that colour. Hex, `oklch()` or `var(--name)`; anything else leaves the entry neutral (no dot). A
+   * hex colour is kept at 3:1 on the menu in light and dark; `oklch()` and `var()` stand as given.
    */
   color?: string;
   /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
@@ -130,7 +132,9 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
-  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon || !!entry.color));
+  entries.some(
+    (entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon || safeColor(entry.color) !== undefined),
+  );
 
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
   const lead = () => props.lead ?? hasLead(props.entries);
@@ -239,27 +243,31 @@ const kindOf = (entry: MenuItem): EntryKind =>
 
 const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSection(entry) ? { label: "" } : entry);
 
-const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
-  <>
-    <Show when={props.lead}>
-      <span class="k2-mi-lead" data-color={props.item.color ? "" : undefined} style={custom({ "--k2-c": props.item.color })}>
-        <Show
-          when={props.item.icon}
-          fallback={
-            <Show when={props.item.color}>
-              <span class="k2-mi-dot" />
-            </Show>
-          }
-        >
-          {(name) => <Icon name={name()} />}
-        </Show>
-      </span>
-    </Show>
-    <span class="k2-mi-label">{props.item.label}</span>
-    <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
-    {props.end}
-  </>
-);
+const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => {
+  // a value that is no colour leaves the entry neutral: no dot, no colour
+  const color = () => safeColor(props.item.color);
+  return (
+    <>
+      <Show when={props.lead}>
+        <span class="k2-mi-lead" data-color={color() ? "" : undefined} style={custom({ "--k2-c": color() })}>
+          <Show
+            when={props.item.icon}
+            fallback={
+              <Show when={color()}>
+                <span class="k2-mi-dot" />
+              </Show>
+            }
+          >
+            {(name) => <Icon name={name()} />}
+          </Show>
+        </span>
+      </Show>
+      <span class="k2-mi-label">{props.item.label}</span>
+      <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+      {props.end}
+    </>
+  );
+};
 
 /** One entry of one kind (submenu, tick, link, deed); its words and states follow the data. */
 const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; value: string; lead: boolean }) => {

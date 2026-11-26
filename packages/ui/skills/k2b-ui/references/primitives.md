@@ -103,11 +103,11 @@ fields. A message in a thread is one `Band`.
 
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
-`href` (adds a chevron), `loading` (a bar lies on value and `meta`;
+`href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
+as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay), `trend` (a `Spark` at the end of the value,
-such as orders per day this week). Use for the key statements of a record
-or the home of a place.
+line; symbol and label stay, a `trend` keeps its place unseen). Use for the
+key statements of a record or the home of a place.
 
 ### Tiles
 
@@ -510,7 +510,8 @@ lines instead of cutting a thing.
   Promise keeps the menu open and the entry busy), `href`, `danger`,
   `disabled`, `color` (the data colour of what it stands for, such as an
   area of a notebook: a dot in the symbol's place, or the symbol in that
-  colour, kept readable), `meta` (a quiet hint at the end, such as a key), `checked`
+  colour; a hex colour is kept at 3:1, `oklch()` and `var()` stand as
+  given, anything else leaves the entry neutral), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with
