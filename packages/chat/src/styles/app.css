@@ -49,7 +49,8 @@
   .k2b-ui .chat-workspace__main:has(.chat-conversation) {
     z-index: auto;
   }
-  .chat-conversation {
+  /* Only v1's frame: in v2 the chat is the detail pane, which already is the phone's page (`data-framed`). */
+  .chat-conversation:not([data-framed]) {
     /* follow-viewport.ts replaces both with the visual viewport's once the chat runs in the browser. */
     --chat-viewport-top: 0px;
     --chat-viewport-height: 100dvh;

@@ -150,7 +150,16 @@ test("on the phone the list is the page, a chat is a page of its own, and its wa
     await page.waitForURL(/\/app\/chat\/c\//);
     await page.locator(".chat-conversation__composer").waitFor();
     expect(await row.isVisible()).toBe(false);
-    await page.locator('[data-k2-part="Back"] a, [data-k2-part="Back"] button').first().click();
+    await settled(page);
+    // The way back stands in the phone bar and takes a tap: nothing of the chat lies over it.
+    const hit = await page.evaluate(() => {
+      const back = document.querySelector<HTMLElement>('[data-k2-part="Back"] a')!;
+      const box = back.getBoundingClientRect();
+      const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+      return { box: [box.left, box.top, box.width, box.height], top: top?.outerHTML.slice(0, 160), inside: back.contains(top) };
+    });
+    expect({ inside: hit.inside, top: hit.top }).toEqual({ inside: true, top: expect.any(String) });
+    await page.locator('[data-k2-part="Back"] a').first().click();
     await page.waitForURL((url) => url.pathname === "/app/chat");
     await row.waitFor();
     expect(errors).toEqual([]);

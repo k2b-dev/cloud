@@ -485,6 +485,7 @@ export default function ChatConversation(props: ChatConversationProps): JSX.Elem
     <section
       ref={frame}
       class="chat-conversation"
+      data-framed={props.framed ? "" : undefined}
       data-wide-title={props.wideTitle ? "" : undefined}
       aria-label={props.title}
       onKeyDown={(event) => {
