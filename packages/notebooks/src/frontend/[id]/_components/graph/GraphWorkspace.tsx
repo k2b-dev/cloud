@@ -95,13 +95,13 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
     else if (g.display() === "timeline") g.focusNote();
     else g.focusNote(first?.id);
   };
-  const listCount = () => t().graphNoteCount({ notes: g.query().trim() ? g.hits().length : g.notes().length, links: g.edges().length });
-  // A large notebook's graph holds the pages around one page; the drawing, the list's count and the notes without links say so.
-  const scopeLine = () => {
+  // A large notebook's graph holds the pages around one page: its count says of how many.
+  const listCount = () => {
+    const notes = g.query().trim() ? g.hits().length : g.notes().length;
     const scope = props.graph.scope;
     return scope
-      ? t().graphScope({ shown: g.model.notes.length, total: scope.total, title: g.model.byId.get(scope.around)?.title || t().untitled })
-      : null;
+      ? t().graphNoteCountScoped({ notes, total: scope.total, links: g.edges().length })
+      : t().graphNoteCount({ notes, links: g.edges().length });
   };
   // Umgebung around a note whose links the filters hide, or that has none: the display gives way to a way out.
   // k2b-ui gap: Empty takes one sentence and one way out. Its second way (Ganzes Notizbuch zeigen when the filters hide
@@ -189,7 +189,7 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                   </Show>
                   {/* the list's count stands in this row, so no row of its own goes above the table */}
                   <Show when={g.state().list && g.model.notes.length > 0}>
-                    <Text type="meta">{scopeLine() ? `${listCount()} · ${scopeLine()}` : listCount()}</Text>
+                    <Text type="meta">{listCount()}</Text>
                   </Show>
                 </>
               }
@@ -275,13 +275,10 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
           <Match when={!g.hasLinks && !g.state().list}>
             <Empty
               icon="affiliate"
-              text={t().graphNoLinks}
+              text={t().graphNoLinksYet}
               action={{ label: t().graphBackToNote, icon: "arrow-left", href: g.closeHref() }}
             />
-            <Section
-              title={t().graphUnlinkedNotes({ count: g.model.notes.length })}
-              summary={`${scopeLine() ? `${scopeLine()} ` : ""}${t().graphNoLinksDescription({ name: props.notebookName })} ${t().graphNoLinksHintBefore} /note ${t().graphNoLinksHintAfter}`}
-            >
+            <Section title={t().graphUnlinkedNotes({ count: g.model.notes.length })}>
               <For each={g.model.notes}>
                 {(note) => (
                   <Row

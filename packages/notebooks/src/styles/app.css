@@ -1306,6 +1306,12 @@
   flex: 0 1 auto;
   text-overflow: ellipsis;
 }
+/* On a phone the count keeps the footer to itself: the hints for touch would cut it. */
+@media (max-width: 29.999rem) {
+  .notebook-graph__hints[data-input] {
+    display: none;
+  }
+}
 .notebook-graph__hints {
   display: none;
   flex: none;
