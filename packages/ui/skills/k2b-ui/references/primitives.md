@@ -37,7 +37,11 @@ The working surface of an app: one per screen.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 
@@ -290,9 +294,32 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
+  with "Übernehmen". Use it inside a popover or sheet; a form field is
+  `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
