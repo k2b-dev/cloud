@@ -224,7 +224,7 @@ test("disabled fields, options and the deed of a notice look off and take no inp
   });
 });
 
-test("facts: the label column takes the longest label, a token is monospace and breaks at any sign", async () => {
+test("facts: the label column takes the longest label, a token is monospace and breaks after its signs", async () => {
   await withPage(async (page) => {
     const found = await page.evaluate(() => {
       const [used, token] = [...document.querySelectorAll(".k2-fact-pair")];
@@ -241,7 +241,7 @@ test("facts: the label column takes the longest label, a token is monospace and 
         inside: value.getBoundingClientRect().right <= token!.querySelector("dd")!.getBoundingClientRect().right + 0.5,
       };
     });
-    expect(found).toEqual({ label: 32, mono: true, wordBreak: "break-all", select: "all", inside: true });
+    expect(found).toEqual({ label: 32, mono: true, wordBreak: "normal", select: "all", inside: true });
   });
 });
 

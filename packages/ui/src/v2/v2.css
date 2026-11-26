@@ -1309,6 +1309,15 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
+/* technical values (Column `mono`): monospace at the line's height, so the row keeps its height */
+.k2-ui .k2-table td > .k2-cell-line[data-mono] {
+  font-family: var(--k2-font-mono);
+}
+/* a line that is cut with "…" keeps one line: the breaks after its signs give way (an engine may break at <wbr> even
+   where white space does not wrap) */
+.k2-ui .k2-table[data-sized] td > .k2-cell-line[data-mono]:not([data-wrap]) wbr {
+  display: none;
+}
 .k2-ui .k2-table[data-sized] td > .k2-cell-line[data-wrap] {
   overflow: hidden;
   display: -webkit-box;
@@ -1584,17 +1593,16 @@
   flex: 1;
   min-width: 0;
 }
-/* a value read sign by sign (a token, an ID): monospace, broken at any sign, selected whole by one click */
+/* a value read sign by sign (a token, an ID, a redirect address): monospace, broken after its signs (the <wbr> of
+   `Facts`) and within a part only where that part is longer than the line, selected whole by one click */
 .k2-ui .k2-fact-value[data-mono] {
   font-family: var(--k2-font-mono);
-  word-break: break-all;
   -webkit-user-select: all;
   user-select: all;
 }
-/* the quiet word under it is no part of the value: selected and broken as text */
+/* the quiet word under it is no part of the value: selected as text */
 .k2-ui .k2-fact-value[data-mono] > small {
   font-family: var(--k2-font);
-  word-break: normal;
   -webkit-user-select: text;
   user-select: text;
 }
