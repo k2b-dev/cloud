@@ -16,6 +16,7 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - A deed that cannot be taken now is `disabled`, and a sentence beside it says why, such as the `Notice` "Freigabe fehlt".
 - A deed under way is `busy`: the button keeps its width, its look and the focus, and takes no second press.
 - A toggle is `pressed`: `true` on, `false` off. Never on a link or on the primary action.
+- The head's "…" is a `Menu` without words or a symbol of its own, at the end of its `Bar`. Where the head gives way (on the phone, or below 1100 px in a head with a title), its buttons without `keep` leave, and the "…" lists them first when it opens: a button runs its own click, a link opens as it does, a `Menu` with words becomes a submenu, a pressed toggle shows its tick and a disabled one stays disabled. Put no copy of them into the "…" yourself. A `Menu` or `Popover` that shows only its symbol (such as "Später" with a clock) stays in the head and keeps its own entries. A head without a "…" keeps its buttons.
 
 ## Menu or popover?
 
@@ -59,9 +60,9 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
-## In a head that gives way
+## Not in v2 yet
 
-A head's "…" is a `Menu` without words or a symbol of its own, at the end of its `Bar`. Where the head gives way (on the phone, or below 1100 px in a head with a title), its buttons without `keep` leave, and the "…" lists them first when it opens: a button runs its own click, a link opens as it does, a `Menu` with words becomes a submenu, a pressed toggle shows its tick and a disabled one stays disabled. Put no copy of them into the "…" yourself. A `Menu` or `Popover` that shows only its symbol (such as "Später" with a clock) stays in the head and keeps its own entries. A head without a "…" keeps its buttons.
+On the phone a head's "…" stays at the end of its head; it does not move into the shell's bar above the page, as the mockup of the customer record shows. Write `// k2b-ui gap: head more in the host bar` at that place.
 
 ## Do and don't
 
