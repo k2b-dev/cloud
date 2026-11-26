@@ -173,6 +173,9 @@ for (const viewport of [
         const row = (await bar.boundingBox())!;
         expect(box.y).toBeGreaterThanOrEqual(row.y + row.height);
       }
+      // centred over the graph's pane, not over the window with the sidebar
+      const pane = (await page.locator('[data-k2-part="Pane"]').first().boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - (pane.x + pane.width / 2))).toBeLessThanOrEqual(2);
     } finally {
       await close(page);
     }
