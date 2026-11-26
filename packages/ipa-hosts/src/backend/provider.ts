@@ -191,6 +191,9 @@ export const hostStats = async (): Promise<{
   hostgroupsTotal: number;
   /** When the mirror last took a host from FreeIPA, ISO; null before the first sync. */
   lastSyncedAt: string | null;
+  /** Hosts whose FreeIPA client stored no SSH keys, and the first of them by name. */
+  hostsWithoutKeys: number;
+  firstWithoutKeys: string | null;
 }> => {
   const [row] = await sql<
     {
@@ -199,6 +202,8 @@ export const hostStats = async (): Promise<{
       hosts_ungrouped: number;
       hostgroups_total: number;
       last_synced_at: Date | null;
+      hosts_without_keys: number;
+      first_without_keys: string | null;
     }[]
   >`
     SELECT
@@ -207,7 +212,10 @@ export const hostStats = async (): Promise<{
       (SELECT COUNT(*)::int FROM ipa_hosts.hosts h
         WHERE NOT EXISTS (SELECT 1 FROM ipa_hosts.host_hostgroups hh WHERE hh.host_fqdn = h.fqdn)) AS hosts_ungrouped,
       (SELECT COUNT(*)::int FROM ipa_hosts.hostgroups)                                             AS hostgroups_total,
-      (SELECT max(synced_at) FROM ipa_hosts.hosts)                                                 AS last_synced_at
+      (SELECT max(synced_at) FROM ipa_hosts.hosts)                                                 AS last_synced_at,
+      (SELECT COUNT(*)::int FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0)          AS hosts_without_keys,
+      (SELECT fqdn FROM ipa_hosts.hosts WHERE cardinality(ssh_fingerprints) = 0
+        ORDER BY fqdn LIMIT 1)                                                                     AS first_without_keys
   `;
   return {
     hostsTotal: row?.hosts_total ?? 0,
@@ -215,6 +223,8 @@ export const hostStats = async (): Promise<{
     hostsUngrouped: row?.hosts_ungrouped ?? 0,
     hostgroupsTotal: row?.hostgroups_total ?? 0,
     lastSyncedAt: row?.last_synced_at ? new Date(row.last_synced_at).toISOString() : null,
+    hostsWithoutKeys: row?.hosts_without_keys ?? 0,
+    firstWithoutKeys: row?.first_without_keys ?? null,
   };
 };
 

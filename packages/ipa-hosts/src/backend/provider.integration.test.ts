@@ -3,7 +3,7 @@ import { sql } from "@k2b/cloud";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { migrate } from "../migrate";
-import { hostGet, hostgroupGetWithHosts, hostgroupListWithHosts } from "./provider";
+import { hostGet, hostgroupGetWithHosts, hostgroupListWithHosts, hostStats } from "./provider";
 
 suiteFor("database")("the host mirror's records", () => {
   test("a host and a host group are read by their exact name in one statement, behind any number of longer names", async () => {
@@ -55,6 +55,24 @@ suiteFor("database")("the host mirror's records", () => {
     } finally {
       await sql`DELETE FROM ipa_hosts.hosts WHERE fqdn LIKE ${`${prefix}-%`}`;
       await sql`DELETE FROM ipa_hosts.hostgroups WHERE cn LIKE ${`${prefix}-%`}`;
+    }
+  });
+
+  test("the figures count the hosts without SSH keys in the same one statement", async () => {
+    await migrate();
+    const prefix = `t${crypto.randomUUID().slice(0, 8)}`;
+    const before = await hostStats();
+    await sql`INSERT INTO ipa_hosts.hosts (fqdn, ssh_fingerprints) VALUES (${`${prefix}-a.example`}, '{}'), (${`${prefix}-b.example`}, '{}')`;
+    await sql`INSERT INTO ipa_hosts.hosts (fqdn, ssh_fingerprints) VALUES (${`${prefix}-c.example`}, '{"SHA256:abc (ssh-ed25519)"}')`;
+    const meter = await meterSql();
+    try {
+      let after: Awaited<ReturnType<typeof hostStats>> | null = null;
+      expect(await meter.during(async () => (after = await hostStats()))).toHaveLength(1);
+      expect(after!.hostsWithoutKeys - before.hostsWithoutKeys).toBe(2);
+      expect(after!.firstWithoutKeys).not.toBeNull();
+    } finally {
+      await meter.close();
+      await sql`DELETE FROM ipa_hosts.hosts WHERE fqdn LIKE ${`${prefix}-%`}`;
     }
   });
 });

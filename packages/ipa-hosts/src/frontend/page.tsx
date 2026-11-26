@@ -79,6 +79,8 @@ export default ssr<AuthContext>(async (c) => {
           ungroupedAll: stats.hostsUngrouped,
           groupsAll: stats.hostgroupsTotal,
           lastSyncedAt: stats.lastSyncedAt,
+          withoutKeys: stats.hostsWithoutKeys,
+          firstWithoutKeys: stats.firstWithoutKeys,
         }}
         accent={ACCENT}
         groups={groupsPage.items}

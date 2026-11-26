@@ -40,6 +40,8 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData; n
           groupsAll: data === "worst" ? 12_345 : groups.length,
           // twelve minutes ago, whatever day the picture is made
           lastSyncedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+          withoutKeys: data === "worst" ? 3_210 : everyHost.filter((host) => host.sshFingerprints.length === 0).length,
+          firstWithoutKeys: everyHost.find((host) => host.sshFingerprints.length === 0)?.fqdn ?? null,
         }}
         accent="#7e22ce"
         groups={groups}

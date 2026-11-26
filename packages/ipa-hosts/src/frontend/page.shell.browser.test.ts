@@ -105,7 +105,9 @@ const firstHtml = async (search: string, data: Data) => {
       hostgroupsTotal: data === "worst" ? 12_345 : groups.length,
       // real clock: the page words the last sync relative to now, so it lies twelve minutes before now on any day
       lastSyncedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    } as never),
+      hostsWithoutKeys: data === "worst" ? 3_210 : hosts.filter((host) => host.sshFingerprints.length === 0).length,
+      firstWithoutKeys: hosts.find((host) => host.sshFingerprints.length === 0)?.fqdn ?? null,
+    }),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -188,7 +190,7 @@ describe("Hosts in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 1024, 390]) {
+      for (const width of [1920, 1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/ipa-hosts${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });

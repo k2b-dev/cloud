@@ -77,7 +77,9 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
       hostsUngrouped: 7,
       hostgroupsTotal: 12_345,
       lastSyncedAt: null,
-    } as never),
+      hostsWithoutKeys: 3,
+      firstWithoutKeys: "db9.werkstatt.example",
+    }),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -93,8 +95,8 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    // the hero says what matters with its figure; the groups, the last sync and the search stand quiet under it
-    expect(text).toContain("Hosts ohne Gruppe 7 12.345 Hostgruppen · noch nie abgeglichen · Suche „server“");
+    // the hero says what matters with its figure; a search says how many of all it shows
+    expect(text).toContain("Hosts ohne Gruppe 7 1 von 12.345");
     // no figure tiles: nothing counts the hosts in groups a second time
     expect(text).not.toContain("in Gruppen");
     expect(text).not.toContain("Zuordnung erforderlich");
@@ -105,7 +107,11 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(gone).toContain("Diesen Host gibt es im Spiegel nicht mehr.");
     // the lead counts the mirror, not the page: 12.345 groups although the page holds fewer, and every host without one
     const all = read(await (await app.request("/admin/ipa-hosts", { headers: { "Accept-Language": "de" } })).text());
-    expect(all).toContain("12.345 Hostgruppen");
+    expect(all).toContain("Hostgruppen 12.345");
+    // the share and the last sync stand quiet under the figure; the hosts without keys are the one exception line
+    expect(all).toContain(
+      "Hosts ohne Gruppe 7 von 5.678 Hosts · noch nie abgeglichen ● 3 Hosts ohne SSH-Schlüssel db9.werkstatt.example und 2 weitere",
+    );
     const ungrouped = read(await (await app.request("/admin/ipa-hosts?tab=ungrouped", { headers: { "Accept-Language": "de" } })).text());
     expect(ungrouped).toContain("Hosts ohne Gruppe 7");
   } finally {

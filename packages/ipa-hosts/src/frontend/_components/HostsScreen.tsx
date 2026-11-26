@@ -2,15 +2,17 @@ import { formatRelative } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
   Button,
   Cells,
-  Chip,
   confirm,
   Dialog,
   Empty,
   Facts,
   Field,
+  Icon,
+  Inline,
   Input,
   List,
   Lookup,
@@ -46,6 +48,9 @@ export type HostsScreenProps = {
     ungroupedAll: number;
     groupsAll: number;
     lastSyncedAt: string | null;
+    /** Hosts of the whole mirror whose client stored no SSH keys, and the first of them. */
+    withoutKeys: number;
+    firstWithoutKeys: string | null;
   };
   /** The colour of the host mirror: its figures carry it inside the Administration shell. */
   accent: string;
@@ -278,7 +283,22 @@ export default function HostsScreen(props: HostsScreenProps) {
   const firstAndMore = (names: readonly string[]) =>
     names.length <= 1 ? (names[0] ?? "") : t().nameAndMore({ name: names[0]!, count: number(names.length - 1) });
   /** A host marks only the exception, as dot and word: its client stored no SSH keys yet. */
-  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip status="warn">{t().noKeys}</Chip> : undefined);
+  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Text tone="warn">{`● ${t().noKeys}`}</Text> : undefined);
+  /** How many hosts of a group stored no SSH keys. */
+  const keyless = (group: IpaHostgroup & { hostDetails: IpaHost[] }) =>
+    group.hostDetails.filter((host) => host.sshFingerprints.length === 0).length;
+  /** A group's exception after its name: how many of its hosts have no keys. */
+  const groupState = (group: IpaHostgroup & { hostDetails: IpaHost[] }) =>
+    keyless(group) > 0 ? <Text tone="warn">{`● ${t().keylessCount({ count: number(keyless(group)) })}`}</Text> : undefined;
+  /** A group's line on the phone: its hosts, the keyless ones, what it contains or what a search found. */
+  const groupPhoneLine = (group: IpaHostgroup & { hostDetails: IpaHost[] }) =>
+    [
+      t().hostCount({ count: group.hostDetails.length }),
+      ...(keyless(group) > 0 ? [t().keylessCount({ count: number(keyless(group)) })] : []),
+      foundHosts(group) || nestedWords(group),
+    ]
+      .filter(Boolean)
+      .join(" · ");
   /** The second line of a host: what the mirror holds, else how many groups it is in, so every row has one height. */
   const hostLine = (host: IpaHost) =>
     [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") ||
@@ -302,9 +322,6 @@ export default function HostsScreen(props: HostsScreenProps) {
     if (found.length === 0) return "";
     return t().foundHosts({ names: found.length <= 2 ? found.join(", ") : t().hostCount({ count: found.length }) });
   };
-  /** What a group is, in words: what a search found in it, its description and its sub-groups. */
-  const groupLine = (group: IpaHostgroup & { hostDetails: IpaHost[] }) =>
-    [foundHosts(group), group.description, nestedWords(group)].filter(Boolean).join(" · ");
 
   // a mirror that holds nothing yet: its one way on is a sync
   const emptyMirror = () => props.figures.hostsTotal === 0 && props.figures.groups === 0 && !props.search;
@@ -322,19 +339,45 @@ export default function HostsScreen(props: HostsScreenProps) {
           color={props.accent}
           label={f.ungroupedAll > 0 ? t().ungroupedLabel : t().allGroupedLabel}
           value={number(f.ungroupedAll > 0 ? f.ungroupedAll : f.hostsTotal)}
-          meta={[
-            t().groupCount({ count: f.groupsAll }),
-            f.lastSyncedAt ? t().lastSynced({ when: formatRelative(f.lastSyncedAt, { locale: locale() }) }) : t().neverSynced,
-            ...(props.search ? [t().searchFor({ query: props.search })] : []),
-          ].join(" · ")}
+          meta={
+            props.search
+              ? t().shownOf({
+                  shown: number(props.tab === "groups" ? f.groups : f.ungrouped),
+                  total: number(props.tab === "groups" ? f.groupsAll : f.ungroupedAll),
+                })
+              : [
+                  ...(f.ungroupedAll > 0 ? [t().ofHosts({ count: number(f.hostsTotal) })] : []),
+                  f.lastSyncedAt ? t().lastSynced({ when: formatRelative(f.lastSyncedAt, { locale: locale() }) }) : t().neverSynced,
+                ].join(" · ")
+          }
         />
       </Cells>
     );
   };
+  /** The one exception line under the hero: the hosts without SSH keys, how many and which first. */
+  const exceptions = () => (
+    <Show when={props.figures.withoutKeys > 0}>
+      <Band>
+        <Inline>
+          <Text>
+            <Text tone="warn">●</Text> <Text weight="strong">{number(props.figures.withoutKeys)}</Text> {t().keylessWord}
+          </Text>
+          <Text type="meta" muted>
+            {props.figures.withoutKeys > 1
+              ? t().nameAndMore({ name: short(props.figures.firstWithoutKeys ?? "", 32), count: number(props.figures.withoutKeys - 1) })
+              : short(props.figures.firstWithoutKeys ?? "", 32)}
+          </Text>
+        </Inline>
+      </Band>
+    </Show>
+  );
 
   const list = () => (
     <Pane label={t().hosts} scrollKey={`ipa-hosts-${props.tab}`}>
-      <Show when={!emptyMirror()}>{hero()}</Show>
+      <Show when={!emptyMirror()}>
+        {hero()}
+        {exceptions()}
+      </Show>
       <Show
         when={props.tab === "groups"}
         fallback={
@@ -357,16 +400,26 @@ export default function HostsScreen(props: HostsScreenProps) {
               open={(host) => ({ href: href({ host: host.fqdn }) })}
               phone={(host) => ({ lines: [host.fqdn, short(hostLine(host))], marks: hostState(host) })}
               columns={[
-                { title: t().host, width: { min: 200, default: 260 }, cell: (host) => host.fqdn },
-                { title: t().state, width: { min: 130, default: 130 }, cell: (host: IpaHost) => hostState(host) ?? "" },
-                { title: t().location, width: { min: 140, default: 180 }, cell: (host) => place(host) || "–", drop: true },
+                {
+                  title: t().host,
+                  width: { min: 220, default: 320 },
+                  // k2b-ui gap: the 28 px mark of a row comes with the table's column mark; until then a plain sign
+                  cell: (host) => (
+                    <Inline>
+                      <Icon name="server" />
+                      <Text weight="strong">{host.sshFingerprints.length === 0 ? short(host.fqdn, 40) : host.fqdn}</Text>
+                      {hostState(host)}
+                    </Inline>
+                  ),
+                },
+                { title: t().location, width: { min: 140, default: 180 }, cell: (host) => place(host), drop: true },
                 ...(props.host
                   ? []
                   : [
                       {
                         title: t().platform,
                         width: { min: 140, default: 180 },
-                        cell: (host: IpaHost) => [host.osVersion, host.platform].filter(Boolean).join(" · ") || "–",
+                        cell: (host: IpaHost) => [host.osVersion, host.platform].filter(Boolean).join(" · "),
                         drop: true,
                       },
                     ]),
@@ -408,29 +461,38 @@ export default function HostsScreen(props: HostsScreenProps) {
             current={openGroup() ?? props.host?.found?.memberofHostgroup[0]}
             open={(group) => ({ href: href({ group: group.cn }) })}
             phone={(group) => ({
-              // without words of its own, a group names its first hosts; the number stands right already
-              lines: [group.cn, short(groupLine(group) || firstAndMore(group.hostDetails.map((host) => host.fqdn)) || t().noHostsInGroup)],
-              time: t().hostCount({ count: group.hostDetails.length }),
+              lines: [group.cn, short(groupPhoneLine(group))],
             })}
             columns={[
-              { title: t().hostgroup, width: { min: 180, default: 240 }, cell: (group) => group.cn },
+              {
+                title: t().hostgroup,
+                width: { min: 220, default: 360 },
+                // k2b-ui gap: the 28 px mark of a row comes with the table's column mark; until then a plain sign
+                cell: (group) => (
+                  <Inline>
+                    <Icon name="folders" />
+                    <Text weight="strong">{keyless(group) > 0 ? short(group.cn, 40) : group.cn}</Text>
+                    {groupState(group)}
+                  </Inline>
+                ),
+              },
               {
                 title: t().hosts,
                 width: { min: 80, default: 90 },
                 align: "end",
                 cell: (group) => number(group.hostDetails.length),
               },
-              // what a group is, in words, while nothing stands open beside the table; the open group says it itself
-              ...(props.group || props.host
-                ? []
-                : [
+              // what a search found in a group, while nothing stands open; its description stands in its detail
+              ...(props.search && !props.group && !props.host
+                ? [
                     {
-                      title: t().description,
-                      width: { min: 180, default: 360 },
-                      cell: (group: IpaHostgroup & { hostDetails: IpaHost[] }) => groupLine(group) || "–",
+                      title: t().found,
+                      width: { min: 180, default: 280 },
+                      cell: (group: IpaHostgroup & { hostDetails: IpaHost[] }) => foundHosts(group),
                       drop: true,
                     },
-                  ]),
+                  ]
+                : []),
             ]}
           />
         </Show>
@@ -486,17 +548,38 @@ export default function HostsScreen(props: HostsScreenProps) {
         />
       }
     >
-      <Show when={group.description || group.hostgroups.length > 0}>
-        <Section icon="settings" title={t().details}>
+      <Cells>
+        <Cells.Cell
+          icon="server"
+          label={t().hosts}
+          value={number(group.hostTotal)}
+          meta={firstAndMore(group.hostDetails.map((host) => short(host.fqdn, STRIP_LINE))) || t().noHostsInGroup}
+        />
+        <Cells.Cell
+          icon="key-off"
+          label={t().noKeys}
+          value={number(keyless(group))}
+          meta={keyless(group) > 0 ? t().onThisPage : t().allHaveKeys}
+        />
+        <Cells.Cell
+          icon="folders"
+          label={t().nested}
+          value={number(group.hostgroups.length)}
+          meta={firstAndMore(group.hostgroups.map((name) => short(name, STRIP_LINE))) || t().noNested}
+        />
+      </Cells>
+      <Show when={group.description || group.hostgroups.length > 1}>
+        <Section title={t().details}>
           <Facts
             items={[
               ...(group.description ? [{ label: t().description, value: group.description }] : []),
-              ...(group.hostgroups.length > 0 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
+              // the sub-groups in full; the strip above counts them
+              ...(group.hostgroups.length > 1 ? [{ label: t().nested, value: group.hostgroups.join(", ") }] : []),
             ]}
           />
         </Section>
       </Show>
-      <Section icon="server" title={t().hostsOfGroup} count={number(group.hostTotal)}>
+      <Section title={t().hostsOfGroup} count={number(group.hostTotal)}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
             <For each={group.hostDetails}>
@@ -596,7 +679,7 @@ export default function HostsScreen(props: HostsScreenProps) {
             meta={host.macAddress[0] ?? t().noMac}
           />
         </Cells>
-        <Section icon="settings" title={t().details}>
+        <Section title={t().details}>
           <Facts
             items={[
               ...(host.description ? [{ label: t().description, value: host.description }] : []),
@@ -614,7 +697,6 @@ export default function HostsScreen(props: HostsScreenProps) {
           />
         </Section>
         <Section
-          icon="folders"
           title={t().memberOf}
           actions={
             host.memberofHostgroup.length > 0
@@ -651,20 +733,16 @@ export default function HostsScreen(props: HostsScreenProps) {
           </Show>
         </Section>
         <Show when={host.sshFingerprints.length > 0}>
-          <Section icon="key" title={t().sshFingerprints}>
-            {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
+          <Section title={t().sshFingerprints}>
+            {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP).
+                The key's comment is a quiet line of its own, so a name like root@host never breaks mid-word. */}
             <Facts
               items={host.sshFingerprints.map((fingerprint) => {
                 const key = readFingerprint(fingerprint);
                 return {
                   label: key.type ?? t().sshKey,
-                  value: key.comment ? (
-                    <>
-                      {key.hash} <Text muted>{key.comment}</Text>
-                    </>
-                  ) : (
-                    key.hash
-                  ),
+                  value: key.hash,
+                  hint: key.comment || undefined,
                   mono: true,
                   copy: key.hash,
                 };
@@ -787,7 +865,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       primary={
         emptyMirror()
           ? undefined
-          : props.tab === "groups" && !props.group && !props.host
+          : props.tab === "groups"
             ? {
                 label: t().newGroup,
                 icon: "folder-plus",
@@ -842,7 +920,7 @@ export default function HostsScreen(props: HostsScreenProps) {
                 ]}
               />
               {/* an empty mirror's way on stands in its empty state, not a second time in the head */}
-              <Show when={!emptyMirror() && props.tab === "groups" && !props.group && !props.host}>
+              <Show when={!emptyMirror() && props.tab === "groups"}>
                 <Button
                   variant="primary"
                   icon="folder-plus"
