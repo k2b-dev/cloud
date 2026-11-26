@@ -96,6 +96,8 @@ const page = async (css: string, html: string, width: number, islands?: Islands)
       const picked = [...document.querySelectorAll(selector)].filter((element) => !element.parentElement?.closest(selector));
       picked.forEach((element, index) => {
         if (as === "remove") {
+          // a Table goes with its phone form
+          if (element.nextElementSibling?.classList.contains("k2-table-phone")) element.nextElementSibling.remove();
           element.remove();
           return;
         }
@@ -112,9 +114,13 @@ const page = async (css: string, html: string, width: number, islands?: Islands)
           last.after(island("-after"));
           return;
         }
+        // already in the island of the primitive it belongs to (a Table's phone form)
+        if (element.closest("solid-island, solid-client")) return;
         const wrapper = island("");
+        // a Table renders its large and its phone form side by side: an island that holds it holds both
+        const phone = element.nextElementSibling?.classList.contains("k2-table-phone") ? element.nextElementSibling : null;
         element.replaceWith(wrapper);
-        wrapper.append(element);
+        wrapper.append(element, ...(phone ? [phone] : []));
       });
     }, islands);
   await settled(opened);
