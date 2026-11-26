@@ -1,14 +1,13 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout } from "@k2b/cloud/ssr";
-import type { JSX } from "solid-js";
 import { toPublicForm } from "../../../../api/form-api-shared";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
 import { planFormComputedFields } from "../../../../form-computed-fields";
 import { gridsService } from "../../../../service";
 import { materializeFormRenderDefaults } from "../../../../service/form-render-defaults";
-import PublicFormSubmit from "../../../_components/forms/PublicFormSubmit.island";
 import { resolveGridsMessages } from "../../../messages";
+import { PublicFormScreen, PublicFormUnavailable } from "./PublicFormScreen";
 
 /**
  * Public form rendering page. Anonymous, no auth required.
@@ -36,13 +35,8 @@ export default ssr<AuthContext>(async (c) => {
     c.header("Cache-Control", "private, no-store");
     c.get("page").title = t.formNotFound;
     return () => (
-      <MinimalLayout c={c}>
-        <PublicShell>
-          <div class="paper standalone-card p-8 text-center text-sm text-dimmed">
-            <i class="ti ti-alert-circle text-base mb-2 block" />
-            {t.formUnavailable}
-          </div>
-        </PublicShell>
+      <MinimalLayout c={c} ui="v2">
+        <PublicFormUnavailable title={t.formNotFound} text={t.formUnavailable} />
       </MinimalLayout>
     );
   }
@@ -92,28 +86,14 @@ export default ssr<AuthContext>(async (c) => {
   const safeForm = await toPublicForm(materializeFormRenderDefaults(form, internalFields, { dateConfig }));
 
   return () => (
-    <MinimalLayout c={c}>
-      <PublicShell>
-        <PublicFormSubmit
-          publicToken={token}
-          form={safeForm}
-          fields={fields}
-          inlineTargetFields={inlineTargetFields}
-          dateConfig={dateConfig}
-        />
-      </PublicShell>
+    <MinimalLayout c={c} ui="v2">
+      <PublicFormScreen
+        publicToken={token}
+        form={safeForm}
+        fields={fields}
+        inlineTargetFields={inlineTargetFields}
+        dateConfig={dateConfig}
+      />
     </MinimalLayout>
   );
 });
-
-// =============================================================================
-// PublicShell — minimal page chrome shared by the form + the not-found state
-// =============================================================================
-
-function PublicShell(props: { children: JSX.Element }) {
-  return (
-    <div class="flex flex-1 flex-col bg-[var(--ui-canvas)]">
-      <main class="flex-1 w-full max-w-2xl mx-auto px-4 py-6 sm:py-10">{props.children}</main>
-    </div>
-  );
-}
