@@ -1,5 +1,6 @@
 import { Link } from "@k2b/ssr/nav";
 import {
+  type Accessor,
   createContext,
   createMemo,
   createUniqueId,
@@ -21,6 +22,7 @@ import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
+import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -53,18 +55,70 @@ const weightClass = { medium: "k2-medium", strong: "k2-strong" } as const;
  * block that carries the text edge itself; anywhere else (a bar, a row, a sentence) it runs inline, and in a bar it is
  * cut to one line with "…". The stylesheet decides by place, so text passed as data behaves the same.
  */
-export const Text = (props: TextProps) => (
-  <Dynamic
-    component={props.href ? "a" : "span"}
-    href={props.href}
-    class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
-    data-k2-part="Text"
-    data-type={props.type}
-    data-tone={props.tone}
-  >
-    {props.children}
-  </Dynamic>
-);
+export const Text = (props: TextProps) => {
+  // made once and read from here: reading `children` again would make its JSX again
+  const words = resolveChildren(() => props.children);
+  return (
+    <Dynamic
+      component={props.href ? "a" : "span"}
+      href={props.href}
+      class={`k2-text${props.type ? ` ${typeClass[props.type]}` : ""}${props.weight ? ` ${weightClass[props.weight]}` : ""}${props.muted ? " k2-muted" : ""}${props.href ? " k2-link" : ""}`}
+      data-k2-part="Text"
+      data-type={props.type}
+      data-tone={props.tone}
+      // a title (the lead of a head) may be cut where it has no room: it says all of its words on hover
+      title={props.type === "lead" && typeof words() === "string" ? String(words()) : undefined}
+    >
+      {words()}
+    </Dynamic>
+  );
+};
+
+export type CutProps = {
+  /** The words, such as an address or a file name. */
+  text: string;
+  /**
+   * What stays whole at the end when the words have no room: an address keeps its domain ("@example.com"), a file
+   * name its last letters and extension ("v12.3.pdf").
+   */
+  keep: "domain" | "extension";
+};
+
+/** How many characters at the end of `text` stay whole (see `CutProps.keep`). */
+export const cutTail = (text: string, keep: CutProps["keep"]): number => {
+  if (keep === "domain") {
+    const at = text.lastIndexOf("@");
+    return at > 0 ? text.length - at : 0;
+  }
+  const extension = /\.[\p{L}\p{N}]{1,8}$/u.exec(text);
+  if (!extension) return 0;
+  // the extension and a few letters before it (whole characters), so a version ("v12.3") survives the cut
+  const before = Array.from(text.slice(0, text.length - extension[0].length))
+    .slice(-6)
+    .join("");
+  return extension[0].length + before.length;
+};
+
+/**
+ * Words cut in the middle where they have no room, so their end stays readable: "bob.lange-adr…@example.com",
+ * "Angebot_Holzwerk…nal_v3.pdf". Their whole words show on hover. Use it for addresses and file names in a row,
+ * a tile or a head; other text is cut at its end by the place it stands in.
+ */
+export const Cut = (props: CutProps) => {
+  const split = () => props.text.length - cutTail(props.text, props.keep);
+  const head = () => props.text.slice(0, split());
+  return (
+    <span class="k2-cut" title={props.text}>
+      {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
+      <Show when={head()}>
+        <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
+      </Show>
+      <Show when={split() < props.text.length}>
+        <span>{props.text.slice(split())}</span>
+      </Show>
+    </span>
+  );
+};
 
 /** The links reading text may carry; any other target shows as text. */
 const proseLinks = ["https:", "http:", "mailto:"] as const;
@@ -185,10 +239,36 @@ export const Facts = (props: FactsProps) => {
 // ── Row and List ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 const ListContext = createContext(false);
+/** Where a row of a list of items stands in the whole list, for assistive technology ("3 of 1,000"). */
+const ListItemContext = createContext<{ index: () => number; size: () => number }>();
 
-export type ListProps = {
+/** A list of a few rows, written out. */
+type WrittenList = {
   /** The entries, each a `Row`. */
   children: JSX.Element;
+  items?: never;
+  rowKey?: never;
+  row?: never;
+  total?: never;
+};
+
+/**
+ * A list of items that can grow without end, such as conversations: only the rows in view and a margin around them
+ * are in the page (see `createVirtualWindow`), the server renders the first rows, and each row says where it stands.
+ */
+type ItemList<T> = {
+  /** All loaded items, in order. */
+  items: readonly T[];
+  /** The stable key of an item. */
+  rowKey: (item: T) => string;
+  /** The `Row` of an item, made once per item while it is in the page. */
+  row: (item: T, index: Accessor<number>) => JSX.Element;
+  /** How many items the whole list has, when more than are loaded; the rows count against it. */
+  total?: number;
+  children?: never;
+};
+
+export type ListProps<T = unknown> = (WrittenList | ItemList<T>) & {
   /** A name for the list, for assistive technology. */
   label?: string;
 };
@@ -254,15 +334,63 @@ const keepPlace = (list: HTMLElement) => {
   });
 };
 
-/** Rows one under the other. (Selection, keyboard and drag come with the behaviour layer.) */
-export const List = (props: ListProps) => {
+/**
+ * Rows one under the other: written out (`children`), or made from `items` with `row`, which keeps only the rows in
+ * view in the page, so a list of any length stays fast. (Selection, keyboard and drag come with the behaviour layer.)
+ */
+export const List = <T,>(props: ListProps<T>) => {
   let list: HTMLDivElement | undefined;
+  const items = () => props.items;
   onMount(() => {
     if (list) keepPlace(list);
   });
   return (
-    <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
-      <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+    <Show
+      when={items()}
+      fallback={
+        <div ref={list} class="k2-list" data-k2-part="List" role="list" aria-label={props.label}>
+          <ListContext.Provider value={true}>{props.children}</ListContext.Provider>
+        </div>
+      }
+    >
+      {(loaded) => <ItemRows {...(props as ItemList<T> & { label?: string })} items={loaded()} />}
+    </Show>
+  );
+};
+
+/** The rows of a list of items, in a window (see `List`). */
+const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
+  let list: HTMLDivElement | undefined;
+  const view = createVirtualWindow({ items: () => props.items, key: (item: T) => props.rowKey(item) });
+  onMount(() => {
+    if (!list) return;
+    // the window keeps the reading place itself, around changes of the items only (see `createVirtualWindow`)
+    view.mount(list);
+  });
+  const size = () => Math.max(props.total ?? 0, props.items.length);
+  return (
+    <div
+      ref={list}
+      class="k2-list"
+      data-k2-part="List"
+      data-virtual=""
+      role="list"
+      aria-label={props.label}
+      style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}
+    >
+      <ListContext.Provider value={true}>
+        <For each={view.shown()}>
+          {(item) => {
+            const index = () => view.indexOf(item);
+            const node = <ListItemContext.Provider value={{ index, size }}>{props.row(item, index)}</ListItemContext.Provider>;
+            const element = resolveChildren(() => node)
+              .toArray()
+              .find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
+            if (element) view.observe(element, item);
+            return node;
+          }}
+        </For>
+      </ListContext.Provider>
     </div>
   );
 };
@@ -340,19 +468,29 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
+  const place = useContext(ListItemContext);
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
+  // a row of three lines cuts each line with "…": a line of words says all of them on hover
+  const cut = (index: number) => {
+    const line = text()[index];
+    return lines() === 3 && typeof line === "string" && line.trim() ? line : undefined;
+  };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
   return (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: the place in the list is set only on a row of a List of items, which is a listitem
     <div
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
+      // in a list of items only some rows are in the page: each says where it stands in the whole list
+      aria-posinset={place ? place.index() + 1 : undefined}
+      aria-setsize={place ? place.size() : undefined}
       data-open={props.href !== undefined || props.onOpen ? "" : undefined}
       data-lines={String(lines())}
       data-unread={props.unread ? "" : undefined}
@@ -419,7 +557,7 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <span class="k2-row-l1">
-        <span class="k2-row-title" id={title}>
+        <span class="k2-row-title" id={title} title={cut(0)}>
           {text()[0]}
         </span>
         <Show when={meta() !== undefined}>
@@ -427,10 +565,14 @@ export const Row = (props: RowProps) => {
         </Show>
       </span>
       <Show when={lines() > 1}>
-        <span class="k2-row-l2">{text()[1]}</span>
+        <span class="k2-row-l2" title={cut(1)}>
+          {text()[1]}
+        </span>
       </Show>
       <Show when={lines() > 2}>
-        <span class="k2-row-l3">{text()[2]}</span>
+        <span class="k2-row-l3" title={cut(2)}>
+          {text()[2]}
+        </span>
       </Show>
       <Show when={time() !== undefined}>
         <span class="k2-row-time">{time()}</span>
@@ -580,15 +722,30 @@ type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);
-  // Every cell is made once: what `cell` returns is placed, never rendered a second time.
-  const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
+  // Every cell is made once, when its row first comes into the page: what `cell` returns is placed, never rendered a
+  // second time; a row that scrolls away and back places the same cells again.
+  const made = createMemo(() => {
+    props.columns;
+    props.rows;
+    return new Map<T, CellValue[]>();
+  });
+  const cellsOf = (row: T) => {
+    const known = made().get(row);
+    if (known) return known;
+    const cells = props.columns.map((column) => column.cell(row));
+    made().set(row, cells);
+    return cells;
+  };
   // the shape of the placeholders while the rows load
   const loading = () => {
     const shape = props.loading;
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
+  // The cells of the first page are made before the table, on the server and in the browser alike, so hydration finds
+  // them in the same order (as all cells were made before); they also say whether rows have two lines.
+  const firstCells = createMemo(() => props.rows.slice(0, SERVER_ROWS).map(cellsOf));
+  const lines = () => (loading()?.lines === 2 || firstCells().some((cells) => cells.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -600,6 +757,13 @@ export const Table = <T,>(props: TableProps<T>) => {
       out.push({ row, index });
     });
     return out;
+  });
+  // A table of any length keeps only the rows in view in the page (see `createVirtualWindow`); its head stays.
+  const itemKey = (item: TableItem<T>) => ("group" in item ? `group:${item.group.key}` : `row:${key(item.row, item.index)}`);
+  const view = createVirtualWindow({ items: () => (loading() ? [] : items()), key: itemKey });
+  let body: HTMLTableSectionElement | undefined;
+  onMount(() => {
+    if (body) view.mount(body);
   });
   const selected = (row: T, index: number) => props.select?.selected.includes(key(row, index)) ?? false;
   // A click anywhere on a row that opens something opens it, unless it was meant for a control in the row.
@@ -669,6 +833,8 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-grid={grid() ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
+          // only the rows in view are in the page: the table says how many it has (its head is the first)
+          aria-rowcount={loading() ? undefined : items().length + 1}
         >
           <Show when={sized()}>
             <colgroup>
@@ -746,7 +912,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </For>
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={body}>
             <Show when={loading()}>
               {(shape) => (
                 <For each={Array.from({ length: shape().rows }, (_, index) => index)}>
@@ -782,58 +948,74 @@ export const Table = <T,>(props: TableProps<T>) => {
                 </For>
               )}
             </Show>
-            <For each={loading() ? [] : items()}>
-              {(item) =>
-                "group" in item ? (
-                  <tr data-group="">
-                    <td colSpan={span()}>
-                      <span class="k2-group-row">
-                        {item.group.head()}
-                        <Show when={item.group.meta}>
-                          <span class="k2-group-row-meta">{item.group.meta}</span>
-                        </Show>
-                      </span>
-                    </td>
-                  </tr>
-                ) : (
-                  (() => {
-                    const target = props.open?.(item.row);
-                    return (
-                      <tr
-                        data-open={target ? "" : undefined}
-                        data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
-                        aria-current={props.current !== undefined && props.current === key(item.row, item.index) ? "true" : undefined}
-                        onClick={target ? openRow : undefined}
-                      >
-                        <Show when={props.select}>
-                          {(select) => (
-                            <td data-select="" data-sticky={props.sticky ? "" : undefined}>
-                              <MarkCheck
-                                label={select().row(item.row)}
-                                checked={selected(item.row, item.index)}
-                                onChange={(on) => toggle(key(item.row, item.index), on)}
-                              />
-                            </td>
-                          )}
-                        </Show>
-                        <For each={props.columns}>
-                          {(column, columnIndex) => (
-                            <td
-                              data-align={column.align}
-                              data-drop={column.drop ? "" : undefined}
-                              data-sticky={firstSticky(columnIndex())}
-                              style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
-                            >
-                              {cell(column, values()[item.index]![columnIndex()]!, columnIndex() === 0 ? target : undefined)}
-                            </td>
-                          )}
-                        </For>
-                      </tr>
-                    );
-                  })()
-                )
-              }
+            {/* the rows before and after those in the page hold their place */}
+            <Show when={view.before() > 0}>
+              <tr data-spacer="" aria-hidden="true">
+                <td colSpan={span()} style={custom({ "--k2-space": `${view.before()}px` })} />
+              </tr>
+            </Show>
+            <For each={view.shown()}>
+              {(item) => {
+                const rowIndex = () => view.indexOf(item) + 2;
+                const node =
+                  "group" in item ? (
+                    <tr data-group="" aria-rowindex={rowIndex()}>
+                      <td colSpan={span()}>
+                        <span class="k2-group-row">
+                          {item.group.head()}
+                          <Show when={item.group.meta}>
+                            <span class="k2-group-row-meta">{item.group.meta}</span>
+                          </Show>
+                        </span>
+                      </td>
+                    </tr>
+                  ) : (
+                    (() => {
+                      const target = props.open?.(item.row);
+                      return (
+                        <tr
+                          aria-rowindex={rowIndex()}
+                          data-open={target ? "" : undefined}
+                          data-selected={props.select && selected(item.row, item.index) ? "" : undefined}
+                          aria-current={props.current !== undefined && props.current === key(item.row, item.index) ? "true" : undefined}
+                          onClick={target ? openRow : undefined}
+                        >
+                          <Show when={props.select}>
+                            {(select) => (
+                              <td data-select="" data-sticky={props.sticky ? "" : undefined}>
+                                <MarkCheck
+                                  label={select().row(item.row)}
+                                  checked={selected(item.row, item.index)}
+                                  onChange={(on) => toggle(key(item.row, item.index), on)}
+                                />
+                              </td>
+                            )}
+                          </Show>
+                          <For each={props.columns}>
+                            {(column, columnIndex) => (
+                              <td
+                                data-align={column.align}
+                                data-drop={column.drop ? "" : undefined}
+                                data-sticky={firstSticky(columnIndex())}
+                                style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
+                              >
+                                {cell(column, cellsOf(item.row)[columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                              </td>
+                            )}
+                          </For>
+                        </tr>
+                      );
+                    })()
+                  );
+                if (typeof Element !== "undefined" && node instanceof Element) view.observe(node, item);
+                return node;
+              }}
             </For>
+            <Show when={view.after() > 0}>
+              <tr data-spacer="" aria-hidden="true">
+                <td colSpan={span()} style={custom({ "--k2-space": `${view.after()}px` })} />
+              </tr>
+            </Show>
           </tbody>
         </table>
       </div>
@@ -842,49 +1024,50 @@ export const Table = <T,>(props: TableProps<T>) => {
           <div class="k2-table-phone">
             {/* while the rows load, the phone shows rows of placeholders of two lines, not an empty list */}
             <Show when={!loading()} fallback={<Loading rows={loading()?.rows} lines={2} />}>
-              <List label={props.label}>
-                <For each={items()}>
-                  {(item) =>
-                    "group" in item ? (
-                      <div class="k2-bar" role="presentation">
-                        <div class="k2-bar-start">
-                          {item.group.head()}
-                          <Show when={item.group.count ?? item.group.meta}>
-                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
-                          </Show>
-                        </div>
+              <List
+                label={props.label}
+                items={items()}
+                rowKey={itemKey}
+                row={(item) =>
+                  "group" in item ? (
+                    <div class="k2-bar" role="presentation">
+                      <div class="k2-bar-start">
+                        {item.group.head()}
+                        <Show when={item.group.count ?? item.group.meta}>
+                          <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                        </Show>
                       </div>
-                    ) : (
-                      (() => {
-                        const form = phone()(item.row);
-                        const target = props.open?.(item.row);
-                        return (
-                          <Row
-                            lines={form.lines}
-                            avatar={form.avatar}
-                            mark={form.mark}
-                            time={form.time}
-                            marks={form.marks}
-                            strong
-                            href={target?.href}
-                            onNavigate={target?.onNavigate}
-                            onOpen={target?.onOpen}
-                            current={props.current !== undefined && props.current === key(item.row, item.index)}
-                            select={
-                              props.select
-                                ? {
-                                    selected: selected(item.row, item.index),
-                                    onChange: (on) => toggle(key(item.row, item.index), on),
-                                  }
-                                : undefined
-                            }
-                          />
-                        );
-                      })()
-                    )
-                  }
-                </For>
-              </List>
+                    </div>
+                  ) : (
+                    (() => {
+                      const form = phone()(item.row);
+                      const target = props.open?.(item.row);
+                      return (
+                        <Row
+                          lines={form.lines}
+                          avatar={form.avatar}
+                          mark={form.mark}
+                          time={form.time}
+                          marks={form.marks}
+                          strong
+                          href={target?.href}
+                          onNavigate={target?.onNavigate}
+                          onOpen={target?.onOpen}
+                          current={props.current !== undefined && props.current === key(item.row, item.index)}
+                          select={
+                            props.select
+                              ? {
+                                  selected: selected(item.row, item.index),
+                                  onChange: (on) => toggle(key(item.row, item.index), on),
+                                }
+                              : undefined
+                          }
+                        />
+                      );
+                    })()
+                  )
+                }
+              />
             </Show>
           </div>
         )}

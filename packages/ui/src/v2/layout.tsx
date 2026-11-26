@@ -15,7 +15,7 @@ import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
-import { RowOpen } from "./content";
+import { Cut, RowOpen } from "./content";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
@@ -698,7 +698,8 @@ const TileName = (props: { tile: Tile }) => (
   <span class="k2-tile-name">
     <span class="k2-tile-title">
       <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
-        {props.tile.title}
+        {/* a long name is cut in the middle, so its extension and version stay readable */}
+        <Cut text={props.tile.title} keep="extension" />
       </RowOpen>
     </span>
     <Show when={props.tile.meta}>

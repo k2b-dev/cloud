@@ -68,6 +68,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a list that can grow without end (mail, records, a log) | `List items rowKey row`: only the rows in view are in the page | – |
 | a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
 | who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
@@ -138,6 +139,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 9. **Lines separate groups, not entries or the parts of one thing.** No
    line under a section head, none between its entries, none inside a
    `Group`.
+10. **Every list that can grow without end scales.** Give such a list its
+   data (`List items rowKey row`, or a `Table`): only the rows in view are
+   in the page, so 10,000 rows cost what 30 do. Write rows out only for a
+   few fixed ones.
 
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page

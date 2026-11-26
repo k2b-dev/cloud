@@ -29,7 +29,7 @@ export function Composer(props: ComposerProps) {
     <section class="k2-composer" data-k2-part="Composer" aria-label={props.label}>
       <Show when={props.head !== undefined || props.headEnd !== undefined}>
         <div class="k2-composer-head">
-          {props.head}
+          <div class="k2-composer-to">{props.head}</div>
           <Show when={props.headEnd !== undefined}>
             <div class="k2-composer-head-end">{props.headEnd}</div>
           </Show>

@@ -671,6 +671,21 @@
   flex: 1;
   font: var(--k2-t-lead);
 }
+/* The title of an open entry is the page's title: beside the actions of its head it takes a second line before it is
+   cut with "…" (its whole words on hover), and the head grows with it; one line keeps the head's 52 px. */
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
+.k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
+  height: auto;
+  min-height: var(--k2-h-status);
+  padding-block: 8px;
+}
+.k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-end {
   gap: 4px;
 }
@@ -784,7 +799,8 @@
   border: var(--k2-hairline);
   border-radius: var(--k2-r-control);
   min-width: 0;
-  max-width: 100%;
+  /* a long name never makes one tile as wide as the row: it is cut in the middle (`Cut`) */
+  max-width: min(100%, 320px);
 }
 .k2-ui .k2-tile > span {
   display: flex;
@@ -800,6 +816,30 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Words cut in the middle: the start gives way with "…", the end (a domain, an extension) stays whole while it fits */
+.k2-ui .k2-cut {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.k2-ui .k2-cut > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* the start keeps a few letters (a start of four or fewer stays whole); only then the end gives way too */
+.k2-ui .k2-cut > span:first-child:not(:last-child) {
+  min-width: 4ch;
+}
+.k2-ui .k2-cut > span[data-whole] {
+  flex: none;
+  min-width: auto;
+}
+.k2-ui .k2-cut > span + span {
+  flex-shrink: 0.001;
 }
 
 .k2-ui .k2-tile-name {
@@ -825,6 +865,8 @@
 }
 .k2-ui .k2-tiles[data-variant="card"] > .k2-tile {
   height: auto;
+  /* a card fills its grid cell; only a plain tile is held to 320 px */
+  max-width: none;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -1108,9 +1150,30 @@
   flex-direction: column;
   min-width: 0;
 }
+/* a list of items keeps only the rows in view in the page; its padding holds the place of the others. The two spaces
+   change with every move of the window: registered as not inherited, a change restyles the list alone, never its
+   rows (inherited, it cost 15 ms of style per frame with 1,000 rows; 4 ms without). */
+@property --k2-before {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@property --k2-after {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.k2-ui .k2-list[data-virtual] {
+  --k2-before: 0px;
+  --k2-after: 0px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
+}
 .k2-ui .k2-row {
+  /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
+  --k2-row-side: auto;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) var(--k2-row-side);
   grid-template-areas: "lead l1 time" "lead l2 end" "lead l3 marks";
   column-gap: 8px;
   align-content: center;
@@ -1134,7 +1197,7 @@
 /* A row without a symbol, a person or a dot has no lead: its text starts on the text edge. In a list where another
    row has a lead, the empty lead keeps its place, so the text of all rows starts in one line (Mail). */
 .k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) var(--k2-row-side);
   grid-template-areas: "l1 time" "l2 end" "l3 marks";
 }
 .k2-ui .k2-row:not([data-digest]):not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) > .k2-row-lead {
@@ -1226,23 +1289,47 @@
 .k2-ui .k2-row[data-lines="1"] > .k2-row-end {
   grid-area: time;
 }
+/* Many marks never push the text out of the row (break-ui 25.11.): they take at most half of it. What does not fit
+   gives way in a fixed order: a tag is cut to about 12 letters first, then lone symbols (a clip, a lock) leave, then
+   the marks at the end; words of a state ("Wartet", "bis Mo") stay whole or leave whole, never stand one letter per
+   line. Marks that leave wrap into a second line the row does not show. */
+.k2-ui .k2-row:has(> .k2-row-marks) {
+  --k2-row-side: fit-content(50%);
+}
 .k2-ui .k2-row-marks {
   grid-area: marks;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  align-content: flex-start;
   justify-content: flex-end;
-  gap: 8px;
-  height: 16px;
+  column-gap: 8px;
+  height: 20px;
+  margin-block: -2px;
+  overflow: hidden;
   color: var(--k2-subtle);
 }
 .k2-ui .k2-row-marks > * {
-  margin-block: -4px;
+  flex: none;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.k2-ui .k2-row-marks > .k2-icon {
+  order: 1;
 }
 .k2-ui .k2-row-marks .k2-icon {
   font-size: 14px;
 }
 .k2-ui .k2-row-marks .k2-chip {
   height: 20px;
+}
+.k2-ui .k2-row-marks .k2-chip[data-kind="tag"] {
+  max-width: calc(12ch + 16px);
+}
+/* a state line under a head holds the state of one thing: a tag there says at most about 16 letters (all on hover),
+   so a long tag never pushes the line onto more lines (break-ui 25.11.: 170 px of state above the text) */
+.k2-ui [data-slot="status"] .k2-chip[data-kind="tag"] {
+  max-width: min(100%, calc(16ch + 16px));
 }
 .k2-ui .k2-row-marks .k2-av,
 .k2-ui .k2-btn .k2-av {
@@ -1396,6 +1483,16 @@
   height: var(--k2-h-row2);
   padding-block: 8px;
   vertical-align: top;
+}
+/* a table of any length keeps only the rows in view in the page; an empty row holds the place of the others */
+.k2-ui .k2-table tr[data-spacer] > td,
+.k2-ui .k2-table[data-grid] tr[data-spacer] > td {
+  --k2-space: 0px;
+  height: var(--k2-space);
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
 }
 .k2-ui .k2-table th:first-child,
 .k2-ui .k2-table td:first-child {
@@ -1860,6 +1957,12 @@
 .k2-ui .k2-chip > .k2-icon {
   font-size: 13px;
 }
+/* where a chip has less room than its words, they are cut with "…" (a tag says all of them on hover) */
+.k2-ui .k2-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-chip[data-status="ok"] {
   background: var(--k2-ok-tint);
   color: var(--k2-ok);
@@ -1880,7 +1983,9 @@
   background: var(--k2-blue-tint);
   color: var(--k2-blue-ink);
 }
+/* a tag holds words someone typed, of any length: it never grows wider than its place */
 .k2-ui .k2-chip[data-kind="tag"] {
+  max-width: 100%;
   font-weight: 400;
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 12%, var(--k2-surface));
   color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 78%, var(--k2-ink-mix));
@@ -2609,6 +2714,21 @@
 .k2-ui .k2-tabs-nav > .k2-tabs > .k2-tab[data-overflow] {
   visibility: hidden;
 }
+/* the open tab never hides: when it has no room it stands after the tabs that fit, as wide as the room left, its name
+   cut with "…"; the tabs it passed wrap away behind it */
+.k2-ui .k2-tabs:has(> .k2-tab[data-kept]) > .k2-tab[data-overflow] {
+  order: 1;
+}
+.k2-ui .k2-tabs > .k2-tab[data-kept] {
+  --k2-tab-room: none;
+  max-width: var(--k2-tab-room);
+  min-width: 0;
+}
+.k2-ui .k2-tab[data-kept] > .k2-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-ni {
   display: flex;
   align-items: center;
@@ -2915,6 +3035,54 @@
 .k2-ui .k2-notice[data-tone="note"] .k2-notice-text,
 .k2-ui .k2-notice[data-tone="ai"] .k2-notice-text {
   font: var(--k2-t-row);
+  /* a note pasted from a call or a summary in points keeps its lines */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+/* a long summary shows 4 lines, a long note 8; "Show more" lies over the end of the last one (its height is taken back
+   by its margin, so nothing moves when it appears) and stands under the text once it is open */
+.k2-ui .k2-notice[data-tone="ai"] {
+  --k2-notice-bg: var(--k2-ai-tint);
+}
+.k2-ui .k2-notice[data-tone="note"] {
+  --k2-notice-bg: var(--k2-note-tint);
+}
+.k2-ui .k2-notice:is([data-tone="ai"], [data-tone="note"]):not([data-open]) .k2-notice-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+}
+.k2-ui .k2-notice[data-tone="note"]:not([data-open]) .k2-notice-text {
+  -webkit-line-clamp: 8;
+}
+.k2-ui .k2-notice-more {
+  all: unset;
+  grid-column: 2;
+  justify-self: end;
+  height: 20px;
+  margin-top: -20px;
+  padding-left: 48px;
+  font: var(--k2-t-row);
+  font-weight: 500;
+  color: var(--k2-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  background: linear-gradient(90deg, transparent, var(--k2-notice-bg) 40px);
+  cursor: default;
+}
+.k2-ui .k2-notice[data-title] .k2-notice-more {
+  grid-column: 2 / -1;
+}
+.k2-ui .k2-notice[data-open] .k2-notice-more {
+  justify-self: start;
+  margin-top: 4px;
+  padding-left: 0;
+  background: none;
+}
+.k2-ui .k2-notice-more:focus-visible {
+  border-radius: var(--k2-r-mark);
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
 .k2-ui .k2-notice > .k2-notice-end {
   padding-left: 4px;
@@ -3584,21 +3752,6 @@
      the one thing above the detail, and the platform may show it in its own bar ([data-k2-part="Back"]) */
   .k2-ui .k2-ws-main:has(.k2-pane[data-detail] > [data-k2-part="Back"]) > [data-slot="head"] {
     display: none;
-  }
-  /* The title of an open entry is the page's title here: it is never cut beside the actions the head keeps (a "…"),
-     it takes a second line instead, and the head grows with it; one line keeps the head's 52 px. */
-  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar,
-  .k2-ui .k2-split > .k2-pane[data-detail] > [data-slot="head"] > .k2-bar {
-    height: auto;
-    min-height: var(--k2-h-status);
-    padding-block: 8px;
-  }
-  .k2-ui .k2-pane[data-detail] > [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    white-space: normal;
-    overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
