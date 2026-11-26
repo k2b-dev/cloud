@@ -53,8 +53,20 @@ const languageNames: Partial<Record<CodeLanguage, string>> = {
   sql: "SQL",
 };
 
-/** A hidden line: every sign a dot, spaces and tabs kept, so the hidden code has the shape of the real one. */
-const hide = (line: string) => line.replace(/[^\s]/gu, "•");
+/**
+ * A hidden line in the shape of the real one: spaces and tabs kept, every run of signs a row of dots exactly as wide
+ * (drawn by CSS at one `ch` a sign, so no font can make it wider or narrower than the code it hides).
+ */
+const Hidden = (props: { line: string }) => (
+  <code>
+    <For each={props.line.split(/(\s+)/u).filter((part) => part !== "")}>
+      {(part) =>
+        /^\s+$/u.test(part) ? part : <span class="k2-code-mask" style={custom({ "--k2-code-signs": String([...part].length) })} />
+      }
+    </For>
+    {props.line === "" ? " " : null}
+  </code>
+);
 
 /**
  * Code to read and copy, such as a config, a key or a command: monospace in the meta role (12/16), lines as written.
@@ -74,11 +86,12 @@ export const CodeBlock = (props: CodeBlockProps) => {
   const lines = createMemo(() => props.code.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"));
   const shown = () => (all() ? lines() : lines().slice(0, codeLinesShown));
   // highlighted only while it shows: a hidden secret never reaches the page as text
-  const drawn = createMemo(() => {
-    const part = shown();
-    if (masked()) return part.map(hide);
-    return highlightCodeDisplayLines(part.join("\n"), props.language ?? "text");
-  });
+  // the highlighter's classes (`hl-*`) in the namespace of v2.css
+  const drawn = createMemo(() =>
+    masked()
+      ? shown()
+      : highlightCodeDisplayLines(shown().join("\n"), props.language ?? "text").map((line) => line.replace(/class="hl-/g, 'class="k2-hl-')),
+  );
   const rest = () => lines().length - shown().length;
   // the widest number of the whole code, so the column keeps its width when the rest shows
   const digits = () => (props.lineNumbers ? String(String(lines().length).length) : undefined);
@@ -135,7 +148,7 @@ export const CodeBlock = (props: CodeBlockProps) => {
                     {index() + 1}
                   </span>
                 </Show>
-                <Show when={!masked()} fallback={<code>{line || " "}</code>}>
+                <Show when={!masked()} fallback={<Hidden line={line} />}>
                   <code innerHTML={line || " "} />
                 </Show>
               </div>

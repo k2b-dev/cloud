@@ -61,9 +61,17 @@ for (const width of [1440, 390]) {
       expect(found.blockRight).toBeLessThanOrEqual(width);
       // the keyboard reaches the long line: focus, then the arrow keys scroll it
       await log.focus();
-      await page.keyboard.press("End");
       await page.keyboard.press("ArrowRight");
-      expect(await log.evaluate((body) => body.scrollLeft)).toBeGreaterThan(0);
+      // the browser may scroll smoothly: wait for the line to move
+      await log.evaluate(
+        (body) =>
+          new Promise<void>((done, fail) => {
+            const until = performance.now() + 1500;
+            const look = () =>
+              body.scrollLeft > 0 ? done() : performance.now() > until ? fail(new Error("did not scroll")) : requestAnimationFrame(look);
+            look();
+          }),
+      );
     });
   });
 
@@ -136,7 +144,8 @@ for (const width of [1440, 390]) {
       }));
       expect(after.text).toContain("-----BEGIN OPENSSH PRIVATE KEY-----");
       expect(after.height).toBe(before.height);
-      expect(after.width).toBe(before.width);
+      // as wide as the code it hid, to the subpixel a font rounds to
+      expect(Math.abs(after.width - before.width)).toBeLessThan(0.5);
       expect(await key.getByRole("button", { name: "Verbergen" }).count()).toBe(1);
     });
   });

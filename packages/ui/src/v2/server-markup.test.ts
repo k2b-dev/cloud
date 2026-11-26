@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Pane } = await import("./layout");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
+const { CodeBlock } = await import("./code");
 
 const split = (more: JSX.Element) =>
   renderToString(() =>
@@ -72,4 +73,21 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
   expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
+});
+
+test("a hidden secret leaves no sign of its code in the server's markup; highlighted code arrives highlighted", () => {
+  const key = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----";
+  const hidden = renderToString(() => createComponent(CodeBlock, { label: "gateway_ed25519", code: key, secret: true }));
+  expect(hidden).not.toContain("BEGIN");
+  expect(hidden).not.toContain("b3BlbnNz");
+  expect(hidden).toContain('role="region"');
+  expect(hidden).toContain('aria-label="gateway_ed25519"');
+  // each run of signs keeps its width: "-----BEGIN" is 10 signs, the second line 24
+  expect(hidden).toContain("--k2-code-signs:10");
+  expect(hidden).toContain("--k2-code-signs:24");
+  const code = renderToString(() =>
+    createComponent(CodeBlock, { label: "gateway.ts", code: "const gateway = 1;", language: "ts", lineNumbers: true }),
+  );
+  expect(code).toContain('<span class="k2-hl-keyword">const</span>');
+  expect(code).toContain('class="k2-code-number"');
 });

@@ -358,7 +358,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           (button) => button.getAttribute("aria-label")?.split(":")[0] ?? button.textContent ?? "",
         );
         const more = element.querySelector(".k2-code-more")?.textContent;
-        return `CodeBlock ${quote(title)}${language ? ` ${language}` : ""}: ${shown} lines${element.querySelector(".k2-code-number") ? " numbered" : ""}${element.hasAttribute("data-masked") ? ", hidden" : ""}${more ? ` (${more})` : ""} | ${deeds.join(" · ")}`;
+        return `CodeBlock ${quote(title)}${language ? ` ${language}` : ""}: ${shown} line${shown === 1 ? "" : "s"}${element.querySelector(".k2-code-number") ? " numbered" : ""}${element.hasAttribute("data-masked") ? ", hidden" : ""}${more ? ` (${more})` : ""} | ${deeds.join(" · ")}`;
       }
       case "Canvas": {
         const height = (element as HTMLElement).style?.getPropertyValue?.("--k2-canvas-h");

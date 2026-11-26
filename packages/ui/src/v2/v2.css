@@ -2274,6 +2274,8 @@
    the body, never the page; with data-wrap they wrap at any sign. A hidden secret shows dots in the shape of its
    signs, so nothing moves when it shows. */
 .k2-ui .k2-code {
+  /* the digits of the widest line number (set by CodeBlock) */
+  --k2-code-digits: 1;
   margin: 0 var(--k2-edge) 12px;
   min-width: 0;
   border: var(--k2-hairline);
@@ -2337,7 +2339,7 @@
 }
 .k2-ui .k2-code-number {
   flex: none;
-  width: calc(var(--k2-code-digits, 1) * 1ch);
+  width: calc(var(--k2-code-digits) * 1ch);
   margin-right: 16px;
   text-align: right;
   color: var(--k2-subtle);
@@ -2352,8 +2354,15 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.k2-ui .k2-code[data-masked] .k2-code-line > code {
-  color: var(--k2-subtle);
+/* a hidden run of signs: dots of one sign's width each, as wide as the signs it hides */
+.k2-ui .k2-code-mask {
+  /* the signs of the run it hides (set by CodeBlock) */
+  --k2-code-signs: 0;
+  display: inline-block;
+  width: calc(var(--k2-code-signs) * 1ch);
+  height: 16px;
+  vertical-align: top;
+  background: radial-gradient(circle, var(--k2-subtle) 1.5px, transparent 2px) 0 50% / 1ch 100% repeat-x;
 }
 .k2-ui .k2-code-more {
   display: flex;
@@ -2363,17 +2372,17 @@
   border-top: var(--k2-hairline);
 }
 /* highlighting: quiet comments, strings and numbers in a colour of their own, keywords in the ink of blue */
-.k2-ui .k2-code-line .hl-comment {
+.k2-ui .k2-code-line .k2-hl-comment {
   color: var(--k2-subtle);
   font-style: italic;
 }
-.k2-ui .k2-code-line .hl-string {
+.k2-ui .k2-code-line .k2-hl-string {
   color: var(--k2-ok);
 }
-.k2-ui .k2-code-line .hl-number {
+.k2-ui .k2-code-line .k2-hl-number {
   color: var(--k2-warn-ink);
 }
-.k2-ui .k2-code-line .hl-keyword {
+.k2-ui .k2-code-line .k2-hl-keyword {
   color: var(--k2-blue-ink);
 }
 

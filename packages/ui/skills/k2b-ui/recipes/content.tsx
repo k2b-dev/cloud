@@ -50,7 +50,7 @@ export default function IntakeGuide(props: Props) {
               <Prose markdown={text()} />
             </Band>
             <Section icon="key" title="Zugang für die Waage">
-              {/* k2b-ui gap: no code block with highlighting in v2; a value to copy is a Facts item with mono and copy. */}
+              {/* A short value to copy is a Facts item with mono and copy; code of more lines is a CodeBlock (code.tsx). */}
               <Facts
                 items={[{ label: "Geräte-Schlüssel", value: "wf_scale_7Q2K-94RT-XM3D", mono: true, copy: "wf_scale_7Q2K-94RT-XM3D" }]}
               />

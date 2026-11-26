@@ -1,7 +1,7 @@
 // Recipe: code to read and copy on an admin page. A private key as a secret (hidden until "Zeigen", copied and
 // downloaded while hidden), a config with line numbers and a switch for long lines, a command, and a snippet with
-// highlighting: each a CodeBlock in its Section. A copy says "Kopiert" in a toast. See `states` at the end: the key
-// shown, and the worst case of a long log (2,000 lines, one of 10,000 signs) that shows 200 lines and "Alles zeigen".
+// highlighting: each a CodeBlock in its Section. A copy says "Kopiert" in a toast. See `states` at the end: the
+// worst case of a long log (2,000 lines, one of 10,000 signs) that shows 200 lines and "Alles zeigen".
 import { Bar, Button, CodeBlock, Nav, Pane, Section, StatusRow, Text, Workspace } from "@k2b/ui/v2";
 
 const key = `-----BEGIN OPENSSH PRIVATE KEY-----
@@ -108,6 +108,5 @@ export default function GatewayAccess(props: Props) {
 
 // The states Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
-  shown: { render: () => <GatewayAccess />, press: "Zeigen" },
   log: () => <GatewayAccess log />,
 };
