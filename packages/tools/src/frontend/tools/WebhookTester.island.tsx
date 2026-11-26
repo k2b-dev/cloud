@@ -269,9 +269,11 @@ function Received(props: { data: WebhookTesterData }) {
               <RequestStatus
                 t={t()}
                 logs={logs()}
+                direction="incoming"
+                when={when()}
                 loading={queries.logs.loading() || queries.logs.refreshing()}
                 onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
-                facts={[{ value: String(endpoints().length), after: t().endpoints }]}
+                facts={[{ value: t().endpointCount({ count: endpoints().length }) }]}
               />
             </>
           }
@@ -389,16 +391,30 @@ function Received(props: { data: WebhookTesterData }) {
 const RequestStatus = (props: {
   t: WebhookMessages;
   logs: WebhookLog[];
+  direction: "incoming" | "outgoing";
+  when: (value: string) => string;
   loading: boolean;
   onRefresh: () => void;
   facts?: { value: string; after: string }[];
 }) => {
   const errors = () => props.logs.filter((log) => log.error || (log.responseStatus ?? 0) >= 400).length;
+  const newest = () => props.logs[0];
+  // what matters now: when the last request came in, or how many answers failed; the counts are quiet facts
+  const lead = () => {
+    const last = newest();
+    if (!last) return props.direction === "incoming" ? props.t.nothingArrived : props.t.nothingSent;
+    if (props.direction === "outgoing") return errors() > 0 ? props.t.answersFailed({ count: errors() }) : props.t.answersOk;
+    return props.t.lastArrived({ time: props.when(last.createdAt) });
+  };
   return (
     <StatusRow
-      lead={props.t.requestCount({ count: props.logs.length })}
+      lead={lead()}
       loading={props.loading}
-      facts={[...(errors() > 0 ? [{ value: String(errors()), after: props.t.errors }] : []), ...(props.facts ?? [])]}
+      facts={[
+        { value: props.t.requestCount({ count: props.logs.length }) },
+        ...(props.direction === "outgoing" && newest() ? [{ value: props.t.lastRequest({ time: props.when(newest()!.createdAt) }) }] : []),
+        ...(props.facts ?? []),
+      ]}
       filters={
         <Button variant="ghost" icon="refresh" onClick={props.onRefresh}>
           {props.t.refresh}
@@ -526,6 +542,8 @@ function Sent(props: { data: WebhookTesterData }) {
               <RequestStatus
                 t={t()}
                 logs={logs()}
+                direction="outgoing"
+                when={when()}
                 loading={queries.logs.loading() || queries.logs.refreshing()}
                 onRefresh={() => void queries.logs.refresh().catch(() => undefined)}
               />

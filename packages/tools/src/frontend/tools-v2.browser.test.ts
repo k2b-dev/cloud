@@ -23,6 +23,10 @@ beforeAll(async () => {
   const fontAsset = iconCss.match(/url\((\.\/[^)"']+\.woff2(?:[?#][^)"']*)?)\)/)?.[1];
   if (!fontAsset) throw new Error("@k2b/ui Tabler preset does not reference a WOFF2 asset");
   const icons = { css: iconCss.replace(fontAsset, "/tabler-icons.woff2"), font: fileURLToPath(new URL(fontAsset, iconCssUrl)) };
+  // the real faces (IBM Plex), so a picture shows the type the product shows
+  const plexUrl = import.meta.resolve("@k2b/ui/fonts/plex.css");
+  const plex = (await Bun.file(fileURLToPath(plexUrl)).text()).replaceAll("./fonts/", "/fonts/");
+  const fontsDir = fileURLToPath(new URL("./fonts/", plexUrl));
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -31,10 +35,13 @@ beforeAll(async () => {
       if (url.pathname === "/styles.css") return new Response(styles, { headers: { "Content-Type": "text/css" } });
       if (url.pathname === "/tabler-icons.css") return new Response(icons.css, { headers: { "Content-Type": "text/css" } });
       if (url.pathname === "/tabler-icons.woff2") return new Response(Bun.file(icons.font));
+      if (url.pathname === "/fonts.css") return new Response(plex, { headers: { "Content-Type": "text/css" } });
+      if (url.pathname.startsWith("/fonts/") && !url.pathname.includes(".."))
+        return new Response(Bun.file(resolve(fontsDir, url.pathname.slice("/fonts/".length))));
       if (url.pathname === "/entry.js")
         return new Response(harness, { headers: { "Content-Type": "application/javascript; charset=utf-8" } });
       return new Response(
-        `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script src="/entry.js"></script></body></html>`,
+        `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fonts.css"><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/tabler-icons.css"></head><body class="k2b-ui" style="margin:0;height:100vh"><div id="app" class="k2-ui" style="display:flex;height:100%"></div><script src="/entry.js"></script></body></html>`,
         { headers: { "Content-Type": "text/html" } },
       );
     },
@@ -149,7 +156,7 @@ test("encoding shows its error at the field and the hash of the text", async () 
 // ── Webhook tester: the main paths on the invented fixture ──
 
 const webhooks = (page: Page, address: string) => page.goto(new URL(address, server.url).href);
-const lead = (page: Page) => page.locator('[data-k2-part="StatusRow"] .k2-status-lead').first().textContent();
+const status = (page: Page) => page.locator('[data-k2-part="StatusRow"]').first().textContent();
 const FIRST_REQUEST = "10000000-0000-4000-8000-000000000001";
 
 test("a request opens beside the list in place, stays in the address through back and reload, and closes", async () => {
@@ -184,7 +191,8 @@ test("a filter from the address and the search narrow the requests, and an empty
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await webhooks(page, "/tools/webhooks?fixture=normal&method=GET");
-    expect(await lead(page)).toBe("3 Anfragen");
+    expect(await status(page)).toContain("Letzte Anfrage heute, 10:17");
+    expect(await status(page)).toContain("3 Anfragen");
     expect(await page.locator('[data-k2-part="FilterBar"]').textContent()).toContain("GET");
     const search = page.getByRole("searchbox", { name: "Anfragen durchsuchen" });
     await search.fill("deploy");
@@ -194,7 +202,7 @@ test("a filter from the address and the search narrow the requests, and an empty
     expect(new URL(page.url()).searchParams.get("method")).toBe("GET");
     await page.getByRole("link", { name: "Filter zurücksetzen" }).click();
     await page.waitForURL((url) => !url.searchParams.has("q") && !url.searchParams.has("method"));
-    await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"] .k2-status-lead')?.textContent === "24 Anfragen");
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"]')?.textContent?.includes("24 Anfragen"));
   } finally {
     await page.close();
   }
@@ -230,7 +238,8 @@ test("a request is sent from its dialog, the form names what is wrong, and the a
     const page = await browser.newPage({ viewport: { width, height: 900 } });
     try {
       await webhooks(page, "/tools/webhooks?mode=send&fixture=normal");
-      expect(await lead(page)).toBe("6 Anfragen");
+      expect(await status(page)).toContain("3 Antworten mit Fehler");
+      expect(await status(page)).toContain("6 Anfragen");
       await page.getByRole("button", { name: "Anfrage senden" }).first().click();
       const dialog = page.getByRole("dialog", { name: "Anfrage senden" });
       await dialog.getByRole("button", { name: "Senden" }).click();
@@ -271,7 +280,7 @@ test("1,000 received requests are ready quickly and never scroll the page sidewa
     await webhooks(page, "/tools/webhooks?fixture=huge");
     await page.locator('[data-k2-part="Table"]').waitFor();
     const ready = performance.now() - started;
-    expect(await lead(page)).toBe("1.000 Anfragen");
+    expect(await status(page)).toContain("1.000 Anfragen");
     const nodes = await page.locator("#app *").count();
     const rows = await page.locator('[data-k2-part="Table"] tbody tr').count();
     if (shots) await Bun.write(resolve(shots, "webhooks-huge.txt"), `ready ${Math.round(ready)} ms\nnodes ${nodes}\nrows ${rows}\n`);
