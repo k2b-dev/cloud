@@ -484,7 +484,14 @@ export const Pane = (props: PaneProps) => {
             {/* a long name is cut with "…"; the whole name is the hint under the pointer */}
             <ActionButton action={{ icon: "chevron-left", ...back() }} variant="text" titled />
             {/* the workspace's head gives way here: a pane without a head of its own names what stands open */}
-            <Show when={!head() && props.label}>{(label) => <span class="k2-pane-back-name">{label()}</span>}</Show>
+            <Show when={!head() && props.label}>
+              {(label) => (
+                // the page's name for assistive technology too: it heads the pane as its title would
+                <span class="k2-pane-back-name" role="heading" aria-level={2}>
+                  {label()}
+                </span>
+              )}
+            </Show>
           </div>
         )}
       </Show>

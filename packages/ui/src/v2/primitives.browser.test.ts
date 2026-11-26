@@ -433,6 +433,8 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         });
         // the way back keeps its whole name as a link; the outline says what the bar names
         expect(await page.getByRole("link", { name: "Angebote und Ausschreibungen 2026", exact: true }).count()).toBe(1);
+        // the name heads the page for assistive technology as well
+        expect(await page.getByRole("heading", { name: "Notizen.md", exact: true }).count()).toBe(1);
         const outline = await describeV2Page(page, "[data-k2-workspace]");
         expect(outline).toContain('Back "Angebote und Ausschreibungen 2026" link · names "Notizen.md"');
         expect(outline).not.toContain("Problems (");
