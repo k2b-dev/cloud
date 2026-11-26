@@ -42,6 +42,8 @@ const screen = () => {
     const tab =
       (["access", "schedule", "danger"] as const).find((entry) => entry === path.split("/")[5]) ?? ("general" satisfies VenueSettingsTab);
     const settings = fixtureSettings();
+    // a venue nobody else works in yet
+    if (variant === "alone") settings.accessEntries = [];
     return (
       <VenueSettingsScreen
         initial={settings}

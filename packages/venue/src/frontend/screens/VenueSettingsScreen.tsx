@@ -31,7 +31,7 @@ import { createMemo, createSignal, For, type JSX, onCleanup, Show } from "solid-
 import { apiClient } from "../../api/client";
 import type { DateOverride, OpeningRule, ShiftTemplate, Venue, VenueDashboard } from "../../contracts";
 import { formatDateKey } from "../../time-format";
-import { ExceptionDialog, OpeningRuleDialog, ShiftTemplateDialog } from "../_components/venue-workspace/schedule";
+import { ExceptionDialog, OpeningRuleDialog, ShiftTemplateDialog, slotTarget } from "../_components/venue-workspace/schedule";
 import { bannerTransform, readError, sortOpeningRules, sortOverrides, sortShiftTemplates } from "../_components/venue-workspace/utils";
 import { venueSlugError } from "../venue-slug";
 import { PublicLinkDialog } from "./LinkDialogs";
@@ -453,7 +453,10 @@ function AccessArea(props: {
             <For each={people()}>
               {(entry) => (
                 <Row
-                  avatar={{ name: principalLabel(entry, locale()) }}
+                  // a person shows a face, a group the group's symbol (never the initial of its name)
+                  {...(entry.principal.type === "group"
+                    ? { mark: { icon: "users-group", color: "#475569" } }
+                    : { avatar: { name: principalLabel(entry, locale()) } })}
                   lines={[principalLabel(entry, locale()), level(entry.permission)]}
                 />
               )}
@@ -494,7 +497,7 @@ function ScheduleArea(props: {
   submitter: <V>(request: (value: V) => Promise<Answer>, failure: string) => (value: V) => Promise<string | null>;
   write: (key: string, run: () => Promise<void>, success: string) => Promise<void>;
 }) {
-  const { t } = useVenueWords();
+  const { t, words } = useVenueWords();
   const venue = () => props.settings.venue;
   const id = () => venue().id;
   const weekday = (value: number) =>
@@ -656,7 +659,8 @@ function ScheduleArea(props: {
         [
           shift.date ? day(shift.date) : weekday(shift.weekday),
           `${shift.startTime}–${shift.endTime}`,
-          shift.maxPeople && shift.maxPeople > shift.minPeople ? `${shift.minPeople}–${shift.maxPeople}` : String(shift.minPeople),
+          // the staffing in words, so "3–4" reads as people and not as a time
+          words().peopleNeeded({ count: shift.maxPeople ?? shift.minPeople, range: slotTarget(shift) }),
           shift.active ? "" : t().paused,
         ]
           .filter(Boolean)

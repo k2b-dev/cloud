@@ -12,6 +12,7 @@ import {
   Dialog,
   Empty,
   FilterBar,
+  Inline,
   Input,
   List,
   ListOrder,
@@ -239,10 +240,45 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
 
   // ── the frame ───────────────────────────────────────────────────────────────────────────────────────────
   const nav = () => venueNav({ t, words }, dashboard(), view(), () => setLinking(true));
-  const signup = { label: t().signUp, icon: "user-plus", onClick: () => setSigningUp(true) };
+  // the head opens the list of shifts to sign up for; "Schicht übernehmen" is the deed of one open shift
+  const signup = { label: words().signUpHead, icon: "user-plus", onClick: () => setSigningUp(true) };
+  // the schedule's state stands in the head row, so the calendar's own toolbar is the only row above the weeks
+  const outlook = () => (
+    <Inline>
+      <Text weight="strong">
+        {canJoinShifts()
+          ? t().nextDaysFreeSpots({ count: dashboard().outlook.missingPeople })
+          : t().nextDaysUnfilledSpots({ count: dashboard().outlook.missingPeople })}
+      </Text>
+      <Text type="meta" muted>
+        {dashboard().outlook.nextGap
+          ? `${t().nextGapLabel} ${formatVenueWeekdayTime(dashboard().outlook.nextGap!.startsAt, venue().timezone, locale())} · ${dashboard().outlook.nextGap!.title}`
+          : t().noGapNextDays}
+      </Text>
+    </Inline>
+  );
+  const gapsMenu = () => (
+    <Menu
+      variant="ghost"
+      items={[
+        {
+          title: words().showShifts,
+          choice: gapsOnly() ? "gaps" : "all",
+          onChoose: (value) => setGaps(value === "gaps"),
+          items: [
+            { label: words().allShifts, value: "all" },
+            { label: words().onlyGaps, value: "gaps" },
+          ],
+        },
+      ]}
+    >
+      {gapsOnly() ? words().onlyGaps : words().allShifts}
+    </Menu>
+  );
   const head = (end?: JSX.Element) => (
-    // The venue's name heads its group in the sidebar, so the head holds only the view's deeds.
+    // The venue's name heads its group in the sidebar, so the head holds only the view's state and deeds.
     <Bar
+      start={view() === "shifts" ? outlook() : undefined}
       end={
         <>
           {end}
@@ -266,7 +302,9 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
         detail={selection() ? 380 : undefined}
         primary={canWrite(venue()) && (view() === "shifts" || view() === "my-shifts") ? signup : undefined}
         head={head(
-          view() === "my-shifts" ? (
+          view() === "shifts" ? (
+            gapsMenu()
+          ) : view() === "my-shifts" ? (
             <Button icon="calendar-share" onClick={() => setSubscribing(true)}>
               {t().subscribeCalendar}
             </Button>
@@ -289,44 +327,6 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
               // beside an open shift the calendar keeps a width of its own; alone it has the whole page
               width={selection() ? { min: 520, default: 1000 } : undefined}
               scrollKey={`venue-schedule-${venue().id}`}
-              status={
-                <StatusRow
-                  lead={
-                    canJoinShifts()
-                      ? t().nextDaysFreeSpots({ count: dashboard().outlook.missingPeople })
-                      : t().nextDaysUnfilledSpots({ count: dashboard().outlook.missingPeople })
-                  }
-                  loading={dashboardQuery.refreshing()}
-                  facts={
-                    dashboard().outlook.nextGap
-                      ? [
-                          {
-                            before: t().nextGapLabel,
-                            value: `${formatVenueWeekdayTime(dashboard().outlook.nextGap!.startsAt, venue().timezone, locale())} · ${dashboard().outlook.nextGap!.title}`,
-                          },
-                        ]
-                      : [{ value: t().noGapNextDays }]
-                  }
-                  filters={
-                    <Menu
-                      variant="ghost"
-                      items={[
-                        {
-                          title: words().showShifts,
-                          choice: gapsOnly() ? "gaps" : "all",
-                          onChoose: (value) => setGaps(value === "gaps"),
-                          items: [
-                            { label: words().allShifts, value: "all" },
-                            { label: words().onlyGaps, value: "gaps" },
-                          ],
-                        },
-                      ]}
-                    >
-                      {gapsOnly() ? words().onlyGaps : words().allShifts}
-                    </Menu>
-                  }
-                />
-              }
             >
               <Show when={dashboardQuery.error()}>
                 <Notice
@@ -532,7 +532,7 @@ const feedbackList = (props: VenueWorkspaceProps, locale: string) => {
 
 /** The search over comments in the head; Enter loads the page with the words in the address. */
 function FeedbackSearch(props: VenueWorkspaceProps) {
-  const { t } = useVenueWords();
+  const { t, words } = useVenueWords();
   const locale = useLocale();
   const [text, setText] = createSignal(props.initialFeedbackSearch);
   return (
@@ -540,7 +540,7 @@ function FeedbackSearch(props: VenueWorkspaceProps) {
       type="search"
       icon="search"
       label={t().searchFeedbackComments}
-      placeholder={t().searchComments}
+      placeholder={words().searchShort}
       value={text()}
       onInput={setText}
       onKeyDown={(event) => {
@@ -590,28 +590,30 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
     <Pane
       label={t().feedback}
       scrollKey={`venue-feedback-${venue().id}`}
+      // the filter bar is the list's one status row: filters, what they found, and the order at its end
       status={
-        <>
-          <FilterBar
-            query={query()}
-            state={state()}
-            onChange={(next) => navigateTo(feedbackHref(venue().id, query(), next))}
-            results={t().feedbackEntriesRange({
-              from: 1,
-              to: props.dashboard.feedbackEntries.length,
-              total: props.dashboard.feedbackEntriesPage?.total ?? 0,
-            })}
-          />
-          <StatusRow
-            // the filter says the period; the first row says what came out of it
-            lead={average() === null ? words().noRatingsYet : words().averageLead({ rating: formatFeedbackRating(average()!, locale()) })}
-            loading={props.refreshing}
-            filters={<ListOrder query={query()} state={state()} onChange={() => undefined} />}
-          />
-        </>
+        <FilterBar
+          query={query()}
+          state={state()}
+          onChange={(next) => navigateTo(feedbackHref(venue().id, query(), next))}
+          results={t().feedbackEntriesRange({
+            from: 1,
+            to: props.dashboard.feedbackEntries.length,
+            total: props.dashboard.feedbackEntriesPage?.total ?? 0,
+          })}
+          end={<ListOrder query={query()} state={state()} onChange={() => undefined} />}
+        />
       }
     >
       <Cells>
+        <Cells.Cell
+          icon="star"
+          color="#d97706"
+          label={t().averageRating}
+          value={average() === null ? words().noRatingsYet : formatFeedbackRating(average()!, locale())}
+          meta={t().inLastDays({ count: days() })}
+          loading={props.refreshing}
+        />
         <Cells.Cell
           icon="message-star"
           color="#2563eb"

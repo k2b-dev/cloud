@@ -1,4 +1,12 @@
-import type { ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard, VenueTemplateSummary } from "../../contracts";
+import type {
+  PublicStatus,
+  ShiftAssignment,
+  ShiftTemplate,
+  UpcomingSlot,
+  Venue,
+  VenueDashboard,
+  VenueTemplateSummary,
+} from "../../contracts";
 import type { VenueWorkspaceProps } from "../_components/venue-workspace/types";
 import type { VenueSettingsContext } from "./VenueSettingsScreen";
 
@@ -161,29 +169,106 @@ export const evening: UpcomingSlot = {
   ],
 };
 
+/** What the café sells this week, as its menu section lists it. */
+const MENU = [
+  { name: "Käsekuchen", description: "Mit Mürbeteig, nach Hausrezept", price: "2,80 €" },
+  { name: "Apfelstrudel", description: "Warm, mit Vanillesoße", price: "3,20 €" },
+  { name: "Cappuccino", price: "2,10 €" },
+  { name: "Chai Latte", description: "Hafermilch auf Wunsch", price: "2,60 €" },
+];
+
+/** A shift of this week from its template, with the people who took it; open places follow from min and max. */
+const slotOf = (
+  date: string,
+  shift: ShiftTemplate,
+  times: { startsAt: string; endsAt: string },
+  people: [id: string, userId: string, name: string][],
+): UpcomingSlot => ({
+  date,
+  template: shift,
+  ...times,
+  assignedCount: people.length,
+  minPeople: shift.minPeople,
+  maxPeople: shift.maxPeople,
+  missingPeople: Math.max(0, shift.minPeople - people.length),
+  full: shift.maxPeople !== null && people.length >= shift.maxPeople,
+  assignments: people.map(([id, userId, name]) => person(id, userId, name, times, shift.id, shift.title)),
+});
+const stocktaking = slotOf(
+  "2026-11-25",
+  template({ id: "Temp03", title: "Inventur", weekday: 3, startTime: "14:00", endTime: "17:00", minPeople: 2, maxPeople: 3 }),
+  { startsAt: "2026-11-25T13:00:00.000Z", endsAt: "2026-11-25T16:00:00.000Z" },
+  [
+    ["Asg005", "user-5", "Alex Probe"],
+    ["Asg006", "user-1", "Robin Example"],
+  ],
+);
+const breakfast = slotOf(
+  "2026-11-27",
+  template({ id: "Temp04", title: "Frühstück", weekday: 5, startTime: "08:00", endTime: "11:00", minPeople: 2, maxPeople: 3 }),
+  { startsAt: "2026-11-27T07:00:00.000Z", endsAt: "2026-11-27T10:00:00.000Z" },
+  [["Asg007", "user-6", "Lea Sommer"]],
+);
+const brunch = slotOf(
+  "2026-11-28",
+  template({ id: "Temp05", title: "Brunch", weekday: 6, startTime: "09:00", endTime: "13:00", minPeople: 3, maxPeople: 5 }),
+  { startsAt: "2026-11-28T08:00:00.000Z", endsAt: "2026-11-28T12:00:00.000Z" },
+  [
+    ["Asg008", "user-2", "Kim Muster"],
+    ["Asg009", "user-7", "Ole Brandt"],
+    ["Asg010", "user-1", "Robin Example"],
+  ],
+);
+
+/** The opening hours: Monday to Friday 8–16, Saturday 9–14. */
+const openingRules = [1, 2, 3, 4, 5, 6].map((weekday) => ({
+  id: `Open0${weekday}`,
+  venueId: "Cafe01",
+  weekday,
+  startTime: weekday === 6 ? "09:00" : "08:00",
+  endTime: weekday === 6 ? "14:00" : "16:00",
+  note: null,
+  position: weekday - 1,
+  createdAt: "2026-09-01T08:00:00.000Z",
+  updatedAt: "2026-09-01T08:00:00.000Z",
+}));
+
+/** Seven ratings of the last days, three with words, as the counts above them say. */
+const feedbackEntries = [
+  { rating: 5, comment: "Bester Kuchen auf dem Campus!", createdAt: "2026-11-25T08:30:00.000Z" },
+  { rating: 4, comment: "Freundlich, aber die Schlange war lang.", createdAt: "2026-11-25T07:50:00.000Z" },
+  { rating: 5, comment: null, createdAt: "2026-11-25T07:10:00.000Z" },
+  { rating: 3, comment: null, createdAt: "2026-11-24T14:10:00.000Z" },
+  { rating: 4, comment: "Mehr vegane Brötchen wären schön.", createdAt: "2026-11-24T10:05:00.000Z" },
+  { rating: 4, comment: null, createdAt: "2026-11-23T15:40:00.000Z" },
+  { rating: 4, comment: null, createdAt: "2026-11-23T09:20:00.000Z" },
+].map((entry) => ({ venueId: "Cafe01", ...entry }));
+
 export const fixtureDashboard = (patch: Partial<VenueDashboard> = {}): VenueDashboard => ({
   venue: fixtureVenue(),
-  openingRules: [],
+  openingRules,
   overrides: [],
-  templates: [lunch.template, evening.template],
-  slots: [lunch, evening],
+  templates: [lunch.template, evening.template, stocktaking.template, breakfast.template, brunch.template],
+  slots: [stocktaking, lunch, evening, breakfast, brunch],
   otherAssignments: [],
   outlook: {
     startDate: "2026-11-25",
     endDate: "2026-12-01",
-    missingPeople: 1,
+    // Thursday's lunch and Friday's breakfast each miss one person
+    missingPeople: 2,
     nextGap: { templateId: "Temp01", date: SHIFT_DAY, title: "Mittagstheke", ...lunchTimes, missingPeople: 1 },
   },
-  assignments: [...lunch.assignments, ...evening.assignments],
-  myUpcomingShifts: [evening.assignments[0]!],
-  myShiftCount: 1,
+  assignments: [...stocktaking.assignments, ...lunch.assignments, ...evening.assignments, ...breakfast.assignments, ...brunch.assignments],
+  // the viewer (user-1) works today's stocktaking, Thursday evening and Saturday's brunch
+  myUpcomingShifts: [stocktaking.assignments[1]!, evening.assignments[0]!, brunch.assignments[2]!],
+  myShiftCount: 3,
   sections: [
     {
       id: "Sec001",
       venueId: "Cafe01",
       kind: "menu",
       title: "Kuchen und Getränke",
-      content: { items: [] },
+      content: { items: MENU },
       enabled: true,
       position: 1,
       createdAt: "2026-10-01T08:00:00.000Z",
@@ -205,17 +290,14 @@ export const fixtureDashboard = (patch: Partial<VenueDashboard> = {}): VenueDash
     count: 7,
     averageRating: 4.1,
     commentCount: 3,
-    buckets: ["2026-11-23", "2026-11-24", "2026-11-25"].map((date, index) => ({
-      date,
-      count: index + 2,
-      averageRating: 3.8 + index * 0.2,
-    })),
+    buckets: [
+      { date: "2026-11-23", count: 2, averageRating: 4 },
+      { date: "2026-11-24", count: 2, averageRating: 3.5 },
+      { date: "2026-11-25", count: 3, averageRating: 4.7 },
+    ],
   },
-  feedbackEntries: [
-    { venueId: "Cafe01", rating: 5, comment: "Bester Kuchen auf dem Campus!", createdAt: "2026-11-25T08:30:00.000Z" },
-    { venueId: "Cafe01", rating: 3, comment: null, createdAt: "2026-11-24T14:10:00.000Z" },
-  ],
-  feedbackEntriesPage: { page: 1, pageSize: 50, total: 2 },
+  feedbackEntries,
+  feedbackEntriesPage: { page: 1, pageSize: 50, total: feedbackEntries.length },
   ...patch,
 });
 
@@ -228,6 +310,7 @@ export const venueProps = (patch: Partial<VenueWorkspaceProps> = {}): VenueWorks
   accessEntries: [],
   apiKeys: [],
   initialView: "shifts",
+  initialPublicPreview: fixturePreview(),
   initialCalendarView: "week",
   initialCalendarViewSource: "url",
   initialCalendarDate: SHIFT_DAY,
@@ -239,19 +322,7 @@ export const venueProps = (patch: Partial<VenueWorkspaceProps> = {}): VenueWorks
 /** The settings of the venue as the server reads them for the settings page. */
 export const fixtureSettings = (): VenueSettingsContext => ({
   venue: fixtureVenue(),
-  openingRules: [
-    {
-      id: "Open01",
-      venueId: "Cafe01",
-      weekday: 1,
-      startTime: "08:00",
-      endTime: "16:00",
-      note: null,
-      position: 0,
-      createdAt: "2026-09-01T08:00:00.000Z",
-      updatedAt: "2026-09-01T08:00:00.000Z",
-    },
-  ],
+  openingRules,
   overrides: [
     {
       id: "Exc001",
@@ -265,7 +336,7 @@ export const fixtureSettings = (): VenueSettingsContext => ({
       updatedAt: "2026-11-01T08:00:00.000Z",
     },
   ],
-  templates: [lunch.template, evening.template],
+  templates: [lunch.template, evening.template, stocktaking.template, breakfast.template, brunch.template],
   accessEntries: [
     {
       id: "00000000-0000-4000-8000-000000000001",
@@ -298,3 +369,24 @@ export const fixtureSettings = (): VenueSettingsContext => ({
   ],
   apiKeys: [],
 });
+
+/** The public page as visitors see it now: open until 16:00, the menu, and the next openings. */
+export const fixturePreview = (): PublicStatus => {
+  const dashboard = fixtureDashboard();
+  return {
+    venue: dashboard.venue,
+    open: true,
+    spontaneousOpen: false,
+    statusLabel: "Geöffnet",
+    todayLabel: "Heute 08:00–16:00",
+    nextOpeningLabel: null,
+    activeWindowLabel: "bis 16:00",
+    upcomingOpenings: [
+      { kind: "regular", title: "Geöffnet", startsAt: "2026-11-26T07:00:00.000Z", endsAt: "2026-11-26T15:00:00.000Z" },
+      { kind: "regular", title: "Geöffnet", startsAt: "2026-11-27T07:00:00.000Z", endsAt: "2026-11-27T15:00:00.000Z" },
+    ],
+    upcomingExceptions: [],
+    openingRules: dashboard.openingRules,
+    sections: dashboard.sections.filter((section) => section.enabled),
+  };
+};

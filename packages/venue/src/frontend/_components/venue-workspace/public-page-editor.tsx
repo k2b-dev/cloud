@@ -411,12 +411,7 @@ export function PublicPageEditor(props: {
   ];
   return (
     <Pane.Split>
-      <Pane
-        label={t().sections}
-        width={{ min: 360, default: 520 }}
-        scrollKey={`venue-public-${venue().id}`}
-        status={<StatusRow lead={words().sectionsCount({ count: sections().length })} loading={orderSaving()} />}
-      >
+      <Pane label={t().sections} width={{ min: 360, default: 520 }} scrollKey={`venue-public-${venue().id}`}>
         <Section
           icon="world"
           title={t().publicPage}
@@ -505,7 +500,15 @@ export function PublicPageEditor(props: {
             {(status) => (
               // k2b-ui gap (lane PS: MinimalLayout ui="v2" and a public page recipe): the public page is not on v2 yet; its own components draw the preview in a canvas.
               <Canvas label={t().preview}>
-                <PublicPageBody status={status()} layout="preview" selectedSectionId={selectedSectionId()} feedback={<FeedbackPreview />} />
+                {/* the page's own cards keep the pane's text edge, so no card edge stands on the grip's line */}
+                <div class="px-5 pb-5">
+                  <PublicPageBody
+                    status={status()}
+                    layout="preview"
+                    selectedSectionId={selectedSectionId()}
+                    feedback={<FeedbackPreview />}
+                  />
+                </div>
               </Canvas>
             )}
           </Show>

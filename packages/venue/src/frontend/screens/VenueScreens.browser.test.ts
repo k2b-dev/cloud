@@ -4,8 +4,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { evening, FIXTURE_NOW, fixtureDashboard, fixtureSettings, lunch, SHIFT_DAY } from "./fixtures";
-import { renderVenueShell } from "./venue-shell.browser-fixture";
+import { evening, FIXTURE_NOW, fixtureDashboard, fixturePreview, fixtureSettings, fixtureVenues, lunch, SHIFT_DAY } from "./fixtures";
+import { type Crumb, renderVenueShell } from "./venue-shell.browser-fixture";
 
 // The main paths of Venue on v2: find and create a venue, open a shift from the calendar, join it with the following
 // weeks, remove someone as an admin, Back and Forward over the selection, sign up from the dialog, leave one of my
@@ -84,9 +84,21 @@ afterAll(async () => {
 
 const head = () =>
   `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style>`;
+/** The title each Venue page gives its layout: Start, Standorte, then the open venue and its settings where they apply. */
+const pageTitle = (address: string): Crumb[] => {
+  const [, , , id, view] = new URL(address, origin).pathname.split("/");
+  const crumbs: Crumb[] = [
+    { title: "Start", href: "/" },
+    { title: "Standorte", href: "/app/venue" },
+  ];
+  const venue = fixtureVenues.find((entry) => entry.id === id);
+  if (!venue) return crumbs;
+  crumbs.push({ title: venue.name, href: `/app/venue/${venue.id}` });
+  return view === "settings" ? [...crumbs, { title: "Standorteinstellungen" }] : crumbs;
+};
 const page = async (variant: string, permission: string, address: string) => {
   if (shell)
-    return (await shell.page(address))
+    return (await shell.page(address, pageTitle(address)))
       .replace("<html", `<html data-variant="${variant}" data-permission="${permission}"`)
       .replace("</head>", `${head()}</head>`)
       .replace("</body>", '<script src="/harness.js"></script></body>');
@@ -132,6 +144,7 @@ const answer = async (route: Route, calls: Call[]) => {
   if (call.method === "POST" && call.path.endsWith("/signup")) return route.fulfill({ status: 201, json: {} });
   if (call.method === "DELETE") return route.fulfill({ json: { message: "Shift cancelled" } });
   if (call.path.endsWith("/settings-context")) return route.fulfill({ json: fixtureSettings() });
+  if (call.path.endsWith("/public-preview")) return route.fulfill({ json: fixturePreview() });
   if (call.method === "PATCH" && call.path === "/api/venue/venues/Cafe01") return route.fulfill({ json: {} });
   if (call.method === "PATCH" && call.path.includes("/templates/")) return route.fulfill({ json: {} });
   if (call.method === "PUT" && call.path.endsWith("/sections/order")) return route.fulfill({ json: {} });
@@ -149,6 +162,8 @@ const open = async (view: View, address: string, options: { variant?: string; pe
     hasTouch: view.touch,
     reducedMotion: "reduce",
     colorScheme: "light",
+    // the person works where the venue is, so times need no note about another zone
+    timezoneId: "Europe/Berlin",
   });
   const tab = await context.newPage();
   tab.setDefaultTimeout(10_000);
@@ -281,7 +296,7 @@ describe("Venue on v2", () => {
   test("the sign-up dialog lists the open shifts by day and takes one", async () => {
     const { context, tab, errors, calls } = await open(desktop, schedule, { permission: "write" });
     try {
-      await tab.getByRole("button", { name: "Schicht übernehmen" }).first().click();
+      await tab.getByRole("button", { name: "Eintragen" }).first().click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByText("Mittagstheke").first().waitFor();
       // the full evening shift is the viewer's own, so it stays listed with Leave
@@ -306,7 +321,8 @@ describe("Venue on v2", () => {
       await tab.waitForFunction(() => document.querySelector('[role="alertdialog"]') === null);
       await settled(tab);
       expect(writes(calls)).toEqual([
-        { method: "DELETE", path: `/api/venue/venues/Cafe01/assignments/${evening.assignments[0]!.id}`, body: null },
+        // the first of my shifts is today's stocktaking
+        { method: "DELETE", path: "/api/venue/venues/Cafe01/assignments/Asg006", body: null },
       ]);
       await tab.getByRole("button", { name: "Kalender abonnieren" }).click();
       const dialog = tab.getByRole("dialog");
@@ -316,6 +332,29 @@ describe("Venue on v2", () => {
       expect(errors).toEqual([]);
     } finally {
       await context.close();
+    }
+  }, 60_000);
+
+  test("access without anyone else says so once, and lists people with faces and groups with their symbol", async () => {
+    const alone = await open(desktop, "/app/venue/Cafe01/settings/access", { variant: "alone" });
+    try {
+      expect(await alone.tab.getByText("Noch niemand hat Zugriff.").isVisible()).toBe(true);
+      expect(alone.errors).toEqual([]);
+    } finally {
+      await alone.context.close();
+    }
+    const team = await open(desktop, "/app/venue/Cafe01/settings/access");
+    try {
+      expect(await team.tab.getByText("Noch niemand hat Zugriff.").count()).toBe(0);
+      expect(await team.tab.locator('[data-k2-part="Avatar"]').count()).toBeGreaterThanOrEqual(3);
+      expect(
+        await team.tab
+          .locator('[data-k2-part="Mark"]')
+          .filter({ has: team.tab.locator(".ti-users-group") })
+          .count(),
+      ).toBe(1);
+    } finally {
+      await team.context.close();
     }
   }, 60_000);
 
