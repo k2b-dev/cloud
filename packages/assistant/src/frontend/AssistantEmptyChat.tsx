@@ -140,7 +140,6 @@ export default function AssistantEmptyChat(props: {
                   <i class={starter.icon} />
                 </span>
                 <span class="assistant-starter__text">
-                  {starter.area ? <small class="assistant-starter__area">{starter.area}</small> : null}
                   {starter.title ? <strong class="assistant-starter__title">{starter.title}</strong> : null}
                   <span class="assistant-starter__hint">{starter.label}</span>
                 </span>

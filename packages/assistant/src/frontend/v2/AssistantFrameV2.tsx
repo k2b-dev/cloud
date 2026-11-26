@@ -116,9 +116,10 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
             start={props.path().length > 0 ? <Path label={t().assistant} items={path()} /> : undefined}
             end={
               <>
-                {/* k2b-ui gap: the head's search should be a symbol that opens over the head on click or "/" (look
-                    rules 26.11.); v2 has the field, which folds to its symbol on the phone only. Enter opens Cloud's
-                    search in the Assistant's chats (or the open Project's). */}
+                {/* k2b-ui gap (Z2): the head's search should be a symbol that opens over the head on click or "/"
+                    (SEARCH + CREATE rule); at 1024 the field squeezes the path. It stays a field until Z2's head
+                    lands: v2 keeps the head on the phone only while it holds a search, and without the head the phone
+                    would lose "Neuer Chat" and the chat's "…". Enter opens Cloud's search in the chats. */}
                 <Input
                   type="search"
                   icon="search"
