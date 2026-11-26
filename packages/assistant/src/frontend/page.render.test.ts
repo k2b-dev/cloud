@@ -520,7 +520,9 @@ test("the panel starts without selecting an unrelated recent chat and renders no
   expect(html).toContain('data-file="AssistantPanel.island.tsx"');
   expect(html).not.toContain('data-file="AssistantWorkspace.island.tsx"');
   expect(html).toContain("assistant-chat-pane");
-  expect(html).toContain('href="/app/assistant/panel?conversation=chat1"');
+  // The panel is v2 (PanelLayout ui="v2") without a sidebar: its chats are one step away in "All chats" below.
+  expect(html).toContain('data-ui="v2"');
+  expect(html).toContain('data-k2-part="Workspace"');
   // No head row and no suggestions: "All chats" under the composer opens the application in the host window.
   expect(html).not.toContain("Open full view");
   expect(html).not.toContain("assistant-starters");

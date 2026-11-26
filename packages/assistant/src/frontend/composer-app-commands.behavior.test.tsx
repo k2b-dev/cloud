@@ -542,8 +542,8 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
   expect(approvals).not.toBeNull();
   approvals!.click();
   await waitFor(() => h.window.location.search === "?approvals=1");
-  // Waiting for you on v2: its statement row stands where the chat was.
-  const heading = h.root.querySelector('[data-k2-part="StatusRow"]');
+  // Waiting for you on v2: its pane stands where the chat was.
+  const heading = h.root.querySelector('[data-k2-part="Pane"][aria-label="Wartet auf dich"]');
   expect(heading).not.toBeNull();
   expect(h.root.querySelector("textarea")).toBeNull();
   const href = h.window.location.href;
@@ -551,7 +551,7 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
   await waitFor(() => h.saves.length === 1);
   await Bun.sleep(50);
   expect(h.window.location.href).toBe(href);
-  expect(h.root.querySelector('[data-k2-part="StatusRow"]') === heading).toBe(true);
+  expect(h.root.querySelector('[data-k2-part="Pane"][aria-label="Wartet auf dich"]') === heading).toBe(true);
   expect(h.root.querySelector("textarea")).toBeNull();
   expect(openCommand).not.toHaveBeenCalled();
 });
