@@ -4887,6 +4887,14 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-pane > .k2-scroll {
     margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
+  /* a split that scrolls its stacked panes as one page ends above them itself; its panes' columns do not scroll there,
+     so they keep no room of their own (it would only be space between the panes) */
+  .k2-ui:has(.k2-bar[data-selecting]) .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])) {
+    margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  }
+  .k2-ui:has(.k2-bar[data-selecting]) .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])) > .k2-pane > .k2-scroll {
+    margin-bottom: 0;
+  }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;

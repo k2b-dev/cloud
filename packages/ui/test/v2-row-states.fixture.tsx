@@ -1,5 +1,22 @@
 import { createSignal } from "solid-js";
-import { Bar, Button, Canvas, Chip, Facts, FilterBar, Input, List, Menu, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import {
+  Bar,
+  Button,
+  Canvas,
+  Chip,
+  Facts,
+  FilterBar,
+  Input,
+  List,
+  Menu,
+  Pane,
+  Path,
+  Row,
+  Section,
+  StatusRow,
+  Text,
+  Workspace,
+} from "../src/v2";
 import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
@@ -207,5 +224,52 @@ export const AreasMenuScreen = () => (
         <List label="Notizen">{[]}</List>
       </Section>
     </Pane>
+  </Workspace>
+);
+
+// A list with an info column in a split, three of its entries selected, and a main action: on the phone the panes stand
+// one under the other and the split scrolls them as one page, while the selection's actions float at the bottom.
+export const SplitSelectionScreen = () => (
+  <Workspace primary={{ label: "Hochladen", icon: "upload" }}>
+    <Pane.Split>
+      <Pane
+        label="Belege"
+        status={
+          <StatusRow
+            lead=""
+            select={{ label: "Alle auswählen", checked: "mixed" }}
+            selection={{
+              count: "3 ausgewählt",
+              actions: [
+                { label: "Teilen", icon: "share" },
+                { label: "Laden", icon: "download" },
+                { label: "Löschen", icon: "trash" },
+              ],
+              clear: { label: "Auswahl aufheben", onClick: () => undefined },
+            }}
+          />
+        }
+      >
+        <List label="Belege">
+          {Array.from({ length: 24 }, (_, index) => (
+            <Row
+              lines={[`Beleg 2026-${String(1100 + index)}.pdf`, "Rechnung Holzhandel Brandt"]}
+              select={{ selected: index < 3, onChange: () => undefined }}
+            />
+          ))}
+        </List>
+      </Pane>
+      <Pane side label="Ordner" width={{ min: 240, default: 280 }}>
+        <Section icon="info-circle" title="Ordner">
+          <Facts
+            items={[
+              { label: "Belege", value: "24" },
+              { label: "Größe", value: "38 MB" },
+              { label: "Zuletzt", value: "heute, 09:14" },
+            ]}
+          />
+        </Section>
+      </Pane>
+    </Pane.Split>
   </Workspace>
 );

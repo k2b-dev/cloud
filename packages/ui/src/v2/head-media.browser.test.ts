@@ -16,7 +16,20 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "side-canvas" | "long" | "areas";
+type Case =
+  | "list"
+  | "closed"
+  | "grid"
+  | "selecting"
+  | "settings"
+  | "states"
+  | "canvas"
+  | "path"
+  | "split-canvas"
+  | "side-canvas"
+  | "long"
+  | "areas"
+  | "split-selecting";
 
 let browser: Browser;
 let client: string;
@@ -424,6 +437,47 @@ test("on the phone the floating actions of a selection cover nothing of the list
           // what a column shows ends above the bar, with room to breathe, so no mark or name lies under it
           expect({ height, at, under: found.shown > found.bar - 8 }).toEqual({ height, at, under: false });
           if (at === "end") expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+        }
+      }
+    },
+    390,
+  );
+});
+
+test("on the phone a split that scrolls its panes as one page ends above the floating actions of a selection, at rest and at its end (review #4241)", async () => {
+  await withPage(
+    "split-selecting",
+    async (page) => {
+      for (const height of [900, 700]) {
+        await page.setViewportSize({ width: 390, height });
+        await settled(page);
+        for (const at of ["rest", "end"] as const) {
+          const found = await page.evaluate((end) => {
+            const split = document.querySelector<HTMLElement>(".k2-ws-main > .k2-split")!;
+            split.scrollTop = end ? split.scrollHeight : 0;
+            const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+            const lines = [...document.querySelectorAll(".k2-row-title, .k2-pane[data-side] dd")].map(
+              (line) => line.getBoundingClientRect().bottom,
+            );
+            return {
+              scrolls: getComputedStyle(split).overflowY,
+              shown: split.getBoundingClientRect().bottom,
+              bar: bar.top,
+              last: Math.max(...lines),
+              // the room after the last line is the bar's, once: no second room of the main action that gave way
+              room: split.scrollHeight - split.clientHeight > 0 ? split.getBoundingClientRect().bottom - Math.max(...lines) : 0,
+            };
+          }, at === "end");
+          expect({ height, at, scrolls: found.scrolls, under: found.shown > found.bar - 8 }).toEqual({
+            height,
+            at,
+            scrolls: "auto",
+            under: false,
+          });
+          if (at === "end") {
+            expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+            expect(found.room).toBeLessThan(72);
+          }
         }
       }
     },
