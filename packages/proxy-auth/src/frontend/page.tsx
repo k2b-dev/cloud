@@ -1,8 +1,8 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
-import { ssr } from "../config";
 import { matchesClientSearch } from "../client-search";
+import { ssr } from "../config";
 import { proxyAuthService } from "../service";
 import ProxyAuthScreen from "./_components/ProxyAuthScreen.island";
 import { clientRow } from "./client-row";

@@ -18,6 +18,7 @@ import {
   Notice,
   Pane,
   Prose,
+  Row,
   Section,
   StatusRow,
   Table,
@@ -26,7 +27,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { createSignal, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { clientRow } from "../client-row";
 import { proxyAuthMessages } from "../messages";
@@ -67,16 +68,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const locale = useLocale();
   const t = () => proxyAuthMessages.resolve([locale()]).t;
   const toast = useToast();
-  const number = (value: number) => value.toLocaleString(locale());
   const verifyUrl = (clientId: string) => `${props.baseUrl}/proxy-auth/verify/${clientId}`;
   const opened = () => props.clients.find((client) => client.id === props.open) ?? null;
-  /** A client's sign in the colour of its state: it lets its groups through, or nobody until it has one. */
-  const ClientName = (mark: { client: ClientRow }) => (
-    <>
-      <Icon name={mark.client.groups.length === 0 ? "lock" : "shield-check"} tone={mark.client.groups.length === 0 ? "warn" : "ok"} />{" "}
-      {mark.client.name}
-    </>
-  );
   const known = (): LookupItem[] =>
     props.clients.flatMap((client) => client.groups).map((group) => ({ value: group.id, label: group.label }));
 
@@ -162,23 +155,23 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     location.assign(LIST);
   };
 
-  /** A client without groups lets nobody through until it has one: state in colour, symbol and word. */
-  const blocked = () => (
-    <Chip status="warn" icon="lock">
-      {t().noGroups}
-    </Chip>
-  );
+  /** A client without groups lets nobody through until it has one: the state as dot and word. */
+  const blocked = () => <Chip status="warn">{t().blockedState}</Chip>;
+  /** The groups that get through, as words; a client without one says so quietly (its state says the rest). */
+  const groupLine = (client: ClientRow) =>
+    client.groups.length === 0 ? t().noGroups : client.groups.map((group) => group.label).join(", ");
 
-  /** The groups as words; without one, the fact that nobody gets through, with its sign. */
-  const groupWords = (client: ClientRow) =>
-    client.groups.length === 0 ? (
-      <>
-        <Icon name="lock" tone="warn" /> {t().blockedFact}
-      </>
-    ) : (
-      client.groups.map((group) => group.label).join(", ")
-    );
+  /** A long ID shortened in the middle, whole when copied. */
+  const shortId = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id);
+  const copy = (value: string) => {
+    void navigator.clipboard?.writeText(value);
+    toast(t().copied, { status: "ok" });
+  };
 
+  /**
+   * The open client: a band when nobody gets through, the address Traefik asks (the hero of a proxy client), the
+   * groups that get through, then its facts.
+   */
   const record = (client: ClientRow) => (
     <Pane
       detail
@@ -186,7 +179,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       back={{ label: t().backToClients, href: listHref() }}
       head={
         <Bar
-          start={<Text weight="strong">{client.name}</Text>}
+          start={<Text type="lead">{client.name}</Text>}
           end={
             <>
               <Menu
@@ -202,17 +195,32 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         />
       }
     >
-      {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
-      <Facts
-        items={[
-          // who gets through comes first: the groups, or the fact that nobody does yet
-          { label: t().allowedGroups, value: <>{groupWords(client)}</> },
-          { label: t().verifyUrl, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) },
-          { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-          ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          { label: t().created, value: client.created },
-        ]}
-      />
+      <Show when={client.groups.length === 0}>
+        <Notice tone="warn" title={t().blockedTitle} actions={[{ label: t().edit, icon: "pencil", onClick: () => start(client) }]}>
+          {t().blockedText}
+        </Notice>
+      </Show>
+      <Section icon="link" title={t().verifyUrl} summary={t().verifySummary}>
+        <Row
+          icon="link"
+          lines={[verifyUrl(client.clientId)]}
+          end={<Button variant="ghost" icon="copy" label={t().copyUrl} onClick={() => copy(verifyUrl(client.clientId))} />}
+        />
+      </Section>
+      <Section icon="users-group" title={t().allowedGroups} count={client.groups.length}>
+        <Show when={client.groups.length > 0} fallback={<Text muted>{t().noGroups}</Text>}>
+          <For each={client.groups}>{(group) => <Row icon="users-group" lines={[group.label]} />}</For>
+        </Show>
+      </Section>
+      <Section icon="settings" title={t().details}>
+        <Facts
+          items={[
+            { label: t().clientId, value: shortId(client.clientId), mono: true, copy: client.clientId },
+            ...(client.description ? [{ label: t().description, value: client.description }] : []),
+            { label: t().created, value: client.created },
+          ]}
+        />
+      </Section>
     </Pane>
   );
 
@@ -232,13 +240,15 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
                   ? t().blockedLead({ count: props.figures.withoutGroups })
                   : t().allGatedLead({ count: props.figures.total })
             }
-            // quiet meta: the number of clients, or how many of them a search shows (the query stands in the field)
-            facts={
-              props.search
-                ? [{ before: t().shownOf({ shown: rows().length, total: props.figures.total }) }]
-                : rows().length > 0
-                  ? [{ before: t().clientCount({ count: rows().length }) }]
-                  : []
+            // the count stands at the end of the row, as in a console's toolbar: all clients, or how many a search shows
+            filters={
+              rows().length > 0 || props.search ? (
+                <Text type="meta" muted>
+                  {props.search
+                    ? t().shownOf({ shown: rows().length, total: props.figures.total })
+                    : t().clientCount({ count: rows().length })}
+                </Text>
+              ) : undefined
             }
           />
         }
@@ -258,25 +268,22 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
                 { icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
           }
           phone={(client) => ({
-            lines: [<ClientName client={client} />, client.description || client.clientId],
+            lines: [client.name, groupLine(client)],
             time: client.created,
             marks: client.groups.length === 0 ? blocked() : undefined,
           })}
+          // one line per client; colour only for the state that needs a look
           columns={[
+            { title: t().client, width: { min: 160, default: 220 }, cell: (client) => client.name },
             {
-              title: t().client,
-              width: { min: 200, default: 320 },
-              cell: (client) =>
-                client.description ? { lines: [<ClientName client={client} />, client.description] } : <ClientName client={client} />,
+              title: t().state,
+              width: { min: 120, default: 120 },
+              cell: (client: ClientRow) => (client.groups.length === 0 ? blocked() : ""),
             },
-            {
-              title: t().allowedGroups,
-              width: { min: 160, default: 280 },
-              // the groups as words; only a client without one carries a chip, the exception
-              cell: (client) => (client.groups.length === 0 ? blocked() : client.groups.map((group) => group.label).join(", ")),
-              drop: true,
-            },
-            { title: t().created, width: { min: 110, default: 140 }, cell: (client) => client.created, drop: true },
+            { title: t().allowedGroups, width: { min: 140, default: 240 }, cell: (client) => groupLine(client), drop: true },
+            ...(props.open
+              ? []
+              : [{ title: t().created, width: { min: 110, default: 120 }, cell: (client: ClientRow) => client.created, drop: true }]),
           ]}
         />
       </Pane>

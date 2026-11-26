@@ -85,10 +85,9 @@ test("the clients render on v2 with their figures, one open beside the list, and
     const text = read(html);
     // the first row says what matters with its number; the list's count is a quiet fact beside it
     expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt 2 Clients");
-    // the groups stand as words; only the client without one carries a chip
-    expect(text).toContain("Grafana Dashboards Ops");
-    expect(text).toContain("Uptime Kuma");
-    expect(text).toContain("Ohne Gruppen");
+    // one line per client: its name, a state only where nobody gets through, its groups as words
+    expect(text).toContain("Client Zustand Zulässige Gruppen Grafana Ops");
+    expect(text).toContain("Uptime Kuma Gesperrt Ohne Gruppen");
     // the open client names its verify address with this Cloud's public address
     expect(text).toContain("https://cloud.example.test/proxy-auth/verify/pa_grafana");
     const setup = read(await (await app.request("/admin/proxy-auth?tab=setup", { headers: { "Accept-Language": "de" } })).text());
