@@ -4858,14 +4858,18 @@
     border-top: var(--k2-hairline);
     background: var(--k2-surface);
   }
+  /* a screen of its own (one chat with its composer at the bottom edge) hides the bar; it stays in the page */
+  .k2-ui .k2-tabbar[hidden] {
+    display: none;
+  }
   .k2-ui .k2-notice-stack {
     right: max(12px, env(safe-area-inset-right));
     bottom: calc(env(safe-area-inset-bottom) + 12px);
     left: max(12px, env(safe-area-inset-left));
     width: auto;
   }
-  /* above the tab bar: its row of the head's height, its line, and the bottom safe area it holds */
-  .k2-ui:has(.k2-tabbar) .k2-notice-stack {
+  /* above a shown tab bar: its row of the head's height, its line, and the bottom safe area it holds */
+  .k2-ui:has(.k2-tabbar:not([hidden])) .k2-notice-stack {
     bottom: calc(var(--k2-h-head) + 1px + env(safe-area-inset-bottom) + 12px);
   }
   /* a floating notice keeps its deeds in the end column, each a framed button of at least 44 px */

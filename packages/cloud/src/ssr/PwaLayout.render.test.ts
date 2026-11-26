@@ -593,8 +593,9 @@ describe("PwaLayout ui v2", () => {
     expect(bare.querySelector(".pwa-v2-main")?.textContent).toBe("[[locale:en]]");
     expect(bare.querySelector('[data-k2-part="Workspace"]')).toBeNull();
     const screen = (await render("/pwa/inventory?ui=v2&bare&screen")).document.querySelector(".pwa-v2");
-    // The tabs stay in the page and step aside (the stylesheet), so `setPwaScreen` can bring them back in place.
+    // The tabs stay in the page and step aside (the tab bar's own hidden state), so `setPwaScreen` can bring them back.
     expect(screen?.hasAttribute("data-screen")).toBe(true);
+    expect(screen?.querySelector(".k2-tabbar")?.hasAttribute("hidden")).toBe(true);
     expect(screen?.hasAttribute("data-tabs")).toBe(true);
   });
 

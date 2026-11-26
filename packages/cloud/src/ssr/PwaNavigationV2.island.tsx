@@ -30,6 +30,8 @@ export type PwaNavigationV2Props = {
   tabsLabel: string;
   /** Start and every part as tabs below 48rem: four, then "More" with the others; none without parts. */
   tabs: PwaNavEntry[];
+  /** A screen of its own: the tab bar steps aside (`hidden`) and `setPwaScreen` brings it back in place. */
+  screen?: boolean;
   /** Every count route of the page, read once a minute like the web's. */
   endpoints: string[];
 };
@@ -68,7 +70,7 @@ export default function PwaNavigationV2(props: PwaNavigationV2Props) {
         />
       </div>
       <Show when={props.tabs.length > 0}>
-        <TabBar label={props.tabsLabel} items={props.tabs.map(item)} />
+        <TabBar label={props.tabsLabel} items={props.tabs.map(item)} hidden={props.screen} />
       </Show>
     </>
   );

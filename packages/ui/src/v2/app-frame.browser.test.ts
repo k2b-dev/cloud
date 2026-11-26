@@ -132,6 +132,24 @@ test("before the page comes alive, the server's notices already stand above the 
   }
 });
 
+test("a screen of its own hides the tab bar: the notices stand above the home indicator and the panes end at the window", async () => {
+  await withPage(390, async (page) => {
+    await page.evaluate(() => window.__screen?.(true));
+    await settled(page);
+    expect(await box(page, ".k2-tabbar")).toBeUndefined();
+    const stack = (await box(page, ".k2-notice-stack"))!;
+    expect(Math.round(stack.bottom)).toBe(844 - insets.bottom - 12);
+    // the room the panes keep is what the stack covers of the window, with no bar below it
+    const room = await page.evaluate(() => document.documentElement.style.getPropertyValue("--k2-notice-stack"));
+    expect(room).toBe(`${Math.ceil(844 - stack.top)}px`);
+    // back from the screen, the bar and the stack above it return
+    await page.evaluate(() => window.__screen?.(false));
+    await settled(page);
+    const bar = (await box(page, ".k2-tabbar"))!;
+    expect(Math.round((await box(page, ".k2-notice-stack"))!.bottom)).toBe(Math.round(bar.top - 12));
+  });
+});
+
 test("a notice with a title has its deed beside the title, and its text runs under both across the full width", async () => {
   await withPage(1440, async (page) => {
     const deed = (await box(page, "#titled .k2-notice-end"))!;

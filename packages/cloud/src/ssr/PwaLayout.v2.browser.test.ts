@@ -369,9 +369,15 @@ describe("PwaLayout ui v2 in a browser", () => {
       expect(await measure(screen)).toEqual({ tabs: 0, main: 844 - insets.bottom });
       expect((await measure(page)).tabs).toBe(1);
       // what `setPwaScreen` does in place, and back
-      await page.evaluate(() => document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", true));
+      await page.evaluate(() => {
+        document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", true);
+        document.querySelector(".k2-tabbar")!.toggleAttribute("hidden", true);
+      });
       expect(await measure(page)).toEqual({ tabs: 0, main: 844 - insets.bottom });
-      await page.evaluate(() => document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", false));
+      await page.evaluate(() => {
+        document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", false);
+        document.querySelector(".k2-tabbar")!.toggleAttribute("hidden", false);
+      });
       expect((await measure(page)).tabs).toBe(1);
     } finally {
       await screen.close();

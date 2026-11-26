@@ -3,11 +3,13 @@ import { Nav, Notice, NoticeStack, Pane, Row, TabBar, Text, Workspace } from "..
 
 // The frame of an installed app as a phone shows it (invented places): the sidebar with the brand's logo and counts,
 // a tab bar of six places (four, then "More" with the other two), and a stack of floating notices over a long pane.
-// `window.__hideNotices()` takes the notices away; `window.__oneLine` holds a notice of one line for the alignment.
+// `window.__hideNotices()` takes the notices away; `window.__screen(true)` hides the tab bar for a screen of its own;
+// `window.__oneLine` holds a notice of one line for the alignment.
 
 declare global {
   interface Window {
     __hideNotices?: () => void;
+    __screen?: (screen: boolean) => void;
     __navigated?: number;
   }
 }
@@ -36,7 +38,11 @@ const LOGO =
 
 export function Demo() {
   const [notices, setNotices] = createSignal(true);
-  if (typeof window !== "undefined") window.__hideNotices = () => setNotices(false);
+  const [screen, setScreen] = createSignal(false);
+  if (typeof window !== "undefined") {
+    window.__hideNotices = () => setNotices(false);
+    window.__screen = setScreen;
+  }
   return (
     <div class="demo-frame">
       <Workspace
@@ -75,7 +81,7 @@ export function Demo() {
           <Text type="meta">Ende der Liste</Text>
         </Pane>
       </Workspace>
-      <TabBar label="App" items={places} />
+      <TabBar label="App" items={places} hidden={screen()} />
       <NoticeStack>
         <Show when={notices()}>
           <Notice tone="warn" icon="wifi-off" actions={[{ label: "Ausblenden", onClick: () => setNotices(false) }]}>

@@ -9,6 +9,9 @@ const V1_SCREEN = "data-k2b-screen";
  */
 export const setPwaScreen = (from: Element, screen: boolean): void => {
   const v2 = from.closest(".pwa-v2");
-  if (v2) v2.toggleAttribute("data-screen", screen);
-  else from.closest(".k2b-mobile-shell")?.toggleAttribute(V1_SCREEN, screen);
+  if (v2) {
+    v2.toggleAttribute("data-screen", screen);
+    // the tab bar's own hidden state, which @k2b/ui's notices follow
+    v2.querySelector(".k2-tabbar")?.toggleAttribute("hidden", screen);
+  } else from.closest(".k2b-mobile-shell")?.toggleAttribute(V1_SCREEN, screen);
 };
