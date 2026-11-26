@@ -89,7 +89,8 @@ export const PictureTiles = (props: PictureTilesProps) => {
             return (
               <grid.Item
                 value={tile.key}
-                {...drag}
+                {...drag.attrs}
+                ref={drag.ref}
                 class="k2-tile"
                 role={props.select ? "option" : "listitem"}
                 aria-selected={props.select ? (selected(tile.key) ? "true" : "false") : undefined}

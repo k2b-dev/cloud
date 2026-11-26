@@ -129,8 +129,7 @@ export const useDragMove = (
     const bind = given && (given.draggable?.(key) ?? true) ? onto.item(key) : undefined;
     const isTarget = () => drag()?.target?.(key) ?? false;
     const files = (event: DragEvent) => isTarget() && drag()?.onFiles !== undefined && hasFiles(event);
-    return {
-      ref: (element: HTMLElement) => bind?.ref(element),
+    const attrs = {
       get "data-dragging"() {
         return mine()?.keys.includes(key) ? "" : undefined;
       },
@@ -166,6 +165,7 @@ export const useDragMove = (
         if (dropped.length > 0) drag()?.onFiles?.(dropped, key);
       },
     };
+    return { attrs, ref: (element: HTMLElement) => bind?.ref(element) };
   };
 
   /** While a pointer drags from this list: a labelled place where letting go changes nothing (guide, 3.11.). */

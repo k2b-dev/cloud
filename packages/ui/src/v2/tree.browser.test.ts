@@ -260,3 +260,155 @@ test("table tree on the phone: the top level as rows of the list, also while row
     expect(names.some((name) => name.includes("Website"))).toBe(false);
   });
 });
+
+// ── Review findings (Codex, 26.11.) ──────────────────────────────────────────────────────────────────────────────
+
+/** The text of the focused element's name, a tree item or a table row. */
+const focusedText = (page: Page) =>
+  page.evaluate(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) return "body";
+    return (active.querySelector(".k2-ni-name, .k2-cell-line")?.textContent ?? active.textContent ?? "").trim();
+  });
+
+test("nav tree: a slow 'Weitere laden' leaves the focus where the person moved it meanwhile", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__holdMore = true;
+    });
+    await place(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    const more = tree(page).getByRole("treeitem", { name: /^Weitere .* laden$/ });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedText(page)).toBe("IMG_00050.jpg");
+    await page.evaluate(() => window.__releaseMore?.());
+    await page.waitForFunction(() => document.querySelectorAll('[role="tree"] [role="treeitem"][aria-level="2"]').length > 60);
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await focusedText(page)).toBe("IMG_00050.jpg");
+  });
+});
+
+test("table tree: a slow 'Weitere laden' keeps the focus on a row: where the person moved, or on the first new row", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__holdMore = true;
+    });
+    await row(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    const more = grid(page).locator("tr[data-more]");
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedText(page)).toBe("IMG_00050.jpg");
+    await page.evaluate(() => window.__releaseMore?.());
+    await page.waitForFunction(() => document.querySelectorAll("tr[aria-level='2']").length > 60);
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await focusedText(page)).toBe("IMG_00050.jpg");
+    // staying on the load row: the focus goes on to the first new row, never to the page
+    await grid(page).locator("tr[data-more]").focus();
+    await page.keyboard.press("Enter");
+    await page.evaluate(() => window.__releaseMore?.());
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes("IMG_00101") === true);
+  });
+});
+
+test("table tree: Left while a row loads closes it, and the late answer does not open it", async () => {
+  await withPage(async (page) => {
+    const archive = row(page, "Archiv");
+    await archive.focus();
+    await page.keyboard.press("ArrowRight");
+    expect(await archive.getAttribute("aria-busy")).toBe("true");
+    await page.keyboard.press("ArrowLeft");
+    expect(await archive.getAttribute("aria-busy")).toBeNull();
+    expect(await focusedText(page)).toBe("Archiv");
+    await page.evaluate(() => window.__release?.());
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await archive.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+test("table tree: with 10 000 loaded rows a key moves the focus without a noticeable wait", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__loadAll?.());
+    await row(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() => document.querySelectorAll("tr[aria-level='2']").length === 10_000, undefined, { timeout: 30_000 });
+    await row(page, "IMG_05000.jpg").focus();
+    const ms = await page.evaluate(() => {
+      const started = performance.now();
+      for (let step = 0; step < 5; step += 1)
+        document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+      return (performance.now() - started) / 5;
+    });
+    expect(await focusedText(page)).toBe("IMG_05005.jpg");
+    // The script work per key is constant (the stop is one memo and each row asks a selector; it was 1 s per key with
+    // a scan per row). What remains is the browser laying out a table of 10 000 real rows when the focus moves, which
+    // WebKit does slower; rendering only the rows in view (virtualization) is what scales past that.
+    expect(ms).toBeLessThan(process.env.TEST_BROWSER === "webkit" ? 250 : 50);
+  }, 1440);
+}, 60_000);
+
+test("a paged level says its whole size; an unknown size says -1", async () => {
+  await withPage(async (page) => {
+    await place(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    const first = tree(page).getByRole("treeitem", { name: "IMG_00001.jpg", exact: true });
+    expect(await first.getAttribute("aria-setsize")).toBe("10000");
+    const more = tree(page).getByRole("treeitem", { name: /^Weitere .* laden$/ });
+    expect(await more.getAttribute("aria-posinset")).toBe("51");
+    expect(await more.getAttribute("aria-setsize")).toBe("10000");
+    await row(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    expect(await row(page, "IMG_00001.jpg").getAttribute("aria-setsize")).toBe("10000");
+    expect(await grid(page).locator("tr[data-more]").getAttribute("aria-posinset")).toBe("51");
+    // a level whose size nobody knows yet
+    await row(page, "Archiv").locator(".k2-tree-chev").click();
+    await page.evaluate(() => window.__release?.());
+    await page.waitForFunction(() => [...document.querySelectorAll("tr[aria-level='2']")].some((tr) => tr.textContent?.includes("2025")));
+    expect(await row(page, "2025").getAttribute("aria-setsize")).toBe("-1");
+  });
+});
+
+test("table tree with a selection: the boxes are no Tab stops; Space on the focused row selects it", async () => {
+  await withPage(async (page) => {
+    const boxes = await grid(page)
+      .locator("tbody input[type=checkbox]")
+      .evaluateAll((inputs) => inputs.map((input) => input.getAttribute("tabindex")));
+    expect(boxes.length).toBeGreaterThan(0);
+    expect(boxes.every((tabindex) => tabindex === "-1")).toBe(true);
+    await row(page, "Notiz.txt").focus();
+    await page.keyboard.press("Space");
+    expect(await row(page, "Notiz.txt").getAttribute("aria-selected")).toBe("true");
+    expect(await page.evaluate(() => window.__selected)).toEqual(["notiz"]);
+  });
+});
+
+test("a failed 'Weitere laden' says so on its row and tries again on Enter (table and nav)", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__failMore = true;
+    });
+    await row(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    const more = grid(page).locator("tr[data-more]");
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector("tr[data-more][data-failed]") !== null);
+    expect(await more.textContent()).toContain("nicht geladen");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes("IMG_00051") === true);
+
+    await page.evaluate(() => {
+      window.__failMore = true;
+    });
+    await place(page, "Fotos").focus();
+    await page.keyboard.press("ArrowRight");
+    const navMore = tree(page).getByRole("treeitem", { name: /Weitere .* laden|nicht geladen/ });
+    await navMore.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector('[role="treeitem"][data-failed-more]') !== null);
+    expect(await navMore.textContent()).toContain("nicht geladen");
+  });
+});
