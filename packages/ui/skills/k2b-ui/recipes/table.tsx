@@ -194,7 +194,8 @@ export const states = {
 };
 
 // The realistic worst case for Fibel's Example and the recipe test: customers at the length people write them, an address
-// that cannot wrap, amounts in the millions and below zero. `one` is a single invoice; `huge` an unpaginated long list.
+// that cannot wrap, amounts in the millions and below zero. `one` is a single invoice; `huge` an unpaginated long list (200 rows: a v2
+// table is not virtualized, so a longer list belongs on pages).
 const worstInvoices: Invoice[] = [
   {
     number: "RE-2611-0042-NACHLASS-SONNENHALDE",
@@ -225,7 +226,7 @@ const worstInvoices: Invoice[] = [
   { number: "RE-2611-0052", customer: "Đặng Thị Ngọc Hân", due: "3. Dez.", state: "overdue", owner: people.ada, amount: "1.284,00 €" },
   { number: "RE-2611-0053", customer: "王秀英", due: "4. Dez.", state: "open", owner: people.felix, amount: "1.000.000,00 €" },
 ];
-const hugeInvoices: Invoice[] = Array.from({ length: 1000 }, (_, index) => ({
+const hugeInvoices: Invoice[] = Array.from({ length: 200 }, (_, index) => ({
   ...invoices[index % 3]!,
   number: `RE-2611-${String(index + 1).padStart(4, "0")}`,
 }));

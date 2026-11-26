@@ -385,7 +385,8 @@ export const states = {
 
 // The realistic worst case for Fibel's Example and the recipe test: every filter set, a lookup with long names and more
 // values than a statement shows, a long search, titles and customers at the length people write them, amounts in the
-// millions and with cents. `one` is a single match; `huge` is a long unpaginated list.
+// millions and with cents. `one` is a single match; `huge` is a long unpaginated list (200 rows;
+// longer lists belong on pages).
 const worstCustomers: LookupItem[] = [
   { value: "k-901", label: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG", meta: "Offenburg" },
   { value: "k-902", label: "Aleksandra Wiśniewska-Kowalczyk", meta: "bartholomew.fitzgerald@northwind-industries-holdings.example.com" },
@@ -438,7 +439,7 @@ const worstOrders: Order[] = [
     amount: 1000000,
   },
 ];
-const hugeOrders: Order[] = Array.from({ length: 1000 }, (_, index) => ({
+const hugeOrders: Order[] = Array.from({ length: 200 }, (_, index) => ({
   number: `A-${10000 + index}`,
   title: `Auftrag ${index + 1} · ${orders[index % 3]!.title}`,
   kind: orders[index % 3]!.kind,
