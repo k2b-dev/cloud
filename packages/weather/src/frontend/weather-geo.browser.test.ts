@@ -146,7 +146,8 @@ for (const width of [390, 768, 1440])
       } finally {
         await page.close();
       }
-    });
+      // the first page of a cold WebKit takes longer than the default 5 s (CI WebKit: 5.0 s timeout, the warm ones 2.6 s)
+    }, 30_000);
 
 test("Weather shows why the city search failed and closes without a save", async () => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });

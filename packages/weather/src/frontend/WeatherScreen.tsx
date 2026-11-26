@@ -1,18 +1,18 @@
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
-import { useLocale } from "@k2b/ui";
+import { Chart } from "@k2b/ui";
 import {
   Bar,
   Button,
   Canvas,
-  Cells,
   Choice,
   Dialog,
   Empty,
   Facts,
   Failed,
   Field,
+  Icon,
   Lookup,
   Menu,
   type MenuEntry,
@@ -20,10 +20,13 @@ import {
   type NavGroup,
   Notice,
   Pane,
+  Progress,
+  RecordHead,
   Section,
   StatusRow,
   Table,
   Text,
+  useLocale,
   useToast,
   Workspace,
 } from "@k2b/ui/v2";
@@ -110,7 +113,17 @@ export default function WeatherScreen(props: WeatherScreenProps) {
         sidebar={<Nav title={t().appName} icon="temperature-celsius" groups={groups()} />}
         head={
           <Bar
-            start={<Text type="body">{props.open?.name ?? t().appName}</Text>}
+            // without an open place the sidebar already names the app: the head holds only its action
+            start={
+              props.open ? (
+                // the place carries its sign in the app colour and its state; the station stands with the measurements
+                <RecordHead
+                  name={props.open.name}
+                  avatar={{ name: props.open.name, color: "var(--k2-app-text)" }}
+                  kinds={props.open.state ? [props.open.state] : undefined}
+                />
+              ) : undefined
+            }
             end={
               <>
                 <Show when={props.open}>
@@ -143,7 +156,6 @@ export default function WeatherScreen(props: WeatherScreenProps) {
                     ? `${t().locationNotFound}. ${t().locationNotFoundDescription}`
                     : `${t().noLocationsTitle}. ${t().noLocationsDescription}`
                 }
-                action={add}
               />
             </Pane>
           }
@@ -170,45 +182,69 @@ export default function WeatherScreen(props: WeatherScreenProps) {
   );
 }
 
-/** The open location: what it is like now, the next hours and days, the radar. */
+/** The open location: what it is like now and how the next hours go, the hours and days, the measurements and radar. */
 function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
   const locale = useLocale();
   const t = () => weatherMessages.resolve([locale()]).t;
   const w = () => props.weather;
+  const curve = () => w().hourly.map((hour, index) => ({ x: index, y: hour.degrees }));
+  // whole degrees around the curve, one degree of air above and below, so no label stands on the frame
+  const range = (): [number, number] => {
+    const values = w().hourly.map((hour) => hour.degrees);
+    return [Math.floor(Math.min(...values)) - 1, Math.ceil(Math.max(...values)) + 1];
+  };
+  // a rain chance is a value with a limit: a bar with its words; no chance is a quiet dash
+  const rain = (row: { rain: string; rainChance: number | null }) =>
+    row.rainChance === null ? row.rain : <Progress value={row.rainChance} of={100} label={row.rain} />;
+  const sign = (row: { icon: string; condition: string }) => (
+    <>
+      <Icon name={row.icon} tone="app" /> {row.condition}
+    </>
+  );
   return (
     <Pane
       label={t().weatherFor({ name: props.open.name })}
       scrollKey={`weather-${props.open.id}`}
       status={
+        // k2b-ui gap: the hero band (one figure 30/34 in the app colour, its trend beside it, exceptions under it) and
+        // the tinted head of the open thing come from lane DP; until then the status row carries the figure and the
+        // facts, and the curve of the next hours stands right under it.
         <StatusRow
           lead={`${w().temperature} · ${w().condition}`}
-          facts={[{ before: `${t().station} `, value: w().station }, ...(props.open.state ? [{ value: props.open.state }] : [])]}
+          facts={[
+            ...(w().today
+              ? [
+                  { before: t().high, value: w().today!.high },
+                  { before: t().low, value: w().today!.low },
+                ]
+              : []),
+            ...w().alerts.map((alert) => ({ value: alert })),
+          ]}
         />
       }
     >
-      <Cells>
-        <Cells.Cell icon="droplet" label={t().humidity} value={w().humidity} />
-        <Cells.Cell icon="wind" label={t().wind} value={w().wind} />
-        <Cells.Cell icon="umbrella" label={t().rain} value={w().rain} />
-        <Cells.Cell icon="cloud" label={t().clouds} value={w().clouds} />
-      </Cells>
+      <Show when={curve().length > 1}>
+        <Canvas label={t().temperatureCurve({ from: w().hourly[0]!.temperature, to: w().hourly.at(-1)!.temperature })} height={128}>
+          <Chart
+            kind="line"
+            area
+            // k2b-ui gap: a chart in a v2 screen cannot take the owning app's colour (the palette sits on the drawing
+            // itself), so the curve keeps the chart's first colour until the chart reads the app colour.
+            style={{ height: "100%" }}
+            padding={{ top: 16, right: 20, bottom: 28, left: 52 }}
+            series={[{ label: t().temperature, data: curve() }]}
+            xAxis={{ insetEndpointLabels: true, format: (index) => w().hourly[index]?.time ?? "" }}
+            // the lowest degree stays unwritten: it would stand on the first hour's label
+            yAxis={{
+              domain: range(),
+              ticks: 3,
+              format: (value) => (value === range()[0] ? "" : `${new Intl.NumberFormat(locale()).format(value)}°`),
+            }}
+          />
+        </Canvas>
+      </Show>
       <Pane.Split>
         <Pane label={t().hourlyForecast}>
-          <Section icon="clock" title={t().hourly}>
-            <Show when={w().hourly.length > 0} fallback={<Empty icon="clock" text={t().noForecast} />}>
-              <Table
-                label={t().hourlyForecast}
-                rows={w().hourly}
-                phone={(hour) => ({ lines: [`${hour.time} · ${hour.temperature}`, hour.condition], time: hour.rain })}
-                columns={[
-                  { title: t().time, width: { min: 72, default: 96 }, cell: (hour) => hour.time },
-                  { title: t().condition, width: { min: 140, default: 220 }, cell: (hour) => hour.condition },
-                  { title: t().temperature, width: { min: 96, default: 112 }, align: "end", cell: (hour) => hour.temperature },
-                  { title: t().rainChance, align: "end", cell: (hour) => hour.rain },
-                ]}
-              />
-            </Show>
-          </Section>
           <Section icon="calendar" title={t().sevenDayForecast}>
             <Show when={w().daily.length > 0} fallback={<Empty icon="calendar" text={t().noForecast} />}>
               <Table
@@ -216,20 +252,40 @@ function WeatherRecord(props: { open: WeatherOpen; weather: WeatherNow }) {
                 rows={w().daily}
                 phone={(day) => ({ lines: [`${day.day} · ${day.range}`, day.condition], time: day.rain })}
                 columns={[
-                  { title: t().day, width: { min: 72, default: 96 }, cell: (day) => day.day },
-                  { title: t().condition, width: { min: 140, default: 200 }, cell: (day) => day.condition },
-                  { title: t().temperature, width: { min: 96, default: 120 }, align: "end", cell: (day) => day.range },
-                  { title: t().rainChance, width: { min: 72, default: 80 }, align: "end", cell: (day) => day.rain },
+                  { title: t().day, width: { min: 64, default: 80 }, cell: (day) => day.day },
+                  { title: t().condition, width: { min: 160, default: 200 }, cell: sign },
+                  { title: t().temperature, width: { min: 104, default: 120 }, align: "end", cell: (day) => day.range },
+                  { title: t().rainChance, width: { min: 120, default: 160 }, cell: rain },
                   { title: t().sunshineDay, align: "end", drop: true, cell: (day) => day.sunshine },
+                ]}
+              />
+            </Show>
+          </Section>
+          <Section icon="clock" title={t().nextHours}>
+            <Show when={w().hourly.length > 0} fallback={<Empty icon="clock" text={t().noForecast} />}>
+              <Table
+                label={t().hourlyForecast}
+                rows={w().hourly}
+                phone={(hour) => ({ lines: [`${hour.time} · ${hour.temperature}`, hour.condition], time: hour.rain })}
+                columns={[
+                  { title: t().time, width: { min: 64, default: 80 }, cell: (hour) => hour.time },
+                  { title: t().condition, width: { min: 160, default: 220 }, cell: sign },
+                  { title: t().temperature, width: { min: 88, default: 104 }, align: "end", cell: (hour) => hour.temperature },
+                  { title: t().rainChance, cell: rain },
                 ]}
               />
             </Show>
           </Section>
         </Pane>
         <Pane side width={{ min: 300, default: 360 }} label={t().currentConditions}>
-          <Section icon="gauge" title={t().currentConditions}>
+          <Section icon="gauge" title={t().measuredNow}>
             <Facts
               items={[
+                { label: t().station, value: w().station },
+                { label: t().humidity, value: w().humidity },
+                { label: t().wind, value: w().wind },
+                { label: t().clouds, value: w().clouds },
+                { label: t().precipitation, value: w().rain },
                 { label: t().pressure, value: w().pressure },
                 { label: t().dewPoint, value: w().dewPoint },
                 { label: t().visibility, value: w().visibility },

@@ -6,8 +6,25 @@ import { type WeatherMessages, weatherConditionLabel } from "../messages";
 /** A saved location in the sidebar: its symbol and temperature come from its current weather, if any. */
 export type WeatherPlace = { id: string; name: string; state: string | null; icon: string; temperature: string | null };
 
-export type WeatherHour = { time: string; icon: string; condition: string; temperature: string; rain: string };
-export type WeatherDay = { day: string; icon: string; condition: string; range: string; rain: string; sunshine: string };
+/** `degrees` and `rainChance` are the plain numbers behind the words, for the temperature curve and the rain bars. */
+export type WeatherHour = {
+  time: string;
+  icon: string;
+  condition: string;
+  temperature: string;
+  degrees: number;
+  rain: string;
+  rainChance: number | null;
+};
+export type WeatherDay = {
+  day: string;
+  icon: string;
+  condition: string;
+  range: string;
+  rain: string;
+  rainChance: number | null;
+  sunshine: string;
+};
 
 /** The weather of the open location, every value already in the reader's words and numbers. */
 export type WeatherNow = {
@@ -23,6 +40,13 @@ export type WeatherNow = {
   dewPoint: string;
   visibility: string;
   sunshine: string;
+  /** Today's lowest and highest temperature from the daily forecast; null without one. */
+  today: { low: string; high: string } | null;
+  /**
+   * What stands out in the next hours, each one short statement: rain likely from an hour on, strong gusts. Empty on
+   * an ordinary day, so the hero stays quiet.
+   */
+  alerts: string[];
   hourly: WeatherHour[];
   daily: WeatherDay[];
 };
@@ -33,6 +57,10 @@ export type WeatherOpen = { id: string; name: string; state: string | null; lat:
 export type GeoResult = { name: string; lat: number; lon: number; country?: string; state?: string; provenance: GeoProvenance };
 
 const TIME_ZONE = "Europe/Berlin";
+/** From this chance on an hour counts as rainy: more likely than not. */
+const RAIN_LIKELY = 50;
+/** Gusts from this speed on stand out: the lowest gust level the DWD warns about (Windböen, 50 km/h). */
+const GUSTS_NOTABLE = 50;
 
 const calendarDate = (value: Date): string => {
   const parts = new Intl.DateTimeFormat("en", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(
@@ -79,6 +107,22 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
 
   const weather = (data: WeatherDataPayload): WeatherNow => {
     const { current } = data;
+    const firstDay = data.daily[0];
+    const rainy = data.hourly.findIndex((entry) => (entry.precipitationProbability ?? 0) >= RAIN_LIKELY);
+    const rainHour = data.hourly[rainy];
+    const alerts = [
+      ...(rainHour
+        ? [
+            t.rainFrom({
+              time: hour(rainHour.timestamp, rainy === 0),
+              chance: percent(rainHour.precipitationProbability ?? 0),
+            }),
+          ]
+        : []),
+      ...(current.windGust != null && current.windGust >= GUSTS_NOTABLE
+        ? [t.gustsUpTo({ speed: `${number(current.windGust)} km/h` })]
+        : []),
+    ];
     return {
       icon: weatherUiService.getTablerIcon(current.icon),
       condition: weatherConditionLabel(current.icon, t),
@@ -92,12 +136,16 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
       dewPoint: current.dewPoint == null ? missing : degrees(current.dewPoint),
       visibility: current.visibility == null ? missing : `${number(current.visibility / 1000, 1)} km`,
       sunshine: current.sunshine == null ? missing : `${number(current.sunshine)} min`,
+      today: firstDay ? { low: degrees(firstDay.tempMin), high: degrees(firstDay.tempMax) } : null,
+      alerts,
       hourly: data.hourly.map((entry, index) => ({
         time: hour(entry.timestamp, index === 0),
         icon: weatherUiService.getTablerIcon(entry.icon),
         condition: weatherConditionLabel(entry.icon, t),
         temperature: degrees(entry.temperature),
+        degrees: entry.temperature,
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
+        rainChance: entry.precipitationProbability || null,
       })),
       daily: data.daily.map((entry) => ({
         day: day(entry.date),
@@ -105,6 +153,7 @@ export const weatherFormat = (locale: string, t: WeatherMessages, now: Date) => 
         condition: weatherConditionLabel(entry.icon, t),
         range: `${degrees(entry.tempMin)} / ${degrees(entry.tempMax)}`,
         rain: entry.precipitationProbability ? percent(entry.precipitationProbability) : missing,
+        rainChance: entry.precipitationProbability || null,
         sunshine: `${number(entry.sunshine / 60, 1)} h`,
       })),
     };
