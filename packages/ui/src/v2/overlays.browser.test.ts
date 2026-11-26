@@ -32,7 +32,17 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false, address = false, toEnd = false } = {},
+  {
+    width = 1440,
+    scale = 1,
+    long = false,
+    touch = false,
+    two = false,
+    opened = false,
+    slowSheet = false,
+    address = false,
+    toEnd = false,
+  } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
