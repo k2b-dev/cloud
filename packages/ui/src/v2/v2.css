@@ -3723,6 +3723,10 @@
   background: var(--k2-ok-tint);
   color: var(--k2-ok);
 }
+.k2-ui .k2-sign[data-tone="warn"] {
+  background: var(--k2-warn-tint);
+  color: var(--k2-warn);
+}
 /* Loading: square placeholders, each exactly one text line of its place high (20 in a row, 16 for a quiet line), so a
    placeholder row is as high as the row that replaces it; the bar of 12 px sits in the middle of that line */
 .k2-ui .k2-skel {

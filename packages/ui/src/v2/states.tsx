@@ -21,8 +21,11 @@ export type EmptyProps = {
    * opens, not announced.
    */
   live?: boolean;
-  /** A result that went well: the sign in the colour of success (colour, sign and word together). */
-  tone?: "ok";
+  /**
+   * The sign in the colour of the state, with its symbol and its sentence: `ok` for a result that went well, `warn` for
+   * something that cannot happen now, `bad` for something that is refused.
+   */
+  tone?: "ok" | "warn" | "bad";
 };
 
 /** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
