@@ -2,9 +2,17 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import GroupsScreen from "../groups/GroupsScreen";
 import { groupsQuery, parseGroupsAddress } from "../groups/query";
-import { parseUsersAddress, usersQuery } from "./query";
+import { parseUsersAddress, USERS_PER_PAGE, usersQuery } from "./query";
 import UsersScreen from "./UsersScreen";
-import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory } from "./users-screen.fixture";
+import {
+  FIXTURE_GROUPS,
+  FIXTURE_NOW,
+  FIXTURE_TIME_ZONE,
+  fixtureDirectory,
+  WORST_GROUP_DESCRIPTION,
+  WORST_GROUPS,
+  WORST_PEOPLE,
+} from "./users-screen.fixture";
 
 /**
  * The user and group lists for a browser test, rendered as the server would render them for the page's address: the
@@ -14,18 +22,21 @@ import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory } from
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
 const failed = document.documentElement.dataset.failed === "true";
+// `data-fixture="worst"`: the realistic worst case (break-ui), paged like the server pages it
+const worst = document.documentElement.dataset.fixture === "worst";
 const params = new URLSearchParams(location.search);
 
 const users = () => {
   const address = parseUsersAddress(usersQuery("de"), params);
-  const entries = fixtureDirectory(address.state);
+  const all = fixtureDirectory(address.state, worst ? WORST_PEOPLE : undefined);
+  const entries = worst ? all.slice((address.page - 1) * USERS_PER_PAGE, address.page * USERS_PER_PAGE) : all;
   return (
     <UsersScreen
       state={address.state}
       page={address.page}
       entries={failed ? null : entries}
-      total={failed ? 0 : entries.length}
-      groupNames={Object.values(FIXTURE_GROUPS)
+      total={failed ? 0 : all.length}
+      groupNames={[...Object.values(FIXTURE_GROUPS), ...WORST_GROUPS]
         .filter((group) => address.state.filters["member-of"]?.includes(group.id))
         .map((group) => ({ value: group.id, label: group.name }))}
       ignored={null}
@@ -46,16 +57,16 @@ const descriptions = new Map<string, string>([
 const groups = () => {
   const address = parseGroupsAddress(groupsQuery("de", "all"), params);
   const search = address.state.search?.toLowerCase();
-  const rows = Object.values(FIXTURE_GROUPS)
+  const rows = (worst ? WORST_GROUPS : Object.values(FIXTURE_GROUPS))
     .filter((group) => !search || group.name.toLowerCase().includes(search))
     .sort((a, b) => a.name.localeCompare(b.name, "de"))
     .map((group, index) => ({
       id: group.id,
       name: group.name,
-      description: descriptions.get(group.id) ?? null,
+      description: worst ? (index % 2 ? null : WORST_GROUP_DESCRIPTION) : (descriptions.get(group.id) ?? null),
       provider: index % 3 === 2 ? ("ipa" as const) : ("local" as const),
-      posix: index % 2 === 0,
-      managed: group.name === "Lager",
+      posix: worst ? index === 0 || index % 2 === 0 : index % 2 === 0,
+      managed: worst ? index === 0 : group.name === "Lager",
       href: `/app/accounts/groups/${group.id}?list_scope=all`,
     }));
   return (

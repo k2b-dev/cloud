@@ -16,8 +16,7 @@ const { Tiles } = await import("./layout");
 const { Digest } = await import("./components");
 const { Row } = await import("./content");
 
-const html = <P extends object>(component: (props: P) => JSX.Element, props: P) =>
-  renderToString(() => createComponent(component, props));
+const html = <P extends object>(component: (props: P) => JSX.Element, props: P) => renderToString(() => createComponent(component, props));
 
 test("a mark is decoration beside its name, names itself with a label, and sends its picture over its symbol", () => {
   const plain = html(Mark, { icon: "table", color: "#008f4c" });

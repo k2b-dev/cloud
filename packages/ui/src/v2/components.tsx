@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -30,7 +31,7 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
-  /** A count at the end, such as unread mails. */
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -103,18 +104,27 @@ export type NavProps = {
   foot?: readonly NavItem[];
 };
 
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
+
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
-);
+const NavEnd = (props: { item: NavItem }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -232,7 +242,7 @@ export type Tab = {
   label: string;
   /** A Tabler icon before the name. */
   icon?: string;
-  /** A quiet count after the name. */
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -258,21 +268,24 @@ export type TabsProps = {
 };
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -301,6 +314,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -345,7 +359,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -689,7 +703,9 @@ export const Digest = (props: DigestProps) => {
                 </span>
                 <span class="k2-digest-state">
                   <Icon name={entry.state.icon} tone={entry.state.tone} />
-                  {entry.state.label}
+                  <span class="k2-digest-state-text" title={entry.state.label}>
+                    {entry.state.label}
+                  </span>
                 </span>
                 <span class="k2-digest-text">{entry.text}</span>
                 <Show when={entry.href !== undefined}>
@@ -786,7 +802,8 @@ export const RecordHead = (props: RecordHeadProps) => (
     <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
     <For each={props.ids}>
       {(id) => (
-        <span class="k2-record-id">
+        // where the head has no room the words give way with "…"; the whole identifier stands in the tip
+        <span class="k2-record-id" title={id.label ? `${id.label} ${id.value}` : id.value}>
           <Show when={id.icon && !id.label}>
             <Icon name={id.icon!} />
           </Show>
