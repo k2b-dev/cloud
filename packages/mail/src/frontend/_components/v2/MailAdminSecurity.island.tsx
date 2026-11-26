@@ -408,7 +408,8 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                   {
                     title: t().rule,
                     width: { min: 100, default: 120 },
-                    cell: (row) => <Chip status={row.policy.disposition === "deny" ? "bad" : "ok"}>{row.rule}</Chip>,
+                    // blocking is the rule working, not trouble: both kinds stay neutral, their mark tells them apart
+                    cell: (row) => <Chip>{row.rule}</Chip>,
                   },
                   { title: t().match, width: { min: 130, default: 160 }, cell: (row) => row.target, drop: true },
                   {
@@ -420,7 +421,7 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                   {
                     title: t().state,
                     width: { min: 100, default: 110 },
-                    cell: (row) => (row.policy.enabled ? <Chip status="ok">{t().healthActive}</Chip> : <Chip>{t().paused}</Chip>),
+                    cell: (row) => <Chip>{row.policy.enabled ? t().healthActive : t().paused}</Chip>,
                   },
                   { title: t().actions, width: { fixed: 88 }, align: "end", cell: (row) => deeds(row.policy.value, ruleDeeds(row.policy)) },
                 ]}

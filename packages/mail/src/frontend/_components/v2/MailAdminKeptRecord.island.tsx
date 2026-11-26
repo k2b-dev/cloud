@@ -144,7 +144,7 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
     if (state === "undo_window") return { label: t().deliveryPending, icon: "clock" };
     if (state === "sending") return { label: t().deliverySending, icon: "send" };
     if (state === "accepted" || state === "sent_sync_pending" || state === "sent" || state === "reconciled_accepted")
-      return { label: t().deliverySent, icon: "circle-check", tone: "ok" };
+      return { label: t().deliverySent, icon: "circle-check" };
     if (state === "failed") return { label: t().deliveryFailed, icon: "alert-circle", tone: "bad" };
     if (state === "cancelled" || state === "reconciled_unsent") return { label: t().deliveryNotSent, icon: "circle-minus", tone: "warn" };
     return { label: t().deliveryUnknown, icon: "help-circle", tone: "warn" };

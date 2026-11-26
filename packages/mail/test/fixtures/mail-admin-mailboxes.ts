@@ -15,7 +15,7 @@ type Seed = [
   attention: number,
 ];
 
-const ok = { label: "Aktiv", status: "ok" } as const;
+const ok = { label: "Aktiv" } as const;
 const seeds: Seed[] = [
   ["Verwaltung", ok, "vor 2 Min.", 2, 6, "4,2 GB", 0],
   ["Kundendienst", ok, "vor 1 Min.", 1, 14, "11,8 GB", 0],

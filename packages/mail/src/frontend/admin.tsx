@@ -60,7 +60,8 @@ export default ssr<AuthContext>(async (c) => {
     return t.healthUnknown;
   };
   const healthStatus = (health: PlatformMailboxOperationSummary["health"]): Status | undefined => {
-    if (health === "active") return "ok";
+    // a mailbox that runs needs nothing: its state stays neutral, colour is for trouble (identity B, rule 7)
+    if (health === "active") return undefined;
     if (health === "paused") return undefined;
     if (health === "degraded" || health === "reconnecting" || health === "verifying" || health === "bootstrapping") return "warn";
     return "bad";
