@@ -823,9 +823,10 @@
   color: var(--k2-blue-ink);
   background: var(--k2-blue-tint);
 }
+/* the focus ring of the shared tokens (the editor draws its rings inside), in the blue of v2 */
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+  outline: var(--k2b-focus-width) solid var(--k2-blue);
+  outline-offset: var(--k2b-focus-offset);
 }
 .k2-ui .k2b-markdown-editor :is(.k2b-markdown-editor__input, .k2b-markdown-editor__preview) {
   padding: 10px var(--k2-edge) !important;

@@ -237,7 +237,7 @@ for (const width of [1440, 390])
     }
   }, 30_000);
 
-/** Walks the focused toolbar with the arrow keys; for each button, where its 3 px ring is cut or covered. */
+/** Walks the focused toolbar with the arrow keys; for each button, where its focus ring is cut or covered. */
 const ringsCut = async (page: Page, bar: string) => {
   await page.locator(`${bar} button`).first().focus();
   // the ring shows for keyboard focus: one arrow there and back starts the walk from the keyboard
@@ -252,9 +252,12 @@ const ringsCut = async (page: Page, bar: string) => {
       const button = document.activeElement;
       if (!(button instanceof HTMLElement)) return { name: "", cut: "nothing focused" };
       const name = button.getAttribute("aria-label") ?? "";
-      if (!getComputedStyle(button).boxShadow.includes("3px")) return { name, cut: "no 3 px ring" };
+      // the ring is the shared focus outline: how far it reaches past the button is its width and its offset
+      const look = getComputedStyle(button);
+      if (look.outlineStyle !== "solid" || Number.parseFloat(look.outlineWidth) < 2) return { name, cut: "no focus ring" };
+      const reach = Math.max(0, Number.parseFloat(look.outlineWidth) + Number.parseFloat(look.outlineOffset));
       const box = button.getBoundingClientRect();
-      const ring = { left: box.left - 3, top: box.top - 3, right: box.right + 3, bottom: box.bottom + 3 };
+      const ring = { left: box.left - reach, top: box.top - reach, right: box.right + reach, bottom: box.bottom + reach };
       for (let clip = button.parentElement; clip && !clip.classList.contains("k2-canvas"); clip = clip.parentElement) {
         const style = getComputedStyle(clip);
         if (style.overflowX === "visible" && style.overflowY === "visible") continue;
@@ -329,7 +332,13 @@ test("both toolbars show a format that is on, and a button under the pointer, th
     await page.locator('[data-editor="shared"] .cm-content').getByText("Lieferung").click();
     await page.waitForFunction(() => document.querySelectorAll('[aria-pressed="true"][aria-label^="Fett"]').length === 2);
     // the toolbars ease their colours (150 ms): read them once no transition runs (the caret blinks on, an animation)
-    const eased = () => page.waitForFunction(() => document.getAnimations().every((motion) => !(motion instanceof CSSTransition)));
+    const eased = () =>
+      page.waitForFunction(() =>
+        document
+          .getAnimations()
+          .filter((animation) => animation.timeline === document.timeline)
+          .every((motion) => !(motion instanceof CSSTransition)),
+      );
     await eased();
     const look = (selector: string) =>
       page.locator(selector).evaluate((button) => {

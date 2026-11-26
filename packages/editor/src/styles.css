@@ -44,9 +44,11 @@
   color: var(--k2-blue-ink);
   background: var(--k2-blue-tint);
 }
+/* the same ring as MarkdownEditor's toolbar in v2: the shared focus tokens, in the blue of v2 */
 .k2-ui [data-k2b-editor-toolbar] .k2b-icon-button:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+  outline: var(--k2b-focus-width) solid var(--k2-blue);
+  outline-offset: var(--k2b-focus-offset);
+  box-shadow: none;
 }
 
 /* The dictation bar's controls match the toolbar's own, so the row keeps its height when the bar stands in. */
