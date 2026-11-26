@@ -425,9 +425,9 @@ export const Tabs = (props: TabsProps) => {
  * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
  *
  * A deep path folds by its length, the same on the server and in the browser, so nothing moves: from five places on,
- * the first and the last two stand, and the places between go into a menu "…" in their order. Where the room runs
- * out, the place before the page shortens with "…" first, then the page itself; their whole names stay in the page
- * and show on hover.
+ * the first and the page stand, and every place between goes into a menu "…" in its order. The page keeps its whole
+ * name: where the room runs out the places between shorten with "…" first, then the first; the page only when
+ * nothing else is left. Every shortened name shows whole on hover.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
@@ -440,35 +440,25 @@ const PATH_SHORT = 6;
 
 export const Path = (props: PathProps) => {
   const t = useOverlayMessages();
-  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -2) : []);
+  // a deep path shows its first place and the page; every place between goes into the menu "…"
+  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -1) : []);
   // a short name ("2026", "Q1") is narrower than the 48 px a long one shortens to, so it stays whole as it is
   const short = (item: PathItem) => (item.label.length <= PATH_SHORT ? "" : undefined);
-  const step = (item: PathItem, last: boolean, near: boolean) =>
+  const step = (item: PathItem, last: boolean, between: boolean) =>
     last ? (
       <b aria-current="page" title={item.label} data-short={short(item)}>
         {item.label}
       </b>
     ) : item.href !== undefined ? (
-      <a
-        class="k2-path-step"
-        href={item.href}
-        data-near={near ? "" : undefined}
-        data-short={near ? short(item) : undefined}
-        title={near ? item.label : undefined}
-      >
+      <a class="k2-path-step" href={item.href} data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
         {item.label}
       </a>
     ) : (
-      <span
-        class="k2-path-step"
-        data-near={near ? "" : undefined}
-        data-short={near ? short(item) : undefined}
-        title={near ? item.label : undefined}
-      >
+      <span class="k2-path-step" data-near={between ? "" : undefined} data-short={short(item)} title={item.label}>
         {item.label}
       </span>
     );
-  const shown = () => (folded().length ? [props.items[0]!, ...props.items.slice(-2)] : props.items);
+  const shown = () => (folded().length ? [props.items[0]!, props.items.at(-1)!] : props.items);
   return (
     <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
       <For each={shown()}>
@@ -485,7 +475,7 @@ export const Path = (props: PathProps) => {
               />
               <Icon name="chevron-right" />
             </Show>
-            {step(item, index() === shown().length - 1, index() === shown().length - 2 && index() > 0)}
+            {step(item, index() === shown().length - 1, index() > 0 && index() < shown().length - 1)}
           </>
         )}
       </For>

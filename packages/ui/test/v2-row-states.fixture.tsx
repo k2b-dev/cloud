@@ -126,6 +126,11 @@ const levels = [
   "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
 ];
 
+// a folder of everyday names, as the Files app has it: its page ("Entwürfe") must never shorten (Files v3)
+export const everydayPath = ["Werkstatt", "Projekte", "2026", "Kunden", "Lindqvist", "Küche", "Entwürfe"].map((label, index, all) =>
+  index < all.length - 1 ? { label, href: `#place-${index}` } : { label },
+);
+
 export const deepPath = levels.map((label, index) => (index < levels.length - 1 ? { label, href: `#level-${index}` } : { label }));
 
 // `chip`: the path stands in an `Inline` with a chip after it (the folder's sharing, W1b #4206).
@@ -136,7 +141,7 @@ export const DeepPathScreen = (props: { chip?: boolean }) => (
         start={
           props.chip ? (
             <Inline>
-              <Path label="Ort" items={deepPath} />
+              <Path label="Ort" items={everydayPath} />
               <Chip icon="users">Mit 4 Personen geteilt</Chip>
             </Inline>
           ) : (
