@@ -159,6 +159,27 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
   });
 });
 
+test("menu: a tick locked and freed while the menu is open follows at once; locked, a press does nothing", async () => {
+  await withPage(async (page) => {
+    await headMenu(page).click();
+    await page.locator(menu).waitFor();
+    await settled(page);
+    const tick = page.getByRole("menuitemcheckbox", { name: "Nur offene zeigen" });
+    expect(await tick.getAttribute("aria-disabled")).toBeNull();
+    await page.evaluate(() => window.__k2LockTick?.(true));
+    await page.waitForFunction(() => document.querySelector('[role="menuitemcheckbox"]')?.getAttribute("aria-disabled") === "true");
+    await tick.click({ force: true });
+    await settled(page);
+    expect(await deeds(page)).toEqual([]);
+    expect(await tick.getAttribute("aria-checked")).toBe("true");
+    await page.evaluate(() => window.__k2LockTick?.(false));
+    await page.waitForFunction(() => !document.querySelector('[role="menuitemcheckbox"]')?.hasAttribute("aria-disabled"));
+    await tick.click();
+    await page.waitForFunction(() => document.querySelector('[role="menuitemcheckbox"]')?.getAttribute("aria-checked") === "false");
+    expect(await deeds(page)).toEqual(["open-only:false"]);
+  });
+});
+
 test("menu: sections with headings; a choice is one radio group, choosing closes the menu and moves the tick", async () => {
   await withPage(async (page) => {
     const trigger = page.getByRole("button", { name: "Antwort" });

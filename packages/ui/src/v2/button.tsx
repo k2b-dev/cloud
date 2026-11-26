@@ -56,9 +56,10 @@ export type ButtonProps = ButtonBase &
         /** The words on the button. */
         children: JSX.Element;
         /**
-         * Beside words ("Speichern") the words are the name and this is a hint under the pointer. Beside a count or a
-         * symbol, which say no deed on their own (`2`), this is the name ("2 offene Kommentare"): it holds what shows,
-         * so a person who says what they see still reaches it.
+         * Beside words ("Speichern", also "1.2k") or other content the words are the name and this is a hint under
+         * the pointer (none when it only repeats them). Beside a count or a symbol as text, which says no deed on its
+         * own (`2`), this is the name and the hint ("2 offene Kommentare"): it holds what shows, so a person who says
+         * what they see still reaches it (`describeV2` names a label that does not).
          */
         label?: string;
       }
@@ -69,19 +70,26 @@ export type ButtonProps = ButtonBase &
       }
   );
 
+/** The text of content that is plain text (words, numbers), or `null` for other content, such as an element. */
+const plainText = (value: unknown): string | null =>
+  typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : Array.isArray(value)
+      ? value.map(plainText).reduce<string | null>((all, part) => (all === null || part === null ? null : all + part), "")
+      : null;
+
 /**
- * Whether the content of a button is words that name it ("Speichern"), not a count or a symbol ("2"): its text holds a
- * letter. Content that is no plain text, such as an element, does not count as words.
+ * Whether the content of a button is a count or a symbol as text ("2", "+"), which names no deed: plain text without a
+ * letter. Words ("Speichern", also "1.2k") and content of another kind, such as an element, name the button themselves.
  */
-export const isWords = (content: unknown): boolean => {
-  const text = (value: unknown): string | null =>
-    typeof value === "string" || typeof value === "number"
-      ? String(value)
-      : Array.isArray(value)
-        ? value.map(text).reduce<string | null>((all, part) => (all === null || part === null ? null : all + part), "")
-        : null;
-  return /\p{L}/u.test(text(content) ?? "");
+export const isCount = (content: unknown): boolean => {
+  const text = plainText(content)?.trim();
+  return !!text && !/\p{L}/u.test(text);
 };
+
+/** The hint of a button with content: its label, unless the label only repeats the words it shows. */
+export const hintOf = (label: string | undefined, content: unknown): string | undefined =>
+  label && label !== plainText(content)?.trim() ? label : undefined;
 
 /** The one button: round, one height per place, a link through `href`. An icon button must have a label. */
 export const Button = (props: ButtonProps) => {
@@ -104,8 +112,8 @@ export const Button = (props: ButtonProps) => {
       aria-busy={props.busy ? "true" : undefined}
       aria-pressed={props.href === undefined && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       // words name the button and its label is a hint; a count or a symbol is named by the label, which holds it
-      aria-label={iconOnly() || !isWords(label()) ? props.label : undefined}
-      title={iconOnly() ? props.label : (props.title ?? (isWords(label()) ? props.label : undefined))}
+      aria-label={iconOnly() || isCount(label()) ? props.label : undefined}
+      title={iconOnly() ? props.label : (props.title ?? hintOf(props.label, label()))}
       aria-haspopup={props.menu ? "menu" : undefined}
       onClick={(event: MouseEvent & { currentTarget: HTMLElement; target: Element }) => {
         if (off()) event.preventDefault();

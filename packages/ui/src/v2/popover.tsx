@@ -1,7 +1,7 @@
 import { createEffect, createSignal, type JSX, onCleanup, children as resolveChildren, Show } from "solid-js";
 import { usePopover } from "./behavior/overlays";
 import { useTip } from "./behavior/tip";
-import { isWords } from "./button";
+import { hintOf, isCount } from "./button";
 import { alignTo, TriggerFace, type TriggerProps } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -51,8 +51,8 @@ const Panel = (props: PopoverPanelProps) => {
         data-icon-only={iconOnly() ? "" : undefined}
         data-menu={iconOnly() ? undefined : ""}
         // as Button: words name the button and its label is a hint; a count or a symbol is named by the label
-        aria-label={iconOnly() ? name() : isWords(words()) ? undefined : props.label}
-        title={iconOnly() ? name() : isWords(words()) ? props.label : undefined}
+        aria-label={iconOnly() ? name() : isCount(words()) ? props.label : undefined}
+        title={iconOnly() ? name() : hintOf(props.label, words())}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </popover.Trigger>

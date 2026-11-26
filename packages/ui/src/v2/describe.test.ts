@@ -30,6 +30,13 @@ const outline = (markup: string) => {
 const fixture = (name: keyof typeof fixtures) => outline(renderToString(() => createComponent(fixtures[name], {})));
 
 describe("describeV2", () => {
+  test("names a count whose label does not hold what it shows", () => {
+    const button = (label: string) =>
+      `<button class="k2-btn" data-k2-part="Button" aria-label="${label}" title="${label}"><i class="ti ti-message-circle k2-icon" aria-hidden="true"></i><span class="k2-btn-label">2</span></button>`;
+    expect(outline(button("Offene Kommentare"))).toContain('Button "2" is named "Offene Kommentare", which does not hold the "2" it shows');
+    expect(outline(button("2 offene Kommentare"))).not.toContain("which does not hold");
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');

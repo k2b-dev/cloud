@@ -407,6 +407,15 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     if (element.classList.contains("k2-table-phone") && (!options.layout || hidden(element))) return;
     if (options.layout && part(element) === "Table" && hidden(element)) return;
     checkChildren(element);
+    // a count is named by its label, which must hold the count, so a person who says what they see reaches it
+    if (element.getAttribute("data-k2-part") === "Button") {
+      const shown = element.textContent?.trim() ?? "";
+      const named = element.getAttribute("aria-label");
+      if (named && shown && !/\p{L}/u.test(shown) && !named.includes(shown))
+        problems.push(
+          `Button ${quote(shown)} is named ${quote(named)}, which does not hold the ${quote(shown)} it shows: put it in its label`,
+        );
+    }
     let next = depth;
     if (element.hasAttribute("data-k2-part") && isLine(element)) {
       const name = part(element);

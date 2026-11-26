@@ -1,6 +1,17 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  mergeProps,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
-import { isWords } from "./button";
+import { hintOf, isCount } from "./button";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -262,13 +273,14 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       return props.item.disabled;
     },
   };
-  const keyed = {
-    ...shared,
+  // mergeProps keeps the getters of `shared`: a spread would read them once, so an entry locked or freed while its menu
+  // is open would keep its first state
+  const keyed = mergeProps(shared, {
     value: props.value,
     get label() {
       return props.item.label;
     },
-  };
+  });
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();
@@ -358,8 +370,8 @@ const MenuRoot = (props: MenuProps) => {
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
         // as Button: words name the button and its label is a hint; a count or a symbol is named by the label
-        aria-label={iconOnly() ? name() : isWords(words()) ? undefined : props.label}
-        title={iconOnly() ? name() : isWords(words()) ? props.label : undefined}
+        aria-label={iconOnly() ? name() : isCount(words()) ? props.label : undefined}
+        title={iconOnly() ? name() : hintOf(props.label, words())}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>

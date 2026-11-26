@@ -90,6 +90,19 @@ test("a button is named by its words; a count or a symbol beside them by its lab
   expect(words).not.toContain("aria-label");
   expect(words).toContain('title="Absender ändern"');
   expect(tag(renderToString(() => createComponent(Button, { icon: "x", label: "Schließen" })))).toContain('aria-label="Schließen"');
+  // a count is also its hint, for a person with a mouse, who sees only the "2"
+  expect(count).toContain('title="2 offene Kommentare"');
+  // content that is an element shows words of its own: they stay the name, and the label is a hint
+  const element = tag(
+    renderToString(() =>
+      createComponent(Button, { label: "Absender ändern", children: createComponent(Text, { children: "Von Anna Berg" }) }),
+    ),
+  );
+  expect(element).not.toContain("aria-label");
+  expect(element).toContain('title="Absender ändern"');
+  // a short count with a letter ("1.2k") is words; a label that only repeats the words is no second hint
+  expect(tag(renderToString(() => createComponent(Button, { label: "1.2k Aufrufe", children: "1.2k" })))).not.toContain("aria-label");
+  expect(tag(renderToString(() => createComponent(Button, { label: "Ansicht", children: "Ansicht" })))).not.toContain("title=");
   // the buttons of a menu and of a popover follow the same rule
   const menu = tag(
     renderToString(() => createComponent(Menu, { label: "3 weitere Ansichten", children: "3", items: [{ label: "Liste" }] })),
