@@ -148,7 +148,8 @@ describe("Activity on UI v2", () => {
       />
     ));
   };
-  const rows = () => [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')];
+  // the rows of the list of changes, not those of the summary beside it
+  const rows = () => [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="List"][aria-label="Aktivität"] [data-k2-part="Row"]')];
   const rowWith = (text: string) => rows().find((row) => row.textContent?.includes(text));
   const opener = (row: HTMLElement | undefined) => row?.querySelector<HTMLAnchorElement | HTMLButtonElement>(".k2-row-open");
   const buttonNamed = (root: ParentNode, label: string) =>
@@ -432,7 +433,9 @@ describe("Activity on UI v2", () => {
     await flush();
     expect(text()).toContain("Liegt vermutlich in Team Vertrieb › Archiv › 2025");
     expect(text()).toContain("Ohne feste Kennung kann Dateien den neuen Ort nicht sicher bestätigen.");
-    expect(text()).toContain("Verschoben am 20.10. um 14:12 vom Assistant im Auftrag von Lukas Pohl.");
+    // who moved it when is said once: by the newest step of its history, not by a second line above it
+    expect(text()).not.toContain("Verschoben am 20.10. um 14:12");
+    expect(text()).toContain("Assistant im Auftrag von Lukas Pohl hat den Ordner");
     buttonNamed(dom.root, "Dorthin springen")!.click();
     expect(opened).toEqual([{ kind: "endpoint", endpoint }]);
   });
@@ -449,7 +452,9 @@ describe("Activity on UI v2", () => {
         },
       },
     });
-    expect(text()).toContain("Liegt im Papierkorb von Team Vertrieb");
+    // the chip says where it lies, once; the note says where it comes back to
+    expect(text()).not.toContain("Liegt im Papierkorb von Team Vertrieb");
+    expect(text()).toContain("Im Papierkorb");
     expect(text()).toContain("Es kommt zurück nach Team Vertrieb › Kunden.");
     expect(text()).toContain("Angebote_2025_Übersicht.xlsx liegt im Papierkorb");
     const answer = async (name: string, expected: string) => {
@@ -523,8 +528,9 @@ describe("Activity on UI v2", () => {
         historyHref="/app/filesv2?view=activity&q=Angebote"
       />
     ));
-    expect(text()).toContain("„Angebote“ liegt vermutlich in");
-    expect(text()).not.toContain("„Kunden“ liegt");
+    // the old place stands once, in the path above; the row says where the folder is now
+    expect(text()).toContain("Vermutlich jetzt in Team Vertrieb › Archiv › Kunden");
+    expect(text()).not.toContain("Team Vertrieb › Kunden › Angebote");
     expect(buttonNamed(dom.root, "Verlauf ansehen")?.getAttribute("href")).toBe("/app/filesv2?view=activity&q=Angebote");
     buttonNamed(dom.root, "Dorthin springen")!.click();
     expect(opened).toEqual([{ kind: "endpoint", endpoint }]);

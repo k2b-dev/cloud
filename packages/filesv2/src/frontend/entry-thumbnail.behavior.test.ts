@@ -52,8 +52,8 @@ describe("the picture of a photo", () => {
     const { entryThumbnail } = await import("./entry-thumbnail");
     const first = new AbortController();
     createRoot(() => entryThumbnail("demo", photo("Front.jpg"), "small", first.signal));
+    // right away, before the cancelled request has even settled
     first.abort();
-    await flush();
     const again = new AbortController();
     expect(createRoot(() => entryThumbnail("demo", photo("Front.jpg"), "small", again.signal))).toBeUndefined();
     expect(asked.map((each) => each.signal)).toEqual([first.signal, again.signal]);

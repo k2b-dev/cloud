@@ -466,14 +466,22 @@ function MissingHit(props: {
         actions={deeds().length ? twoDeeds() : undefined}
         summary={
           <>
-            <Chip status={tag().status}>{tag().label}</Chip>{" "}
-            <Show when={typeof now() === "string"} fallback={<SentenceText parts={now() as Part[]} />}>
-              {now() as string}
+            <Chip status={tag().status}>{tag().label}</Chip>
+            {/* each fact once: in the trash the chip says where it lies, and its history says who put it there */}
+            <Show when={props.kind !== "trash"}>
+              {" "}
+              <Show when={typeof now() === "string"} fallback={<SentenceText parts={now() as Part[]} />}>
+                {now() as string}
+              </Show>
             </Show>
           </>
         }
       >
-        <Show when={why()}>{(parts) => <Row icon="info-circle" lines={[<SentenceText parts={parts()} />]} />}</Show>
+        {/* who moved or deleted it when is the newest step of the history below; a hit without steps, and an unclear
+            or hidden one (its "why" says more than the step), says it here */}
+        <Show when={(rows().length === 0 || (props.kind !== "trash" && props.kind !== "moved")) && why()}>
+          {(parts) => <Row icon="info-circle" lines={[<SentenceText parts={parts()} />]} />}
+        </Show>
         <Show when={props.kind === "moved" && chain.error()}>
           <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void chain.refresh() }]}>
             {h().chainFailed}

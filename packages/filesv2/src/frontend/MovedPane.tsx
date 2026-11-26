@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { type Action, List, Notice, type OnNavigate, Pane, Row, StatusRow } from "@k2b/ui/v2";
+import { type Action, Button, List, Notice, type OnNavigate, Pane, Row } from "@k2b/ui/v2";
 import { createMemo, type JSX } from "solid-js";
 import { entryMark } from "./entry-mark";
 import {
@@ -14,7 +14,7 @@ import {
   placeOf,
 } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
-import { personOf, SentenceText } from "./history-v2";
+import { SentenceText } from "./history-v2";
 import type { MovedSnapshot } from "./workspace-state";
 
 /**
@@ -41,10 +41,10 @@ export default function MovedPane(props: {
     // A null endpoint can mean hidden, missing or interrupted evidence; it does not prove a current place.
     if (!point) return fill(h().chainFailed, {});
     const path: Part[] = [{ kind: "place", segments: placeOf(props.env, { kind: "endpoint", endpoint: point }) }];
-    return fill(props.moved.chain.certainty === "verified" ? h().movedNow : h().movedProbably, { name: name(), path });
+    return fill(props.moved.chain.certainty === "verified" ? h().v2MovedNow : h().v2MovedProbably, { path });
   };
   const why = () =>
-    fill(h().whyMoved, {
+    fill(h().v2MovedWhen, {
       date: formatDate(props.moved.entry.time, locale(), props.env),
       time: formatTime(props.moved.entry.time, locale(), props.env),
       by: byParts(actor(), h(), props.env, props.moved.entry),
@@ -58,15 +58,18 @@ export default function MovedPane(props: {
   };
   const mark = entryMark({ name: name(), directory: true });
   return (
-    <Pane label={h().movedTitleFolder} status={<StatusRow lead={h().movedTitleFolder} />}>
-      {/* The note about the bookmark leads; two rows say where the folder is now and who moved it, each with its one
-          deed. A list ends with the space under its last row, so no line closes the page. */}
-      <Notice tone="note">
-        <SentenceText parts={fill(h().bookmarkNote, { path: [{ kind: "place", segments: props.oldAddress }] })} />
-      </Notice>
+    <Pane label={h().movedTitleFolder}>
+      {/* Say it once (Valentin 26.11.): the note says that the folder moved and what that means for the bookmark; the
+          row says where it is now and who moved it when, with the way there and its history; the old place is the
+          head's path. */}
+      <Notice tone="note">{h().v2MovedNote}</Notice>
       <List label={h().movedTitleFolder}>
-        <Row mark={mark} lines={[name(), <SentenceText parts={now()} />]} action={jump()} />
-        <Row avatar={personOf(actor())} lines={[<SentenceText parts={why()} />, props.oldAddress.join(" › ")]} action={history()} />
+        <Row
+          mark={mark}
+          lines={[<SentenceText parts={now()} />, <SentenceText parts={why()} />]}
+          action={jump()}
+          end={<Button variant="ghost" icon="history" label={history().label} href={history().href} onNavigate={props.onNavigate} />}
+        />
       </List>
       {props.children}
     </Pane>

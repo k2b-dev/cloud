@@ -28,6 +28,7 @@ const MAX_POLLS = 8;
 let active = 0;
 const waiting: (() => void)[] = [];
 const slot = async (signal: AbortSignal) => {
+  signal.throwIfAborted();
   if (active < CONCURRENCY) {
     active++;
     return;
@@ -45,8 +46,10 @@ const slot = async (signal: AbortSignal) => {
     signal.addEventListener("abort", cancel, { once: true });
   });
 };
+// The newest waiting request goes first: the tiles just scrolled into view and the file just opened, not those the
+// person has long scrolled past (a tile leaving its folder cancels its request with the folder's signal).
 const release = () => {
-  const next = waiting.shift();
+  const next = waiting.pop();
   if (next) next();
   else active--;
 };

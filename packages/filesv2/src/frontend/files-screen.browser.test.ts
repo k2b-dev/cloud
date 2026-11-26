@@ -263,7 +263,8 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
       return route.fulfill({
         contentType: "text/plain; charset=utf-8",
         headers: { "access-control-allow-origin": "*" },
-        body: "# Notizen\n\nZuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\n- Maße prüfen\n- Kanten bestellen\n",
+        // a working note long enough to fill the editor, as a real one does
+        body: "# Notizen\n\nZuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\n- Maße prüfen\n- Kanten bestellen\n\n## Küche Lindqvist\n\nAufmaß am Dienstag mit Frau Lindqvist. Die Nische links ist 4 mm schmaler als im Plan, die Hochschränke rücken deshalb nach rechts.\n\n- Arbeitsplatte Granit, 38 mm, Kante gefast\n- Spüle als Unterbau, Ausschnitt nach Schablone\n- Sockel 100 mm, Lüftungsgitter unter dem Backofen\n\n## Material\n\n| Teil | Menge | Lieferant |\n| --- | --- | --- |\n| Eiche Dreischicht 19 mm | 6 Platten | Holzhandel Sommer |\n| Topfbänder 110° | 24 | Beschläge Thal |\n| Vollauszüge 500 mm | 8 | Beschläge Thal |\n| Hartwachsöl | 2,5 l | Lager |\n\n## Termine\n\n1. Fronten ölen: Mittwoch und Donnerstag\n2. Montage: Montag ab 7:30, zu zweit\n3. Abnahme mit der Kundin: Dienstag Nachmittag\n\n> Rückruf von Frau Lindqvist: Griffleisten lieber in Schwarz.\n\n## Offen\n\n- [ ] Muster Arbeitsplatte zurückgeben\n- [ ] Rechnung Teilzahlung schreiben\n- [x] Fotos vom Bestand ablegen\n",
       });
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
@@ -532,18 +533,28 @@ describe("a folder of Files on v2", () => {
     });
 
   test("the grid asks for the preview of a photo only once its tile comes into view", async () => {
-    const { context, tab, errors, seen } = await open(wide, "/app/filesv2?base=demo", "huge");
+    // a short window: about two rows of tiles in view, six tiles to a row
+    const { context, tab, errors, seen } = await open({ ...wide, height: 500 }, "/app/filesv2?base=demo", "huge");
     try {
       await tab.locator("[data-k2-part=FilterBar]").getByRole("button", { name: /Liste/ }).click();
       await tab.getByRole("menuitemradio", { name: "Raster" }).click();
       await tab.locator("[data-k2-part=Tiles] > [role=listitem]").first().waitFor();
-      const previews = () => seen.api.filter((request) => request.includes("/preview?"));
-      // the first page starts with 40 folders: its photos stand below the view
-      await tab.evaluate(() => new Promise((resolve) => setTimeout(resolve, 300)));
-      expect(previews()).toEqual([]);
-      await tab.locator("[data-k2-part=Tiles] > [role=listitem]").last().scrollIntoViewIfNeeded();
+      // the grid's own (large) previews; the list asked for its small ones before the switch
+      const previews = () => seen.api.filter((request) => request.includes("/preview?") && request.includes("size=large"));
+      const asked = (name: string) => previews().some((request) => request.includes(name.replaceAll(" ", "+")));
       await tab.waitForFunction(() => document.querySelector("[data-k2-part=Tiles] img") !== null);
-      expect(previews().some((request) => request.includes("Beleg+0041.jpg") || request.includes("Beleg%200041.jpg"))).toBe(true);
+      // the page holds 50 entries, 21 of them photos: only those of the rows in view and the next are asked for
+      const first = previews().length;
+      expect(first).toBeGreaterThan(0);
+      expect(first).toBeLessThanOrEqual(10);
+      expect(asked("Beleg 0009.jpg")).toBe(true);
+      // jumping to the end asks for the last rows' photos, never for those of the rows jumped over
+      await tab.locator("[data-k2-part=Tiles] > [role=listitem]").last().scrollIntoViewIfNeeded();
+      // the last rows ask for theirs (the next page may have come in under them), never those jumped over
+      for (let wait = 0; wait < 50 && previews().length <= first; wait++)
+        await tab.evaluate(() => new Promise((resolve) => setTimeout(resolve, 100)));
+      expect(previews().length).toBeGreaterThan(first);
+      expect(asked("Beleg 0031.jpg")).toBe(false);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -690,7 +701,7 @@ describe("the views beside the folders on v2", () => {
       await tab.getByText("Ansicht Front Eiche.jpg").first().waitFor();
       // "Me" is where Activity starts; six photos of one person at one time read as one line.
       expect(new URL(tab.url()).searchParams.get("who")).toBe("me");
-      expect(await tab.locator("[data-k2-part=List]").innerText()).toContain("6 Dateien hochgeladen");
+      expect(await tab.locator("[data-k2-part=List][aria-label='Aktivität']").innerText()).toContain("6 Dateien hochgeladen");
       await shoot(tab, "12-activity-1440");
       await expectClean(tab);
 
@@ -760,9 +771,13 @@ describe("the views beside the folders on v2", () => {
 
       await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Freigaben" }).click();
       await tab.getByText("Unterlagen Lindqvist").first().waitFor();
-      await tab.getByRole("button", { name: "Link widerrufen" }).first().click();
+      // the status column says the state only; revoking is a deed of the row's "…"
+      expect(await tab.getByRole("button", { name: "Link widerrufen" }).count()).toBe(0);
+      await tab.locator("[data-k2-part=Table]").getByRole("button", { name: "Aktionen für Unterlagen Lindqvist" }).click();
+      await tab.getByRole("menuitem", { name: "Link widerrufen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Widerrufen" }).click();
       await tab.waitForFunction(() => document.body.textContent?.includes("Freigabe widerrufen."));
+      // the question opened from a menu entry is really answered: the link is revoked through the API
       expect(seen.posts.at(-1)?.path).toMatch(/^\/shares\/.+\/revoke$/);
       expect(errors).toEqual([]);
     } finally {
@@ -784,10 +799,15 @@ describe("the views beside the folders on v2", () => {
         .evaluate((element) => [getComputedStyle(element).fontSize, getComputedStyle(element).fontFamily]);
       expect(stats[0]).toBe("12px");
       expect(stats[1]).toContain("IBM Plex Sans");
-      // saving and closing are the deeds of the title row; saving waits for a change
-      const save = tab.locator("[data-slot=status]").getByRole("button", { name: "Speichern" });
+      // one bar (Valentin 26.11.): the head names the file alone, small, with its draft's state; the place is the
+      // sidebar's active entry; no title row of the editor's own
+      expect((await tab.locator("[data-slot=head] [data-k2-part=Path]").innerText()).trim()).toBe("Notizen.md");
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Chip]").innerText()).toBe("Alles gespeichert");
+      expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
+      // saving and closing end the editor's own bar, which every width shows; saving waits for a change
+      const save = tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" });
       expect(await save.isDisabled()).toBe(true);
-      expect(await tab.locator("[data-slot=status]").getByRole("button", { name: "Schließen" }).count()).toBe(1);
+      expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Schließen" }).count()).toBe(1);
       await editor.click();
       await tab.keyboard.type(" Neu.");
       await tab.getByText("Ungespeicherte Änderungen").first().waitFor();
@@ -838,14 +858,9 @@ describe("the views beside the folders on v2", () => {
       try {
         await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
         if (address.includes("view=edit")) {
-          // the editor's title, its state and "Speichern" stand in one line on the phone
-          const status = tab.locator("[data-slot=status]");
-          const tops = await Promise.all(
-            [status.getByText("Notizen.md"), status.getByRole("button", { name: "Speichern" })].map(async (part) =>
-              Math.round((await part.boundingBox())!.y),
-            ),
-          );
-          expect(Math.abs(tops[0]! - tops[1]!)).toBeLessThan(8);
+          // the phone's head keeps only its search: saving and closing are in the editor's own bar there too
+          expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" }).isVisible()).toBe(true);
+          expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
         }
         await expectClean(tab);
         expect(errors).toEqual([]);

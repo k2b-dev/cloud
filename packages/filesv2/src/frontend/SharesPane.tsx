@@ -1,5 +1,5 @@
 import { toast, useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, Dialog, Failed, Icon, Inline, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Dialog, Failed, Icon, Menu, type OnNavigate, Pane, Table, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { BaseSummary, SharePage, ShareView } from "../contracts";
@@ -150,28 +150,19 @@ export default function SharesPane(props: {
                 },
                 {
                   title: b().v2From,
-                  width: { min: 120, default: 130 },
+                  width: { min: 110, default: 120 },
                   drop: true,
                   avatar: (share) => ({ name: share.createdBy }),
                   cell: (share) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy),
                 },
                 {
+                  // the state alone: an expired or revoked link wears its chip, an active one says nothing
                   title: b().shareState,
-                  width: { min: 180, default: 190 },
+                  width: { min: 112, default: 116 },
                   drop: true,
-                  cell: (share) => (
-                    <Inline>
-                      {state(share)}
-                      <Show when={share.state === "active"}>
-                        {/* the deed says its word: a crossed link beside "Aktiv" read as a second state */}
-                        <Button variant="ghost" busy={busy() === share.id} disabled={Boolean(busy())} onClick={() => void revoke(share)}>
-                          {b().v2RevokeLink}
-                        </Button>
-                      </Show>
-                    </Inline>
-                  ),
+                  cell: (share) => state(share),
                 },
-                { title: b().shareExpires, width: { min: 80, default: 84 }, drop: true, cell: expiresCell },
+                { title: b().shareExpires, width: { min: 72, default: 76 }, drop: true, cell: expiresCell },
                 {
                   title: b().v2Accesses,
                   width: { min: 64, default: 72 },
@@ -180,7 +171,29 @@ export default function SharesPane(props: {
                   cell: (share) => String(share.accessCount),
                 },
                 // the place has its own width and gives the rest to the name
-                { title: b().v2Place, width: { min: 160, default: 220 }, drop: true, cell: place },
+                { title: b().v2Place, width: { min: 110, default: 130 }, drop: true, cell: place },
+                {
+                  // the deeds of a link stand behind its "…", at the row's end
+                  title: b().v2Deeds,
+                  width: { min: 48, default: 48 },
+                  align: "end",
+                  cell: (share) => (
+                    <Show when={share.state === "active"}>
+                      <Menu
+                        label={b().v2DeedsFor({ name: share.title })}
+                        items={[
+                          {
+                            label: b().v2RevokeLink,
+                            icon: "link-off",
+                            danger: true,
+                            disabled: Boolean(busy()),
+                            onClick: () => void revoke(share),
+                          },
+                        ]}
+                      />
+                    </Show>
+                  ),
+                },
               ]}
             />
             <Show when={shown().next}>

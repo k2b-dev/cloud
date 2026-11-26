@@ -84,7 +84,7 @@ import {
 } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
 import { activityRequest, placeDescriber } from "./history-requests";
-import MarkdownPane from "./MarkdownPane";
+import MarkdownPane, { type EditorHead } from "./MarkdownPane";
 import MovedPane from "./MovedPane";
 import { useFilesMessages } from "./messages";
 import OfficePane from "./OfficePane";
@@ -673,6 +673,8 @@ export default function FilesScreen(props: {
     void go(activityUrl({ ...activityFilters(), q: words || undefined }));
   };
   // The editor's way back: its folder with the file open beside it.
+  // the open Markdown editor's draft state and save, shown in the head beside its path
+  const [editorHead, setEditorHead] = createSignal<EditorHead | null>(null);
   const editorBack = () => {
     const launch = snapshot().editor;
     if (launch) void go(filesUrl(launch.base.id, parentPath(launch.entry.path), null, launch.entry.path));
@@ -820,7 +822,11 @@ export default function FilesScreen(props: {
     ];
   };
   /** New entries and uploads: the head's "Neu". */
+  // the head's one create action (Valentin 26.11.): uploading first, then what can be made new here
   const addMenu = (): MenuEntry[] => [
+    { label: b().upload, icon: "upload", onClick: actions.pickFiles },
+    { label: b().uploadFolder, icon: "folder-up", onClick: actions.pickFolder },
+    "separator",
     { label: b().newFolder, icon: "folder-plus", onClick: () => void actions.createFolder() },
     { label: b().newFile, icon: "file-plus", onClick: () => void actions.createFile() },
     { label: assets().markdown, icon: "markdown", onClick: () => void actions.createMarkdown() },
@@ -837,9 +843,6 @@ export default function FilesScreen(props: {
           },
         ]
       : []),
-    "separator",
-    { label: b().upload, icon: "upload", onClick: actions.pickFiles },
-    { label: b().uploadFolder, icon: "folder-up", onClick: actions.pickFolder },
   ];
   const view = () => preference(snapshot().selectedId);
   // k2b-ui gap: Table has no tree rows (lane Y2: Table tree rows); a storage that keeps the tree view shows its list.
@@ -985,12 +988,8 @@ export default function FilesScreen(props: {
     }
     if (screen() === "edit") {
       const launch = snapshot().editor;
-      const folders = launch ? ancestors(parentPath(launch.entry.path)) : [];
-      // the file itself is the editor's title, in its status row: the path ends at its folder (Path folds a deep one)
-      return [
-        ...(base ? [{ label: label(base), href: filesUrl(base.id) }] : []),
-        ...folders.map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
-      ];
+      // one bar: the file's name, small; its place is the active entry of the sidebar, not a second path (Valentin 26.11.)
+      return launch ? [{ label: launch.entry.name }] : [];
     }
     const moved = snapshot().moved;
     if (moved)
@@ -1031,7 +1030,7 @@ export default function FilesScreen(props: {
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         // No empty half (look rule 5): the detail stands only while an entry is open.
         detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
-        primary={screen() === "folder" && !snapshot().moved && !openPath() ? uploadAction() : undefined}
+        primary={screen() === "folder" && !snapshot().moved ? uploadAction() : undefined}
         head={
           <Bar
             start={
@@ -1048,12 +1047,17 @@ export default function FilesScreen(props: {
             }
             end={
               <>
+                {/* the draft's state beside the file's name in the one head row; saving and closing are in the
+                    editor's own bar, which every width shows */}
+                <Show when={screen() === "edit" && editorHead()}>
+                  {(head) => <Chip status={head().dirty() ? "warn" : "ok"}>{head().state()}</Chip>}
+                </Show>
                 <Show when={screen() === "activity"}>
                   <Input
                     type="search"
                     icon="search"
                     label={h().searchLabel}
-                    placeholder={h().searchPlaceholder}
+                    placeholder={b().v2SearchShort}
                     value={activityFilters().q ?? ""}
                     onKeyDown={(event) => {
                       if (event.isComposing) return;
@@ -1085,13 +1089,8 @@ export default function FilesScreen(props: {
                     }}
                   />
                   <Show when={canCreate() && !searching()}>
+                    {/* ONE create action, never "+" beside "Hochladen" (Valentin 26.11.) */}
                     <Menu icon="plus" label={b().add} items={addMenu()} disabled={actions.busy()} />
-                    {/* Beside an open file the upload stays in "+": on the phone nothing floats over the file. */}
-                    <Show when={!openPath()}>
-                      <Button variant="primary" icon="upload" disabled={actions.busy()} onClick={actions.pickFiles}>
-                        {b().upload}
-                      </Button>
-                    </Show>
                   </Show>
                 </Show>
               </>
@@ -1150,6 +1149,7 @@ export default function FilesScreen(props: {
                   onGuard={(guard) => {
                     editorGuard = guard;
                   }}
+                  onHead={(head) => setEditorHead(() => head)}
                 />
               ) : (
                 <OfficePane launch={launch} onBack={editorBack} />

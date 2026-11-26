@@ -37,6 +37,14 @@ export function entryThumbnail(
     const created: Slot = { shown, settled: false };
     slot = created;
     slots.set(url, created);
+    // a folder left behind forgets its waiting previews at once, so the photo asks again as soon as it shows again
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (slots.get(url) === created && !created.settled) slots.delete(url);
+      },
+      { once: true },
+    );
     // a 200 lands in the browser's cache under the versioned address, so the mark's picture loads from there
     void loadPreview(url, signal).then(
       (result) => {

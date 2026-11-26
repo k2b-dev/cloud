@@ -420,7 +420,8 @@ export function OpenedRow(props: {
     fill(h().memberOpened, { object: [{ kind: "name", text: props.item.entry.name }], at: [{ kind: "place", segments: [place()] }] });
   return (
     <Row
-      lines={[<SentenceText parts={parts()} />, place()]}
+      // the sentence names the place once ("geöffnet in Werkstatt"); no second line repeats it
+      lines={[<SentenceText parts={parts()} />]}
       mark={entryMark(props.item.entry)}
       time={
         props.dated === false

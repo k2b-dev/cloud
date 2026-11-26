@@ -80,9 +80,9 @@ const worst: FileEntry[] = [
 
 const huge: FileEntry[] = Array.from({ length: 1000 }, (_, index) => {
   const number = String(index + 1).padStart(4, "0");
-  if (index < 40) return entry(`Ordner ${number}`, true, 0, index);
-  // every tenth file a photo: the grid asks for the previews of those in view only
-  return index % 10 === 0
+  if (index < 8) return entry(`Ordner ${number}`, true, 0, index);
+  // every other file a photo, all through the folder: the grid asks only for the previews of those in view
+  return index % 2 === 0
     ? entry(`Beleg ${number}.jpg`, false, 2_400_000 + index, index)
     : entry(`Beleg ${number}.pdf`, false, 10_000 + index * 37, index);
 });

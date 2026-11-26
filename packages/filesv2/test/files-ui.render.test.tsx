@@ -102,8 +102,9 @@ describe("Filesv2 server-rendered feedback", () => {
       favoritesPreview: { items: [favorite], more: false },
       recentByYou: { page: page([upload]), opened: [] },
     });
-    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "Today 1 change by you"])
-      expect(overview).toContain(text);
+    // no statement row that tells nothing to act on ("Today 1 change by you", Valentin 26.11.)
+    expect(overview).not.toContain("change by you");
+    for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf"]) expect(overview).toContain(text);
     expect(overview).toContain('aria-label="All storage"');
     // beside the storages, the viewer's own last changes under their day, in the row design of Activity
     expect(overview).toContain('aria-label="Recently by you"');
@@ -148,7 +149,8 @@ describe("Filesv2 server-rendered feedback", () => {
         next: null,
       },
     });
-    for (const text of ["Unterlagen Lindqvist", "1 link · 1 active", "Revoke", "3 accesses"]) expect(shares).toContain(text);
+    for (const text of ["Unterlagen Lindqvist", "1 link · 1 active", "Actions for Unterlagen Lindqvist", "3 accesses"])
+      expect(shares).toContain(text);
     expect(shares).not.toContain('data-k2-part="Loading"');
   });
 

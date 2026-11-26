@@ -48,6 +48,7 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   });
   const { default: MarkdownDocument } = await import("../src/frontend/MarkdownPane");
   let guard: (() => Promise<boolean>) | null = null;
+  let head: import("../src/frontend/MarkdownPane").EditorHead | null = null;
   const dispose = render(
     () =>
       createComponent(MarkdownDocument, {
@@ -55,6 +56,9 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
         onBack: () => {},
         onGuard: (value) => {
           guard = value;
+        },
+        onHead: (value) => {
+          head = value;
         },
       }),
     dom.root,
@@ -65,19 +69,17 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
     dom.cleanup();
   };
   await flush();
-  // the draft's state is the chip beside the title: "Saved" for a moment after a save
-  const stateChip = () => dom.root.querySelector('[data-slot="status"] [data-k2-part="Chip"]')?.textContent?.trim();
+  // the draft's state stands in the workspace's head: "Saved" for a moment after a save
+  const stateChip = () => head?.state();
   const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
   expect(editor).not.toBeNull();
   expect(editor.value).toBe("hello");
-  // saving and closing are the deeds of the title row, no longer of the editor's toolbar
+  // no title row of its own: saving and closing end the editor's own bar, which every width shows
   const tools = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')];
-  expect(tools.map((tool) => tool.getAttribute("aria-label"))).not.toContain("Close");
-  const row = dom.root.querySelector('[data-slot="status"]')!;
-  expect([...row.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual([
-    "Save",
-    "Close",
-  ]);
+  expect(tools.slice(-2).map((tool) => tool.getAttribute("aria-label"))).toEqual(["Save", "Close"]);
+  expect(dom.root.querySelector('[data-slot="status"]')).toBeNull();
+  expect(head!.canWrite).toBe(true);
+  expect(head!.canSave()).toBe(false);
   expect(dom.root.textContent).not.toContain("Back to folder");
   expect(dom.root.querySelector('[data-variant="embedded"][data-fill="true"]')).not.toBeNull();
   expect(await guard!()).toBe(true);
@@ -112,11 +114,11 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   expect(allowed).toBe(true);
   expect(dom.document.querySelector("dialog")).toBeNull();
   expect(editor.value).toBe("my draft");
-  expect(dom.root.textContent).toContain("Unsaved changes");
+  expect(stateChip()).toBe("Unsaved changes");
   failSave = false;
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
-  expect(dom.root.textContent).not.toContain("Unsaved changes");
+  expect(stateChip()).not.toBe("Unsaved changes");
   expect(await guard!()).toBe(true);
   expect(dom.root.querySelector('[role="toolbar"]')!.textContent).not.toContain("Saved");
   expect(stateChip()).toBe("Saved");

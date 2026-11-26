@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Canvas, Empty, Loading, Notice, Pane, StatusRow } from "@k2b/ui/v2";
+import { Canvas, Empty, Loading, Notice, Pane } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { OfficeEditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -120,15 +120,9 @@ export default function OfficePane(props: { launch: OfficeEditorLaunch; onBack: 
   // from this URL, never from the posted form.
   const action = () => `${props.launch.action}&closebutton=1&lang=${encodeURIComponent(collaboraLanguage(locale()))}`;
   return (
-    <Pane
-      label={props.launch.entry.name}
-      status={
-        <StatusRow
-          lead={loaded() ? props.launch.entry.name : failed() ? b().editorFailed : b().editorLoading}
-          loading={!loaded() && !failed()}
-        />
-      }
-    >
+    // the file's name stands small at the end of the workspace's path, never as a title row of its own; Collabora
+    // brings its own close
+    <Pane label={props.launch.entry.name}>
       <Show when={external()}>
         <Notice
           tone="warn"

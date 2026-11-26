@@ -159,6 +159,8 @@ export default function EntryDetail(props: EntryDetailProps) {
   return (
     <Pane
       detail
+      // the quiet sections of a record's info column, so its own sections and the link and version parts read alike
+      side
       label={head()?.name ?? props.path.split("/").at(-1) ?? props.path}
       back={{ label: props.folderName, href: props.closeHref, onNavigate: props.onNavigate }}
       head={
@@ -166,7 +168,8 @@ export default function EntryDetail(props: EntryDetailProps) {
         <Bar
           start={
             <Inline>
-              <Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>
+              {/* 14/600 as the mockup's detail head: the name is small, never a big title of its own (Valentin 26.11.) */}
+              <Text weight="strong">{head()?.name ?? props.path.split("/").at(-1)}</Text>
               {/* the star and "…" keep their place while the entry reads again; they wait until it is there */}
               <Button
                 variant="ghost"

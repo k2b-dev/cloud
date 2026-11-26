@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, StatusRow, Tiles } from "@k2b/ui/v2";
+import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
@@ -10,7 +10,7 @@ import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
-import { daysAgo, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
+import { formatWhen, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { ActivityLineRow } from "./history-v2";
 import { useFilesMessages } from "./messages";
@@ -44,14 +44,6 @@ export default function OverviewPane(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const labels = createMemo(() => props.bases.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) })));
-  // The first row says what matters today: what this person changed today; the storages count in their section.
-  const today = () => {
-    const page = props.recent?.page;
-    if (!page) return b().allStorage;
-    const count = page.items.filter((entry) => daysAgo(entry.time, props.env) === 0).length;
-    return b().v2TodayByYou({ count, more: page.next && count === page.items.length ? "+" : "" });
-  };
-  const unreachable = () => props.bases.filter((base) => base.status !== "existing").length;
   // runs this page opened; opening is presentation only, so a reload starts closed
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
   const toggle = (key: string) =>
@@ -86,11 +78,9 @@ export default function OverviewPane(props: {
   return (
     // Two columns: the storages and favorites, and beside them what this person did last; on the phone one under the other.
     <Pane.Split>
-      <Pane
-        label={b().allStorage}
-        scrollKey="filesv2-overview"
-        status={<StatusRow lead={today()} facts={unreachable() ? [{ value: unreachable(), after: b().v2Unreachable }] : undefined} />}
-      >
+      {/* no statement row: "Heute 5 Änderungen von dir" gave nothing to act on (Valentin 26.11.); a storage that is
+          not there says so with its own chip */}
+      <Pane label={b().allStorage} scrollKey="filesv2-overview">
         {props.issues.map((issue) => (
           <Notice tone="warn" title={t()[issue.area]}>
             {/* an area that could not be read has no storage of its own in the list: the notice speaks of the area,
@@ -156,16 +146,18 @@ export default function OverviewPane(props: {
             title={b().v2RecentlyOpened}
             count={props.recent!.opened.slice(0, FAVORITES_PREVIEW).length}
           >
-            <Tiles
-              label={b().v2RecentlyOpened}
-              items={props.recent!.opened.slice(0, FAVORITES_PREVIEW).map((item) => ({
-                ...entryMark(item.entry),
-                title: item.entry.name,
-                meta: favoritePlace(item, labels()),
-                href: favoriteHref(item),
-                onNavigate: props.onNavigate,
-              }))}
-            />
+            {/* rows, not tiles: a few files fill the column, and on the phone no tile stands alone in its row */}
+            <List label={b().v2RecentlyOpened}>
+              {props.recent!.opened.slice(0, FAVORITES_PREVIEW).map((item) => (
+                <Row
+                  mark={entryMark(item.entry)}
+                  lines={[item.entry.name, favoritePlace(item, labels())]}
+                  time={formatWhen(item.markedAt, locale(), h(), props.env)}
+                  href={favoriteHref(item)}
+                  onNavigate={props.onNavigate}
+                />
+              ))}
+            </List>
           </Section>
         </Show>
       </Pane>

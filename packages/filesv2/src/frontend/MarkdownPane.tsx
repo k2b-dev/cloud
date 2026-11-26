@@ -1,5 +1,5 @@
 import { MarkdownEditor, prompts, toast } from "@k2b/ui";
-import { Bar, Button, Canvas, Chip, Failed, Loading, Notice, Pane, Text } from "@k2b/ui/v2";
+import { Canvas, Failed, Loading, Notice, Pane } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkdownLaunch } from "../contracts";
@@ -14,11 +14,26 @@ import { uploadFile } from "./uploads";
  * notice with its way out, the editor itself in the rest of the pane. Leaving with unsaved changes asks first, also
  * for links of the shell; the browser asks before the tab closes.
  */
+/** What the workspace's head shows of the editor: its draft's state and the deed that saves it. */
+export type EditorHead = {
+  state: () => string;
+  dirty: () => boolean;
+  saving: () => boolean;
+  canWrite: boolean;
+  canSave: () => boolean;
+  save: () => void;
+};
+
 export default function MarkdownPane(props: {
   launch: MarkdownLaunch;
   onBack: () => void;
   /** The workspace asks this before it leaves the editor; `false` stays. */
   onGuard: (guard: (() => Promise<boolean>) | null) => void;
+  /**
+   * The draft's state and its save for the workspace's head: the file's name stands small at the end of the path there,
+   * never as a title row of its own (Valentin 26.11.).
+   */
+  onHead: (head: EditorHead | null) => void;
 }) {
   const t = useAssetMessages();
   const fill = createEditorFill();
@@ -28,7 +43,6 @@ export default function MarkdownPane(props: {
   const [loading, setLoading] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [saved, setSaved] = createSignal(false);
-  let area: HTMLDivElement | undefined;
   let savedTimer: ReturnType<typeof setTimeout> | undefined;
   const clearSaved = () => {
     clearTimeout(savedTimer);
@@ -183,18 +197,9 @@ export default function MarkdownPane(props: {
       });
     };
     document.addEventListener("click", click, true);
-    // Ctrl/Cmd+S in the text saves, as the editor's own toolbar did before its deeds moved to the row above
-    const keys = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "s") return;
-      if (!(event.target instanceof Node) || !area?.contains(event.target)) return;
-      event.preventDefault();
-      if (props.launch.canWrite && dirty() && !saving()) void save();
-    };
-    document.addEventListener("keydown", keys);
     onCleanup(() => {
       window.removeEventListener("beforeunload", beforeUnload);
       document.removeEventListener("click", click, true);
-      document.removeEventListener("keydown", keys);
     });
   });
   onCleanup(() => {
@@ -204,34 +209,17 @@ export default function MarkdownPane(props: {
   });
   const state = () =>
     saving() ? t().saving : dirty() ? t().unsaved : saved() ? t().saved : props.launch.canWrite ? t().v2AllSaved : t().v2ReadOnly;
+  props.onHead({
+    state,
+    dirty,
+    saving,
+    canWrite: props.launch.canWrite,
+    canSave: () => props.launch.canWrite && dirty() && ready() && !saving(),
+    save: () => void save(),
+  });
+  onCleanup(() => props.onHead(null));
   return (
-    <Pane
-      label={props.launch.entry.name}
-      // the file is the title; whether its draft is saved is a state beside it, on the phone too (a status row's
-      // filters leave there, the state of an open entry stays). Saving and closing are the deeds of this row.
-      status={
-        <Bar
-          // title and state stand in the bar itself, not in an Inline (which wraps in a status place): the row stays one
-          // line on the phone, and the title gives way with "…" before the state and the deeds
-          start={
-            <>
-              <Text type="lead">{props.launch.entry.name}</Text>
-              <Chip status={dirty() ? "warn" : "ok"}>{state()}</Chip>
-            </>
-          }
-          end={
-            <>
-              <Show when={props.launch.canWrite}>
-                <Button variant="primary" icon="device-floppy" busy={saving()} disabled={!dirty() || !ready()} onClick={() => void save()}>
-                  {t().save}
-                </Button>
-              </Show>
-              <Button variant="ghost" icon="x" label={t().close} onClick={props.onBack} />
-            </>
-          }
-        />
-      }
-    >
+    <Pane label={props.launch.entry.name}>
       <Show when={error() && ready()}>
         <Notice
           tone="warn"
@@ -248,13 +236,7 @@ export default function MarkdownPane(props: {
       </Show>
       <Canvas label={props.launch.entry.name}>
         {/* the editor's own edge is 12 px; 8 more put its text on the page's text edge of 20 px */}
-        <div
-          ref={(element) => {
-            area = element;
-            fill.ref(element);
-          }}
-          style={{ height: fill.height(), "padding-inline": "8px" }}
-        >
+        <div ref={fill.ref} style={{ height: fill.height(), "padding-inline": "8px" }}>
           <Show when={!loading()} fallback={<Loading rows={12} />}>
             <Show when={ready()} fallback={<Failed text={error() || t().failed} onRetry={() => void load()} />}>
               <MarkdownEditor
@@ -267,6 +249,13 @@ export default function MarkdownPane(props: {
                 fill
                 variant="embedded"
                 disabled={!props.launch.canWrite}
+                // saving and closing stand at the end of the editor's own bar, the one place every width shows (the
+                // phone's head keeps only its search); Ctrl/Cmd+S saves there too
+                onClose={props.onBack}
+                onSave={() => void save()}
+                saving={saving()}
+                saved={saved()}
+                saveDisabled={!dirty() || !props.launch.canWrite}
               />
             </Show>
           </Show>

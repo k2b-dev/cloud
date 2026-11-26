@@ -110,7 +110,8 @@ describe("Filesv2 office editing", () => {
     expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("UITheme=light");
     expect(form.querySelector<HTMLInputElement>('input[name="ui_defaults"]')!.value).toContain("SavedUIState=false");
     expect(form.querySelector<HTMLInputElement>('input[name="css_variables"]')!.value).toContain("--co-primary-element=");
-    expect(dom.root.textContent).toContain("Loading editor");
+    // the frame loads under its placeholder; the name stands in the workspace's path, not in a status row of its own
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
     const frame = dom.root.querySelector("iframe")!;
     const posted: string[] = [];
     if (frame.contentWindow)
@@ -126,7 +127,7 @@ describe("Filesv2 office editing", () => {
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Frame_Ready" } });
     message({ MessageId: "App_LoadingStatus", Values: { Status: "Document_Loaded" } });
     await flush();
-    expect(dom.root.textContent).not.toContain("Loading editor");
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).toBeNull();
     if (frame.contentWindow) expect(posted).toEqual(["Host_PostmessageReady", "Hide_Command", "Hide_Command"]);
     message({ MessageId: "UI_Close", Values: { EverModified: false } });
     expect(backs).toEqual([1]);
@@ -161,7 +162,7 @@ describe("Filesv2 office editing", () => {
       expect(action.searchParams.get("lang")).toBe(collabora);
       expect(action.searchParams.get("WOPISrc")).toBe(new URL(launch.action).searchParams.get("WOPISrc"));
       expect(submitted[0]!.fields).toEqual(["access_token", "access_token_ttl", "css_variables", "ui_defaults"]);
-      expect(dom.root.textContent).toContain("Editor wird geladen");
+      expect(dom.root.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
     }
   });
   test("the editor explains external-write limitations once per browser for writable unmanaged files, beside the document", async () => {

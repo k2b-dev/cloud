@@ -20,14 +20,24 @@ export function createSeenTiles(
       setSeen((now) => new Set([...now].filter((key) => known.has(key))));
       if (!visible) return;
       let observer: IntersectionObserver | undefined;
+      // the grid may change again before the microtask runs: an effect already cleaned up starts no observer
+      let done = false;
+      onCleanup(() => {
+        done = true;
+        observer?.disconnect();
+      });
       // after the grid drew the tiles of these keys
       queueMicrotask(() => {
+        if (done) return;
         const tiles = [...document.querySelectorAll(`[data-k2-part="Tiles"][aria-label="${CSS.escape(grid())}"] > [role="listitem"]`)];
         if (!tiles.length) return;
         const byElement = new WeakMap<Element, string>();
         observer = new IntersectionObserver(
           (records) => {
-            const keys = records.filter((record) => record.isIntersecting).flatMap((record) => byElement.get(record.target) ?? []);
+            const seenNow = records.filter((record) => record.isIntersecting);
+            // a tile seen once stays seen: it needs no more watching
+            for (const record of seenNow) observer?.unobserve(record.target);
+            const keys = seenNow.flatMap((record) => byElement.get(record.target) ?? []);
             if (keys.length) setSeen((now) => new Set([...now, ...keys]));
           },
           // the column that scrolls the grid, so the look-ahead is measured in its view
@@ -40,7 +50,6 @@ export function createSeenTiles(
           observer!.observe(tile);
         });
       });
-      onCleanup(() => observer?.disconnect());
     }),
   );
   return (key) => seen().has(key);
