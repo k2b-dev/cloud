@@ -756,4 +756,28 @@ describe("text a person cannot read", () => {
     },
     TEST_TIMEOUT,
   );
+
+  // Spaces at 1024 px (W3, 26.11.): a narrow status row keeps the symbol of ListOrder and hides its words with a clip;
+  // the words stay its name, so the label is not cut. A label that has room to show and is cut still is.
+  test(
+    "red: a button whose shown label is cut; green: a button whose label is hidden on purpose and stays its name",
+    async () => {
+      const outline = async (label: string) => {
+        const page = await open(
+          `<div data-k2-workspace data-k2-part="Workspace"><div data-k2-part="Bar" style="display:flex"><button type="button" class="k2-btn" style="width:48px;overflow:hidden"><span class="k2-btn-label" style="${label}">Sortiert nach Fälligkeit</span></button></div></div>`,
+          { width: 390 },
+        );
+        try {
+          return await describeV2Page(page, "#app");
+        } finally {
+          await page.close();
+        }
+      };
+      expect(await outline("white-space:nowrap")).toContain('"Sortiert nach Fälligkeit" cuts its label');
+      expect(await outline("position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap")).not.toContain(
+        "cuts its label",
+      );
+    },
+    TEST_TIMEOUT,
+  );
 });

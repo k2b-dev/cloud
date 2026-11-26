@@ -506,6 +506,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
+      // Words hidden on purpose (a narrow status row keeps the symbol of ListOrder, a clip of 1 px keeps the words as
+      // its name) are no cut label, as long as the control still has a name; a label hidden with no name left is.
+      const visuallyHidden =
+        label !== control && (label.getBoundingClientRect().width <= 1 || /inset\(50%\)/.test(getComputedStyle(label).clipPath));
+      const named = (control.getAttribute("aria-label") ?? label.textContent ?? "").trim() !== "";
+      if (visuallyHidden && named) continue;
       if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
