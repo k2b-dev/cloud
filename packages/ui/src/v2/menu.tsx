@@ -275,6 +275,38 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
     element.addEventListener("keydown", keys);
     onCleanup(() => element.removeEventListener("keydown", keys));
   });
+  // The panel takes the focus once it shows (a sheet shows a moment after it opens, and WebKit leaves the focus of a
+  // tap in the menu): keys, Escape first of all, then reach the panel, not the menu behind it.
+  let panel: HTMLElement | undefined;
+  createEffect(() => {
+    if (!open()) return;
+    let frame = 0;
+    let tries = 0;
+    const take = () => {
+      const shown = panel?.isConnected && !panel.hidden && panel.getClientRects().length > 0;
+      if (!shown) {
+        tries += 1;
+        if (tries < 120) frame = requestAnimationFrame(take);
+        return;
+      }
+      if (panel && !panel.contains(document.activeElement)) panel.focus({ preventScroll: true });
+    };
+    frame = requestAnimationFrame(take);
+    // An Escape that still lands in the menu behind (the menu's sheet keeps the focus in WebKit) closes the panel
+    // only, as the innermost layer, and puts the focus back on its entry.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !document.activeElement?.closest('[role="menu"]')) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setOpen(false);
+      entry()?.focus();
+    };
+    document.addEventListener("keydown", escape, true);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", escape, true);
+    });
+  });
   // beside the entry on the side its menu opened to, so it never covers the way it came
   const side = () => (entry()?.closest(".k2-menu")?.getAttribute("data-side") === "left" ? "left" : "right");
   const close = () => {
@@ -288,6 +320,9 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
       </props.level.Item>
       <PageLayer from={entry}>
         <popover.Popup
+          ref={(element: HTMLElement) => {
+            panel = element;
+          }}
           class="k2-pop k2-dpop"
           data-k2-part="Popover"
           aria-label={props.item.label}

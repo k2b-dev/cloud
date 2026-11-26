@@ -163,3 +163,19 @@ test("Tab stays inside the panel; a press inside it leaves the menu open", async
     expect((await deeds(page)).at(-1)).toBe("apply:");
   });
 });
+
+test("on the phone Escape closes the panel's sheet first and leaves the menu open, wherever the focus stood", async () => {
+  await withPage(
+    async (page) => {
+      await page.getByRole("button", { name: "Später" }).tap();
+      await sheetAtRest(page);
+      await entry(page).tap();
+      await panel(page).waitFor();
+      await page.keyboard.press("Escape");
+      await panel(page).waitFor({ state: "detached" });
+      expect(await page.locator('[role="menu"]').count()).toBe(1);
+      expect(await focused(page)).toBe("Notiz und Zeit …");
+    },
+    { width: 390, touch: true },
+  );
+});
