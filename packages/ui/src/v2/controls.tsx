@@ -372,8 +372,9 @@ export type SelectProps = {
 const Ends = (props: { text: string }) => {
   const at = () => props.text.lastIndexOf("@");
   return (
-    <Show when={at() > 0} fallback={<span title={props.text}>{props.text}</span>}>
-      <span class="k2-ends" title={props.text}>
+    <Show when={at() > 0} fallback={props.text}>
+      {/* `dir="auto"`: an address keeps its own order (name, then domain) also in a right-to-left page */}
+      <span class="k2-ends" title={props.text} dir="auto">
         {/* the two parts are boxes, which assistive technology would read with a space between: it reads the whole */}
         <span class="k2-ends-start" data-start="" aria-hidden="true">
           {props.text.slice(0, at())}
@@ -1228,7 +1229,16 @@ const ChoiceGroup = (props: ChoiceProps) => {
   };
   let group: HTMLDivElement | undefined;
   const onReset = (event: Event) => {
-    if (event.target instanceof HTMLFormElement && group && event.target.contains(group)) setOwn(initial);
+    if (!(event.target instanceof HTMLFormElement) || !group || !event.target.contains(group)) return;
+    setOwn(initial);
+    // A choice the page holds stays as the page holds it: the reset puts the inputs back to their defaults, so one
+    // task later they show the page's choice again, and the form sends what the page holds.
+    const inputs = group;
+    if (props.onChange)
+      setTimeout(() => {
+        for (const input of inputs.querySelectorAll<HTMLInputElement>("input.k2-mark-input"))
+          input.checked = chosen().includes(input.value);
+      });
   };
   onMount(() => {
     document.addEventListener("reset", onReset);
@@ -1247,7 +1257,7 @@ const ChoiceGroup = (props: ChoiceProps) => {
       aria-disabled={props.disabled ? "true" : undefined}
     >
       <For each={options()}>
-        {(option) => {
+        {(option, index) => {
           const on = () => chosen().includes(option.value);
           return (
             <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
@@ -1261,8 +1271,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
                   ref={(input) => {
                     input.defaultChecked = initial.includes(option.value);
                   }}
-                  // boxes: one required box would ask for every box, so several are never required one by one
-                  required={(!props.multiple && field?.required) || undefined}
+                  // boxes: while none is chosen the first one is required, so the form asks for one, never for all
+                  required={(field?.required && (!props.multiple || (index() === 0 && chosen().length === 0))) || undefined}
                   disabled={props.disabled}
                   onChange={(event) => choose(option.value, event.currentTarget.checked)}
                 />

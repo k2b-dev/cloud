@@ -41,6 +41,7 @@ export function Demo() {
   const [accent, setAccent] = createSignal("#b45309");
   const [banner, setBanner] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(30);
+  const [notify, setNotify] = createSignal<string[]>(["mail"]);
   return (
     <Workspace>
       <Pane label="Einstellungen">
@@ -122,6 +123,25 @@ export function Demo() {
           </Field>
         </Band>
         {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
+        {/* several to choose, at least one (outside the form below, whose other checks it would hold up) */}
+        <Band>
+          {/* several to choose, at least one */}
+          <Field name="crew" label="Mannschaft" required>
+            <Choice name="crew" multiple options={["Anna Berg", "Jonas Wolf"]} />
+          </Field>
+        </Band>
+        {/* an address in a right-to-left page */}
+        <div dir="rtl">
+          <Band>
+            <Field name="rtl-sender" label="المرسل">
+              <Select
+                options={["Anna Berg <anna.berg@werkstatt-lindqvist.example>"]}
+                value="Anna Berg <anna.berg@werkstatt-lindqvist.example>"
+                onChange={() => undefined}
+              />
+            </Field>
+          </Band>
+        </div>
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
             {/* people to choose, each with their face: one who is responsible, several who take part */}
@@ -133,6 +153,19 @@ export function Demo() {
                   { value: "anna", label: "Anna Berg", person: { name: "Anna Berg", color: "#0f766e" } },
                   { value: "jonas", label: "Jonas Wolf", person: { name: "Jonas Wolf", color: "#7c3aed" } },
                   { value: "mia", label: "Mia Lindqvist-Oswald", person: { name: "Mia Lindqvist-Oswald" } },
+                ]}
+              />
+            </Field>
+            {/* held by the page: a form's reset must not show other boxes than the page holds */}
+            <Field name="notify" label="Benachrichtigen">
+              <Choice
+                name="notify"
+                multiple
+                value={notify()}
+                onChange={setNotify}
+                options={[
+                  { value: "mail", label: "Per Mail" },
+                  { value: "push", label: "Auf dem Telefon" },
                 ]}
               />
             </Field>

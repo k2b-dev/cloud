@@ -147,6 +147,7 @@ for (const width of [1440, 390])
       await reset(page);
       await page.waitForFunction(() => document.querySelectorAll('#sent input[name="team"]:checked').length === 1);
       expect(entriesOf((await sent(page)).entries, "owner")).toEqual(["anna"]);
+      expect(entriesOf((await sent(page)).entries, "team")).toEqual(["jonas"]);
     }, width);
   });
 
@@ -177,8 +178,52 @@ for (const width of [1440, 390])
         };
       }, out);
       expect(area).toEqual({ height: width < 768 ? 44 : 36, reached: true });
+      // a press near the start of the control, away from the thumb, sets the thumb there
+      const control = await corners.locator(".k2-slider-control").boundingBox();
+      await page.mouse.click((control?.x ?? 0) + 2, (control?.y ?? 0) + (control?.height ?? 0) / 2);
+      await page.waitForFunction(() => document.querySelector('[aria-label="Ecken"], .k2-field input[type="range"]') !== null);
+      expect(Number(await thumb.getAttribute("aria-valuenow"))).toBeLessThanOrEqual(1);
     }, width);
   });
+
+test("choice held by the page: after a form's reset the boxes and the entries sent are what the page holds", async () => {
+  await withPage(async (page) => {
+    const notify = field(page, "Benachrichtigen");
+    await notify.getByRole("checkbox", { name: "Auf dem Telefon" }).click();
+    expect(entriesOf((await sent(page)).entries, "notify")).toEqual(["mail", "push"]);
+    await reset(page);
+    // one task later the boxes show the page's choice again
+    await page.waitForFunction(() => document.querySelectorAll('#sent input[name="notify"]:checked').length === 2);
+    expect(entriesOf((await sent(page)).entries, "notify")).toEqual(["mail", "push"]);
+  });
+});
+
+test("choice of several that is required: the form cannot be sent until one is chosen", async () => {
+  await withPage(async (page) => {
+    const crew = field(page, "Mannschaft");
+    const valid = () => page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="crew"]')?.validity.valid);
+    expect(await valid()).toBe(false);
+    await crew.getByRole("checkbox", { name: "Jonas Wolf" }).click();
+    expect(await valid()).toBe(true);
+    // one box is enough: the second is never asked for
+    expect(
+      await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>('input[name="crew"]')].every((box) => box.validity.valid)),
+    ).toBe(true);
+  });
+});
+
+test("select in a right-to-left page: an address keeps its own order, name first and domain last", async () => {
+  await withPage(async (page) => {
+    const order = await page.locator('[dir="rtl"] .k2-ends').evaluate((ends) => {
+      const start = ends.querySelector("[data-start]")!.getBoundingClientRect();
+      const end = ends.querySelector("[data-end]")!.getBoundingClientRect();
+      return start.left < end.left;
+    });
+    expect(order).toBe(true);
+    // a value that is no address carries no hint of its own
+    expect(await field(page, "Tarif").locator(".k2-input-value [title]").count()).toBe(0);
+  });
+});
 
 test("select: a locked select takes no focus and opens nothing; a dimmed option is skipped", async () => {
   await withPage(async (page) => {
