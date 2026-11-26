@@ -763,3 +763,36 @@
     font-size: max(1rem, 16px) !important;
   }
 }
+
+/* ── The Markdown editor inside a v2 screen ──────────────────────────────────────────────────────────────────────
+   Below `.k2-ui` the editor's chrome speaks v2, its behaviour unchanged: a toolbar of the v2 bar height (40 px) with
+   icon buttons of the v2 hit area (28 px) and icon size (16 px), the first glyph on the v2 text edge (the button's
+   6 px inset pulled out), the text on the same edge, and the count line in the meta role. A v1 page renders as before. */
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar {
+  min-height: var(--k2-h-bar);
+  gap: 2px;
+  padding: 6px calc(var(--k2-edge) - 6px);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  border-radius: var(--k2-r-control);
+  color: var(--k2-muted);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool > .ti {
+  font-size: 16px;
+  line-height: 1;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2b-markdown-editor :is(.k2b-markdown-editor__input, .k2b-markdown-editor__preview) {
+  padding: 10px var(--k2-edge) !important;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__stats {
+  padding: 4px var(--k2-edge);
+  font: var(--k2-t-meta);
+  letter-spacing: normal;
+  color: var(--k2-subtle);
+}

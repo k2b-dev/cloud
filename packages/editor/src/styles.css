@@ -9,6 +9,30 @@
   }
 }
 
+/* Inside a v2 screen (`.k2-ui`) the toolbar speaks v2, its behaviour unchanged: the v2 bar height (40 px), icon buttons
+   of the v2 hit area (28 px) and icon size (16 px), the first glyph on the v2 text edge (the button's 6 px inset
+   pulled out). Outside any layer, so it wins over the utility classes the toolbar carries for a v1 page. */
+.k2-ui [data-k2b-editor-toolbar] {
+  min-height: var(--k2-h-bar);
+  padding-inline: calc(var(--k2-edge) - 6px);
+  color: var(--k2-muted);
+}
+.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button {
+  width: var(--k2-h-control-small);
+  height: var(--k2-h-control-small);
+  min-width: var(--k2-h-control-small);
+  padding: 0;
+  border-radius: var(--k2-r-control);
+}
+.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button .ti {
+  font-size: 16px;
+  line-height: 1;
+}
+.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+
 /* The dictation bar's controls match the toolbar's own, so the row keeps its height when the bar stands in. */
 [data-k2b-editor-toolbar] .k2b-dictation-bar {
   --k2b-dictation-control: 1.75rem;
