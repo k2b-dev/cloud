@@ -92,8 +92,7 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
                 style={{ height: "100%" }}
               />
             </Canvas>
-            {/* the time left and the start in one line under the reading; a Bar here would draw a second line at the
-                section's end */}
+            {/* the time left under the reading; a Bar here would draw a second line at the section's end */}
             <Inline>
               <Progress
                 value={s.state() === "done" ? 100 : s.running() ? Math.round((s.progress()?.progress ?? 0) * 100) : 0}
@@ -104,6 +103,10 @@ export default function SpeedtestPane(props: SpeedtestProps & { label?: string; 
                     : t().remaining({ seconds: s.remaining() })
                 }
               />
+            </Inline>
+            {/* the start on a line of its own: "Test starten" and "Stoppen" differ in width, and one shared line wrapped
+                for one of them only, so the bar above moved when the test started */}
+            <Inline>
               <Button
                 variant={s.running() ? undefined : "primary"}
                 icon={s.running() ? "player-stop" : "player-play"}
