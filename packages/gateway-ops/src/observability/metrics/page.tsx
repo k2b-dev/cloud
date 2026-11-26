@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, getDateConfig, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { formatDateTime, formatNumber } from "@k2b/cloud/shared";
 import { AdminLayout } from "@k2b/cloud/ssr";
 import { ssr } from "../../config";
@@ -90,6 +90,7 @@ export default ssr<AuthContext>(async (c) => {
     <AdminLayout c={c} ui="v2" title={area.metrics}>
       <MetricsScreen
         nav={observabilityAdminNav(c, locale, attention, "metrics")}
+        timeZone={getTimeZone(c)}
         sources={sources}
         state={address.state}
         ignored={ignored}

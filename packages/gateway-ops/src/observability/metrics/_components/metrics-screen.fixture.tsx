@@ -49,6 +49,7 @@ export const MetricsScreenFixture = (props: { search?: string; worst?: boolean; 
     <LocaleProvider locale={locale}>
       <MetricsScreen
         nav={fixtureNav}
+        timeZone="Europe/Berlin"
         sources={sources}
         state={state}
         ignored={null}

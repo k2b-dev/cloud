@@ -347,4 +347,28 @@ describe("the service pages of Observability on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  test("a new metrics token takes a quick expiry or its own day, ending that day in the person's zone", async () => {
+    const posts: { expiresAt: string | null }[] = [];
+    const { context, tab, errors } = await open(desktop, "metrics", "/admin/observability/metrics", {
+      api: (route) => {
+        posts.push(route.request().postDataJSON());
+        return route.fulfill({ json: { token: "metrics_fixture_token", credential: { id: "t2" } } });
+      },
+    });
+    try {
+      await tab.getByRole("button", { name: "Neues Token" }).first().click();
+      const dialog = tab.getByRole("dialog");
+      await dialog.getByRole("radio", { name: "Eigenes Datum …" }).check();
+      const day = dialog.getByRole("textbox", { name: /^Eigenes Datum/ });
+      await day.fill("15.12.2099");
+      await day.press("Enter");
+      await dialog.getByRole("button", { name: "Erstellen" }).click();
+      await tab.getByText("metrics_fixture_token").waitFor();
+      expect(posts.at(-1)?.expiresAt).toBe("2099-12-15T22:59:00.000Z");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 });

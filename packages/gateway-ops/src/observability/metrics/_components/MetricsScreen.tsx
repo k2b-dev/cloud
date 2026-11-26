@@ -1,4 +1,5 @@
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
+import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -6,6 +7,7 @@ import {
   Chip,
   Choice,
   confirm,
+  DateInput,
   Dialog,
   Empty,
   Facts,
@@ -40,6 +42,8 @@ export type MetricRow = {
 export type MetricsTokenRow = { id: string; name: string; line: string };
 
 export type MetricsScreenProps = {
+  /** The person's zone: a picked expiry day ends at midnight there. */
+  timeZone: string;
   nav: NavProps;
   sources: { id: string; label: string }[];
   state: MetricsState;
@@ -53,7 +57,8 @@ export type MetricsScreenProps = {
 };
 
 /** Days a new token lives; "never" keeps it until it is revoked. */
-const EXPIRY = ["30", "90", "365", "never"] as const;
+/** Days a new token lives, "never" until it is revoked, or "date": a day the person picks. */
+const EXPIRY = ["30", "90", "365", "never", "date"] as const;
 
 /** Metrics on v2: the scrape endpoint, its bearer tokens and the catalogue of metrics with its filters. */
 export default function MetricsScreen(props: MetricsScreenProps) {
@@ -210,13 +215,13 @@ export default function MetricsScreen(props: MetricsScreenProps) {
           ]}
         />
       </Pane>
-      <CreateTokenDialog open={creating()} onOpenChange={setCreating} />
+      <CreateTokenDialog open={creating()} onOpenChange={setCreating} timeZone={props.timeZone} />
     </AdminWorkspace>
   );
 }
 
 /** "Neuer Token": a name and how long it lives, then the token once, to copy; closing reloads the list. */
-function CreateTokenDialog(props: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function CreateTokenDialog(props: { open: boolean; onOpenChange: (open: boolean) => void; timeZone: string }) {
   const locale = useLocale();
   const t = () => gatewayOpsMessages.resolve([locale()]).t;
   const [name, setName] = createSignal(t().defaultMetricsTokenName);
@@ -224,17 +229,30 @@ function CreateTokenDialog(props: { open: boolean; onOpenChange: (open: boolean)
   const [busy, setBusy] = createSignal(false);
   const [failure, setFailure] = createSignal<string | null>(null);
   const [token, setToken] = createSignal<string | null>(null);
-  const expiryLabel = (value: (typeof EXPIRY)[number]) => (value === "never" ? t().expiryNever : t().expiryDays({ days: Number(value) }));
+  // the picked day as a date key ("2026-12-15"); the token expires at the end of that day in the person's zone
+  const [day, setDay] = createSignal("");
+  const [dayError, setDayError] = createSignal<string | null>(null);
+  const expiryLabel = (value: (typeof EXPIRY)[number]) =>
+    value === "never" ? t().expiryNever : value === "date" ? t().expiryOwnDate : t().expiryDays({ days: Number(value) });
+  /** The end of a picked day in the person's zone, as an instant. */
+  const endOfDay = (key: string) => new Date(dates.zonedDateTimeToInstant(`${key}T23:59`, props.timeZone));
+  const expiresAt = (): string | null => {
+    const choice = expiry();
+    if (choice === "never") return null;
+    if (choice === "date") return endOfDay(day()).toISOString();
+    return new Date(Date.now() + Number(choice) * 86_400_000).toISOString();
+  };
   const submit = async () => {
     if (!name().trim()) return setFailure(t().required);
+    if (expiry() === "date" && (!day() || endOfDay(day()).getTime() <= Date.now())) return setDayError(t().expiryDateFuture);
     setBusy(true);
     setFailure(null);
+    setDayError(null);
     try {
-      const days = expiry() === "never" ? null : Number(expiry());
       const response = await fetch("/api/gateway/metrics/tokens", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name().trim(), expiresAt: days ? new Date(Date.now() + days * 86_400_000).toISOString() : null }),
+        body: JSON.stringify({ name: name().trim(), expiresAt: expiresAt() }),
       });
       const data = (await response.json().catch(() => null)) as { token?: string; message?: string } | null;
       if (!response.ok || !data?.token) throw new Error(data?.message ?? t().createMetricsTokenFailed);
@@ -292,6 +310,18 @@ function CreateTokenDialog(props: { open: boolean; onOpenChange: (open: boolean)
             }}
           />
         </Field>
+        <Show when={expiry() === "date"}>
+          <Field label={t().expiryOwnDate} error={dayError() ?? undefined}>
+            <DateInput
+              value={day()}
+              timeZone={props.timeZone}
+              onInput={(value) => {
+                setDay(value);
+                setDayError(null);
+              }}
+            />
+          </Field>
+        </Show>
       </Dialog>
     </Show>
   );
