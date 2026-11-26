@@ -70,9 +70,14 @@ export default function NoteWorkspace(props: NoteWorkspaceProps) {
   });
 
   // Another view goes through the editor's leave guard, as a link click does, so unsent text is never dropped.
+  // The view already shown keeps the page, the editor and its unsent text as they are.
+  const shown = (mode: "write" | "readonly" | "book") =>
+    (mode === "write" && props.mode === "edit") || (mode === "readonly" && props.mode === "read");
   const view = (mode: "write" | "readonly" | "book") => ({
     href: buildNoteUrl(notebook(), note(), mode),
-    onNavigate: () => void navigateToNotebookNote(buildNoteUrl(notebook(), note(), mode)),
+    onNavigate: () => {
+      if (!shown(mode)) void navigateToNotebookNote(buildNoteUrl(notebook(), note(), mode));
+    },
   });
   const viewMenu = (): MenuEntry[] => [
     ...(props.mode === "edit"

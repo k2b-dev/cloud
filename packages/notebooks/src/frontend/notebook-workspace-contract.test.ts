@@ -2,10 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 
 describe("Notebooks workspace contract", () => {
-  test("inherits the cookie-backed workspace layout rendered by Cloud", async () => {
+  test("a note opens in the v2 workspace; Cloud's layout state stays the shell's", async () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
 
-    expect(source).toMatch(/<AppWorkspace\b[^>]*class="notebooks-workspace flex-1 min-h-0"/);
+    expect(source).toContain("<NoteWorkspace");
+    expect(source).toContain('ui="v2"');
     expect(source).not.toContain("initialWorkspaceLayout");
     expect(source).not.toContain("layoutState={() =>");
   });
@@ -20,11 +21,9 @@ describe("Notebooks workspace contract", () => {
   test("keeps notebook settings modal-only and opens without an access preflight", async () => {
     const pageSource = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
     const pageDataSource = await Bun.file(resolve(import.meta.dir, "[id]/page-data.ts")).text();
-    const sidebarSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookSidebar.island.tsx")).text();
-    const openSettings = sidebarSource.slice(
-      sidebarSource.indexOf("const openSettings ="),
-      sidebarSource.indexOf("const navigationHidden ="),
-    );
+    const sidebarSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/notebook-sidebar-state.ts")).text();
+    const openSettings = sidebarSource.slice(sidebarSource.indexOf("const openSettings ="), sidebarSource.indexOf("const chooseNewNote ="));
+    expect(openSettings.length).toBeGreaterThan(0);
 
     expect(pageSource).not.toContain("NotebookSettingsPanel.island");
     expect(pageDataSource).not.toContain("isSettingsMode");
@@ -32,10 +31,10 @@ describe("Notebooks workspace contract", () => {
     expect(openSettings).toContain("openNotebookSettingsDialog");
   });
 
-  test("uses the shared presence section", async () => {
-    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NotebookDetailPanel.island.tsx")).text();
+  test("the details show who is here as their own section", async () => {
+    const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/detail/NoteDetails.tsx")).text();
 
-    expect(source).toContain("<DetailPresence");
+    expect(source).toContain("title={t().hereNow}");
   });
 
   test("uses shared tree rows and action visibility for note navigation", async () => {

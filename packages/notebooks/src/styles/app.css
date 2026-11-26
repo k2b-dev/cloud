@@ -34,6 +34,13 @@
   min-height: 0;
   flex: 1;
 }
+/* k2b-ui gap: a Canvas cannot fill its pane. The note's editing surface keeps its own scroller (reading position, the
+   comment margin and the floating pills measure it), so its one Canvas takes the pane's height. */
+[data-k2-canvas]:has(> .notebook-document-surface) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 .notebook-book-document {
   display: flex;
 }

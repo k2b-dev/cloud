@@ -143,30 +143,15 @@ test("an empty notebook shows its sidebar placeholder as one line directly below
   expect(await select(html, '[role="tree"]')).toEqual([]);
 });
 
-test("an empty notebook centers its main-area placeholder in the work area", async () => {
+test("an empty notebook says so where the note would stand, in a v2 workspace", async () => {
   const html = await renderEmptyNotebook("write");
-  const [placeholder, ...others] = await select(html, ".k2b-app-workspace__main > .k2b-placeholder");
-
+  const [workspace] = await select(html, 'solid-island[data-file="NoteWorkspace.island.tsx"]');
+  expect(islandProps(workspace?.attributes["data-props"]).note).toBeNull();
+  const [empty, ...others] = await select(html, '[data-k2-part="Empty"]');
   expect(others).toEqual([]);
-  expect(placeholder?.attributes["data-variant"]).toBe("panel");
-  expect(placeholder?.attributes["data-align"]).toBe("center");
-  expect(placeholder?.attributes.class?.split(/\s+/)).toContain("flex-1");
-  expect(placeholder?.text).toBe("Noch keine Notizen");
-});
-
-test("an empty notebook with a hidden navigation offers a visible control that shows it again", async () => {
-  const hidden = await renderEmptyNotebook("write", { navigationHidden: true });
-  // No editor toolbar here, and the sidebar with the create button is hidden.
-  const [show, ...others] = await select(hidden, 'button[aria-controls="notebook-navigation"]');
-  expect(others).toEqual([]);
-  expect(show?.attributes["aria-label"]).toBe("Navigation einblenden");
-  expect(show?.attributes["aria-expanded"]).toBe("false");
-  expect(show?.attributes.disabled).toBeUndefined();
-
-  const visible = await renderEmptyNotebook("write");
-  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])')).toEqual(
-    [],
-  );
+  expect(empty?.text).toBe("Noch keine Notizen");
+  // hiding the navigation moved to the v2 frame (lane Z2); the page keeps no control of its own for it
+  expect(await select(html, ".k2b-app-workspace__main")).toEqual([]);
 });
 
 test("an empty book shows its sidebar placeholder as one line below the pages heading", async () => {
@@ -615,18 +600,24 @@ test("write mode opens with the saved Markdown in the preview, as the editor ope
   }
 });
 
+const noteOf = async (html: string) => {
+  const [workspace] = await select(html, 'solid-island[data-file="NoteWorkspace.island.tsx"]');
+  return islandProps(workspace?.attributes["data-props"]) as {
+    ctx: { fullWidth: boolean };
+    note: { editor: Record<string, unknown> & { initialDetail: Record<string, unknown> }; details: Record<string, unknown> | null };
+  };
+};
+
 test("read-only without a snapshot starts from the saved Markdown", async () => {
   const html = await renderEditorPage({ mode: "readonly", snapshot: null });
   expect((await select(html, "#notebook-note-preview"))[0]?.text).toContain("Wir sammeln wichtige Gedanken für das Team.");
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(islandProps(editor?.attributes["data-props"]).initialContent).toStartWith("# Wochenplan");
+  expect(String((await noteOf(html)).note.editor.initialContent)).toStartWith("# Wochenplan");
 });
 
 test("write mode sends the saved Markdown and no collaboration state, which loads only on the first edit", async () => {
   const html = await renderEditorPage();
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  const props = islandProps(editor?.attributes["data-props"]);
-  expect(props.initialContent).toStartWith("# Wochenplan");
+  const props = (await noteOf(html)).note.editor;
+  expect(String(props.initialContent)).toStartWith("# Wochenplan");
   expect(props.initialDetail).toHaveProperty("contentMd");
   expect(props.initialDetail).toMatchObject({ contentMd: props.initialContent });
   expect(props).not.toHaveProperty("initialSnapshot");
@@ -659,7 +650,7 @@ test("null saved text keeps the editor's single empty line", async () => {
 });
 
 for (const mode of ["write", "readonly"] as const) {
-  test(`${mode}: the first HTML renders full width and seeds Ansicht from the cookie`, async () => {
+  test(`${mode}: the first HTML renders full width from the cookie`, async () => {
     for (const fullWidth of [false, true]) {
       const html = await renderNotebookWithNotes(fullWidth ? { fullWidth: true } : {}, mode);
       const [presence] = await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]');
@@ -667,10 +658,9 @@ for (const mode of ["write", "readonly"] as const) {
       const surfaces = await select(html, ".notebook-document-surface");
       expect(surfaces).toHaveLength(1);
       expect(surfaces[0]?.attributes["data-full-width"]).toBe(fullWidth ? "" : undefined);
-      const [panel] = await select(html, 'solid-island[data-file="NotebookDetailPanel.island.tsx"]');
-      expect(islandProps(panel?.attributes["data-props"]).fullWidth).toBe(fullWidth);
-      expect(await select(html, ".notebook-view-menu__trigger")).toHaveLength(1);
-      expect(await select(html, '.notebooks-full-width-option input[role="switch"]')).toHaveLength(0);
+      const view = await noteOf(html);
+      expect(view.ctx.fullWidth).toBe(fullWidth);
+      expect(view.note.details?.fullWidth).toBe(fullWidth);
     }
   });
 }
@@ -864,12 +854,9 @@ for (const permission of ["write", "read"] as const) {
 
 test.each(["write", "readonly"] as const)("%s: SSR supplies author identities to the panel", async (mode) => {
   const html = await renderEditorPage({ mode });
-  const [panel] = await select(html, '[data-file="NotebookDetailPanel.island.tsx"]');
-  expect(panel).toBeDefined();
-  const props = islandProps(panel?.attributes["data-props"]);
-  expect(props.noteAuthors).toEqual(noteAuthors);
-  const [editor] = await select(html, 'solid-client[data-file="NoteEditor.client.tsx"]');
-  expect(islandProps(editor?.attributes["data-props"]).initialDetail).toHaveProperty("noteAuthors", noteAuthors);
+  const view = await noteOf(html);
+  expect(view.note.details?.noteAuthors).toEqual(noteAuthors);
+  expect(view.note.editor.initialDetail).toHaveProperty("noteAuthors", noteAuthors);
 });
 
 test.each(["note02", "other1"])(
@@ -900,14 +887,11 @@ for (const mode of ["write", "book", "graph", "graph&from=readonly"] as const)
     expect(shell.panel.context.scope.id).not.toBe(notebook.id);
   });
 
-// Write and Links draw no workspace head: the toolbar holds the navigation and Details buttons (old head button →
-// toolbar button). Read and version history have no toolbar, so they keep the head's buttons.
-test.each([
-  { mode: "write", head: 0, ownDetails: 0 },
-  { mode: "graph", head: 0, ownDetails: 0 },
-  { mode: "readonly", head: 1, ownDetails: 1 },
-] as const)("$mode: the workspace head and its Details button", async ({ mode, head, ownDetails }) => {
+// Write and Read-only draw the v2 head: the views as tabs and the Details toggle; the graph keeps its own toolbar (v1).
+test.each(["write", "readonly"] as const)("%s: the head holds the views and the Details toggle", async (mode) => {
   const html = await renderNotebookWithNotes({}, mode);
-  expect(await select(html, ".k2b-app-workspace__head")).toHaveLength(head);
-  expect(await select(html, ".k2b-app-workspace__detail-toggle")).toHaveLength(mode === "graph" ? 0 : ownDetails);
+  const tabs = await select(html, '[data-k2-part="Tabs"] a');
+  expect(tabs.map((tab) => tab.text.trim())).toEqual(["Bearbeiten", "Lesen", "Buch"]);
+  expect(await select(html, 'button[aria-label="Detailbereich"][aria-pressed]')).toHaveLength(1);
+  expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
 });
