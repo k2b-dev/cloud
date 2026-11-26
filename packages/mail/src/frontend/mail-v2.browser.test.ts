@@ -893,6 +893,8 @@ describe("Mail on the v2 pilot with worst-case data", () => {
     try {
       await page.locator(".k2-composer-start").click();
       await page.locator('[data-k2-part="Canvas"] [data-k2-part="Composer"]').waitFor();
+      // the pointer leaves the opened reply, so no hover fades while the page settles
+      await page.mouse.move(1, 1);
       await settled(page);
       const head = await page.locator('[data-k2-part="Canvas"] .k2-composer-head').boundingBox();
       const end = await page.locator('[data-k2-part="Canvas"] .k2-composer-head-end').boundingBox();
