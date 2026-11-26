@@ -250,6 +250,13 @@ type WrittenList = {
   rowKey?: never;
   row?: never;
   total?: never;
+  controller?: never;
+};
+
+/** What an app may ask of a list of items: a row that is not in the page now, such as the row to give the focus back to. */
+export type ListController = {
+  /** Brings the item with this key into view and gives back its row; null for a key the list does not hold. */
+  reveal: (key: string) => HTMLElement | null;
 };
 
 /**
@@ -263,6 +270,8 @@ type ItemList<T> = {
   rowKey: (item: T) => string;
   /** The `Row` of an item, made once per item while it is in the page. */
   row: (item: T, index: Accessor<number>) => JSX.Element;
+  /** Receives the list's controller once it is in the page (see `ListController`). */
+  controller?: (list: ListController) => void;
   /** How many items the whole list has, when more than are loaded; the rows count against it. */
   total?: number;
   children?: never;
@@ -366,6 +375,7 @@ const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
     if (!list) return;
     // the window keeps the reading place itself, around changes of the items only (see `createVirtualWindow`)
     view.mount(list);
+    props.controller?.({ reveal: view.reveal });
   });
   const size = () => Math.max(props.total ?? 0, props.items.length);
   return (
@@ -705,30 +715,22 @@ type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);
-  // Every cell is made once, when its row first comes into the page: what `cell` returns is placed, never rendered a
-  // second time; a row that scrolls away and back places the same cells again.
-  const made = createMemo(() => {
-    props.columns;
-    props.rows;
-    return new Map<T, CellValue[]>();
-  });
-  const cellsOf = (row: T) => {
-    const known = made().get(row);
-    if (known) return known;
-    const cells = props.columns.map((column) => column.cell(row));
-    made().set(row, cells);
-    return cells;
-  };
   // the shape of the placeholders while the rows load
   const loading = () => {
     const shape = props.loading;
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  // The cells of the first page are made before the table, on the server and in the browser alike, so hydration finds
-  // them in the same order (as all cells were made before); they also say whether rows have two lines.
-  const firstCells = createMemo(() => props.rows.slice(0, SERVER_ROWS).map(cellsOf));
-  const lines = () => (loading()?.lines === 2 || firstCells().some((cells) => cells.some(isPair)) ? "2" : "1");
+  // Every cell is made once per showing of its row: what `cell` returns is placed, never rendered a second time. The
+  // cells of the first page are made before the table, on the server and in the browser alike, so hydration finds them
+  // in the same order, and they live with the table (they also say whether rows have two lines). A row further down
+  // makes its cells when it comes into the page and lets them go with it, so a row that comes back makes them anew and
+  // shows what they read now.
+  const firstCells = createMemo(
+    () => new Map(props.rows.slice(0, SERVER_ROWS).map((row) => [row, props.columns.map((column) => column.cell(row))] as const)),
+  );
+  const cellsOf = (row: T): CellValue[] => firstCells().get(row) ?? props.columns.map((column) => column.cell(row));
+  const lines = () => (loading()?.lines === 2 || [...firstCells().values()].some((cells) => cells.some(isPair)) ? "2" : "1");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -955,6 +957,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   ) : (
                     (() => {
                       const target = props.open?.(item.row);
+                      const cells = cellsOf(item.row);
                       return (
                         <tr
                           aria-rowindex={rowIndex()}
@@ -982,7 +985,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                                 data-sticky={firstSticky(columnIndex())}
                                 style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                               >
-                                {cell(column, cellsOf(item.row)[columnIndex()]!, columnIndex() === 0 ? target : undefined)}
+                                {cell(column, cells[columnIndex()]!, columnIndex() === 0 ? target : undefined)}
                               </td>
                             )}
                           </For>
