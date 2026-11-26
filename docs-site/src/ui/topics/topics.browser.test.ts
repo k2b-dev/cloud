@@ -35,6 +35,23 @@ const open = async (path: string, width = 1440) => {
   return { page, errors };
 };
 
+// The demo is the host of its phone bar, as Cloud's shell is: the head's search leaves the head on the phone, and the
+// bar's search opens it. A search out of reach would be a lie of the demo.
+test("at 390 px the phone bar's search opens the search of the screen's head", async () => {
+  const { page, errors } = await open("/en/ui/v2/screen/table", 390);
+  try {
+    await settled(page);
+    const field = page.locator('[data-slot="head"] [data-k2-part="Input"][data-search] > input');
+    expect(await field.evaluate((input) => input.getBoundingClientRect().height <= 1)).toBe(true);
+    await page.getByRole("button", { name: "Suchen", exact: true }).click();
+    await settled(page);
+    expect(await field.evaluate((input) => document.activeElement === input && input.getBoundingClientRect().width > 100)).toBe(true);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 describe("recipe route", () => {
   for (const name of recipeNames)
     for (const state of ["", ...Object.keys(recipeStates(name))])
