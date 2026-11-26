@@ -114,8 +114,8 @@ describe("the note details on v2: recovery and pagination", () => {
     rows()
       .filter((row) => row !== created())
       .map((row) => row.querySelector(".k2-row-title")?.textContent?.trim());
-  // The last edit and by whom: the first key fact in the head.
-  const header = () => dom.root.querySelector('[data-k2-part="Pane"] [data-k2-part="Band"] dd')?.textContent ?? "";
+  // The last edit and by whom: the meta line in the head.
+  const header = () => dom.root.querySelector('[data-k2-part="Pane"] [data-k2-part="Band"] .k2-t-meta')?.textContent ?? "";
   const offlineNotice = () => button("Erneut verbinden") ?? null;
   const pane = () => dom.root.querySelector('[data-k2-part="Pane"]');
 
@@ -175,7 +175,7 @@ describe("the note details on v2: recovery and pagination", () => {
     ];
     const sendOutline = (items: typeof outline) => window.dispatchEvent(new CustomEvent(TOC_UPDATE_EVENT, { detail: items }));
     const outlineRows = () => [...(section("Inhalt")?.querySelectorAll('[data-k2-part="Row"]') ?? [])];
-    const elements = () => [dom.root.querySelector('[data-k2-part="Pane"] [data-k2-part="Band"] dd'), ...outlineRows()];
+    const elements = () => [dom.root.querySelector('[data-k2-part="Pane"] [data-k2-part="Band"] .k2-t-meta'), ...outlineRows()];
     const dispose = await renderPanel();
     try {
       await until(() => header().includes("Author 0"));

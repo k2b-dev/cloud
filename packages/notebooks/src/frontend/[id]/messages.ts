@@ -483,8 +483,8 @@ export const notebookWorkspaceMessages = i18n.define({
       accessLoadFailed: "Who has access could not be loaded.",
       noteDetails: "Note details",
       noteKeyFacts: "Key facts of the note",
-      createdMeta: ({ date, name, self }: { date: string; name: string; self: boolean }) =>
-        self ? `Created ${date} by you` : name ? `Created ${date} by ${name}` : `Created ${date}`,
+      editedMeta: ({ time, name, self }: { time: string; name: string; self: boolean }) =>
+        self ? `Edited ${time} by you` : name ? `Edited ${time} by ${name}` : `Edited ${time}`,
       automatic: "Automatic",
       roleRead: "Can view",
       roleWrite: "Can edit",
@@ -493,7 +493,6 @@ export const notebookWorkspaceMessages = i18n.define({
       publicAccess: "Anyone with the link",
       serviceAccount: "Service",
       tagsHint: "Add one with #name in the text.",
-      edited: "Edited",
       extent: "Length",
       size: "Size",
       words: ({ count }: { count: number }) =>
@@ -1056,8 +1055,8 @@ export const notebookWorkspaceMessages = i18n.define({
       accessLoadFailed: "Wer Zugriff hat, konnte nicht geladen werden.",
       noteDetails: "Notizdetails",
       noteKeyFacts: "Eckdaten der Notiz",
-      createdMeta: ({ date, name, self }) =>
-        self ? `Erstellt am ${date} von dir` : name ? `Erstellt am ${date} von ${name}` : `Erstellt am ${date}`,
+      editedMeta: ({ time, name, self }) =>
+        self ? `Bearbeitet ${time} von dir` : name ? `Bearbeitet ${time} von ${name}` : `Bearbeitet ${time}`,
       automatic: "Automatisch",
       roleRead: "Ansehen",
       roleWrite: "Bearbeiten",
@@ -1066,7 +1065,6 @@ export const notebookWorkspaceMessages = i18n.define({
       publicAccess: "Alle mit dem Link",
       serviceAccount: "Dienst",
       tagsHint: "Mit #name im Text vergeben.",
-      edited: "Bearbeitet",
       extent: "Umfang",
       size: "Größe",
       words: ({ count }) => i18n.plural(count, "de", { one: `${count} Wort`, other: `${count.toLocaleString("de")} Wörter` }),

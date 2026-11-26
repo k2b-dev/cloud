@@ -784,23 +784,20 @@ export default function NoteDetails(props: NoteDetailsProps) {
   // ── Drawing (v2) ──────────────────────────────────────────────────────
 
   /**
-   * The head's one meta line: "Erstellt vor 3 Tagen von Paul Wagner", after the state that matters more (locked, read
-   * only); offline it is the problem itself, in its colour. The last edit is a key fact below, so it is not repeated.
+   * The head's one meta line, the last change and who made it: "Bearbeitet vor 12 Min. von Jana Berger" (the time first,
+   * so a long name is what "…" cuts), after the state that matters more (locked, read only); offline it is the problem
+   * itself, in its colour.
    */
   const metaText = (): string => {
     if (offline()) {
       const savedAt = sync().lastSavedAt;
       return savedAt ? `${t().offline} · ${t().lastSaved} ${dates.formatTime(savedAt, props.dateConfig)}` : t().offline;
     }
-    const creator = authors().createdBy;
-    const created = t().createdMeta({
-      date: dates.formatDate(createdAt(), props.dateConfig),
-      name: creator ? actorName(creator) : "",
-      self: isSelf(creator),
-    });
-    if (lockedAt()) return `${t().locked} · ${created}`;
-    if (!props.canWrite) return `${t().readOnlyShort} · ${created}`;
-    return created;
+    const editor = lastEditor();
+    const edited = t().editedMeta({ time: relative(editedAt()), name: editor ? actorName(editor) : "", self: isSelf(editor) });
+    if (lockedAt()) return `${t().locked} · ${edited}`;
+    if (!props.canWrite) return `${t().readOnlyShort} · ${edited}`;
+    return edited;
   };
   const person = (actor: NotebookActivityActor | null | undefined): Person => ({
     name: actor?.kind === "system" || !actor ? t().automatic : actor.displayName,
@@ -878,17 +875,19 @@ export default function NoteDetails(props: NoteDetailsProps) {
   const presenceLine = (entry: DetailPresencePerson) =>
     [entry.activity === "writing" ? t().presenceWriting : t().presenceReading, entry.place, entry.trailing].filter(Boolean).join(" · ");
   const accessPerson = (entry: DetailAccessEntry): Person => ({ name: entry.name, image: entry.src ?? undefined });
-  /** The three key facts of the open note, in its head: the last edit and by whom, its length, its comments. */
+  /** The three key facts of the open note, under its meta line: who made it and when, its length, its comments. */
   // One list for the page's life whose labels and values follow the note: typing, saving and presence never draw its
   // rows anew.
   const keyFacts: Fact[] = [
     {
       get label() {
-        return t().edited;
+        return t().created;
       },
-      // plain words, so a long name wraps and the time after it is never cut
+      // plain words, so a long name wraps and the date after it is never cut
       get value() {
-        return lastEditor() ? `${actorName(lastEditor())} · ${relative(editedAt())}` : relative(editedAt());
+        const creator = authors().createdBy;
+        const date = dates.formatDate(createdAt(), props.dateConfig);
+        return creator ? `${actorName(creator)} · ${date}` : date;
       },
     },
     {
@@ -958,8 +957,8 @@ export default function NoteDetails(props: NoteDetailsProps) {
           onNavigate: () => closePanel(),
         }}
         scrollKey="notebook-detail"
-        // k2b-ui gap: tinted object head (app tint ground, 40 px sign, name 18 with its meta line and key facts in one
-        // block) – lane DP. Until it lands, the note's mark and name stand in the head bar, and its meta line, three key
+        // k2b-ui gap: ObjectHead (DP) – the open note's tinted head (app tint ground, 40 px sign, name 18, meta line and
+        // key facts in one block). Until it lands, the note's mark and name stand in the head bar, and its meta line, three key
         // facts and its one action in the first band.
         head={
           <Bar
