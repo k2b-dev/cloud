@@ -324,9 +324,9 @@ test("a drag ends when the grip loses the pointer capture", async () => {
     await page.evaluate(() =>
       document.addEventListener("pointerdown", (event) => Reflect.set(window, "__k2Pointer", event.pointerId), true),
     );
+    const box = await page.locator(grips.list).boundingBox();
     await drag(page, grips.list, 30);
     await page.locator(grips.list).evaluate((grip) => grip.releasePointerCapture(Number(Reflect.get(window, "__k2Pointer"))));
-    const box = await page.locator(grips.list).boundingBox();
     await page.mouse.move((box?.x ?? 0) + 60, (box?.y ?? 0) + 10, { steps: 2 });
     await page.waitForFunction(() => !document.querySelector("[data-dragging]"));
     await settled(page);
