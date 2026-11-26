@@ -54,11 +54,11 @@ screen, recipe, test screen and documentation example:
    names, colours, people, states, ten rows and more. Never "Tabelle 1",
    never four rows on a white page.
 9. **The page head has at most two full-width rows** above list and
-   detail: path or views with the actions, then filters with count, order
-   and view. Never four rows of head.
-10. **Settings are rows, not a form letter:** label and hint on the left,
-    the value at a fixed width beside it, its current state visible at a
-    glance; never full-width fields stacked one under the other.
+   detail: path or views with the actions, then `FilterBar` with count,
+   order and view at its `end`. Never four rows of head.
+10. **Settings are `Setting` rows, not a form letter:** label and hint on
+    the left, the value at a fixed width beside it, its current state
+    visible at a glance; never full-width fields stacked one under the other.
 
 Prove it before you show it: `v2-preview` draws the screen in the frame
 of its host (icon rail, tinted page); put your 1440 and 390 px pictures
@@ -121,7 +121,9 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
-| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` above the `StatusRow` and `ListOrder` in its `filters` | `filtered-table.tsx` |
+| a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
+| files, photos, pages: a list, a grid, the open one | `Table` column `mark` (thumbnail), `Tiles variant="media"` with `select`, `Preview` in the detail, `Nav quota` | `files.tsx` |
+| a settings page | `Cells` for the state, `Setting` rows (`was` for an unsaved change) | `settings-page.tsx` |
 | filter values that load (people, customers) | a `lookup` field: `FilterBar` opens `Lookup`; in a form, `Lookup` itself | `filtered-table.tsx` |
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |

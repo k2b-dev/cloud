@@ -188,6 +188,47 @@ export const Mark = (props: MarkProps) => {
   );
 };
 
+export type PreviewProps = {
+  /** What the picture shows, for assistive technology, such as "Vorschau von Ansicht Front Eiche.jpg". */
+  label: string;
+  /** The thing's symbol, which stands while the picture loads, when it fails, and for a thing without a picture. */
+  icon: string;
+  /** The data colour of the thing or of its kind, as on its `Mark`. */
+  color?: string;
+  /** The address of the picture: a photo, the first page of a PDF, a frame of a video. */
+  image?: string;
+  /** The type on the corner, such as `PDF`, or the length of a video, such as `2:14`. */
+  kind?: string;
+};
+
+/**
+ * A large picture of the open thing at the top of its detail: 4:3 from text edge to text edge, round like the thing's
+ * mark. Without a picture, or while it loads or fails, the thing's symbol stands large on the
+ * tint of its colour in the same place, so nothing moves. It stands where the detail's text starts; it is never a
+ * box inside a box.
+ */
+export const Preview = (props: PreviewProps) => {
+  const picture = createPicture(() => props.image);
+  return (
+    <div
+      class="k2-mk k2-preview"
+      data-k2-part="Preview"
+      data-image={props.image ? (picture.state() ?? "") : undefined}
+      role="img"
+      aria-label={props.label}
+      style={custom({ "--k2-c": props.color })}
+    >
+      <Icon name={props.icon} />
+      <picture.Picture />
+      <Show when={props.kind}>
+        <span class="k2-mk-kind" data-k2-glyph="">
+          {props.kind}
+        </span>
+      </Show>
+    </div>
+  );
+};
+
 export type SparkProps = {
   /** The values in their order, oldest first; the last one (today, this hour) stands in full colour. */
   values: readonly number[];

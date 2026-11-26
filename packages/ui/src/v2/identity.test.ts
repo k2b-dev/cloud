@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { createComponent } from "solid-js";
+import { createComponent, type JSX } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 
@@ -16,7 +16,7 @@ const { Tiles } = await import("./layout");
 const { Digest } = await import("./components");
 const { Row } = await import("./content");
 
-const html = (component: Parameters<typeof createComponent>[0], props: Record<string, unknown>) =>
+const html = <P extends object>(component: (props: P) => JSX.Element, props: P) =>
   renderToString(() => createComponent(component, props));
 
 test("a mark is decoration beside its name, names itself with a label, and sends its picture over its symbol", () => {

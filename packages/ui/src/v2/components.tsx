@@ -101,6 +101,11 @@ export type NavProps = {
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
+  /**
+   * What the open place uses of what it may, above the foot: a storage of 100 GB, seats of a plan. Its name and the
+   * words ("38,2 von 100 GB") on one line, a bar under them in the app colour, amber from 75 % and red from 90 %.
+   */
+  quota?: { label: string; value: number; of: number; text: string };
 };
 
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
@@ -217,6 +222,32 @@ export const Nav = (props: NavProps) => (
         </>
       )}
     </Index>
+    <Show when={props.quota}>
+      {(quota) => {
+        const share = () => (quota().of > 0 ? Math.max(0, Math.min(1, quota().value / quota().of)) : 0);
+        return (
+          <div
+            class="k2-nav-quota"
+            data-k2-part="Nav.Quota"
+            data-status={share() >= 0.9 ? "bad" : share() >= 0.75 ? "warn" : undefined}
+            role="meter"
+            aria-label={quota().label}
+            aria-valuemin={0}
+            aria-valuemax={quota().of}
+            aria-valuenow={quota().value}
+            aria-valuetext={quota().text}
+          >
+            <span class="k2-nav-quota-line">
+              <span>{quota().label}</span>
+              <span>{quota().text}</span>
+            </span>
+            <span class="k2-nav-quota-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+              <i />
+            </span>
+          </div>
+        );
+      }}
+    </Show>
     <Show when={props.foot?.length}>
       <div class="k2-nav-foot">
         <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
@@ -515,8 +546,11 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
+                On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
+            <span class="k2-status-actions">
+              <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            </span>
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
