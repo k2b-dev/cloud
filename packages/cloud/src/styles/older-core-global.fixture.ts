@@ -1,10 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 
 const styles = import.meta.dir;
-/** A scratch folder below the package, so the copy resolves `tailwindcss` and `@k2b/ui` as global.css does. */
-const scratchRoot = resolve(styles, "../..");
+/**
+ * Scratch folders below the package's `.cache` (ignored by Git, so a killed run leaves nothing to commit), where the
+ * copy resolves `tailwindcss` and `@k2b/ui` from the package as global.css does.
+ */
+const scratchRoot = resolve(styles, "../../.cache");
 
 /**
  * Core's global.css as a Core from before a change built it: the same sheet without the given files, which the change
@@ -20,7 +23,8 @@ export const buildOlderGlobal = async (without: readonly string[]): Promise<stri
   }
   // every relative path of the sheet (imports, `@source`) now starts from the scratch folder
   source = source.replace(/(@(?:import|source)\s+")(\.\.?\/)/g, (_, rule: string, dot: string) => `${rule}${join(styles, dot)}/`);
-  const scratch = mkdtempSync(join(scratchRoot, ".older-core-"));
+  mkdirSync(scratchRoot, { recursive: true });
+  const scratch = mkdtempSync(join(scratchRoot, "older-core-"));
   try {
     const entry = join(scratch, "global.css");
     writeFileSync(entry, source);
