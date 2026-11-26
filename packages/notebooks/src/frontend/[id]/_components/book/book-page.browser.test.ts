@@ -7,7 +7,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, Locator, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../../../../../ui/test/browser";
+import { launchBrowser, pageErrors, settled } from "../../../../../../ui/test/browser";
 import { renderNotebookBook } from "../../../../lib/book-renderer";
 import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import "../detail/ssr-test-plugin";
@@ -173,9 +173,15 @@ afterAll(async () => {
 });
 
 type BookWindow = Window & { bookPageMarker?: string; serverArticle?: Element | null; bookReady?: boolean };
-const errors: string[] = [];
+// every page's errors; a view transition that a navigation cuts short is the browser's, not the page's
+const errors: string[][] = [];
 afterEach(() => {
-  expect(errors.splice(0)).toEqual([]);
+  expect(
+    errors
+      .splice(0)
+      .flat()
+      .filter((message) => !message.includes("ViewTransition")),
+  ).toEqual([]);
 });
 const ready = async (page: Page) => {
   await page.waitForFunction(() => (window as BookWindow).bookReady === true);
@@ -195,10 +201,8 @@ const open = async (width: number, path = "/app/notebooks/book01/notes/note01?mo
       { name: "settings-app-notebooks", value: encodeURIComponent(JSON.stringify({ fullWidth: true })), url: server.url.href },
     ]);
   const page = await context.newPage();
-  // an error in the page fails the test that opened it (a view transition a navigation cuts short is the browser's)
-  page.on("pageerror", (error) => {
-    if (!error.message.includes("ViewTransition")) errors.push(error.message);
-  });
+  // an error in the page fails the test that opened it
+  errors.push(pageErrors(page));
   await page.goto(new URL(path, server.url).href);
   if (javaScriptEnabled) await ready(page);
   return page;
