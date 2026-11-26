@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
-import { fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps } from "./fixtures";
+import { fixtureDashboard, fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps } from "./fixtures";
 import VenueOverviewScreen from "./VenueOverviewScreen";
 import VenueScreen from "./VenueScreen";
 import VenueSettingsScreen from "./VenueSettingsScreen";
@@ -42,7 +42,13 @@ const screen = () => {
     const tab =
       (["access", "schedule", "danger"] as const).find((entry) => entry === path.split("/")[5]) ?? ("general" satisfies VenueSettingsTab);
     const settings = fixtureSettings();
-    return <VenueSettingsScreen initial={settings} dashboard={{ venue: settings.venue, myShiftCount: 1, feedback: null }} tab={tab} />;
+    return (
+      <VenueSettingsScreen
+        initial={settings}
+        dashboard={{ venue: settings.venue, myShiftCount: fixtureDashboard().myShiftCount, feedback: fixtureDashboard().feedback }}
+        tab={tab}
+      />
+    );
   }
   const base = venueProps();
   const venue = { ...base.dashboard.venue, permission, ...(variant === "worst" ? { name: worst[0]!.name } : {}) };

@@ -1802,6 +1802,26 @@ export type VenueDashboardOptions = {
   feedbackPage?: number;
 };
 
+/** How many shifts the caller holds at a venue, for the count beside "Meine Schichten". */
+const countMyShifts = async (venue: Venue, user: UserLike | null) =>
+  user
+    ? sql<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count
+      FROM venue.shift_assignments
+      WHERE venue_id = ${venue.id}::uuid
+        AND user_id = ${user.id}::uuid
+    `.then((rows) => rows[0]?.count ?? 0)
+    : 0;
+
+/** The figures a venue's sidebar shows on every page (my shifts, feedback), without the schedule a dashboard loads. */
+const navFacts = async (venue: Venue, user: UserLike | null) => {
+  const [myShiftCount, feedback] = await Promise.all([
+    countMyShifts(venue, user),
+    canSeeInternal(venue) ? feedbackSummary(venue, { includeEntries: false }) : null,
+  ]);
+  return { myShiftCount, feedback: feedback?.summary ?? null };
+};
+
 /**
  * Loads the workspace view of a Venue resolved for its caller. The Venue's
  * `permission` decides what the view contains; see {@link canSeeInternal}.
@@ -1826,14 +1846,7 @@ const dashboard = async (venue: Venue, user: UserLike | null, options: VenueDash
           page: options.feedbackPage,
         })
       : Promise.resolve(null),
-    user
-      ? sql<{ count: number }[]>`
-      SELECT COUNT(*)::int AS count
-      FROM venue.shift_assignments
-      WHERE venue_id = ${venue.id}::uuid
-        AND user_id = ${user.id}::uuid
-    `.then((rows) => rows[0]?.count ?? 0)
-      : Promise.resolve(0),
+    countMyShifts(venue, user),
   ]);
   const [{ slots, otherAssignments }, outlook] = await Promise.all([
     slotWindow(venue, { startDate: options.slotStartDate, days: slotDays }),
@@ -1975,6 +1988,7 @@ export const venueService = {
   status: statusForVenue,
   publicStatus,
   dashboard,
+  navFacts,
   publicResources: { resolve: resolvePublicId, resolveMany: resolvePublicIds, resolveOwned: resolveVenuePublicId, ...publicProjection },
   ical: {
     getOrCreateToken: getOrCreateIcalToken,

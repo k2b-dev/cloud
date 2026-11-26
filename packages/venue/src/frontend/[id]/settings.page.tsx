@@ -22,7 +22,8 @@ export default ssr<AuthContext>(async (c) => {
   if (!resolved.ok) return ssr.error(c, resolved.error.status);
   // Everyone else reads the venue where it works for them; the settings are the admins' own place.
   if (resolved.data.permission !== "admin") return c.redirect(`/app/venue/${encodeURIComponent(id)}/shifts`);
-  const settings = await loadVenueSettingsContext(resolved.data);
+  // the sidebar shows the same figures as on the venue's other pages
+  const [settings, facts] = await Promise.all([loadVenueSettingsContext(resolved.data), venueService.navFacts(resolved.data, user)]);
   return () => (
     <Layout
       c={c}
@@ -35,11 +36,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.venueSettings },
       ]}
     >
-      <VenueSettingsScreen
-        initial={settings}
-        dashboard={{ venue: settings.venue, myShiftCount: 0, feedback: null }}
-        tab={tab ?? "general"}
-      />
+      <VenueSettingsScreen initial={settings} dashboard={{ venue: settings.venue, ...facts }} tab={tab ?? "general"} />
     </Layout>
   );
 });
