@@ -62,6 +62,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   back to where it was scrolled.
 - `side`: the info column of a record; quieter sections, a `more` link
   becomes a row.
+- `busy`: the app fetches what the column shows anew (rows after a filter
+  changed). The content stays, quieter after 150 ms, under a 2 px line along
+  the top; `aria-busy`, "Lädt …" once, nothing moves. The first load keeps
+  its placeholders (`Table loading`, `Loading`).
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
@@ -435,7 +439,12 @@ lines instead of cutting a thing.
   entries are options (`value`, else `label`), the chosen one carries the
   tick, choosing closes the menu. Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`.
+  its button; there is no `align`. `search: { label, from, empty,
+  fallback }` puts a field on top from `from` entries on (deeds only,
+  loose or in sections): typing filters entries and sections, the first
+  match is highlighted so Enter runs it, `fallback(query)` adds an entry
+  for the text itself ("Leere Aufgabe „…“"). Never build a search menu
+  from a Popover.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.

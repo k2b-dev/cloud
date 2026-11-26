@@ -596,6 +596,41 @@
 .k2-ui .k2-scroll > * {
   flex: none;
 }
+/* A pane that fetches anew (`busy`): what it shows stays where it is and turns quieter after 150 ms, so a fast answer
+   never flickers; a 2 px line runs along the top of the region over a sticky head. The line has no height of its own,
+   so nothing moves. Without motion the line stands still. */
+.k2-ui .k2-scroll > .k2-busy-line {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  height: 0;
+}
+.k2-ui .k2-busy-line::after {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent 0 30%, var(--k2-app, var(--k2-blue)) 30% 70%, transparent 70%) 0 0 / 200% 100%;
+  animation: k2-busy-line 1.2s linear infinite;
+}
+@keyframes k2-busy-line {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k2-ui .k2-busy-line::after {
+    animation: none;
+    background: var(--k2-app, var(--k2-blue));
+  }
+}
+.k2-ui .k2-scroll[data-busy] > :not(.k2-busy-line, .k2-hidden-text) {
+  opacity: 0.55;
+  transition: opacity 120ms ease 150ms;
+}
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
 .k2-ui .k2-split {
   position: relative;
@@ -3069,8 +3104,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* a hint at the end (a key, what a template fills in) gives way before the words: at most 45 % of the entry, cut with
+   "…"; a short key never reaches that */
 .k2-ui .k2-mi-meta {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
@@ -3128,6 +3170,55 @@
   height: 1px;
   background: var(--k2-line);
   margin: 4px -4px;
+}
+/* A menu with a search: the field stays on top while the entries scroll under it, the menu keeps its width as matches
+   come and go, and a line parts the groups as in a plain menu. */
+.k2-ui .k2-menu.k2-msearch {
+  width: 300px;
+  padding: 0;
+  overflow: hidden;
+}
+.k2-ui .k2-msearch-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.k2-ui .k2-msearch-field {
+  flex: none;
+  margin: 8px 8px 4px;
+  height: var(--k2-h-dense);
+}
+.k2-ui .k2-msearch-field > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: var(--k2-t-row);
+  color: inherit;
+}
+.k2-ui .k2-msearch-field > .k2-icon {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-msearch-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(360px, calc(var(--available-height, 100dvh) - 56px));
+  overflow-y: auto;
+  padding: 0 4px 4px;
+}
+.k2-ui .k2-msearch .k2-mgroup + .k2-mgroup {
+  margin: 4px -4px 0;
+  padding: 4px 4px 0;
+  border-top: 1px solid var(--k2-line);
+}
+.k2-ui .k2-msearch-empty {
+  margin: 0;
+  padding: 8px 12px 12px;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {
@@ -4102,13 +4193,6 @@
 }
 .k2-ui .k2-fsheet .k2-fed-pick .k2-dpick {
   width: 308px;
-}
-/* "+ Filter" for many fields: the search over them, as wide as a filter's editor. */
-.k2-ui .k2-pop.k2-fpick {
-  padding-top: 8px;
-}
-.k2-ui .k2-fpick .k2-opt > .k2-icon {
-  color: var(--k2-subtle);
 }
 .k2-ui .k2-fsheet-search {
   margin: 8px var(--k2-edge) 4px;

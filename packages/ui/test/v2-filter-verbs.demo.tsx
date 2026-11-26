@@ -1,6 +1,6 @@
 import { createMemo, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Bar, Button, Chip, FilterBar, Input, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, FilterBar, Input, type ListChange, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
 import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "../src/v2/list-query";
 
 // The inventory of an antiques trade on invented data, as a table with many columns would declare it: thirteen fields
@@ -261,6 +261,10 @@ declare global {
   interface Window {
     /** The address of every change, in order. */
     __verbChanges?: string[];
+    /** Where every change came from (`ListChange.source`), in order. */
+    __sources?: string[];
+    /** With `_slow` in the address: the rows of the last change come only when the test calls this. */
+    __releaseRows?: () => void;
   }
 }
 
@@ -272,16 +276,25 @@ export function Demo() {
     ? ({ ...parsed, filters: { ...parsed.filters, status: { verb: "is", value: ["consigned", "gone"] } } } as unknown as State)
     : parsed;
   const [state, setState] = createSignal<State>(initial);
+  // the rows the page has fetched: with `_slow` they follow a change only when the test lets them, as a slow server's
+  const slow = !isServer && new URLSearchParams(location.search).has("_slow");
+  const [fetched, setFetched] = createSignal<State>(initial);
+  if (!isServer) window.__releaseRows = () => setFetched(state());
+  const busy = () => fetched() !== state();
   const rows = createMemo(() => {
-    const list = items.filter((item) => matches(item, state()));
-    const sort = state().sort;
+    const list = items.filter((item) => matches(item, fetched()));
+    const sort = fetched().sort;
     const sign = sort.direction === "asc" ? 1 : -1;
     list.sort((a, b) => (sort.field === "price" ? (a.price - b.price) * sign : a.received.localeCompare(b.received) * sign));
     return list;
   });
-  const change = (next: State) => {
-    if (!isServer) window.__verbChanges = [...(window.__verbChanges ?? []), location.search];
+  const change = (next: State, at: ListChange) => {
+    if (!isServer) {
+      window.__verbChanges = [...(window.__verbChanges ?? []), location.search];
+      window.__sources = [...(window.__sources ?? []), at.source];
+    }
     setState(next);
+    if (!slow) setFetched(next);
   };
   return (
     <Workspace
@@ -309,6 +322,7 @@ export function Demo() {
     >
       <Pane
         label="Inventar"
+        busy={busy()}
         status={
           <>
             <FilterBar

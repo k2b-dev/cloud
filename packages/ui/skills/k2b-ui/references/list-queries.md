@@ -101,6 +101,12 @@ no × at its default; changed, it is tinted and × returns it to the default.
   `viewIcon(scope)` gives a saved view's tab its symbol.
 - A value the address cannot hold is refused at its field; nothing is
   written.
+- `onChange(state, { source })`: `"user"` from the bar or `ListOrder`
+  (start a paged list at page 1), `"history"` from back and forward
+  (keep the page the address names). Never listen to `popstate` yourself.
+- While the rows load after a change, set `Pane busy` on the list's pane:
+  one quiet state for the whole region, nothing per statement, nothing
+  moves.
 - What the app deleted (an option, preset, sort or group an old link or saved
   view still names) is left out by `parse`, `serialize` and `set`, never
   thrown. Build no app-side filter for it. A new value given to `set` must

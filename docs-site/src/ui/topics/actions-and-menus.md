@@ -24,6 +24,7 @@ Offers of a workshop. The head holds the views, a hint on the refresh button, a 
 - The person picks one deed or one option, and the menu closes.
 - Entries, sections under a heading, a choice with a tick, toggles, a submenu, a red deed after a line.
 - The same entries go to the row's "…" and to its `Menu.Context`.
+- Many deeds to pick from (templates, fields): `search` puts a field on top from `from` entries on. Typing keeps the entries whose words, or whose section's heading, hold the text; the first match is highlighted, so Enter runs it, and Escape first empties the field. `fallback` adds an entry for the text itself after the matches, alone when nothing matches ("Leere Aufgabe „Palette tauschen“"). The field stays on top while the entries scroll, also on the phone. It holds deeds, loose or in sections; a menu with a link, a submenu, a toggle or a choice stays a plain menu.
 
 ### Popover
 
@@ -45,7 +46,7 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
 
-<Props of="Menu MenuItem MenuSection" />
+<Props of="Menu MenuItem MenuSection MenuSearch" />
 
 ### Menu.Context
 

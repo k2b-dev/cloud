@@ -1,5 +1,18 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+  type JSX,
+  onCleanup,
+  children as resolveChildren,
+  Show,
+  untrack,
+} from "solid-js";
+import { useCommand } from "./behavior/command";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { usePopover } from "./behavior/overlays";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -83,7 +96,31 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /**
+   * A search field on top of the entries, from `from` entries on (counting those in sections): typing keeps the
+   * entries whose words, or whose section's heading, hold the text. For deeds, loose or in sections; a menu with a
+   * link, a submenu, a toggling entry or a section with `choice` stays a plain menu.
+   */
+  search?: MenuSearch;
 };
+
+/** How a menu searches its entries (see `MenuProps.search`). */
+export type MenuSearch = {
+  /** The name and the quiet words of the field, such as "Vorlage suchen". */
+  label: string;
+  /** From this many entries on the field shows; always when not set. */
+  from?: number;
+  /** The words when nothing matches; "Nichts passt zu „…“." when not set. */
+  empty?: (query: string) => string;
+  /**
+   * An entry (or a section) for the text itself, such as "Leere Aufgabe „Palette tauschen“": it stands last, after
+   * the matches, and alone when nothing matches, where Enter runs it. `undefined` offers none for this text.
+   */
+  fallback?: (query: string) => MenuItem | MenuSection | undefined;
+};
+
+/** Text as a menu search compares it: lower case, without accents ("Fällig" is found by "fallig"). */
+export const foldedText = (text: string) => text.toLocaleLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 
 /**
  * Lines between groups: before the first dangerous entry after others, and around a section; no line at the start,
@@ -327,7 +364,202 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
  * head or a section; with words it is a framed button with a chevron. Keys, typeahead, focus and placement come from
  * the behaviour layer; the menu lines up with the end of a button on the right and the start of one on the left.
  */
-const MenuRoot = (props: MenuProps) => {
+const MenuRoot = (props: MenuProps) => (
+  <Show
+    when={props.search && searchable(props.items) && countOf(props.items) >= (props.search.from ?? 0)}
+    fallback={<PlainMenu {...props} />}
+  >
+    <SearchMenu {...props} search={props.search!} />
+  </Show>
+);
+
+/** Whether a search can hold these entries: deeds, loose or in sections without `choice`. */
+const searchable = (entries: readonly MenuEntry[]): boolean =>
+  entries.every((entry) =>
+    entry === "separator"
+      ? true
+      : isSection(entry)
+        ? entry.choice === undefined && searchable(entry.items)
+        : entry.items === undefined && entry.checked === undefined && entry.href === undefined,
+  );
+
+/** How many entries a menu offers, those in sections included. */
+const countOf = (entries: readonly MenuEntry[]): number =>
+  entries.reduce((sum, entry) => sum + (entry === "separator" ? 0 : isSection(entry) ? entry.items.length : 1), 0);
+
+/** An entry of a searching menu, with the place it keeps while the search changes. */
+type Found = { key: string; item: MenuItem };
+type FoundGroup = { key: string; title?: string; items: Found[] };
+
+/**
+ * The entries as a searching menu lists them: loose entries in groups of their own, sections under their heading,
+ * each entry keyed by its place, so a new search keeps the element of an entry that still matches.
+ */
+const groupsOf = (entries: readonly MenuEntry[], prefix: string): FoundGroup[] => {
+  const groups: FoundGroup[] = [];
+  entries.forEach((entry, index) => {
+    if (entry === "separator") return;
+    if (isSection(entry)) {
+      groups.push({
+        key: `${prefix}${index}`,
+        title: entry.title,
+        items: entry.items.map((item, at) => ({ key: `${prefix}${index}.${at}`, item })),
+      });
+      return;
+    }
+    const last = groups.at(-1);
+    const found = { key: `${prefix}${index}`, item: entry };
+    if (last && last.title === undefined) last.items.push(found);
+    else groups.push({ key: `${prefix}${index}`, items: [found] });
+  });
+  return groups;
+};
+
+/** The groups with the entries whose words, or whose group's heading, hold the text. */
+const matching = (groups: readonly FoundGroup[], query: string): FoundGroup[] => {
+  const words = foldedText(query.trim());
+  if (!words) return [...groups];
+  return groups.flatMap((group) => {
+    if (group.title !== undefined && foldedText(group.title).includes(words)) return [group];
+    const items = group.items.filter((found) => foldedText(found.item.label).includes(words));
+    return items.length > 0 ? [{ ...group, items }] : [];
+  });
+};
+
+/**
+ * A menu with a search on top: core's command in the menu's popup. The focus stays in the field, the arrows move the
+ * highlight, the first match is highlighted as the text changes, and Enter or a press runs it; the field stays on top
+ * while the entries scroll. Running an entry closes the menu.
+ */
+const SearchMenu = (props: MenuProps & { search: MenuSearch }) => {
+  const t = useOverlayMessages();
+  const words = resolveChildren(() => props.children);
+  const iconOnly = () => words() === undefined;
+  const name = () => props.label ?? t().moreActions;
+  let trigger: HTMLElement | undefined;
+  let popup: HTMLElement | undefined;
+  const [align, setAlign] = createSignal<"start" | "end">("end");
+  const [open, setOpen] = createSignal(false);
+  const [query, setQuery] = createSignal("");
+  // the ids core names a group by: one per menu, and the group's place in it
+  const popupId = createUniqueId();
+  const groupId = (key: string) => `${popupId}-g${key.replace(/[^a-z0-9]/gi, "-")}`;
+  const popover = usePopover(() => ({
+    open: open(),
+    onOpenChange: (next: boolean) => {
+      if (next) setAlign(alignTo(trigger));
+      else setQuery("");
+      setOpen(next);
+    },
+  }));
+  const groups = createMemo(() => {
+    const found = matching(groupsOf(props.items, ""), query());
+    const text = query().trim();
+    const extra = text ? props.search.fallback?.(text) : undefined;
+    return extra ? [...found, ...groupsOf([extra], "fallback:")] : found;
+  });
+  const lead = () => groups().some((group) => group.items.some((found) => !!found.item.icon));
+  const find = (key: string) =>
+    groups()
+      .flatMap((group) => group.items)
+      .find((found) => found.key === key)?.item;
+  const run = (key: string) => {
+    const item = find(key);
+    if (!item || item.disabled) return;
+    setOpen(false);
+    setQuery("");
+    item.onClick?.();
+  };
+  const list = useCommand(() => ({
+    query: query(),
+    onQueryChange: setQuery,
+    onAction: run,
+    filter: false,
+    loop: false,
+    autoHighlight: true,
+  }));
+  return (
+    <>
+      <popover.Trigger
+        ref={(element: HTMLElement) => {
+          trigger = element;
+        }}
+        disabled={props.disabled}
+        class="k2-btn"
+        data-k2-part="Button"
+        data-variant={(props.variant ?? (iconOnly() ? "ghost" : "secondary")) === "secondary" ? undefined : (props.variant ?? "ghost")}
+        data-icon-only={iconOnly() ? "" : undefined}
+        data-menu={iconOnly() ? undefined : ""}
+        data-keep={iconOnly() ? "" : undefined}
+        aria-label={iconOnly() ? name() : undefined}
+        title={iconOnly() ? name() : undefined}
+      >
+        <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
+      </popover.Trigger>
+      <popover.Popup
+        ref={(element: HTMLElement) => {
+          popup = element;
+        }}
+        initialFocus={() => popup?.querySelector<HTMLElement>("input") ?? null}
+        class="k2-menu k2-msearch"
+        data-k2-part="Menu"
+        side="bottom"
+        align={align()}
+        sideOffset={4}
+        collisionPadding={8}
+      >
+        <list.Root class="k2-msearch-root">
+          <div class="k2-input k2-msearch-field" data-search="">
+            <Icon name="search" />
+            <list.Input aria-label={props.search.label} placeholder={props.search.label} spellcheck={false} />
+          </div>
+          <list.List class="k2-msearch-list" aria-label={name()}>
+            {/* by place, not by object: a new search keeps the entries that still match, and their highlight */}
+            <For each={groups().map((group) => group.key)}>
+              {(groupKey) => {
+                const group = () => groups().find((each) => each.key === groupKey);
+                return (
+                  <list.Group class="k2-mgroup" id={groupId(groupKey)}>
+                    <Show when={group()?.title}>
+                      {(title) => (
+                        // core names a group by its heading's id; each entry names its group, else core takes it for empty
+                        <list.GroupLabel class="k2-mh" id={groupId(groupKey)} group={groupId(groupKey)}>
+                          {title()}
+                        </list.GroupLabel>
+                      )}
+                    </Show>
+                    <For each={group()?.items.map((found) => found.key) ?? []}>
+                      {(key) => {
+                        const item = () => find(key) ?? { label: "" };
+                        return (
+                          <list.Item
+                            class="k2-mi"
+                            value={key}
+                            label={item().label}
+                            group={groupId(groupKey)}
+                            disabled={item().disabled}
+                            data-danger={item().danger ? "" : undefined}
+                          >
+                            <EntryFace item={item()} lead={lead()} />
+                          </list.Item>
+                        );
+                      }}
+                    </For>
+                  </list.Group>
+                );
+              }}
+            </For>
+          </list.List>
+          <Show when={groups().length === 0}>
+            <p class="k2-msearch-empty">{props.search.empty?.(query().trim()) ?? t().noMatch({ query: query().trim() })}</p>
+          </Show>
+        </list.Root>
+      </popover.Popup>
+    </>
+  );
+};
+
+const PlainMenu = (props: MenuProps) => {
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;

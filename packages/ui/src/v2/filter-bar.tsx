@@ -14,7 +14,6 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { useLocale } from "../intl/locale";
-import { useCommand } from "./behavior/command";
 import { useListbox } from "./behavior/lists";
 import { usePopover } from "./behavior/overlays";
 import { Button } from "./button";
@@ -37,7 +36,7 @@ import type {
 } from "./list-query";
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
-import { Menu, type MenuEntry, type MenuItem, TriggerFace } from "./menu";
+import { foldedText, Menu, type MenuEntry, type MenuItem } from "./menu";
 import { readNumber, showNumber } from "./number-text";
 import { Dialog } from "./overlays";
 import { Empty } from "./states";
@@ -347,6 +346,9 @@ const isPhone = () => !isServer && matchMedia(phoneQuery).matches;
 // ── FilterBar ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Where saved views come from and go to; leave it out and the bar offers no saving. */
+/** Where a change of the list's state came from: the person, in the bar, or back and forward in the history. */
+export type ListChange = { readonly source: "user" | "history" };
+
 export type FilterBarViews = {
   /**
    * The stores the app offers, in the order the dialog lists them. A store the person may not write appears only when
@@ -371,8 +373,10 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
   /**
    * Every change, already written to the address: the app loads the list for it. The bar writes the address itself
    * (each open editor adds one entry to the history, every other change one), and calls this on back and forward too.
+   * `change.source` says which: `"user"` for a change the person made in the bar (a list starts again at its first
+   * page), `"history"` for back and forward (a list keeps the page the address names).
    */
-  onChange: (state: ListQueryState<F, S, G>) => void;
+  onChange: (state: ListQueryState<F, S, G>, change: ListChange) => void;
   /** The state of the current view, which "Zurücksetzen" returns to; the empty query (`query.reset()`) by default. */
   base?: ListQueryState<F, S, G>;
   /** A Tabler icon per field, before its name in "+ Filter" and the phone sheet. */
@@ -456,10 +460,10 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
       if (entry) history.pushState(history.state, "", url);
       else history.replaceState(history.state, "", url);
     }
-    props.onChange(next);
+    props.onChange(next, { source: "user" });
   };
   onMount(() => {
-    const back = () => props.onChange(props.query.parse(location.search).state);
+    const back = () => props.onChange(props.query.parse(location.search).state, { source: "history" });
     addEventListener("popstate", back);
     onCleanup(() => removeEventListener("popstate", back));
   });
@@ -636,16 +640,14 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
           }}
         </For>
         <span class="k2-fbar-add">
-          <Show
-            when={fields().length > searchFrom}
-            fallback={
-              <Menu icon="plus" items={addEntries()}>
-                {t().addFilter}
-              </Menu>
-            }
+          {/* many fields: the menu's own search over them and their headings */}
+          <Menu
+            icon="plus"
+            items={addEntries()}
+            search={{ label: t().searchFields, from: searchFrom + 1, empty: (query) => t().noField({ query }) }}
           >
-            <FieldPicker fields={fields()} icons={props.icons} meta={meta} onPick={openField} />
-          </Show>
+            {t().addFilter}
+          </Menu>
         </span>
         <Show when={changed()}>
           <span class="k2-fbar-reset">
@@ -724,7 +726,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
 
 // ── Adding a filter ────────────────────────────────────────────────────────────────────────────────────────────
 
-/** From this many fields on, "+ Filter" opens a search over them instead of a plain menu: a menu this long is a wall. */
+/** Above this many fields, "+ Filter" and the phone sheet search them: a menu this long is a wall. */
 const searchFrom = 10;
 
 type FieldGroup = { title?: string; fields: [string, ListQueryField][] };
@@ -751,17 +753,16 @@ const fieldGroups = (fields: readonly [string, ListQueryField][], t: FilterMessa
   return groups.length === 1 ? [{ fields: groups[0]!.fields }] : groups;
 };
 
-/** Text as the field search compares it: lower case, without accents ("Fällig" is found by "fallig"). */
-const folded = (text: string) => text.toLocaleLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
-
-/** The fields whose name or category holds the search text, in their groups; empty groups go. */
+/**
+ * The phone sheet's search over the fields, by the rule of a searching `Menu` ("+ Filter"): a group whose heading
+ * holds the text keeps all its fields, else the fields whose name holds it; empty groups go.
+ */
 const fieldMatches = (groups: readonly FieldGroup[], query: string): FieldGroup[] => {
-  const words = folded(query.trim());
+  const words = foldedText(query.trim());
   if (!words) return [...groups];
   return groups.flatMap((group) => {
-    const found = group.fields.filter(([, definition]) =>
-      [definition.label, definition.category ?? ""].some((text) => folded(text).includes(words)),
-    );
+    if (group.title !== undefined && foldedText(group.title).includes(words)) return [group];
+    const found = group.fields.filter(([, definition]) => foldedText(definition.label).includes(words));
     return found.length > 0 ? [{ ...group, fields: found }] : [];
   });
 };
@@ -769,103 +770,6 @@ const fieldMatches = (groups: readonly FieldGroup[], query: string): FieldGroup[
 /** The field keys of the group with this heading ("" for the one without). */
 const keysIn = (groups: readonly FieldGroup[], title: string): string[] =>
   groups.find((group) => (group.title ?? "") === title)?.fields.map(([key]) => key) ?? [];
-
-/**
- * "+ Filter" for many fields: core's command in a popover, a search over the fields with their groups. The focus stays
- * in the search; the arrows move through the fields, Enter or a press opens the chosen one's editor.
- */
-const FieldPicker = (props: {
-  fields: readonly [string, ListQueryField][];
-  icons?: Readonly<Record<string, string | undefined>>;
-  meta: (key: string, definition: ListQueryField) => string | undefined;
-  onPick: (key: string) => void;
-}) => {
-  const t = useFilterMessages();
-  const [open, setOpen] = createSignal(false);
-  const [query, setQuery] = createSignal("");
-  const popover = usePopover(() => ({
-    open: open(),
-    onOpenChange: (next: boolean) => {
-      setOpen(next);
-      if (!next) setQuery("");
-    },
-  }));
-  const groups = createMemo(() => fieldMatches(fieldGroups(props.fields, t()), query()));
-  const list = useCommand(() => ({
-    query: query(),
-    onQueryChange: setQuery,
-    onAction: (key: string) => {
-      setOpen(false);
-      setQuery("");
-      props.onPick(key);
-    },
-    filter: false,
-    loop: false,
-  }));
-  const idBase = createUniqueId();
-  let popup: HTMLElement | undefined;
-  return (
-    <>
-      <popover.Trigger class="k2-btn" data-k2-part="Button" data-menu="">
-        <TriggerFace icon="plus" label={t().addFilter} iconOnly={false} chevron />
-      </popover.Trigger>
-      <popover.Popup
-        ref={(element: HTMLElement) => {
-          popup = element;
-        }}
-        initialFocus={() => popup?.querySelector<HTMLElement>("input") ?? null}
-        class="k2-pop k2-fpop k2-fpick"
-        data-k2-part="Popover"
-        side="bottom"
-        align="start"
-        sideOffset={4}
-        collisionPadding={8}
-      >
-        <list.Root class="k2-lookup" data-k2-part="FieldPicker">
-          <div class="k2-input k2-lookup-search" data-search="">
-            <Icon name="search" />
-            <list.Input aria-label={t().searchFields} placeholder={t().searchFields} spellcheck={false} />
-          </div>
-          <list.List class="k2-lookup-list" aria-label={t().addFilter}>
-            {/* by name, not by object: a new search keeps the entries that still match and their highlight */}
-            <For each={groups().map((group) => group.title ?? "")}>
-              {(title, index) => {
-                // core names a group by its label's id; each entry names its group, else core takes it for empty
-                const id = `${idBase}-${index()}`;
-                return (
-                  <list.Group class="k2-opt-group" id={id}>
-                    <Show when={title}>
-                      <list.GroupLabel class="k2-opt-head" id={id} group={id}>
-                        {title}
-                      </list.GroupLabel>
-                    </Show>
-                    <For each={keysIn(groups(), title)}>
-                      {(key) => {
-                        const definition = props.fields.find(([each]) => each === key)![1];
-                        return (
-                          <list.Item class="k2-opt" value={key} label={definition.label} group={id}>
-                            <Show when={props.icons?.[key]}>{(name) => <Icon name={name()} />}</Show>
-                            <span class="k2-opt-label">{definition.label}</span>
-                            <Show when={props.meta(key, definition)}>{(words) => <span class="k2-opt-meta">{words()}</span>}</Show>
-                          </list.Item>
-                        );
-                      }}
-                    </For>
-                  </list.Group>
-                );
-              }}
-            </For>
-          </list.List>
-          <Show when={groups().length === 0}>
-            <div class="k2-lookup-state">
-              <Empty icon="search-off" text={t().noField({ query: query().trim() })} />
-            </div>
-          </Show>
-        </list.Root>
-      </popover.Popup>
-    </>
-  );
-};
 
 // ── Statement ──────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -1929,8 +1833,8 @@ const groupEntries = <F extends Fields, S extends string, G extends string>(quer
 export type ListOrderProps<F extends Fields, S extends string, G extends string> = {
   query: ListQuery<F, S, G>;
   state: ListQueryState<F, S, G>;
-  /** Every change, already written to the address, as `FilterBar` does. */
-  onChange: (state: ListQueryState<F, S, G>) => void;
+  /** Every change, already written to the address, as `FilterBar` does; it always comes from the person (`"user"`). */
+  onChange: (state: ListQueryState<F, S, G>, change: ListChange) => void;
 };
 
 /**
@@ -1949,7 +1853,7 @@ export const ListOrder = <F extends Fields, S extends string, G extends string>(
       const text = props.query.serialize(next, location.search).toString();
       history.pushState(history.state, "", `${location.pathname}${text ? `?${text}` : ""}${location.hash}`);
     }
-    props.onChange(next);
+    props.onChange(next, { source: "user" });
   };
   const words = () => orderWords(props.query, props.state, t());
   const groups = () => groupEntries(props.query, t());

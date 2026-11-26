@@ -186,7 +186,7 @@ test("a day verb picks one day in the calendar of the editor; “ist leer” fin
 test("a choice says “ist nicht” and “ist weder … noch …”; back and forward bring the verb back", async () => {
   await withPage("", async (page) => {
     await page.locator(".k2-fbar-add .k2-btn").click();
-    await page.locator(".k2-fpick input").fill("status");
+    await page.locator(".k2-msearch input").fill("status");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.locator(".k2-fpop .k2-fed").waitFor();
@@ -213,11 +213,11 @@ test("a choice says “ist nicht” and “ist weder … noch …”; back and f
 test("“+ Filter” with many fields searches them: groups by category, accents do not matter, nothing found says so", async () => {
   await withPage("price.after=500", async (page) => {
     await page.locator(".k2-fbar-add .k2-btn").click();
-    const picker = page.locator(".k2-fpick");
+    const picker = page.locator(".k2-msearch");
     await picker.waitFor();
     // the focus is in the search
-    await page.waitForFunction(() => document.activeElement?.matches(".k2-fpick input") === true);
-    expect(await picker.locator(".k2-opt-head").allTextContents()).toEqual(["Häufig", "Preise", "Termine", "Herkunft", "Lager"]);
+    await page.waitForFunction(() => document.activeElement?.matches(".k2-msearch input") === true);
+    expect(await picker.locator(".k2-mh").allTextContents()).toEqual(["Häufig", "Preise", "Termine", "Herkunft", "Lager"]);
     // an active field shows its value
     expect(
       await picker
@@ -260,7 +260,7 @@ test("the query's own parameter names: sort and grouping write `ordnung` and `gr
     expect(address(page)).toBe("sort=col3.asc&q=raw&suche=Vitrine&ordnung=price.desc&gruppe=status");
     // a filter goes in beside them; a reload reads the same
     await page.locator(".k2-fbar-add .k2-btn").click();
-    await page.locator(".k2-fpick input").fill("lager");
+    await page.locator(".k2-msearch input").fill("lager");
     await page.getByRole("option", { name: "Lagerort" }).click();
     await page.locator(".k2-fpop").getByRole("option", { name: "Laden" }).click();
     expect(address(page)).toBe("sort=col3.asc&q=raw&location=shop&suche=Vitrine&ordnung=price.desc&gruppe=status");
@@ -331,5 +331,55 @@ test("an option the app deleted, from its own old state, shows with a warning, a
     // the address never holds the deleted option; the next state leaves it out
     expect(address(page)).toBe("_stale=1&status=consigned,online");
     expect(await statements(page)).toEqual(["Status ist Eingeliefert oder Online"]);
+  });
+});
+
+test("while the page fetches after a change, the list region is busy: its rows stay and nothing moves", async () => {
+  await withPage("_slow=1&title=Vitrine", async (page) => {
+    const region = page.locator(".k2-pane > .k2-scroll");
+    const before = await region.boundingBox();
+    const table = await page.locator("table").boundingBox();
+    await edit(page, "Titel");
+    await page.locator(".k2-fpop .k2-fed-field input").fill("Spiegel");
+    await page.keyboard.press("Enter");
+    // the statement follows at once; the rows wait for the page's answer, in a busy region that keeps its place
+    expect(await statements(page)).toEqual(["Titel enthält Spiegel"]);
+    await page.waitForFunction(() => document.querySelector(".k2-pane > .k2-scroll")?.getAttribute("aria-busy") === "true");
+    expect(await rows(page)).toEqual(["Jugendstil-Vitrine", "Vitrinenschrank, Nussbaum"]);
+    expect(await region.getByRole("status").count()).toBe(1);
+    await settled(page);
+    expect(await region.boundingBox()).toEqual(before);
+    expect(await page.locator("table").boundingBox()).toEqual(table);
+    expect(await page.locator(".k2-busy-line").evaluate((line) => line.getBoundingClientRect().height)).toBe(0);
+    // quieter, not hidden
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-pane > .k2-scroll > :not(.k2-busy-line, .k2-hidden-text)")].every(
+        (part) => getComputedStyle(part).opacity === "0.55",
+      ),
+    );
+    await page.evaluate(() => window.__releaseRows?.());
+    await page.waitForFunction(() => !document.querySelector(".k2-pane > .k2-scroll")?.hasAttribute("aria-busy"));
+    expect(await rows(page)).toEqual(["Spiegel mit Goldrahmen"]);
+    expect(await page.locator(".k2-busy-line").count()).toBe(0);
+  });
+});
+
+test("onChange says where a change came from: the person in the bar, or back and forward", async () => {
+  await withPage("", async (page) => {
+    await page.locator(".k2-order .k2-btn").first().click();
+    await page.getByRole("menuitemradio", { name: "Preis" }).click();
+    await page.locator(".k2-fbar-add .k2-btn").click();
+    await page.locator(".k2-msearch input").fill("epoche");
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-fpop").getByRole("option", { name: "Barock" }).click();
+    await page.keyboard.press("Escape");
+    await page.locator(".k2-fpop").waitFor({ state: "detached" });
+    expect(await page.evaluate(() => window.__sources)).toEqual(["user", "user"]);
+    await page.goBack();
+    await page.waitForFunction(() => window.__sources?.length === 3);
+    await page.goForward();
+    await page.waitForFunction(() => window.__sources?.length === 4);
+    expect(await page.evaluate(() => window.__sources)).toEqual(["user", "user", "history", "history"]);
+    expect(address(page)).toBe("era=baroque&ordnung=price.desc");
   });
 });

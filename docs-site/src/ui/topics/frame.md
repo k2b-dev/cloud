@@ -47,7 +47,7 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 ### Pane
 
-A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
+A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`. `busy` while the app fetches what it shows anew (after a filter changed): the content stays, quieter after 150 ms, under a 2 px line along the top of the region, `aria-busy`, and nothing moves.
 
 <Props of="Pane" />
 
