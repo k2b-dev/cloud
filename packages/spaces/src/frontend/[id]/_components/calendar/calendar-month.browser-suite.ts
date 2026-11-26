@@ -666,6 +666,22 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
+  // The grid is the content of its pane: no edge or rounded corner of its own, so no second line stands beside the pane's.
+  test("the calendar lies flat in its pane, on the desktop and the phone", async () => {
+    for (const view of [desktop, phone]) {
+      const page = await open(view);
+      try {
+        const edges = await page.locator(".k2b-content-calendar").evaluate((calendar) => {
+          const style = getComputedStyle(calendar);
+          return [style.borderTopWidth, style.borderLeftWidth, style.borderRightWidth, style.borderBottomWidth, style.borderTopLeftRadius].join(" ");
+        });
+        expect(edges).toBe("0px 0px 0px 0px 0px");
+      } finally {
+        await page.context().close();
+      }
+    }
+  }, 60_000);
+
   test("desktop: a click selects a day without navigating and shows the quick create quietly; the grid keeps the keys", async () => {
     const page = await open(desktop);
     try {
