@@ -145,7 +145,8 @@ test("a writable Space with a long query still renders its primary command link"
   const response = await request();
   expect(response.status).toBe(200);
   const html = await response.text();
-  const primary = html.match(/<a\b[^>]*data-workspace-primary[^>]*>/)?.[0];
+  // the main action of the phone is a command link, so it also works before the page is live
+  const primary = html.match(/<a\b[^>]*k2-fab[^>]*>/)?.[0];
   expect(primary?.match(/\bhref="([^"]*)"/)?.[1]).toContain("command=spaces.task.compose");
 });
 

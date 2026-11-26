@@ -586,6 +586,7 @@ export function TemplatesSection(props: {
               <Row
                 icon={templateIcon(template).replace(/^ti\s+ti-/, "")}
                 lines={[template.name, describeTemplateDateRule(template, locale())]}
+                onOpen={editing() === null ? () => setEditing({ kind, template }) : undefined}
                 end={
                   <Menu
                     label={t.moreActionsFor({ label: template.name })}

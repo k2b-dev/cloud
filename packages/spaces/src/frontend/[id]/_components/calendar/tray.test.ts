@@ -40,7 +40,8 @@ describe("Spaces task tray queries", () => {
   test("link each part to the list view with the same query", () => {
     const undated = taskTrayFilters(defaultCalendarFilter)?.undated;
     expect(undated && taskTrayListHref("/app/spaces/Space1", undated)).toBe(
-      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority",
+      // The list reads its order as field and direction (`sort=priority.asc`), as its address writes it.
+      "/app/spaces/Space1?view=list&type=task&assignedTo=me&deadline=none&sort=priority.asc",
     );
   });
 });

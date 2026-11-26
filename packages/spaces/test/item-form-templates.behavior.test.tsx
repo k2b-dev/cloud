@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 import { dates } from "@k2b/stdlib";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
@@ -7,6 +7,7 @@ import { createDomTestHarness } from "../../ui/test/dom";
 import type { ItemFormData } from "../src/frontend/[id]/_components/shared/ItemForm";
 import { templateDraftSource } from "../src/frontend/[id]/_components/shared/item-form/templates";
 import { addCalendarDays, formatTemplateDate, localNow, proposeTemplateDates, templateSchedule } from "../src/presentation/item-templates";
+import { fieldControl, installV2Globals, sendDialog } from "./v2-dom";
 
 const SPACE_ID = "Space1";
 const TIME_ZONE = "Europe/Berlin";
@@ -90,6 +91,7 @@ describe("Spaces templates in the new item dialog", () => {
     } = {},
   ) => {
     const dom = createDomTestHarness();
+    installV2Globals(dom);
     const { default: ItemForm } = await import("../src/frontend/[id]/_components/shared/ItemForm");
     const submitted: ItemFormData[] = [];
     const dispose = render(
@@ -110,41 +112,60 @@ describe("Spaces templates in the new item dialog", () => {
       dom.root,
     );
     const radio = (group: string, label: string) => {
-      const radios = [...dom.root.querySelectorAll<HTMLButtonElement>(`[role="radiogroup"]`)].find(
+      // A v2 Choice: a radio group named by its field's label or its own, each option an input inside its label.
+      const group_ = [...dom.document.querySelectorAll<HTMLElement>('[role="radiogroup"]')].find(
         (element) =>
-          element.getAttribute("aria-labelledby") &&
-          dom.root.querySelector(`#${element.getAttribute("aria-labelledby")}`)?.textContent === group,
+          element.getAttribute("aria-label") === group ||
+          (element.getAttribute("aria-labelledby") &&
+            dom.document.getElementById(element.getAttribute("aria-labelledby")!)?.textContent?.trim().startsWith(group)),
       );
-      return [...(radios?.querySelectorAll<HTMLButtonElement>('[role="radio"]') ?? [])].find(
-        (button) => button.textContent?.trim() === label,
-      );
+      return [...(group_?.querySelectorAll<HTMLLabelElement>("label") ?? [])]
+        .find((option) => option.textContent?.trim() === label)
+        ?.querySelector<HTMLInputElement>("input");
     };
-    const input = (selector: string) => dom.root.querySelector<HTMLInputElement & HTMLTextAreaElement>(selector)!;
+    const input = (selector: string) => dom.document.querySelector<HTMLInputElement & HTMLTextAreaElement>(selector)!;
     const type = (selector: string, value: string) => {
       input(selector).value = value;
       input(selector).dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     };
-    const submit = () => dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    const close = () => {
+    const submit = () => sendDialog(dom);
+    const close = async () => {
       dispose();
+      // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+      await Bun.sleep(20);
       dom.cleanup();
     };
-    const button = (label: string, scope: ParentNode = dom.root) =>
+    const button = (label: string, scope: ParentNode = dom.document) =>
       [...scope.querySelectorAll<HTMLButtonElement>("button")].find((element) => element.textContent?.trim() === label)!;
-    const allDaySwitch = () => dom.root.querySelector<HTMLInputElement>('input[role="switch"]')!;
+    const allDaySwitch = () => dom.document.querySelector<HTMLInputElement>('input[role="switch"]')!;
     const title = () => input('input[placeholder="What needs to be done?"], input[placeholder="Event title"]').value;
-    return { dom, radio, input, type, submit, submitted, close, button, allDaySwitch, title };
+    /** Types a day into the date field with these words. */
+    const day = (label: string, value: string) => {
+      const control = fieldControl(dom, label)!;
+      control.value = value;
+      control.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    };
+    /** Answers the open question with the button of these words, once its dialog is there. */
+    const answer = async (label: string) => {
+      await Bun.sleep(10);
+      const question = [...dom.document.querySelectorAll<HTMLElement>('[role="dialog"], [role="alertdialog"]')].at(-1);
+      [...(question?.querySelectorAll<HTMLButtonElement>("button") ?? [])]
+        .find((element) => element.textContent?.trim() === label)!
+        .click();
+      await Bun.sleep(10);
+    };
+    return { dom, radio, input, type, submit, submitted, close, button, allDaySwitch, title, day, answer };
   };
 
   test("a Space without templates of the kind keeps today's dialog", async () => {
     const view = await open({ templates: [review] });
-    expect(view.dom.root.textContent).not.toContain("Template");
-    view.close();
+    expect(view.dom.document.body.textContent).not.toContain("Template");
+    await view.close();
   });
 
   test("choosing a template fills the form, proposes dates, and submits the first one", async () => {
     const view = await open();
-    expect(view.radio("Template", "Blank")?.getAttribute("aria-checked")).toBe("true");
+    expect(view.radio("Template", "Blank")?.checked).toBe(true);
     expect(view.radio("Template", "Review")).toBeUndefined();
 
     view.radio("Template", "Weekly report")!.click();
@@ -152,14 +173,12 @@ describe("Spaces templates in the new item dialog", () => {
 
     const proposals = proposeTemplateDates(weekly, { now: new Date(), timeZone: TIME_ZONE });
     const [first, second] = proposals;
-    expect(view.radio("Due", formatTemplateDate(first!, "en"))?.getAttribute("aria-checked")).toBe("true");
+    expect(view.radio("Due", formatTemplateDate(first!, "en"))?.checked).toBe(true);
     expect(view.radio("Due", "Other date…")).toBeDefined();
     expect(view.radio("Due", "No date")).toBeDefined();
-    expect(view.dom.root.textContent).toContain("Proposed by the template · Wed or Thu · 16:00");
+    expect(view.dom.document.body.textContent).toContain("Proposed by the template · Wed or Thu · 16:00");
     expect(view.input('input[placeholder="What needs to be done?"]').value).toStartWith("Weekly report ");
-    expect(view.dom.root.querySelector('[data-testid="template-summary"]')?.textContent).toBe(
-      "From the template: 2 checklist items · Report · Medium · You",
-    );
+    expect(view.dom.document.body.textContent).toContain("From the template: 2 checklist items · Report · Medium · You");
 
     // Another proposal moves the deadline and the untouched placeholders with it.
     view.radio("Due", formatTemplateDate(second!, "en"))!.click();
@@ -177,7 +196,7 @@ describe("Spaces templates in the new item dialog", () => {
       assignCreator: true,
       columnId: columns[0]!.id,
     });
-    view.close();
+    await view.close();
   });
 
   test("no date and another date stay one tap away", async () => {
@@ -185,39 +204,40 @@ describe("Spaces templates in the new item dialog", () => {
     view.radio("Template", "Weekly report")!.click();
     await Promise.resolve();
     view.radio("Due", "Other date…")!.click();
-    expect(view.dom.root.textContent).toContain("Deadline");
+    expect(view.dom.document.body.textContent).toContain("Deadline");
     view.radio("Due", "No date")!.click();
     view.submit();
     await Promise.resolve();
     expect(view.submitted[0]?.deadline).toBeUndefined();
     expect(view.submitted[0]?.checklist).toEqual(["Collect numbers", "Send"]);
-    view.close();
+    await view.close();
   });
 
   test("replacing typed input asks first and keeps it when declined", async () => {
     const view = await open();
-    const { prompts } = await import("@k2b/ui");
-    const confirm = spyOn(prompts, "confirm").mockResolvedValue(false);
     view.type('input[placeholder="What needs to be done?"]', "My own task");
     view.radio("Template", "Notes")!.click();
-    await Promise.resolve();
-    expect(confirm).toHaveBeenCalledTimes(1);
+    await Bun.sleep(10);
+    expect(view.dom.document.body.textContent).toContain("Use this template?");
+    await view.answer("Cancel");
     expect(view.input('input[placeholder="What needs to be done?"]').value).toBe("My own task");
-    expect(view.radio("Template", "Blank")?.getAttribute("aria-checked")).toBe("true");
+    // Blank stays chosen, for the eye and for the browser, so Notes can be pressed again.
+    const marked = (label: string) => view.radio("Template", label)?.checked;
+    expect(marked("Blank")).toBe(true);
+    expect(marked("Notes")).toBe(false);
 
-    confirm.mockResolvedValue(true);
     view.radio("Template", "Notes")!.click();
-    await Promise.resolve();
-    await Promise.resolve();
+    await view.answer("Replace");
     expect(view.input('input[placeholder="What needs to be done?"]').value).toBe("Notes");
     // A template without a date rule proposes nothing and shows no date row.
-    expect(view.dom.root.textContent).not.toContain("Proposed by the template");
+    expect(view.dom.document.body.textContent).not.toContain("Proposed by the template");
 
     // Switching between templates without own input asks nothing.
     view.radio("Template", "Weekly report")!.click();
-    await Promise.resolve();
-    expect(confirm).toHaveBeenCalledTimes(2);
-    view.close();
+    await Bun.sleep(10);
+    expect(view.dom.document.body.textContent).not.toContain("Use this template?");
+    expect(view.radio("Template", "Weekly report")?.checked).toBe(true);
+    await view.close();
   });
 
   test("an event template proposes its start, keeps the range picker, and sets the duration", async () => {
@@ -226,16 +246,16 @@ describe("Spaces templates in the new item dialog", () => {
     view.radio("Template", "Review")!.click();
     await Promise.resolve();
     const [date] = proposeTemplateDates(review, { now: new Date(), timeZone: TIME_ZONE });
-    expect(view.radio("When", formatTemplateDate(date!, "en"))?.getAttribute("aria-checked")).toBe("true");
+    expect(view.radio("When", formatTemplateDate(date!, "en"))?.checked).toBe(true);
     expect(view.radio("When", "No date")).toBeUndefined();
-    expect(view.dom.root.textContent).toContain("Schedule");
-    expect(view.dom.root.querySelector('[data-testid="template-summary"]')?.textContent).toContain("Room 2 · 45 min");
+    expect(view.dom.document.body.textContent).toContain("Start");
+    expect(view.dom.document.body.textContent).toContain("Room 2 · 45 min");
     view.submit();
     await Promise.resolve();
     const schedule = templateSchedule(templateDraftSource(review), date!, TIME_ZONE);
     expect(view.submitted[0]).toMatchObject({ title: "Review", startsAt: schedule.startsAt, endsAt: schedule.endsAt, location: "Room 2" });
     expect(view.submitted[0]?.checklist).toBeUndefined();
-    view.close();
+    await view.close();
   });
 
   for (const timeZone of ["UTC", "America/New_York", "Europe/Berlin"]) {
@@ -247,9 +267,9 @@ describe("Spaces templates in the new item dialog", () => {
       view.submit();
       await Promise.resolve();
       const schedule = templateSchedule(templateDraftSource(offsite), date!, timeZone);
-      expect(view.dom.root.querySelector('[role="alert"]')).toBeNull();
+      expect(view.dom.document.querySelector('[role="alert"]')).toBeNull();
       expect(view.submitted[0]).toMatchObject({ startsAt: schedule.startsAt, endsAt: schedule.endsAt, allDay: true });
-      view.close();
+      await view.close();
     });
   }
 
@@ -273,33 +293,29 @@ describe("Spaces templates in the new item dialog", () => {
       endsAt: local(addCalendarDays(date!, 1), "00:00"),
       allDay: true,
     });
-    view.close();
+    await view.close();
   });
 
-  test("an all-day range from the picker keeps its days west of UTC", async () => {
+  test("an all-day range keeps its days west of UTC", async () => {
     const timeZone = "America/New_York";
     const view = await open({ type: "event", templates: [], timeZone });
     view.type('input[placeholder="Event title"]', "Offsite");
     view.allDaySwitch().click();
-    // An all-day range is a typed field; its calendar, with the presets and Apply, renders once it opens.
-    view.dom.root
-      .querySelector<HTMLInputElement>(".k2b-date-field input")!
-      .dispatchEvent(new view.dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }) as unknown as Event);
-    await Promise.resolve();
-    view.button("Tomorrow").click();
-    view.button("Apply").click();
+    // Until the v2 picker is out (#4159), an all-day range is typed day by day; both days are inclusive.
+    const tomorrow = addCalendarDays(localNow(new Date(), timeZone).date, 1);
+    view.day("Start", tomorrow);
+    view.day("End", tomorrow);
     view.submit();
     await Promise.resolve();
-    const tomorrow = addCalendarDays(localNow(new Date(), timeZone).date, 1);
     expect(view.submitted[0]).toMatchObject({
       startsAt: dates.zonedDateTimeToInstant(`${tomorrow}T00:00`, timeZone),
       endsAt: dates.zonedDateTimeToInstant(`${addCalendarDays(tomorrow, 1)}T00:00`, timeZone),
       allDay: true,
     });
-    view.close();
+    await view.close();
   });
 
-  test("untouched placeholders follow No date, the deadline picker, and the event range", async () => {
+  test("untouched placeholders follow No date, the deadline, and the event start", async () => {
     const today = localNow(new Date(), TIME_ZONE).date;
     const task = await open();
     task.radio("Template", "Weekly report")!.click();
@@ -307,21 +323,20 @@ describe("Spaces templates in the new item dialog", () => {
     task.radio("Due", "No date")!.click();
     expect(task.title()).toBe(`Weekly report ${weekdayOf(today)}`);
     task.radio("Due", "Other date…")!.click();
-    task.button("Tomorrow").click();
+    task.day("Deadline", addCalendarDays(today, 1));
     expect(task.title()).toBe(`Weekly report ${weekdayOf(addCalendarDays(today, 1))}`);
     // Own text stays.
     task.type('input[placeholder="What needs to be done?"]', "My report");
-    task.button("Today").click();
+    task.day("Deadline", today);
     expect(task.title()).toBe("My report");
-    task.close();
+    await task.close();
 
     const event = await open({ type: "event", templates: [{ ...review, title: "Review {{weekday}}" }] });
     event.radio("Template", "Review")!.click();
     await Promise.resolve();
-    event.button("Tomorrow").click();
-    event.button("Apply").click();
+    event.day("Start", addCalendarDays(today, 1));
     expect(event.title()).toBe(`Review ${weekdayOf(addCalendarDays(today, 1))}`);
-    event.close();
+    await event.close();
   });
 
   test("an event from a calendar slot keeps the slot until a proposal is chosen", async () => {
@@ -329,10 +344,10 @@ describe("Spaces templates in the new item dialog", () => {
     view.radio("Template", "Review")!.click();
     await Promise.resolve();
     const [date] = proposeTemplateDates(review, { now: new Date(), timeZone: TIME_ZONE });
-    expect(view.radio("When", formatTemplateDate(date!, "en"))?.getAttribute("aria-checked")).toBe("false");
+    expect(view.radio("When", formatTemplateDate(date!, "en"))?.checked).toBe(false);
     view.submit();
     await Promise.resolve();
     expect(view.submitted[0]).toMatchObject({ title: "Review", startsAt: "2026-11-02T13:00:00.000Z", endsAt: "2026-11-02T14:00:00.000Z" });
-    view.close();
+    await view.close();
   });
 });

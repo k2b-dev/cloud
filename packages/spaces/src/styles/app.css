@@ -256,6 +256,8 @@
    the island shadow on the island surface, flat columns around it. Its first tag tints it 6 % (10 % dark), and the
    tag's name always stands in the footer. State changes only paint. */
 .spaces-kanban-columns { --spaces-kanban-gap: 1rem; gap: var(--spaces-kanban-gap); }
+/* The cards (6 px inside their column) start at the pane's text edge, clear of the sidebar's line and its grip. */
+.k2-ui .spaces-kanban-columns { padding-inline: calc(var(--k2-edge) - 0.375rem); }
 .spaces-kanban-column { width: 17.5rem; }
 .k2b-ui .spaces-kanban-card {
   /* KanbanBoard sets the first tag's colour inline on a tinted card. */

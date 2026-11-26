@@ -227,6 +227,32 @@ const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>):
     panelDialogOptions,
   )) ?? null;
 
+type RouteCount = Pick<CalendarProps, "items" | "columns" | "baseUrl" | "view" | "date" | "filter" | "dateConfig">;
+
+/**
+ * What the calendar counts before its view reports the days it shows, the same on the server and in the browser: the
+ * route's day or week, else the month's own days. The page's status row starts from it.
+ */
+export const countOfRoute = (props: RouteCount, events?: readonly CalendarEvent[]) => {
+  if (isScrollingCalendarView(props.view)) {
+    const day = calendar.formatDateKey(props.date, props.dateConfig);
+    if (props.view === "day") return countCalendarDays(props.items, day, day, props.dateConfig);
+    // The calendar's weeks start on Monday unless the date context says otherwise.
+    const context = { weekStartsOn: 1 as const, ...props.dateConfig };
+    const start = calendar.startOfWeek(props.date, context);
+    const last = calendar.formatDateKey(calendar.addDays(start, 6, context), context);
+    return countCalendarDays(props.items, calendar.formatDateKey(start, context), last, props.dateConfig);
+  }
+  if (props.view !== "month") return props.items.length;
+  const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
+  const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
+  const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
+  const painted =
+    events ??
+    props.items.map((item) => toCalendarEvent(item, props.columns, props.baseUrl, props.view, props.date, props.filter, props.dateConfig));
+  return countCalendarEvents(painted, firstKey, endKey, props.dateConfig);
+};
+
 export default function Calendar(props: CalendarProps) {
   const t = useSpaceMessages();
   const locale = useLocale();
@@ -262,38 +288,19 @@ export default function Calendar(props: CalendarProps) {
    * outside the focus month; before the first report it counts that month's own days.
    */
   const shownCount = () => {
-    if (isScrollingCalendarView(props.view)) {
-      const days = visibleDays() ?? routeDays();
-      return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
-    }
-    if (props.view !== "month") return props.items.length;
     const days = visibleDays();
-    if (days)
-      return countCalendarEvents(
-        events(),
-        days.first,
-        calendar.formatDateKey(
-          calendar.addDays(calendar.parseCalendarDate(days.last, props.dateConfig), 1, props.dateConfig),
-          props.dateConfig,
-        ),
+    if (!days) return countOfRoute(props, events());
+    if (isScrollingCalendarView(props.view)) return countCalendarDays(props.items, days.first, days.last, props.dateConfig);
+    if (props.view !== "month") return props.items.length;
+    return countCalendarEvents(
+      events(),
+      days.first,
+      calendar.formatDateKey(
+        calendar.addDays(calendar.parseCalendarDate(days.last, props.dateConfig), 1, props.dateConfig),
         props.dateConfig,
-      );
-    const monthStart = calendar.startOfMonth(props.date, props.dateConfig);
-    const firstKey = calendar.formatDateKey(monthStart, props.dateConfig);
-    const endKey = calendar.formatDateKey(calendar.addMonths(monthStart, 1, props.dateConfig), props.dateConfig);
-    return countCalendarEvents(events(), firstKey, endKey, props.dateConfig);
-  };
-  /** The days the route opens before the view says what it shows: the day, or its week. */
-  const routeDays = () => {
-    const day = calendar.formatDateKey(props.date, props.dateConfig);
-    if (props.view === "day") return { first: day, last: day };
-    // The calendar's weeks start on Monday unless the date context says otherwise.
-    const context = { weekStartsOn: 1 as const, ...props.dateConfig };
-    const start = calendar.startOfWeek(props.date, context);
-    return {
-      first: calendar.formatDateKey(start, context),
-      last: calendar.formatDateKey(calendar.addDays(start, 6, context), context),
-    };
+      ),
+      props.dateConfig,
+    );
   };
   const reconcileAfterWrite = (): void =>
     void invalidateSpacesData().catch(() => retryToast(t.calendarRefreshFailed, t.retry, reconcileAfterWrite));

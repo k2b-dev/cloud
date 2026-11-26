@@ -3,7 +3,7 @@ import { Chip, Table } from "@k2b/ui/v2";
 import type { SpaceColumn, SpaceItem } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
 import { useSpaceMessages } from "../../messages";
-import { itemPeople } from "../list/ItemRow";
+import { itemPeople, statusColor } from "../list/ItemRow";
 import { isInactiveTask, itemLastActivityAt } from "../shared/item-activity";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -37,7 +37,7 @@ export default function ItemsTable(props: Props) {
   const status = (item: SpaceItem) => {
     const column = columnsById().get(item.columnId);
     return column ? (
-      <Chip tag color={column.color ?? undefined}>
+      <Chip tag color={statusColor(column)}>
         {column.name}
       </Chip>
     ) : (
@@ -63,7 +63,7 @@ export default function ItemsTable(props: Props) {
         { title: t.kind, width: { min: 80, default: 96 }, cell: (item) => (isEvent(item) ? t.event : t.task), drop: true },
         { title: t.priority, width: { min: 90, default: 110 }, cell: priority, drop: true },
         { title: t.schedule, width: { min: 140, default: 200 }, cell: schedule },
-        { title: t.assignees, width: { min: 120, default: 180 }, cell: (item) => itemPeople(item).join(", ") || "—", drop: true },
+        { title: t.assignees, width: { min: 120, default: 180 }, cell: (item) => itemPeople(item, t.onIt).join(", ") || "—", drop: true },
         {
           title: t.tags,
           width: { min: 100, default: 140 },

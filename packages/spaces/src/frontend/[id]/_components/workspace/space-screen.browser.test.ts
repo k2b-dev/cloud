@@ -99,7 +99,7 @@ describe("a Space on v2", () => {
   test("a task is ticked off at the end of its row", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/spaces/Space1?view=list");
     try {
-      await tab.getByRole("checkbox", { name: "Mark complete: Clear out shelf B" }).check();
+      await tab.getByRole("button", { name: "Mark complete: Clear out shelf B" }).click();
       await tab.waitForFunction(() => document.body.innerText.includes("Item completed"));
       expect(seen.completed).toEqual([{ completed: true }]);
       expect(errors).toEqual([]);
@@ -140,9 +140,13 @@ describe("a Space on v2", () => {
   test("on the phone an open item is the page, with one way back to the list", async () => {
     const { context, tab, errors } = await open(phone, "/app/spaces/Space1?view=list&item=Item05");
     try {
-      const back = tab.locator('[data-k2-part="Back"]');
+      const back = tab.locator('[data-k2-part="Back"] a');
       await back.waitFor();
       expect(await back.getAttribute("href")).toBe("/app/spaces/Space1?view=list");
+      await back.click();
+      await tab.waitForFunction(() => !location.search.includes("item="));
+      await tab.getByText("Clear out shelf B", { exact: true }).waitFor();
+      expect(await tab.locator('[data-k2-part="Back"]').count()).toBe(0);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

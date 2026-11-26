@@ -130,8 +130,10 @@ export default function ItemsPane(props: Props) {
                 <ListOrder query={query()} state={state()} onChange={change} />
                 <Show when={props.currentView === "list"}>
                   {/* k2b-ui gap: a list query has no default grouping; the Space groups by day unless the address says otherwise. */}
+                  {/* A symbol beside the order, so both fit beside an open item; its name says the grouping. */}
                   <Menu
-                    variant="ghost"
+                    icon="stack-2"
+                    label={`${t.groupBy}: ${groupLabel(filter().groupBy)}`}
                     items={[
                       {
                         title: t.groupBy,
@@ -143,9 +145,7 @@ export default function ItemsPane(props: Props) {
                         items: GROUPS.map((group) => ({ label: groupLabel(group), value: group })),
                       },
                     ]}
-                  >
-                    {`${t.groupBy}: ${groupLabel(filter().groupBy)}`}
-                  </Menu>
+                  />
                 </Show>
               </>
             }

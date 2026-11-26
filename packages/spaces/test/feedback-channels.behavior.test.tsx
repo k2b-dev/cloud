@@ -4,6 +4,7 @@ import { createComponent, createRoot } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "../../ui/test/dom";
 import type { SpaceItem } from "../src/contracts";
+import { buttonNamed, installV2Globals, sendDialog } from "./v2-dom";
 
 const now = "2026-10-03T10:00:00.000Z";
 const item: SpaceItem = {
@@ -32,11 +33,9 @@ const item: SpaceItem = {
   assignees: [],
   tags: [],
 };
-/** The input of a v2 check, found by its words. */
+/** A row's done toggle, found by its name. */
 const checkInput = (root: ParentNode, label: string) =>
-  Array.from(root.querySelectorAll<HTMLElement>('[data-k2-part="Check"]'))
-    .find((check) => check.textContent?.trim() === label)
-    ?.querySelector<HTMLInputElement>("input") ?? null;
+  Array.from(root.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.getAttribute("aria-label") === label) ?? null;
 const flush = async () => {
   await Promise.resolve();
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -202,27 +201,8 @@ describe("Spaces feedback channels", () => {
   });
 
   test("a failed create keeps its dialog open with the reason and the Space it was opened for", async () => {
-    const { dialogCore, toast } = await import("@k2b/ui");
     const { createItemController } = await import("../src/frontend/[id]/_components/sidebar/CreateItemButton");
-    // Render the dialog in place, as the real dialog layer would.
-    const form = spyOn(dialogCore, "open").mockImplementation(
-      (view) =>
-        new Promise((resolve) => {
-          const host = dom.document.createElement("div");
-          dom.root.append(host);
-          const disposeDialog = render(
-            () =>
-              view((value) => {
-                disposeDialog();
-                host.remove();
-                resolve(value);
-              }),
-            host,
-          );
-        }),
-    );
-    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
-    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    installV2Globals(dom);
     const assign = spyOn(dom.window.location, "assign").mockImplementation(() => {});
     let spaceId = "SpaceA";
     let controller: ReturnType<typeof createItemController> | undefined;
@@ -241,74 +221,60 @@ describe("Spaces feedback channels", () => {
     createAnswers = [Response.json({ message: "Spaces is unavailable" }, { status: 503 })];
     const created = controller!.createItem({ returnTo: "/app/mail/inbox" });
     await flush();
-    const title = dom.root.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
+    const title = dom.document.querySelector<HTMLInputElement>('input[placeholder="What needs to be done?"]')!;
     title.value = "Order name labels";
     title.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    const submit = () => dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
-    submit();
+    sendDialog(dom);
     await flush();
 
     // The form stays with the input and the reason; nothing is retried from a toast.
-    const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
+    // The form's own notice; the people picker loads (and fails) on its own here, without an API for it.
+    const alerts = [...dom.document.querySelectorAll('[data-k2-part="Notice"][role="alert"]')]
+      .map((alert) => alert.textContent?.trim())
+      .filter(Boolean);
     expect(alerts).toEqual(["Spaces is unavailable"]);
     expect(title.value).toBe("Order name labels");
-    expect(errors).not.toHaveBeenCalled();
+    expect(dom.document.querySelectorAll('[data-k2-part="Toast"]')).toHaveLength(0);
     expect(assign).not.toHaveBeenCalled();
 
     // A later compose command selects another Space before the user submits again.
     spaceId = "SpaceB";
-    submit();
+    sendDialog(dom);
     await created;
     expect(creations).toEqual([
       { spaceId: "SpaceA", title: "Order name labels" },
       { spaceId: "SpaceA", title: "Order name labels" },
     ]);
-    expect(successes).toHaveBeenCalledWith("Task created");
     expect(assign).toHaveBeenCalledWith("/app/mail/inbox");
+    expect(dom.document.querySelector('[data-k2-part="Toast"]')?.textContent).toContain("Task created");
 
     dispose();
-    form.mockRestore();
-    successes.mockRestore();
-    errors.mockRestore();
+    // A closing v2 dialog finishes its focus work a moment later, while the window still exists.
+    await Bun.sleep(20);
     assign.mockRestore();
   });
 
   test("a failed edit keeps its dialog open, so a later inline change is never overwritten by a stale Retry", async () => {
-    const { dialogCore, toast } = await import("@k2b/ui");
     const { openEditItemDialog } = await import("../src/frontend/[id]/_components/shared/editItem");
-    let closeDialog: ((value?: unknown) => void) | undefined;
-    const form = spyOn(dialogCore, "open").mockImplementation(
-      (view) =>
-        new Promise((resolve) => {
-          const host = dom.document.createElement("div");
-          dom.root.append(host);
-          const disposeDialog = render(() => {
-            closeDialog = (value) => {
-              disposeDialog();
-              host.remove();
-              resolve(value as never);
-            };
-            return view(closeDialog);
-          }, host);
-        }),
-    );
-    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+    installV2Globals(dom);
     const columns = [{ id: "Col001", spaceId: item.spaceId, name: "Open", color: null, rank: "1024", isDone: false }];
 
     const saved = openEditItemDialog({ spaceId: item.spaceId, item: { ...item, columnId: "Col001" }, columns, tags: [] });
     await flush();
-    dom.root.querySelector("form")!.dispatchEvent(new dom.window.Event("submit", { bubbles: true, cancelable: true }));
+    sendDialog(dom);
     await flush();
 
-    const alerts = [...dom.root.querySelectorAll('[role="alert"]')].map((alert) => alert.textContent?.trim()).filter(Boolean);
+    // The form's own notice; the people picker loads (and fails) on its own here, without an API for it.
+    const alerts = [...dom.document.querySelectorAll('[data-k2-part="Notice"][role="alert"]')]
+      .map((alert) => alert.textContent?.trim())
+      .filter(Boolean);
     expect(alerts).toEqual(["Spaces is unavailable"]);
-    expect(dom.root.querySelector("form")).not.toBeNull();
-    expect(errors).not.toHaveBeenCalled();
+    expect(dom.document.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(dom.document.querySelectorAll('[data-k2-part="Toast"]')).toHaveLength(0);
 
-    closeDialog!(null);
+    buttonNamed(dom, "Cancel")!.click();
     expect(await saved).toBeNull();
-    form.mockRestore();
-    errors.mockRestore();
+    await Bun.sleep(20);
   });
 
   test("a Retry toast closes with its component, and a failure after it is gone shows none", async () => {

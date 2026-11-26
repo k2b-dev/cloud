@@ -65,7 +65,7 @@ describe("calendar of all Spaces on the server", () => {
   test("no catalog is an error with a way to try again, never an empty calendar", () => {
     const html = render("/app/spaces/calendar?view=week&date=2026-10-27", { catalog: false, locale: "en" });
     expect(html).toContain("Calendars could not be loaded");
-    expect(html).toContain("Try again");
+    expect(html).toContain("Retry");
     expect(html).not.toContain("No events");
   });
 

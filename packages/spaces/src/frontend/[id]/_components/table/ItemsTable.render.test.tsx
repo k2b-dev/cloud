@@ -74,13 +74,13 @@ test("colors each status tag with its column color and falls back to green only 
 
   const statusTag = (name: string) => html.match(new RegExp(`<span\\b[^>]*>\\s*<span\\b[^>]*>${name}</span>`))?.[0];
 
-  expect(statusTag("Verworfen")).toContain("--k2b-choice-color:#ef4444;");
-  expect(statusTag("Verworfen")).not.toContain("--k2b-choice-color:#10b981");
-  expect(statusTag("Erledigt")).toContain("--k2b-choice-color:#10b981;");
-  expect(statusTag("In progress")).toContain("--k2b-choice-color:#3b82f6;");
+  expect(statusTag("Verworfen")).toContain("--k2-c:#ef4444");
+  expect(statusTag("Verworfen")).not.toContain("--k2-c:#10b981");
+  expect(statusTag("Erledigt")).toContain("--k2-c:#10b981");
+  expect(statusTag("In progress")).toContain("--k2-c:#3b82f6");
   // A completed item in an open column without a color stays untinted, as in List and Kanban.
   expect(statusTag("Backlog")).toBeDefined();
-  expect(statusTag("Backlog")).not.toContain("--k2b-choice-color");
+  expect(statusTag("Backlog")).not.toContain("--k2-c");
 });
 
 const renderTable = (item: SpaceItem) =>
@@ -100,7 +100,7 @@ const renderTable = (item: SpaceItem) =>
     }),
   );
 
-test("shows the working assignee once, first, with one green ring", () => {
+test("names whoever works on the task once, first, as on it", () => {
   const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
   const html = renderTable(
     task({
@@ -117,10 +117,6 @@ test("shows the working assignee once, first, with one green ring", () => {
       },
     }),
   );
-  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
-  expect(html).not.toContain('aria-label="Mira Beck avatar"');
-  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
-  expect(html).toContain('title="Mira Beck, Valentin Kolb"');
-  expect(html).toContain(">Mira Beck, Valentin Kolb</span>");
+  expect(html).toContain("Mira Beck is on it, Valentin Kolb");
+  expect(html.match(/Mira Beck/g)).toHaveLength(1);
 });

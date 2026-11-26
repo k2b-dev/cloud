@@ -16,6 +16,7 @@ export function createKanbanShortcuts(props: { canWrite: boolean }) {
         onOpenChange={(open) => !open && close()}
         foot={<Button onClick={() => close()}>{t.close}</Button>}
       >
+        {/* k2b-ui gap: v2 has no key caps yet; each key stands as its sign in the fact's label. */}
         <Facts
           items={[
             { label: arrows, value: t.kanbanShortcutNavigate },

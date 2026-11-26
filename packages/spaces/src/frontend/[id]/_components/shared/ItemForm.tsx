@@ -1,4 +1,4 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import {
   Bar,
@@ -18,7 +18,7 @@ import {
   Select,
   Text,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { ESTIMATE_STEP_MINUTES, type EstimateSuggestionResult, type SpaceItemAssignee } from "@/contracts";
 import { isDateOnlyDeadline } from "@/presentation/deadline";
@@ -46,21 +46,10 @@ import {
 import { spaceCommandMessages } from "../../../../commands";
 import { useSpaceMessages } from "../../messages";
 import { templateIcon } from "./create-menu";
-import {
-  allDayEnd,
-  allDayStart,
-  DEADLINE_DEFAULT_TIME,
-  dateOnlyRange,
-  datePart,
-  deadlinePresets,
-  EVENT_DURATION_PRESETS,
-  instantFromLocalDateTime,
-  scheduleDatePresets,
-} from "./item-form/date";
+import { allDayEnd, allDayStart, DEADLINE_DEFAULT_TIME, dateOnlyRange, datePart, instantFromLocalDateTime } from "./item-form/date";
 import { priorityOptions } from "./item-form/options";
 import { BLANK_TEMPLATE, browserTimeZone, MAX_TEMPLATE_CHIPS, NO_DATE, OTHER_DATE, templateDraftSource } from "./item-form/templates";
 import type { ItemFormData, ItemFormProps, ItemType, Priority } from "./item-form/types";
-import SpaceAssigneePicker from "./SpaceAssigneePicker";
 
 export type { ItemFormData } from "./item-form/types";
 
@@ -148,11 +137,13 @@ export default function ItemForm(props: ItemFormProps) {
   };
   onMount(() => void requestEstimate());
   onCleanup(() => estimateRequest?.abort());
+  let estimateInput: HTMLInputElement | HTMLTextAreaElement | undefined;
   const acceptEstimate = () => {
     const current = estimate();
     if (current === "loading" || current.state !== "ready") return;
     setEstimatedDurationMinutes(current.suggestion.minutes);
     setEstimateAccepted(true);
+    estimateInput?.focus();
   };
   const estimateTitle = () => {
     const result = estimate();
@@ -224,14 +215,19 @@ export default function ItemForm(props: ItemFormProps) {
     if (!ownInput()) fillText(date);
   };
 
+  // k2b-ui gap: a v2 Choice keeps the browser's tick on an option the form declined (fix with lane N, #4160), so a
+  // second press on it would do nothing; after a decline the choice is drawn anew from the form's value.
+  const [templateRound, setTemplateRound] = createSignal(0);
   const chooseTemplate = async (id: string, opening = false) => {
     if (id === templateId()) return;
     if (
       !opening &&
       ownInput() &&
       !(await confirm({ title: t.replaceInputTitle, description: t.replaceInputQuestion, confirm: t.replaceInput }))
-    )
+    ) {
+      setTemplateRound((round) => round + 1);
       return;
+    }
     setTemplateId(id);
     setError("");
     const template = selectedTemplate();
@@ -348,7 +344,7 @@ export default function ItemForm(props: ItemFormProps) {
 
   const isEvent = () => itemType() === "event";
   const defaultTitle = () => (isEditMode() ? (isEvent() ? t.editEvent : t.editTask) : isEvent() ? t.newEvent : t.newTask);
-  const defaultIcon = () => (isEditMode() ? "ti ti-pencil" : isEvent() ? "ti ti-calendar-plus" : "ti ti-square-plus");
+  const _defaultIcon = () => (isEditMode() ? "ti ti-pencil" : isEvent() ? "ti ti-calendar-plus" : "ti ti-square-plus");
   const defaultSubmitLabel = () => (isEditMode() ? (isEvent() ? t.saveEvent : t.saveTask) : isEvent() ? t.createEvent : t.createTask);
   const eventRange = () =>
     allDay() ? dateOnlyRange(startsAt(), endsAt(), props.dateConfig) : { start: startsAt() || null, end: endsAt() || null };
@@ -578,6 +574,7 @@ export default function ItemForm(props: ItemFormProps) {
   const deadlineFields = () => (
     <Field.Row>
       <Field label={t.deadline} name="deadline" optional={t.optional}>
+        {/* k2b-ui gap: the v2 date picker is not out yet (#4159); until then a day is typed as 2026-11-27. */}
         <DateInput value={dayOf(deadline())} onInput={(day) => setDeadlineParts(day, timeOf(deadline()))} />
       </Field>
       <Field label={t.time} name="deadline-time" optional={t.optional}>
@@ -622,10 +619,21 @@ export default function ItemForm(props: ItemFormProps) {
       <Check switch label={t.allDayEvent} checked={allDay()} onChange={handleAllDayChange} />
     </>
   );
-  const estimateNotice = () => {
+  /** The ready suggestion, if there is one. */
+  const estimateReady = () => {
     const result = estimate();
-    if (!loadEstimate || result === "loading" || result.state === "none") return null;
-    return result;
+    return result !== "loading" && result.state === "ready" ? result.suggestion : null;
+  };
+  /**
+   * Gustav's estimate in one line under the field, from the first frame on, so arriving and accepting move nothing:
+   * what Gustav is doing or found, and whether an open suggestion is kept.
+   */
+  const estimateLine = () => {
+    const suggestion = estimateReady();
+    if (!suggestion) return estimateTitle();
+    if (estimateAccepted()) return t.estimateSuggestionTaken({ minutes: suggestion.minutes });
+    const found = `${suggestion.confidence === "low" ? t.estimateSuggestionUnsure : t.estimateSuggestionReady}: ${suggestion.minutes} min`;
+    return estimateOpen() ? `${found}. ${t.estimateSuggestionUnsaved}` : found;
   };
 
   return (
@@ -675,13 +683,29 @@ export default function ItemForm(props: ItemFormProps) {
         />
       </Show>
       <Show when={quickCreate() && kindTemplates().length > 0}>
-        <Field label={t.template} name="template">
-          <Select
-            value={templateId()}
-            options={templateOptions().map((option) => ({ value: option.value, label: option.label }))}
-            onChange={(value) => void chooseTemplate(value)}
-          />
-        </Field>
+        <Show
+          when={kindTemplates().length <= MAX_TEMPLATE_CHIPS}
+          fallback={
+            <Field label={t.template} name="template">
+              <Select
+                value={templateId()}
+                options={templateOptions().map((option) => ({ value: option.value, label: option.label }))}
+                onChange={(value) => void chooseTemplate(value)}
+              />
+            </Field>
+          }
+        >
+          {/* A few templates stand side by side, one tap each, as before; drawn anew after a declined template. */}
+          <Show when={templateRound() + 1} keyed>
+            <Choice
+              name="template"
+              label={t.template}
+              value={templateId()}
+              options={templateOptions().map((option) => ({ value: option.value, label: option.label }))}
+              onChange={(value) => void chooseTemplate(value)}
+            />
+          </Show>
+        </Show>
       </Show>
       <Field label={t.title} name="title" error={error() === t.titleRequired ? error() : undefined} required>
         <Input
@@ -705,8 +729,9 @@ export default function ItemForm(props: ItemFormProps) {
           name="template-date"
           hint={t.templateProposal({ rule: describeTemplateDateRule(selectedTemplate()!, locale()) })}
         >
-          <Select
-            value={dateChoice() ?? ""}
+          <Choice
+            name="template-date"
+            value={dateChoice() ?? undefined}
             options={dateOptions().map((option) => ({ value: option.value, label: option.label }))}
             onChange={chooseDate}
           />
@@ -733,45 +758,37 @@ export default function ItemForm(props: ItemFormProps) {
           <Field
             label={t.estimatedDuration}
             name="estimate"
-            hint={!isEditMode() ? t.estimatedDurationDescription : undefined}
+            hint={!isEditMode() ? t.estimatedDurationDescription : (estimateReady()?.reason ?? undefined)}
             optional="min"
           >
             <Input
+              ref={(element) => (estimateInput = element)}
               type="number"
               min={ESTIMATE_STEP_MINUTES}
               value={estimatedDurationMinutes() === null ? "" : String(estimatedDurationMinutes())}
+              placeholder={estimateOpen() ? String(estimateReady()!.minutes) : undefined}
               onInput={(value) => {
                 const parsed = Number.parseInt(value, 10);
                 setEstimatedDurationMinutes(Number.isFinite(parsed) && parsed > 0 ? parsed : null);
               }}
             />
           </Field>
-          <Show when={estimateNotice()}>
-            {(result) => {
-              const ready = () => {
-                const current = result();
-                return current.state === "ready" ? current : null;
-              };
-              return (
-                <Notice
-                  tone="ai"
-                  icon="sparkles"
-                  title={t.estimateSuggestionSource}
-                  actions={
-                    ready() && !estimateAccepted()
-                      ? [{ label: t.estimateSuggestionAccept, onClick: acceptEstimate }]
-                      : result().state === "failed" && (result() as { reason?: string }).reason === "error"
+          <Show when={loadEstimate}>
+            <Notice
+              tone="ai"
+              actions={
+                estimateReady() && !estimateAccepted()
+                  ? [{ label: t.estimateSuggestionAccept, onClick: acceptEstimate }]
+                  : (() => {
+                      const result = estimate();
+                      return result !== "loading" && result.state === "failed" && result.reason === "error"
                         ? [{ label: t.retry, onClick: () => void requestEstimate() }]
-                        : undefined
-                  }
-                >
-                  {ready() ? `${estimateTitle()} ${ready()!.suggestion.minutes} min` : estimateTitle()}
-                </Notice>
-              );
-            }}
-          </Show>
-          <Show when={estimateOpen()}>
-            <Text type="meta">{t.estimateSuggestionUnsaved}</Text>
+                        : undefined;
+                    })()
+              }
+            >
+              {estimateLine()}
+            </Notice>
           </Show>
         </Show>
         <Show when={isEvent()}>

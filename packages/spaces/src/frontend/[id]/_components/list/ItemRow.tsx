@@ -1,7 +1,7 @@
 import { cloudAvatarSource } from "@k2b/cloud/account/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Check, Row } from "@k2b/ui/v2";
+import { Button, Row } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount } from "solid-js";
 import { INACTIVE_ITEM_DAYS, type SpaceColumn, type SpaceItem } from "@/contracts";
 import { formatDeadline } from "@/presentation/deadline";
@@ -45,9 +45,15 @@ export const formatEstimate = (minutes: number) => {
   return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`;
 };
 
-/** The people of an item as the row names them: whoever works on it first, then the other assignees. */
-export const itemPeople = (item: SpaceItem) => [
-  ...(item.claim ? [item.claim.displayName] : []),
+/** A status's colour; a done status without its own is green, as on the board, an open one stays untinted. */
+export const statusColor = (column: Pick<SpaceColumn, "color" | "isDone">) => column.color ?? (column.isDone ? "#10b981" : undefined);
+
+/**
+ * The people of an item as the row names them: whoever works on it first (as "… is on it" with `onIt`), then the other
+ * assignees.
+ */
+export const itemPeople = (item: SpaceItem, onIt?: (values: { name: string }) => string) => [
+  ...(item.claim ? [onIt ? onIt({ name: item.claim.displayName }) : item.claim.displayName] : []),
   ...(item.assignees ?? []).filter((assignee) => assignee.id !== item.claim?.actor.id).map((assignee) => assignee.displayName),
 ];
 
@@ -119,7 +125,8 @@ export default function ItemRow(props: ItemRowProps) {
       const focused = document.activeElement;
       if (!list || !row || !focused || !row.contains(focused)) return;
       const position = rows().indexOf(row);
-      const control = focused.matches("input") ? "input" : "a";
+      // the done toggle (a pressed or unpressed button) hands focus to the next row's toggle, the link to its link
+      const control = focused.matches("button[aria-pressed]") ? "button[aria-pressed]" : "a";
       queueMicrotask(() => {
         if (!list.isConnected || (document.activeElement && document.activeElement !== document.body)) return;
         const remaining = rows();
@@ -152,7 +159,7 @@ export default function ItemRow(props: ItemRowProps) {
       props.item.estimatedDurationMinutes !== null ? formatEstimate(props.item.estimatedDurationMinutes) : undefined,
       props.item.activeBlockerCount > 0 ? t.blockedByCount({ count: props.item.activeBlockerCount }) : undefined,
       isInactiveTask(props.item) ? t.inactiveFor({ days: INACTIVE_ITEM_DAYS }) : undefined,
-      itemPeople(props.item).join(", ") || undefined,
+      itemPeople(props.item, t.onIt).join(", ") || undefined,
       tags.length
         ? `${tags
             .slice(0, 2)
@@ -189,7 +196,7 @@ export default function ItemRow(props: ItemRowProps) {
                 ? "circle-check"
                 : "circle"
       }
-      color={status()?.color ?? undefined}
+      color={status() ? statusColor(status()!) : undefined}
       lines={details() ? [props.item.title, details()] : [props.item.title]}
       time={when()}
       current={props.isSelected}
@@ -197,14 +204,17 @@ export default function ItemRow(props: ItemRowProps) {
       onNavigate={() => requestSpacesRouteNavigation(itemUrl(), { scroll: "preserve" })}
       end={
         isEvent() ? undefined : (
-          // k2b-ui gap: a Row has no task check in its lead (`select` means selection); the check stands at the end.
-          <Check
+          // k2b-ui gap: a Row has no task check in its lead (`select` means selection); a toggle with the round symbol
+          // of a task stands at the end, named for assistive technology only, so the title keeps the row's width.
+          <Button
+            variant="ghost"
+            icon={isCompleted() ? "circle-check" : "circle"}
             // A reader who cannot change the task hears its title and whether it is done.
             label={props.canWrite ? `${t.markComplete}: ${props.item.title}` : props.item.title}
-            checked={isCompleted()}
-            // k2b-ui gap: a Check has no busy state; it takes no press while its change runs.
-            disabled={!props.canWrite || blocked() || busy()}
-            onChange={(completed) => void toggleCompleted(completed)}
+            pressed={isCompleted()}
+            busy={busy()}
+            disabled={!props.canWrite || blocked()}
+            onClick={() => void toggleCompleted(!isCompleted())}
           />
         )
       }

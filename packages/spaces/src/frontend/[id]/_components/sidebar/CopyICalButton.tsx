@@ -9,7 +9,6 @@ type Props = {
 };
 
 export function createIcalCopy(props: Pick<Props, "icalToken">) {
-  const t = useSpaceMessages();
   const [copied, setCopied] = createSignal(false);
 
   const icalUrl = () =>

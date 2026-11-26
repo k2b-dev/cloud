@@ -1,5 +1,5 @@
 import { CloudAvatar } from "@k2b/cloud/account/ui";
-import { Avatar, type AvatarSize } from "@k2b/ui";
+import type { AvatarSize } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import { For, Show } from "solid-js";
 import type { SpaceItemAssignee, SpaceItemClaim } from "@/contracts";

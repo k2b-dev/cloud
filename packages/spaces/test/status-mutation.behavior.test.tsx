@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceColumn } from "@/contracts";
-import { createDomTestHarness } from "../../ui/test/dom";
+import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
+import { installV2Globals, menuEntry } from "./v2-dom";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 const columns: SpaceColumn[] = [
@@ -52,12 +53,50 @@ const flip = (input: HTMLInputElement) => {
   input.dispatchEvent(new Event("change", { bubbles: true }));
 };
 
-/** The text of the status list alone; the automatic-column switches above it name the same columns. */
-const listText = (root: HTMLElement) => root.querySelector(".k2b-settings-collection__list")!.textContent!;
+/** The section of the statuses; the automatic-column switches above it name the same columns. */
+const statusList = (dom: DomTestHarness) => dom.document.querySelectorAll<HTMLElement>('[data-k2-part="Section"]')[1]!;
+const listText = (dom: DomTestHarness) => statusList(dom).textContent!;
+/** The switch of an automatic column, by its name. */
+const switchFor = (dom: DomTestHarness, label: string) =>
+  Array.from(dom.document.querySelectorAll<HTMLInputElement>('input[role="switch"]')).find((input) =>
+    input.closest('[data-k2-part="Row"]')!.textContent!.includes(label),
+  )!;
+/** Moves a status one place from its row's menu; resolves to whether the entry could be chosen. */
+const move = async (dom: DomTestHarness, name: string, direction: "up" | "down") => {
+  const entry = await menuEntry(dom, `More actions for ${name}`, direction === "up" ? "Move up" : "Move down");
+  const enabled = entry?.getAttribute("aria-disabled") !== "true";
+  entry?.click();
+  // a refused entry leaves its menu open; Escape closes it the way a person would
+  if (!enabled) dom.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }) as unknown as Event);
+  await Bun.sleep(10);
+  return enabled;
+};
 
 const flush = async () => {
   await Promise.resolve();
   await Promise.resolve();
+};
+
+const mount = async (props: {
+  virtualColumns: Array<{ kind: "blocked" | "overdue"; rank: string }>;
+  onSettingsChange?: () => Promise<void>;
+}) => {
+  const dom = createDomTestHarness();
+  installV2Globals(dom);
+  const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
+  const dispose = render(
+    () => createComponent(StatusesSection, { spaceId: SPACE_ID, columns, onDirtyChange: () => undefined, ...props }),
+    dom.root,
+  );
+  return {
+    dom,
+    close: async () => {
+      dispose();
+      // a closing v2 menu finishes its focus work a moment later, while the window still exists
+      await Bun.sleep(20);
+      dom.cleanup();
+    },
+  };
 };
 
 describe("Spaces status mutations", () => {
@@ -66,130 +105,76 @@ describe("Spaces status mutations", () => {
     return;
   }
 
-  test("captures one same-tick reorder intent and releases its optimistic projection after canonical reconciliation", async () => {
+  test("takes one reorder at a time and releases its optimistic projection after canonical reconciliation", async () => {
     requests.length = 0;
-    const dom = createDomTestHarness();
     const reconciliation = deferred<void>();
-    const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
-    const dispose = render(
-      () =>
-        createComponent(StatusesSection, {
-          spaceId: SPACE_ID,
-          columns,
-          virtualColumns: [],
-          onDirtyChange: () => undefined,
-          onSettingsChange: () => reconciliation.promise,
-        }),
-      dom.root,
-    );
+    const { dom, close } = await mount({ virtualColumns: [], onSettingsChange: () => reconciliation.promise });
 
-    const moveDown = dom.root.querySelector<HTMLButtonElement>('[aria-label="Move Open down"]')!;
-    moveDown.click();
-    moveDown.click();
+    expect(await move(dom, "Open", "down")).toBe(true);
+    // While the first move is saved, the next one waits.
+    expect(await move(dom, "Open", "down")).toBe(false);
     expect(requests).toHaveLength(1);
     expect(requests[0]!.columnIds).toEqual([columns[1]!.id, columns[0]!.id]);
-    expect(listText(dom.root).indexOf("Done")).toBeLessThan(listText(dom.root).indexOf("Open"));
+    expect(listText(dom).indexOf("Done")).toBeLessThan(listText(dom).indexOf("Open"));
 
     requests[0]!.response.resolve(new Response(null, { status: 200 }));
     await flush();
-    expect(listText(dom.root).indexOf("Done")).toBeLessThan(listText(dom.root).indexOf("Open"));
+    expect(listText(dom).indexOf("Done")).toBeLessThan(listText(dom).indexOf("Open"));
     reconciliation.resolve();
     await flush();
-    expect(listText(dom.root).indexOf("Open")).toBeLessThan(listText(dom.root).indexOf("Done"));
-
-    dispose();
-    dom.cleanup();
+    expect(listText(dom).indexOf("Open")).toBeLessThan(listText(dom).indexOf("Done"));
+    await close();
   });
 
   test("orders an enabled automatic column with the statuses and names it by kind", async () => {
     requests.length = 0;
-    const dom = createDomTestHarness();
-    const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
-    const dispose = render(
-      () =>
-        createComponent(StatusesSection, {
-          spaceId: SPACE_ID,
-          columns,
-          virtualColumns: [{ kind: "overdue", rank: "1536" }],
-          onDirtyChange: () => undefined,
-        }),
-      dom.root,
-    );
+    const { dom, close } = await mount({ virtualColumns: [{ kind: "overdue", rank: "1536" }] });
 
-    dom.root.querySelector<HTMLButtonElement>('[aria-label="Move Overdue up"]')!.click();
+    expect(await move(dom, "Overdue", "up")).toBe(true);
     expect(requests.map((request) => request.columnIds)).toEqual([["overdue", columns[0]!.id, columns[1]!.id]]);
-    expect(listText(dom.root).indexOf("Overdue")).toBeLessThan(listText(dom.root).indexOf("Open"));
-
-    dispose();
-    dom.cleanup();
+    expect(listText(dom).indexOf("Overdue")).toBeLessThan(listText(dom).indexOf("Open"));
+    await close();
   });
 
   test("a switch changes the list at once, sits above it, and holds reordering until the change is saved", async () => {
     requests.length = 0;
     switches.length = 0;
-    const dom = createDomTestHarness();
     const reconciliation = deferred<void>();
-    const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
-    const dispose = render(
-      () =>
-        createComponent(StatusesSection, {
-          spaceId: SPACE_ID,
-          columns,
-          virtualColumns: [{ kind: "blocked", rank: "1536" }],
-          onDirtyChange: () => undefined,
-          onSettingsChange: () => reconciliation.promise,
-        }),
-      dom.root,
-    );
-    const list = dom.root.querySelector(".k2b-settings-collection__list")!;
-    const switchFor = (label: string) =>
-      Array.from(dom.root.querySelectorAll<HTMLInputElement>('input[role="switch"]')).find((input) =>
-        input.closest("label")!.textContent!.includes(label),
-      )!;
+    const { dom, close } = await mount({
+      virtualColumns: [{ kind: "blocked", rank: "1536" }],
+      onSettingsChange: () => reconciliation.promise,
+    });
     // Rows the switches add or remove sit below them, so a switch never moves under the pointer.
-    expect(switchFor("Blocked").compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(switchFor(dom, "Blocked").compareDocumentPosition(statusList(dom)) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    flip(switchFor("Blocked"));
-    expect(listText(dom.root)).not.toContain("Blocked");
+    flip(switchFor(dom, "Blocked"));
+    expect(listText(dom)).not.toContain("Blocked");
     await flush();
     expect(switches.map(({ kind, enabled }) => [kind, enabled])).toEqual([["blocked", false]]);
-    const moveDoneUp = () => dom.root.querySelector<HTMLButtonElement>('[aria-label="Move Done up"]')!;
-    expect(moveDoneUp().disabled).toBe(true);
-    moveDoneUp().click();
+    expect(await move(dom, "Done", "up")).toBe(false);
     expect(requests).toHaveLength(0);
 
     switches[0]!.response.resolve(new Response(JSON.stringify([]), { status: 200 }));
     await flush();
     // Saved but not yet reloaded: the list still leaves Blocked out, so a reorder never names it.
-    expect(listText(dom.root)).not.toContain("Blocked");
-    moveDoneUp().click();
+    expect(listText(dom)).not.toContain("Blocked");
+    expect(await move(dom, "Done", "up")).toBe(true);
     expect(requests.map((request) => request.columnIds)).toEqual([[columns[1]!.id, columns[0]!.id]]);
 
     reconciliation.resolve();
-    dispose();
-    dom.cleanup();
+    await close();
   });
 
   test("a switched-on column joins the list in front of the first done status right away", async () => {
     switches.length = 0;
-    const dom = createDomTestHarness();
-    const { StatusesSection } = await import("../src/frontend/[id]/_components/edit/StatusesSection");
-    const dispose = render(
-      () => createComponent(StatusesSection, { spaceId: SPACE_ID, columns, virtualColumns: [], onDirtyChange: () => undefined }),
-      dom.root,
-    );
-    flip(
-      Array.from(dom.root.querySelectorAll<HTMLInputElement>('input[role="switch"]')).find((input) =>
-        input.closest("label")!.textContent!.includes("Overdue"),
-      )!,
-    );
-    const text = listText(dom.root);
+    const { dom, close } = await mount({ virtualColumns: [] });
+    flip(switchFor(dom, "Overdue"));
+    const text = listText(dom);
     expect(text.indexOf("Open")).toBeLessThan(text.indexOf("Overdue"));
     expect(text.indexOf("Overdue")).toBeLessThan(text.indexOf("Done"));
 
     await flush();
     switches[0]!.response.resolve(new Response(JSON.stringify([]), { status: 200 }));
-    dispose();
-    dom.cleanup();
+    await close();
   });
 });

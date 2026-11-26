@@ -65,7 +65,9 @@ describe("the Spaces home on v2", () => {
       await tab.getByText("Clear out shelf B (today)").waitFor();
       await tab.goBack();
       await tab.waitForFunction(() => !location.search.includes("view="));
-      await tab.getByText("Clear out shelf B", { exact: true }).waitFor();
+      // Back shows "For me" again, freshly loaded (the API marks the rows with their view).
+      await tab.getByText("Clear out shelf B (mine)", { exact: true }).waitFor();
+      expect(await tab.getByText("Clear out shelf B (today)").count()).toBe(0);
       // the page itself never loaded again
       expect(visited).toEqual(["/app/spaces"]);
       expect(errors).toEqual([]);

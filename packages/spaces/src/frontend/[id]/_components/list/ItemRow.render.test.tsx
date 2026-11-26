@@ -69,11 +69,10 @@ const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
     }),
   );
 
-test("disables list completion while a task has active blockers", () => {
+test("disables list completion while a task has active blockers, and says why beside it", () => {
   const html = renderRow(task({ activeBlockerCount: 1 }));
 
-  expect(html).toContain('title="Complete all blocking tasks first"');
-  expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled[^>]*aria-label="Mark complete: Confirm room booking"/);
+  expect(html).toMatch(/<button(?=[^>]*disabled)(?=[^>]*aria-label="Mark complete: Confirm room booking")[^>]*>/);
   expect(html).toContain("Blocked by 1");
 });
 
@@ -84,10 +83,10 @@ test.each([1, 3])("renders the German blocked-by label with %s blockers", (count
   expect(html).not.toContain("Blocked by");
 });
 
-test("names a read-only task's checkbox by the task alone, so an open task is not announced as completed", () => {
+test("names a read-only task's toggle by the task alone, so an open task is not announced as completed", () => {
   const html = renderRow(task(), false);
 
-  expect(html).toMatch(/<input[^>]*type="checkbox"[^>]*disabled[^>]*aria-label="Confirm room booking"/);
+  expect(html).toMatch(/<button(?=[^>]*disabled)(?=[^>]*aria-label="Confirm room booking")[^>]*>/);
   expect(html).not.toContain("Completed:");
 });
 
@@ -95,17 +94,17 @@ test.each([
   ["earlier today at 09:00", "2026-10-09T07:00:00Z", false],
   ["today in Berlin but yesterday in UTC", "2026-10-08T22:30:00Z", false],
   ["yesterday", "2026-10-08T07:00:00Z", true],
-])("only marks a past-day deadline red: %s", (_label, deadline, overdue) => {
+])("only calls a past-day deadline overdue: %s", (_label, deadline, overdue) => {
   setSystemTime(new Date("2026-10-09T12:00:00Z"));
   try {
     const html = renderRow(task({ deadline }));
-    expect(html.includes("text-red-500")).toBe(overdue);
+    expect(html.includes("Overdue")).toBe(overdue);
   } finally {
     setSystemTime();
   }
 });
 
-test("shows the working assignee once, first, with one green ring", () => {
+test("shows whoever works on the task once, first, as on it, with their picture", () => {
   const mira = { id: "44444444-4444-4444-8444-444444444444", kind: "user" as const, displayName: "Mira Beck", avatarHash: null };
   const html = renderRow(
     task({
@@ -122,10 +121,9 @@ test("shows the working assignee once, first, with one green ring", () => {
       },
     }),
   );
-  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-  expect(html.match(/aria-label="Mira Beck is on it"/g)).toHaveLength(1);
-  expect(html).not.toContain('aria-label="Mira Beck avatar"');
-  expect(html.indexOf('aria-label="Mira Beck is on it"')).toBeLessThan(html.indexOf('aria-label="Valentin Kolb avatar"'));
+  expect(html).toContain('data-k2-part="Avatar" data-k2-avatar role="img" aria-label="Mira Beck"');
+  expect(html).toContain("Mira Beck is on it, Valentin Kolb");
+  expect(html.match(/Mira Beck/g)).toHaveLength(2);
 });
 
 test("shows a claim holder even when the task has no assignees", () => {
@@ -141,9 +139,8 @@ test("shows a claim holder even when the task has no assignees", () => {
       },
     }),
   );
-  expect(html.match(/data-ring="success"/g)).toHaveLength(1);
-  // A service account holder shows its robot picture, named for screen readers by its alt text.
-  expect(html).toContain('alt="Task worker is on it"');
+  expect(html).toContain('aria-label="Task worker"');
+  expect(html).toContain("Task worker is on it");
 });
 
 test("SSR renders a German all-day deadline as the same calendar day", () => {

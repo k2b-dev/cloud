@@ -6,7 +6,7 @@ import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/c
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { createRetryToasts } from "../../../lib/feedback";
 import { useSpaceMessages } from "../../messages";
-import Calendar from "../calendar";
+import Calendar, { countOfRoute } from "../calendar";
 import { type CalendarColorBy, type CalendarFilter, parseCalendarRoute } from "../calendar/filter";
 import { calendarFilterOf, calendarStateOf, type SpaceCalendarState, spaceCalendarQuery } from "../calendar/query";
 import {
@@ -216,8 +216,19 @@ export default function SpacesCalendarRoute(props: Props) {
 
   const query = createMemo(() => spaceCalendarQuery(locale(), { columns: props.columns, tags: props.tags }));
   const [controls, setControls] = createSignal<Parameters<NonNullable<CalendarProps["onControls"]>>[0]>();
-  // The server counts the loaded entries; the calendar counts the days in view once it lays them out.
-  const [shownCount, setShownCount] = createSignal(props.initialState.items.length);
+  // The first picture counts what the calendar counts before it lays out its days, on the server as in the browser;
+  // then the calendar reports the days in view.
+  const [shownCount, setShownCount] = createSignal(
+    countOfRoute({
+      items: shown().items,
+      columns: props.columns,
+      baseUrl: props.baseUrl,
+      view: state().view,
+      date: new Date(state().date),
+      filter: state().filter,
+      dateConfig: props.dateConfig,
+    }),
+  );
   const barState = () => calendarStateOf(state().filter, "calendar");
   const base = (): SpaceCalendarState => ({ ...query().reset(), view: "calendar" });
   const colorLabel = (colorBy: CalendarColorBy) => ({ tag: t.tag, status: t.status, priority: t.priority, person: t.person })[colorBy];

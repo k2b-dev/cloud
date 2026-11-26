@@ -18,6 +18,7 @@ import { createMenuEntries } from "../shared/create-menu";
 import { createIcalCopy } from "../sidebar/CopyICalButton";
 import { createItemController } from "../sidebar/CreateItemButton";
 import type { SpacesSidebarData } from "../sidebar/SpacesSidebarList";
+import { spacePrimaryHref } from "../sidebar/space-primary";
 import BoardPane from "./BoardPane";
 import ItemsPane from "./ItemsPane";
 import { createKanbanShortcuts } from "./kanban-shortcuts";
@@ -284,7 +285,14 @@ export default function SpaceScreen(props: SpaceScreenProps) {
       }
       primary={
         state.canWrite
-          ? { label: primaryLabel, icon: "plus", onClick: () => void create.createItem({ type: view === "calendar" ? "event" : "task" }) }
+          ? {
+              label: primaryLabel,
+              icon: "plus",
+              // A command link (the view's address with `?command=`), so the phone's main action also works before the
+              // page is live and opens in a new tab; a plain click opens the form in place.
+              href: spacePrimaryHref({ space: state.space, query: committedQuery(), currentView: view }),
+              onNavigate: () => void create.createItem({ type: view === "calendar" ? "event" : "task" }),
+            }
           : undefined
       }
     >

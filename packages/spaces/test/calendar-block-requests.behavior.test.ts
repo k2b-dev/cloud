@@ -5,6 +5,7 @@ import { createDomTestHarness } from "../../ui/test/dom";
 import type { CalendarRange } from "../src/frontend/[id]/_components/calendar/range";
 import type { CalendarProps } from "../src/frontend/[id]/_components/calendar/types";
 import type { SpacesViewSnapshot } from "../src/frontend/[id]/_components/workspace/workspace-types";
+import { installV2Globals } from "./v2-dom";
 
 const SPACE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -17,6 +18,7 @@ describe("Spaces calendar block requests", () => {
   for (const cv of ["", "&cv=timeline"]) {
     test(`earlier and later blocks name the month view when the page URL has ${cv ? "cv=timeline" : "no cv"}`, async () => {
       const dom = createDomTestHarness();
+      installV2Globals(dom);
       const base = `/app/spaces/${SPACE_ID}?view=calendar&cd=2026-08-01${cv}`;
       dom.window.history.replaceState(null, "", base);
       const initialState = {

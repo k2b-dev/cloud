@@ -100,47 +100,38 @@ describe("Spaces overview", () => {
     const html = render(null, "de-CH");
     expect(html).toContain("Für mich");
     expect(html).toContain("Meine Arbeit");
-    expect(html).toContain("3 offene Einträge");
     expect(html).toContain("„Ship overview“ in Launch erledigt");
     expect(html).not.toContain("Completed “Ship overview”");
   });
 
-  test("renders the shared object navigation, head tabs and flat work/activity rows", () => {
+  test("renders the Spaces in the sidebar, the views as tabs, and the work and activity as rows", () => {
     const html = render();
-    expect(html).toContain("spaces-overview-workspace");
+    expect(html).toContain("data-k2-workspace");
+    // The sidebar: each Space with its open items, pinned or not, and a way to start one.
     expect(html).toContain('href="/app/spaces/Space1"');
     expect(html).toContain('href="/app/spaces/Space2"');
-    expect(html).toContain("3 open items");
-    expect(html).toContain("0 open items");
     expect(html).toContain("Unpin Launch");
     expect(html).toContain("Pin Archive");
-    expect(html).toContain("Search Spaces");
     expect(html).toContain("New space");
-    expect(html).toContain("My work");
-    expect(html).toMatch(/href="\/app\/spaces"[^>]*aria-current="page"/);
-    expect(html).toMatch(/href="\/app\/spaces\?view=mine"[^>]*aria-current="page"/);
+    expect(html).toMatch(/<a[^>]*data-k2-part="Nav.Item"[^>]*aria-current="page"[^>]*href="\/app\/spaces"/);
+    // The head: the views as tabs, the search and the main action.
+    expect(html).toMatch(/<a[^>]*class="k2-tab "[^>]*aria-current="page"[^>]*href="\/app\/spaces"/);
+    expect(html).toContain('aria-label="Search Spaces"');
     expect(html).toContain("New task");
-    expect(html).not.toContain("k2b-app-workspace__switcher");
-    expect(html).not.toContain("k2b-paper");
-    expect(html).toContain("spaces-overview-work-row");
-    // Activity is the shared timeline: the sentence links to the item, the person starts the sentence.
-    expect(html).toContain('class="k2b-activity"');
-    expect(html).toContain('class="k2b-activity__text-link" href="/app/spaces/Space1?item=Item01"');
-    expect(textOf(html)).toContain("Sofie · ");
-    expect(html).toContain("2 hr. ago");
-    expect(html).toContain("k2b-activity__avatar");
-    expect(html).not.toContain("spaces-overview-space-list");
+    // The work opens its item; the activity names who did what and links to the item.
     expect(html).toContain("Ship overview");
-    expect(html).not.toContain("k2b-stat-grid");
-    expect(html).toContain("Completed “Ship overview” in Launch");
-    expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-spaces-overview-activity"(?![^>]*hidden)/);
+    expect(html.match(/href="\/app\/spaces\/Space1\?item=Item01"/g)).toHaveLength(2);
+    expect(textOf(html)).toContain("Completed “Ship overview” in Launch");
+    expect(textOf(html)).toContain("Sofie");
+    expect(textOf(html)).toContain("2 hours ago");
+    expect(html).not.toContain('data-k2-part="Loading"');
   });
 
   test("keeps activity errors distinct from an empty feed, above the entries that are still there", () => {
     const html = render("Activity unavailable");
     expect(textOf(html)).toContain("Could not load activity: Activity unavailable");
-    expect(html).toContain("Reload");
+    expect(html).toContain("Retry");
     expect(html).not.toContain("Space and item changes will appear here.");
-    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf('class="k2b-activity"'));
+    expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf("Completed “Ship overview”"));
   });
 });

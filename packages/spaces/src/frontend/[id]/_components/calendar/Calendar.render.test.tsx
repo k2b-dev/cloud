@@ -10,6 +10,7 @@ import { registerSsrTestPlugin } from "../../../../../../ui/test/ssr-test-plugin
 import { spaceMessages } from "../../messages";
 import { CALENDAR_NEUTRAL_COLOR, CALENDAR_PRIORITY_COLORS, calendarPersonColor } from "./colors";
 import { type CalendarColorBy, defaultCalendarFilter } from "./filter";
+import { spaceCalendarQuery } from "./query";
 import type { CalendarView } from "./types";
 
 beforeEach(() => setSystemTime(new Date("2026-10-24T12:00:00Z")));
@@ -20,7 +21,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: Calendar } = await import("./index");
+const { default: Calendar, countOfRoute } = await import("./index");
 
 describe("Spaces calendar toolbar", () => {
   for (const [locale, title, first] of [
@@ -55,7 +56,7 @@ describe("Spaces calendar toolbar", () => {
     });
   }
 
-  test("uses an input button for New event", () => {
+  test("leaves creating and the filters to the page's head and status row, and selects a day by a click", () => {
     const html = renderToString(() =>
       createComponent(Calendar, {
         spaceId: "Space1",
@@ -71,13 +72,10 @@ describe("Spaces calendar toolbar", () => {
       }),
     );
 
-    expect(html).toMatch(
-      /data-variant="input"[^>]*>.*<span class="max-sm:sr-only">New event<\/span><i class="ti ti-chevron-down[^>]*><\/i><\/span><\/button>/,
-    );
-    // The filters and the count sit in the toolbar after the title; there is no second row.
-    expect(html).toMatch(
-      /<div class="k2b-calendar-header__content">.*aria-label="Scope".*aria-label="Priority".*aria-label="Status".*0 shown/,
-    );
+    // The v2 page's head holds New event, its status row the filters and the count; the calendar keeps none of them.
+    expect(html).not.toContain("New event");
+    expect(html).not.toContain('aria-label="Scope"');
+    expect(html).not.toContain("0 shown");
     // A day is selected, not opened, by a click: it links nowhere, and its week number opens the week.
     expect(html).toContain('role="gridcell"');
     expect(html).not.toMatch(/<a[^>]*class="k2b-calendar-month__day-number/);
@@ -224,8 +222,8 @@ const chip = (html: string, title: string) => {
   return match[0];
 };
 
-describe("Spaces calendar month toolbar", () => {
-  test("counts only the entries of the month it names, not those on the padding days, in English and German", () => {
+describe("Spaces calendar month count", () => {
+  test("counts only the entries of the month it names, not those on the padding days, on the server as in the browser", () => {
     const monthItems = [
       base({ id: "Event1", startsAt: "2026-09-29T10:00:00+02:00", endsAt: "2026-09-29T11:00:00+02:00" }),
       base({ id: "Event2", startsAt: "2026-09-30T23:30:00+02:00", endsAt: "2026-09-30T23:59:00+02:00" }),
@@ -234,29 +232,17 @@ describe("Spaces calendar month toolbar", () => {
       base({ id: "Event5", allDay: true, startsAt: "2026-10-31T23:00:00.000Z", endsAt: "2026-11-01T23:00:00.000Z" }),
       base({ id: "Task01", deadline: "2026-10-14T22:00:00.000Z" }),
     ];
-    for (const locale of ["en", "de"] as const) {
-      const html = renderToString(() =>
-        createComponent(LocaleProvider, {
-          locale,
-          get children() {
-            return createComponent(Calendar, {
-              spaceId: "Space1",
-              items: monthItems,
-              columns,
-              tags: [],
-              filter: defaultCalendarFilter,
-              view: "month",
-              date: new Date("2026-10-14T22:00:00.000Z"),
-              baseUrl: "/app/spaces/Space1",
-              dateConfig: { locale, timeZone: "Europe/Berlin", weekStartsOn: 1 },
-              canWrite: false,
-            });
-          },
-        }),
-      );
-      expect(html).toContain(locale === "de" ? "3 angezeigt" : "3 shown");
-      expect(html).not.toContain(locale === "de" ? "6 angezeigt" : "6 shown");
-    }
+    // The page's status row starts from this count before the calendar lays out its weeks.
+    const count = countOfRoute({
+      items: monthItems,
+      columns,
+      filter: defaultCalendarFilter,
+      view: "month",
+      date: new Date("2026-10-14T22:00:00.000Z"),
+      baseUrl: "/app/spaces/Space1",
+      dateConfig: { locale: "en", timeZone: "Europe/Berlin", weekStartsOn: 1 },
+    });
+    expect(count).toBe(3);
   });
 });
 
@@ -336,24 +322,13 @@ describe("Spaces calendar colors", () => {
     expect(chip(person, "Send the press kit")).toContain(`--k2b-calendar-accent:${CALENDAR_NEUTRAL_COLOR}`);
   });
 
-  test("offers Reset in the scope menu for a changed filter, not for another color, and Reset keeps the color", () => {
-    const resetSection = /role="group" aria-label="Filter actions"/;
-    expect(renderView("month", "en", "person")).not.toMatch(resetSection);
-    const filtered = renderToString(() =>
-      createComponent(Calendar, {
-        spaceId: "Space1",
-        items,
-        columns,
-        tags: [fair, press],
-        filter: { ...defaultCalendarFilter, type: "task", colorBy: "person" },
-        view: "month",
-        date: new Date("2026-08-12T00:00:00.000Z"),
-        baseUrl: "/app/spaces/Space1",
-        dateConfig: { locale: "en", timeZone: "UTC", weekStartsOn: 1 },
-        canWrite: true,
-      }),
-    );
-    expect(filtered).toMatch(resetSection);
+  test("a reset of the filters keeps the color choice, which is no filter", () => {
+    const query = spaceCalendarQuery("en", { columns, tags: [fair, press] });
+    const address = "view=calendar&ctype=task&ccolor=person&cv=month";
+    const reset = query.serialize(query.reset(), address);
+    expect(reset.get("ccolor")).toBe("person");
+    expect(reset.get("cv")).toBe("month");
+    expect(reset.has("ctype")).toBe(false);
   });
 
   test("keeps the color choice in every calendar link", () => {
@@ -459,7 +434,7 @@ describe("Spaces task tray below the day view", () => {
     expect(html.match(/type="checkbox"/g)).toHaveLength(3);
     // Only a part with more tasks than it shows links to the list with all of them, under the same query.
     expect(html).toContain('aria-label="Show all 7 overdue tasks"');
-    expect(html).toContain('href="/app/spaces/Space1?view=list&amp;type=task&amp;deadline=overdue&amp;sortDesc=true"');
+    expect(html).toContain('href="/app/spaces/Space1?view=list&amp;type=task&amp;deadline=overdue&amp;sort=deadline.desc"');
     expect(html).not.toContain("Show all 2");
   });
 
@@ -468,7 +443,7 @@ describe("Spaces task tray below the day view", () => {
     const html = render({ filter, tray: { overdue: { items: [], total: 0 }, undated: { items: undated, total: 9 } } });
     expect(html).not.toContain(">Overdue</h3>");
     expect(html).toContain(
-      'href="/app/spaces/Space1?view=list&amp;type=task&amp;priority=urgent&amp;tags=Tag001&amp;assignedTo=me&amp;deadline=none&amp;sort=priority"',
+      'href="/app/spaces/Space1?view=list&amp;type=task&amp;priority=urgent&amp;tags=Tag001&amp;assignedTo=me&amp;deadline=none&amp;sort=priority.asc"',
     );
   });
 
