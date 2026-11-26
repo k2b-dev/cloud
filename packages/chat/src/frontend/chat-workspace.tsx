@@ -3615,39 +3615,46 @@ export function ChatWorkspaceView(
     content,
   });
   const v2Detail = (): ChatDetailV2 | null => {
-    // k2b-ui gap: For you, Discover channels and a chat's threads page still draw v1 inside the v2 pane (next slice).
+    const V2 = props.v2!;
     if (route().forYou)
-      return pageDetail("for-you", t().forYou, () => (
-        <ForYou
-          initial={takeInitialForYou()}
-          revision={forYouRevision()}
-          basePath={basePath}
-          dateConfig={props.dateConfig}
-          now={now}
-          onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
-          onBack={backToList}
-        />
-      ));
+      return {
+        ...pageDetail("for-you", t().forYou, () => (
+          <V2.ForYouPaneV2
+            initial={takeInitialForYou()}
+            revision={forYouRevision()}
+            basePath={basePath}
+            dateConfig={props.dateConfig}
+            now={now}
+            onOpen={(item) => openView(item.conversation.id, item.thread.id, undefined, item.message.id)}
+          />
+        )),
+        drawing: false,
+      };
     if (route().channels)
-      return pageDetail("channels", t().browseChannels, () => (
-        <DiscoverChannels
-          initial={takeInitialChannelPage()}
-          query={route().query ?? ""}
-          onQuery={(query) => {
-            setRoute({ ...route(), query });
-            navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
-              replace: true,
-              scroll: "preserve",
-              viewTransition: false,
-            });
-          }}
-          revision={channelRevision()}
-          onSubscribe={subscribe}
-          onOpen={(id) => openChosen(id)}
-          onBack={backToList}
-          listHref={basePath}
-        />
-      ));
+      return {
+        ...pageDetail("channels", t().browseChannels, () => (
+          <V2.DiscoverChannelsPaneV2
+            initial={takeInitialChannelPage()}
+            query={route().query ?? ""}
+            onQuery={(query) => {
+              setRoute({ ...route(), query });
+              // Typing only rewrites the address; it never animates the page.
+              navigate(`${basePath}/channels${query ? `?q=${encodeURIComponent(query)}` : ""}`, {
+                replace: true,
+                scroll: "preserve",
+                viewTransition: false,
+              });
+            }}
+            revision={channelRevision()}
+            onSubscribe={subscribe}
+            onOpen={(id) => openChosen(id)}
+            onBack={backToList}
+            listHref={basePath}
+          />
+        )),
+        drawing: false,
+      };
+    // k2b-ui gap: a chat's threads page (the phone's) and the no-access page still draw v1 inside the v2 pane.
     const threads = threadsPageOpen();
     if (threads) return { ...pageDetail(`threads:${threads.id}`, t().threadsIn({ title: threads.title }), () => threadsPageView(threads)) };
     const current = conversation();

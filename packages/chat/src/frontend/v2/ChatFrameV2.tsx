@@ -48,8 +48,10 @@ export type ChatDetailV2 = {
   buttons?: readonly ChatHeadButton[];
   /** The rest of the deeds behind "…". */
   menu?: readonly MenuEntry[];
-  /** The drawing, made once per key. */
+  /** What the pane shows, made once per key. */
   content: () => JSX.Element;
+  /** The content is Chat's own drawing (the history and composer), drawn in a `Canvas` that fills the pane; `false` for a page built of v2 parts. */
+  drawing?: boolean;
 };
 
 export type ChatFrameV2Props = {
@@ -204,9 +206,11 @@ export default function ChatFrameV2(props: ChatFrameV2Props): JSX.Element {
                     />
                   }
                 >
-                  <Canvas label={detail().label} height="fill">
-                    <div style={drawing}>{content}</div>
-                  </Canvas>
+                  <Show when={fallback.drawing !== false} fallback={content}>
+                    <Canvas label={detail().label} height="fill">
+                      <div style={drawing}>{content}</div>
+                    </Canvas>
+                  </Show>
                 </Pane>
               );
             }}

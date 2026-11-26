@@ -26,6 +26,18 @@ const people = [
   { id: "99999999-9999-4999-8999-999999999999", name: "Sara Yilmaz" },
 ] as const;
 
+/** The page's props as the server reads them from the address. */
+const propsFor = (path: string) => {
+  const url = new URL(path, "https://chat.test");
+  return harness.props({
+    chat: /\/c\/([^/]+)/.exec(url.pathname)?.[1],
+    panel: url.searchParams.get("panel") === "info" ? "info" : undefined,
+    forYouPage: url.pathname.endsWith("/for-you"),
+    channelsPage: url.pathname.endsWith("/channels"),
+    query: url.searchParams.get("q") ?? "",
+  });
+};
+
 const pin = (chat: string) =>
   harness.fetch(
     new Request(new URL(`/api/chat/conversations/${chat}/personal`, harness.url), {
@@ -39,8 +51,7 @@ beforeAll(async () => {
   shell = await chatShellPage(
     (request) => {
       const url = new URL(request.url);
-      const chat = /\/c\/([^/]+)/.exec(url.pathname)?.[1];
-      return harness.props({ chat, panel: url.searchParams.get("panel") === "info" ? "info" : undefined });
+      return propsFor(url.pathname + url.search);
     },
     { ui: "v2" },
   );
@@ -84,13 +95,12 @@ const load = async (path: string, width: number, height: number) => {
   const errors = pageErrors(page);
   await page.goto(new URL(path, harness.url).href);
   await settled(page);
-  const chat = /\/c\/([^/]+)/.exec(path)?.[1];
   await page.evaluate(
     ({ props }) => {
       document.getElementById("root")!.replaceChildren();
       return window.mountChat(props, "en", "v2");
     },
-    { props: harness.props({ chat, panel: path.includes("panel=info") ? "info" : undefined }) },
+    { props: propsFor(path) },
   );
   await settled(page);
   return { page, errors, close: () => context.close() };
@@ -182,3 +192,50 @@ for (const [width, height] of [
       await close();
     }
   }, 60_000);
+
+test("For you lists who mentioned or answered the reader, and a row opens the message", async () => {
+  const it = harness.addChat({ members: [nora, tobias], name: "IT", count: 3, end: new Date(harness.now().getTime() - 3_600_000) });
+  const item = (kind: "mention" | "reply", author: typeof nora, unread: boolean, minutes: number) => ({
+    kind,
+    conversation: { id: it, title: "IT", kind: "chat" as const },
+    thread: { id: "general", name: "General" },
+    message: {
+      id: `msg${String(minutes).padStart(7, "0")}`,
+      seq: minutes,
+      author: { type: "user" as const, id: author.id, name: author.name },
+      preview: "Can you look at it?",
+      createdAt: new Date(harness.now().getTime() - minutes * 60_000).toISOString(),
+    },
+    unread,
+  });
+  harness.setForYou([item("mention", nora, true, 5), item("reply", tobias, false, 50)]);
+  const { page, errors, close } = await load("/app/chat/for-you", 1440, 900);
+  try {
+    const rows = page.locator('[data-k2-part="Row"]', { hasText: "mentioned you" });
+    await rows.first().waitFor();
+    expect(await page.locator('[data-k2-part="Row"]', { hasText: "Tobias replied to you" }).count()).toBe(1);
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await shoot(page, "04-for-you-light-1440");
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
+
+test("Discover channels lists the channels, and Subscribe subscribes in place", async () => {
+  harness.addChannel("Werkstatt-Termine", "Dates and slots of the workshop", false);
+  const { page, errors, close } = await load("/app/chat/channels", 1440, 900);
+  try {
+    const row = page.locator('[data-k2-part="Row"]', { hasText: "Werkstatt-Termine" });
+    await row.waitFor();
+    const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+    expect(layout.problems).toEqual([]);
+    await shoot(page, "05-channels-light-1440");
+    await row.getByRole("button", { name: "Subscribe" }).click();
+    await row.getByRole("button", { name: "Subscribed" }).waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await close();
+  }
+}, 60_000);
