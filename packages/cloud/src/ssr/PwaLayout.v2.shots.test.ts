@@ -61,7 +61,13 @@ const user: User = {
   manages: [],
   managesGroupIds: [],
 };
-const part = (id: string, name: string, icon: string, color: `#${string}`, pwa: { badge?: boolean; summary?: boolean } = {}): RuntimeAppMeta => ({
+const part = (
+  id: string,
+  name: string,
+  icon: string,
+  color: `#${string}`,
+  pwa: { badge?: boolean; summary?: boolean } = {},
+): RuntimeAppMeta => ({
   id,
   name,
   icon: `ti ti-${icon}`,
@@ -79,7 +85,7 @@ const apps: RuntimeAppMeta[] = [
   part("chat", "Chat", "messages", "#0e7490", { badge: true }),
   part("mail", "Mail", "mail", "#2563eb", { badge: true }),
   part("spaces", "Spaces", "layout-kanban", "#b45309", { summary: true }),
-  part("files", "Dateien", "folder", "#a16207"),
+  part("files", "Dateien", "folder", "#15803d"),
   part("notebooks", "Notizbücher", "notebook", "#7c3aed"),
 ];
 const counts: Record<string, number> = { "/pwa/chat/unread": 3, "/pwa/mail/unread": 12, "/pwa/spaces/summary": 5 };
@@ -229,8 +235,9 @@ const settingsMain = () => [
   // the account, the other devices and everything beyond this device live in Cloud's own settings: one clear way there
   section({ icon: "cloud", color: "#be185d", title: "Lindenhof Cloud" }, () => [
     row({
-      avatar: { name: "Mia Muster", color: "#be185d" },
-      lines: ["Alle Einstellungen", "Konto, Sicherheit und weitere Geräte von Mia Muster"],
+      icon: "settings",
+      color: "#be185d",
+      lines: ["Alle Einstellungen", "Konto, Sicherheit und weitere Geräte"],
       end: createComponent(Icon, { name: "external-link" }),
       href: "/me",
     }),
@@ -249,7 +256,7 @@ const settingsMain = () => [
       end: createComponent(Text, { muted: true, children: "Deutsch" }),
     }),
   ]),
-  section({ icon: "bell", color: "#0e7490", title: "Mitteilungen auf diesem Gerät", count: 5 }, () => [
+  section({ icon: "bell", color: "#0e7490", title: "Mitteilungen", count: 5 }, () => [
     row({
       icon: "messages",
       color: "#0e7490",
@@ -276,7 +283,7 @@ const settingsMain = () => [
     }),
     row({
       icon: "folder",
-      color: "#a16207",
+      color: "#15803d",
       lines: ["Dateien", "Freigaben an dich"],
       end: createComponent(Text, { muted: true, children: "Aus" }),
     }),
