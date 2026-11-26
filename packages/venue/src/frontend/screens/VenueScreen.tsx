@@ -291,7 +291,13 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
   const head = (end?: JSX.Element) => (
     // The venue's name heads its group in the sidebar, so the head holds only the view's state and deeds.
     <Bar
-      start={view() === "shifts" ? outlook() : undefined}
+      start={
+        view() === "shifts" ? (
+          outlook()
+        ) : view() === "my-shifts" && dashboard().myUpcomingShifts.length > 0 ? (
+          <Text type="lead">{words().upcomingShifts({ count: dashboard().myUpcomingShifts.length })}</Text>
+        ) : undefined
+      }
       end={
         <>
           {end}
@@ -314,25 +320,20 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
         sidebarLabel={words().views}
         detail={selection() ? 380 : undefined}
         primary={canWrite(venue()) && (view() === "shifts" || view() === "my-shifts") ? signup : undefined}
-        head={head(
-          view() === "shifts" ? (
-            gapsMenu()
-          ) : view() === "my-shifts" ? (
-            // the subscription has no other place, so it stays in the head on the phone too
-            <Button icon="calendar-share" keep onClick={() => setSubscribing(true)}>
-              {t().subscribeCalendar}
-            </Button>
-          ) : view() === "feedback" ? (
-            <>
-              <FeedbackSearch {...props} />
-              <Show when={venue().feedbackEnabled}>
-                <Button icon="external-link" href={`/app/venue/public/${venue().id}/feedback`}>
-                  {t().feedbackPage}
-                </Button>
-              </Show>
-            </>
-          ) : undefined,
-        )}
+        // one head per view: the feedback carries its search and page link in its filter bar, the public page has
+        // its own heads in the editor and the preview, so neither keeps an empty bar above them
+        head={
+          view() === "feedback" || view() === "public"
+            ? undefined
+            : head(
+                view() === "shifts" ? (
+                  gapsMenu()
+                ) : view() === "my-shifts" ? (
+                  // the subscription has no other place: a symbol with its name as the hint stays on the phone too
+                  <Button icon="calendar-share" keep label={t().subscribeCalendar} onClick={() => setSubscribing(true)} />
+                ) : undefined,
+              )
+        }
       >
         <Show when={view() === "shifts"}>
           <Pane.Split>
@@ -424,11 +425,7 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
           </Pane.Split>
         </Show>
         <Show when={view() === "my-shifts"}>
-          <Pane
-            label={t().myShifts}
-            scrollKey={`venue-mine-${venue().id}`}
-            status={<StatusRow lead={words().upcoming} facts={[{ value: dashboard().myUpcomingShifts.length }]} />}
-          >
+          <Pane label={t().myShifts} scrollKey={`venue-mine-${venue().id}`}>
             <TimeZoneNote
               timeZone={venue().timezone}
               times={dashboard().myUpcomingShifts.flatMap((shift) => [shift.startsAt, shift.endsAt])}
@@ -643,7 +640,17 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
             to: props.dashboard.feedbackEntries.length,
             total: props.dashboard.feedbackEntriesPage?.total ?? 0,
           })}
-          end={<ListOrder query={query()} state={state()} onChange={() => undefined} />}
+          end={
+            <>
+              <ListOrder query={query()} state={state()} onChange={() => undefined} />
+              <FeedbackSearch {...props} />
+              <Show when={venue().feedbackEnabled}>
+                <Button icon="external-link" href={`/app/venue/public/${venue().id}/feedback`}>
+                  {t().feedbackPage}
+                </Button>
+              </Show>
+            </>
+          }
         />
       }
     >
