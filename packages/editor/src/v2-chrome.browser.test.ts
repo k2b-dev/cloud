@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, settled } from "../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../ui/test/browser";
 import { solidTestPlugin } from "../../ui/test/solid-test-plugin";
 
 // The chrome of both Markdown editors inside a v2 screen of Cloud (Cloud's stylesheet, v1 and v2): toolbars of the
@@ -188,7 +188,7 @@ test("nothing in the toolbars moves once the page stands: a hover and a press ke
     const before = await boxes();
     await page.evaluate(() => new Promise((done) => setTimeout(done, 300)));
     const button = page.locator("[data-k2b-editor-toolbar] button").first();
-    await button.hover();
+    await hoverInPlace(button);
     await button.click();
     await settled(page);
     expect(await boxes()).toEqual(before);
