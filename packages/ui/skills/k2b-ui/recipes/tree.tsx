@@ -5,7 +5,7 @@
 import { Bar, Button, Chip, Icon, Inline, Input, Nav, type NavTreeNode, Pane, Path, StatusRow, Table, Text, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "files" };
+export const app = { name: "Dateien", color: "#2563eb", icon: "files" };
 
 // One mark per kind of entry, the same in the tree, the table and every sentence.
 const type = {
@@ -237,13 +237,13 @@ export default function FilesTree() {
               cell: (entry: Entry) => entry.name,
               // each entry leads with the mark of its kind
               mark: (entry: Entry) => type[entry.kind],
-              width: { min: 200, default: 260 },
+              width: { min: 200, default: 330 },
             },
             {
               title: "Von",
               cell: (entry: Entry) => entry.owner.name,
               avatar: (entry: Entry) => entry.owner,
-              width: { min: 110, default: 130 },
+              width: { min: 110, default: 190 },
               drop: true,
             },
             {
@@ -257,11 +257,11 @@ export default function FilesTree() {
                     <Text>{sharing[entry.shared].label}</Text>
                   </Inline>
                 ),
-              width: { min: 130, default: 150 },
+              width: { min: 130, default: 210 },
               drop: true,
             },
-            { title: "Geändert", cell: (entry: Entry) => entry.changed, width: { min: 90, default: 110 }, drop: true },
-            { title: "Größe", cell: (entry: Entry) => entry.size, align: "end", width: { min: 80, default: 90 } },
+            { title: "Geändert", cell: (entry: Entry) => entry.changed, width: { min: 90, default: 160 }, drop: true },
+            { title: "Größe", cell: (entry: Entry) => entry.size, align: "end", width: { min: 80, default: 130 } },
           ]}
           rows={content}
           rowKey={(entry) => entry.id}

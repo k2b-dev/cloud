@@ -19,6 +19,7 @@ import {
   Row,
   Section,
   StatusRow,
+  Table,
   Text,
   useToast,
   Workspace,
@@ -29,7 +30,7 @@ type Member = { id: string; name: string; initials: string; color: string; role:
 type Invitation = { email: string; sent: string; reachable: boolean };
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#4f46e5", icon: "layout-kanban" };
+export const app = { name: "Spaces", color: "#4f46e5", icon: "layout-kanban" };
 
 // Each space has its colour and symbol, the same in the sidebar, the head and every sentence.
 const space = {
@@ -152,17 +153,35 @@ export default function SpaceMembers() {
         }
       >
         <Section icon="users" title="Mitglieder" count={list().length}>
-          <List label="Mitglieder">
-            <For each={list()}>
-              {(member) => (
-                <Row
-                  avatar={{ name: member.name, initials: member.initials, color: member.color }}
-                  lines={[member.name, `${member.role} · ${last[member.id] ?? ""}`]}
-                  end={<Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />}
-                />
-              )}
-            </For>
-          </List>
+          {/* one line per member: the face and name, the role as a chip, when they were here, their deeds */}
+          <Table
+            label="Mitglieder"
+            rows={list()}
+            rowKey={(member) => member.id}
+            phone={(member) => ({
+              avatar: { name: member.name, initials: member.initials, color: member.color },
+              lines: [member.name, last[member.id] ?? ""],
+              marks: <Chip>{member.role}</Chip>,
+              // the deeds stay on the phone, at the end of each row
+              end: <Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />,
+            })}
+            columns={[
+              {
+                title: "Name",
+                width: { min: 160, default: 320 },
+                avatar: (member) => ({ name: member.name, initials: member.initials, color: member.color }),
+                cell: (member) => member.name,
+              },
+              { title: "Rolle", width: { min: 110, default: 170 }, cell: (member) => <Chip>{member.role}</Chip> },
+              { title: "Zuletzt", width: { min: 140, default: 290 }, drop: true, cell: (member) => last[member.id] ?? "" },
+              {
+                title: "Aktionen",
+                width: { min: 56, default: 80 },
+                align: "end",
+                cell: (member) => <Menu label={`Aktionen für ${member.name}`} items={deeds(member)} />,
+              },
+            ]}
+          />
         </Section>
         <Section icon="mail" title="Offene Einladungen" count={invitations.length}>
           <List label="Offene Einladungen">

@@ -28,7 +28,7 @@ import {
 import { createSignal, For, Show } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "hammer" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "hammer" };
 
 // One mark per kind of work, the same in the list, the detail and every sentence.
 const kind = {

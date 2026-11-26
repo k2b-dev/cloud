@@ -2,10 +2,10 @@
 // row leads with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
 // Each row opens its invoice and, when it is overdue, has one deed; on the phone the table becomes two-line rows with the same mark.
 // Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
-import { Avatar, Bar, Button, Chip, Failed, Input, Nav, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Chip, Failed, Input, Nav, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#15803d", icon: "coin-euro" };
+export const app = { name: "Finanzen", color: "#15803d", icon: "coin-euro" };
 
 // One colour per kind of document, the same in every list, card and sentence of the app.
 const kind = {
@@ -146,23 +146,30 @@ export default function OpenInvoices(props: Props) {
             columns={[
               {
                 title: "Rechnung",
-                width: { min: 110, default: 120 },
+                width: { min: 125, default: 170 },
                 // the thing's mark leads its name
                 mark: () => kind.invoice,
                 cell: (row) => row.number,
               },
-              { title: "Kunde", width: { min: 130, default: 140 }, cell: (row) => row.customer },
+              { title: "Kunde", width: { min: 150, default: 220 }, cell: (row) => row.customer },
               {
                 title: "Zustand",
-                width: { min: 110, default: 120 },
+                width: { min: 125, default: 170 },
                 cell: (row) => <Chip status={stateOf[row.state].status}>{stateOf[row.state].label}</Chip>,
               },
-              { title: "Fällig", width: { min: 70, default: 80 }, numeric: true, cell: (row) => row.due, drop: true },
+              { title: "Fällig", width: { min: 70, default: 120 }, numeric: true, cell: (row) => row.due, drop: true },
               // the person in charge as a face; the avatar carries the name
-              { title: "Person", width: { min: 64, default: 64 }, drop: true, cell: (row) => <Avatar {...row.owner} /> },
-              { title: "Betrag", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.amount },
+              {
+                title: "Person",
+                width: { min: 100, default: 120 },
+                drop: true,
+                avatar: (row) => row.owner,
+                cell: (row) => row.owner.name.split(" ")[0],
+              },
+              { title: "Betrag", width: { min: 90, default: 140 }, align: "end", cell: (row) => row.amount },
               {
                 title: "Aktion",
+                width: { min: 56, default: 80 },
                 cell: (row) =>
                   row.state === "overdue" ? (
                     // the one deed of a row as a quiet icon button; its name says what it does

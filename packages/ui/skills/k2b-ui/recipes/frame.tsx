@@ -27,7 +27,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "tool" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "tool" };
 
 // One mark per kind of machine, the same in the list, the detail and every sentence.
 const machine = {

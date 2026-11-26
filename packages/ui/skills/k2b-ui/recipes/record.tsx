@@ -25,7 +25,7 @@ import {
 import { For, type JSX } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "users" };
+export const app = { name: "Kunden", color: "#2563eb", icon: "users" };
 
 const area = { money: "#8e1b6f", deliveries: "#c2410c", todo: "#2563eb" };
 // One mark per category of article, the same in every list of the app.
@@ -239,7 +239,8 @@ export default function CustomerOverview(props: Props) {
             icon="currency-euro"
             color={area.money}
             label="Geld heute"
-            value={props.empty ? "0,00 €" : <Chip amount="out">{customer.money.amount}</Chip>}
+            // an amount is a number, not a pill
+            value={props.empty ? "0,00 €" : customer.money.amount}
             meta={props.empty ? "nichts offen" : customer.money.meta}
             href="#geld"
           />
@@ -300,7 +301,21 @@ export default function CustomerOverview(props: Props) {
               ) : props.empty ? (
                 <Empty icon="package" text="Noch keine Einlieferung." action={{ label: "Einlieferung erfassen", icon: "plus" }} />
               ) : (
-                <Digest items={customer.history.map((entry) => ({ icon: "package", color: area.deliveries, ...entry }))} />
+                // each delivery as a row: its id over the sentence, the date at the end, its state as a chip
+                <List label="Vorgänge">
+                  <For each={customer.history}>
+                    {(entry) => (
+                      <Row
+                        mark={{ icon: "package", color: area.deliveries }}
+                        lines={[entry.title, entry.text]}
+                        time={entry.date}
+                        marks={
+                          entry.state.tone ? <Chip status={entry.state.tone}>{entry.state.label}</Chip> : <Chip>{entry.state.label}</Chip>
+                        }
+                      />
+                    )}
+                  </For>
+                </List>
               )}
             </Section>
             <Section

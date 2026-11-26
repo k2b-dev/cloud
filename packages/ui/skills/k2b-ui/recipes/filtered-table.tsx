@@ -52,7 +52,7 @@ export const orderQuery = defineListQuery({
 });
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#c2410c", icon: "tool" };
+export const app = { name: "Werkstatt", color: "#c2410c", icon: "tool" };
 
 // One mark per kind of order, the same in every list, card and sentence of the app.
 const kind = {
@@ -289,9 +289,8 @@ export default function FilteredOrders(props: Props) {
             onChange={setState}
             icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
             names={{ customer: props.customers ?? CUSTOMERS }}
-            results={
-              props.loading ? "Wird geladen" : `${countOrders(rows().length)} · ${euro(rows().reduce((sum, order) => sum + order.amount, 0))}`
-            }
+            // the count only: the phone's sheet reads it as "10 Aufträge zeigen"
+            results={props.loading ? "Wird geladen" : countOrders(rows().length)}
             end={<ListOrder query={orderQuery} state={state()} onChange={setState} />}
           />
         }
@@ -323,21 +322,21 @@ export default function FilteredOrders(props: Props) {
           columns={[
             {
               title: "Auftrag",
-              width: { min: 170, default: 190 },
+              width: { min: 160, default: 250 },
               // the order's mark leads its name
               mark: (row) => kind[row.kind],
               cell: (row) => row.title,
             },
-            { title: "Kunde", width: { min: 140, default: 160 }, cell: (row) => row.customer, drop: true },
+            { title: "Kunde", width: { min: 130, default: 210 }, cell: (row) => row.customer, drop: true },
             {
               title: "Status",
-              width: { min: 100, default: 110 },
+              width: { min: 100, default: 160 },
               cell: (row) => (row.late ? <Chip status="bad">Verzug</Chip> : <Chip status={tone[row.status]}>{label(row.status)}</Chip>),
             },
             // the team as faces: one picture with every name
-            { title: "Team", width: { min: 80, default: 90 }, drop: true, cell: (row) => <Avatar.Stack people={row.team} /> },
-            { title: "Fällig", width: { min: 90, default: 100 }, numeric: true, cell: (row) => row.due, drop: true },
-            { title: "Betrag", width: { min: 80, default: 90 }, align: "end", cell: (row) => euro(row.amount) },
+            { title: "Team", width: { min: 80, default: 130 }, drop: true, cell: (row) => <Avatar.Stack people={row.team} /> },
+            { title: "Fällig", width: { min: 90, default: 140 }, numeric: true, cell: (row) => row.due, drop: true },
+            { title: "Betrag", width: { min: 80, default: 130 }, align: "end", cell: (row) => euro(row.amount) },
           ]}
         />
       </Pane>

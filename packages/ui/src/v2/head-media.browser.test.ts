@@ -232,7 +232,11 @@ test("in rows of two lines a file keeps its thumbnail beside its box", async () 
         .evaluate((element) => {
           const box = element.querySelector(".k2-mark")!.getBoundingClientRect();
           const mark = element.querySelector(".k2-mk")!.getBoundingClientRect();
-          return { side: mark.left > box.right, mark: `${mark.width}x${mark.height}`, middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1 };
+          return {
+            side: mark.left > box.right,
+            mark: `${mark.width}x${mark.height}`,
+            middle: Math.abs(box.top + box.height / 2 - (mark.top + mark.height / 2)) < 1,
+          };
         });
       expect(lead).toEqual({ side: true, mark: "32x32", middle: true });
     },
@@ -256,7 +260,8 @@ test("a setting stands with its value beside its name, and an unsaved change say
     const setting = page.locator("[data-k2-part='Setting']").first();
     const found = await setting.evaluate((element) => {
       const label = element.querySelector(".k2-field-label")!.getBoundingClientRect();
-      const control = element.querySelector(".k2-input")!.getBoundingClientRect();
+      // the control's place: a field, or a field with its unit beside it
+      const control = element.querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was)")!.getBoundingClientRect();
       const was = element.querySelector(".k2-field-was");
       return {
         beside: control.left > label.right,
@@ -268,7 +273,7 @@ test("a setting stands with its value beside its name, and an unsaved change say
     expect(found).toEqual({ beside: true, width: 300, was: "geändert · vorher 12 Std.", under: true });
     // the controls of all settings stand in one line down the page
     const lefts = await page
-      .locator("[data-k2-part='Setting'] > :is(.k2-input, .k2-check)")
+      .locator("[data-k2-part='Setting'] > :is(.k2-input, .k2-check, .k2-inline)")
       .evaluateAll((elements) => [...new Set(elements.map((element) => Math.round(element.getBoundingClientRect().left)))]);
     expect(lefts.length).toBe(1);
   });

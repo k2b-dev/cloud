@@ -3,7 +3,7 @@
 import { Bar, Button, Cells, Chip, Digest, Input, Mark, Nav, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#047857", icon: "table" };
+export const app = { name: "Grids", color: "#047857", icon: "table" };
 
 // Each kind of thing has one colour, so a table looks like a table in the sidebar, in a row and in a sentence.
 const kind = {
@@ -52,6 +52,13 @@ export default function PlaceHome(props: Props) {
                 { label: "Tagesplan", ...kind.app },
               ],
             },
+            {
+              label: "Auswertung",
+              items: [
+                { label: "Monatsbericht", ...kind.document },
+                { label: "Rechnung erzeugen", ...kind.workflow },
+              ],
+            },
           ]}
           foot={[
             { label: "Bearbeiten", icon: "pencil" },
@@ -97,52 +104,134 @@ export default function PlaceHome(props: Props) {
           <Cells.Cell
             icon="calendar-due"
             label="Heute fällig"
-            value={props.quiet ? "4" : <Chip status="warn">9 · 3 ohne Monteur</Chip>}
-            meta="nächster 10:30 Küche Lindqvist"
+            // the number stands as a number; what needs a person stands beside it as a tinted chip
+            value={
+              props.quiet ? (
+                "4"
+              ) : (
+                <>
+                  9 <Chip status="warn">3 offen</Chip>
+                </>
+              )
+            }
+            meta="3 ohne Monteur · nächster 10:30"
+          />
+          <Cells.Cell
+            icon="package"
+            color={kind.table.color}
+            label="Ersatzteile knapp"
+            value={
+              props.quiet ? (
+                "0"
+              ) : (
+                <>
+                  8 <Chip status="warn">bestellen</Chip>
+                </>
+              )
+            }
+            meta="Scharniere, Griffe, Kantenband"
           />
           <Cells.Cell
             icon="bolt"
             color={kind.workflow.color}
             label="Workflows"
-            value={props.quiet ? <Chip status="ok">3 laufen</Chip> : <Chip status="bad">1 Fehler</Chip>}
+            value={
+              props.quiet ? (
+                <>
+                  3 <Chip status="ok">laufen</Chip>
+                </>
+              ) : (
+                <>
+                  3 <Chip status="bad">1 Fehler</Chip>
+                </>
+              )
+            }
             meta={props.quiet ? "zuletzt 09:41" : "Nachbestellung · heute 06:00"}
           />
         </Cells>
-        <Section title="Annahme" count={3} actions={[{ label: "Neu in Annahme", icon: "plus" }]}>
-          <Row
-            mark={kind.table}
-            lines={["Aufträge", "Tabelle · 128 Einträge · Offen 41 · Kanban · Kalender"]}
-            marks={<Chip status="ok">+12 heute</Chip>}
-            href="#auftraege"
-          />
-          <Row
-            mark={kind.form}
-            lines={["Auftrag annehmen", "Formular in Aufträge · öffentlich"]}
-            marks={props.quiet ? undefined : <Chip yours>7 neu</Chip>}
-            href="#formular"
-          />
-          <Row
-            mark={kind.workflow}
-            lines={["Eingangsbestätigung", "Workflow · bei neuem Auftrag · Mail an Kunden"]}
-            marks={<Chip status="ok">läuft · 09:41</Chip>}
-            href="#bestaetigung"
-          />
-        </Section>
-        <Section title="Teile & Lager" count={3}>
-          <Row
-            mark={kind.table}
-            lines={["Ersatzteile", "Tabelle · 642 Einträge · Nachbestellen 8"]}
-            marks={<Chip status="warn">8 knapp</Chip>}
-            href="#ersatzteile"
-          />
-          <Row mark={kind.table} lines={["Lieferanten", "Tabelle · 37 Einträge · Aktiv 21"]} href="#lieferanten" />
-          <Row
-            mark={kind.workflow}
-            lines={["Nachbestellung", "Workflow · täglich 06:00 · Lieferant nicht erreichbar"]}
-            marks={props.quiet ? <Chip status="ok">läuft</Chip> : <Chip status="bad">Fehler · 06:00</Chip>}
-            href="#nachbestellung"
-          />
-        </Section>
+        {/* the groups of the place side by side, as they are arranged in the sidebar */}
+        <Section.Columns>
+          <Section title="Annahme" count={3} actions={[{ label: "Neu in Annahme", icon: "plus" }]}>
+            <Row
+              strong
+              mark={kind.table}
+              lines={["Aufträge", "128 Einträge · Offen 41 · Kanban · Kalender"]}
+              marks={<Chip status="ok">+12 heute</Chip>}
+              href="#auftraege"
+            />
+            <Row
+              strong
+              mark={kind.form}
+              lines={["Auftrag annehmen", "Formular → Aufträge · öffentlich"]}
+              marks={props.quiet ? undefined : <Chip yours>7 neu</Chip>}
+              href="#formular"
+            />
+            <Row
+              strong
+              mark={kind.workflow}
+              lines={["Eingangsbestätigung", "Workflow · bei neuem Auftrag · Mail an Kunden"]}
+              marks={<Chip status="ok">läuft · 09:41</Chip>}
+              href="#bestaetigung"
+            />
+          </Section>
+          <Section title="Teile & Lager" count={3} actions={[{ label: "Neu in Teile & Lager", icon: "plus" }]}>
+            <Row
+              strong
+              mark={kind.table}
+              lines={["Ersatzteile", "642 Einträge · Nachbestellen 8 · Nach Lieferant"]}
+              marks={<Chip status="warn">8 knapp</Chip>}
+              href="#ersatzteile"
+            />
+            <Row strong mark={kind.table} lines={["Lieferanten", "37 Einträge · Aktiv 21"]} time="Mo." href="#lieferanten" />
+            <Row
+              strong
+              mark={kind.workflow}
+              lines={["Nachbestellung", "Workflow · täglich 06:00 · Lieferant nicht erreichbar"]}
+              marks={props.quiet ? <Chip status="ok">läuft</Chip> : <Chip status="bad">Fehler · 06:00</Chip>}
+              href="#nachbestellung"
+            />
+          </Section>
+          <Section title="Planung" count={3} actions={[{ label: "Neu in Planung", icon: "plus" }]}>
+            <Row
+              strong
+              mark={kind.table}
+              lines={["Termine", "86 Einträge · Woche · Nach Monteur · Kalender"]}
+              marks={<Chip yours>9 heute</Chip>}
+              href="#termine"
+            />
+            <Row strong mark={kind.table} lines={["Monteure", "6 Einträge · 4 im Einsatz"]} time="12.11." href="#monteure" />
+            <Row
+              strong
+              mark={kind.app}
+              lines={["Tagesplan", "App · für Monteure am Telefon"]}
+              marks={<Chip status="ok">veröffentlicht</Chip>}
+              href="#tagesplan"
+            />
+          </Section>
+          <Section title="Auswertung" count={3} actions={[{ label: "Neu in Auswertung", icon: "plus" }]}>
+            <Row
+              strong
+              mark={kind.table}
+              lines={["Umsatz je Monteur", "Ansicht von Aufträge · gruppiert, Summe"]}
+              time="gestern"
+              href="#umsatz"
+            />
+            <Row
+              strong
+              mark={kind.document}
+              lines={["Monatsbericht", "Dokumentvorlage · PDF aus Aufträge"]}
+              time="01.11."
+              href="#bericht"
+            />
+            <Row
+              strong
+              mark={kind.workflow}
+              lines={["Rechnung erzeugen", "Workflow · von Hand gestartet"]}
+              marks={<Chip>Entwurf</Chip>}
+              href="#rechnung"
+            />
+          </Section>
+        </Section.Columns>
         <Section title="Zuletzt geändert" more={{ label: "Alle Aktivitäten", forward: true }}>
           <Digest
             label="Zuletzt geändert"

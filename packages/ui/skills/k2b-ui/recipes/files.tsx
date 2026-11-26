@@ -26,7 +26,7 @@ import { defineListQuery, field, type ListQueryStateOf } from "@k2b/ui/v2/list-q
 import { createSignal } from "solid-js";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "files" };
+export const app = { name: "Dateien", color: "#2563eb", icon: "files" };
 
 // Small drawings stand in for the thumbnails the server would send.
 const picture = (body: string) =>
@@ -431,10 +431,10 @@ export default function Folder(props: Props) {
                     <Button icon="download">Laden</Button>
                   </>
                 }
-                end={<Text type="meta">JPG · 4,2 MB</Text>}
               />
               <Facts
                 items={[
+                  { label: "Datei", value: "JPG · 4,2 MB" },
                   { label: "Geändert", value: "Felix Thal · heute, 09:42" },
                   { label: "Aufgenommen", value: "24.11.2026 · 4032 × 3024" },
                   { label: "Ort", value: "Werkstatt › Projekte › Küche Lindqvist" },

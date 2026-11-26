@@ -26,7 +26,7 @@ import {
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
 
 // A small logo as a data URL, so the recipe draws without the network.
 const logo =
@@ -82,14 +82,20 @@ export default function SignInPageSettings(props: Props) {
               <Button href="#" disabled={changes === 0}>
                 Verwerfen
               </Button>
-              <Button variant="primary" type="submit" disabled={changes === 0 || props.locked}>
+              {/* the page's one primary while there is something to save; with nothing changed it waits, dimmed */}
+              <Button
+                variant={changes > 0 && !props.locked ? "primary" : "secondary"}
+                type="submit"
+                disabled={changes === 0 || props.locked}
+              >
                 Speichern
               </Button>
             </>
           }
         />
       }
-      primary={{ label: "Speichern", icon: "check", disabled: changes === 0 || props.locked }}
+      // the floating "Speichern" only while there is something to save; it would cover a field for nothing
+      primary={changes > 0 && !props.locked ? { label: "Speichern", icon: "check" } : undefined}
     >
       <Pane.Split>
         <Pane label="Anmeldeseite">

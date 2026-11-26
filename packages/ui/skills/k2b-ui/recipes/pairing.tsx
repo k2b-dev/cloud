@@ -2,33 +2,33 @@
 // were last seen; beside them a QR code to scan, the code both devices show to compare, and the wait for the other
 // device as a polite `Notice tone="warn"`; the section is a link target (`id`). Removing a device asks with
 // `Dialog.confirm({ danger: true })`.
+
+import { qr } from "@k2b/stdlib/qr";
 import {
   Bar,
   Button,
   Chip,
   CodeDisplay,
   Dialog,
-  List,
+  Digest,
+  Mark,
   Nav,
   Notice,
   Pane,
   Path,
   QrCode,
-  Row,
   Section,
   StatusRow,
+  Table,
   Text,
   Workspace,
 } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
-export const app = { color: "#2563eb", icon: "adjustments-horizontal" };
+export const app = { name: "Verwaltung", color: "#2563eb", icon: "adjustments-horizontal" };
 
-// An invented stand-in for a QR code, so the recipe draws without a library; an app passes `qr.toSvg(link)` from
-// `@k2b/stdlib/qr`.
-const finder = (x: number, y: number) =>
-  `<rect x='${x}' y='${y}' width='7' height='7'/><rect x='${x + 1}' y='${y + 1}' width='5' height='5' fill='white'/><rect x='${x + 2}' y='${y + 2}' width='3' height='3'/>`;
-const qrSvg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 25 25' shape-rendering='crispEdges'><rect width='25' height='25' fill='white'/>${finder(0, 0)}${finder(18, 0)}${finder(0, 18)}<rect x='9' y='9' width='2' height='2'/><rect x='12' y='10' width='3' height='1'/><rect x='10' y='13' width='1' height='4'/><rect x='14' y='14' width='4' height='2'/><rect x='19' y='19' width='3' height='3'/><rect x='9' y='20' width='4' height='1'/></svg>`;
+// The QR code the app makes from the pairing link with `@k2b/stdlib/qr`.
+const qrSvg = qr.toSvg("https://cloud.werkstatt.example/koppeln?code=482913");
 
 // One mark per kind of device, the same in the list and every sentence.
 const kind = {
@@ -95,19 +95,49 @@ export default function PairDevice(props: Props) {
       >
         <Pane.Split>
           <Pane label="Gekoppelte Geräte">
-            <List label="Gekoppelte Geräte">
-              {list().map((device) => (
-                <Row
-                  mark={kind[device.kind]}
-                  lines={[device.name, `${device.person} · ${device.seen}`]}
-                  marks={
-                    device.stale ? <Chip status="warn">Still</Chip> : device.id === fresh.id ? <Chip status="ok">Neu</Chip> : undefined
-                  }
+            {/* one line per device: its kind, its person, when it was last seen, its state and the deed */}
+            <Table
+              label="Gekoppelte Geräte"
+              rows={list()}
+              rowKey={(device) => device.id}
+              phone={(device) => ({
+                mark: kind[device.kind],
+                lines: [device.name, `${device.person} · ${device.seen}`],
+                marks: device.stale ? <Chip status="warn">Still</Chip> : device.id === fresh.id ? <Chip status="ok">Neu</Chip> : undefined,
+              })}
+              columns={[
+                { title: "Gerät", width: { min: 150, default: 250 }, mark: (device) => kind[device.kind], cell: (device) => device.name },
+                {
+                  title: "Person",
+                  width: { min: 120, default: 200 },
+                  drop: true,
+                  avatar: (device) => ({ name: device.person === "für alle" ? "Alle" : device.person }),
+                  cell: (device) => device.person,
+                },
+                { title: "Zuletzt", width: { min: 100, default: 160 }, cell: (device) => device.seen },
+                {
+                  title: "Zustand",
+                  width: { min: 90, default: 130 },
+                  cell: (device) =>
+                    device.stale ? (
+                      <Chip status="warn">Still</Chip>
+                    ) : device.id === fresh.id ? (
+                      <Chip status="ok">Neu</Chip>
+                    ) : (
+                      <Chip status="ok">Aktiv</Chip>
+                    ),
+                },
+                {
+                  title: "Entfernen",
+                  width: { min: 56, default: 80 },
+                  align: "end",
                   // a deed that destroys asks first, in red (see `remove`)
-                  end={<Button variant="ghost" icon="trash" label={`${device.name} entfernen`} onClick={() => remove(device)} />}
-                />
-              ))}
-            </List>
+                  cell: (device) => (
+                    <Button variant="ghost" icon="trash" label={`${device.name} entfernen`} onClick={() => remove(device)} />
+                  ),
+                },
+              ]}
+            />
           </Pane>
           <Pane side label="Gerät koppeln" width={{ min: 300, default: 360 }}>
             <Section id="pair" icon="device-mobile" title="Gerät koppeln">
@@ -129,6 +159,33 @@ export default function PairDevice(props: Props) {
                 Sobald das Gerät den Code bestätigt, ist es gekoppelt. Der Code gilt fünf Minuten.
               </Notice>
             )}
+            <Section icon="history" title="Zuletzt gekoppelt">
+              <Digest
+                label="Zuletzt gekoppelt"
+                activity={[
+                  {
+                    person: { name: "Sami Yilmaz" },
+                    text: (
+                      <>
+                        <Text weight="strong">Sami Yilmaz</Text> hat <Mark {...kind.phone} />
+                        <Text weight="strong">Pixel Sami</Text> gekoppelt
+                      </>
+                    ),
+                    time: "gestern",
+                  },
+                  {
+                    person: { name: "Ada Renz" },
+                    text: (
+                      <>
+                        <Text weight="strong">Ada Renz</Text> hat <Mark {...kind.laptop} />
+                        <Text weight="strong">Laptop Büro</Text> gekoppelt
+                      </>
+                    ),
+                    time: "Mo.",
+                  },
+                ]}
+              />
+            </Section>
           </Pane>
         </Pane.Split>
       </Pane>
