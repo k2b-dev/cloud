@@ -45,14 +45,23 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const box = parent.getBoundingClientRect();
     if (box.height <= 0) continue;
     // A box of a few px holds no word of 2 letters or more: its text is gone (a sender of width 0 beside many marks).
+    // The box that shows it counts: its own, or an ancestor that clips sideways and was pressed to a few px itself.
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
-    if ([...words].length >= 2 && box.width < Math.min(4, fontSize / 3)) {
+    const least = Math.min(4, fontSize / 3);
+    let shownWidth = box.width;
+    for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
+      shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
+    }
+    if ([...words].length >= 2 && shownWidth < least) {
       squeezed.push(
-        `${name(parent)} "${labelOf(parent)}" is ${round(box.width)} px wide; its text is gone, give it room or cut it with "…"`,
+        `${name(parent)} "${labelOf(parent)}" is ${round(shownWidth)} px wide; its text is gone, give it room or cut it with "…"`,
       );
       continue;
     }
-    // One letter per line: three or more line boxes, none wider than about a letter and a half.
+    // One letter per line: three or more line boxes, none wider than about a letter and a half, and more lines than
+    // words (a list of short lines broken on purpose, "1.", "2.", "3.", is no finding).
     const range = document.createRange();
     range.selectNodeContents(node);
     const rows = new Map<number, number>();
@@ -62,7 +71,8 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
       rows.set(top, (rows.get(top) ?? 0) + rect.width);
     }
     const widths = [...rows.values()];
-    if (widths.length >= 3 && [...words].length >= 3 && Math.max(...widths) <= fontSize * 1.6)
+    const wordCount = words.split(/\s+/).length;
+    if (widths.length >= 3 && widths.length > wordCount && [...words].length >= 3 && Math.max(...widths) <= fontSize * 1.6)
       squeezed.push(
         `${name(parent)} "${labelOf(parent)}" stands one letter per line (${widths.length} lines of at most ${round(Math.max(...widths))} px); keep it on one line`,
       );

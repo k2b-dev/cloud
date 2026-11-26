@@ -695,6 +695,29 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // review of #4210: lines broken on purpose are no finding; text shown through an ancestor of 0 px is one.
+  test(
+    "green: short lines broken on purpose; red: text inside a box that an ancestor of 0 px cuts away",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row"><span data-probe="list" style="white-space:pre-line">1.\n2.\n3.\n4.</span></div>' +
+            '<div class="row" style="display:flex"><span style="flex:0 0 0;min-width:0;overflow:hidden"><span data-probe="inner" style="display:inline-block;width:120px">Aleksandra</span></span>' +
+            '<span style="flex:none;white-space:nowrap">Wartet · Reklamation · bis Mo · Vorschlag · Anhang · Schloss · Person · noch mehr</span></div>',
+        ),
+        { width: 900 },
+      );
+      try {
+        const found = (await measureV2Layout(page)).squeezed;
+        expect(found.filter((line) => line.includes('"list"'))).toEqual([]);
+        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="inner"\] "Aleksandra" is 0 px wide/));
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {

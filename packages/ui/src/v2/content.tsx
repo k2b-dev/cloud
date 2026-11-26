@@ -106,7 +106,7 @@ export const Cut = (props: CutProps) => {
   const split = () => props.text.length - cutTail(props.text, props.keep);
   const head = () => props.text.slice(0, split());
   return (
-    <span class="k2-cut" title={props.text}>
+    <span class="k2-midcut" title={props.text}>
       {/* a start of a few letters is never cut: "…" would stand for nearly all of it */}
       <Show when={head()}>
         <span data-whole={Array.from(head()).length <= 4 ? "" : undefined}>{head()}</span>
