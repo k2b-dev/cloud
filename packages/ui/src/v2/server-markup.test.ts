@@ -73,3 +73,19 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
     /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
   );
 });
+
+test("a column's foot with unsaved changes is on the bottom of the column in the server's markup, in its scroll area", () => {
+  const markup = renderToString(() =>
+    createComponent(Pane, {
+      label: "Einstellungen",
+      unsaved: true,
+      get foot() {
+        return createComponent(Text, { children: "Speichern" });
+      },
+      get children() {
+        return createComponent(Text, { children: "Name" });
+      },
+    }),
+  );
+  expect(markup).toMatch(/<div class="k2-scroll"[^>]*>.*<div class="k2-slot" data-slot="foot" data-unsaved="">/s);
+});

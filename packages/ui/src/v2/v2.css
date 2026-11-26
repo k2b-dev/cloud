@@ -603,6 +603,30 @@
 .k2-ui .k2-scroll > * {
   flex: none;
 }
+/* The foot of a column (`Pane foot`): a bar in the flow after the content, its deeds at the end, as high as a head.
+   It draws the line above it, so the last line of the content gives way. With unsaved changes it stays on the bottom
+   of the column while it scrolls (sticky in the column, never the window), the surface under it, and the fade at the
+   column's end gives way. */
+.k2-ui .k2-scroll > [data-slot="foot"] > .k2-bar {
+  height: var(--k2-h-head);
+  justify-content: flex-end;
+  border-top: var(--k2-hairline);
+  border-bottom: 0;
+  background: var(--k2-surface);
+}
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > :is(.k2-sec, .k2-row):nth-last-child(1 of :not([data-slot="foot"])),
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-list:nth-last-child(1 of :not([data-slot="foot"])) > .k2-row:last-child {
+  border-bottom: 0;
+}
+.k2-ui .k2-scroll > [data-slot="foot"][data-unsaved] > .k2-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+}
+.k2-ui .k2-split > .k2-pane > .k2-scroll:has(> [data-slot="foot"][data-unsaved]) {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
 /* panes side by side inside content: the list beside its reader, the main column beside its info column */
 .k2-ui .k2-split {
   position: relative;
@@ -4062,6 +4086,10 @@
     border-radius: var(--k2-r-round);
     box-shadow: var(--k2-float);
     z-index: 4;
+  }
+  /* a column's foot that stays on the bottom (unsaved changes) holds the main action above it, never under it */
+  .k2-ui .k2-ws:has(> .k2-ws-main > :is(.k2-pane, .k2-split > .k2-pane) > .k2-scroll > [data-slot="foot"][data-unsaved]) > .k2-fab {
+    bottom: calc(16px + var(--k2-h-head));
   }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {

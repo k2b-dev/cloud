@@ -413,6 +413,16 @@ export type PaneProps = {
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
   scrollKey?: string;
+  /**
+   * The bar at the end of the column, such as "Verwerfen" and "Speichern" under a form of settings: in the flow after
+   * the content, so it ends the column.
+   */
+  foot?: JSX.Element;
+  /**
+   * There are changes that are not saved yet: the `foot` stays on the bottom of the column while it scrolls, so the
+   * save is in reach from every field. The server's page has it there too, so nothing jumps when the page comes alive.
+   */
+  unsaved?: boolean;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -443,6 +453,7 @@ export const Pane = (props: PaneProps) => {
   });
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
+  const foot = resolveChildren(() => props.foot);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -497,6 +508,11 @@ export const Pane = (props: PaneProps) => {
       </Show>
       <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
         <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
+        <Show when={foot()}>
+          <div class="k2-slot" data-slot="foot" data-unsaved={props.unsaved ? "" : undefined}>
+            {foot()}
+          </div>
+        </Show>
       </div>
     </section>
   );
