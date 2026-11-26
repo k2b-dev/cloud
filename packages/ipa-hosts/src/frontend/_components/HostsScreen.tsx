@@ -40,8 +40,15 @@ export type HostsScreenProps = {
   ungrouped: IpaHost[];
   /** Pages of the visible list: the groups or the hosts without a group. */
   paging: { page: number; pages: number };
-  /** The group open beside the list (`group=<cn>`), read on its own; null when there is none with that name. */
-  group: { cn: string; found: (IpaHostgroup & { hostDetails: IpaHost[] }) | null } | null;
+  /**
+   * The group open beside the list (`group=<cn>`), read on its own with one page of its hosts (`hosts_page`) and the
+   * number of all of them; `found` is null when there is none with that name.
+   */
+  group: {
+    cn: string;
+    found: (IpaHostgroup & { hostDetails: IpaHost[]; hostTotal: number }) | null;
+    paging: { page: number; pages: number };
+  } | null;
   /** The host open beside the list (`host=<fqdn>`), read on its own. */
   host: { fqdn: string; found: IpaHost | null } | null;
 };
@@ -61,7 +68,14 @@ export default function HostsScreen(props: HostsScreenProps) {
   const number = (value: number) => value.toLocaleString(locale());
 
   /** The address of this view with some parameters changed; open records close unless they are named. */
-  const href = (change: { tab?: HostsTab; search?: string; page?: number; group?: string | null; host?: string | null }) => {
+  const href = (change: {
+    tab?: HostsTab;
+    search?: string;
+    page?: number;
+    group?: string | null;
+    host?: string | null;
+    hostsPage?: number;
+  }) => {
     const params = new URLSearchParams();
     const tab = change.tab ?? props.tab;
     if (tab !== "groups") params.set("tab", tab);
@@ -70,6 +84,7 @@ export default function HostsScreen(props: HostsScreenProps) {
     const page = change.page ?? (change.tab || change.search !== undefined ? 1 : props.paging.page);
     if (page > 1) params.set(tab === "ungrouped" ? "ungrouped_page" : "page", String(page));
     if (change.group) params.set("group", change.group);
+    if (change.group && (change.hostsPage ?? 1) > 1) params.set("hosts_page", String(change.hostsPage));
     if (change.host) params.set("host", change.host);
     const text = params.toString();
     return text ? `${PATH}?${text}` : PATH;
@@ -362,7 +377,7 @@ export default function HostsScreen(props: HostsScreenProps) {
     </Pane>
   );
 
-  const groupRecord = (group: IpaHostgroup & { hostDetails: IpaHost[] }) => (
+  const groupRecord = (group: IpaHostgroup & { hostDetails: IpaHost[]; hostTotal: number }, paging: { page: number; pages: number }) => (
     <Pane
       detail
       label={group.cn}
@@ -391,7 +406,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Facts
         items={[
           ...(group.description ? [{ label: t().description, value: group.description }] : []),
-          { label: t().hosts, value: t().hostCount({ count: group.hostDetails.length }) },
+          { label: t().hosts, value: t().hostCount({ count: group.hostTotal }) },
           ...(group.hostgroups.length > 0
             ? [{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]
             : []),
@@ -400,8 +415,31 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Section icon="server" title={t().hostsOfGroup}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
-            <For each={group.hostDetails}>{(host) => hostRow(host, href({ group: group.cn, host: host.fqdn }))}</For>
+            <For each={group.hostDetails}>
+              {(host) => hostRow(host, href({ group: group.cn, host: host.fqdn, hostsPage: paging.page }))}
+            </For>
           </List>
+        </Show>
+        <Show when={paging.pages > 1}>
+          <Bar
+            start={<Text type="meta">{`${number(paging.page)} / ${number(paging.pages)}`}</Text>}
+            end={
+              <>
+                <Button
+                  icon="chevron-left"
+                  href={href({ group: group.cn, hostsPage: paging.page - 1 })}
+                  disabled={paging.page <= 1}
+                  label={t().previous}
+                />
+                <Button
+                  icon="chevron-right"
+                  href={href({ group: group.cn, hostsPage: paging.page + 1 })}
+                  disabled={paging.page >= paging.pages}
+                  label={t().next}
+                />
+              </>
+            }
+          />
         </Show>
       </Section>
     </Pane>
@@ -677,7 +715,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         <Show when={!props.host && props.group}>
           {(open) => (
             <Show when={open().found} fallback={missing(t().groupNotFound)}>
-              {(group) => groupRecord(group())}
+              {(group) => groupRecord(group(), open().paging)}
             </Show>
           )}
         </Show>

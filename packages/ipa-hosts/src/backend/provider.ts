@@ -443,15 +443,27 @@ export const hostgroupListWithHosts = async (params: {
   };
 };
 
-/** One host group by its exact name with its members, for the record a page opens; null when the mirror has none. One statement. */
-export const hostgroupGetWithHosts = async (cn: string): Promise<IpaHostgroupWithHostsRecord | null> => {
-  const rows = await sql<DbRow[]>`
+/**
+ * One host group by its exact name, for the record a page opens: its sub-groups and one page of its hosts (by name) with
+ * the number of all of them, so a group of any size reads in bounded work. Null when the mirror has none. One statement.
+ */
+export const hostgroupGetWithHosts = async (
+  cn: string,
+  params: { page: number; perPage: number },
+): Promise<(IpaHostgroupWithHostsRecord & { hostTotal: number }) | null> => {
+  const offset = (params.page - 1) * params.perPage;
+  const rows = await sql<(DbRow & { host_total: number })[]>`
     SELECT hg.cn, hg.description,
-      COALESCE(ARRAY(SELECT hh.host_fqdn FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn ORDER BY hh.host_fqdn), '{}') AS member_hosts,
+      (SELECT count(*) FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn)::int AS host_total,
+      COALESCE(ARRAY(
+        SELECT hh.host_fqdn FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn
+        ORDER BY hh.host_fqdn LIMIT ${params.perPage} OFFSET ${offset}
+      ), '{}') AS member_hosts,
       COALESCE(ARRAY(SELECT hgh.child_cn FROM ipa_hosts.hostgroup_hostgroups hgh WHERE hgh.parent_cn = hg.cn ORDER BY hgh.child_cn), '{}') AS member_hostgroups,
       COALESCE((
-        SELECT jsonb_agg(
-          jsonb_build_object(
+        SELECT jsonb_agg(member.detail ORDER BY member.fqdn)
+        FROM (
+          SELECT h.fqdn, jsonb_build_object(
             'fqdn', h.fqdn,
             'description', h.description,
             'location', h.location,
@@ -461,17 +473,18 @@ export const hostgroupGetWithHosts = async (cn: string): Promise<IpaHostgroupWit
             'platform', h.platform,
             'os_version', h.os_version,
             'ssh_fingerprints', h.ssh_fingerprints
-          )
+          ) AS detail
+          FROM ipa_hosts.host_hostgroups hh
+          JOIN ipa_hosts.hosts h ON h.fqdn = hh.host_fqdn
+          WHERE hh.hostgroup_cn = hg.cn
           ORDER BY h.fqdn
-        )
-        FROM ipa_hosts.host_hostgroups hh
-        JOIN ipa_hosts.hosts h ON h.fqdn = hh.host_fqdn
-        WHERE hh.hostgroup_cn = hg.cn
+          LIMIT ${params.perPage} OFFSET ${offset}
+        ) member
       ), '[]'::jsonb) AS host_details
     FROM ipa_hosts.hostgroups hg
     WHERE hg.cn = ${cn}
   `;
-  return rows[0] ? toHostgroupWithHosts(rows[0]) : null;
+  return rows[0] ? { ...toHostgroupWithHosts(rows[0]), hostTotal: Number(rows[0].host_total) } : null;
 };
 
 /** One host by its exact name with its groups, for the record a page opens; null when the mirror has none. One statement. */

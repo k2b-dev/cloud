@@ -80,7 +80,10 @@ const firstHtml = async (search: string, data: Data) => {
       total: data === "worst" ? 24_691 : ungrouped.length,
       hasNext: false,
     } as never),
-    spyOn(ipaHostsService.hostgroup, "getWithHosts").mockImplementation(async ({ cn }) => groups.find((group) => group.cn === cn) ?? null),
+    spyOn(ipaHostsService.hostgroup, "getWithHosts").mockImplementation(async ({ cn }) => {
+      const group = groups.find((candidate) => candidate.cn === cn);
+      return group ? { ...group, hostTotal: group.hostDetails.length } : null;
+    }),
     spyOn(ipaHostsService.host, "get").mockImplementation(async ({ fqdn }) => hosts.find((host) => host.fqdn === fqdn) ?? null),
     spyOn(ipaHostsService, "stats").mockResolvedValue({
       hostsInGroups: data === "worst" ? 98_765 : groups.reduce((sum, group) => sum + group.hostDetails.length, 0),

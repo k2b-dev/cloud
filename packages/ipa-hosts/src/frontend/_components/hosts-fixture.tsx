@@ -41,7 +41,11 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData; n
         groups={groups}
         ungrouped={ungrouped}
         paging={{ page: 1, pages: data === "worst" ? 124 : 1 }}
-        group={groupName ? { cn: groupName, found: groups.find((group) => group.cn === groupName) ?? null } : null}
+        group={(() => {
+          if (!groupName) return null;
+          const found = groups.find((group) => group.cn === groupName);
+          return { cn: groupName, found: found ? { ...found, hostTotal: found.hostDetails.length } : null, paging: { page: 1, pages: 1 } };
+        })()}
         host={fqdn ? { fqdn, found: everyHost.find((candidate) => candidate.fqdn === fqdn) ?? null } : null}
       />
     </LocaleProvider>

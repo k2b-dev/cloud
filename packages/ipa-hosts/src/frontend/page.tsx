@@ -7,6 +7,7 @@ import HostsScreen from "./_components/HostsScreen.island";
 import { hostMessages } from "./messages";
 
 const PER_PAGE = 100;
+const GROUP_HOSTS_PER_PAGE = 50;
 
 const pageOf = (raw: string | undefined) => {
   const page = Number(raw ?? "1");
@@ -26,13 +27,15 @@ export default ssr<AuthContext>(async (c) => {
   const search = c.req.query("search")?.trim().slice(0, 200) ?? "";
   const groupName = c.req.query("group")?.trim().slice(0, 255) || null;
   const fqdn = c.req.query("host")?.trim().slice(0, 253) || null;
+  const hostsPage = pageOf(c.req.query("hosts_page"));
 
   const [groupsPage, ungroupedHosts, stats, openGroup, openHost] = await Promise.all([
     ipaHostsService.hostgroup.listWithHosts({ pagination: { page, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     ipaHostsService.host.listUngrouped({ pagination: { page: ungroupedPage, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     ipaHostsService.stats(),
     // an open record is read by its exact name, so it opens on any page, with any search, among any number of names
-    groupName ? ipaHostsService.hostgroup.getWithHosts({ cn: groupName }) : null,
+    // a group of any size opens with one page of its hosts
+    groupName ? ipaHostsService.hostgroup.getWithHosts({ cn: groupName, page: hostsPage, perPage: GROUP_HOSTS_PER_PAGE }) : null,
     fqdn ? ipaHostsService.host.get({ fqdn }) : null,
   ]);
   const pagination =
@@ -55,7 +58,15 @@ export default ssr<AuthContext>(async (c) => {
         groups={groupsPage.items}
         ungrouped={ungroupedHosts.items}
         paging={{ page: pagination.page, pages: pagination.total_pages }}
-        group={groupName ? { cn: groupName, found: openGroup } : null}
+        group={
+          groupName
+            ? {
+                cn: groupName,
+                found: openGroup,
+                paging: { page: hostsPage, pages: Math.max(1, Math.ceil((openGroup?.hostTotal ?? 0) / GROUP_HOSTS_PER_PAGE)) },
+              }
+            : null
+        }
         host={fqdn ? { fqdn, found: openHost } : null}
       />
     </AdminLayout>
