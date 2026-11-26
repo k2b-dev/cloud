@@ -112,6 +112,15 @@ const week: Event[] = [
     seats: { free: 5, of: 60 },
     host: { name: "Jonas Becker", color: "#be123c" },
   },
+  // the worst case of a title: long, with a year range at its end
+  {
+    title: "Gesprächsreihe Nachbarschaft: Wohnen, Arbeiten und Ankommen im Lindenhof 1950–2025",
+    kind: "talk",
+    time: "So 11:00",
+    room: "Saal 2",
+    seats: { free: 31, of: 40 },
+    host: { name: "Olena Koval", color: "#15803d" },
+  },
   {
     title: "Podium: Wohnen im Quartier",
     kind: "talk",
@@ -124,6 +133,9 @@ const week: Event[] = [
 
 /** What the wall screen shows after what runs now. */
 const next = [...today.slice(1), ...week.slice(0, 2)];
+
+/** A range of numbers (1920–1960) stays on one line when a title wraps: a word joiner after its dash. */
+const keepRanges = (text: string) => text.replace(/(\d)–(\d)/g, "$1–\u2060$2");
 
 const few = (seats: Seats) => seats.free > 0 && seats.free <= Math.max(3, seats.of / 10);
 
@@ -168,7 +180,9 @@ const programme = (events: Listed[]) => (
     columns={[
       {
         title: "Veranstaltung",
-        cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`] }),
+        // a long title takes a second line before it is cut: a year range never breaks off in the middle
+        wrap: true,
+        cell: (event) => ({ lines: [keepRanges(event.title), `${event.time} · ${event.room} · ${kinds[event.kind].label}`] }),
       },
       {
         title: "Leitung",
