@@ -3615,8 +3615,14 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
+  /* a section's actions keep only their symbols; the words stay their names (not `display: none`, which took them) */
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
