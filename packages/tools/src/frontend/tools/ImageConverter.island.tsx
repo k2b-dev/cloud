@@ -22,8 +22,9 @@ import {
   Text,
   useToast,
 } from "@k2b/ui/v2";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import ToolsScreen from "../ToolsScreen";
+import { toolColors } from "../tools-colors";
 import {
   buildBase64ImageTag,
   fitWithin,
@@ -66,10 +67,23 @@ type ExportRequest = { scope: ExportScope; destination: ExportDestination };
 type ExportResult = { destination: ExportDestination; message: string };
 
 const FORMATS: readonly ImageConverterFormat[] = ["jpeg", "png", "webp"];
-/** A limit in pixels from a field: empty is no limit, anything else must be a whole positive number. */
-const pixels = (value: string): number | null => {
+/** A limit in pixels from a field: empty is no limit, a whole positive number a limit, anything else not valid. */
+const pixels = (value: string): number | null | undefined => {
+  if (!value.trim()) return null;
   const number = Number(value);
-  return value.trim() && Number.isInteger(number) && number > 0 ? number : null;
+  return Number.isInteger(number) && number > 0 ? number : undefined;
+};
+/** A quality in percent from a field, 10 to 100, or not valid. */
+const percent = (value: string): number | undefined => {
+  const number = Number(value);
+  return value.trim() && Number.isFinite(number) && number >= 10 && number <= 100 ? number / 100 : undefined;
+};
+/** A hex colour from a field, the short form written out (#fff is #ffffff), or not valid. */
+const hexColor = (value: string): string | undefined => {
+  const text = value.trim().toLowerCase();
+  if (/^#[0-9a-f]{6}$/.test(text)) return text;
+  if (/^#[0-9a-f]{3}$/.test(text)) return `#${[...text.slice(1)].map((digit) => digit + digit).join("")}`;
+  return undefined;
 };
 
 let nextImageId = 0;
@@ -112,10 +126,20 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const intakeController = new AbortController();
   let processing = false;
   const [format, setFormat] = createSignal<ImageConverterFormat>("webp");
-  const [quality, setQuality] = createSignal(0.85);
-  const [jpegBackground, setJpegBackground] = createSignal("#ffffff");
-  const [maxWidth, setMaxWidth] = createSignal<number | null>(null);
-  const [maxHeight, setMaxHeight] = createSignal<number | null>(null);
+  // The fields keep what was typed; a value that is not valid says so at its field and holds the export.
+  const [qualityText, setQualityText] = createSignal("85");
+  const [backgroundText, setBackgroundText] = createSignal("#ffffff");
+  const [widthText, setWidthText] = createSignal("");
+  const [heightText, setHeightText] = createSignal("");
+  const quality = () => percent(qualityText()) ?? 0.85;
+  const jpegBackground = () => hexColor(backgroundText()) ?? "#ffffff";
+  const maxWidth = () => pixels(widthText()) ?? null;
+  const maxHeight = () => pixels(heightText()) ?? null;
+  const qualityError = () => (format() !== "png" && percent(qualityText()) === undefined ? t().qualityInvalid : undefined);
+  const backgroundError = () => (format() === "jpeg" && hexColor(backgroundText()) === undefined ? t().colorInvalid : undefined);
+  const widthError = () => (pixels(widthText()) === undefined ? t().pixelsInvalid : undefined);
+  const heightError = () => (pixels(heightText()) === undefined ? t().pixelsInvalid : undefined);
+  const settingsInvalid = () => Boolean(qualityError() || backgroundError() || widthError() || heightError());
   const [progress, setProgress] = createSignal<number | null>(null);
   const [error, setError] = createSignal("");
   const [exportLocked, setExportLocked] = createSignal(false);
@@ -330,7 +354,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   });
 
   const startExport = (scope: ExportScope, destination: ExportDestination) => {
-    if (!loading() && !exportMutation.loading()) void exportMutation.mutate({ scope, destination });
+    if (!loading() && !exportMutation.loading() && !settingsInvalid()) void exportMutation.mutate({ scope, destination });
   };
 
   onCleanup(() => {
@@ -461,8 +485,18 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   ? {
                       count: t().selectedCount({ count: selectedCount() }),
                       actions: [
-                        { label: exportWord(), icon: "download", onClick: () => startExport("selected", "download"), disabled: busy() },
-                        { label: copyWord(), icon: "copy", onClick: () => startExport("selected", "clipboard"), disabled: busy() },
+                        {
+                          label: exportWord(),
+                          icon: "download",
+                          onClick: () => startExport("selected", "download"),
+                          disabled: busy() || settingsInvalid(),
+                        },
+                        {
+                          label: copyWord(),
+                          icon: "copy",
+                          onClick: () => startExport("selected", "clipboard"),
+                          disabled: busy() || settingsInvalid(),
+                        },
                       ],
                       clear: { label: t().clearSelection, onClick: () => toggleAll(false) },
                     }
@@ -481,58 +515,57 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               />
             }
           >
-            {/* k2b-ui gap: no thumbnail in a v2 row yet (DP: Row mark / Tiles media); each image shows its type sign. */}
-            <Show when={items().some((item) => item.status !== "failed")}>
-              <List label={t().listLabel}>
-                <For
-                  each={items()
-                    .filter((item) => item.status !== "failed")
-                    .map((item) => item.id)}
-                >
-                  {(id) => {
-                    // A removed row can read the list once more before it is disposed.
-                    const item = createMemo(() => itemsById().get(id));
-                    return (
-                      <Show when={item()}>
-                        {(current) => (
-                          <Menu.Context items={deedsOf(current())}>
-                            <Row
-                              icon="photo"
-                              color="#0e7490"
-                              lines={[current().file.name, lineOf(current())]}
-                              select={
-                                current().status === "ready" && hasSelection()
-                                  ? { selected: selectedOf(current()), onChange: (selected) => toggleImage(id, selected) }
-                                  : undefined
-                              }
-                              end={<Menu label={t().imageActions({ name: current().file.name })} items={deedsOf(current())} />}
-                            />
-                          </Menu.Context>
-                        )}
-                      </Show>
-                    );
-                  }}
-                </For>
-              </List>
-            </Show>
-            {/* A file that could not be added says why and what to do, whole, and can be removed; below the list, so no row moves. */}
-            <For each={items().filter((item) => item.status === "failed")}>
-              {(item) => (
-                <Notice
-                  tone="bad"
-                  title={`${item.file.name}: ${item.status === "failed" ? intakeT()[`${item.reason}Title`] : ""}`}
-                  actions={[
-                    {
-                      label: t().removeNamed({ name: item.file.name }),
-                      onClick: () => removeImage(item.id),
-                      disabled: exportMutation.loading(),
-                    },
-                  ]}
-                >
-                  {lineOf(item)}
-                </Notice>
-              )}
-            </For>
+            {/* k2b-ui gap: no thumbnail in a v2 row on this branch (Row mark, #4208, which conflicts with the virtual list of
+                #4211 until one of them lands); each image shows its type sign in the image colour. */}
+            {/* Every file is a row, in drop order: one that could not be added says why and how to go on in its own row. */}
+            <List
+              label={t().listLabel}
+              items={items()}
+              rowKey={(item) => item.id}
+              row={(item) => {
+                // the list makes a row once per item; the current state of the item comes from the lookup
+                const current = createMemo(() => itemsById().get(item.id) ?? item);
+                const failure = () => {
+                  const value = current();
+                  return value.status === "failed" ? value : undefined;
+                };
+                return (
+                  <Show
+                    when={!failure()}
+                    fallback={
+                      <Row
+                        icon="photo-off"
+                        color="var(--k2-bad)"
+                        lines={[current().file.name, failure() ? intakeT()[`${failure()!.reason}Title`] : "", lineOf(current())]}
+                        end={
+                          <Button
+                            variant="ghost"
+                            icon="x"
+                            label={t().removeNamed({ name: current().file.name })}
+                            disabled={exportMutation.loading()}
+                            onClick={() => removeImage(item.id)}
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <Menu.Context items={deedsOf(current())}>
+                      <Row
+                        icon="photo"
+                        color={toolColors.image}
+                        lines={[current().file.name, lineOf(current())]}
+                        select={
+                          current().status === "ready" && hasSelection()
+                            ? { selected: selectedOf(current()), onChange: (selected) => toggleImage(item.id, selected) }
+                            : undefined
+                        }
+                        end={<Menu label={t().imageActions({ name: current().file.name })} items={deedsOf(current())} />}
+                      />
+                    </Menu.Context>
+                  </Show>
+                );
+              }}
+            />
           </Show>
           <Band>
             <Text type="meta" muted>
@@ -568,54 +601,44 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               </Field>
               <Show when={format() !== "png"}>
                 {/* k2b-ui gap: no v2 slider (lane Y, #4191); the quality is a number in percent. */}
-                <Field label={t().quality} optional="%">
+                <Field label={t().quality} optional="%" error={qualityError()}>
                   <Input
                     type="number"
                     min={10}
                     max={100}
-                    value={String(Math.round(quality() * 100))}
+                    value={qualityText()}
                     disabled={exportMutation.loading()}
-                    onInput={(value) => {
-                      const percent = Number(value);
-                      if (Number.isFinite(percent) && percent >= 10 && percent <= 100) setQuality(percent / 100);
-                    }}
+                    onInput={setQualityText}
                   />
                 </Field>
               </Show>
               <Show when={format() === "jpeg"}>
                 {/* k2b-ui gap: no v2 colour picker (lane Y, #4191); the background is a hex colour. */}
-                <Field label={t().transparencyBackground} hint={t().transparencyDescription}>
-                  <Input
-                    value={jpegBackground()}
-                    spellcheck={false}
-                    disabled={exportMutation.loading()}
-                    onInput={(value) => {
-                      if (/^#[0-9a-f]{6}$/i.test(value.trim())) setJpegBackground(value.trim());
-                    }}
-                  />
+                <Field label={t().transparencyBackground} hint={t().transparencyDescription} error={backgroundError()}>
+                  <Input value={backgroundText()} spellcheck={false} disabled={exportMutation.loading()} onInput={setBackgroundText} />
                 </Field>
               </Show>
             </Section>
             <Section icon="dimensions" title={t().maxDimensions} summary={t().maxDimensionsDescription}>
               <Field.Row>
-                <Field label={t().maxWidth} optional="px">
+                <Field label={t().maxWidth} optional="px" error={widthError()}>
                   <Input
                     type="number"
                     min={1}
                     placeholder={t().original}
-                    value={maxWidth() === null ? "" : String(maxWidth())}
+                    value={widthText()}
                     disabled={exportMutation.loading()}
-                    onInput={(value) => setMaxWidth(pixels(value))}
+                    onInput={setWidthText}
                   />
                 </Field>
-                <Field label={t().maxHeight} optional="px">
+                <Field label={t().maxHeight} optional="px" error={heightError()}>
                   <Input
                     type="number"
                     min={1}
                     placeholder={t().original}
-                    value={maxHeight() === null ? "" : String(maxHeight())}
+                    value={heightText()}
                     disabled={exportMutation.loading()}
-                    onInput={(value) => setMaxHeight(pixels(value))}
+                    onInput={setHeightText}
                   />
                 </Field>
               </Field.Row>
@@ -624,14 +647,14 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               <Bar
                 end={
                   <>
-                    <Button icon="copy" disabled={loading()} onClick={() => startExport(scope(), "clipboard")}>
-                      {t().copyShort}
+                    <Button icon="copy" disabled={loading() || settingsInvalid()} onClick={() => startExport(scope(), "clipboard")}>
+                      {hasSelection() ? copyWord() : t().copyShort}
                     </Button>
                     <Button
                       variant="primary"
                       icon="download"
                       busy={exportMutation.loading()}
-                      disabled={loading()}
+                      disabled={loading() || settingsInvalid()}
                       onClick={() => startExport(scope(), "download")}
                     >
                       {exportWord()}

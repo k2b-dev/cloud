@@ -58,6 +58,9 @@ describe("Image Converter", () => {
     expect(html).toContain("Export selected (1)");
     expect(html).toContain("Copy selected (1) as Base64 HTML");
     expect(html).toContain("Clear selection");
+    // the copy of the settings pane copies the selection too, and says so
+    expect(html).not.toContain("Copy as Base64<");
+    expect(html.match(/Copy selected \(1\) as Base64 HTML/g)?.length).toBeGreaterThanOrEqual(2);
   });
 });
 
@@ -77,8 +80,12 @@ describe("image intake states in the main workspace", () => {
   test("a file that failed keeps its reason, recovery and remove action, with the settings closed", () => {
     const html = renderItems([{ status: "failed", id: "failed", file, reason: "decode-failed" }]);
 
-    expect(html).toContain("IMG_0001.HEIC: This image could not be read.");
-    expect(html).toContain("Export it again from the source app, or choose another file.");
+    // the failure stands in the file's own row, in the list: no band across the page per file
+    expect(html).not.toContain('data-k2-part="Notice"');
+    const row = html.slice(html.indexOf('data-k2-part="Row"'));
+    expect(row).toContain("IMG_0001.HEIC");
+    expect(row).toContain("This image could not be read.");
+    expect(row).toContain("Export it again from the source app, or choose another file.");
     expect(html).toContain("Remove IMG_0001.HEIC");
     expect(html).not.toContain("Convert and export");
     expect(html).not.toContain("Export all (");
