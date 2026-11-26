@@ -194,35 +194,35 @@ export const revokeClientFamilies = async (params: {
   userId: string | null;
   reason: string;
 }): Promise<number> => {
-  const families = params.userId
-    ? await params.db<{ id: string }[]>`
-        UPDATE oauth.refresh_token_families
-        SET status = 'revoked',
-          revoked_at = COALESCE(revoked_at, now()),
-          revoked_reason = ${params.reason}
-        WHERE client_id = ${params.clientId}
-          AND user_id = ${params.userId}::uuid
-          AND status IN ('active', 'reserved')
-        RETURNING id
+  // one statement per case: the families and their tokens together, without sending the family ids back and forth
+  const [row] = params.userId
+    ? await params.db<{ revoked: number }[]>`
+        WITH revoked AS (
+          UPDATE oauth.refresh_token_families
+          SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), revoked_reason = ${params.reason}
+          WHERE client_id = ${params.clientId} AND user_id = ${params.userId}::uuid AND status IN ('active', 'reserved')
+          RETURNING id
+        ), tokens AS (
+          UPDATE oauth.refresh_tokens token
+          SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+          FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+        )
+        SELECT count(*)::int AS revoked FROM revoked
       `
-    : await params.db<{ id: string }[]>`
-        UPDATE oauth.refresh_token_families
-        SET status = 'revoked',
-          revoked_at = COALESCE(revoked_at, now()),
-          revoked_reason = ${params.reason}
-        WHERE client_id = ${params.clientId}
-          AND status IN ('active', 'reserved')
-        RETURNING id
+    : await params.db<{ revoked: number }[]>`
+        WITH revoked AS (
+          UPDATE oauth.refresh_token_families
+          SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), revoked_reason = ${params.reason}
+          WHERE client_id = ${params.clientId} AND status IN ('active', 'reserved')
+          RETURNING id
+        ), tokens AS (
+          UPDATE oauth.refresh_tokens token
+          SET status = 'revoked', revoked_at = COALESCE(token.revoked_at, now())
+          FROM revoked WHERE token.family_id = revoked.id AND token.status IN ('active', 'issuing')
+        )
+        SELECT count(*)::int AS revoked FROM revoked
       `;
-  if (families.length === 0) return 0;
-  await params.db`
-    UPDATE oauth.refresh_tokens
-    SET status = 'revoked',
-      revoked_at = COALESCE(revoked_at, now())
-    WHERE family_id = ANY(${toPgUuidArray(families.map((family) => family.id))}::uuid[])
-      AND status IN ('active', 'issuing')
-  `;
-  return families.length;
+  return row?.revoked ?? 0;
 };
 
 export const rotate = async (

@@ -47,22 +47,43 @@ suiteFor(
     }));
 
   test("an administrator disconnects one person, then everyone; a revoked refresh token no longer refreshes", () =>
-    withAdminOAuth(async ({ adminHeaders, sessionHeaders }) => {
+    withAdminOAuth(async ({ userId, writeHeaders, sessionHeaders }) => {
       const fixture = await connectedClient();
       try {
         const [ada, ben] = fixture.people;
-        const one = await routes.request(`/${fixture.id}/connections/${ada!.userId}`, { method: "DELETE", headers: adminHeaders });
+        // sign-ins still on their way: Ben's unexchanged code and an open device sign-in end with everyone's connections
+        await sql`
+          INSERT INTO oauth.codes (client_id, user_id, redirect_uri, audiences)
+          VALUES (${fixture.clientId}, ${ben!.userId}::uuid, 'https://client.example.test/callback', ARRAY['cloud']::text[])
+        `;
+        await sql`
+          INSERT INTO oauth.device_authorizations (device_code_hash, user_code_hash, client_id, scopes, audiences, expires_at)
+          VALUES (${crypto.randomUUID()}, ${crypto.randomUUID()}, ${fixture.clientId}, ARRAY['offline_access']::text[], ARRAY['cloud']::text[],
+            now() + INTERVAL '10 minutes')
+        `;
+        const open = async () => {
+          const [row] = await sql<{ codes: number; devices: number }[]>`
+            SELECT (SELECT count(*)::int FROM oauth.codes WHERE client_id = ${fixture.clientId} AND expires_at > now()) AS codes,
+              (SELECT count(*)::int FROM oauth.device_authorizations WHERE client_id = ${fixture.clientId} AND expires_at > now()) AS devices
+          `;
+          return row;
+        };
+        expect(await open()).toEqual({ codes: 1, devices: 1 });
+
+        const one = await routes.request(`/${fixture.id}/connections/${ada!.userId}`, { method: "DELETE", headers: writeHeaders });
         expect(one.status).toBe(200);
         expect(z.object({ revoked: z.number() }).parse(await one.json())).toEqual({ revoked: 1 });
         expect(await familyStates(fixture.clientId)).toEqual({ [ada!.userId]: "revoked", [ben!.userId]: "active" });
-        // the revoked refresh token is refused; the other person's still works
+        // the revoked refresh token is refused; Ben's family and his sign-ins on their way stay untouched
         expect(await oauth.refreshTokens.rotate(ada!.refreshToken, fixture.client)).toEqual({ ok: false, error: "invalid_grant" });
+        expect(await open()).toEqual({ codes: 1, devices: 1 });
 
         const all = await routes.request(`/${fixture.id}/connections`, { method: "DELETE", headers: sessionHeaders });
         expect(all.status).toBe(200);
         expect(z.object({ revoked: z.number() }).parse(await all.json())).toEqual({ revoked: 1 });
         expect(await familyStates(fixture.clientId)).toEqual({ [ada!.userId]: "revoked", [ben!.userId]: "revoked" });
         expect(await oauth.refreshTokens.rotate(ben!.refreshToken, fixture.client)).toEqual({ ok: false, error: "invalid_grant" });
+        expect(await open()).toEqual({ codes: 0, devices: 0 });
 
         // one audit entry per revoke: who, which client, which person or all
         const events = await sql<
@@ -76,7 +97,7 @@ suiteFor(
           { userId: ada!.userId, all: false, revoked: 1 },
           { userId: null, all: true, revoked: 1 },
         ]);
-        expect(events.every((event) => typeof event.actor_user_id === "string")).toBe(true);
+        expect(events.map((event) => event.actor_user_id)).toEqual([userId, userId]);
       } finally {
         await fixture.remove();
       }

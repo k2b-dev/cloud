@@ -51,8 +51,8 @@ export const oauthService = {
       fromMutation(await oauth.clients.delete_(config)),
     regenerateSecret: async (config: Parameters<typeof oauth.clients.regenerateSecret>[0]) =>
       fromMutation(await oauth.clients.regenerateSecret(config)),
-    revokeConnections: async (config: Parameters<typeof oauth.clients.revokeConnections>[0]) =>
-      fromMutation(await oauth.clients.revokeConnections(config)),
+    revokeConnections: async (config: Parameters<typeof oauth.disconnect.revokeConnections>[0]) =>
+      fromMutation(await oauth.disconnect.revokeConnections(config)),
   },
 };
 

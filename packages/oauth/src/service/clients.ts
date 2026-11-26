@@ -13,7 +13,6 @@ import type {
   OAuthScope,
   UpdateOAuthClient,
 } from "@/contracts";
-import * as refreshTokens from "./refresh-tokens";
 
 // ==========================
 // OAuth Clients Service
@@ -61,7 +60,7 @@ type AccessPrincipals = {
   groups: OAuthAccessGroup[];
 };
 
-type OAuthClientAdminActor = {
+export type OAuthClientAdminActor = {
   id: string;
   uid: string;
   provider: string;
@@ -612,45 +611,6 @@ export const regenerateSecret = async (params: {
     );
 
     return { ok: true, data: { clientSecret } } as const;
-  });
-};
-
-/**
- * Disconnect one person, or everyone, from a client: their refresh tokens stop working at once, and the access
- * tokens already issued run out at their short expiry. One audit entry names who did it, the client and whom.
- */
-export const revokeConnections = async (params: {
-  id: string;
-  /** The person to disconnect; null disconnects everyone. */
-  userId: string | null;
-  actor: OAuthClientAdminActor;
-}): Promise<MutationResult<{ revoked: number }>> => {
-  const existing = await get({ id: params.id });
-  if (!existing) return { ok: false, error: "Client not found", status: 404 };
-
-  return sql.begin(async (tx) => {
-    const revoked = await refreshTokens.revokeClientFamilies({
-      db: tx,
-      clientId: existing.clientId,
-      userId: params.userId,
-      reason: params.userId ? "admin_disconnect_user" : "admin_disconnect_all",
-    });
-    await audit.record(
-      {
-        action: "oauth.client.connections_revoke",
-        outcome: "allowed",
-        actor: {
-          userId: params.actor.id,
-          uid: params.actor.uid,
-          provider: params.actor.provider,
-          roles: params.actor.roles,
-        },
-        target: { type: "oauth_client", id: existing.id, label: existing.name },
-        metadata: { clientId: existing.clientId, userId: params.userId, all: params.userId === null, revoked },
-      },
-      tx,
-    );
-    return { ok: true, data: { revoked } } as const;
   });
 };
 
