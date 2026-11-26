@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser } from "playwright";
-import { launchBrowser } from "../../../../ui/test/browser";
+import { launchBrowser, pageErrors } from "../../../../ui/test/browser";
 
 const ui = `${resolve(import.meta.dir, "../../../../ui")}/`;
 let server: ReturnType<typeof Bun.serve>;
@@ -88,9 +88,15 @@ afterAll(async () => {
   server?.stop(true);
 });
 
-const errors: string[] = [];
+// every page's errors; a view transition that a navigation cuts short is the browser's, not the page's
+const errors: string[][] = [];
 afterEach(() => {
-  expect(errors.splice(0)).toEqual([]);
+  expect(
+    errors
+      .splice(0)
+      .flat()
+      .filter((message) => !message.includes("ViewTransition")),
+  ).toEqual([]);
 });
 const open = async (path: string, width = 1440) => {
   const page = await browser.newPage({
@@ -98,9 +104,7 @@ const open = async (path: string, width = 1440) => {
     isMobile: width < 600,
     hasTouch: width < 1024,
   });
-  page.on("pageerror", (error) => {
-    if (!error.message.includes("ViewTransition")) errors.push(error.message);
-  });
+  errors.push(pageErrors(page));
   await page.goto(new URL(path, server.url).href);
   await page.locator("[data-k2-workspace]").waitFor();
   await page.evaluate(() => document.fonts.ready);

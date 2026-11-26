@@ -51,7 +51,7 @@ const entries = [
   ["Mail", "mail/src/frontend/_components/MailboxSettings.tsx", "mail.mailbox", { context: { mailbox: { id: "Targ01" } } }],
   ["Mail admin", "mail/src/frontend/_components/MailAdminMailboxActions.island.tsx", "mail.mailbox", { mailboxId: "Targ01" }],
   ["Notebooks", "notebooks/src/frontend/[id]/_components/settings/AccessSection.tsx", "notebooks.notebook", { notebook: { id: "Targ01" } }],
-  ["Notebooks admin", "notebooks/src/frontend/_components/AdminNotebookActions.island.tsx", "notebooks.notebook", { notebookId: "Targ01" }],
+  ["Notebooks admin", "notebooks/src/frontend/_components/admin-notebook-actions.ts", "notebooks.notebook", { notebookId: "Targ01" }],
   ["Grids", "grids/src/frontend/_components/permissions/ScopedAccessSection.tsx", "grids.base", { scope: { type: "base", id: "Targ01" } }],
   [
     "Grids App",
