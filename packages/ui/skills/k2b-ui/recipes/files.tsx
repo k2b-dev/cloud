@@ -9,7 +9,6 @@ import {
   Icon,
   Input,
   ListOrder,
-  Menu,
   Nav,
   Pane,
   Path,
@@ -316,20 +315,19 @@ export default function Folder(props: Props) {
               onChange={setState}
               icons={{ kind: "file", owner: "user" }}
               results="13 Einträge · 186 MB"
-              end={
-                <>
-                  <ListOrder query={fileQuery} state={state()} onChange={setState} />
-                  <Menu
-                    icon={props.grid ? "layout-grid" : "list"}
-                    items={[
-                      { label: "Liste", icon: "list", checked: !props.grid },
-                      { label: "Raster", icon: "layout-grid", checked: props.grid === true },
-                    ]}
-                  >
-                    {props.grid ? "Raster" : "Liste"}
-                  </Menu>
-                </>
-              }
+              end={<ListOrder query={fileQuery} state={state()} onChange={setState} />}
+              // list or grid: a menu beside the order on the desktop, in the one menu "Ansicht" on the phone
+              display={[
+                {
+                  title: "Darstellung",
+                  choice: props.grid ? "grid" : "list",
+                  onChoose: () => {},
+                  items: [
+                    { label: "Liste", icon: "list", value: "list" },
+                    { label: "Raster", icon: "layout-grid", value: "grid" },
+                  ],
+                },
+              ]}
             />
           )
         }

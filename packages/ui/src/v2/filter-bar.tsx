@@ -31,7 +31,7 @@ import type {
 } from "./list-query";
 import { Lookup } from "./lookup";
 import { Icon } from "./marks";
-import { Menu, type MenuEntry, type MenuItem } from "./menu";
+import { Menu, type MenuEntry, type MenuItem, type MenuSection } from "./menu";
 import { Dialog } from "./overlays";
 import { useToast } from "./toast";
 
@@ -303,6 +303,12 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
    * height. On the phone it leaves; the sheet holds sort and group there.
    */
   end?: JSX.Element;
+  /**
+   * How the list shows beside its order, each a choice of one: "Darstellung" (Liste, Raster), "Farbe" (nach Tag, nach
+   * Status). On the desktop each stands as a menu after `end`, named by its chosen value; on the phone they join sort
+   * and grouping in one menu "Ansicht" at the bar's end, so nothing of how the list shows is out of reach.
+   */
+  display?: readonly MenuSection[];
 };
 
 /**
@@ -487,9 +493,34 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   const fieldCount = () => active().filter(([key, definition]) => !isDefault(key, definition)).length;
   // the end of the bar is made once and read from here: reading the prop again would make its JSX again
   const tail = resolveChildren(() => props.end);
+  // The phone's one menu of how the list shows: the sort, the grouping, then the app's own choices (display).
+  const viewSections = (): MenuEntry[] => {
+    const sections: MenuEntry[] = [];
+    if (!props.query.sort.fixed)
+      sections.push({
+        title: t().sort,
+        choice: `${props.state.sort.field}.${props.state.sort.direction}`,
+        onChoose: (value) => apply((params) => params.set("sort", value)),
+        items: sortEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
+      });
+    if (props.query.group && Object.keys(props.query.group).length > 0)
+      sections.push({
+        title: t().group,
+        choice: props.state.group ?? "",
+        onChoose: (value) => apply((params) => (value ? params.set("group", value) : params.delete("group"))),
+        items: groupEntries(props.query, t()).map((entry) => ({ label: entry.label, value: entry.value })),
+      });
+    return [...sections, ...(props.display ?? [])];
+  };
 
   return (
-    <div class="k2-fbar" data-k2-part="FilterBar" data-tail={tail() !== undefined ? "" : undefined} role="group" aria-label={t().filters}>
+    <div
+      class="k2-fbar"
+      data-k2-part="FilterBar"
+      data-tail={tail() !== undefined || props.display?.length ? "" : undefined}
+      role="group"
+      aria-label={t().filters}
+    >
       <Button variant="secondary" icon="adjustments-horizontal" onClick={() => openSheet({})}>
         {t().filterCount}
         <Show when={fieldCount() > 0}>
@@ -565,13 +596,35 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
           </span>
         </Show>
       </div>
-      <OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />
-      <Show when={tail() !== undefined}>
+      {/* on the phone: the order alone opens the sheet; with choices of how the list shows, one menu holds them all */}
+      <Show
+        when={props.display?.length}
+        fallback={<OrderButtons query={props.query} state={props.state} onOpen={(display) => openSheet({ display })} />}
+      >
+        <span class="k2-fbar-view">
+          <Menu icon="adjustments-horizontal" items={viewSections()}>
+            {t().view}
+          </Menu>
+        </span>
+      </Show>
+      <Show when={tail() !== undefined || props.display?.length}>
         <div class="k2-fbar-tail">
           <Show when={props.results}>
             <span class="k2-fbar-results">{props.results}</span>
           </Show>
           {tail()}
+          <For each={props.display}>
+            {(section) => {
+              const chosen = () => section.items.find((item) => item.value === section.choice);
+              return (
+                <span class="k2-fbar-display">
+                  <Menu icon={chosen()?.icon} label={section.title} items={[section]}>
+                    {chosen()?.label ?? section.title}
+                  </Menu>
+                </span>
+              );
+            }}
+          </For>
         </div>
       </Show>
       <Show when={props.views && props.views.stores.length > 0 ? props.views : undefined}>
