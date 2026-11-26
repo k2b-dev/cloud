@@ -26,6 +26,8 @@ export const MailV2TimePicker = (props: {
       time
       label={props.label}
       timeZone={props.timeZone}
+      // a moment ahead: six weeks from this week, no month of days that lie behind (on the phone and the desktop alike)
+      view="weeks"
       min={today}
       defaultTime="08:00"
       {...(value ? { value } : {})}

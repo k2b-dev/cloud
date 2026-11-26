@@ -416,7 +416,12 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       await panel(page).waitFor();
       expect(await panel(page).locator('[data-value="2026-11-28"]').getAttribute("aria-selected")).toBe("true");
-      expect(await panel(page).getByRole("textbox", { name: "Uhrzeit" }).inputValue()).toBe("08:00");
+      // the time is core's time input: an hour and a minute
+      const time = panel(page).getByRole("group", { name: "Uhrzeit" });
+      expect([
+        await time.getByRole("spinbutton", { name: "Stunde" }).inputValue(),
+        await time.getByRole("spinbutton", { name: "Minute" }).inputValue(),
+      ]).toEqual(["08", "00"]);
       // back: the calendar gives the place back to the times
       await panel(page).getByRole("button", { name: "Zurück zu Datum und Uhrzeit …" }).click();
       await panel(page).waitFor({ state: "detached" });
