@@ -1,8 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import type { NavProps } from "@k2b/ui/v2";
-import type { KeptConversationExport } from "../../../contracts";
-import type { KeepHistoryEntry } from "../../../service/kept-conversations";
-import type { MailAdminKeptRow } from "./MailAdminKeptList.island";
+import type { KeptConversationExport } from "../../src/contracts";
+import type { MailAdminKeptRow } from "../../src/frontend/_components/v2/MailAdminKeptList.island";
+import type { KeepHistoryEntry } from "../../src/service/kept-conversations";
 
 // Invented data for Cloud administration › Mail › Kept: a firm that keeps conversations as evidence (leases, claims,
 // staff matters). Names and domains are made up (example.org); the clock is fixed so every date reads the same.

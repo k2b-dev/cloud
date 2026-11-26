@@ -8,6 +8,7 @@ import {
   Button,
   Chip,
   Failed,
+  Icon,
   Inline,
   Input,
   Mark,
@@ -190,10 +191,10 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
                 width: { min: 130, default: 160 },
                 cell: (row) =>
                   row.mailboxDeleted ? (
-                    <Inline>
-                      <Text>{row.mailboxName}</Text>
-                      <Chip status="warn">{t().deletedShort}</Chip>
-                    </Inline>
+                    // state as colour, symbol and word; the status row counts these rows
+                    <Text tone="warn">
+                      <Icon name="trash" /> {row.mailboxName} ({t().deletedShort})
+                    </Text>
                   ) : (
                     row.mailboxName
                   ),
