@@ -49,7 +49,9 @@ default and keeps the plain address name (`title=Vitrine`), every other one is
 `key.verb` (`status.not=online,sold`, `price.after=500`, `due.empty=`). The
 state then holds a term `{ verb, value }` (`empty` and `notEmpty` have no
 value); a field without `verbs` keeps its plain value. `filterVerbs[kind]`
-lists what each kind allows; a `required` field has no verbs.
+lists what each kind allows; a `required` field has no verbs, and the first
+verb compares with a value (never `empty`: a form's empty field `a=` must
+not mean "is empty").
 
 ```ts
 title: field.text({ label: "Titel", verbs: ["contains", "is", "notContains", "empty"] }),
@@ -71,8 +73,9 @@ Each sort option names what it orders with `kind`: `date` ("Neueste zuerst" /
 `labels: { asc, desc }` from the app's catalog ("Früheste zuerst" for a due
 date). `ListOrder` and the phone sheet show two choices, "Sortieren nach"
 (the fields) and "Reihenfolge" (the order in words); its button reads
-"Preis · Höchster zuerst". Never arrows. Picking another field keeps the order
-shown when that field offers it. The address stays `sort=price.desc`.
+"Preis · Höchster zuerst". Never arrows. Picking another field takes the first
+of its declared `directions` (`["desc", "asc"]`: newest or highest first);
+without them it keeps the order shown. The address stays `sort=price.desc`.
 
 A field with `required` (a log's time range) is framed like a field and has
 no × at its default; changed, it is tinted and × returns it to the default.

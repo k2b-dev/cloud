@@ -117,7 +117,7 @@ test("the sort reads in words: “Sortieren nach” the fields, “Reihenfolge�
   });
 });
 
-test("choosing an order keeps the field; another field keeps the order shown, in its own words", async () => {
+test("choosing an order keeps the field; another field starts with the first of its declared orders, in its own words", async () => {
   await withPage(filterBundle, "", async (page) => {
     const button = page.locator(".k2-order .k2-btn").first();
     await button.click();
@@ -126,11 +126,12 @@ test("choosing an order keeps the field; another field keeps the order shown, in
     await page.getByRole("menuitemradio", { name: "Älteste zuerst" }).click();
     expect(new URL(page.url()).searchParams.get("sort")).toBe("received.asc");
     expect(await button.textContent()).toBe("Eingang · Älteste zuerst");
-    // another field keeps the order shown, in its own words
+    // another field starts with the first of its declared directions (Preis declares ["desc", "asc"]: highest first),
+    // not with the order shown, in its own words
     await button.click();
     await page.getByRole("menuitemradio", { name: "Preis" }).click();
-    expect(new URL(page.url()).searchParams.get("sort")).toBe("price.asc");
-    expect(await button.textContent()).toBe("Preis · Niedrigster zuerst");
+    expect(new URL(page.url()).searchParams.get("sort")).toBe("price.desc");
+    expect(await button.textContent()).toBe("Preis · Höchster zuerst");
     await button.click();
     expect(await page.getByRole("group", { name: "Reihenfolge" }).getByRole("menuitemradio").allTextContents()).toEqual([
       "Höchster zuerst",
@@ -138,7 +139,7 @@ test("choosing an order keeps the field; another field keeps the order shown, in
     ]);
     // one choice: the tick at the end of the chosen row, in both sections
     await settled(page);
-    expect(await tickPlaces(page, ".k2-menu .k2-mi")).toEqual(["end", "none", "none", "end"]);
+    expect(await tickPlaces(page, ".k2-menu .k2-mi")).toEqual(["end", "none", "end", "none"]);
   });
 });
 

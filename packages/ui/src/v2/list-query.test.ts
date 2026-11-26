@@ -597,6 +597,17 @@ describe("filter verbs", () => {
       }),
     ).toThrow("verbs");
     expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: ["is", "is"] }) }, sort })).toThrow("repeat");
+    // the first verb keeps the plain name: `a=` from a form's empty field must never mean "is empty"
+    expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: ["empty", "is"] }) }, sort })).toThrow(
+      "compare with a value",
+    );
+    expect(() =>
+      defineListQuery({
+        key: "x",
+        fields: { a: field.choice({ label: "A", options: [{ value: "o", label: "O" }], verbs: ["notEmpty"] }) },
+        sort,
+      }),
+    ).toThrow("compare with a value");
     expect(() => defineListQuery({ key: "x", fields: { a: field.text({ label: "A", verbs: [] }) }, sort })).toThrow("verbs");
     expect(() =>
       defineListQuery({ key: "x", fields: { a: field.text({ label: "A", required: "v", verbs: ["is", "not"] }) }, sort }),
