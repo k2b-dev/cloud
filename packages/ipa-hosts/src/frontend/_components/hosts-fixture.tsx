@@ -17,7 +17,8 @@ const nav: NavProps = {
 const NORMAL_GROUPS = denseGroups();
 const WORST_GROUPS = worstGroups();
 
-export const HostsFixture = (props: { search: string; data?: HostsFixtureData }) => {
+/** `nav` is the shell's own admin navigation when the screen stands in the real page (dialog pictures). */
+export const HostsFixture = (props: { search: string; data?: HostsFixtureData; nav?: NavProps }) => {
   const params = new URLSearchParams(props.search);
   const data = props.data ?? "normal";
   const groups = data === "worst" ? WORST_GROUPS : data === "empty" ? [] : NORMAL_GROUPS;
@@ -28,7 +29,7 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData })
   return (
     <LocaleProvider locale="de">
       <HostsScreen
-        nav={nav}
+        nav={props.nav ?? nav}
         tab={params.get("tab") === "ungrouped" ? "ungrouped" : "groups"}
         search={params.get("search") ?? ""}
         figures={{

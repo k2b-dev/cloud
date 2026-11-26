@@ -478,7 +478,7 @@ export const hostgroupGetWithHosts = async (cn: string): Promise<IpaHostgroupWit
 export const hostGet = async (fqdn: string): Promise<IpaHostRecord | null> => {
   const rows = await sql<DbRow[]>`
     SELECT h.*,
-      COALESCE(ARRAY(SELECT hostgroup_cn FROM ipa_hosts.host_hostgroups WHERE host_fqdn = h.fqdn), '{}') AS hostgroups
+      COALESCE(ARRAY(SELECT hostgroup_cn FROM ipa_hosts.host_hostgroups WHERE host_fqdn = h.fqdn ORDER BY hostgroup_cn), '{}') AS hostgroups
     FROM ipa_hosts.hosts h
     WHERE h.fqdn = ${fqdn}
   `;

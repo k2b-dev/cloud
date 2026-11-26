@@ -88,7 +88,9 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
     expect(text).toContain("7 Hosts sind keiner Gruppe zugeordnet");
-    expect(text).toContain("von 5.678 insgesamt");
+    expect(text).toContain("1.234 in Gruppen");
+    // the lead says it once: no chip, figure or tab count repeats the hosts without a group
+    expect(text).not.toContain("Zuordnung erforderlich");
     // the open host is read by its exact name, though it is not on this page and the search names something else
     expect(hosts.mock.calls[0]![0]).toEqual({ fqdn: "far-away.example" });
     expect(text).toContain("archiv");

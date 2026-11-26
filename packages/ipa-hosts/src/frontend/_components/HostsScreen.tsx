@@ -236,15 +236,8 @@ export default function HostsScreen(props: HostsScreenProps) {
   /** A group's own colour, the same on every visit: its mark in lists and records. */
   const PALETTE = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#0891b2", "#ca8a04"];
   const groupColor = (cn: string) => PALETTE[[...cn].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
-  /** What a host's mirror says of its enrolment: SSH keys stored by the client, or none (colour, symbol and word). */
-  const hostState = (host: IpaHost) =>
-    host.sshFingerprints.length > 0 ? (
-      <Chip status="ok" icon="key">
-        {t().keysStored}
-      </Chip>
-    ) : (
-      <Chip icon="key-off">{t().noKeys}</Chip>
-    );
+  /** A row marks only the exception: a host whose client stored no SSH keys yet (symbol and word). */
+  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip icon="key-off">{t().noKeys}</Chip> : undefined);
   /** The second line of a host: only what the mirror holds. */
   const hostLine = (host: IpaHost) =>
     [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") || (host.macAddress[0] ?? host.platform ?? "");
@@ -279,37 +272,26 @@ export default function HostsScreen(props: HostsScreenProps) {
                 : t().assignedLead
           }
           facts={props.search ? [{ before: t().search, value: props.search }] : []}
-          filters={
-            props.figures.ungrouped > 0 ? (
-              <Chip status="warn" icon="server-off">
-                {t().needsAssignment}
-              </Chip>
-            ) : undefined
-          }
         />
       }
     >
-      <Cells>
-        <Cells.Cell
-          icon="folders"
-          label={t().hostgroups}
-          value={number(props.figures.groups)}
-          meta={props.search ? t().filtered : t().mirroredFromIpa}
-        />
-        <Cells.Cell
-          icon="server"
-          label={t().hostsInGroups}
-          value={number(props.figures.hostsInGroups)}
-          meta={t().ofTotal({ total: props.figures.hostsTotal })}
-        />
-        <Cells.Cell
-          icon={props.figures.ungrouped > 0 ? "server-off" : "check"}
-          label={t().ungrouped}
-          value={props.figures.ungrouped > 0 ? <Text tone="warn">{number(props.figures.ungrouped)}</Text> : "0"}
-          meta={props.figures.ungrouped > 0 ? t().needsAssignment : t().allAssigned}
-          href={props.figures.ungrouped > 0 && props.tab !== "ungrouped" ? href({ tab: "ungrouped", group: null, host: null }) : undefined}
-        />
-      </Cells>
+      {/* the figures say what the lead does not; an empty mirror has nothing to count */}
+      <Show when={props.figures.hostsTotal > 0 || props.figures.groups > 0}>
+        <Cells>
+          <Cells.Cell
+            icon="folders"
+            label={t().hostgroups}
+            value={number(props.figures.groups)}
+            meta={props.search ? t().filtered : t().mirroredFromIpa}
+          />
+          <Cells.Cell
+            icon="server"
+            label={t().hosts}
+            value={number(props.figures.hostsTotal)}
+            meta={t().inGroups({ count: props.figures.hostsInGroups })}
+          />
+        </Cells>
+      </Show>
       <Show
         when={props.tab === "groups"}
         fallback={
@@ -388,31 +370,31 @@ export default function HostsScreen(props: HostsScreenProps) {
       head={
         <Bar
           start={<Text type="lead">{group.cn}</Text>}
-          end={<Button variant="ghost" icon="x" label={t().close} href={href({ group: null })} />}
+          end={
+            <>
+              <Button icon="trash" onClick={() => void deleteGroup(group.cn)}>
+                {t().delete}
+              </Button>
+              <Button
+                icon="pencil"
+                onClick={() => (setFailure(null), setGroupDraft({ cn: group.cn, name: group.cn, description: group.description ?? "" }))}
+              >
+                {t().edit}
+              </Button>
+              <Button variant="ghost" icon="x" label={t().close} href={href({ group: null })} />
+            </>
+          }
         />
       }
     >
-      <List label={group.cn}>
-        <Show when={group.description}>{(text) => <Row icon="align-left" lines={[text(), t().description]} />}</Show>
-        <Row icon="server" color={groupColor(group.cn)} lines={[t().hostCount({ count: group.hostDetails.length }), t().hosts]} />
-      </List>
-      <Show when={group.hostgroups.length > 0}>
-        <Facts items={[{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]} />
-      </Show>
-      <Bar
-        end={
-          <>
-            <Button icon="trash" onClick={() => void deleteGroup(group.cn)}>
-              {t().delete}
-            </Button>
-            <Button
-              icon="pencil"
-              onClick={() => (setFailure(null), setGroupDraft({ cn: group.cn, name: group.cn, description: group.description ?? "" }))}
-            >
-              {t().edit}
-            </Button>
-          </>
-        }
+      <Facts
+        items={[
+          ...(group.description ? [{ label: t().description, value: group.description }] : []),
+          { label: t().hosts, value: t().hostCount({ count: group.hostDetails.length }) },
+          ...(group.hostgroups.length > 0
+            ? [{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]
+            : []),
+        ]}
       />
       <Section icon="server" title={t().hostsOfGroup}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
@@ -431,46 +413,48 @@ export default function HostsScreen(props: HostsScreenProps) {
         detail
         label={host.fqdn}
         back={{ label: openGroup() ?? t().ungroupedHosts, href: back }}
-        head={<Bar start={<Text type="lead">{host.fqdn}</Text>} end={<Button variant="ghost" icon="x" label={t().close} href={back} />} />}
-      >
-        <List label={host.fqdn}>
-          <Row icon="world" lines={[host.fqdn, "FQDN"]} marks={hostState(host)} />
-          <Show when={host.description}>{(text) => <Row icon="align-left" lines={[text(), t().description]} />}</Show>
-          <Show when={place(host)}>{(text) => <Row icon="map-pin" lines={[text(), t().location]} />}</Show>
-          <Show when={host.platform || host.osVersion}>
-            <Row icon="cpu" lines={[[host.osVersion, host.platform].filter(Boolean).join(" · "), t().platform]} />
-          </Show>
-        </List>
-        <Show when={host.macAddress.length > 0}>
-          <Facts
-            items={[
-              { label: t().macAddressesLabel, value: <For each={host.macAddress}>{(mac) => <Chip icon="network">{mac}</Chip>}</For> },
-            ]}
+        head={
+          <Bar
+            start={<Text type="lead">{host.fqdn}</Text>}
+            end={
+              <>
+                <Button icon="trash" onClick={() => void deleteHost(host.fqdn)}>
+                  {t().delete}
+                </Button>
+                <Button
+                  icon="pencil"
+                  onClick={() => {
+                    setFailure(null);
+                    setMacErrors([]);
+                    setHostDraft({
+                      description: host.description ?? "",
+                      locality: host.locality ?? "",
+                      location: host.location ?? "",
+                      macs: [...host.macAddress],
+                    });
+                  }}
+                >
+                  {t().edit}
+                </Button>
+                <Button variant="ghost" icon="x" label={t().close} href={back} />
+              </>
+            }
           />
-        </Show>
-        <Bar
-          end={
-            <>
-              <Button icon="trash" onClick={() => void deleteHost(host.fqdn)}>
-                {t().delete}
-              </Button>
-              <Button
-                icon="pencil"
-                onClick={() => {
-                  setFailure(null);
-                  setMacErrors([]);
-                  setHostDraft({
-                    description: host.description ?? "",
-                    locality: host.locality ?? "",
-                    location: host.location ?? "",
-                    macs: [...host.macAddress],
-                  });
-                }}
-              >
-                {t().edit}
-              </Button>
-            </>
-          }
+        }
+      >
+        <Facts
+          items={[
+            { label: "FQDN", value: host.fqdn, copy: host.fqdn },
+            { label: t().sshKeys, value: host.sshFingerprints.length > 0 ? t().keysStored : t().noKeys },
+            ...(host.description ? [{ label: t().description, value: host.description }] : []),
+            ...(place(host) ? [{ label: t().location, value: place(host) }] : []),
+            ...(host.platform || host.osVersion
+              ? [{ label: t().platform, value: [host.osVersion, host.platform].filter(Boolean).join(" · ") }]
+              : []),
+            ...(host.macAddress.length > 0
+              ? [{ label: t().macAddressesLabel, value: <For each={host.macAddress}>{(mac) => <Chip icon="network">{mac}</Chip>}</For> }]
+              : []),
+          ]}
         />
         <Section
           icon="folders"
@@ -641,7 +625,6 @@ export default function HostsScreen(props: HostsScreenProps) {
                 {
                   label: t().ungrouped,
                   icon: "server-off",
-                  count: props.figures.ungrouped > 0 ? number(props.figures.ungrouped) : undefined,
                   href: href({ tab: "ungrouped", group: null, host: null }),
                   current: props.tab === "ungrouped",
                 },
