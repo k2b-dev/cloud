@@ -110,10 +110,10 @@ describe("Book on v2", () => {
       "BookMermaid.island.tsx",
       "BookCharts.island.tsx",
     ]);
-    // the notebook's name stands in the sidebar's switcher, never a second time beside it in the head
+    // the head's title is the notebook, for writers and readers: on the phone it is the only place that names it
     for (const page of [render(), html]) {
       const [head] = await selectHtml(page, '[data-slot="head"]');
-      expect(head?.text).not.toContain("Company handbook");
+      expect(head?.text).toContain("Company handbook");
       // the view menu stands in the server's frame, so nothing moves into the head when the browser takes over
       expect((await selectHtml(page, '[data-slot="head"] button[data-slot="menu-trigger"]')).map((button) => button.text.trim())).toContain(
         "View",

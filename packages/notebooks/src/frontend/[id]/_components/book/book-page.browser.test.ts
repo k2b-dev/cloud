@@ -242,7 +242,7 @@ for (const width of [1440, 390]) {
       expect(await page.locator("solid-island #notebook-book-content").count()).toBe(0);
       expect(await page.locator('solid-island[data-file="BookHead.island.tsx"] [data-k2-part="Tabs"]').count()).toBe(1);
       // a writer's head holds the views, as the note's head does; the sidebar names the notebook beside it
-      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).not.toContain("Handbuch Lager");
+      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).toContain("Handbuch Lager");
       expect((await page.locator(main).boundingBox())!.height).toBeGreaterThan(400);
     } finally {
       await close(page);
@@ -297,9 +297,15 @@ for (const width of [1440, 390]) {
   test(`${width}: a reader stays in Book and reaches the note's open comments from the head`, async () => {
     const page = await open(width, "/app/notebooks/book01/notes/note01?mode=book&reader=1");
     try {
-      // no views into the workspace; the switcher names the notebook, the article its note
+      // no views into the workspace; the head names the notebook and holds the comments in the same row
       expect(await tabs(page).count()).toBe(0);
-      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).not.toContain("Handbuch Lager");
+      const head = page.locator('[data-k2-workspace] [data-slot="head"]');
+      expect(await head.textContent()).toContain("Handbuch Lager");
+      const row = await head.locator('[data-k2-part="Bar"]').first().boundingBox();
+      const named = await head.getByText("Handbuch Lager").boundingBox();
+      const count = await head.locator('a[title="2 offene Kommentare"]').boundingBox();
+      expect(Math.abs(named!.y + named!.height / 2 - (count!.y + count!.height / 2))).toBeLessThanOrEqual(2);
+      expect(count!.y + count!.height).toBeLessThanOrEqual(row!.y + row!.height);
       // the comments: their sign and number in sight, named in words, also on the phone
       const comments = page.locator('[data-k2-workspace] a[title="2 offene Kommentare"]');
       expect(await comments.isVisible()).toBe(true);
@@ -329,10 +335,15 @@ test("an address with an anchor opens at its heading, and mounting the islands k
 test("390: the shell's menu reaches Book's page tree", async () => {
   const page = await open(390);
   try {
-    // the phone's title row opens Cloud's menu with the navigation the sidebar provides: the notebook and its pages
-    const navigation = await page.evaluate(() => window.shellNavigation?.() ?? null);
-    expect(navigation?.label).toBe("Handbuch Lager");
-    expect(navigation?.entries).toEqual(expect.arrayContaining(["Überblick", "Wareneingang", "Kühlkette"]));
+    // the phone's title row opens Cloud's menu, which renders the navigation the sidebar provides: the notebook and
+    // its pages
+    await page.evaluate(() => window.openShellMenu?.());
+    const menu = page.getByRole("dialog").filter({ hasText: "Überblick" });
+    await menu.waitFor();
+    expect(await menu.textContent()).toContain("Handbuch Lager");
+    expect(await menu.getByRole("link", { name: "Überblick" }).isVisible()).toBe(true);
+    // and Cloud's search offers no command to hide a sidebar the phone does not have
+    expect(await page.evaluate(() => window.navigationCommandTitle?.() ?? null)).toBeNull();
   } finally {
     await close(page);
   }
@@ -376,7 +387,8 @@ test("scrolling keeps the reading position in the entry at most every 150 ms, an
 }, 60_000);
 
 test("Cloud's search hides and shows the navigation with the workspace's own toggle, and says which it does", async () => {
-  const page = await open(1440);
+  // 1023: the widest window below 64 rem still shows the sidebar as a column the workspace can hide
+  const page = await open(1023);
   const title = () => page.evaluate(() => window.navigationCommandTitle?.() ?? null);
   const run = () => page.evaluate(() => window.runNavigationCommand?.());
   try {
