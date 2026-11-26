@@ -629,8 +629,9 @@
   min-width: 0;
   flex: none;
 }
-/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
-.k2-ui .k2-scroll > .k2-bar[data-k2-part="Bar"]:last-child {
+/* the foot of a column (a form's deeds) or of a section draws no line under itself: the line above it, or the
+   section's own, separates it, so two lines never stand one over the other */
+.k2-ui :is(.k2-scroll, .k2-sec) > .k2-bar[data-k2-part="Bar"]:last-child {
   border-bottom: 0;
 }
 .k2-ui .k2-bar-start,

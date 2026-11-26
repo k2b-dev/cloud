@@ -37,7 +37,8 @@ type Case =
   | "groups"
   | "split-list-canvas"
   | "empty-ways"
-  | "view-statement";
+  | "view-statement"
+  | "section-foot";
 
 let browser: Browser;
 let client: string;
@@ -1297,5 +1298,25 @@ test("on the phone the statements end before 'Ansicht' at rest and fade at their
         if (which === "view-statement") expect(cut).toEqual({ long: true, ellipsis: "ellipsis" });
       },
       390,
+    );
+});
+
+test("a bar that ends a section draws no line of its own: one line parts it from the next section, never two", async () => {
+  for (const width of [1440, 390])
+    await withPage(
+      "section-foot",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const [first] = document.querySelectorAll(".k2-sec");
+          return {
+            bar: getComputedStyle(first!.querySelector(":scope > .k2-bar")!).borderBottomWidth,
+            section: getComputedStyle(first!).borderBottomWidth,
+          };
+        });
+        expect(found).toEqual({ bar: "0px", section: "1px" });
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
     );
 });

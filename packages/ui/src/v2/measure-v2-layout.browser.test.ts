@@ -283,6 +283,28 @@ describe("measureV2Layout", () => {
   );
 
   test(
+    "red: two lines 1.5 px apart read as one thick line, a double line; 2 px apart they are two",
+    async () => {
+      const apart = (gap: number) =>
+        columns(
+          `<div class="band"><span class="k2-t-meta">seit 09:12</span></div><div class="band top" style="margin-top:${gap}px"><span class="k2-t-meta">3 offen</span></div>`,
+        );
+      for (const [gap, found] of [
+        [1.5, 1],
+        [2, 0],
+      ] as const) {
+        const page = await open(apart(gap));
+        try {
+          expect({ gap, double: (await measureV2Layout(page)).double.length }).toEqual({ gap, double: found });
+        } finally {
+          await page.close();
+        }
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "red: overflow: hidden cuts the tab mark to 1 px beside the head line, a double line",
     async () => {
       const page = await open(head("hidden"));

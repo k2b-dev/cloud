@@ -12,6 +12,7 @@ import {
   LongAddressScreen,
   ProseCodeScreen,
   RowStatesScreen,
+  SectionFootScreen,
   SelectionScreen,
   StructureScreen,
   ViewStatementScreen,
@@ -44,7 +45,8 @@ declare global {
       | "groups"
       | "split-list-canvas"
       | "empty-ways"
-      | "view-statement";
+      | "view-statement"
+      | "section-foot";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -73,6 +75,8 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which === "section-foot" ? (
+        <SectionFootScreen />
       ) : which === "view-statement" ? (
         <ViewStatementScreen />
       ) : which === "long" ? (

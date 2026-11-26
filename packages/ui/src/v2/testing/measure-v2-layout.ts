@@ -4,7 +4,7 @@
  *
  * - **edge:** a horizontal hairline or a tinted band reaches both edges of its column (within 1.5 px). A column edge
  *   is a vertical hairline, an element matched by `columns`, or the edge of `root`.
- * - **double:** no two parallel lines lie at most 1 px apart over more than 1 px of length, also across components.
+ * - **double:** no two parallel lines lie less than 2 px apart over more than 1 px of length, also across components.
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
  * - **grip:** the pill of every grip is centred on its 1 px line within ±0.25 CSS px, measured in the DOM and again
@@ -469,7 +469,7 @@ function measureInPage(options: InPage): DomResult {
         );
     }
 
-    // 4. Double lines: parallel, at most 1 px apart, sharing more than 1 px of length, of different elements.
+    // 4. Double lines: parallel, less than 2 px apart, sharing more than 1 px of length, of different elements.
     const collapsedPair = (a: Element, b: Element) => {
       const table = a.closest("table");
       return !!table && table === b.closest("table") && getComputedStyle(table).borderCollapse === "collapse";
@@ -479,7 +479,7 @@ function measureInPage(options: InPage): DomResult {
       list.sort((a, b) => a.across0 - b.across0);
       for (const [index, a] of list.entries())
         for (const b of list.slice(index + 1)) {
-          if (b.across0 - a.across1 > 1) break;
+          if (b.across0 - a.across1 >= 2) break;
           if (a.element === b.element || a.round || b.round || collapsedPair(a.element, b.element)) continue;
           const shared = Math.min(a.along1, b.along1) - Math.max(a.along0, b.along0);
           if (shared > 1)

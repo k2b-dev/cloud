@@ -486,3 +486,23 @@ export const ViewStatementScreen = () => {
     </Workspace>
   );
 };
+
+// A section that ends with its own bar of deeds ("Alle anzeigen"), above a second section: one line between them.
+export const SectionFootScreen = () => (
+  <Workspace>
+    <Pane label="Werkstatt">
+      <Section title="Anstehend" count={2}>
+        <List label="Anstehend">
+          <Row lines={["Fronten ölen"]} time="heute" />
+          <Row lines={["Aufmaß Küche"]} time="morgen" />
+        </List>
+        <Bar end={<Button variant="ghost">Alle anzeigen</Button>} />
+      </Section>
+      <Section title="Zuletzt" count={1}>
+        <List label="Zuletzt">
+          <Row lines={["Angebot Lindqvist"]} time="09:40" />
+        </List>
+      </Section>
+    </Pane>
+  </Workspace>
+);
