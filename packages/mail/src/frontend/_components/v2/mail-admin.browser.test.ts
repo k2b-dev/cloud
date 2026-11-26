@@ -4,6 +4,7 @@ import type { Browser, BrowserContextOptions, Page } from "playwright";
 import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/browser";
 import { KEPT_NOW, keptAdminNav, keptDateConfig, keptRecord, keptRows, keptWorstRows } from "../../../../test/fixtures/mail-admin-kept";
 import { mailboxesProps } from "../../../../test/fixtures/mail-admin-mailboxes";
+import { securityProps } from "../../../../test/fixtures/mail-admin-security";
 import type { KeptHarnessOptions } from "./mail-admin.browser-harness";
 
 // Cloud administration › Mail › Kept on v2: the list selects and downloads, searches and pages through addresses, and
@@ -78,6 +79,15 @@ beforeAll(async () => {
       if (url.pathname === "/styles.css") return new Response(css, { headers: { "Content-Type": "text/css; charset=utf-8" } });
       if (url.pathname.startsWith("/ui/") && !url.pathname.includes(".."))
         return new Response(Bun.file(resolve(uiDist, url.pathname.slice(4))));
+      // Security: every change is recorded; a value the server refuses comes back with its reason
+      if (url.pathname.startsWith("/api/mail/admin/security")) {
+        const text = await request.text();
+        const body = text ? JSON.parse(text) : null;
+        requests.push({ method: request.method, path: url.pathname, body });
+        if (body?.value === "nicht gültig" || body?.name === "Ab" || body?.trustedAuthservIds?.includes("abgelehnt"))
+          return Response.json({ message: "Der Server lehnt diesen Wert ab." }, { status: 400 });
+        return Response.json({});
+      }
       // Mailboxes: the storage refresh is queued, a mailbox's access loads for its dialog
       if (url.pathname === "/api/mail/admin/storage/reconcile") {
         requests.push({ method: request.method, path: url.pathname, body: null });
@@ -429,4 +439,189 @@ describe("Admin › Mail › Mailboxes on v2", () => {
       await partial.context().close();
     }
   }, 30_000);
+});
+
+describe("Admin › Mail › Security on v2", () => {
+  const security = (...args: Parameters<typeof securityProps>): KeptHarnessOptions => ({ locale: "de", security: securityProps(...args) });
+  const reloaded = (page: Page) => page.waitForURL("**/admin/mail/kept", { waitUntil: "load" });
+  /** Opens a dialog from "+" or "⋯" in the head, as a person does. */
+  const fromHead = async (page: Page, menu: string, item: string) => {
+    await page.getByRole("button", { name: menu, exact: true }).click();
+    await page.getByRole("menuitem", { name: item }).click();
+    return page.getByRole("dialog");
+  };
+  /** Cancel closes the dialog without a request, and the focus goes back to the button that opened its menu. */
+  const cancelReturnsFocus = async (page: Page, menu: string, item: string) => {
+    const before = requests.length;
+    const dialog = await fromHead(page, menu, item);
+    await dialog.getByRole("button", { name: "Abbrechen" }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForFunction((name) => document.activeElement?.getAttribute("aria-label") === name, menu);
+    expect(requests.length).toBe(before);
+  };
+
+  test("shows the figures and the three lists as tabs, each in its own address", async () => {
+    for (const context of [desktop, phone]) {
+      const page = await open(context, security());
+      try {
+        await page.getByText("Gemeldete E-Mails").filter({ visible: true }).first().waitFor();
+        await page.getByText("rechnung@paypal-konto-sicherheit.example.org").filter({ visible: true }).first().waitFor();
+        // every report shows its state as dot and word (a cell that returned nothing once left the column empty)
+        await page.getByText("In Prüfung", { exact: true }).filter({ visible: true }).first().waitFor();
+        expect(await overflow(page)).toBeLessThanOrEqual(0);
+        expect(page.errors).toEqual([]);
+      } finally {
+        await page.context().close();
+      }
+    }
+    const rules = await open(desktop, security("rules", { searches: { reports: "paypal", rules: "", identities: "" } }));
+    try {
+      await rules.getByText("login-microsoft-verify.example.org").filter({ visible: true }).first().waitFor();
+      // the tabs keep the other lists' searches in their addresses
+      expect(await rules.locator('a[href="/admin/mail/security?reports=paypal"]').count()).toBe(1);
+      expect(await rules.locator('a[href="/admin/mail/security?view=identities&reports=paypal"]').count()).toBe(1);
+    } finally {
+      await rules.context().close();
+    }
+  }, 60_000);
+
+  test("the rule dialog asks for a value, shows the server's refusal, saves, and gives the focus back on cancel", async () => {
+    const page = await open(desktop, security());
+    try {
+      await cancelReturnsFocus(page, "Regel hinzufügen", "Regel hinzufügen");
+      const dialog = await fromHead(page, "Regel hinzufügen", "Regel hinzufügen");
+      await dialog.getByRole("button", { name: "Regel hinzufügen" }).click();
+      await dialog.getByText("Bitte ausfüllen").waitFor();
+      expect(requests.filter((entry) => entry.path.startsWith("/api/mail/admin/security"))).toEqual([]);
+
+      await dialog.getByLabel("Adresse oder Domain").fill("nicht gültig");
+      await dialog.getByRole("button", { name: "Regel hinzufügen" }).click();
+      await dialog.getByText("Der Server lehnt diesen Wert ab.").waitFor();
+      expect(await dialog.getByLabel("Adresse oder Domain").inputValue()).toBe("nicht gültig");
+
+      await dialog.getByLabel("Adresse oder Domain").fill("phish.example.org");
+      await dialog.getByLabel("Begründung").fill("  Welle vom Montag  ");
+      const done = reloaded(page);
+      await dialog.getByRole("button", { name: "Regel hinzufügen" }).click();
+      await done;
+      expect(requests.at(-1)).toEqual({
+        method: "POST",
+        path: "/api/mail/admin/security/policies",
+        body: { disposition: "deny", target: "sender_domain", value: "phish.example.org", note: "Welle vom Montag", enabled: true },
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the identity dialog needs a name and domains, keeps a refusal, and saves the domains as a list", async () => {
+    const page = await open(desktop, security("identities"));
+    try {
+      await cancelReturnsFocus(page, "Regel hinzufügen", "Identität schützen");
+      const dialog = await fromHead(page, "Regel hinzufügen", "Identität schützen");
+      await dialog.getByRole("button", { name: "Identität schützen" }).click();
+      expect(await dialog.getByText("Bitte ausfüllen").count()).toBe(2);
+
+      await dialog.getByLabel("Sichtbarer Absendername").fill("Ab");
+      await dialog.getByLabel("Zulässige Absender-Domains").fill("werkstatt.example.org");
+      await dialog.getByRole("button", { name: "Identität schützen" }).click();
+      await dialog.getByText("Der Server lehnt diesen Wert ab.").waitFor();
+
+      await dialog.getByLabel("Sichtbarer Absendername").fill("Mira Solberg");
+      await dialog.getByLabel("Zulässige Absender-Domains").fill("werkstatt.example.org, , lohn.example.org ");
+      const done = reloaded(page);
+      await dialog.getByRole("button", { name: "Identität schützen" }).click();
+      await done;
+      expect(requests.at(-1)).toEqual({
+        method: "POST",
+        path: "/api/mail/admin/security/protected-identities",
+        body: { name: "Mira Solberg", allowedDomains: ["werkstatt.example.org", "lohn.example.org"], note: null, enabled: true },
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("the authentication dialog starts from the saved names, refuses more than 20, and saves", async () => {
+    const page = await open(desktop, security());
+    try {
+      await cancelReturnsFocus(page, "Weitere Aktionen", "Authentifizierung");
+      const dialog = await fromHead(page, "Weitere Aktionen", "Authentifizierung");
+      const field = dialog.getByLabel("Namen der Authentifizierungsserver");
+      expect(await field.inputValue()).toBe("mx.werkstatt.example.org");
+      await field.fill(Array.from({ length: 21 }, (_, index) => `mx${index}.example.org`).join(", "));
+      await dialog.getByRole("button", { name: "Speichern" }).click();
+      await dialog.getByText("Höchstens 20 Einträge").waitFor();
+
+      await field.fill("abgelehnt");
+      await dialog.getByRole("button", { name: "Speichern" }).click();
+      await dialog.getByText("Der Server lehnt diesen Wert ab.").waitFor();
+
+      await field.fill("mx.werkstatt.example.org, mx2.werkstatt.example.org");
+      const done = reloaded(page);
+      await dialog.getByRole("button", { name: "Speichern" }).click();
+      await done;
+      expect(requests.at(-1)).toEqual({
+        method: "PATCH",
+        path: "/api/mail/admin/security/settings",
+        body: { trustedAuthservIds: ["mx.werkstatt.example.org", "mx2.werkstatt.example.org"] },
+      });
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
+
+  test("a report's decision keeps its note and gives the focus back, and deleting a rule asks first", async () => {
+    const page = await open(desktop, security());
+    try {
+      const deeds = page.getByRole("button", { name: "Weitere Aktionen für ceo@werkstatt-mail.example.org" }).filter({ visible: true });
+      // cancel gives the focus back to the row's "⋯"
+      await deeds.click();
+      await page.getByRole("menuitem", { name: "Phishing bestätigen" }).click();
+      let dialog = page.getByRole("dialog", { name: "Phishing-Meldung bestätigen" });
+      expect(await dialog.getByLabel("Interne Notiz").inputValue()).toBe("Rückfrage bei der Buchhaltung läuft");
+      await dialog.getByRole("button", { name: "Abbrechen" }).click();
+      await dialog.waitFor({ state: "hidden" });
+      await page.waitForFunction(
+        () => document.activeElement?.getAttribute("aria-label") === "Weitere Aktionen für ceo@werkstatt-mail.example.org",
+      );
+
+      await deeds.click();
+      await page.getByRole("menuitem", { name: "Phishing bestätigen" }).click();
+      dialog = page.getByRole("dialog", { name: "Phishing-Meldung bestätigen" });
+      await dialog.getByLabel("Interne Notiz").fill("Bestätigt: gefälschte Geschäftsführung");
+      const done = reloaded(page);
+      await dialog.getByRole("button", { name: "Bestätigen" }).click();
+      await done;
+      expect(requests.at(-1)).toEqual({
+        method: "PATCH",
+        path: "/api/mail/admin/security/reports/00000000-0000-4000-8000-000000000002",
+        body: { status: "confirmed", resolutionNote: "Bestätigt: gefälschte Geschäftsführung" },
+      });
+    } finally {
+      await page.context().close();
+    }
+
+    const rules = await open(desktop, security("rules"));
+    try {
+      await rules
+        .getByRole("button", { name: "Weitere Aktionen für login-microsoft-verify.example.org" })
+        .filter({ visible: true })
+        .click();
+      await rules.getByRole("menuitem", { name: "Regel löschen" }).click();
+      const question = rules.getByRole("alertdialog");
+      await question.getByText("login-microsoft-verify.example.org löschen?").waitFor();
+      const done = reloaded(rules);
+      await question.getByRole("button", { name: "Regel löschen" }).click();
+      await done;
+      expect(requests.at(-1)).toEqual({
+        method: "DELETE",
+        path: "/api/mail/admin/security/policies/00000000-0000-4000-8000-000000000102",
+        body: null,
+      });
+      expect(rules.errors.filter((error) => !error.startsWith("InvalidStateError: Transition was aborted"))).toEqual([]);
+    } finally {
+      await rules.context().close();
+    }
+  }, 60_000);
 });

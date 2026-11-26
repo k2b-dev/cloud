@@ -3,11 +3,13 @@ import { render } from "solid-js/web";
 import MailAdminKeptList, { type MailAdminKeptListProps } from "./MailAdminKeptList.island";
 import MailAdminKeptRecord, { type MailAdminKeptRecordProps } from "./MailAdminKeptRecord.island";
 import MailAdminMailboxes, { type MailAdminMailboxesProps } from "./MailAdminMailboxes.island";
+import MailAdminSecurity, { type MailAdminSecurityProps } from "./MailAdminSecurity.island";
 
 export type KeptHarnessOptions = { locale: "de" | "en" } & (
-  | { list: MailAdminKeptListProps; record?: never; mailboxes?: never }
-  | { record: MailAdminKeptRecordProps; list?: never; mailboxes?: never }
-  | { mailboxes: MailAdminMailboxesProps; list?: never; record?: never }
+  | { list: MailAdminKeptListProps; record?: never; mailboxes?: never; security?: never }
+  | { record: MailAdminKeptRecordProps; list?: never; mailboxes?: never; security?: never }
+  | { mailboxes: MailAdminMailboxesProps; list?: never; record?: never; security?: never }
+  | { security: MailAdminSecurityProps; list?: never; record?: never; mailboxes?: never }
 );
 
 declare global {
@@ -29,6 +31,8 @@ window.mountKept = (options) => {
           <MailAdminKeptRecord {...options.record} />
         ) : options.mailboxes ? (
           <MailAdminMailboxes {...options.mailboxes} />
+        ) : options.security ? (
+          <MailAdminSecurity {...options.security} />
         ) : null}
       </LocaleProvider>
     ),

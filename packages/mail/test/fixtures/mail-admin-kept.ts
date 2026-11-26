@@ -11,7 +11,7 @@ export const KEPT_NOW = "2026-11-26T09:30:00.000Z";
 export const keptDateConfig = { locale: "de", timeZone: "Europe/Berlin" } as const;
 
 /** The admin bar as `adminNavigation(c, mailAdminSections(locale, "kept"))` builds it for an administrator. */
-export const keptAdminNav = (locale: "de" | "en" = "de", current: "kept" | "mailboxes" = "kept"): NavProps => {
+export const keptAdminNav = (locale: "de" | "en" = "de", current: "kept" | "mailboxes" | "security" = "kept"): NavProps => {
   const de = locale === "de";
   return {
     title: de ? "Verwaltung" : "Admin",
@@ -30,7 +30,13 @@ export const keptAdminNav = (locale: "de" | "en" = "de", current: "kept" | "mail
         items: [
           { label: "Mail", icon: "mail", href: "/admin/mail" },
           { label: de ? "Postfächer" : "Mailboxes", icon: "inbox", href: "/admin/mail", nested: true, current: current === "mailboxes" },
-          { label: de ? "Sicherheit" : "Security", icon: "shield-lock", href: "/admin/mail/security", nested: true },
+          {
+            label: de ? "Sicherheit" : "Security",
+            icon: "shield-lock",
+            href: "/admin/mail/security",
+            nested: true,
+            current: current === "security",
+          },
           { label: de ? "Aufbewahrt" : "Kept", icon: "lock", href: "/admin/mail/kept", nested: true, current: current === "kept" },
           { label: "Dateien", icon: "folders", href: "/admin/files" },
           { label: "Grids", icon: "table", href: "/admin/grids" },

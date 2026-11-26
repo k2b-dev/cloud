@@ -110,19 +110,20 @@ export default ssr<AuthContext>(async (c) => {
           trusted: policies.filter((policy) => policy.disposition === "trust" && policy.enabled).length,
           identities: identities.filter((identity) => identity.enabled).length,
         }}
+        // only the open tab's rows travel to the browser; the others give their counts
         reports={
           reportsResult.ok
-            ? { rows: reportRows, total: reports.length }
+            ? { rows: view === "reports" ? reportRows : [], total: reports.length }
             : { failed: `${t.couldNotLoadReports}: ${localizeMailError(reportsResult.error, locale).message}` }
         }
         rules={
           policiesResult.ok
-            ? { rows: ruleRows, total: policies.length }
+            ? { rows: view === "rules" ? ruleRows : [], total: policies.length }
             : { failed: `${t.couldNotLoadRules}: ${localizeMailError(policiesResult.error, locale).message}` }
         }
         identities={
           identitiesResult.ok
-            ? { rows: identityRows, total: identities.length }
+            ? { rows: view === "identities" ? identityRows : [], total: identities.length }
             : { failed: `${t.couldNotLoadIdentities}: ${localizeMailError(identitiesResult.error, locale).message}` }
         }
         trustedAuthservIds={settingsResult.ok ? settingsResult.data.trustedAuthservIds : null}

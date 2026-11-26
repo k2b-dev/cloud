@@ -314,7 +314,6 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                 phone={(row) => ({
                   mark: { icon: "flag", color: SECURITY_COLOR },
                   lines: [row.report.senderAddress ?? t().unknownSender, row.findings],
-                  time: row.updated.text,
                   marks: (
                     <Inline>
                       {stateChip(row.state)}
@@ -326,7 +325,7 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                 columns={[
                   {
                     title: t().sender,
-                    width: { min: 200, default: 260 },
+                    width: { min: 200, default: 240 },
                     cell: (row) => (
                       <Inline>
                         <Mark icon="flag" color={SECURITY_COLOR} />
@@ -336,22 +335,20 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                   },
                   {
                     title: t().status,
-                    width: { min: 120, default: 130 },
-                    cell: (row) => {
-                      stateChip(row.state);
-                    },
+                    width: { min: 110, default: 120 },
+                    cell: (row) => stateChip(row.state),
                   },
-                  { title: t().evidence, width: { min: 200, default: 320 }, cell: (row) => row.findings },
+                  { title: t().evidence, width: { min: 180, default: 280 }, cell: (row) => row.findings },
                   {
                     title: t().reports,
-                    width: { min: 80, default: 90 },
+                    width: { min: 80, default: 80 },
                     align: "end",
                     cell: (row) => number(row.report.reportCount),
                     drop: true,
                   },
                   {
                     title: t().updatedColumn,
-                    width: { min: 110, default: 130 },
+                    width: { min: 110, default: 120 },
                     cell: (row) => (
                       <time dateTime={row.updated.iso} title={row.updated.title}>
                         {row.updated.text}
@@ -361,7 +358,7 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                   },
                   {
                     title: t().actions,
-                    width: { fixed: 56 },
+                    width: { fixed: 88 },
                     align: "end",
                     cell: (row) => deeds(row.report.senderAddress ?? row.report.id, reportDeeds(row.report)),
                   },
@@ -425,7 +422,7 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                     width: { min: 100, default: 110 },
                     cell: (row) => (row.policy.enabled ? <Chip status="ok">{t().healthActive}</Chip> : <Chip>{t().paused}</Chip>),
                   },
-                  { title: t().actions, width: { fixed: 56 }, align: "end", cell: (row) => deeds(row.policy.value, ruleDeeds(row.policy)) },
+                  { title: t().actions, width: { fixed: 88 }, align: "end", cell: (row) => deeds(row.policy.value, ruleDeeds(row.policy)) },
                 ]}
               />
             ))}
@@ -468,7 +465,7 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                     cell: (row) => <Text muted>{row.note ?? "–"}</Text>,
                     drop: true,
                   },
-                  { title: t().actions, width: { fixed: 56 }, align: "end", cell: (row) => deeds(row.name, identityDeeds(row)) },
+                  { title: t().actions, width: { fixed: 88 }, align: "end", cell: (row) => deeds(row.name, identityDeeds(row)) },
                 ]}
               />
             ))}
