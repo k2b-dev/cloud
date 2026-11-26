@@ -1168,7 +1168,8 @@ export default function RecordsView(props: Props) {
                   state={barState()?.state ?? each().query.reset()}
                   onChange={onBarChange}
                   names={statementNames()}
-                  results={summary()}
+                  // with nothing to show, the empty state says so; the bar does not say it a second time
+                  results={(isGrouped() ? buckets().length : items().length) === 0 ? undefined : summary()}
                   // k2b-ui gap: the bar has no refresh mark like StatusRow loading; rows update in place meanwhile.
                   end={moreFilters()}
                 />

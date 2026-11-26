@@ -151,10 +151,13 @@ const formatMetricDuration = (ms: number | null, locale: string): string => {
 };
 
 const formatPercent = (value: number, locale: string): string =>
-  new Intl.NumberFormat(locale, {
-    style: "percent",
-    maximumFractionDigits: value >= 10 ? 0 : 1,
-  }).format(value / 100);
+  // a rate of no runs is no number
+  !Number.isFinite(value)
+    ? "–"
+    : new Intl.NumberFormat(locale, {
+        style: "percent",
+        maximumFractionDigits: value >= 10 ? 0 : 1,
+      }).format(value / 100);
 
 const triggerSummary = (workflow: PublicWorkflow, locale: string): string => {
   const t = workflowMessages.resolve([locale]).t;
@@ -751,7 +754,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
                   href: runHref(run.id),
                   onNavigate: () => selectRun(run.id),
                 })}
-                empty={{ icon: "player-play", text: t().noMatchingRuns }}
+                empty={{ icon: "player-play", text: runStatus() === "all" && runChannel() === "all" ? t().noRunsYet : t().noMatchingRuns }}
                 phone={(run) => ({
                   lines: [
                     run.error?.message ?? run.resultMessage ?? workflowRunStatusLabel(run.status, locale()),

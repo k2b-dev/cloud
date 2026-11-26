@@ -120,7 +120,11 @@ export default function BasesOverview(props: BasesOverviewProps) {
     <Pane
       label={t().bases}
       scrollKey="grids-bases"
-      status={<StatusRow lead={lead()} facts={searching() ? [{ before: t().searchBases, value: `„${props.state.search}“` }] : []} />}
+      status={
+        props.total > 0 || searching() ? (
+          <StatusRow lead={lead()} facts={searching() ? [{ before: t().searchBases, value: `„${props.state.search}“` }] : []} />
+        ) : undefined
+      }
     >
       <Table
         label={t().bases}

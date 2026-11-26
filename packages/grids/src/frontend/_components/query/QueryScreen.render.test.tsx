@@ -108,7 +108,8 @@ describe("query screen on v2", () => {
         page: { size: 100, start: 0, returned: 1, nextCursor: null },
       },
     });
-    expect(html).toContain("Rows 1-1 · 1 column");
+    // one row is "Row 1", not a range
+    expect(html).toContain("Row 1 · 1 column");
     expect(html).toContain("Laptop 14");
   });
 });

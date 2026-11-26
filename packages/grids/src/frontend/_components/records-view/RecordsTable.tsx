@@ -22,7 +22,8 @@ const widthOf = (type: string) =>
   NARROW.has(type)
     ? { min: 64, default: 88 }
     : NUMERIC.has(type)
-      ? { min: 80, default: 120 }
+      ? // an amount is never cut: room for 987.654.321,99 EUR
+        { min: 120, default: 150 }
       : DATES.has(type)
         ? { min: 96, default: 132 }
         : { min: 120, default: 220 };

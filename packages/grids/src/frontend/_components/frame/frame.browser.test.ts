@@ -692,3 +692,40 @@ describe("a workflow on v2", () => {
     }
   }, 90_000);
 });
+
+// break-ui: every v2 screen of Grids with no entry, exactly one, and the worst case, on a phone and a wide screen
+describe("break-ui on every Grids screen", () => {
+  const screens = [
+    ["bases", "/app/grids"],
+    ["base-home", "/app/grids/Bas001"],
+    ["records", "/app/grids/Bas001/table/table"],
+    ["records-open", "/app/grids/Bas001/table/table?record=record-0"],
+    ["documents", "/app/grids/Bas001/documents?view=list"],
+    ["template", "/app/grids/Bas001/document/table/TPL001"],
+    ["query", `/app/grids/Bas001/query?q=${encodeURIComponent("from table Aufträge")}`],
+    ["query-view", "/app/grids/Bas001/table/table/view/V9"],
+    ["workflow", "/app/grids/Bas001/workflows/W1"],
+  ] as const;
+  for (const variant of ["empty", "one", "worst"] as const)
+    test(`${variant}: holds at 390 and 1440 px`, async () => {
+      const broken: string[] = [];
+      for (const [name, address] of screens)
+        for (const view of [wide, phone]) {
+          const { context, tab, errors } = await open(view, address, variant);
+          try {
+            await shoot(tab, `breakui-${name}-${variant}-light-${view.name}`);
+            await tab.mouse.move(0, 0);
+            const outline = await describeV2Page(tab, "#root");
+            const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+            const problems = [
+              ...(outline.includes("Problems (") ? [outline.slice(outline.indexOf("Problems ("))] : []),
+              ...layout.problems,
+            ];
+            for (const problem of [...problems, ...errors]) broken.push(`${name} ${view.name}: ${problem}`);
+          } finally {
+            await context.close();
+          }
+        }
+      expect(broken).toEqual([]);
+    }, 240_000);
+});

@@ -20,7 +20,11 @@ import { parseWorkflowUrlState } from "../workflows/workflow-url-state";
 import type { NavigationState } from "../workspace/navigation-catalog";
 import type { PublicOkWorkspaceState } from "../workspace/workspace-public-state-model";
 
-export type FixtureVariant = "plain" | "worst" | "huge";
+/** Plain data, the break-ui worst case, 1,000 entries, none at all, and exactly one (singular words). */
+export type FixtureVariant = "plain" | "worst" | "huge" | "empty" | "one";
+
+/** How many entries a list holds in a variant: none, one, or what the variant would have. */
+const sized = (variant: FixtureVariant, count: number) => (variant === "empty" ? 0 : variant === "one" ? Math.min(1, count) : count);
 
 export const FIXTURE_REVISION = { revision: "r1", resources: { "base:Bas001": "b1" } };
 export const FIXTURE_NOW = "2026-11-25T09:00:00.000Z";
@@ -94,7 +98,8 @@ export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): 
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
   const all = variant === "huge" ? hugeBases((page - 1) * 100) : variant === "worst" ? WORST_BASES : PLAIN_BASES;
   const search = params.get("q")?.trim().toLowerCase();
-  const bases = search ? all.filter((each) => `${each.name} ${each.description ?? ""}`.toLowerCase().includes(search)) : all;
+  const found = search ? all.filter((each) => `${each.name} ${each.description ?? ""}`.toLowerCase().includes(search)) : all;
+  const bases = found.slice(0, sized(variant, found.length));
   const apps =
     variant === "plain"
       ? []
@@ -107,7 +112,7 @@ export const basesFixture = (variant: FixtureVariant, params: URLSearchParams): 
   return {
     page,
     bases,
-    total: search ? bases.length : variant === "huge" ? 1000 : all.length,
+    total: search || variant === "empty" || variant === "one" ? bases.length : variant === "huge" ? 1000 : all.length,
     templates: TEMPLATES,
     baseStats: stats(bases, variant === "worst"),
     recentTables: bases.slice(0, 12).map((each, index) => ({
@@ -258,12 +263,18 @@ export const recordsFixture = (variant: FixtureVariant, params: URLSearchParams)
                   : index === 1
                     ? "X"
                     : `物流センター東京 ${index}`,
-              customer: index === 2 ? "🚚 Spedition 💥" : record.data.customer,
-              number: index === 3 ? "987654321.99" : record.data.number,
+              customer: index === 2 ? "🚚 Spedition 💥" : index === 4 ? null : record.data.customer,
+              number: index === 3 ? "987654321.99" : index === 4 ? null : record.data.number,
+              date: index === 4 ? null : record.data.date,
+              contact: index === 5 ? "bartholomew.fitzgerald@northwind-industries-holdings.example.com" : record.data.contact,
+              place:
+                index === 6
+                  ? "https://werkstatt.example.org/standorte/nordhausen/halle-3/regal-17/fach-4?ansicht=karte"
+                  : record.data.place,
               notes: "Eine sehr lange Notiz, die erklärt, welche Absprachen getroffen wurden und warum die Lieferung später kommt.",
             },
           }))
-        : tableRecords;
+        : tableRecords.slice(0, sized(variant, tableRecords.length));
   const frame = baseHomeFixture(variant, { edit: params.get("edit") === "true", groups: false });
   return {
     frame: { ...frame, route: { kind: "records", activeKey: "table:table", activeTableId: "table" } },
@@ -361,7 +372,7 @@ const document = (index: number, variant: FixtureVariant) => {
 export const documentsFixture = (variant: FixtureVariant, params: URLSearchParams) => {
   const catalog = parseDocumentCatalogUrlState(params);
   const flat = documentCatalogIsFlat(catalog);
-  const count = variant === "huge" ? 1000 : variant === "worst" ? 12 : 18;
+  const count = sized(variant, variant === "huge" ? 1000 : variant === "worst" ? 12 : 18);
   const items = flat || catalog.path.length ? Array.from({ length: count }, (_, index) => document(index, variant)) : [];
   const frame = baseHomeFixture(variant, { edit: false, groups: false });
   return {
@@ -403,7 +414,7 @@ const QUERY_FIELDS = ["text", "status", "customer", "number", "date"] as const;
 
 /** The rows a query over the orders returns: a page of up to 100 of `total`, from `start` on. */
 export const queryResultFixture = (variant: FixtureVariant, start = 0): PublicDslQueryPreviewResponse => {
-  const total = variant === "huge" ? 1000 : variant === "worst" ? 4 : 10;
+  const total = sized(variant, variant === "huge" ? 1000 : variant === "worst" ? 4 : 10);
   const size = Math.min(100, total - start);
   const worst = (index: number) =>
     index === 0
@@ -477,7 +488,7 @@ export const queryFixture = (variant: FixtureVariant, params: URLSearchParams): 
 /** A saved view that aggregates: revenue by month, as the server renders its first page. */
 export const queryViewFixture = (variant: FixtureVariant): Parameters<typeof QueryViewScreen>[0] => {
   const frame = queryFrame(variant, "records");
-  const months = variant === "huge" ? 100 : 12;
+  const months = sized(variant, variant === "huge" ? 100 : 12);
   const views = queryViews(variant);
   return {
     frame,
@@ -523,7 +534,7 @@ export const queryViewFixture = (variant: FixtureVariant): Parameters<typeof Que
 /** The documents of the template "Rechnung": newest first, or by year and month, as the address asks. */
 export const templateFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof DocumentTemplateScreen>[0] => {
   const state = parseTemplateDocumentsState(params, "list");
-  const count = variant === "huge" ? 1000 : variant === "worst" ? 12 : 18;
+  const count = sized(variant, variant === "huge" ? 1000 : variant === "worst" ? 12 : 18);
   const all = Array.from({ length: count }, (_, index) => ({
     ...document(index, variant),
     templateId: "TPL001",
@@ -619,7 +630,7 @@ const workflowRun = (index: number, variant: FixtureVariant): WorkflowRunFixture
 /** The workflow "Rechnung stellen" with its runs; `?run=` opens one, `?status=` and `?channel=` filter them. */
 export const workflowFixture = (variant: FixtureVariant, params: URLSearchParams): Parameters<typeof WorkflowScreen>[0] => {
   const filters = parseWorkflowUrlState(params);
-  const count = variant === "huge" ? 1000 : variant === "worst" ? 9 : 24;
+  const count = sized(variant, variant === "huge" ? 1000 : variant === "worst" ? 9 : 24);
   const runs = Array.from({ length: count }, (_, index) => workflowRun(index, variant)).filter(
     (run) => (filters.status === "all" || run.status === filters.status) && (filters.channel === "all" || run.channel === filters.channel),
   );
@@ -639,15 +650,15 @@ export const workflowFixture = (variant: FixtureVariant, params: URLSearchParams
   const attention = runs.filter((run) => run.status === "needs_attention").length;
   const counts = {
     total: count,
-    active: 1,
+    active: Math.min(1, count),
     queued: 0,
-    running: 1,
+    running: Math.min(1, count),
     waiting: 0,
-    succeeded: count - failed - attention - 1,
+    succeeded: Math.max(0, count - failed - attention - 1),
     failed,
     canceled: 0,
     needsAttention: attention,
-    errorRate: Math.round(((failed + attention) / count) * 1000) / 10,
+    errorRate: count ? Math.round(((failed + attention) / count) * 1000) / 10 : 0,
     avgDurationMs: 2_900,
     p99DurationMs: 8_400,
     lastRunAt: runs[0]?.createdAt ?? null,
