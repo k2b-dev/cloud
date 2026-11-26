@@ -1,18 +1,6 @@
 import type { WorkflowJsonValue } from "@k2b/cloud/workflows";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import {
-  DataTable,
-  type DataTableColumn,
-  dialogCore,
-  NoticeCard,
-  PanelDialog,
-  Placeholder,
-  panelDialogWorkspaceOptions,
-  prompts,
-  StatusBadge,
-  useLocale,
-  Button as V1Button,
-} from "@k2b/ui";
+import { dialogCore, PanelDialog, Placeholder, panelDialogWorkspaceOptions, prompts, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
@@ -61,6 +49,7 @@ import type {
 import { workflowMessages } from "./messages";
 import { WorkflowAutomaticTriggerState } from "./WorkflowAutomaticTriggerState";
 import { WorkflowEditor } from "./WorkflowEditor";
+import { openWorkflowEmailActivity } from "./WorkflowEmailActivity";
 import { WorkflowLauncherManager } from "./WorkflowLauncherManager";
 import { WorkflowRevisionHistory } from "./WorkflowRevisionHistory";
 import { WorkflowRunDetailPanel } from "./WorkflowRunDetailPanel";
@@ -115,7 +104,6 @@ type WorkflowRunPage = {
 };
 
 type WorkflowEmailDeliveryPage = z.infer<typeof PublicGridsWorkflowEmailDeliveryListSchema>;
-type WorkflowEmailDelivery = WorkflowEmailDeliveryPage["items"][number];
 
 type WorkflowsPageApi = {
   "by-base": {
@@ -176,61 +164,6 @@ const triggerSummary = (workflow: PublicWorkflow, locale: string): string => {
   return triggers.map((trigger) => (trigger === "recordEvent" ? t.recordEvent : t.schedule)).join(", ");
 };
 
-function EmailDeliveryTable(props: {
-  deliveries: WorkflowEmailDelivery[];
-  loading?: boolean;
-  nextCursor?: string | null;
-  onLoadMore?: () => void;
-}) {
-  const locale = useLocale();
-  const t = () => workflowMessages.resolve([locale()]).t;
-  const recipients = (delivery: WorkflowEmailDelivery) =>
-    delivery.recipients.map((recipient) => `${recipient.kind}:${recipient.recipient}`).join(", ") || "-";
-  const columns = createMemo<DataTableColumn<WorkflowEmailDelivery>[]>(() => [
-    { id: "status", header: t().status, value: (delivery) => delivery.status },
-    { id: "subject", header: t().subject, value: (delivery) => delivery.subject, cellClass: "max-w-72" },
-    { id: "recipients", header: t().recipients, value: recipients, cellClass: "max-w-72" },
-    { id: "sent", header: t().sent, value: (delivery) => delivery.createdAt, cellClass: "whitespace-nowrap" },
-  ]);
-  return (
-    <section class="flex min-h-0 flex-1 flex-col">
-      <DataTable
-        ariaLabel={t().workflowEmailDeliveries}
-        rows={props.deliveries}
-        columns={columns()}
-        getRowId={(delivery) =>
-          [delivery.createdAt, delivery.workflowRunId ?? "", delivery.templateId ?? "", delivery.subject ?? ""].join(":")
-        }
-        density="compact"
-        highlightColumns={false}
-        class="paper min-h-[20rem] flex-1 overflow-auto"
-        hasMore={!!props.nextCursor}
-        loadingMore={props.loading}
-        onLoadMore={props.onLoadMore}
-        empty={props.loading ? t().loadingEmailDeliveries : t().noWorkflowEmails}
-        renderCell={({ row: delivery, col, render, value }) => {
-          if (col.id === "status") {
-            return (
-              <span class="flex min-w-0 flex-col items-start gap-1">
-                <StatusBadge
-                  tone={delivery.status === "failed" ? "error" : "ok"}
-                  label={delivery.status === "failed" ? t().failed : t().sent}
-                />
-                <Show when={delivery.error}>
-                  {(error) => <span class="block max-w-48 truncate text-red-600 dark:text-red-400">{error()}</span>}
-                </Show>
-              </span>
-            );
-          }
-          if (col.id === "sent") return <span class="text-dimmed">{formatDate(delivery.createdAt, locale())}</span>;
-          if (col.id === "recipients") return <span class="text-dimmed">{recipients(delivery)}</span>;
-          return render(value);
-        }}
-      />
-    </section>
-  );
-}
-
 /**
  * A workflow of a base on v2: its name, state and deeds in the head; how it ran (last run, runs, error rate) as one
  * strip of figures; its automatic triggers; its runs, filtered in the address, with the open run beside them.
@@ -266,10 +199,8 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
   const [stats, setStats] = createSignal<PublicWorkflowRunStats | null>(props.initialOverview.stats);
   const [runs, setRuns] = createSignal<PublicWorkflowRun[]>(props.initialOverview.runs.items);
   const [nextCursor, setNextCursor] = createSignal<string | null>(props.initialOverview.runs.nextCursor);
-  const [emailDeliveries, setEmailDeliveries] = createSignal<WorkflowEmailDelivery[]>([]);
-  const [nextEmailCursor, setNextEmailCursor] = createSignal<string | null>(null);
-  const [emailLoadError, setEmailLoadError] = createSignal<string | null>(null);
-  const [emailActivityOpen, setEmailActivityOpen] = createSignal(false);
+  // counts finished runs, so an open e-mail activity reads again
+  const [emailRefresh, setEmailRefresh] = createSignal(0);
   const [loadErrors, setLoadErrors] = createSignal<Partial<Record<WorkflowLoadArea, string>>>({});
 
   const activeStats = createMemo(() => {
@@ -372,18 +303,6 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
     return PublicGridsWorkflowEmailDeliveryListSchema.parse(await res.json());
   };
 
-  const emailDeliveriesMut = mutations.create<void, void>({
-    // Live updates replace a read in flight.
-    concurrency: "replace",
-    mutation: async (_, { abortSignal }) => {
-      const page = await fetchEmailDeliveries(null, abortSignal);
-      setEmailDeliveries(page.items);
-      setNextEmailCursor(page.nextCursor ?? null);
-    },
-    onSuccess: () => setEmailLoadError(null),
-    onError: (error) => setEmailLoadError(error.message),
-  });
-
   let statsRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleStatsRefresh = () => {
     if (statsRefreshTimer) clearTimeout(statsRefreshTimer);
@@ -405,24 +324,12 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
 
     if (isTerminalWorkflowRunStatus(update.status)) {
       scheduleStatsRefresh();
-      if (emailActivityOpen()) emailDeliveriesMut.mutate();
+      setEmailRefresh((count) => count + 1);
     }
   });
 
   onCleanup(() => {
     if (statsRefreshTimer) clearTimeout(statsRefreshTimer);
-  });
-
-  const loadMoreEmailDeliveriesMut = mutations.create<void, void>({
-    mutation: async (_, { abortSignal }) => {
-      const cursor = nextEmailCursor();
-      if (!cursor) return;
-      const page = await fetchEmailDeliveries(cursor, abortSignal);
-      setEmailDeliveries((current) => [...current, ...page.items]);
-      setNextEmailCursor(page.nextCursor ?? null);
-    },
-    onSuccess: () => setEmailLoadError(null),
-    onError: (error) => setEmailLoadError(error.message),
   });
 
   const launchersMut = mutations.create<void, void>({
@@ -637,53 +544,16 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
     runMut.mutate({ input, mode });
   };
 
-  const openEmailActivity = async () => {
+  // k2b-ui gap: the e-mail activity stays its v1 dialog (a table of deliveries) until a v2 dialog with a table exists
+  const openEmailActivity = () => {
     const workflow = activeWorkflow();
     if (!workflow) return;
-    setEmailDeliveries([]);
-    setNextEmailCursor(null);
-    setEmailLoadError(null);
-    setEmailActivityOpen(true);
-    emailDeliveriesMut.mutate();
-    try {
-      await dialogCore.open<void>(
-        (close) => (
-          <PanelDialog surface="floating">
-            <PanelDialog.Header
-              title={t().emailActivity}
-              subtitle={t().messagesSentBy({ name: workflow.name })}
-              icon="ti ti-mail"
-              close={() => close()}
-            />
-            <PanelDialog.Body>
-              <div class="flex min-h-[24rem] flex-1 flex-col gap-2">
-                <Show when={emailLoadError()}>
-                  {(message) => (
-                    <NoticeCard tone="danger" bodyClass="flex items-center justify-between gap-3" role="alert">
-                      <span>{message()}</span>
-                      <V1Button variant="ghost" size="sm" type="button" class="shrink-0" onClick={() => emailDeliveriesMut.mutate()}>
-                        <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
-                      </V1Button>
-                    </NoticeCard>
-                  )}
-                </Show>
-                <EmailDeliveryTable
-                  deliveries={emailDeliveries()}
-                  loading={emailDeliveriesMut.loading() || loadMoreEmailDeliveriesMut.loading()}
-                  nextCursor={nextEmailCursor()}
-                  onLoadMore={() => loadMoreEmailDeliveriesMut.mutate()}
-                />
-              </div>
-            </PanelDialog.Body>
-          </PanelDialog>
-        ),
-        panelDialogWorkspaceOptions,
-      );
-    } finally {
-      setEmailActivityOpen(false);
-      emailDeliveriesMut.abort();
-      loadMoreEmailDeliveriesMut.abort();
-    }
+    void openWorkflowEmailActivity({
+      title: t().emailActivity,
+      subtitle: t().messagesSentBy({ name: workflow.name }),
+      load: fetchEmailDeliveries,
+      refresh: emailRefresh,
+    });
   };
 
   const runsQuery = createMemo(() => workflowRunsQuery(locale()));
@@ -722,7 +592,7 @@ export default function WorkflowScreen(props: WorkflowScreenProps) {
   };
 
   const more = (workflow: PublicWorkflow): MenuEntry[] => [
-    { label: t().emailActivity, icon: "mail", onClick: () => void openEmailActivity() },
+    { label: t().emailActivity, icon: "mail", onClick: openEmailActivity },
     { label: t().refresh, icon: "refresh", onClick: reloadAll },
     ...(props.canManageActiveWorkflow
       ? [
