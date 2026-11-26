@@ -404,6 +404,7 @@ export default function RunsScreen(props: RunsScreenProps) {
         {(part) => <Notice tone="bad">{t().unavailable({ kind: kindLabel(part.kind) })}</Notice>}
       </For>
       <Show when={cells().length > 0}>
+        {/* k2b-ui gap: Cells stacks one cell per line on the phone; four key figures want 2x2 or one dense row there */}
         <KeyCells cells={cells()} />
       </Show>
       <Show when={unreadFigures()}>

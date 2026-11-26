@@ -98,6 +98,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
           </>
         }
       >
+        {/* k2b-ui gap: Cells stacks one cell per line on the phone; four key figures want 2x2 or one dense row there */}
         <KeyCells cells={props.cells} />
         <Section icon="bell" title={t().signals} summary={props.verdict.description}>
           <Show when={props.signals.length > 0} fallback={<Empty icon="circle-check" text={t().noSignalsHint} />}>
