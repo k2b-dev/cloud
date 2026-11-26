@@ -255,7 +255,8 @@ const plainActivity = (): ActivityEntry[] => [
  * second draft that went to the trash before it. Only the search answers with them, so Activity's day stays as it is.
  */
 export const fixtureSearchHistory = (): ActivityEntry[] => [
-  change("file.edit", 1_450, 3, { after: gone("Angebote/Alter Entwurf.pdf") }),
+  // Jana uploaded the draft and edited it again: the one person the summary has something to say about
+  change("file.edit", 1_450, 2, { after: gone("Angebote/Alter Entwurf.pdf") }),
   change("item.trash", 2_950, 0, { before: gone("Projekte/Treppe Winter/Entwurf Treppe.pdf") }),
   change("file.upload", 4_300, 2, { after: gone("Angebote/Alter Entwurf.pdf") }),
 ];

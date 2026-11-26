@@ -588,15 +588,21 @@ describe("Activity on UI v2", () => {
       actor: { kind: "user", userId: "jana", name: "Jana Berger" },
       after: live("vertrieb/Kunden/Angebote 2025 Übersicht.xlsx", { directory: false }),
     });
-    await search([trashed, other]);
+    const again = entry({
+      action: "file.edit",
+      actor: { kind: "user", userId: "jana", name: "Jana Berger" },
+      after: live("vertrieb/Kunden/Angebote 2025 Übersicht.xlsx", { directory: false }),
+    });
+    await search([trashed, other, again]);
     // the chip never stands alone: its line says where the folder comes back to, and no note says it a second time
     const summary = dom.root.querySelector<HTMLElement>('[data-k2-part="Chip"]')!.parentElement!;
     expect(summary.textContent).toContain("Der Ordner kommt zurück");
     expect(text().split("Der Ordner kommt zurück")).toHaveLength(2);
-    // who, where, what kind: the same summary as Activity's, over the hits' changes
+    // the same summary as Activity's, over the hits' changes, with only the heads that say something (Jana changed two
+    // things); a place reads once, whether the side is current or vanished
     const glance = dom.root.querySelector<HTMLElement>('[data-k2-part="List"][aria-label="Im Überblick"]')!;
     expect(glance.textContent).toContain("Jana Berger");
-    expect(glance.textContent).toContain("Lukas Pohl");
+    expect(glance.textContent!.split("Team Vertrieb › Kunden")).toHaveLength(2);
   });
 
   /** A hop of the chain past `moved`, by Jana, at `time`. */

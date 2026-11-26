@@ -1205,6 +1205,7 @@ export default function FilesScreen(props: {
                     }}
                     initial={moved.contents ?? undefined}
                     onNavigate={onNavigate}
+                    env={history().env}
                   />
                 )}
               </Show>

@@ -463,7 +463,7 @@ export const browserMessages = i18n.define({
       v2Understood: "Understood",
       v2Close: "Close",
       v2SearchShort: "Search",
-      v2EmptyDrop: "Drop files on the page or add them with “+”.",
+      v2EmptyDrop: "Add files with “+”.",
       v2RecentlyOpened: "Recently opened",
       v2RevokeLink: "Revoke link",
       otherStorage: "another storage",
@@ -954,7 +954,7 @@ export const browserMessages = i18n.define({
       v2Understood: "Verstanden",
       v2Close: "Schließen",
       v2SearchShort: "Suchen",
-      v2EmptyDrop: "Zieh Dateien auf die Seite oder füge sie mit „+“ hinzu.",
+      v2EmptyDrop: "Füge Dateien mit „+“ hinzu.",
       v2RecentlyOpened: "Zuletzt geöffnet",
       // the deed, apart from the state "Widerrufen" of a revoked link in the same column
       v2RevokeLink: "Link widerrufen",

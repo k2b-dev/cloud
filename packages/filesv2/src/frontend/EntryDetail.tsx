@@ -33,7 +33,7 @@ import FilePreview from "./FilePreview";
 import FileThumbnail from "./FileThumbnail";
 import { apiFailure, contentLease, inlinePdfHref, previewKind } from "./file-preview";
 import type { FolderActions } from "./folder-actions";
-import { formatWhen } from "./history-actions";
+import { formatWhen, type HistoryEnvironment } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { itemHistoryRequest, itemHistorySource } from "./history-requests";
 import { useFilesMessages } from "./messages";
@@ -344,7 +344,13 @@ function Loaded(
         />
       </Section>
       <Show when={props.item.directory}>
-        <FolderContents base={props.base} folder={props.item} actions={props.actions} onNavigate={props.onNavigate} />
+        <FolderContents
+          base={props.base}
+          folder={props.item}
+          actions={props.actions}
+          onNavigate={props.onNavigate}
+          env={props.history?.env}
+        />
       </Show>
       {/* k2b-ui gap: public links, versions and the item's history are still the v1 parts of the detail; their v2
           rebuild comes with the history views (Files PR 2). Their behaviour stays the same meanwhile. */}
@@ -385,8 +391,11 @@ export function FolderContents(props: {
   onNavigate: OnNavigate;
   /** The server's first page, so the first picture has the entries without a loading state. */
   initial?: { items: FileEntry[]; next: string | null };
+  /** With it each entry says who changed it last and when, as the folder's rows do. */
+  env?: HistoryEnvironment;
 }) {
   const t = useBrowserMessages();
+  const h = useHistoryMessages();
   const locale = useLocale();
   const key = () => JSON.stringify([props.base.id, props.base.locationKey, props.folder.path, props.folder.modified]);
   const initial = props.initial ? { source: key(), data: { key: key(), ...props.initial } } : undefined;
@@ -406,8 +415,17 @@ export function FolderContents(props: {
   const page = () => (contents.data()?.key === key() ? contents.data() : undefined);
   const shown = () => page()?.items.slice(0, CONTENTS_SHOWN) ?? [];
   const more = () => (page()?.next || (page()?.items.length ?? 0) > CONTENTS_SHOWN ? true : undefined);
-  const meta = (entry: FileEntry) =>
-    entry.directory ? t().kindFolder : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+  const meta = (entry: FileEntry) => {
+    const what = entry.directory
+      ? t().kindFolder
+      : `${fileKindLabel({ name: entry.name }, locale())} · ${formatFileViewSize(entry.size, locale())}`;
+    // who changed it last and when; an author the listing does not name leaves only the time
+    const env = props.env;
+    if (!env) return what;
+    const when = formatWhen(entry.modified, locale(), h(), env);
+    const author = entry.facts?.author?.name;
+    return [what, author ? `${author}, ${when}` : when].join(" · ");
+  };
   const href = (entry: FileEntry) =>
     entry.directory ? filesUrl(props.base.id, entry.path) : filesUrl(props.base.id, props.folder.path, null, entry.path);
   return (
