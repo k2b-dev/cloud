@@ -127,8 +127,9 @@ const SeamGrip = (props: { grip: SeamGrip }) => {
 };
 
 /** The seam between two columns: the one 1 px line, and on a line that moves its grip. */
-const Seam = (props: { grip?: SeamGrip }) => (
-  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"}>
+/** `context`: the line before a context column, which lies across, above it, where the context gives way. */
+const Seam = (props: { grip?: SeamGrip; context?: boolean }) => (
+  <div class="k2-seam" data-context={props.context ? "" : undefined} aria-hidden={props.grip ? undefined : "true"}>
     <Show when={props.grip}>{(grip) => <SeamGrip grip={grip()} />}</Show>
   </div>
 );
@@ -371,6 +372,8 @@ export const Workspace = (props: WorkspaceProps) => {
 type SplitEntry = {
   readonly width?: Width;
   readonly label?: string;
+  /** A context column (`side`): the split lets it give way to the end of the main column where it lacks the room. */
+  readonly side?: PaneProps["side"];
   element?: HTMLElement;
   /** The pane's width in px while its grip has moved it. */
   size?: Accessor<number | undefined>;
@@ -406,8 +409,19 @@ export type PaneProps = {
    * it, the × gives way on the phone, so the detail has one way back there.
    */
   back?: Action;
-  /** The side column of a record (the info column): quieter sections. */
-  side?: boolean;
+  /**
+   * The context column after a main column in a `Pane.Split`: the info column of a record, what a form feeds, a chart
+   * beside a table, or the right half of a detail that grows on a large screen (who and what happened, beside what it
+   * is). Quieter sections. It stands beside the main column only where the split holds both: the other columns at
+   * their minimum (400 px, or their `width.min`), its own default `width` (400 px without one) and the line between;
+   * `{ from }` sets that room in px of the split instead, for a main column that needs more, such as a table
+   * (`{ from: 1400 }`: a large screen). With less room it gives way to the end of the main column: the split then
+   * scrolls in one piece, the main column first and the context under it at the full width, so the main column is
+   * never squeezed and nothing hides. It needs no room of the workspace: the sidebar never becomes a drawer for it.
+   * The rule is a `<style>` beside the split, made from these widths on the server too; a page whose content security
+   * policy allows no inline style keeps the context column beside.
+   */
+  side?: boolean | { from: number };
   /**
    * A name under which the page keeps this column's scroll position, such as "mail-list": back and forward bring
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
@@ -428,19 +442,24 @@ export const Pane = (props: PaneProps) => {
     get label() {
       return props.label;
     },
+    get side() {
+      return props.side;
+    },
     size,
     resize: setSize,
   };
   useContext(SplitContext)?.(entry);
-  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
-  useContext(ColumnsContext)?.register({
-    get need() {
-      return props.width?.min ?? flexibleMin;
-    },
-    get detail() {
-      return props.detail === true;
-    },
-  });
+  // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns. A context
+  // column needs nothing: where there is no room beside, it stands under the main column.
+  if (!props.side)
+    useContext(ColumnsContext)?.register({
+      get need() {
+        return props.width?.min ?? flexibleMin;
+      },
+      get detail() {
+        return props.detail === true;
+      },
+    });
   const head = resolveChildren(() => props.head);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
@@ -570,27 +589,65 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
       },
     };
   };
+  // The room a context column needs beside the others: each other column at its default (a column without a width at
+  // its 400 px), its own default width (which includes the line before it) and the lines between the others; or the
+  // room its `from` names. From there on nothing in the split wraps, as each column starts from these widths. The panes
+  // registered while they rendered above, so the server's page and the first render in the browser make the same rule.
+  const id = createUniqueId();
+  const room = () => {
+    const context = props.entries.find((entry) => entry.side);
+    if (!context) return undefined;
+    if (typeof context.side === "object") return context.side.from;
+    const others = props.entries.filter((entry) => entry !== context);
+    return (
+      others.reduce((sum, entry) => sum + (entry.width?.default ?? flexibleMin), 0) +
+      (context.width?.default ?? flexibleMin) +
+      others.length -
+      1
+    );
+  };
+  // Below that room (from 768 px on; the phone stacks every split) the context column and the line before it take a row
+  // each, at the end. One container query on the split's own width, so a workspace with or without its sidebar decides
+  // alike; made per split, as the room is the split's own. The columns before it stay beside each other: a column with
+  // a width starts from its minimum and grows back to its default, so they share the row down to their minimums (the
+  // workspace keeps that room). Every pane shows all it holds, since the split scrolls in one piece.
+  const split = `.k2-ui .k2-split[data-k2-split="${id}"]`;
+  const flowRule = (px: number) =>
+    `@media (min-width: 768px) { @container k2-split (width < ${px}px) { ` +
+    `${split} > .k2-pane[data-side], ${split} > .k2-seam + .k2-pane[data-side][data-width] { flex: 0 0 100%; width: auto; min-width: 0; max-width: none; } ` +
+    `${split} > .k2-pane:not([data-side])[data-width], ${split} > .k2-seam + .k2-pane:not([data-side])[data-width] { flex: 1 1 var(--k2-pane-min); max-width: var(--k2-pane-w); } ` +
+    `${split} > .k2-pane { min-height: auto; overflow: visible; } ` +
+    `${split} > .k2-pane > .k2-scroll { flex: none; overflow: visible; -webkit-mask-image: none; mask-image: none; animation: none; } ` +
+    `${split} > .k2-seam[data-context] { flex: 0 0 100%; width: auto; height: 1px; } ${split} > .k2-seam[data-context] > .k2-grip { display: none; } } }`;
   return (
-    <div class="k2-split" data-k2-part="Pane.Split">
-      <For each={panes()}>
-        {(pane, index) => (
-          <>
-            {pane}
-            <Seam grip={grip(index())} />
-          </>
-        )}
-      </For>
-      {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
-      <Show when={props.empty}>
-        {(empty) => (
-          <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
-            <div class="k2-scroll">
-              <Empty icon={empty().icon} text={empty().text} />
-            </div>
-          </section>
-        )}
-      </Show>
-    </div>
+    <>
+      <Show when={room()}>{(px) => <style data-k2-rule="">{flowRule(px())}</style>}</Show>
+      <div
+        class="k2-split"
+        data-k2-part="Pane.Split"
+        data-k2-split={room() === undefined ? undefined : id}
+        data-context={room() === undefined ? undefined : ""}
+      >
+        <For each={panes()}>
+          {(pane, index) => (
+            <>
+              {pane}
+              <Seam grip={grip(index())} context={entryOf(index() + 1)?.side !== undefined && entryOf(index() + 1)?.side !== false} />
+            </>
+          )}
+        </For>
+        {/* the place of the declared detail while none is open: the column beside it keeps its width (not on the phone) */}
+        <Show when={props.empty}>
+          {(empty) => (
+            <section class="k2-pane" data-k2-part="Pane" data-detail-empty="" aria-label={empty().text}>
+              <div class="k2-scroll">
+                <Empty icon={empty().icon} text={empty().text} />
+              </div>
+            </section>
+          )}
+        </Show>
+      </div>
+    </>
   );
 };
 

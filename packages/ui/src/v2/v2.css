@@ -610,9 +610,25 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  /* its context column asks the split's own width (below), never the window's */
+  container: k2-split / inline-size;
 }
 .k2-ui .k2-scroll > .k2-split {
   flex: 1 0 auto;
+}
+/* A split with a context column (`Pane side`): beside each other while the split holds both, the panes fill its height
+   as in every split. Where it does not, the split's own rule (a `<style>` beside it, made from the panes' widths: a
+   container query takes no custom property) lets the panes wrap: the context column gives way to the end of the main
+   column at its full width, and the split scrolls in one piece, so the main column is never squeezed and nothing hides.
+   On the phone every split stands one pane under the other already (below). */
+.k2-ui .k2-split[data-context] {
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.k2-ui .k2-split[data-context]::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── Bar: fixed height by place, line below, places start and end ──────────────────────────────────────────── */
@@ -3848,8 +3864,10 @@
   .k2-ui .k2-grip {
     display: none;
   }
-  .k2-ui .k2-split {
+  .k2-ui .k2-split,
+  .k2-ui .k2-split[data-context] {
     flex-direction: column;
+    flex-wrap: nowrap;
     overflow: visible;
   }
   .k2-ui .k2-split > .k2-seam {

@@ -129,21 +129,23 @@ const drag = async (page: Page, grip: string, dx: number) => {
 test("the sidebar grip: keys move it 8 and 64 px, Home and End go to the limits, Enter back; the values follow", async () => {
   await withPage(async (page) => {
     await widths(page, { side: 248, list: 360, reader: 488, info: 299 });
-    // the most: the columns keep their minimum beside it (1398 inside the edge − 1 − 280 − 400 − 240 − 2)
-    await values(page, grips.side, ["200", "248", "475", "248 px"]);
+    // the most: list and reader keep their minimum beside it (1398 inside the edge − 1 − 280 − 1 − 400); the info
+    // column, a context column (`side`), needs no room here: it gives way to the end of the reader
+    await values(page, grips.side, ["200", "248", "716", "248 px"]);
     await page.locator(grips.side).focus();
     await page.keyboard.press("ArrowRight");
     await widths(page, { side: 256 });
     await page.keyboard.press("Shift+ArrowRight");
     await widths(page, { side: 320 });
-    await values(page, grips.side, ["200", "320", "475", "320 px"]);
+    await values(page, grips.side, ["200", "320", "716", "320 px"]);
     await page.keyboard.press("Home");
     await widths(page, { side: 200 });
     await page.keyboard.press("End");
-    await widths(page, { side: 475, list: 280, reader: 400, info: 240 });
+    // the info column stands under list and reader, across them (280 + 1 + 400)
+    await widths(page, { side: 716, list: 280, reader: 400, info: 681 });
     await page.keyboard.press("Enter");
     await widths(page, { side: 248, list: 360, reader: 488, info: 299 });
-    await values(page, grips.side, ["200", "248", "475", "248 px"]);
+    await values(page, grips.side, ["200", "248", "716", "248 px"]);
   });
 });
 
@@ -308,11 +310,11 @@ test("a wider sidebar gives way when the window narrows, so the columns keep the
   await withPage(async (page) => {
     await page.locator(grips.side).focus();
     await page.keyboard.press("End");
-    await widths(page, { side: 475 });
-    // 1248 inside the edge − 1 − 280 − 400 − 240 − 2
+    await widths(page, { side: 716 });
+    // 1248 inside the edge − 1 − 280 − 1 − 400; the info column stands under list and reader
     await page.setViewportSize({ width: 1250, height: 800 });
-    await widths(page, { side: 325, list: 280, reader: 400, info: 240 });
-    await values(page, grips.side, ["200", "325", "325", "325 px"]);
+    await widths(page, { side: 566, list: 280, reader: 400, info: 681 });
+    await values(page, grips.side, ["200", "566", "566", "566 px"]);
   });
 });
 

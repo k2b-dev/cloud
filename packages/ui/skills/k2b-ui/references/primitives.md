@@ -66,8 +66,23 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   that closes in place returns the focus to the row that opened it.
 - `scrollKey` (such as "mail-list"): back and forward bring the column
   back to where it was scrolled.
-- `side`: the info column of a record; quieter sections, a `more` link
-  becomes a row.
+- `side`: the context column after a main column in a `Pane.Split` (the
+  info column of a record, what a form feeds, a chart beside a table);
+  quieter sections, a `more` link becomes a row. It stands beside the main
+  column only where the split holds both: the other columns at their
+  default (400 px without a `width`) and its own default width. With less
+  it gives way to the end of the main column, at its full width, and the
+  split scrolls in one piece: the main column is never squeezed and nothing
+  hides. `side={{ from: 1400 }}` sets that room in px of the split, for a
+  main column that needs more (a table: beside only on a large screen). It
+  needs no room of the workspace, so the sidebar never becomes a drawer for
+  it.
+- A detail that grows on a large screen is the same part: under the
+  detail's one `head` (and what spans both, such as a hero band), a
+  `Pane.Split` of what it is (a `Pane`) and who and what happened (a `Pane
+  side`, `width={{ min: 280, default: 320 }}`). It stands in two columns
+  from 720 px of the detail (a window of ~1680 px beside a list of 640 px)
+  and in reading order below that.
 - children: bands, sections, groups, lists, tables, notices, `Text`.
 
 ### Pane.Split
