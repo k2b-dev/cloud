@@ -402,7 +402,8 @@ lines instead of cutting a thing.
   they keep only their symbols, the words stay their names; leave on the
   phone),
   `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  becomes the bar of what can be done with them; the count is never cut, and
+  actions without room go whole into a "…" menu from the end).
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the

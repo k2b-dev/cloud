@@ -2916,12 +2916,40 @@
 .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
   display: none;
 }
+/* The count never shrinks; the actions stand on one line that hides what wraps, and the ones without room go whole into
+   the "…" after them (measured in the browser, as the tabs of a head). The empty first item lets even the first action
+   go whole. An action that went into the menu is out of sight and out of the Tab key's way. */
+.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-lead {
+  flex: none;
+  max-width: none;
+}
+.k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 0 1 auto;
+  column-gap: 8px;
+  min-width: 0;
+  height: var(--k2-h-control-small);
+  overflow: hidden;
+}
+.k2-ui .k2-status-actions::before {
+  content: "";
+  height: var(--k2-h-control-small);
+  margin-inline-end: -8px;
+}
+.k2-ui .k2-status-action {
+  display: flex;
+}
+.k2-ui .k2-status-action[data-overflow] {
+  visibility: hidden;
+}
 @container k2-status (max-width: 599px) {
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) {
+  .k2-ui .k2-bar[data-selecting] .k2-status-action > .k2-btn:not([data-variant]):has(> .k2-icon) {
     width: var(--k2-h-control-small);
     padding: 0;
   }
-  .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
+  .k2-ui .k2-bar[data-selecting] .k2-status-action > .k2-btn:not([data-variant]):has(> .k2-icon) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;

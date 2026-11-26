@@ -485,6 +485,70 @@ test("a row of 1024 px with marks={false} is the row without marks: no empty gro
   expect(results[1]!.group).toBe(false);
 });
 
+// The bar of what can be done with the selected entries (W1b, Files): seven actions need about 1290 px, more than
+// Files' 1117 px list beside its sidebar. The actions that do not fit go whole into a "…" menu from the end; the count
+// is never cut, no action is cut, the way out stays, and every action stays reachable, in its order.
+for (const [width, column] of [
+  [1440, 1117],
+  [1440, 1024],
+  [390, 390],
+] as const)
+  test(`the selection bar of a row of ${column} px in a window of ${width} px: seven actions, those without room in "…"`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2Selection?.());
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const box = row.getBoundingClientRect();
+          const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
+          const count = row.querySelector<HTMLElement>(".k2-status-lead")!;
+          const actions = [...row.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].filter(
+            (button) => !button.closest("[data-k2-part=Menu]") && button.getAttribute("aria-haspopup") !== "menu",
+          );
+          const seen = (button: HTMLElement) => {
+            const rect = button.getBoundingClientRect();
+            if (getComputedStyle(button).visibility === "hidden" || rect.width === 0) return false;
+            // in sight: not wrapped below the bar's one line
+            return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
+          };
+          return {
+            count: { whole: count.scrollWidth <= count.clientWidth + 0.5, text: count.textContent?.trim() },
+            buttons: actions.map((button) => ({
+              name: button.textContent?.trim() || button.getAttribute("aria-label") || "",
+              seen: seen(button),
+              whole: button.scrollWidth <= button.clientWidth + 0.5,
+              inside: button.getBoundingClientRect().right <= inner + 0.5,
+            })),
+          };
+        });
+        expect(found.count).toEqual({ whole: true, text: "12 ausgewählt" });
+        const all = ["Herunterladen", "Teilen", "Verschieben", "Kopieren", "Umbenennen", "Als Favorit markieren", "In den Papierkorb"];
+        const actions = found.buttons.filter((button) => all.includes(button.name));
+        const clear = found.buttons.find((button) => button.name === "Auswahl aufheben");
+        // the way out stays, whole, inside the row
+        expect(clear).toEqual({ name: "Auswahl aufheben", seen: true, whole: true, inside: true });
+        // every action in sight is whole and inside; the ones in sight are the first ones
+        for (const action of actions.filter((action) => action.seen)) expect(action).toEqual({ ...action, whole: true, inside: true });
+        const inSight = actions.filter((action) => action.seen).map((action) => action.name);
+        expect(inSight).toEqual(all.slice(0, inSight.length));
+        // the rest is in the "…" menu, in its order
+        const rest = all.slice(inSight.length);
+        const row = page.locator('[data-k2-part="StatusRow"]');
+        if (rest.length === 0) expect(await row.getByRole("button", { name: "Weitere Aktionen" }).count()).toBe(0);
+        else {
+          await row.getByRole("button", { name: "Weitere Aktionen" }).click();
+          const items = await page.getByRole("menuitem").allTextContents();
+          expect(items.map((item) => item.trim())).toEqual(rest);
+        }
+        // at 1024 px and below, seven actions do not fit beside the count and the way out in the test browsers: some go
+        // into the menu (at 1117 px that depends on the font's widths, so there only the rules above hold)
+        if (column <= 1024) expect(rest.length).toBeGreaterThan(0);
+      },
+      { width, column },
+    );
+  });
+
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
   await withPage(

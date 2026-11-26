@@ -482,9 +482,74 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end, in
+   * their order (in a column below 600 px they first keep only their symbols, below 400 px the way out its ×).
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
+};
+
+/**
+ * The actions of a selection bar, as the tabs of a head give way: they stand on one line that hides what wraps, and the
+ * ones without room go whole into a "…" menu from the end, in their order, so none is cut and every one stays
+ * reachable. In a narrow column they keep only their symbols first (the stylesheet), so more stay in the bar. Measured
+ * in the browser; the server sends every action, and the stylesheet already hides what wraps.
+ */
+const SelectionActions = (props: { actions: readonly Action[] }) => {
+  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
+  let row: HTMLDivElement | undefined;
+  onMount(() => {
+    if (!row) return;
+    const measure = () => {
+      const buttons = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
+      // an action that wrapped below the row's one line has no room (even the first may wrap, after the empty item)
+      const top = row?.getBoundingClientRect().top ?? 0;
+      const index = buttons.findIndex((button) => button.getBoundingClientRect().top > top + 1);
+      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
+    };
+    // as the tabs: once per frame, never inside the observer's own turn (WebKit reports that as a resize loop)
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    const sizes = new ResizeObserver(later);
+    sizes.observe(row);
+    for (const child of row.children) sizes.observe(child);
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+    });
+  });
+  const hidden = () => props.actions.slice(fit());
+  return (
+    <>
+      <div class="k2-status-actions" ref={row}>
+        <Index each={props.actions}>
+          {(action, index) => (
+            <span class="k2-status-action" data-overflow={index >= fit() ? "" : undefined}>
+              <ActionButton action={action()} titled />
+            </span>
+          )}
+        </Index>
+      </div>
+      <Show when={hidden().length > 0}>
+        <Menu
+          items={hidden().map((action) => ({
+            label: action.label,
+            icon: action.icon,
+            href: action.href,
+            onNavigate: action.onNavigate,
+            onClick: action.onClick,
+            disabled: action.disabled,
+          }))}
+        />
+      </Show>
+    </>
+  );
 };
 
 /**
@@ -556,8 +621,7 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
-            {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names */}
-            <For each={selection().actions}>{(action) => <ActionButton action={action} titled />}</For>
+            <SelectionActions actions={selection().actions} />
             <ActionButton action={{ icon: "x", ...selection().clear }} variant="text" titled />
           </div>
         )}
