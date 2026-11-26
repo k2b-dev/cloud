@@ -20,7 +20,7 @@ import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -454,10 +454,10 @@ export type Column<T> = {
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px (`fixed`: its default, no grip). The
-   * column is exactly its default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px; `{ fixed }`: one width, no grip. The
+   * column is exactly that wide; cut text never widens it.
    */
-  width?: Width;
+  width?: ColumnWidth;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
@@ -563,6 +563,11 @@ type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);
+  /** The width of column `index` when it can be dragged, else nothing. */
+  const dragWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return draggable(width) ? width : undefined;
+  };
   // Every cell is made once: what `cell` returns is placed, never rendered a second time.
   const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
   // the shape of the placeholders while the rows load
@@ -663,7 +668,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                 {(column, index) => (
                   <col
                     style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
+                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${columnPx(column.width)}px` } : undefined
                     }
                   />
                 )}
@@ -689,16 +694,19 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width && !props.columns[index() - 1]!.width!.fixed}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                    {/* a grip after a column that can be dragged; a fixed one keeps its width */}
+                    <Show when={dragWidth(index() - 1)}>
+                      {(width) => (
+                        <span
+                          class="k2-cgrip"
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={props.columns[index() - 1]!.title}
+                          aria-valuemin={width().min}
+                          aria-valuenow={width().default}
+                          tabindex="0"
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}
