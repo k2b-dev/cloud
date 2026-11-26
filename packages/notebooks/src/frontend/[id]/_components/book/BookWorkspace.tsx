@@ -75,14 +75,21 @@ export default function BookWorkspace(props: BookWorkspaceProps) {
                     ...(shown().selectedNoteId && !shown().locked
                       ? [{ label: t().openAsEdit, icon: "pencil", href: workspaceHref("write") }]
                       : []),
-                    { label: t().openAsRead, icon: "eye", href: workspaceHref("readonly") },
+                    // the note's open comments count on Read, which opens at the first of them
+                    {
+                      label: t().openAsRead,
+                      icon: "eye",
+                      count: openComments() > 0 ? openComments() : undefined,
+                      href: openComments() > 0 ? commentsHref(shown().href) : workspaceHref("readonly"),
+                    },
                     { label: book().book, icon: "book", current: true, href: withPresentationMode(shown().href, "book") },
                   ]}
                 />
               </Show>
             }
             end={
-              <Show when={openComments() > 0}>
+              // a reader has no views, so the comments are a button of their own
+              <Show when={!shown().canWrite && openComments() > 0}>
                 <Button icon="message-circle" href={commentsHref(shown().href)} keep>
                   {comments().bookEntry({ count: openComments() })}
                 </Button>

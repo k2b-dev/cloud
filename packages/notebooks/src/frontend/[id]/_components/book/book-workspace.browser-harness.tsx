@@ -1,5 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
+import { renderNotebookBook } from "@/lib/book-renderer";
 import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import BookWorkspace from "./BookWorkspace";
 
@@ -20,6 +21,22 @@ const tree = [
     ],
   },
 ];
+/** A dense page of the handbook, drawn by Book's own renderer: headings, a list, a table and the link onward. */
+const OVERVIEW = renderNotebookBook({
+  markdown: [
+    "# Überblick",
+    "So arbeitet das Lager: Ware kommt an Rampe 1 bis 3 an, wird geprüft, eingelagert und für den Versand kommissioniert. Jede Station hat eine eigene Seite mit Ablauf, Ansprechpersonen und Checklisten.",
+    "## Stationen",
+    "- **Wareneingang** – Annahme, Sichtprüfung, Buchung im System\n- **Einlagerung** – Hochregal Gang A bis F, Kühlbereich K1\n- **Kommissionierung** – Pick-by-Scan, zwei Schichten\n- **Versand** – Packplätze 1 bis 6, Abholung 16 Uhr",
+    "## Zeiten",
+    "| Bereich | Frühschicht | Spätschicht |\n| --- | --- | --- |\n| Wareneingang | 6:00–14:00 | 14:00–22:00 |\n| Kommissionierung | 6:00–14:00 | 14:00–22:00 |\n| Versand | 8:00–16:30 | – |",
+    "[Weiter zum Wareneingang](/app/notebooks/book01/notes/note02?mode=book)",
+  ].join("\n\n"),
+  notebookId: "book01",
+  noteId: "note01",
+  locale: "de",
+}).html;
+
 const root = document.getElementById("root");
 if (root) {
   window.bookPageMarker = "first load";
@@ -36,11 +53,10 @@ if (root) {
           currentHref="/app/notebooks/book01/notes/note01?mode=book"
           navigationHidden={false}
           fullWidth={false}
-          html={
-            '<h1 id="ueberblick">Überblick</h1><p>So arbeitet das Lager.</p><p><a href="/app/notebooks/book01/notes/note02?mode=book">Weiter zum Wareneingang</a></p>'
-          }
+          html={OVERVIEW}
           noteTitle="Überblick"
-          canWrite
+          // `?reader=1`: a reader, who stays in Book
+          canWrite={new URLSearchParams(location.search).get("reader") !== "1"}
           locked={false}
           historyIncomplete={false}
           cursor={null}

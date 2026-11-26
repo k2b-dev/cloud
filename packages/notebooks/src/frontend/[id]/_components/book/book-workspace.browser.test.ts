@@ -137,10 +137,10 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(
         () => document.querySelector('[data-k2-part="Tabs"] a')?.getAttribute("href") === "/app/notebooks/book01/notes/note02?mode=write",
       );
-      // the note's open comments lead into Read at the first one
-      expect(await page.getByRole("link", { name: "2 Kommentare" }).getAttribute("href")).toBe(
-        "/app/notebooks/book01/notes/note02?mode=readonly&annotation=first",
-      );
+      // the note's open comments count on Read, which opens at the first one
+      const read = tabs(page).nth(1);
+      expect(await read.getAttribute("href")).toBe("/app/notebooks/book01/notes/note02?mode=readonly&annotation=first");
+      expect(await read.textContent()).toContain("2");
       // with the comments in it, the head still fits
       expect((await measureV2Layout(page, { root: '[data-k2-workspace] [data-k2-part="Bar"]' })).problems).toEqual([]);
       await page.goBack();
