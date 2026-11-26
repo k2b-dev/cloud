@@ -1,6 +1,8 @@
+import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Tabs, Text } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, type Person, Tabs, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import type { NotebookActivityActor } from "../../../../lib/activity-actions";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { notebookWorkspaceMessages } from "../../messages";
 import { commentMessages } from "../comments/messages";
@@ -15,13 +17,23 @@ export type BookHeadProps = {
   fullWidth: boolean;
   /** The note the page opened with; later notes arrive as snapshots without a new page. */
   initial: BookMetadata;
+  /** The server's time: the base of "vor 4 Min" for the first note, so server and browser say the same. */
+  now: string;
 };
 
+const person = (actor: NotebookActivityActor): Person => ({
+  name: actor.displayName,
+  image:
+    actor.kind === "user" && actor.id && actor.avatarHash
+      ? `/api/accounts/users/${encodeURIComponent(actor.id)}/avatar?rev=${encodeURIComponent(actor.avatarHash)}`
+      : undefined,
+});
+
 /**
- * Book's head: the notebook's name, the note's views (Bearbeiten, Lesen, Buch) for writers, the view menu and the note's
- * open comments, in one row. The reader moves between notes without a new page, so the head follows each note's
- * snapshot: its views and comments always belong to the note shown. The note's own title is the article's first
- * heading.
+ * Book's head, one row: the note's views (Bearbeiten, Lesen, Buch) for writers, then who wrote the note and who changed
+ * it last and when, and at the end the view menu and the note's open comments. The notebook is named once: by the
+ * sidebar's switcher, and on the phone by the shell's title row. The note's own title is the article's first heading,
+ * the page's hero. The reader moves between notes without a new page, so the head follows each note's snapshot.
  */
 export default function BookHead(props: BookHeadProps) {
   const locale = useLocale();
@@ -39,15 +51,30 @@ export default function BookHead(props: BookHeadProps) {
     withPresentationMode(shown().selectedNoteId ? shown().href : `/app/notebooks/${props.notebookId}`, mode);
   const openComments = () => (shown().selectedNoteId ? (shown().openComments ?? 0) : 0);
   const entry = () => comments().bookEntry({ count: openComments() });
+  // the people of the note: who changed it last, then who wrote it (once each)
+  const people = () => {
+    const authors = shown().selectedNoteId ? shown().authors : null;
+    const actors = [authors?.lastEditedBy, authors?.createdBy].filter((actor): actor is NotebookActivityActor => !!actor);
+    return actors
+      .filter((actor, index) => actors.findIndex((other) => other.kind === actor.kind && other.id === actor.id) === index)
+      .map(person);
+  };
+  // "zuletzt Lena Hartwig · vor 4 Min": the first note counts from the server's time, a later one from the browser's
+  const lastChanged = () => {
+    const editor = shown().selectedNoteId ? shown().authors?.lastEditedBy : null;
+    const updatedAt = shown().updatedAt;
+    if (!editor || !updatedAt) return null;
+    const base = shown() === props.initial ? props.now : new Date().toISOString();
+    return book().lastChanged({ name: editor.displayName, when: dates.formatDateTimeRelative(updatedAt, { base, locale: locale() }) });
+  };
 
   return (
     <Bar
       start={
-        // The head's title is the notebook: on the phone, where no sidebar shows its switcher, it is the only place that
-        // names it (the platform will hide it beside an open switcher, lane Z2). Readers stay in Book: only writers get
-        // the way into the workspace, as the note's head offers it.
+        // Readers stay in Book: only writers get the way into the workspace, as the note's head offers it.
+        // k2b-ui gap: the notebook's name in the head while the sidebar is hidden (Workspace collapse state, lane Z2);
+        // the switcher names it while the sidebar shows, the shell's title row on the phone.
         <>
-          <Text weight="strong">{shown().notebookName}</Text>
           <Show when={shown().canWrite}>
             <Tabs
               label={t().view}
@@ -60,6 +87,18 @@ export default function BookHead(props: BookHeadProps) {
               ]}
             />
           </Show>
+          {/* the note's people, one quiet line (rule: people are visible); cut first when the head is narrow */}
+          <Show when={people().length > 0}>
+            <Avatar.Stack
+              people={people()}
+              label={book().authors({
+                names: people()
+                  .map((one) => one.name)
+                  .join(", "),
+              })}
+            />
+          </Show>
+          <Show when={lastChanged()}>{(line) => <Text type="meta">{line()}</Text>}</Show>
         </>
       }
       end={

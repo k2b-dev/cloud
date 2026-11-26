@@ -45,6 +45,8 @@ const OVERVIEW = renderNotebookBook({
   noteId: "note01",
   locale: "de",
 }).html;
+const ADA = { kind: "user" as const, id: "u-ada", displayName: "Ada Renz", avatarHash: null };
+const LENA = { kind: "user" as const, id: "u-lena", displayName: "Lena Hartwig", avatarHash: null };
 const second = {
   href: "/app/notebooks/book01/notes/note02?mode=book",
   html: '<h1 id="wareneingang">Wareneingang</h1><p>Annahme an Rampe 2.</p>',
@@ -58,6 +60,8 @@ const second = {
   historyIncomplete: false,
   cursor: null,
   openComments: 2,
+  authors: { createdBy: ADA, lastEditedBy: ADA },
+  updatedAt: "2026-10-15T09:00:00.000Z",
 };
 
 /** The page as the server renders it; the cookies say whether the person hid the sidebar or reads in full width. */
@@ -87,6 +91,10 @@ const pageMarkup = (sidebarCollapsed: boolean, fullWidth: boolean, reader: boole
               locked: false,
               historyIncomplete: false,
               cursor: null,
+              now: "2026-10-16T17:30:00.000Z",
+              // who wrote the note and who changed it last, four minutes before the server's time
+              authors: { createdBy: ADA, lastEditedBy: LENA },
+              updatedAt: "2026-10-16T17:26:00.000Z",
             });
           },
         });
@@ -245,8 +253,12 @@ for (const width of [1440, 390]) {
       // the article is plain markup, in no island; the head and the navigation stand in theirs
       expect(await page.locator("solid-island #notebook-book-content").count()).toBe(0);
       expect(await page.locator('solid-island[data-file="BookHead.island.tsx"] [data-k2-part="Tabs"]').count()).toBe(1);
-      // a writer's head holds the views, as the note's head does; the sidebar names the notebook beside it
-      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).toContain("Handbuch Lager");
+      // a writer's head holds the views, as the note's head does, and the note's people; the notebook is named once, by
+      // the sidebar's switcher (on the phone by the shell's title row), never again in the head
+      const head = page.locator('[data-k2-workspace] [data-slot="head"]');
+      expect(await head.textContent()).not.toContain("Handbuch Lager");
+      expect(await head.locator('[data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe("Geschrieben von Lena Hartwig, Ada Renz");
+      if (width > 600) expect(await head.textContent()).toContain("zuletzt Lena Hartwig · vor 4");
       expect((await page.locator(main).boundingBox())!.height).toBeGreaterThan(400);
     } finally {
       await close(page);
@@ -279,6 +291,13 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(
         () => document.querySelector('[data-k2-part="Tabs"] a')?.getAttribute("href") === "/app/notebooks/book01/notes/note02?mode=write",
       );
+      // the head names the people of the note it now shows: one who wrote and last changed it
+      await page.waitForFunction(() =>
+        document.querySelector('[data-k2-workspace] [data-slot="head"]')?.textContent?.includes("zuletzt Ada Renz"),
+      );
+      expect(await page.locator('[data-k2-workspace] [data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe(
+        "Geschrieben von Ada Renz",
+      );
       // the note's open comments: their sign and number, named in words, leading into Read at the first one
       // k2b-ui gap: a v2 Button with words takes `label` only as its title, not as its name, so the name is the number until
       // the Button names it in words as its contract says
@@ -301,12 +320,12 @@ for (const width of [1440, 390]) {
   test(`${width}: a reader stays in Book and reaches the note's open comments from the head`, async () => {
     const page = await open(width, "/app/notebooks/book01/notes/note01?mode=book&reader=1");
     try {
-      // no views into the workspace; the head names the notebook and holds the comments in the same row
+      // no views into the workspace; the head holds the note's people and the comments in the same row
       expect(await tabs(page).count()).toBe(0);
       const head = page.locator('[data-k2-workspace] [data-slot="head"]');
-      expect(await head.textContent()).toContain("Handbuch Lager");
+      expect(await head.textContent()).not.toContain("Handbuch Lager");
       const row = await head.locator('[data-k2-part="Bar"]').first().boundingBox();
-      const named = await head.getByText("Handbuch Lager").boundingBox();
+      const named = await head.locator('[data-k2-part="Avatar.Stack"]').boundingBox();
       const count = await head.locator('a[title="2 offene Kommentare"]').boundingBox();
       expect(Math.abs(named!.y + named!.height / 2 - (count!.y + count!.height / 2))).toBeLessThanOrEqual(2);
       expect(count!.y + count!.height).toBeLessThanOrEqual(row!.y + row!.height);

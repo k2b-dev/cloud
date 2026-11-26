@@ -46,6 +46,7 @@ describe("independent Book live metadata regression", () => {
           locked: false,
           historyIncomplete: false,
           cursor: null,
+          now: "2026-10-16T17:30:00.000Z",
         }),
       dom.root,
     );

@@ -84,6 +84,8 @@ export default ssr<AuthContext>(async (c) => {
         fullWidth
         ui="v2"
         title={data.notebook.name}
+        // on the phone the shell bar names the notebook (and opens its pages), so the head keeps room for the views
+        headTitle="page"
       >
         <link rel="stylesheet" href={katexStylesHref} />
         <RememberNotebook notebookId={data.notebook.id} />
@@ -106,6 +108,9 @@ export default ssr<AuthContext>(async (c) => {
           cursor={data.ctx.workspaceCursor}
           fullWidth={data.ctx.fullWidth}
           openComments={data.bookOpenComments}
+          authors={data.bookAuthors}
+          updatedAt={data.selectedNote?.updatedAt ?? null}
+          now={data.now}
         />
       </Layout>
     );

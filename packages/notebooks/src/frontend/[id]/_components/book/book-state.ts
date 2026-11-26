@@ -1,3 +1,5 @@
+import type { NoteAuthors } from "../../../../lib/activity-actions";
+
 export type BookSnapshot = {
   href: string;
   html: string | null;
@@ -11,6 +13,10 @@ export type BookSnapshot = {
   locked: boolean;
   historyIncomplete: boolean;
   cursor: string | null;
+  /** Who wrote the selected note and who changed it last (one bounded query per note), when it is known. */
+  authors?: NoteAuthors | null;
+  /** When the selected note last changed. */
+  updatedAt?: string | null;
   /** Open inline comments of the selected note; Book shows only their number. */
   openComments?: number;
 };

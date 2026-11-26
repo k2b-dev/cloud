@@ -256,6 +256,11 @@ export async function loadNotebookPageData(c: NotebookPageContext) {
     initialAnnotations,
     // Without the count Book just leaves out its comments entry; the note itself still opens.
     bookOpenComments: isBookMode && selected.internalNoteId ? await countOpenAnnotations(selected.internalNoteId).catch(() => 0) : 0,
+    // Book's head names who wrote the note and who changed it last; without them it leaves the line out.
+    bookAuthors:
+      isBookMode && selected.internalNoteId
+        ? await notebooksService.activity.noteAuthors({ noteId: selected.internalNoteId }).catch(() => null)
+        : null,
     dateConfig: ctx.dateConfig,
   };
 }

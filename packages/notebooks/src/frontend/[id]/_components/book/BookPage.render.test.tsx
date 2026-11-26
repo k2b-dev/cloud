@@ -38,6 +38,12 @@ const render = (
               html,
               noteTitle: "Welcome",
               cursor: null,
+              now: "2026-10-16T17:30:00.000Z",
+              authors: {
+                createdBy: { kind: "user", id: "u-ada", displayName: "Ada Renz", avatarHash: null },
+                lastEditedBy: { kind: "user", id: "u-lena", displayName: "Lena Hartwig", avatarHash: null },
+              },
+              updatedAt: "2026-10-16T17:26:00.000Z",
               navigationHidden: false,
               fullWidth: false,
               tags: [{ tag: "handbook", count: 2 }],
@@ -110,10 +116,15 @@ describe("Book on v2", () => {
       "BookMermaid.island.tsx",
       "BookCharts.island.tsx",
     ]);
-    // the head's title is the notebook, for writers and readers: on the phone it is the only place that names it
+    // the notebook is named once, by the sidebar (on the phone by the shell's title row); the head names the note's
+    // people from the server on, for writers and readers
     for (const page of [render(), html]) {
       const [head] = await selectHtml(page, '[data-slot="head"]');
-      expect(head?.text).toContain("Company handbook");
+      expect(head?.text).not.toContain("Company handbook");
+      expect(head?.text).toContain("last changed by Lena Hartwig · ");
+      expect((await selectHtml(page, '[data-slot="head"] [data-k2-part="Avatar.Stack"]'))[0]?.attributes["aria-label"]).toBe(
+        "Written by Lena Hartwig, Ada Renz",
+      );
       // the view menu stands in the server's frame, so nothing moves into the head when the browser takes over
       expect((await selectHtml(page, '[data-slot="head"] button[data-slot="menu-trigger"]')).map((button) => button.text.trim())).toContain(
         "View",

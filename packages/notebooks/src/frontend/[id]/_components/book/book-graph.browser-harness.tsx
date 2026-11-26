@@ -40,6 +40,7 @@ export function BookGraphFixture(props: BookGraphFixtureProps) {
         locked: props.navigator.locked ?? false,
         historyIncomplete: false,
         cursor: null,
+        now: "2026-10-16T17:30:00.000Z",
       });
 }
 
