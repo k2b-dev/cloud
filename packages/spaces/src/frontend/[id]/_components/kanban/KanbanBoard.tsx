@@ -915,8 +915,11 @@ export default function KanbanBoard(props: Props) {
    * redraw never pulls the focus back.
    */
   let dropFocus: { itemId: string; bucketKey: string } | null = null;
+  // The dropped card's own link counts too: a question the drop asked hands the focus back to the card when it closes,
+  // and the card is drawn again while the move saves, so its grip still takes the focus after that.
   const isDropFocusTarget = (element: Element, focus: { itemId: string; bucketKey: string }) =>
     element.closest<HTMLElement>("[data-spaces-kanban-grip]")?.dataset.spacesKanbanGrip === focus.itemId ||
+    element.closest<HTMLElement>("[data-spaces-kanban-card]")?.dataset.itemId === focus.itemId ||
     element.closest<HTMLElement>("[data-spaces-kanban-fold]")?.dataset.spacesKanbanFold === focus.bucketKey;
   const restoreDropFocus = () => {
     const focus = dropFocus;

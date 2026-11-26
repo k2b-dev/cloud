@@ -408,7 +408,7 @@ const layout = (page: Page) =>
     };
     const board = window.document.querySelector('[role="region"]')!;
     return {
-      toolbar: box(window.document.querySelector("[data-spaces-head-filters]")),
+      toolbar: box(window.document.querySelector('[data-k2-part="FilterBar"]')),
       board: box(board),
       boardScroll: { width: board.scrollWidth, client: board.clientWidth },
       documentScroll: { width: window.document.documentElement.scrollWidth, client: window.document.documentElement.clientWidth },
@@ -989,7 +989,7 @@ describePart("board", "Spaces Kanban board in a browser", () => {
         expect(await selection('article:has([data-item-id="Item02"])')).toEqual(
           canWrite ? ["none", "none"] : expect.not.arrayContaining(["none"]),
         );
-        expect(await selection("[data-spaces-head-filters]")).toEqual(expect.not.arrayContaining(["none"]));
+        expect(await selection('[data-k2-part="FilterBar"]')).toEqual(expect.not.arrayContaining(["none"]));
       } finally {
         await page.context().close();
       }
@@ -1251,10 +1251,11 @@ describePart("keyboard", "Spaces Kanban board in a browser", () => {
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("ArrowRight");
       await page.keyboard.press("Space");
-      const question = page.getByRole("dialog", { name: "Take over task" });
+      // the v2 question is an alert dialog
+      const question = page.getByRole("alertdialog", { name: "Take over task" });
       await question.waitFor();
       expect(await question.count()).toBe(1);
-      expect(await page.getByRole("dialog").count()).toBe(1);
+      expect(await page.getByRole("alertdialog").count()).toBe(1);
       expect(moves).toEqual([]);
       const moved = page.waitForResponse((response) => response.url().endsWith("/items/Item04/move"));
       await question.getByRole("button", { name: "Take over and complete" }).click();
@@ -1384,7 +1385,8 @@ describePart("keyboard", "Spaces Kanban board in a browser", () => {
       await page.keyboard.press("Space");
       await page.keyboard.press("ArrowDown");
       // The card's M and D belong to its link, not to the grip that moves it. Head commands use modifier chords.
-      expect(await singleKeyCommandShortcuts()).toEqual([]);
+      // The page's own n (a blank task, as on the v1 page) is the one single key; the board adds none.
+      expect(await singleKeyCommandShortcuts()).toEqual(["n"]);
       for (const key of ["j", "k", "m", "d"]) await page.keyboard.press(key);
       expect(await page.evaluate<unknown>(() => Reflect.get(window, "__workspaceKeys"))).toEqual([]);
       expect(await page.locator("[data-spaces-kanban-drop-indicator]").count()).toBe(1);
