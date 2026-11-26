@@ -1201,6 +1201,8 @@
   gap: 0.5rem;
   height: var(--notebook-graph-head);
   padding: 0 0.625rem 0 1rem;
+  /* the head measures its own width, as wide as Main, not the window (a narrow Main beside the navigation) */
+  container: notebook-graph-head / inline-size;
 }
 .notebook-graph__title {
   display: flex;
@@ -1690,10 +1692,31 @@
 .notebook-graph__phone-default {
   display: none;
 }
-/* Display switcher: equal segments, so checking one never changes a width. */
+/* Display switcher: every segment shows its name and keeps its width, so checking one moves nothing. */
 .notebook-graph__display-switcher {
-  width: 20rem;
   flex: none;
+}
+.notebook-graph__title-display {
+  display: none;
+}
+/* A narrow Main (a 1024 px window beside the navigation, and the phone): the displays keep only their symbols, so the
+   head keeps every control and the search its 128 px; their names stay for assistive technology, and the title names
+   the chosen one. */
+@container notebook-graph-head (max-width: 699px) {
+  .notebook-graph__display-switcher .notebook-graph__display-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    padding: 0;
+    margin: -1px;
+    border-width: 0;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .notebook-graph__title-display {
+    display: inline;
+  }
 }
 /* Depth: content-sized segments that never wrap; the checked one has the same width as before. */
 .notebook-graph__depth {
@@ -1938,9 +1961,19 @@
     flex-wrap: wrap;
     align-content: flex-start;
   }
+  /* two rows of 52 px fill the 104 px head exactly (above the toolbar's own gap) */
+  .k2b-ui .notebook-graph__head.k2b-toolbar {
+    row-gap: 0;
+  }
   .notebook-graph__title {
     height: 3.25rem;
     justify-content: center;
+    /* it takes what the title row leaves beside the search: with its own width as a start (the chosen display's name
+       in it) a control wrapped into a third row and pushed the switcher under the filters */
+    flex: 1 1 0;
+  }
+  .notebook-graph__search {
+    flex-grow: 0;
   }
   .notebook-graph__display-switcher {
     display: flex;
@@ -1950,17 +1983,14 @@
     align-items: center;
     order: 1;
   }
-  /* Only the checked display shows its name; the others keep it for assistive technology. */
-  .notebook-graph__display-switcher [aria-checked="false"] .notebook-graph__display-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    padding: 0;
-    margin: -1px;
-    border-width: 0;
-    clip-path: inset(50%);
-    white-space: nowrap;
+  /* On the phone the displays share the row in equal parts of at least 44 px height, symbols only (the narrow-Main
+     rule above); a name shown only on the checked one changed its width and moved the others (#4221). */
+  .k2b-ui .notebook-graph__display-switcher .k2b-segmented-control {
+    width: 100%;
+  }
+  .k2b-ui .notebook-graph__display-switcher .k2b-segmented-control[data-size] .k2b-segmented-control__option {
+    flex: 1 1 0%;
+    min-height: 2.75rem;
   }
   /* Phones hide Changed like the prototype, unless the list is sorted by it: then the order keeps its cause. */
   .notebook-graph__list:not([data-sorted]) .notebook-graph__list-changed {

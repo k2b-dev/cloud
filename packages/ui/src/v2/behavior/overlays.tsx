@@ -65,9 +65,16 @@ export type DialogOptions = OverlayOptions & {
 };
 
 /**
- * A sheet stands on the bottom of the screen. Core answers a change of its content's height with a spring that starts
- * at the old height and moves the whole sheet: for a moment it stands off the bottom, and a tap there hits the backdrop
- * and closes it (#4141). Core offers no way to leave that spring out, so it ends here, before the frame is drawn.
+ * The moves core plays on a sheet over time (opening, closing, a spring): animations on the document's timeline. The
+ * effects that follow a touch screen sheet's scroll (`ScrollTimeline`) run all the time and are no move.
+ */
+const moves = (element: Element) => element.getAnimations().filter((animation) => animation.timeline === element.ownerDocument.timeline);
+
+/**
+ * A sheet (a dialog's, or a popover's on the phone) stands on the bottom of the screen. Core answers a change of its
+ * content's height with a spring that starts at the old height and moves the whole sheet: for a moment it stands off
+ * the bottom, and a tap there hits the backdrop and closes it (#4141). Core offers no way to leave that spring out, so
+ * it ends here, before the frame is drawn.
  *
  * Core starts the spring in its own ResizeObserver of the sheet, which may be made before or after this one (its sheet
  * module loads on its own time). So this one only notes the change and observes a part inside the sheet: an
@@ -79,7 +86,7 @@ const holdSheetBottom = (element: HTMLElement) => {
   let height: number | undefined;
   const after = new ResizeObserver(() => {
     after.disconnect();
-    for (const animation of element.getAnimations()) animation.finish();
+    for (const animation of moves(element)) animation.finish();
   });
   const sizes = new ResizeObserver(() => {
     const now = element.offsetHeight;
@@ -97,6 +104,77 @@ const holdSheetBottom = (element: HTMLElement) => {
   onCleanup(() => {
     sizes.disconnect();
     after.disconnect();
+  });
+};
+
+/**
+ * Only a person's touch moves a sheet. On a touch screen core lets the sheet's host scroll (its scroll-snap way): a
+ * swipe down scrolls the host and closes the sheet. A script's scroll of something inside the sheet into view
+ * (`scrollIntoView`, a focus) scrolls that host too and closed the resting sheet (#4167). So a scroll of the host that
+ * no touch moved, while core moves nothing itself (no animation of the sheet or of its host, such as its slide above an
+ * on-screen keyboard), is put back: the sheet's bottom on the bottom of the window, once a frame at most.
+ *
+ * A swipe and its glide after the finger left stay as they are: the glide counts only after a touch that scrolled the
+ * host. A tap scrolls nothing, so the scroll its press starts (a calendar's step that scrolls its day into view) is a
+ * script's and is put back. Only touch moves the host: a wheel or the keys on a touch screen are put back too.
+ */
+const holdSheetOpen = (element: HTMLElement) => {
+  const doc = element.ownerDocument;
+  const view = doc.defaultView;
+  if (!view) return;
+  let touched = false;
+  // the touch scrolled the host: a swipe, which glides on after the finger left
+  let dragged = false;
+  let gliding = false;
+  // one correction a frame, so the host and its snap do not answer each other within it
+  let corrected = false;
+  let glide = 0;
+  // a swipe's glide ends when the host has not scrolled for a moment
+  const glideOn = () => {
+    gliding = true;
+    view.clearTimeout(glide);
+    glide = view.setTimeout(() => {
+      gliding = false;
+    }, 150);
+  };
+  const touchStart = () => {
+    touched = true;
+    dragged = false;
+  };
+  const touchEnd = () => {
+    touched = false;
+    if (dragged) glideOn();
+    dragged = false;
+  };
+  const scroll = (event: Event) => {
+    const host = element.parentElement;
+    if (event.target !== host || !host) return;
+    if (touched) {
+      dragged = true;
+      return glideOn();
+    }
+    if (gliding) return glideOn();
+    if (element.getAttribute("data-presentation") !== "sheet" || element.hidden) return;
+    if (moves(element).length > 0 || moves(host).length > 0 || corrected) return;
+    const floor = view.visualViewport ? view.visualViewport.offsetTop + view.visualViewport.height : view.innerHeight;
+    const drop = element.getBoundingClientRect().bottom - floor;
+    if (Math.abs(drop) <= 1) return;
+    corrected = true;
+    view.requestAnimationFrame(() => {
+      corrected = false;
+    });
+    host.scrollTop += drop;
+  };
+  doc.addEventListener("touchstart", touchStart, { capture: true, passive: true });
+  doc.addEventListener("touchend", touchEnd, { capture: true, passive: true });
+  doc.addEventListener("touchcancel", touchEnd, { capture: true, passive: true });
+  doc.addEventListener("scroll", scroll, { capture: true, passive: true });
+  onCleanup(() => {
+    view.clearTimeout(glide);
+    doc.removeEventListener("touchstart", touchStart, { capture: true });
+    doc.removeEventListener("touchend", touchEnd, { capture: true });
+    doc.removeEventListener("touchcancel", touchEnd, { capture: true });
+    doc.removeEventListener("scroll", scroll, { capture: true });
   });
 };
 
@@ -122,6 +200,7 @@ export function useDialog(options: () => DialogOptions = () => ({})): DialogPart
           {...props}
           ref={(element: HTMLElement) => {
             holdSheetBottom(element);
+            holdSheetOpen(element);
             props.ref?.(element);
           }}
           backdrop={undefined}
@@ -200,12 +279,26 @@ export type PopoverParts = {
   Close: SlotComponent;
 };
 
-/** A non-modal popover next to its trigger; Escape and an outside press close it. */
-export function usePopover(options: () => OverlayOptions = () => ({})): PopoverParts {
+/**
+ * A non-modal popover next to its trigger; Escape and an outside press close it. `presentation: "sheet"` slides it up
+ * from the bottom of the screen instead, modal, and a swipe down closes it too.
+ */
+export function usePopover(options: () => OverlayOptions & { presentation?: "popover" | "sheet" } = () => ({})): PopoverParts {
   const handle = usePrimitive(popoverPrimitive, options);
+  const Content = popupComponent(handle, "content");
   return {
     Trigger: slotComponent(handle, "trigger", "button"),
-    Popup: popupComponent(handle, "content"),
+    // as a sheet on the phone it holds its bottom when its content changes height, as a dialog's sheet does
+    Popup: (props) => (
+      <Content
+        {...props}
+        ref={(element: HTMLElement) => {
+          holdSheetBottom(element);
+          holdSheetOpen(element);
+          props.ref?.(element);
+        }}
+      />
+    ),
     Title: slotComponent(handle, "title", "h2"),
     Close: slotComponent(handle, "close", "button"),
   };

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { type Catalogs, checkToastCopySource, isShortLabel, readCatalog } from "./toast-copy";
+import { type Catalogs, checkToastCopySource, isShortLabel, readCatalog, sentences } from "./toast-copy";
 
 const file = "packages/example/src/frontend/Example.tsx";
 const catalogFile = "packages/example/src/frontend/example-messages.ts";
@@ -67,4 +67,26 @@ test("ignores other calls, tests, and the component itself", () => {
     [],
   );
   expect(checkToastCopySource("packages/ui/src/feedback/toast.ts", `toast("A whole sentence that explains a lot");`, catalogs)).toEqual([]);
+});
+
+test("a v2 toast's message is its title: one sentence passes, a second sentence is a finding", () => {
+  const v2 = (message: string) =>
+    `import { useToast } from "@k2b/ui/v2";\nconst Example = () => {\n  const toast = useToast();\n  toast(${message}, { status: "bad" });\n};`;
+  // long, but one sentence: v2 has no description to move it into, and it is never "untitled"
+  expect(
+    checkToastCopySource(file, v2(`"The pairing could not be cancelled, so choose Pair a device again to cancel it."`), catalogs),
+  ).toEqual([]);
+  expect(checkToastCopySource(file, v2('exampleMessages.resolve(["en"]).t.sendingIn({ seconds: 3 })'), catalogs)).toEqual([]);
+  const two = checkToastCopySource(file, v2(`"Password changed. You are signed out everywhere else."`), catalogs);
+  expect(two.map(({ key }) => key.split(" | ")[1])).toEqual(["v2-sentences"]);
+  // v1's toast beside a v2 import keeps the v1 contract
+  const v1 = `import { Button } from "@k2b/ui/v2";\nimport { toast } from "@k2b/ui";\ntoast.error("The pairing could not be cancelled. Choose Pair a device again to cancel it.");`;
+  expect(checkToastCopySource(file, v1, catalogs).map(({ key }) => key.split(" | ")[1])).toEqual(["untitled"]);
+});
+
+test("counts sentences by their ends, not by dots inside a sentence", () => {
+  expect(sentences("Saved.")).toBe(1);
+  expect(sentences("Version 1.2 is ready")).toBe(1);
+  expect(sentences("Saved. Reload to see it.")).toBe(2);
+  expect(sentences("Gespeichert! Lade neu, um es zu sehen.")).toBe(2);
 });

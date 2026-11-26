@@ -178,10 +178,20 @@ const callUser = (handler: unknown, event: Event) => {
 
 const host = { by: "framework", attaches: "all" } as const;
 
+/**
+ * Core writes some words for assistive technology in English only, such as a colour slider's "26 degrees". An author's
+ * `valueText` makes them from core's own attributes for the slot (its `aria-valuenow`, its style), in the page's
+ * language, so the words always follow the value core holds.
+ */
+const wordsOfAuthor = (attrs: Props, user: PartProps): Props =>
+  typeof user.valueText === "function" ? { ...attrs, "aria-valuetext": user.valueText(attrs) } : attrs;
+
 /** Element props for a part: attributes, `class`, author handlers (`onKeyDown` …), `ref`, and children. */
 export type PartProps = Props & {
   children?: JSX.Element | ((state: Props) => JSX.Element);
   ref?: (el: HTMLElement) => void;
+  /** The slot's `aria-valuetext`, made from core's attributes for it (see `wordsOfAuthor`). */
+  valueText?: (attrs: Props) => string;
 };
 
 /**
@@ -204,7 +214,7 @@ export function part<P extends Primitive>(
   // Handlers go on the element as native listeners (`on:type`), so core sees the same event order as on a plain
   // element. The author's handler for the same type runs first; `preventDefault` there skips core's.
   const handlers: Props = {};
-  const taken = new Set<string>(["children", "ref"]);
+  const taken = new Set<string>(["children", "ref", "valueText"]);
   for (const type of Object.keys(partHandlers(record))) {
     const authorKey = Object.keys(user).find((key) => key.toLowerCase() === `on${type}`);
     if (authorKey) taken.add(authorKey);
@@ -219,7 +229,12 @@ export function part<P extends Primitive>(
       watched.attrs();
       const now = current();
       takeOwnId(now, user.id);
-      return toSolidAttrs(yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null));
+      return toSolidAttrs(
+        wordsOfAuthor(
+          yieldToAuthor(partAttrs(now, now.props), (name) => user[name] != null),
+          user,
+        ),
+      );
     },
     undefined,
     { equals: sameRecord },
