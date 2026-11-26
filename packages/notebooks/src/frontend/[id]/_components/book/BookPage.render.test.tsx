@@ -122,9 +122,7 @@ describe("Book on v2", () => {
       const [head] = await selectHtml(page, '[data-slot="head"]');
       expect(head?.text).not.toContain("Company handbook");
       expect(head?.text).toContain("last changed by Lena Hartwig · ");
-      expect((await selectHtml(page, '[data-slot="head"] [data-k2-part="Avatar.Stack"]'))[0]?.attributes["aria-label"]).toBe(
-        "Written by Lena Hartwig, Ada Renz",
-      );
+      expect(await selectHtml(page, '[data-slot="head"] [data-k2-part="Avatar"]')).toHaveLength(1);
       // the view menu stands in the server's frame, so nothing moves into the head when the browser takes over
       expect((await selectHtml(page, '[data-slot="head"] button[data-slot="menu-trigger"]')).map((button) => button.text.trim())).toContain(
         "View",

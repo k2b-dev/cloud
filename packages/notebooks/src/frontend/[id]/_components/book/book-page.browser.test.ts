@@ -257,7 +257,8 @@ for (const width of [1440, 390]) {
       // the sidebar's switcher (on the phone by the shell's title row), never again in the head
       const head = page.locator('[data-k2-workspace] [data-slot="head"]');
       expect(await head.textContent()).not.toContain("Handbuch Lager");
-      expect(await head.locator('[data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe("Geschrieben von Lena Hartwig, Ada Renz");
+      // the last change with its face: the one avatar of the head, decoration beside the name it stands for
+      expect(await head.locator('[data-k2-part="Avatar"]').count()).toBe(1);
       if (width > 600) expect(await head.textContent()).toContain("zuletzt Lena Hartwig · vor 4");
       expect((await page.locator(main).boundingBox())!.height).toBeGreaterThan(400);
     } finally {
@@ -291,12 +292,9 @@ for (const width of [1440, 390]) {
       await page.waitForFunction(
         () => document.querySelector('[data-k2-part="Tabs"] a')?.getAttribute("href") === "/app/notebooks/book01/notes/note02?mode=write",
       );
-      // the head names the people of the note it now shows: one who wrote and last changed it
+      // the head names who last changed the note it now shows
       await page.waitForFunction(() =>
         document.querySelector('[data-k2-workspace] [data-slot="head"]')?.textContent?.includes("zuletzt Ada Renz"),
-      );
-      expect(await page.locator('[data-k2-workspace] [data-k2-part="Avatar.Stack"]').getAttribute("aria-label")).toBe(
-        "Geschrieben von Ada Renz",
       );
       // the note's open comments: their sign and number, named in words, leading into Read at the first one
       // k2b-ui gap: a v2 Button with words takes `label` only as its title, not as its name, so the name is the number until
@@ -325,7 +323,7 @@ for (const width of [1440, 390]) {
       const head = page.locator('[data-k2-workspace] [data-slot="head"]');
       expect(await head.textContent()).not.toContain("Handbuch Lager");
       const row = await head.locator('[data-k2-part="Bar"]').first().boundingBox();
-      const named = await head.locator('[data-k2-part="Avatar.Stack"]').boundingBox();
+      const named = await head.locator('[data-k2-part="Avatar"]').boundingBox();
       const count = await head.locator('a[title="2 offene Kommentare"]').boundingBox();
       expect(Math.abs(named!.y + named!.height / 2 - (count!.y + count!.height / 2))).toBeLessThanOrEqual(2);
       expect(count!.y + count!.height).toBeLessThanOrEqual(row!.y + row!.height);

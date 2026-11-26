@@ -30,8 +30,8 @@ const person = (actor: NotebookActivityActor): Person => ({
 });
 
 /**
- * Book's head, one row: the note's views (Bearbeiten, Lesen, Buch) for writers, then who wrote the note and who changed
- * it last and when, and at the end the view menu and the note's open comments. The notebook is named once: by the
+ * Book's head, one row: the note's views (Bearbeiten, Lesen, Buch) for writers, then who changed the note last and
+ * when, and at the end the view menu and the note's open comments. The notebook is named once: by the
  * sidebar's switcher, and on the phone by the shell's title row. The note's own title is the article's first heading,
  * the page's hero. The reader moves between notes without a new page, so the head follows each note's snapshot.
  */
@@ -51,21 +51,14 @@ export default function BookHead(props: BookHeadProps) {
     withPresentationMode(shown().selectedNoteId ? shown().href : `/app/notebooks/${props.notebookId}`, mode);
   const openComments = () => (shown().selectedNoteId ? (shown().openComments ?? 0) : 0);
   const entry = () => comments().bookEntry({ count: openComments() });
-  // the people of the note: who changed it last, then who wrote it (once each)
-  const people = () => {
-    const authors = shown().selectedNoteId ? shown().authors : null;
-    const actors = [authors?.lastEditedBy, authors?.createdBy].filter((actor): actor is NotebookActivityActor => !!actor);
-    return actors
-      .filter((actor, index) => actors.findIndex((other) => other.kind === actor.kind && other.id === actor.id) === index)
-      .map(person);
-  };
+  const editor = () => (shown().selectedNoteId ? (shown().authors?.lastEditedBy ?? null) : null);
   // "zuletzt Lena Hartwig · vor 4 Min": the first note counts from the server's time, a later one from the browser's
   const lastChanged = () => {
-    const editor = shown().selectedNoteId ? shown().authors?.lastEditedBy : null;
+    const last = editor();
     const updatedAt = shown().updatedAt;
-    if (!editor || !updatedAt) return null;
+    if (!last || !updatedAt) return null;
     const base = shown() === props.initial ? props.now : new Date().toISOString();
-    return book().lastChanged({ name: editor.displayName, when: dates.formatDateTimeRelative(updatedAt, { base, locale: locale() }) });
+    return book().lastChanged({ name: last.displayName, when: dates.formatDateTimeRelative(updatedAt, { base, locale: locale() }) });
   };
 
   return (
@@ -87,17 +80,10 @@ export default function BookHead(props: BookHeadProps) {
               ]}
             />
           </Show>
-          {/* the note's people, one quiet line (rule: people are visible); cut first when the head is narrow */}
-          <Show when={people().length > 0}>
-            <Avatar.Stack
-              people={people()}
-              label={book().authors({
-                names: people()
-                  .map((one) => one.name)
-                  .join(", "),
-              })}
-            />
-          </Show>
+          {/* who changed the note last, with their face, and when (rule: people are visible); cut first when the head is
+              narrow. k2b-ui gap: Avatar.Stack in a narrow Bar paints its "+n" over the words after it (DP), so the head
+              shows the one face of the last change instead of the authors' stack. */}
+          <Show when={editor()}>{(one) => <Avatar {...person(one())} decorative />}</Show>
           <Show when={lastChanged()}>{(line) => <Text type="meta">{line()}</Text>}</Show>
         </>
       }
