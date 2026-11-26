@@ -629,12 +629,18 @@ Cells.Cell = (props: CellProps) => {
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A figure on a card, such as "6 Tabellen" or a state such as "8 knapp". */
+/** The symbol a state brings when a figure names none, so a state is always colour, symbol and word. */
+const statIcon: Record<Status, string> = { ok: "circle-check", warn: "alert-circle", bad: "alert-triangle" };
+
 export type TileStat = {
   /** A Tabler icon before the words. */
   icon?: string;
   /** The figure in words, such as "6 Tabellen". */
   label: string;
-  /** A state: its colour, with the words (never a colour alone). */
+  /**
+   * A state: its colour, its symbol and its words, never a colour alone. Without an `icon` the state brings its own:
+   * a check for ok, a circle with "!" for waiting, a triangle for wrong.
+   */
   status?: Status;
   /** "Waits for you", in the blue of selection, such as "3 Anträge". */
   yours?: boolean;
@@ -724,7 +730,7 @@ const TileCard = (props: { tile: Tile }) => (
         <For each={props.tile.stats}>
           {(stat) => (
             <span class="k2-tile-stat" data-status={stat.status} data-yours={stat.yours ? "" : undefined}>
-              <Show when={stat.icon}>{(name) => <Icon name={name()} />}</Show>
+              <Show when={stat.icon ?? (stat.status ? statIcon[stat.status] : undefined)}>{(name) => <Icon name={name()} />}</Show>
               {stat.label}
             </span>
           )}

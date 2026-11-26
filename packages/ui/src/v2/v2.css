@@ -246,6 +246,12 @@
    reader falls back to its own default until the primitive sets one. */
 .k2-ui {
   --k2-c: initial;
+  --k2-c-fg: initial;
+  --k2-c-fg-dark: initial;
+  --k2-c-soft: initial;
+  --k2-c-soft-dark: initial;
+  --k2-c-ink: initial;
+  --k2-c-ink-dark: initial;
   --k2-pane-w: initial;
   --k2-pane-min: initial;
   --k2-ws-side: initial;
@@ -255,6 +261,7 @@
   --k2-drawer-w: initial;
   --k2-p: initial;
   --k2-v: initial;
+  --k2-avs-w: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
@@ -2013,7 +2020,7 @@
   border-radius: 6px;
   overflow: hidden;
   background: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 13%, var(--k2-surface));
-  color: color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix));
+  color: var(--k2-c-fg, color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix)));
   vertical-align: middle;
 }
 .k2-ui .k2-mk > .k2-icon {
@@ -2042,7 +2049,7 @@
   z-index: 1;
   padding: 1px 3px;
   border-radius: 3px;
-  background: color-mix(in srgb, var(--k2-c, var(--k2-n600)) 90%, var(--k2-ink-mix));
+  background: var(--k2-c-ink, color-mix(in srgb, var(--k2-c, var(--k2-n600)) 90%, var(--k2-ink-mix)));
   color: var(--k2-white);
   font: 600 7px/8px var(--k2-font);
   letter-spacing: 0.02em;
@@ -2090,8 +2097,13 @@
 .k2-ui .k2-avs {
   display: inline-flex;
   align-items: center;
-  flex: none;
   vertical-align: middle;
+  /* its own room, never more than its place: the faces it can hold whole decide how many stand (below) */
+  container: k2-avs / inline-size;
+  width: var(--k2-avs-w);
+  max-width: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 .k2-ui .k2-avs > .k2-av {
   box-shadow: 0 0 0 2px var(--k2-surface);
@@ -2104,10 +2116,66 @@
   height: 20px;
   font-size: 9px;
 }
+/* A stack shows as many faces as its width holds whole, beside a count of up to three signs; the count that stands
+   belongs to the faces that stand, so it is always right and never cut. */
 .k2-ui .k2-avs-rest {
   margin-left: 6px;
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
+  white-space: nowrap;
+  flex: none;
+  display: none;
+}
+.k2-ui .k2-avs[data-k="1"] > .k2-avs-rest[data-visible="1"],
+.k2-ui .k2-avs[data-k="2"] > .k2-avs-rest[data-visible="2"],
+.k2-ui .k2-avs[data-k="3"] > .k2-avs-rest[data-visible="3"],
+.k2-ui .k2-avs[data-k="4"] > .k2-avs-rest[data-visible="4"],
+.k2-ui .k2-avs[data-k="5"] > .k2-avs-rest[data-visible="5"] {
+  display: inline;
+}
+@container k2-avs (max-width: 125.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 5) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="5"]) > .k2-avs-rest[data-visible="4"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 107.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 4) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="3"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 89.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 3) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
+    display: inline;
+  }
+}
+@container k2-avs (max-width: 71.98px) {
+  .k2-ui .k2-avs > .k2-av:nth-of-type(n + 2) {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
+    display: none;
+  }
+  .k2-ui .k2-avs:is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
+    display: inline;
+  }
 }
 
 /* ── Spark: a few bars of a short history, the last in full colour; 20 px high ─────────────────────────────── */
@@ -2123,10 +2191,26 @@
   width: 4px;
   height: var(--k2-v);
   border-radius: 1px;
-  background: color-mix(in srgb, var(--k2-c, var(--k2-app, var(--k2-blue))) 45%, var(--k2-surface));
+  background: var(--k2-c-soft, var(--k2-app-text));
 }
 .k2-ui .k2-spark > i:last-child {
-  background: var(--k2-c, var(--k2-app, var(--k2-blue)));
+  background: var(--k2-c-ink, var(--k2-app-text));
+}
+/* dark: the same foregrounds, worked out against the dark surface */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mk,
+.k2-ui.dark .k2-mk,
+.k2-ui[data-theme="dark"] .k2-mk {
+  color: var(--k2-c-fg-dark, color-mix(in srgb, var(--k2-c, var(--k2-n500)) 88%, var(--k2-ink-mix)));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i,
+.k2-ui.dark .k2-spark > i,
+.k2-ui[data-theme="dark"] .k2-spark > i {
+  background: var(--k2-c-soft-dark, var(--k2-app-text));
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-spark > i:last-child,
+.k2-ui.dark .k2-spark > i:last-child,
+.k2-ui[data-theme="dark"] .k2-spark > i:last-child {
+  background: var(--k2-c-ink-dark, var(--k2-app-text));
 }
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
