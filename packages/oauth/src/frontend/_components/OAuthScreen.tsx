@@ -294,8 +294,10 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   const removeNow = async (client: ClientRow) => {
     const response = await apiClient[":id"].$delete({ param: { id: client.id } }).catch(() => null);
     if (!response?.ok) {
-      const words = client.registrationKind === "dynamic" ? t().notRevoked : t().notDeleted;
-      toast(words, { status: "bad", retry: () => void removeNow(client) });
+      toast(client.registrationKind === "dynamic" ? t().notRevoked : t().notDeleted, {
+        status: "bad",
+        retry: () => void removeNow(client),
+      });
       return;
     }
     location.assign(list());
