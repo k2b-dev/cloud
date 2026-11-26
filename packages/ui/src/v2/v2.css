@@ -4180,8 +4180,9 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* a section's actions keep only their symbols; the words stay their names (not `display: none`, which took them) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
+  /* a head action with a leading symbol keeps only the symbol; its words stay its title and name (not `display: none`,
+     which took them). One without a leading symbol keeps its words, also with a trailing chevron (forward, menu) */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
