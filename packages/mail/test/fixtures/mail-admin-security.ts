@@ -122,6 +122,8 @@ export const securityProps = (view: SecurityView = "reports", overrides: Partial
   },
   identities: { rows: securityIdentities, total: securityIdentities.length },
   trustedAuthservIds: ["mx.werkstatt.example.org"],
+  open: null,
+  dateConfig: { locale: "de", timeZone: "Europe/Berlin" },
   reportsPerDay: Array.from({ length: 30 }, (_, index) => [0, 0, 1, 0, 2, 0, 0, 1, 4, 0][index % 10] ?? 0),
   ...overrides,
 });

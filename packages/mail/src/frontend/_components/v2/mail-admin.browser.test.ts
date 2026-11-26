@@ -600,7 +600,8 @@ describe("Admin › Mail › Security on v2", () => {
   }, 30_000);
 
   test("a report's decision keeps its note and gives the focus back, and deleting a rule asks first", async () => {
-    const page = await open(desktop, security());
+    // the deeds of a report stand in the head of its detail, which the address opens
+    const page = await open(desktop, security("reports", { open: "00000000-0000-4000-8000-000000000002" }));
     try {
       const deeds = page.getByRole("button", { name: "Weitere Aktionen für ceo@werkstatt-mail.example.org" }).filter({ visible: true });
       // cancel gives the focus back to the row's "⋯"
@@ -630,7 +631,7 @@ describe("Admin › Mail › Security on v2", () => {
       await page.context().close();
     }
 
-    const rules = await open(desktop, security("rules"));
+    const rules = await open(desktop, security("rules", { open: "00000000-0000-4000-8000-000000000102" }));
     try {
       await rules
         .getByRole("button", { name: "Weitere Aktionen für login-microsoft-verify.example.org" })
@@ -687,4 +688,52 @@ describe("Admin › Mail at its limits (break-ui)", () => {
         }
       }
     }, 60_000);
+});
+
+describe("Admin › Mail › Security detail beside the list", () => {
+  const rule = "00000000-0000-4000-8000-000000000101";
+  const identity = "00000000-0000-4000-8000-000000000201";
+
+  test("a row opens its detail in the address; the detail holds the whole value and note, and closes to the list", async () => {
+    const page = await open(desktop, { locale: "de", security: securityWorstProps("rules") });
+    try {
+      // a row of one line links to its detail, the other searches kept
+      const href = await page
+        .getByRole("link", { name: /rechnungsabteilung-zahlungsverkehr/ })
+        .first()
+        .getAttribute("href");
+      expect(href).toBe(`/admin/mail/security?view=rules&open=${rule}`);
+    } finally {
+      await page.context().close();
+    }
+    const opened = await open(desktop, { locale: "de", security: { ...securityWorstProps("rules"), open: rule } });
+    try {
+      // the value the row cuts stands whole, and the note of 500 characters wraps
+      await opened
+        .getByText(/northwind-industries-holdings\.example\.org$/)
+        .filter({ visible: true })
+        .last()
+        .waitFor();
+      await opened.getByText("Begründung Begründung", { exact: false }).filter({ visible: true }).last().waitFor();
+      expect(await opened.getByRole("link", { name: "Schließen" }).getAttribute("href")).toBe("/admin/mail/security?view=rules");
+      expect(await overflow(opened)).toBeLessThanOrEqual(0);
+      expect(opened.errors).toEqual([]);
+    } finally {
+      await opened.context().close();
+    }
+  }, 60_000);
+
+  test("on the phone the detail is the page, with the way back to the list", async () => {
+    const page = await open(phone, { locale: "de", security: { ...securityWorstProps("identities"), open: identity } });
+    try {
+      // all twenty allowed domains stand in the detail, not one cut line
+      await page.getByText("niederlassung-20.northwind-industries-holdings.example.org").filter({ visible: true }).first().waitFor();
+      const back = page.getByRole("link", { name: "Phishing-Schutz" }).filter({ visible: true }).first();
+      expect(await back.getAttribute("href")).toBe("/admin/mail/security?view=identities");
+      expect(await overflow(page)).toBeLessThanOrEqual(0);
+      expect(page.errors).toEqual([]);
+    } finally {
+      await page.context().close();
+    }
+  }, 30_000);
 });

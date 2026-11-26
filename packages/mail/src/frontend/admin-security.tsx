@@ -130,6 +130,8 @@ export default ssr<AuthContext>(async (c) => {
             : { failed: `${t.couldNotLoadIdentities}: ${localizeMailError(identitiesResult.error, locale).message}` }
         }
         trustedAuthservIds={settingsResult.ok ? settingsResult.data.trustedAuthservIds : null}
+        open={c.req.query("open") || null}
+        dateConfig={dateConfig}
       />
     </AdminLayout>
   );
