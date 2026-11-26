@@ -4645,10 +4645,6 @@
   border-radius: var(--k2-r-card);
   pointer-events: auto;
 }
-.k2-ui .k2-notice-stack > .k2-notice:not([data-tone]),
-.k2-ui .k2-notice-stack > .k2-notice[data-tone="info"] {
-  border-color: var(--k2-card-edge);
-}
 .k2-ui .k2-pane > .k2-scroll {
   padding-bottom: var(--k2-notice-stack, 0px);
 }
