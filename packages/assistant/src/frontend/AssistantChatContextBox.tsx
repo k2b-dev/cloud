@@ -368,6 +368,8 @@ export function AssistantChatContextPlaces(props: {
   /** The chat's title, for the head row on phones, where the app's head names only the app. */
   title?: string | null;
   onSheet: () => void;
+  /** Whether the head row with the title and "In diesem Chat" stands above the timeline; the v2 page puts both in its head. */
+  head?: boolean;
 }) {
   const copy = useCopy();
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
@@ -390,29 +392,31 @@ export function AssistantChatContextPlaces(props: {
   return (
     <>
       {/* The button stands in a head row above the timeline, never over it, so it covers no message. */}
-      <div class="assistant-context-head">
-        <Show when={props.title}>
-          {(title) => (
-            <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
-              {title()}
-            </p>
-          )}
-        </Show>
-        <Button
-          ref={host.buttonRef}
-          class="assistant-context-button"
-          data-k2b-primary="ai"
-          size="sm"
-          variant="ghost"
-          aria-label={copy().title}
-          aria-haspopup="dialog"
-          aria-expanded={host.anchor() ? "true" : "false"}
-          onClick={host.toggle}
-        >
-          <i class="ti ti-layout-list" aria-hidden="true" />
-          <span>{copy().title}</span>
-        </Button>
-      </div>
+      <Show when={props.head !== false}>
+        <div class="assistant-context-head">
+          <Show when={props.title}>
+            {(title) => (
+              <p class="assistant-context-head__title k2b-truncate-fade" title={title()}>
+                {title()}
+              </p>
+            )}
+          </Show>
+          <Button
+            ref={host.buttonRef}
+            class="assistant-context-button"
+            data-k2b-primary="ai"
+            size="sm"
+            variant="ghost"
+            aria-label={copy().title}
+            aria-haspopup="dialog"
+            aria-expanded={host.anchor() ? "true" : "false"}
+            onClick={host.toggle}
+          >
+            <i class="ti ti-layout-list" aria-hidden="true" />
+            <span>{copy().title}</span>
+          </Button>
+        </div>
+      </Show>
       <div class="assistant-context-boxcol">
         <AssistantChatContextBox
           variant="island"

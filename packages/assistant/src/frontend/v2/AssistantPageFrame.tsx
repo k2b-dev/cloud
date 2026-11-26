@@ -16,6 +16,8 @@ const createProjectForm = lazyAction(() => import("../AssistantProjectsDialog"))
  */
 export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }) {
   const w = frame.w;
+  // The chat's title and "In diesem Chat" stand in this frame's head, not in a row above the timeline.
+  w.setContextHead(false);
   const deeds = createAssistantChatDeeds({
     basePath: w.basePath,
     locale: w.locale,
@@ -78,6 +80,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         openPreferences: () => void openAssistantPrefsModal(),
         onConversationUpdated: w.updateConversation,
       }}
+      openContext={w.openContextSheet}
       openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
       path={headPath}
       newChat={() => ({

@@ -1903,6 +1903,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     onOpenSources: () => openContextOverview("sources", contextText("Sources")),
     onOpenContext: () => openContextOverview("context", artifactCopy().context),
   });
+  // The head row above the timeline (title, "In diesem Chat"); the v2 page carries both in its own head instead.
+  const [contextHead, setContextHead] = createSignal(true);
   const openContextSheet = () =>
     // The phone sheet loads when it opens.
     void import("./AssistantChatContextSheet").then(({ openAssistantContextBoxSheet }) =>
@@ -3595,6 +3597,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
                     project={activeConversationProject()}
                     title={activeConversation()?.title ?? null}
                     onSheet={openContextSheet}
+                    head={contextHead()}
                   />
                 </Show>
               </div>
@@ -3697,6 +3700,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     openQuestions,
     jumpToQuestion,
     archiveBlocker,
+    openContextSheet,
+    setContextHead,
   };
 }
 

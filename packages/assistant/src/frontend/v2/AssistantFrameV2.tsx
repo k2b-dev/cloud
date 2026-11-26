@@ -22,6 +22,8 @@ export type AssistantFrameV2Props = {
   nav: Omit<AssistantNavOptions, "showDetails">;
   /** The chat the page shows, whose deeds stand behind the head's "…"; null on a view or a Project. */
   openChat: Accessor<AiConversation | null>;
+  /** Opens what belongs to the open chat (files, results, sources), "In diesem Chat". */
+  openContext: () => void;
   /** Where the page stands after "Gustav": the open chat, Project or view. */
   path: Accessor<readonly { label: string; href?: string }[]>;
   newChat: Accessor<Action>;
@@ -121,7 +123,18 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
                   onInput={setQuery}
                   onKeyDown={searchKey}
                 />
-                <Show when={props.openChat()}>{(chat) => <Menu label={v2().chatActions} items={nav.chatMenu(chat())} />}</Show>
+                <Show when={props.openChat()}>
+                  {(chat) => (
+                    <Menu
+                      label={v2().chatActions}
+                      items={[
+                        { label: v2().inThisChat, icon: "layout-list", onClick: props.openContext },
+                        "separator",
+                        ...nav.chatMenu(chat()),
+                      ]}
+                    />
+                  )}
+                </Show>
                 {/* The one way to create; it stays on the phone, where no button floats over the composer.
                     k2b-ui gap: v2's primary is always blue; Gustav's primary is plum (appearance.primary "ai", rule
                     assistant-no-blue). Lane Y brings it as a platform token; until then no colour of our own. */}

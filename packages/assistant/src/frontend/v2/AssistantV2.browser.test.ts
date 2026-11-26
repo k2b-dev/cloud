@@ -102,7 +102,7 @@ const propsOf = (scene: Scene, url: URL) => {
   const openId =
     scene.open === false || url.searchParams.has("approvals")
       ? null
-      : (url.searchParams.get("conversation") ?? (state === "usual" ? FIXTURE_OPEN_ID : null));
+      : (url.searchParams.get("conversation") ?? (state === "usual" ? FIXTURE_OPEN_ID : state === "worst" ? "Wst001" : null));
   const open = openId ? conversations.find((conversation) => conversation.id === openId) : undefined;
   return {
     embedded: false,
@@ -343,6 +343,20 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       return route.fulfill({
         json: { projectId: url.pathname.split("/")[5], knowledge: [], files: [], references: [], skills: { items: [] } },
       });
+    if (url.pathname === "/api/assistant/workspace/sidebar") {
+      const state = scene.state ?? "usual";
+      return route.fulfill({
+        json: {
+          conversations,
+          counts: { unread: 0, needsAttention: 0, places: { total: FIXTURE_PLACE_CHATS.length, unread: 0, needsAttention: 0 } },
+          placeChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
+          projects: fixtureProjects(state),
+          doneCount: conversations.filter((conversation) => conversation.isDone).length,
+          moreConversations: state === "huge",
+          questions: scene.waiting ? FIXTURE_QUESTIONS : { items: [], count: 0 },
+        },
+      });
+    }
     const quiet: Record<string, unknown> = {
       "/api/ai/resources/recent": { resources: [] },
       "/api/ai/quotas": { enabled: false, balances: [] },
@@ -545,6 +559,7 @@ describe("Assistant on v2", () => {
       const { context, page, errors } = await open(wide, "/app/assistant", { state });
       try {
         const ready = Math.round(performance.now() - started);
+        await shoot(page, `1440-measure-${state}`);
         const counts = await page.evaluate(() => ({
           all: document.querySelectorAll("*").length,
           nav: document.querySelectorAll('[data-k2-part="Nav"] *').length,
