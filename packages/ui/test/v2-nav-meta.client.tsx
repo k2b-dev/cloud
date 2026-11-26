@@ -32,6 +32,14 @@ render(
               },
               { label: "Angebot Küche", icon: "message", href: "#c2", meta: "Büro", dot: "running" },
               { label: "Ohne Ort", icon: "message", href: "#c3" },
+              // an entry with deeds of its own: under the pointer its "…" takes the end of the first line only
+              {
+                label: "Lager",
+                icon: "message",
+                href: "#c4",
+                meta: "Halle 2, Regal 14, hinten beim Tor neben der Rampe für die Anlieferung",
+                menu: [{ label: "Ausblenden", onClick: () => undefined }],
+              },
             ],
           },
         ]}

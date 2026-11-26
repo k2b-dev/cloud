@@ -2453,6 +2453,18 @@
 .k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni > .k2-ni-count {
   display: none;
 }
+/* an entry with a second line keeps that line as it is (review of #4293): the room for the "…" comes off its first line
+   only, and its count keeps its column unseen, so the columns of both lines stay */
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] {
+  padding-right: 8px;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] > .k2-ni-name {
+  margin-inline-end: 24px;
+}
+.k2-ui .k2-ni-row:is(:hover, :has(:focus-visible), :has(> .k2-btn[aria-expanded="true"])) > .k2-ni[data-meta] > .k2-ni-count {
+  display: block;
+  visibility: hidden;
+}
 @media (hover: none) {
   .k2-ui .k2-ni-row > .k2-btn {
     opacity: 1;

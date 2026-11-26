@@ -45,8 +45,13 @@ for (const width of [1440, 390])
   test(`a sidebar entry says its place on a quiet second line of one line at ${width} px`, async () => {
     await withPage(width, async (page) => {
       // part of the entry's name, after the name
-      await page.getByRole("link", { name: /^Abnahme der Musterfronten.*Werkstatt Lindenstraße 12/ }).waitFor();
-      await page.getByRole("link", { name: /^Angebot Küche .*Büro$/ }).waitFor();
+      await page
+        .getByRole("link", {
+          name: "Abnahme der Musterfronten nach dem zweiten Ölen mit der Kundin Werkstatt Lindenstraße 12, Halle 3, hinten links beim Rolltor",
+          exact: true,
+        })
+        .waitFor();
+      await page.getByRole("link", { name: "Angebot Küche Läuft Büro", exact: true }).waitFor();
       const entries = await page.evaluate(() =>
         Array.from(document.querySelectorAll<HTMLElement>(".k2-ni")).map((entry) => {
           const name = entry.querySelector(".k2-ni-name")!;
@@ -78,3 +83,28 @@ for (const width of [1440, 390])
       expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });
+
+// Review of #4293: under the pointer an entry with deeds shows its "…" over the end of its first line; its second line
+// keeps its width and its cut, so nothing jumps.
+test("under the pointer the … of an entry takes room in its first line only", async () => {
+  await withPage(1440, async (page) => {
+    const entry = page.locator(".k2-ni-row", { hasText: "Lager" });
+    const read = () =>
+      entry.evaluate((row) => {
+        const meta = row.querySelector(".k2-ni-meta")!;
+        const name = row.querySelector(".k2-ni-name")!.getBoundingClientRect();
+        const more = row.querySelector(":scope > .k2-btn")!.getBoundingClientRect();
+        return {
+          meta: [Math.round(meta.getBoundingClientRect().left), Math.round(meta.getBoundingClientRect().right), meta.clientWidth],
+          clear: name.right <= more.left + 0.5,
+        };
+      });
+    const before = await read();
+    await entry.hover();
+    await settled(page);
+    const under = await read();
+    expect(under.meta).toEqual(before.meta);
+    // the name ends before the "…"
+    expect(under.clear).toBe(true);
+  });
+});
