@@ -12,8 +12,11 @@ import PasswordGenerator from "./tools/PasswordGenerator.island";
 import QrCodeGenerator from "./tools/QrCodeGenerator.island";
 import SpeedTest from "./tools/SpeedTest.island";
 import UuidGenerator from "./tools/UuidGenerator.island";
+import WebhookTester from "./tools/WebhookTester.island";
+import { webhookHarness } from "./tools/webhook-tester.harness";
 
-// One Tools screen on v2 per address: `?screen=catalog` (with `q`), or a tool id.
+// One Tools screen on v2 per address: `?screen=catalog` (with `q`), or a tool id. The webhook tester stands at its own
+// address (`/tools/webhooks`, with `?fixture=`), because its links lead there.
 export const v2Screens: Record<string, () => JSX.Element> = {
   catalog: () => <ToolCatalog search={new URL(location.href).searchParams.get("q") ?? ""} />,
   password: () => <PasswordGenerator />,
@@ -26,13 +29,14 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
   speedtest: () => <SpeedTest server="https://speedtest.example.test" enabled />,
+  webhooks: () => <WebhookTester data={webhookHarness()} />,
 };
 
 const params = new URL(location.href).searchParams;
 render(
   () => (
     <LocaleProvider locale={params.get("locale") ?? "de"}>
-      {(v2Screens[params.get("screen") ?? "catalog"] ?? v2Screens.catalog!)()}
+      {(v2Screens[location.pathname === "/tools/webhooks" ? "webhooks" : (params.get("screen") ?? "catalog")] ?? v2Screens.catalog!)()}
     </LocaleProvider>
   ),
   document.getElementById("app")!,

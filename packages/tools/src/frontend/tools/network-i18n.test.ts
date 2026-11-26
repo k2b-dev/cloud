@@ -23,7 +23,7 @@ describe("Network tools i18n", () => {
 
   test("resolves representative German messages", () => {
     const { t } = webhookMessages.resolve(["de"]);
-    expect(t.endpointCreated).toBe("Endpunkt erstellt.");
+    expect(t.endpointCreated).toBe("Endpunkt erstellt");
     expect(t.colTarget).toBe("Ziel");
     expect(t.requestCount({ count: 1 })).toBe("1 Anfrage");
     expect(t.requestCount({ count: 3 })).toBe("3 Anfragen");

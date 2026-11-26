@@ -1,858 +1,569 @@
-import { listenPopState, navigate } from "@k2b/ssr/nav";
-import { mutation, timed } from "@k2b/stdlib/solid";
+import { listenPopState } from "@k2b/ssr/nav";
+import { mutation } from "@k2b/stdlib/solid";
+import { useLocale } from "@k2b/ui";
 import {
-  AppWorkspace,
+  Band,
+  Bar,
   Button,
-  CopyButton,
-  DataTable,
-  type DataTableColumn,
-  type DataTableRenderCell,
-  DescriptionList,
-  DetailPanel,
-  FilterChip,
-  type FilterChipSection,
-  IconButton,
-  NoticeCard,
-  prompts,
-  ScrollArea,
+  Dialog,
+  Empty,
+  Failed,
+  Field,
+  FilterBar,
+  Input,
+  List,
+  Menu,
+  type MenuEntry,
+  type OnNavigate,
+  Pane,
+  Row,
   Section,
   Select,
-  StatusBadge,
-  type StatusTone,
-  TextInput,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+  StatusRow,
+  Tabs,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
+import type { ListQueryStateOf } from "@k2b/ui/v2/list-query";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import ToolsScreen from "../ToolsScreen";
 import { type WebhookMessages, webhookMessages } from "./webhook-messages";
-import { assertOk, createWebhookQueries, type Endpoint, type WebhookLog } from "./webhook-queries";
+import type { WebhookTesterData } from "./webhook-page-data";
+import { assertOk, createWebhookQueries, type Endpoint, type WebhookLog, type WebhookQuerySource } from "./webhook-queries";
+import { RequestPane, RequestTable, timeReader } from "./webhook-request";
+import { METHODS, type Method, receivedQuery, sentQuery } from "./webhook-query";
 
-type Mode = "receive" | "send";
-type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+const BASE = "/tools/webhooks";
+const DETAIL_WIDTH = 400;
+/** The data colour of an endpoint, where requests arrive. */
+const ENDPOINT_COLOR = "#0f766e";
 
-export type WebhookTesterInitialState = {
-  mode: Mode;
-  endpointId: string | null;
-  method: Method | null;
-  query: string;
-  requestId: string | null;
-};
-
-const METHODS: Method[] = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const DEFAULT_STATE: WebhookTesterInitialState = {
-  mode: "receive",
-  endpointId: null,
-  method: null,
-  query: "",
-  requestId: null,
-};
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const parseMethod = (value: string): Method | null => METHODS.find((method) => method === value.toUpperCase()) ?? null;
-
-const modeOptions = (t: WebhookMessages): FilterChipSection[] => [
-  {
-    options: [
-      { value: "receive", label: t.modeReceive, icon: "ti ti-inbox" },
-      { value: "send", label: t.modeSend, icon: "ti ti-send" },
-    ],
-  },
-];
-
-const METHOD_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "GET", label: "GET", icon: "ti ti-download" },
-      { value: "POST", label: "POST", icon: "ti ti-upload" },
-      { value: "PUT", label: "PUT", icon: "ti ti-refresh" },
-      { value: "PATCH", label: "PATCH", icon: "ti ti-pencil" },
-      { value: "DELETE", label: "DELETE", icon: "ti ti-trash" },
-    ],
-  },
-];
-
-export const parseWebhookTesterState = (url: URL): WebhookTesterInitialState => {
-  const mode = url.searchParams.get("mode") === "send" ? "send" : "receive";
-  return {
-    mode,
-    endpointId: UUID_RE.test(url.searchParams.get("endpoint") ?? "") ? url.searchParams.get("endpoint") : null,
-    method: parseMethod(url.searchParams.get("method") ?? ""),
-    query: url.searchParams.get("q") ?? "",
-    requestId: url.searchParams.get("request") || null,
-  };
-};
+const isEndpoint = (value: unknown): value is Endpoint =>
+  Boolean(value && typeof value === "object" && "id" in value && "urlPath" in value && typeof value.id === "string");
 
 const isWebhookLog = (value: unknown): value is WebhookLog =>
   Boolean(value && typeof value === "object" && "id" in value && typeof value.id === "string");
 
-const assertWebhookLog = (value: unknown, message: string): WebhookLog => {
-  if (isWebhookLog(value)) return value;
-  throw new Error(message);
+/** An address of the tester: the view, the list's own parameters, and the open request. */
+const addressOf = (mode: "receive" | "send", list: URLSearchParams, request?: string | null) => {
+  const params = new URLSearchParams(mode === "send" ? "mode=send" : "");
+  for (const [key, value] of list) if (key !== "mode" && key !== "request") params.append(key, value);
+  if (request) params.set("request", request);
+  return `${BASE}${params.size ? `?${params}` : ""}`;
 };
 
-const formatDate = (value: string | null, locale: string) => (value ? new Date(value).toLocaleString(locale) : "-");
-const shortBody = (value: string | null) => {
-  if (!value) return "-";
-  const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 140 ? `${compact.slice(0, 140)}...` : compact;
-};
-
-const parseJsonLike = (value: unknown): { ok: true; value: unknown } | { ok: false; value: string } => {
-  if (value === null || value === undefined) return { ok: false, value: "-" };
-  if (typeof value !== "string") return { ok: true, value };
-
-  let current: unknown = value.trim();
-  for (let i = 0; i < 2; i++) {
-    if (typeof current !== "string") return { ok: true, value: current };
-    const trimmed = current.trim();
-    if (!trimmed || !["{", "[", '"'].includes(trimmed[0] ?? "")) break;
-    try {
-      current = JSON.parse(trimmed);
-    } catch {
-      break;
-    }
-  }
-  return typeof current === "string" ? { ok: false, value: current || "-" } : { ok: true, value: current };
-};
-
-const stringifyBlock = (value: unknown): string => {
-  if (value === null || value === undefined) return "-";
-  if (typeof value === "string") return value || "-";
-  return JSON.stringify(value, null, 2);
-};
-
-const formatPrettyValue = (value: unknown): string => {
-  if (value === null || value === undefined) return "null";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value, null, 2);
-};
-
-const parseHeaders = (raw: string, invalidMessage: string): Record<string, string> => {
-  const trimmed = raw.trim();
-  if (!trimmed) return {};
-  const parsed = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(invalidMessage);
-  return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
-};
-
-const methodClass = (method: string) => {
-  if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";
-  if (method === "POST") return "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300";
-  if (method === "DELETE") return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  return "bg-[var(--ui-surface-muted)] text-secondary";
-};
-
-const statusClass = (status: number | null, error: string | null) => {
-  if (error) return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  if (!status) return "bg-[var(--ui-surface-muted)] text-secondary";
-  if (status >= 200 && status < 300) return "bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300";
-  if (status >= 400) return "bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300";
-  return "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300";
-};
-
-function RequestSearchInput(props: { value: string; onSearch: (value: string) => Promise<void> | void }) {
+/**
+ * What both views share: the words, the time reader, the open request (in the address as `request`, opened and closed
+ * in place) and the copy with its toast.
+ */
+const useTester = (data: WebhookTesterData) => {
   const locale = useLocale();
   const t = () => webhookMessages.resolve([locale()]).t;
-  const [value, setValue] = createSignal(props.value);
-  const [focused, setFocused] = createSignal(false);
-  const [pending, setPending] = createSignal(false);
-  const debounce = timed.debounce((nextValue: string) => {
-    void Promise.resolve(props.onSearch(nextValue)).finally(() => setPending(false));
-  }, 200);
+  const when = createMemo(() => timeReader(locale(), data.timeZone, data.now, t()));
+  const [request, setRequest] = createSignal(new URLSearchParams(data.address).get("request"));
+  const toast = useToast();
+  onMount(() => onCleanup(listenPopState(({ url }) => setRequest(url.searchParams.get("request")))));
+  /** Opens (or with `null` closes) a request in place: one history entry, the list keeps its rows and scroll. */
+  const show =
+    (id: string | null): OnNavigate =>
+    (navigation) => {
+      history.pushState(history.state, "", navigation.href);
+      setRequest(id);
+    };
+  const copy = (text: string, done: string) =>
+    void navigator.clipboard.writeText(text).then(
+      () => toast(done, { status: "ok" }),
+      () => toast(t().copyFailed, { status: "bad" }),
+    );
+  return { t, when, request, setRequest, show, copy, toast };
+};
 
-  createEffect(() => {
-    if (!focused() && !debounce.isPending()) setValue(props.value);
-  });
+const views = (t: WebhookMessages, mode: "receive" | "send") => (
+  <Tabs
+    label={t.views}
+    items={[
+      { label: t.modeReceive, icon: "inbox", href: BASE, current: mode === "receive" },
+      { label: t.modeSend, icon: "send", href: `${BASE}?mode=send`, current: mode === "send" },
+    ]}
+  />
+);
 
+/** The search of the head: Enter applies it to the address (one history entry), Escape clears it. */
+const SearchInput = (props: { t: WebhookMessages; value: string; onSearch: (text: string) => void }) => (
+  <Input
+    type="search"
+    icon="search"
+    label={props.t.searchLabel}
+    placeholder={props.t.searchPlaceholder}
+    value={props.value}
+    onKeyDown={(event) => {
+      if (event.isComposing) return;
+      const input = event.currentTarget as HTMLInputElement;
+      if (event.key === "Enter") props.onSearch(input.value);
+      if (event.key === "Escape" && input.value) {
+        input.value = "";
+        props.onSearch("");
+      }
+    }}
+  />
+);
+
+/**
+ * The webhook tester on v2. Received: the person's endpoints with their addresses, then every request that came in;
+ * Send: a request to any public address, then what was sent. Both lists filter by the address (FilterBar), open a
+ * request beside the list, and start with the rows the server loaded.
+ */
+export default function WebhookTester(props: { data: WebhookTesterData }) {
   return (
-    <div onFocusIn={() => setFocused(true)} onFocusOut={() => setFocused(false)}>
-      <TextInput
-        type="search"
-        icon="ti ti-search"
-        placeholder={t().searchPlaceholder}
-        value={value}
-        onValueChange={(next) => {
-          setValue(next);
-          setPending(true);
-          debounce.debouncedFn(next);
-        }}
-        clearable
-        suffix={pending() ? <i class="ti ti-loader-2 animate-spin text-dimmed" /> : undefined}
-      />
-    </div>
+    <Show when={props.data.mode === "send"} fallback={<Received data={props.data} />}>
+      <Sent data={props.data} />
+    </Show>
   );
 }
 
-export default function WebhookTester(props: { initialState?: WebhookTesterInitialState; baseHref?: string }) {
-  const locale = useLocale();
-  const t = () => webhookMessages.resolve([locale()]).t;
-  const [routeState, setRouteState] = createSignal<WebhookTesterInitialState>(props.initialState ?? DEFAULT_STATE);
-  const [targetUrl, setTargetUrl] = createSignal("");
-  const [sendMethod, setSendMethod] = createSignal<Method>("POST");
-  const [headers, setHeaders] = createSignal('{\n  "content-type": "application/json"\n}');
-  const [body, setBody] = createSignal('{\n  "hello": "world"\n}');
-
-  const requestQuery = createMemo(
-    () => ({
-      mode: routeState().mode,
-      endpointId: routeState().endpointId,
-      method: routeState().method,
-      query: routeState().query,
-      requestId: null,
-    }),
-    undefined,
-    {
-      equals: (prev, next) =>
-        prev.mode === next.mode && prev.endpointId === next.endpointId && prev.method === next.method && prev.query === next.query,
-    },
+function Received(props: { data: WebhookTesterData }) {
+  const { t, when, request, setRequest, show, copy, toast } = useTester(props.data);
+  const declared = (endpoints: readonly Endpoint[]) => receivedQuery(t(), endpoints);
+  const [state, setState] = createSignal<ListQueryStateOf<ReturnType<typeof receivedQuery>>>(
+    declared(props.data.endpoints).parse(props.data.address).state,
   );
-
-  const { endpoints: endpointsQuery, logs: logsQuery } = createWebhookQueries(requestQuery);
-  const endpointOptions = (): FilterChipSection[] => [
-    {
-      options: [
-        { value: "all", label: t().allEndpoints, icon: "ti ti-world" },
-        ...(endpointsQuery.data() ?? []).map((endpoint) => ({
-          value: endpoint.id,
-          label: endpoint.name,
-          icon: "ti ti-webhook",
-        })),
-      ],
-    },
-  ];
-
-  const selectedLog = createMemo(() => (logsQuery.data() ?? []).find((log) => log.id === routeState().requestId) ?? null);
-  const baseUrl = () => props.baseHref ?? (typeof window === "undefined" ? "/tools/webhooks" : window.location.pathname);
-  const absoluteEndpointUrl = (endpoint: Endpoint) => `${window.location.origin}${endpoint.urlPath}`;
-
-  const buildHref = (state: WebhookTesterInitialState) => {
-    const params = new URLSearchParams();
-    if (state.mode !== "receive") params.set("mode", state.mode);
-    if (state.endpointId && state.mode === "receive") params.set("endpoint", state.endpointId);
-    if (state.method) params.set("method", state.method);
-    if (state.query.trim()) params.set("q", state.query.trim());
-    if (state.requestId) params.set("request", state.requestId);
-    const query = params.toString();
-    return `${baseUrl()}${query ? `?${query}` : ""}`;
-  };
-
-  let routeRevision = 0;
-  const commitRoute = (patch: Partial<WebhookTesterInitialState>, options: { replace?: boolean } = { replace: true }) => {
-    const next = { ...routeState(), ...patch };
-    if (patch.mode && patch.mode !== routeState().mode) {
-      next.endpointId = patch.mode === "receive" ? next.endpointId : null;
-      next.requestId = null;
-    }
-    routeRevision += 1;
-    setRouteState(next);
-    navigate(buildHref(next), { replace: options.replace ?? true, scroll: "preserve" });
-  };
-
-  onMount(() =>
-    onCleanup(
-      listenPopState(({ url }) => {
-        routeRevision += 1;
-        setRouteState(parseWebhookTesterState(url));
-      }),
-    ),
+  const source = (): WebhookQuerySource => ({
+    mode: "receive",
+    endpointId: state().filters.endpoint ?? null,
+    method: state().filters.method ?? null,
+    query: state().search ?? "",
+    requestId: null,
+  });
+  // what the server read is the first picture; after a failed read the island reads again at once
+  const queries = createWebhookQueries(
+    source,
+    props.data.failed ? undefined : { source: source(), endpoints: props.data.endpoints, logs: props.data.logs },
   );
+  const endpoints = () => queries.endpoints.data() ?? [];
+  const query = createMemo(() => declared(endpoints()));
+  const logs = () => queries.logs.data() ?? [];
+  const failed = () => Boolean(queries.logs.error() || queries.endpoints.error()) || (props.data.failed && !queries.logs.data());
+  const listAddress = () => query().serialize(state());
+  const href = (id: string | null) => addressOf("receive", listAddress(), id);
+  const urlOf = (endpoint: Endpoint) => `${props.data.origin}${endpoint.urlPath}`;
+  const search = (text: string) => {
+    const next = query().set(state(), "q", text.trim());
+    if (!next) return;
+    history.pushState(history.state, "", addressOf("receive", query().serialize(next), null));
+    setRequest(null);
+    setState(next);
+  };
+  const filterTo = (endpoint: Endpoint) => query().set(state(), "endpoint", endpoint.id);
 
-  const createEndpointMutation = mutation.create<Endpoint, { name: string }>({
-    mutation: async ({ name }, { abortSignal }) => {
-      const response = await apiClient.webhooks.endpoints.$post({ json: { name } }, { init: { signal: abortSignal } });
+  // ── Writes ──
+  const [creating, setCreating] = createSignal(false);
+  const [name, setName] = createSignal("");
+  const [nameError, setNameError] = createSignal<string>();
+  const create = mutation.create<Endpoint, { name: string }>({
+    mutation: async (input, { abortSignal }) => {
+      const response = await apiClient.webhooks.endpoints.$post({ json: input }, { init: { signal: abortSignal } });
       await assertOk(response);
-      return (await response.json()) as Endpoint;
+      const endpoint: unknown = await response.json();
+      if (!isEndpoint(endpoint)) throw new Error(t().unexpectedResponse);
+      return endpoint;
     },
   });
-
-  const deleteEndpointMutation = mutation.create<Endpoint, Endpoint>({
+  const remove = mutation.create<Endpoint, Endpoint>({
     mutation: async (endpoint, { abortSignal }) => {
-      const response = await apiClient.webhooks.endpoints[":endpointId"].$delete(
-        { param: { endpointId: endpoint.id } },
-        { init: { signal: abortSignal } },
-      );
+      const response = await apiClient.webhooks.endpoints[":endpointId"].$delete({ param: { endpointId: endpoint.id } }, { init: { signal: abortSignal } });
       await assertOk(response);
       return endpoint;
     },
   });
+  onCleanup(() => {
+    create.abort();
+    remove.abort();
+  });
+  const openCreate = () => {
+    setName("");
+    setNameError(undefined);
+    setCreating(true);
+  };
+  const submitCreate = async () => {
+    if (create.loading()) return;
+    const value = name().trim();
+    if (!value) return setNameError(t().enterEndpointName);
+    const outcome = await create.mutate({ name: value });
+    if (outcome === "error") return toast(create.error()?.message || t().endpointCreateFailed, { status: "bad" });
+    if (outcome !== "success") return;
+    setCreating(false);
+    try {
+      await queries.endpoints.invalidate();
+      toast(t().endpointCreated, { status: "ok" });
+    } catch {
+      toast(t().endpointCreatedRefreshFailed, { status: "bad" });
+    }
+  };
+  const deleteEndpoint = async (endpoint: Endpoint) => {
+    const agreed = await Dialog.confirm({
+      title: t().deleteEndpointTitle({ name: endpoint.name }),
+      description: t().deleteEndpointDescription,
+      confirm: t().deleteConfirm,
+      cancel: t().cancel,
+    });
+    if (!agreed) return;
+    const outcome = await remove.mutate(endpoint);
+    if (outcome === "error") return toast(remove.error()?.message || t().endpointDeleteFailed, { status: "bad" });
+    if (outcome !== "success") return;
+    // a filter on the deleted endpoint ends with it
+    if (state().filters.endpoint === endpoint.id) {
+      const next = query().clear(state(), "endpoint");
+      history.replaceState(history.state, "", addressOf("receive", query().serialize(next), request()));
+      setState(next);
+    }
+    try {
+      await Promise.all([queries.endpoints.invalidate(), queries.logs.invalidate()]);
+      toast(t().endpointDeleted, { status: "ok" });
+    } catch {
+      toast(t().endpointDeletedRefreshFailed, { status: "bad" });
+    }
+  };
+  const deeds = (endpoint: Endpoint): MenuEntry[] => {
+    const filtered = filterTo(endpoint);
+    return [
+      ...(filtered ? [{ label: t().showRequests, icon: "filter", href: addressOf("receive", query().serialize(filtered), null) }] : []),
+      { label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint), t().urlCopied) },
+      { label: t().deleteEndpoint({ name: endpoint.name }), icon: "trash", danger: true, onClick: () => void deleteEndpoint(endpoint) },
+    ];
+  };
+  const openLog = () => {
+    const id = request();
+    return id ? logs().find((log) => log.id === id) : undefined;
+  };
 
-  const sendRequestMutation = mutation.create<WebhookLog, { url: string; method: Method; headers: Record<string, string>; body: string }>({
+  return (
+    <ToolsScreen
+      tool="webhooks"
+      views={views(t(), "receive")}
+      detail={request() ? DETAIL_WIDTH : undefined}
+      primary={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }}
+      end={
+        <>
+          <SearchInput t={t()} value={state().search ?? ""} onSearch={search} />
+          <Button variant="primary" icon="plus" onClick={openCreate}>
+            {t().addEndpoint}
+          </Button>
+        </>
+      }
+    >
+      <Pane.Split>
+        <Pane
+          label={t().requests}
+          scrollKey="tools-webhooks"
+          status={
+            <>
+              <FilterBar
+                query={query()}
+                state={state()}
+                onChange={setState}
+                icons={{ endpoint: "webhook", method: "code" }}
+                results={t().requestCount({ count: logs().length })}
+              />
+              <RequestStatus t={t()} logs={logs()} loading={queries.logs.loading() || queries.logs.refreshing()} onRefresh={() => void queries.logs.refresh().catch(() => undefined)} facts={[{ value: String(endpoints().length), after: t().endpoints }]} />
+            </>
+          }
+        >
+          <Section icon="webhook" title={t().endpoints} count={endpoints().length} summary={t().endpointsSummary}>
+            <Show
+              when={endpoints().length > 0}
+              fallback={<Empty icon="webhook" text={t().noEndpoints} action={{ label: t().newEndpoint, icon: "plus", onClick: openCreate }} />}
+            >
+              <List label={t().endpoints}>
+                <For each={endpoints()}>
+                  {(endpoint) => (
+                    <Menu.Context items={deeds(endpoint)}>
+                      <Row
+                        icon="webhook"
+                        color={ENDPOINT_COLOR}
+                        lines={[endpoint.name, urlOf(endpoint)]}
+                        meta={t().requestCount({ count: endpoint.requestCount })}
+                        time={endpoint.lastRequestAt ? t().lastRequest({ time: when()(endpoint.lastRequestAt) }) : t().noRequestYet}
+                        current={state().filters.endpoint === endpoint.id}
+                        action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint), t().urlCopied) }}
+                        end={<Menu label={t().endpointActions({ name: endpoint.name })} items={deeds(endpoint)} />}
+                      />
+                    </Menu.Context>
+                  )}
+                </For>
+              </List>
+            </Show>
+          </Section>
+          <Show when={!failed()} fallback={<Failed text={t().loadFailed} onRetry={() => void Promise.all([queries.endpoints.refresh(), queries.logs.refresh()]).catch(() => undefined)} />}>
+            <RequestTable
+              label={t().requests}
+              rows={logs()}
+              current={request()}
+              t={t()}
+              when={when()}
+              href={href}
+              onOpen={(id) => show(id)}
+              endpointOf={(log) => endpoints().find((endpoint) => endpoint.id === log.endpointId)?.name ?? t().deletedEndpoint}
+              empty={
+                state().search || state().filters.endpoint || state().filters.method
+                  ? { icon: "filter-off", text: t().noMatches, action: { label: t().resetFilters, icon: "filter-off", href: BASE } }
+                  : { icon: "inbox", text: t().emptyIncoming }
+              }
+            />
+          </Show>
+          <Band>
+            <Text type="meta" muted>
+              {t().dataNotice}
+            </Text>
+          </Band>
+        </Pane>
+        <Show when={request()}>
+          <RequestPane
+            log={openLog()}
+            endpointName={endpoints().find((endpoint) => endpoint.id === openLog()?.endpointId)?.name}
+            t={t()}
+            when={when()}
+            listLabel={t().requests}
+            closeHref={href(null)}
+            onClose={show(null)}
+          />
+        </Show>
+      </Pane.Split>
+      <Dialog
+        title={t().newEndpoint}
+        open={creating()}
+        onOpenChange={setCreating}
+        foot={
+          <>
+            <Button onClick={() => setCreating(false)}>{t().cancel}</Button>
+            <Button variant="primary" icon="plus" busy={create.loading()} onClick={() => void submitCreate()}>
+              {t().create}
+            </Button>
+          </>
+        }
+      >
+        <Field label={t().nameLabel} hint={t().nameHint} error={nameError()} required>
+          <Input
+            value={name()}
+            placeholder={t().namePlaceholder}
+            maxLength={120}
+            onInput={(value) => {
+              setName(value);
+              setNameError(undefined);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.isComposing) void submitCreate();
+            }}
+          />
+        </Field>
+      </Dialog>
+    </ToolsScreen>
+  );
+}
+
+/** The one statement of the list: how many requests, how many of them failed, and the way to look again. */
+const RequestStatus = (props: {
+  t: WebhookMessages;
+  logs: WebhookLog[];
+  loading: boolean;
+  onRefresh: () => void;
+  facts?: { value: string; after: string }[];
+}) => {
+  const errors = () => props.logs.filter((log) => log.error || (log.responseStatus ?? 0) >= 400).length;
+  return (
+    <StatusRow
+      lead={props.t.requestCount({ count: props.logs.length })}
+      loading={props.loading}
+      facts={[...(errors() > 0 ? [{ value: String(errors()), after: props.t.errors }] : []), ...(props.facts ?? [])]}
+      filters={<Button variant="ghost" icon="refresh" onClick={props.onRefresh}>{props.t.refresh}</Button>}
+    />
+  );
+};
+
+function Sent(props: { data: WebhookTesterData }) {
+  const { t, when, request, setRequest, show, toast } = useTester(props.data);
+  const query = createMemo(() => sentQuery(t()));
+  const [state, setState] = createSignal<ListQueryStateOf<ReturnType<typeof sentQuery>>>(query().parse(props.data.address).state);
+  const source = (): WebhookQuerySource => ({
+    mode: "send",
+    endpointId: null,
+    method: state().filters.method ?? null,
+    query: state().search ?? "",
+    requestId: null,
+  });
+  const queries = createWebhookQueries(
+    source,
+    props.data.failed ? undefined : { source: source(), endpoints: props.data.endpoints, logs: props.data.logs },
+  );
+  const logs = () => queries.logs.data() ?? [];
+  const failed = () => (props.data.failed && !queries.logs.data()) || Boolean(queries.logs.error());
+  const href = (id: string | null) => addressOf("send", query().serialize(state()), id);
+  const search = (text: string) => {
+    const next = query().set(state(), "q", text.trim());
+    if (!next) return;
+    history.pushState(history.state, "", addressOf("send", query().serialize(next), null));
+    setRequest(null);
+    setState(next);
+  };
+
+  const [target, setTarget] = createSignal("");
+  const [method, setMethod] = createSignal<Method>("POST");
+  const [headers, setHeaders] = createSignal('{\n  "content-type": "application/json"\n}');
+  const [body, setBody] = createSignal('{\n  "hello": "world"\n}');
+  const [headersError, setHeadersError] = createSignal<string>();
+  const [targetError, setTargetError] = createSignal<string>();
+  // the form keeps what was typed between two sends, so a request is easy to send again with a change
+  const [composing, setComposing] = createSignal(false);
+  const send = mutation.create<WebhookLog, { url: string; method: Method; headers: Record<string, string>; body: string }>({
     mutation: async (intent, { abortSignal }) => {
       const response = await apiClient.webhooks.send.$post({ json: intent }, { init: { signal: abortSignal } });
       await assertOk(response);
-      return assertWebhookLog(await response.json(), t().unexpectedResponse);
+      const log: unknown = await response.json();
+      if (!isWebhookLog(log)) throw new Error(t().unexpectedResponse);
+      return log;
     },
   });
-
-  const [reconciling, setReconciling] = createSignal(false);
-  let disposed = false;
-  let promptingCreate = false;
-  const reconcile = async (tasks: Array<Promise<void>>) => {
-    setReconciling(true);
+  onCleanup(() => send.abort());
+  const parseHeaders = (): Record<string, string> | undefined => {
+    const text = headers().trim();
+    if (!text) return {};
     try {
-      await Promise.all(tasks);
-    } finally {
-      if (!disposed) setReconciling(false);
-    }
-  };
-  const writePending = () =>
-    createEndpointMutation.loading() || deleteEndpointMutation.loading() || sendRequestMutation.loading() || reconciling();
-  const writesBlocked = () =>
-    writePending() ||
-    endpointsQuery.loading() ||
-    endpointsQuery.refreshing() ||
-    logsQuery.loading() ||
-    logsQuery.refreshing() ||
-    Boolean(endpointsQuery.error() || logsQuery.error());
-
-  onCleanup(() => {
-    disposed = true;
-    createEndpointMutation.abort();
-    deleteEndpointMutation.abort();
-    sendRequestMutation.abort();
-  });
-
-  const createEndpoint = async (nameInput: string) => {
-    if (writesBlocked()) return;
-    const name = nameInput.trim();
-    if (!name) {
-      toast.error(t().enterEndpointName);
-      return;
-    }
-    const startedAtRevision = routeRevision;
-    const outcome = await createEndpointMutation.mutate({ name });
-    if (disposed) return;
-    const error = createEndpointMutation.error();
-    if (outcome === "error") {
-      toast.error(error?.message || t().endpointCreateFailed);
-      return;
-    }
-    if (outcome !== "success") return;
-    const endpoint = createEndpointMutation.data()!;
-    try {
-      await reconcile([endpointsQuery.invalidate()]);
+      const parsed: unknown = JSON.parse(text);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+        return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
     } catch {
-      if (disposed) return;
-      toast.error(t().endpointCreatedRefreshFailed);
-      return;
+      // the field says what is wrong
     }
-    if (disposed) return;
-    if (routeRevision === startedAtRevision) commitRoute({ mode: "receive", endpointId: endpoint.id, requestId: null });
-    toast.success(t().endpointCreated);
+    setHeadersError(t().headersMustBeJsonObject);
+    return undefined;
   };
-
-  const openCreateEndpoint = async () => {
-    if (writesBlocked() || promptingCreate) return;
-    promptingCreate = true;
-    try {
-      const result = await prompts.form({
-        title: t().newEndpoint,
-        icon: "ti ti-webhook",
-        fields: {
-          name: { type: "text", label: t().nameLabel, required: true, placeholder: t().namePlaceholder },
-        },
-        confirmText: t().create,
-      });
-      if (disposed || !result) return;
-      await createEndpoint(String(result.name ?? ""));
-    } finally {
-      promptingCreate = false;
-    }
-  };
-
-  const deleteEndpoint = async (endpoint: Endpoint) => {
-    if (writesBlocked()) return;
-    const startedAtRevision = routeRevision;
-    const outcome = await deleteEndpointMutation.mutate(endpoint);
-    if (disposed) return;
-    const error = deleteEndpointMutation.error();
-    if (outcome === "error") {
-      toast.error(error?.message || t().endpointDeleteFailed);
-      return;
-    }
+  const submit = async () => {
+    if (send.loading()) return;
+    if (!target().trim()) return setTargetError(t().enterTarget);
+    const parsed = parseHeaders();
+    if (!parsed) return;
+    const startedAt = location.href;
+    const outcome = await send.mutate({ url: target().trim(), method: method(), headers: parsed, body: method() === "GET" ? "" : body() });
+    if (outcome === "error") return toast(send.error()?.message || t().requestFailed, { status: "bad" });
     if (outcome !== "success") return;
+    const log = send.data()!;
+    setComposing(false);
     try {
-      await reconcile([endpointsQuery.invalidate(), logsQuery.invalidate()]);
+      await queries.logs.invalidate();
     } catch {
-      if (disposed) return;
-      toast.error(t().endpointDeletedRefreshFailed);
-      return;
+      return toast(t().requestSentRefreshFailed, { status: "bad" });
     }
-    if (disposed) return;
-    if (routeRevision === startedAtRevision && routeState().endpointId === endpoint.id) {
-      commitRoute({ endpointId: null, requestId: null });
-    }
-    toast.success(t().endpointDeleted);
+    toast(t().requestSent, { status: "ok" });
+    // the answer opens beside the list, unless the person went elsewhere while it was sent
+    if (location.href !== startedAt) return;
+    history.pushState(history.state, "", href(log.id));
+    setRequest(log.id);
+  };
+  const openLog = () => {
+    const id = request();
+    return id ? logs().find((log) => log.id === id) : undefined;
   };
 
-  const sendRequest = async () => {
-    if (writesBlocked()) return;
-    try {
-      const startedAtRevision = routeRevision;
-      const intent = {
-        url: targetUrl(),
-        method: sendMethod(),
-        headers: parseHeaders(headers(), t().headersMustBeJsonObject),
-        body: body(),
-      };
-      const outcome = await sendRequestMutation.mutate(intent);
-      if (disposed) return;
-      const error = sendRequestMutation.error();
-      if (outcome === "error") {
-        toast.error(error?.message || t().requestFailed);
-        return;
+  return (
+    <ToolsScreen
+      tool="webhooks"
+      views={views(t(), "send")}
+      detail={request() ? DETAIL_WIDTH : undefined}
+      primary={{ label: t().sendRequestTitle, icon: "send", onClick: () => setComposing(true) }}
+      end={
+        <>
+          <SearchInput t={t()} value={state().search ?? ""} onSearch={search} />
+          <Button variant="primary" icon="send" onClick={() => setComposing(true)}>
+            {t().sendRequestTitle}
+          </Button>
+        </>
       }
-      if (outcome !== "success") return;
-      const log = sendRequestMutation.data()!;
-      if (routeState().mode === "send") {
-        try {
-          await reconcile([logsQuery.invalidate()]);
-        } catch {
-          if (disposed) return;
-          if (routeRevision === startedAtRevision) {
-            toast.error(t().requestSentRefreshFailed);
-            return;
+    >
+      <Pane.Split>
+        <Pane
+          label={t().requests}
+          scrollKey="tools-webhooks-sent"
+          status={
+            <>
+              <FilterBar query={query()} state={state()} onChange={setState} icons={{ method: "code" }} results={t().requestCount({ count: logs().length })} />
+              <RequestStatus t={t()} logs={logs()} loading={queries.logs.loading() || queries.logs.refreshing()} onRefresh={() => void queries.logs.refresh().catch(() => undefined)} />
+            </>
           }
-        }
-      }
-      if (disposed) return;
-      if (routeRevision === startedAtRevision) commitRoute({ mode: "send", requestId: log.id });
-      toast.success(t().requestSent);
-    } catch (error) {
-      if (error instanceof Error) toast.error(error.message);
-    }
-  };
-
-  // A primary list never scrolls sideways: no column has a fixed minimum width. One long text per table (URL,
-  // target) takes the room that is left (`w-full! max-w-0!`: the table's own cell cap outranks a plain utility);
-  // content type and body end at a fixed width inside their cell; all three end with an ellipsis. Side columns wait
-  // in the row details when the table is narrow.
-  const endpointColumns = (): DataTableColumn<Endpoint>[] => [
-    { id: "name", header: t().colName, value: "name" },
-    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "w-full! max-w-0!", priority: 2 },
-    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24" },
-    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()), priority: 3 },
-    { id: "actions", header: "", value: (row) => row.id, class: "w-14" },
-  ];
-
-  const logColumns = (): DataTableColumn<WebhookLog>[] => [
-    { id: "method", header: t().colMethod, value: "method", class: "w-20", priority: 2 },
-    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "w-full! max-w-0!" },
-    { id: "status", header: t().colStatus, value: (row) => row.responseStatus ?? row.error ?? "logged", class: "w-24" },
-    { id: "contentType", header: t().colContentType, value: "requestContentType", priority: 3 },
-    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), priority: 2 },
-    { id: "created", header: t().colTime, value: (row) => formatDate(row.createdAt, locale()) },
-  ];
-
-  const renderEndpointCell: DataTableRenderCell<Endpoint> = (ctx) => {
-    if (ctx.col.id === "url") {
-      const url = absoluteEndpointUrl(ctx.row);
-      return (
-        <div class="flex items-center gap-2">
-          <code class="truncate text-[11px]">{url}</code>
-          <CopyButton text={url} variant="secondary" size="sm" class="shrink-0" />
-        </div>
-      );
-    }
-    if (ctx.col.id === "actions") {
-      return (
-        <IconButton
-          label={t().deleteEndpoint({ name: ctx.row.name })}
-          variant="danger"
-          size="sm"
-          disabled={writesBlocked()}
-          onClick={() => deleteEndpoint(ctx.row)}
         >
-          <i class="ti ti-trash" aria-hidden="true" />
-        </IconButton>
-      );
-    }
-    return ctx.render(ctx.value);
-  };
-
-  const renderLogCell: DataTableRenderCell<WebhookLog> = (ctx) => {
-    if (ctx.col.id === "method")
-      return <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${methodClass(ctx.row.method)}`}>{ctx.row.method}</span>;
-    if (ctx.col.id === "status") {
-      const label = ctx.row.error ? t().statusError : ctx.row.responseStatus ? String(ctx.row.responseStatus) : t().statusLogged;
-      return (
-        <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(ctx.row.responseStatus, ctx.row.error)}`}>{label}</span>
-      );
-    }
-    if (ctx.col.id === "target" || ctx.col.id === "body" || ctx.col.id === "contentType") {
-      const text = String(ctx.value ?? "");
-      const width = ctx.col.id === "contentType" ? "max-w-24" : ctx.col.id === "body" ? "max-w-32" : "";
-      return (
-        <span class={`block truncate ${width}`} title={text}>
-          {text}
-        </span>
-      );
-    }
-    return ctx.render(ctx.value);
-  };
-
-  const hasActiveFilters = () => Boolean(routeState().endpointId || routeState().method || routeState().query.trim());
-  const selectedMethodFilter = (): string[] => {
-    const value = routeState().method;
-    return value ? [value] : [];
-  };
-  const clearFilters = () => commitRoute({ endpointId: null, method: null, query: "", requestId: null });
-  const totalLabel = () => {
-    const count = logsQuery.data()?.length ?? 0;
-    if (logsQuery.loading()) return t().loadingRequests;
-    return hasActiveFilters() ? t().requestCountFiltered({ count }) : t().requestCount({ count });
-  };
-  const retryReads = () => void Promise.all([endpointsQuery.refresh(), logsQuery.refresh()]).catch(() => undefined);
-  const refreshLogs = () => void logsQuery.refresh().catch(() => undefined);
-
-  return (
-    <>
-      <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-        <div class="flex min-h-0 flex-1 flex-col gap-2">
-          <div class="flex items-center justify-between gap-3" style="view-transition-name: tools-webhook-title">
-            <div class="min-w-0">
-              <h1 class="min-w-0 text-base font-semibold text-primary">{t().heading}</h1>
-              <p class="mt-0.5 text-xs text-dimmed">{t().subtitle}</p>
-            </div>
-            <Show when={routeState().mode === "receive"}>
-              <Button variant="secondary" size="xs" class="shrink-0" disabled={writesBlocked()} onClick={() => void openCreateEndpoint()}>
-                <i class="ti ti-plus text-sm" />
-                {t().add}
-              </Button>
-            </Show>
-          </div>
-
-          <NoticeCard tone="warning">{t().dataNotice}</NoticeCard>
-
-          <Show when={endpointsQuery.error() ?? logsQuery.error()}>
-            {(error) => (
-              <NoticeCard tone="danger" title={t().refreshFailedTitle} detail={error().message}>
-                <Button variant="secondary" size="sm" onClick={retryReads}>
-                  {t().retry}
-                </Button>
-              </NoticeCard>
-            )}
-          </Show>
-
-          <Show
-            when={routeState().mode === "receive"}
-            fallback={
-              <SendPanel
-                blocked={writesBlocked()}
-                pending={writePending()}
-                targetUrl={targetUrl}
-                setTargetUrl={setTargetUrl}
-                method={sendMethod}
-                setMethod={setSendMethod}
-                headers={headers}
-                setHeaders={setHeaders}
-                body={body}
-                setBody={setBody}
-                onSend={sendRequest}
-              />
-            }
-          >
-            <section class="flex flex-col gap-2">
-              <div class="flex items-center justify-between gap-2">
-                <h2 class="text-sm font-semibold text-primary">{t().endpoints}</h2>
-                <span class="text-xs text-dimmed">{t().endpointCount({ count: endpointsQuery.data()?.length ?? 0 })}</span>
-              </div>
-              <DataTable
-                rows={endpointsQuery.data() ?? []}
-                columns={endpointColumns()}
-                getRowId={(row) => row.id}
-                selectedRowId={routeState().endpointId}
-                onRowClick={(row) => commitRoute({ mode: "receive", endpointId: row.id, requestId: null })}
-                renderCell={renderEndpointCell}
-                empty={t().noEndpoints}
-                density="compact"
-                class="max-h-48 overflow-auto"
-                scrollPreserveKey="webhook-endpoints-table"
-              />
-            </section>
-          </Show>
-
-          <section class="flex min-h-0 flex-1 flex-col gap-2">
-            <RequestSearchInput value={routeState().query} onSearch={(query) => commitRoute({ query, requestId: null })} />
-            <div class="flex flex-wrap items-center gap-2">
-              <FilterChip
-                label={t().filterMode}
-                icon="ti ti-arrows-exchange"
-                options={modeOptions(t())}
-                value={[routeState().mode]}
-                onValueChange={(value) => commitRoute({ mode: (value[0] ?? "receive") as Mode, requestId: null })}
-                defaultValue={["receive"]}
-              />
-              <Show when={routeState().mode === "receive"}>
-                <FilterChip
-                  label={t().filterWebhook}
-                  icon="ti ti-webhook"
-                  options={endpointOptions()}
-                  value={[routeState().endpointId ?? "all"]}
-                  onValueChange={(value) => commitRoute({ endpointId: value[0] === "all" ? null : (value[0] ?? null), requestId: null })}
-                  isActive={Boolean(routeState().endpointId)}
-                  defaultValue={["all"]}
-                />
-              </Show>
-              <FilterChip
-                label={t().filterMethod}
-                icon="ti ti-code"
-                options={METHOD_OPTIONS}
-                value={selectedMethodFilter()}
-                onValueChange={(value) => commitRoute({ method: (value[0] as Method | undefined) ?? null, requestId: null })}
-              />
-              <Show when={hasActiveFilters()}>
-                <Button variant="secondary" size="sm" class="text-red-600 dark:text-red-400" onClick={clearFilters}>
-                  <i class="ti ti-x" />
-                  {t().clear}
-                </Button>
-              </Show>
-              <span class="text-xs text-dimmed">{totalLabel()}</span>
-              <Button variant="secondary" size="sm" class="ml-auto" onClick={refreshLogs}>
-                <i class="ti ti-refresh" />
-                {t().refresh}
-              </Button>
-            </div>
-
-            <DataTable
-              rows={logsQuery.data() ?? []}
-              columns={logColumns()}
-              getRowId={(row) => row.id}
-              selectedRowId={routeState().requestId}
-              onRowClick={(row) => commitRoute({ requestId: row.id }, { replace: false })}
-              renderCell={renderLogCell}
-              empty={routeState().mode === "receive" ? t().emptyIncoming : t().emptyOutgoing}
-              density="compact"
-              fillHeight
-              class="paper flex-1 min-h-0 overflow-auto"
-              scrollPreserveKey="webhook-requests-table"
+          <Show when={!failed()} fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}>
+            <RequestTable
+              label={t().requests}
+              rows={logs()}
+              current={request()}
+              t={t()}
+              when={when()}
+              href={href}
+              onOpen={(id) => show(id)}
+              empty={
+                state().search || state().filters.method
+                  ? { icon: "filter-off", text: t().noMatches, action: { label: t().resetFilters, icon: "filter-off", href: `${BASE}?mode=send` } }
+                  : { icon: "send", text: t().emptyOutgoing }
+              }
             />
-          </section>
-        </div>
-      </AppWorkspace.Main>
-
-      <AppWorkspace.Detail
-        id="webhook-request"
-        open={Boolean(selectedLog())}
-        onClose={() => commitRoute({ requestId: null })}
-        width="lg"
-        viewTransitionName="webhook-request-detail"
-      >
-        <Show when={selectedLog()}>
-          {(log) => (
-            <RequestDetail
-              log={log()}
-              endpoint={log().endpointId ? endpointsQuery.data()?.find((endpoint) => endpoint.id === log().endpointId) : null}
-              onClose={() => commitRoute({ requestId: null })}
-            />
-          )}
+          </Show>
+          <Band>
+            <Text type="meta" muted>
+              {t().dataNotice}
+            </Text>
+          </Band>
+        </Pane>
+        <Show when={request()}>
+          <RequestPane log={openLog()} endpointName={undefined} t={t()} when={when()} listLabel={t().requests} closeHref={href(null)} onClose={show(null)} />
         </Show>
-      </AppWorkspace.Detail>
-    </>
-  );
-}
-
-function SendPanel(props: {
-  blocked: boolean;
-  pending: boolean;
-  targetUrl: () => string;
-  setTargetUrl: (value: string) => void;
-  method: () => Method;
-  setMethod: (value: Method) => void;
-  headers: () => string;
-  setHeaders: (value: string) => void;
-  body: () => string;
-  setBody: (value: string) => void;
-  onSend: () => void;
-}) {
-  const locale = useLocale();
-  const t = () => webhookMessages.resolve([locale()]).t;
-  return (
-    <section class="paper p-4">
-      <div class="mb-3 flex items-start justify-between gap-3">
-        <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-primary">{t().sendRequestTitle}</h2>
-          <p class="mt-0.5 text-xs text-dimmed">{t().sendRequestSubtitle}</p>
-        </div>
-        <Button
-          size="sm"
-          class="shrink-0"
-          loading={props.pending}
-          loadingLabel={t().sending}
-          disabled={props.blocked || !props.targetUrl().trim()}
-          onClick={props.onSend}
-        >
-          <i class="ti ti-send text-sm" />
-          {t().send}
-        </Button>
-      </div>
-
-      <div class="grid grid-cols-1 gap-2 lg:grid-cols-[10rem_1fr]">
-        <Select
-          label={t().methodLabel}
-          value={props.method}
-          onValueChange={(value) => props.setMethod(value as Method)}
-          options={METHODS}
-        />
-        <TextInput
-          label={t().targetUrlLabel}
-          type="url"
-          placeholder="https://example.com/webhook"
-          value={props.targetUrl}
-          onValueChange={props.setTargetUrl}
-        />
-      </div>
-
-      <div class="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
-        <div class="flex min-w-0 flex-col gap-1">
-          <TextInput label={t().headersLabel} multiline lines={7} value={props.headers} onValueChange={props.setHeaders} />
-        </div>
-        <div class="flex min-w-0 flex-col gap-1">
-          <TextInput
-            label={t().bodyLabel}
-            multiline
-            lines={7}
-            value={props.body}
-            onValueChange={props.setBody}
-            disabled={props.method() === "GET"}
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | null | undefined; onClose: () => void }) {
-  const locale = useLocale();
-  const t = () => webhookMessages.resolve([locale()]).t;
-  const kindLabel = () => (props.log.direction === "incoming" ? t().incomingRequest : t().outgoingRequest);
-  const title = () => props.endpoint?.name ?? kindLabel();
-  const location = () => props.log.path || props.log.url;
-  const status = (): { tone: StatusTone; label: string } => {
-    if (props.log.error) return { tone: "error", label: t().statusError };
-    const code = props.log.responseStatus;
-    if (!code) return { tone: "neutral", label: t().statusLogged };
-    return { tone: code >= 500 ? "error" : code >= 400 ? "warning" : "ok", label: String(code) };
-  };
-  return (
-    <DetailPanel>
-      <DetailPanel.Header
-        kind={
+      </Pane.Split>
+      <Dialog
+        title={t().sendRequestTitle}
+        open={composing()}
+        onOpenChange={setComposing}
+        foot={
           <>
-            <span>{kindLabel()}</span>
-            <StatusBadge tone={status().tone} label={status().label} variant="dot" />
+            <Button onClick={() => setComposing(false)}>{t().cancel}</Button>
+            <Button variant="primary" icon="send" busy={send.loading()} onClick={() => void submit()}>
+              {t().send}
+            </Button>
           </>
         }
-        title={title()}
-        subtitle={
-          <span class="flex min-w-0 items-center gap-1">
-            <span class="shrink-0">{props.log.method}</span>
-            <span class="shrink-0">·</span>
-            <span class="min-w-0 truncate" title={location()}>
-              {location()}
-            </span>
-          </span>
-        }
-        meta={<span title={formatDate(props.log.createdAt, locale())}>{formatDate(props.log.createdAt, locale())}</span>}
-        primaryActions={<CopyButton text={JSON.stringify(props.log, null, 2)} label={t().copyJson} variant="subtle" size="sm" />}
-        actions={
-          <IconButton label={t().closeRequestDetails} onClick={props.onClose}>
-            <i class="ti ti-x" aria-hidden="true" />
-          </IconButton>
-        }
-      />
-
-      <DetailPanel.Body scrollPreserveKey={`webhook-request-detail-${props.log.id}`}>
-        <Section title={t().properties}>
-          <DescriptionList
-            layout="rows"
-            size="sm"
-            items={[
-              { term: t().duration, description: props.log.durationMs === null ? "-" : `${props.log.durationMs} ms` },
-              { term: t().contentType, description: props.log.requestContentType ?? "-" },
-              { term: t().queryLabel, description: props.log.query || "-" },
-            ]}
+      >
+        <Text>{t().sendRequestSubtitle}</Text>
+        <Field.Row>
+          <Field label={t().methodLabel}>
+            <Select options={[...METHODS]} value={method()} onChange={(value) => setMethod(METHODS.find((item) => item === value) ?? "POST")} />
+          </Field>
+          <Field label={t().targetUrlLabel} error={targetError()} required>
+            <Input
+              type="url"
+              placeholder="https://example.com/webhook"
+              value={target()}
+              autocomplete="url"
+              spellcheck={false}
+              onInput={(value) => {
+                setTarget(value);
+                setTargetError(undefined);
+              }}
+            />
+          </Field>
+        </Field.Row>
+        <Field label={t().headersLabel} hint={t().headersHint} error={headersError()}>
+          <Input
+            multiline
+            spellcheck={false}
+            value={headers()}
+            onInput={(value) => {
+              setHeaders(value);
+              setHeadersError(undefined);
+            }}
           />
-        </Section>
-
-        <LogBlock title={t().requestBody} value={props.log.requestBody ?? "-"} />
-        <LogBlock title={t().responseBody} value={props.log.responseBody ?? props.log.error ?? "-"} />
-
-        <DetailPanel.Group title={t().moreAboutRequest}>
-          <LogBlock title={t().requestHeaders} value={props.log.requestHeaders} collapsible />
-          <LogBlock title={t().responseHeaders} value={props.log.responseHeaders ?? "-"} collapsible />
-        </DetailPanel.Group>
-      </DetailPanel.Body>
-    </DetailPanel>
+        </Field>
+        <Field label={t().bodyLabel} hint={method() === "GET" ? t().bodyHint : undefined}>
+          <Input multiline spellcheck={false} value={body()} onInput={setBody} disabled={method() === "GET"} />
+        </Field>
+      </Dialog>
+    </ToolsScreen>
   );
 }
 
-/** A request or response part. Header parts stay closed under "More about this request" and name their keys while closed. */
-const LogBlock = (props: { title: string; value: unknown; collapsible?: boolean }) => {
-  const locale = useLocale();
-  const t = () => webhookMessages.resolve([locale()]).t;
-  const [raw, setRaw] = createSignal(false);
-  const parsed = () => parseJsonLike(props.value);
-  const rawText = () => stringifyBlock(props.value);
-  const prettyRows = () => {
-    const data = parsed();
-    if (!data.ok) return [];
-    if (Array.isArray(data.value)) return data.value.map((value, index) => [String(index), value] as const);
-    if (data.value && typeof data.value === "object") return Object.entries(data.value as Record<string, unknown>);
-    return [["value", data.value] as const];
-  };
-  const commands = () => (
-    <>
-      <Button variant="secondary" size="xs" class="text-[11px]" onClick={() => setRaw(!raw())}>
-        {raw() ? t().pretty : t().raw}
-      </Button>
-      <CopyButton text={rawText()} label={t().copy} variant="secondary" size="xs" class="text-[11px]" />
-    </>
-  );
-  const content = () => (
-    <Show
-      when={!raw() && parsed().ok}
-      fallback={<pre class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed">{rawText()}</pre>}
-    >
-      <ScrollArea class="max-h-80 rounded-md bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
-        <div class="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1.5 text-xs">
-          <For each={prettyRows()}>
-            {([key, value]) => {
-              const isComplex = typeof value === "object" && value !== null;
-              return (
-                <>
-                  <span class="min-w-0 truncate font-medium text-dimmed" title={key}>
-                    {key}
-                  </span>
-                  <span class={`min-w-0 whitespace-pre-wrap break-words text-secondary ${isComplex ? "font-mono text-[11px]" : ""}`}>
-                    {formatPrettyValue(value)}
-                  </span>
-                </>
-              );
-            }}
-          </For>
-        </div>
-      </ScrollArea>
-    </Show>
-  );
-
-  if (props.collapsible) {
-    const summary = () => {
-      const rows = prettyRows();
-      return rows.length > 0 ? rows.map(([key]) => key).join(", ") : rawText();
-    };
-    return (
-      <Section title={props.title} collapsible summary={summary()}>
-        <div class="mb-2 flex justify-end gap-1">{commands()}</div>
-        {content()}
-      </Section>
-    );
-  }
-
-  return (
-    <Section title={props.title} actions={commands()}>
-      {content()}
-    </Section>
-  );
-};
