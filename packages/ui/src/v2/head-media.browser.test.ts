@@ -86,8 +86,7 @@ test("on the phone how the list shows stays in reach: sort, grouping and display
     },
     390,
   );
-  // a page, a menu and a sort that writes the address: about 4 s in WebKit, too close to the default 5 s
-}, 10_000);
+});
 
 test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
   await withPage("list", async (page) => {
