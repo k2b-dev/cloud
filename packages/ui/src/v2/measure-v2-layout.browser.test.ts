@@ -706,6 +706,19 @@ describe("text a person cannot read", () => {
     TEST_TIMEOUT,
   );
 
+  // content.tsx at 320 px: a link in running text that wraps has a box around both its lines, which the text beside
+  // it on those lines fills; only its pieces on each line are the control
+  test(
+    "green: a link that wraps in running text shares no place with the words around it",
+    async () => {
+      const prose = await measure(
+        '<p class="k2-t-body" style="width:180px;margin:0">Bitte lesen Sie vorher <a href="#">die Annahme und ihre Bedingungen</a> und Fragen zur Annahme beantwortet.</p>',
+      );
+      expect(prose.overlap).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: an amount in a cut table cell; green: the cell holds the whole amount",
     async () => {

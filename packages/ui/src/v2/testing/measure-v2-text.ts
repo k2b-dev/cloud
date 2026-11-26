@@ -108,9 +108,12 @@ export function measureTextInPage(options: { root: string; skip: string; control
   for (const control of Array.from(root.querySelectorAll(controlSelector))) {
     // a stretched target lies over its row on purpose; the box of a check is its input, stretched over the mark
     if (control.matches(".k2-row-open, .k2-mark-input") || skipped(control) || !shown(control)) continue;
-    const r = control.getBoundingClientRect();
-    const box = control.parentElement ? meet(r, seenIn(control.parentElement)) : r;
-    if (size(box).width <= 2 || size(box).height <= 2) continue;
+    // a link in running text that wraps is two pieces, one per line, not the box around both
+    const view = control.parentElement ? seenIn(control.parentElement) : undefined;
+    const pieces = Array.from(control.getClientRects())
+      .map((piece) => (view ? meet(piece, view) : piece))
+      .filter((piece) => size(piece).width > 2 && size(piece).height > 2);
+    if (!pieces.length) continue;
     const own = layer(control);
     for (const run of runs) {
       if (control.contains(run.node) || layer(run.parent) !== own) continue;
@@ -118,8 +121,8 @@ export function measureTextInPage(options: { root: string; skip: string; control
       // (`covers`: the search of a phone head opens over its tabs while it has the focus) may hide it.
       if (options.covers && control.matches(options.covers)) continue;
       for (const part of run.seen) {
-        const both = size(meet(part, box));
-        if (both.width <= 2 || both.height <= 2) continue;
+        const both = pieces.map((piece) => size(meet(part, piece))).find((each) => each.width > 2 && each.height > 2);
+        if (!both) continue;
         const key = `${words(run.node.textContent)}|${words(control.textContent) || control.getAttribute("aria-label")}`;
         if (reported.has(key)) break;
         reported.add(key);

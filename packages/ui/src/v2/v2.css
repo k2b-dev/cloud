@@ -1555,9 +1555,10 @@
 .k2-ui .k2-table[data-lines="2"] td:has(> .k2-cell-person) {
   vertical-align: middle;
 }
-/* things in one line in a cut cell (a picture and a name): the words give way with "…", not cut through a sign */
-.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)),
-.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-row-open > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
+/* things in one line in a cell that gives way (a picture and a name), in a table with widths or without: the words give
+   way with "…", not cut through a sign */
+.k2-ui .k2-table .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)),
+.k2-ui .k2-table .k2-cell-line > .k2-row-open > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
