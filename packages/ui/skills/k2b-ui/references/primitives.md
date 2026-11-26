@@ -373,7 +373,8 @@ lines instead of cutting a thing.
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
   now, and the sentence says why), `primary` (the one thing to do, such as
   "Neu laden": a framed button after one quiet text button at most; it is
-  no primary of the page), children (the sentence and its
+  no primary of the page; a deed whose symbol is the notice's own sign shows
+  no symbol, so the sign stands once), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
