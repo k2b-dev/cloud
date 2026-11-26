@@ -98,6 +98,11 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     expect(text).toContain("archiv");
     const gone = read(await (await app.request("/admin/ipa-hosts?host=weg.example", { headers: { "Accept-Language": "de" } })).text());
     expect(gone).toContain("Diesen Host gibt es im Spiegel nicht mehr.");
+    // the lead counts the mirror, not the page: 12.345 groups although the page holds fewer, and every host without one
+    const all = read(await (await app.request("/admin/ipa-hosts", { headers: { "Accept-Language": "de" } })).text());
+    expect(all).toContain("12.345 Hostgruppen");
+    const ungrouped = read(await (await app.request("/admin/ipa-hosts?tab=ungrouped", { headers: { "Accept-Language": "de" } })).text());
+    expect(ungrouped).toContain("7 Hosts ohne Gruppe");
   } finally {
     for (const spy of spies) spy.mockRestore();
   }
