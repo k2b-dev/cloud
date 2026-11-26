@@ -201,6 +201,66 @@ describe("Mail v2: the reader's dialogs are v2 dialogs", () => {
     }
   }, 60_000);
 
+  // Review of #4213: the dialog closes as soon as the server stored the text, even while the view still catches up.
+  test("the summary dialog closes once the text is stored, though the view's update still runs", async () => {
+    const { page, errors } = await open();
+    try {
+      let stored = false;
+      let release = () => {};
+      const held = new Promise<void>((done) => {
+        release = done;
+      });
+      await page.route(/\/workspace-(route|list|detail)/, async (route) => {
+        if (stored) await held;
+        await route.fallback();
+      });
+      await page.route("**/api/mail/mailboxes/Box001/conversations/Demo01/summary", async (route) => {
+        const { summary } = route.request().postDataJSON() as { summary: string };
+        stored = true;
+        await route.fulfill({ json: summaryState({ summary, summaryRevision: 2, source: "person" }) });
+      });
+      await reader(page).locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      await dialog(page).getByRole("textbox", { name: "Zusammenfassung" }).fill("Kurz");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await dialog(page).waitFor({ state: "detached", timeout: 5_000 });
+      release();
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // Review of #4213: a save the network loses keeps the dialog, the text and the focus in the field; the × waits too.
+  test("a save the network loses keeps the dialog, the text and the focus in the field; × waits for the answer", async () => {
+    const { page, errors } = await open();
+    try {
+      let release = () => {};
+      const held = new Promise<void>((done) => {
+        release = done;
+      });
+      await page.route("**/api/mail/mailboxes/Box001/conversations/Demo01/summary", async (route) => {
+        await held;
+        await route.abort("internetdisconnected");
+      });
+      await reader(page).locator('[data-k2-part="Notice"][data-tone="ai"]').getByRole("button", { name: "Bearbeiten" }).click();
+      const text = dialog(page).getByRole("textbox", { name: "Zusammenfassung" });
+      await text.fill("Offline geschrieben");
+      await dialog(page).getByRole("button", { name: "Zusammenfassung speichern" }).click();
+      await dialog(page)
+        .getByRole("button", { name: /Schließen|Close/ })
+        .click({ force: true });
+      await Bun.sleep(200);
+      expect(await dialog(page).isVisible()).toBe(true);
+      release();
+      await dialog(page).locator('[role="alert"]').waitFor();
+      expect(await text.inputValue()).toBe("Offline geschrieben");
+      await page.waitForFunction(() => document.activeElement?.tagName === "TEXTAREA");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Vorhandenes verknüpfen picks a task in the v2 lookup and links it", async () => {
     const { page, errors, sent } = await open();
     try {

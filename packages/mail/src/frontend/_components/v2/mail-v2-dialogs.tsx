@@ -83,13 +83,16 @@ export const askMailV2Summary = (
     const [summary, setSummary] = createSignal(value);
     const [error, setError] = createSignal<string>();
     const [busy, setBusy] = createSignal(false);
+    let field: HTMLInputElement | HTMLTextAreaElement | undefined;
     const submit = async () => {
       if (busy()) return;
       setBusy(true);
       setError(undefined);
       const refused = await save(summary()).finally(() => setBusy(false));
-      if (refused) setError(refused);
-      else answer(true);
+      if (!refused) return answer(true);
+      setError(refused);
+      // the field was locked while saving, and Safari then leaves the focus on the page: it goes back to the text
+      requestAnimationFrame(() => field?.focus());
     };
     return (
       <Asking
@@ -108,7 +111,15 @@ export const askMailV2Summary = (
         }
       >
         <Field label={text.label} hint={text.hint} {...(error() ? { error: error() } : {})}>
-          <Input multiline value={summary()} onInput={setSummary} disabled={busy()} />
+          <Input
+            multiline
+            value={summary()}
+            onInput={setSummary}
+            disabled={busy()}
+            ref={(element) => {
+              field = element;
+            }}
+          />
         </Field>
       </Asking>
     );

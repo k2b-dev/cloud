@@ -15,6 +15,8 @@ type SummaryEdit = {
   summary: string;
   /** Saved from the reader's own dialog, which shows a refusal at its field and stays open: no Retry beside it. */
   inDialog?: boolean;
+  /** Runs once the server stored the summary, before the view is brought up to date (the dialog closes then). */
+  onStored?: () => void;
 };
 
 /**
@@ -61,7 +63,7 @@ export function createMailSummaryEdit(props: {
         });
       const current = mutations.create<{ refreshError: Error | null; refresh: () => Promise<void> }, SummaryEdit, { edit: SummaryEdit }>({
         onBefore: (edit) => ({ edit }),
-        mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary }, { abortSignal }) => {
+        mutation: async ({ mailboxId, conversationId, expectedSummaryRevision, summary, onStored }, { abortSignal }) => {
           if (!active) throw new DOMException("Mailbox changed", "AbortError");
           const onSaved = props.onSaved();
           const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].summary.$put(
@@ -71,6 +73,7 @@ export function createMailSummaryEdit(props: {
           if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
           const updated = await response.json();
           abortSignal.throwIfAborted();
+          onStored?.();
           const refresh = () => onSaved(conversationId, updated);
           return { refreshError: await captureMailWorkspaceRefreshError(refresh), refresh };
         },
@@ -112,17 +115,22 @@ export function createMailSummaryEdit(props: {
           cancel: t().cancel,
         },
         current.summary ?? "",
-        async (typed) => {
-          if (gone()) return null;
-          const outcome = await instance.mutate({
-            mailboxId: props.mailboxId(),
-            conversationId,
-            expectedSummaryRevision: current.summaryRevision,
-            summary: typed,
-            inDialog: true,
-          });
-          return outcome === "error" ? (instance.error()?.message ?? t().updateSummaryFailed) : null;
-        },
+        // The dialog closes once the server stored the text; bringing the view up to date runs on after it, and a
+        // failure there reaches the person as the Retry toast of a stale view.
+        (typed) =>
+          new Promise<string | null>((answer) => {
+            if (gone()) return answer(null);
+            void instance
+              .mutate({
+                mailboxId: props.mailboxId(),
+                conversationId,
+                expectedSummaryRevision: current.summaryRevision,
+                summary: typed,
+                inDialog: true,
+                onStored: () => answer(null),
+              })
+              .then((outcome) => answer(outcome === "error" ? (instance.error()?.message ?? t().updateSummaryFailed) : null));
+          }),
       );
       return;
     }
