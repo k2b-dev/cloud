@@ -574,7 +574,11 @@ export const StatusRow = (props: StatusRowProps) => {
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type NoticeProps = {
-  /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
+  /**
+   * What it is: a note of a person, a summary by AI, something wrong, something waiting. Assistive technology hears
+   * `bad` at once (an alert) and `warn` politely when it appears or changes (a status); `note` and `ai` are read
+   * with the page.
+   */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
   icon?: string;
@@ -597,7 +601,9 @@ export const Notice = (props: NoticeProps) => (
     data-k2-part="Notice"
     data-tone={props.tone}
     data-title={props.title ? "" : undefined}
-    role={props.tone === "bad" ? "alert" : "note"}
+    // something wrong interrupts; something waiting is a state, heard politely when it appears or changes; a person's
+    // note and a summary by AI are content to read
+    role={props.tone === "bad" ? "alert" : props.tone === "warn" ? "status" : "note"}
   >
     <Icon name={props.icon ?? toneIcon[props.tone]} />
     <Show when={props.title}>

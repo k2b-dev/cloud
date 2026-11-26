@@ -40,6 +40,8 @@ export {
 } from "./components";
 export {
   type CellValue,
+  CodeDisplay,
+  type CodeDisplayProps,
   type Column,
   type Fact,
   Facts,
@@ -51,6 +53,8 @@ export {
   type OpenTarget,
   Prose,
   type ProseProps,
+  QrCode,
+  type QrCodeProps,
   Row,
   type RowLines,
   type RowProps,

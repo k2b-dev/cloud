@@ -38,6 +38,8 @@ export type SectionProps = {
   summary?: JSX.Element;
   /** The way to all of it, at the end ("All deliveries ›"). */
   more?: Action;
+  /** An anchor for a link to this section, such as `screen` for `/me#screen`; unique on the page. */
+  id?: string;
   /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
 };
@@ -49,7 +51,7 @@ export type SectionProps = {
 export const Section = (props: SectionProps) => {
   const summary = resolveChildren(() => props.summary);
   return (
-    <section class="k2-sec" data-k2-part="Section" aria-label={props.title}>
+    <section class="k2-sec" data-k2-part="Section" id={props.id} aria-label={props.title}>
       <div class="k2-sh">
         <Show when={props.icon}>
           {(name) => (

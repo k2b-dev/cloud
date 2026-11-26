@@ -60,7 +60,7 @@ Data that failed to load once, with "Erneut versuchen" in the language of the pa
 
 ### Notice
 
-A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why.
+A band with a sign, a sentence and its consequence, and at most two deeds; a deed that cannot be taken now is `disabled`, and the sentence says why. Assistive technology hears `bad` at once and `warn` politely when it appears or changes.
 
 <Props of="Notice" />
 
