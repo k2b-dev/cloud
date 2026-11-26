@@ -376,16 +376,21 @@ for (const [where, height] of [
   });
 
 type Box = { x: number; y: number; width: number; height: number };
-/** Whether the panel took the menu's place: it shares one of the menu's side edges and its top, and stays on screen. */
-const tookPlace = (menu: Box, placed: Box, width: number, height: number) =>
-  (Math.abs(placed.x - menu.x) <= 1 || Math.abs(placed.x + placed.width - (menu.x + menu.width)) <= 1) &&
+/**
+ * Whether the panel took the menu's place: it stands on the menu's `edge` (the side the menu grew from, so the panel
+ * grows the same way) and stays on screen.
+ */
+const tookPlace = (menu: Box, placed: Box, edge: "left" | "right", width: number, height: number) =>
+  (edge === "left" ? Math.abs(placed.x - menu.x) <= 1 : Math.abs(placed.x + placed.width - (menu.x + menu.width)) <= 1) &&
   placed.x >= 0 &&
   placed.x + placed.width <= width &&
   placed.y >= 0 &&
   placed.y + placed.height <= height;
 
 // Review of #4249 (r2): the corner a menu grew from is physical, read from its box and the page's direction. Under
-// right-to-left a menu at the start of the bar grows to the right, and a submenu may open to the left or right.
+// right-to-left the menus still grow from an edge the test reads from the page: the button menu from its edge on the
+// button's side, the submenu from its edge away from the menu it came from, the context menu from its edge at the
+// pointer. Each time the panel must stand on that same edge, so it grows the same way.
 test("right to left: a panel takes the place of a button menu, of a submenu and of a context menu", async () => {
   const width = 1440;
   const height = 900;
@@ -397,11 +402,14 @@ test("right to left: a panel takes the place of a button menu, of a submenu and 
       await root.waitFor();
       await settled(page);
       const rootBox = await root.boundingBox();
+      const button = await page.getByRole("button", { name: "Später" }).boundingBox();
+      // the menu grows from its button to one side (the window's edge may push it): it stands on the other side's edge
+      const rootEdge = !!rootBox && !!button && rootBox.x + rootBox.width / 2 >= button.x + button.width / 2 ? "left" : "right";
       await entry(page).click();
       await panel(page).waitFor();
       await settled(page);
       const one = await panel(page).boundingBox();
-      expect(!!rootBox && !!one && tookPlace(rootBox, one, width, height)).toBe(true);
+      expect(!!rootBox && !!one && tookPlace(rootBox, one, rootEdge, width, height)).toBe(true);
       await page.keyboard.press("Escape");
       await panel(page).waitFor({ state: "detached" });
       // the submenu: it takes the submenu's place and never lies over the menu it came from
@@ -415,7 +423,9 @@ test("right to left: a panel takes the place of a button menu, of a submenu and 
       await other.waitFor();
       await settled(page);
       const two = await other.boundingBox();
-      expect(!!sub && !!two && tookPlace(sub, two, width, height)).toBe(true);
+      // the submenu's edge away from the menu it came from
+      const subEdge = !!sub && !!rootAgain && sub.x < rootAgain.x ? "right" : "left";
+      expect(!!sub && !!two && tookPlace(sub, two, subEdge, width, height)).toBe(true);
       const apart = !!rootAgain && !!two && (two.x + two.width <= rootAgain.x + 1 || two.x >= rootAgain.x + rootAgain.width - 1);
       expect(apart).toBe(true);
       await page.keyboard.press("Escape");
@@ -425,7 +435,8 @@ test("right to left: a panel takes the place of a button menu, of a submenu and 
       // the context menu
       const row = await page.getByText("Auftrag", { exact: true }).boundingBox();
       if (!row) throw new Error("no row");
-      await page.mouse.click(row.x + row.width - 4, row.y + 4, { button: "right" });
+      const pointer = { x: row.x + row.width - 4, y: row.y + 4 };
+      await page.mouse.click(pointer.x, pointer.y, { button: "right" });
       const context = page.locator('[role="menu"]');
       await context.waitFor();
       await settled(page);
@@ -435,7 +446,10 @@ test("right to left: a panel takes the place of a button menu, of a submenu and 
       await note.waitFor();
       await settled(page);
       const three = await note.boundingBox();
-      expect(!!contextBox && !!three && tookPlace(contextBox, three, width, height)).toBe(true);
+      // the context menu's edge at the pointer
+      const contextEdge =
+        !!contextBox && Math.abs(contextBox.x + contextBox.width - pointer.x) < Math.abs(contextBox.x - pointer.x) ? "right" : "left";
+      expect(!!contextBox && !!three && tookPlace(contextBox, three, contextEdge, width, height)).toBe(true);
     },
     { dir: "rtl", width, height },
   );

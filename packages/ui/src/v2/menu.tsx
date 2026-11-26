@@ -141,6 +141,9 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
   return box.left + box.width / 2 > document.documentElement.clientWidth / 2 ? "end" : "start";
 };
 
+/** The room a menu, a submenu or a panel keeps from the edges of the window, in px. */
+const edgeRoom = 8;
+
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
   entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
@@ -314,6 +317,8 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
       if (menu) {
         const box = menu.getBoundingClientRect();
         const side = menu.getAttribute("data-side");
+        // the menu and the panel's layer at the end of the page both take the page's direction (<html dir>), so the
+        // menu's says how core reads the panel's start and end too
         const rtl = getComputedStyle(menu).direction === "rtl";
         // a submenu's side is physical; a menu under or over its button lines up with its start or end, which the
         // page's direction turns into left or right
@@ -421,7 +426,7 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
             const anchor = {
               getBoundingClientRect: () => {
                 const tall = panel?.offsetHeight ?? 0;
-                return new DOMRect(at.x, Math.max(8, Math.min(at.top, window.innerHeight - tall - 8)), 0, 0);
+                return new DOMRect(at.x, Math.max(edgeRoom, Math.min(at.top, window.innerHeight - tall - edgeRoom)), 0, 0);
               },
             };
             return { anchor };
@@ -430,7 +435,7 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           // the edge of the panel that stands on the corner, in the reading direction core places by
           align={panelAlign()}
           sideOffset={corner() ? 0 : 4}
-          collisionPadding={8}
+          collisionPadding={edgeRoom}
         >
           {/* the panel names its step and leads back to the entries it took the place of, as a submenu's step does */}
           <button
@@ -487,7 +492,7 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
         >
           <EntryFace item={props.item} lead={props.lead} end={<Icon name="chevron-right" />} />
         </sub.Trigger>
-        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={8}>
+        <sub.Popup class="k2-menu" data-k2-part="Menu" side={side()} sideOffset={4} collisionPadding={edgeRoom}>
           <Entries level={sub} entries={props.item.items ?? []} />
         </sub.Popup>
       </>
@@ -575,7 +580,7 @@ const MenuRoot = (props: MenuProps) => {
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>
@@ -609,7 +614,7 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
         {props.children}
         <Icon name="chevron-down" />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={edgeRoom}>
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>
@@ -644,7 +649,7 @@ const MenuContext = (props: MenuContextProps) => {
     <>
       {resolved()}
       <PageLayer from={element}>
-        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={8}>
+        <level.Popup class="k2-menu" data-k2-part="Menu" collisionPadding={edgeRoom}>
           <Entries level={level} entries={props.items} />
         </level.Popup>
       </PageLayer>
