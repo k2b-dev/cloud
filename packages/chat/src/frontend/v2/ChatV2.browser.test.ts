@@ -239,3 +239,44 @@ test("Discover channels lists the channels, and Subscribe subscribes in place", 
     await close();
   }
 }, 60_000);
+
+// break-ui: the worst names and counts a list meets. Rows keep their sign and time, names are cut with "…", nothing
+// leaves its column, and the v2 rules hold at both widths. Last in the file: these chats join the list from here on.
+test("the list keeps its shape with the worst names and counts", async () => {
+  const end = harness.now();
+  harness.addPerson({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Q" });
+  harness.addPerson({ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach" });
+  harness.addChat({ members: [{ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "Q" }], count: 4, end });
+  harness.addChat({
+    members: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", name: "Maximiliane Alexandra von Hohenzollern-Sigmaringen-Wittelsbach" }],
+    count: 130,
+    unread: 120,
+    end,
+    spacing: 0.1,
+  });
+  harness.addChat({ members: [nora], name: "projektabstimmung.lieferanten.werkstatt-nord@example.org", count: 3, end });
+  harness.addChat({ members: [tobias], name: "東京オフィス · 物流チーム 🚚📦", count: 3, end });
+  harness.addChannel("🎉", "", true);
+  for (const [width, height] of [
+    [1440, 900],
+    [390, 844],
+  ] as const) {
+    const { page, errors, close } = await load("/app/chat", width, height);
+    try {
+      await page.locator('[data-k2-part="Row"]', { hasText: "Hohenzollern" }).first().waitFor();
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect({ width, problems: layout.problems }).toEqual({ width, problems: [] });
+      // No row grows wider than its list.
+      const overflow = await page.evaluate(
+        () =>
+          Array.from(document.querySelectorAll<HTMLElement>('[data-k2-part="Row"]')).filter((row) => row.scrollWidth > row.clientWidth + 1)
+            .length,
+      );
+      expect(overflow).toBe(0);
+      await shoot(page, `06-worst-light-${width}`);
+      expect(errors).toEqual([]);
+    } finally {
+      await close();
+    }
+  }
+}, 120_000);
