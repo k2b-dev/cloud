@@ -40,7 +40,8 @@ const withPage = async (
   const errors = pageErrors(page);
   try {
     const html = `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`;
-    // `address`: a page at an address of its own, whose history takes entries (WebKit keeps none for a page set from markup)
+    // `address`: a page at an address of its own, whose history takes entries (WebKit keeps none for a page set from markup);
+    // every `Dialog.confirm` needs it, as its answer waits until its entry has left the history
     if (address) {
       await page.route("http://overlays.test/**", (route) => route.fulfill({ contentType: "text/html", body: html }));
       await page.goto("http://overlays.test/frage");
@@ -364,21 +365,24 @@ const answerOf = async (page: Page, from: "page" | "island") => {
 };
 
 test("Dialog.confirm with danger: the agreeing button is red with white words, the other keeps the focus", async () => {
-  await withPage(async (page) => {
-    await page.evaluate(() => window.__k2AskDanger?.());
-    const dialog = page.getByRole("alertdialog", { name: "Gerät entfernen?" });
-    await dialog.waitFor();
-    await settled(page);
-    const agree = dialog.getByRole("button", { name: "Entfernen" });
-    expect(await agree.getAttribute("data-danger")).toBe("");
-    const [fill, words] = await agree.evaluate((button) => [getComputedStyle(button).backgroundColor, getComputedStyle(button).color]);
-    expect(fill).toBe("rgb(185, 28, 28)");
-    expect(words).toBe("rgb(255, 255, 255)");
-    // the focus starts on the other button, as for every question: Enter alone never destroys
-    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Abbrechen");
-    await page.keyboard.press("Escape");
-    expect(await answerOf(page, "page")).toBe("false");
-  });
+  await withPage(
+    async (page) => {
+      await page.evaluate(() => window.__k2AskDanger?.());
+      const dialog = page.getByRole("alertdialog", { name: "Gerät entfernen?" });
+      await dialog.waitFor();
+      await settled(page);
+      const agree = dialog.getByRole("button", { name: "Entfernen" });
+      expect(await agree.getAttribute("data-danger")).toBe("");
+      const [fill, words] = await agree.evaluate((button) => [getComputedStyle(button).backgroundColor, getComputedStyle(button).color]);
+      expect(fill).toBe("rgb(185, 28, 28)");
+      expect(words).toBe("rgb(255, 255, 255)");
+      // the focus starts on the other button, as for every question: Enter alone never destroys
+      expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Abbrechen");
+      await page.keyboard.press("Escape");
+      expect(await answerOf(page, "page")).toBe("false");
+    },
+    { address: true },
+  );
 });
 
 for (const touch of [false, true])
@@ -400,11 +404,14 @@ for (const touch of [false, true])
         dialog = await askFrom(page, "page", "Weiter?");
         await dialog.getByRole("button", { name: "Ja" }).click();
         expect(await answerOf(page, "page")).toBe("true");
+        // the answer arrives once the entry has left: a caller that navigates on it replaces the page's own entry
+        expect(await page.evaluate(() => document.body.dataset.at)).toBe(before);
         await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
         // so does Escape
         dialog = await askFrom(page, "page", "Weiter?");
         await page.keyboard.press("Escape");
         expect(await answerOf(page, "page")).toBe("false");
+        expect(await page.evaluate(() => document.body.dataset.at)).toBe(before);
         await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
         // Back hands the focus back to the button that asked, as Escape does
         const trigger = page.getByRole("button", { name: "Löschen", exact: true });
@@ -455,7 +462,7 @@ test("Dialog.confirm with two Workspaces: the first answers, the other takes ove
       expect(await answerOf(page, "page")).toBe("true");
       await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
     },
-    { two: true },
+    { two: true, address: true },
   );
   // the first one leaves first: the second takes over
   await withPage(
@@ -464,34 +471,40 @@ test("Dialog.confirm with two Workspaces: the first answers, the other takes ove
       await (await askFrom(page, "page", "Weiter?")).getByRole("button", { name: "Ja" }).click();
       expect(await answerOf(page, "page")).toBe("true");
     },
-    { two: true },
+    { two: true, address: true },
   );
 });
 
 test("Dialog.confirm from another island (its own copy of the library): the page's Workspace answers", async () => {
-  await withPage(async (page) => {
-    const dialog = await askFrom(page, "island", "Aus der Insel?");
-    // the page's Workspace answers: the island's copy brings no dialog of its own
-    expect(await ownHosts(page)).toBe(0);
-    await dialog.getByRole("button", { name: "Ja" }).click();
-    expect(await answerOf(page, "island")).toBe("true");
-    // without a Workspace the island's copy brings its own dialog, and takes it away with the answer
-    await page.evaluate(() => window.__k2Drop?.(1));
-    await askFrom(page, "island", "Aus der Insel?");
-    expect(await ownHosts(page)).toBe(1);
-    await page.getByRole("button", { name: "Ja" }).click();
-    expect(await answerOf(page, "island")).toBe("true");
-    await page.waitForFunction(() => document.querySelectorAll("body > .k2-ui[style]").length === 0);
-  });
+  await withPage(
+    async (page) => {
+      const dialog = await askFrom(page, "island", "Aus der Insel?");
+      // the page's Workspace answers: the island's copy brings no dialog of its own
+      expect(await ownHosts(page)).toBe(0);
+      await dialog.getByRole("button", { name: "Ja" }).click();
+      expect(await answerOf(page, "island")).toBe("true");
+      // without a Workspace the island's copy brings its own dialog, and takes it away with the answer
+      await page.evaluate(() => window.__k2Drop?.(1));
+      await askFrom(page, "island", "Aus der Insel?");
+      expect(await ownHosts(page)).toBe(1);
+      await page.getByRole("button", { name: "Ja" }).click();
+      expect(await answerOf(page, "island")).toBe("true");
+      await page.waitForFunction(() => document.querySelectorAll("body > .k2-ui[style]").length === 0);
+    },
+    { address: true },
+  );
 });
 
 test("Dialog.confirm: a question whose Workspace leaves while it asks is answered no", async () => {
-  await withPage(async (page) => {
-    await askFrom(page, "page", "Weiter?");
-    await page.evaluate(() => window.__k2Drop?.(1));
-    expect(await answerOf(page, "page")).toBe("false");
-    await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
-  });
+  await withPage(
+    async (page) => {
+      await askFrom(page, "page", "Weiter?");
+      await page.evaluate(() => window.__k2Drop?.(1));
+      expect(await answerOf(page, "page")).toBe("false");
+      await page.waitForFunction(() => !document.querySelector(".k2-dialog"));
+    },
+    { address: true },
+  );
 });
 
 // The value of a selection is set like the value of an input (the mockup's `.k-input` holds both): the same type, and
@@ -597,7 +610,7 @@ for (const touch of [false, true])
         await page.waitForFunction(() => document.body.textContent?.includes("Antwort: ja"));
         expect(await answer()).toBe("Antwort: ja");
       },
-      touch ? { width: 390, touch } : {},
+      touch ? { width: 390, touch, address: true } : { address: true },
     );
   });
 

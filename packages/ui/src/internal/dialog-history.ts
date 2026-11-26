@@ -5,7 +5,11 @@
  * question holds an entry. The dialogs of `dialog-core` register their own entries here through `attach`.
  */
 
-let nextHistoryId = 0;
+/**
+ * Every copy of the library on a page (each island bundles its own) numbers its entries from a start of its own, so a
+ * copy never takes another copy's marker for its own and stops that copy's Back; within a copy the numbers rise.
+ */
+let nextHistoryId = ((globalThis.crypto?.getRandomValues(new Uint32Array(1))[0] ?? 0) + 1) * 2 ** 20;
 /** The history state key that marks a dialog's same-URL entry. */
 const HISTORY_MARKER = "k2bDialog";
 

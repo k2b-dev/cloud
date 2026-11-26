@@ -37,6 +37,8 @@ export function Demo() {
   };
   window.__k2Ask = () =>
     void Dialog.confirm({ title: "Weiter?", confirm: "Ja" }).then((answer) => {
+      // where the history stands when the answer arrives: a caller that navigates then must find its own entry
+      document.body.dataset.at = `${JSON.stringify(history.state ?? null)} ${location.href}`;
       document.body.dataset.answer = String(answer);
     });
   return (
