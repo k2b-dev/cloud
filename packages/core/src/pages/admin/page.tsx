@@ -1,5 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { AdminLayout, adminNavigation, getDisplayRuntimeContext, hasDedicatedRuntimeRoute } from "@k2b/cloud/ssr";
+import { declaredIconColor } from "@k2b/cloud/ssr/app-icon-style";
 import { ssr } from "../../config";
 import { adminMessages } from "./messages";
 import type { OverviewSection, OverviewTask } from "./OverviewScreen";
@@ -39,12 +40,19 @@ export default ssr<AuthContext>(async (c) => {
     { href: "/admin/signin", title: t.peopleAndAccess, description: t.peopleAndAccessDescription, icon: "users" },
   ];
   const sections: OverviewSection[] = [
-    { title: t.startHere, summary: t.chooseTask, tasks: start },
-    { title: t.platformConfiguration, summary: t.platformConfigurationDescription, tasks: platformTasks(t) },
+    // sections say what they hold by their rows; no sentence without a deed
+    { title: t.startHere, tasks: start },
+    { title: t.platformConfiguration, tasks: platformTasks(t) },
     {
       title: t.appAdministration,
-      summary: t.appAdministrationDescription,
-      tasks: adminApps.map((app) => ({ href: app.adminHref!, title: app.name, description: app.description, icon: v2Icon(app.icon) })),
+      // each app's own sign in its colour (the content shows whose it is)
+      tasks: adminApps.map((app) => ({
+        href: app.adminHref!,
+        title: app.name,
+        description: app.description,
+        icon: v2Icon(app.icon),
+        color: declaredIconColor(app.appearance),
+      })),
     },
   ];
 
