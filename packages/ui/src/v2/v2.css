@@ -2912,8 +2912,8 @@
    between settings: a section separates them from the next topic. */
 .k2-ui .k2-field[data-setting] {
   grid-template-columns: minmax(0, 1fr) 300px;
-  grid-template-rows: auto auto;
-  grid-template-areas: "label control" "message was";
+  grid-template-rows: auto auto auto;
+  grid-template-areas: "label control" "message control" ". was";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -2922,6 +2922,8 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
+  /* the name and its hint stand together, beside the middle of the control */
+  align-self: end;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
@@ -2933,11 +2935,7 @@
 }
 .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
   grid-area: control;
-  grid-row: 1 / span 2;
   min-width: 0;
-}
-.k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
-  grid-row: 1;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-was {
   grid-area: was;
@@ -2952,9 +2950,8 @@
     grid-template-areas: "label" "message" "control" "was";
     row-gap: 4px;
   }
-  .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was),
-  .k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was) {
-    grid-row: auto;
+  .k2-ui .k2-field[data-setting] > .k2-field-label {
+    align-self: start;
   }
 }
 
