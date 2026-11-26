@@ -256,7 +256,10 @@ describe("the account list on v2", () => {
       const shown = await names(tab);
       expect(shown.filter((name) => name === "Milan Horvat")).toHaveLength(2);
       expect(shown.filter((name) => name === "Petra Lindqvist")).toHaveLength(2);
-      expect(await tab.locator("[data-status-row]").textContent()).toContain("2 davon in mehreren Gruppen");
+      const several = fixtureDirectory(parseUsersAddress(query, new URLSearchParams("status=active")).state).filter(
+        (entry) => entry.kind === "person" && entry.groups.length > 1,
+      ).length;
+      expect(await tab.locator("[data-status-row]").textContent()).toContain(`${several} davon in mehreren Gruppen`);
       await shoot(tab, "grouped-light-1440");
       await expectClean(tab);
       // grouping only arranges the page: Back takes it away without loading the rows again
@@ -327,14 +330,30 @@ describe("the account list on v2", () => {
         (count) => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === count,
         expectedNames("kind=agent").length,
       );
-      expect(await names(tab)).toEqual(["Festplaner", "Wochenbericht"]);
+      expect(await names(tab)).toEqual([
+        "Angebotsentwurf",
+        "Festplaner",
+        "Inventur-Assistent",
+        "Nachbestellung",
+        "Posteingang sortieren",
+        "Rechnungsexport",
+        "Wochenbericht",
+      ]);
       expect(seen.api.at(-1)).toContain("kind=agent");
       // an agent row opens the agent's page
       const first = tab.locator("[data-k2-part=Table] tbody tr td:first-child a").first();
-      expect(await first.getAttribute("href")).toBe("/app/accounts/agents/0b2f5c7e-0000-4000-8000-000000000002");
+      expect(await first.getAttribute("href")).toBe("/app/accounts/agents/0b2f5c7e-0000-4000-8000-000000000009");
       await tab.reload();
       await settled(tab);
-      expect(await names(tab)).toEqual(["Festplaner", "Wochenbericht"]);
+      expect(await names(tab)).toEqual([
+        "Angebotsentwurf",
+        "Festplaner",
+        "Inventur-Assistent",
+        "Nachbestellung",
+        "Posteingang sortieren",
+        "Rechnungsexport",
+        "Wochenbericht",
+      ]);
       await tab.goBack();
       await tab.waitForFunction(() => !new URL(location.href).searchParams.has("kind"));
       await tab.waitForFunction(
@@ -360,9 +379,11 @@ describe("the account list on v2", () => {
     // an API key account has no page of its own: its row opens its keys on the API key page
     const keys = await open(wide, "/app/accounts/users?kind=api-key");
     try {
-      expect(await names(keys.tab)).toEqual(["Import Buchhaltung"]);
+      expect(await names(keys.tab)).toEqual(["Formular Auftrag annehmen", "Import Buchhaltung", "Kalender-Abo Werkstatt"]);
       const link = keys.tab.locator("[data-k2-part=Table] tbody tr td:first-child a").first();
-      expect(await link.getAttribute("href")).toBe("/app/accounts/api-keys?search=Import+Buchhaltung&kind=resource_bound&automatic=1");
+      expect(await link.getAttribute("href")).toBe(
+        "/app/accounts/api-keys?search=Formular+Auftrag+annehmen&kind=resource_bound&automatic=1",
+      );
       expect(keys.errors).toEqual([]);
     } finally {
       await keys.context.close();
@@ -414,10 +435,10 @@ describe("the account list on v2", () => {
         expect(text).toContain("🦊 Fox");
         expect(text).toContain("<script>alert(1)</script> &amp; **fett**");
         if (view !== phone) {
-          // twelve groups: their count leads the cell, so the cut names never hide it
+          // twelve groups: three faces and "+9" lead the cell, so the cut names never hide how many there are
           const groups = tab.locator("[data-k2-part=Table] tbody tr").filter({ hasText: "Waldenburg" }).locator("td").nth(3);
-          const chip = groups.locator("[data-k2-part=Chip]");
-          expect(await chip.textContent()).toBe("12");
+          const chip = groups.locator('[data-k2-part="Avatar.Stack"]');
+          expect(await chip.textContent()).toContain("+9");
           const cell = await groups.boundingBox();
           const mark = await chip.boundingBox();
           expect(mark!.x + mark!.width).toBeLessThanOrEqual(cell!.x + cell!.width);

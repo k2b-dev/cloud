@@ -182,6 +182,9 @@ export const parseUsersAddress = (query: UsersQuery, params: URLSearchParams): U
 
 const dayStart = (day: string, timeZone: string): Date =>
   new Date(dates.zonedDateTimeToInstant(`${day}T00:00`, timeZone, { disambiguation: "compatible" }));
+/** The start of the day `now` falls on, in the person's time zone: from when "today" counts. */
+export const todayStart = (timeZone: string, now: Date = new Date()): Date =>
+  dayStart(new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now), timeZone);
 const nextDay = (day: string): string => new Date(Date.parse(`${day}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
 
 /** The last-sign-in window a period asks for, in the person's time zone: `since` inclusive, `until` exclusive. */

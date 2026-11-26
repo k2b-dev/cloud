@@ -139,6 +139,7 @@ test("the address filters, sorts and groups the list on the server, and a row le
         provider: undefined,
         duplicateMail: undefined,
         sort: { field: "lastLogin", direction: "desc" },
+        summary: { today: expect.any(Date) },
         pagination: { page: 1, perPage: 100 },
       },
     ],

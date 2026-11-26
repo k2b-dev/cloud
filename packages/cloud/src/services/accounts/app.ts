@@ -3,6 +3,7 @@ import type { PersonAvatar } from "../../contracts/avatar";
 import type {
   AccountDirectoryEntry,
   AccountDirectoryPerson,
+  AccountDirectorySummary,
   BaseGroup,
   BaseUser,
   EntityKind,
@@ -328,12 +329,13 @@ export const accountsAppService = {
      */
     directory: async (
       config: Omit<AccountDirectoryQuery, "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
-    ): Promise<Result<Paginated<AccountDirectoryEntry>>> => {
+    ): Promise<Result<Paginated<AccountDirectoryEntry> & { summary?: AccountDirectorySummary }>> => {
       if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));
       const { actor: _actor, pagination, ...query } = config;
       const { page, perPage } = paginate(pagination);
       const result = await accountDirectory({ ...query, page, perPage });
-      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total });
+      const summary = result.summary ? { summary: result.summary } : {};
+      return ok({ items: result.items, page, perPage, total: result.total, hasNext: page * perPage < result.total, ...summary });
     },
   },
   user: {
@@ -367,7 +369,7 @@ export const accountsAppService = {
      * It checks the administrator role itself, so a page, an API or a CLI reaching it gets the same answer.
      */
     directory: async (
-      config: Omit<AccountDirectoryQuery, "kinds" | "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
+      config: Omit<AccountDirectoryQuery, "kinds" | "summary" | "page" | "perPage"> & { actor: AccountsActor; pagination?: PageParams },
     ): Promise<Result<Paginated<UserDirectoryEntry>>> => {
       // The list names every account with its sign-ins and groups: administrators only, whichever way it is reached.
       if (!isAdminActor(config.actor)) return fail(err.forbidden("Admin access required"));

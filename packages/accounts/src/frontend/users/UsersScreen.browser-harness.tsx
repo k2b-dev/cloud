@@ -4,7 +4,7 @@ import GroupsScreen from "../groups/GroupsScreen";
 import { groupsQuery, parseGroupsAddress } from "../groups/query";
 import { parseUsersAddress, USERS_PER_PAGE, usersQuery } from "./query";
 import UsersScreen from "./UsersScreen";
-import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory, fixtureSample } from "./users-screen.fixture";
+import { FIXTURE_GROUPS, FIXTURE_NOW, FIXTURE_TIME_ZONE, fixtureDirectory, fixtureSample, fixtureSummary } from "./users-screen.fixture";
 
 /**
  * The account and group lists for a browser test, rendered as the server would render them for the page's address: the
@@ -29,6 +29,7 @@ const users = () => {
       state={address.state}
       page={address.page}
       entries={failed ? null : entries}
+      summary={failed ? null : fixtureSummary(sample)}
       total={failed ? 0 : matching.length}
       groupNames={Object.values(FIXTURE_GROUPS)
         .filter((group) => address.state.filters["member-of"]?.includes(group.id))

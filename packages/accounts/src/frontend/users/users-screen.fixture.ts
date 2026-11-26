@@ -1,6 +1,6 @@
-import type { AccountDirectoryEntry, AccountDirectoryPerson } from "@k2b/cloud/contracts";
+import type { AccountDirectoryEntry, AccountDirectoryPerson, AccountDirectorySummary } from "@k2b/cloud/contracts";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { directoryQueryOf, type UsersState } from "./query";
+import { directoryQueryOf, todayStart, type UsersState } from "./query";
 
 // Invented sample data for the account list's browser test and design review: a fixed "now", fixed IDs, no real people.
 
@@ -90,6 +90,16 @@ const seeds: Seed[] = [
   { name: "Henrik Brandt", role: "admin", groups: [G.workshop], last: 140, passkey: false, expired: true },
   { name: "Lea Oswald", role: "guest", groups: [G.temps], last: 3, passkey: false },
   { name: "Tobias Rombach", role: "member", groups: [G.sales], last: 96, passkey: true },
+  { name: "Sami Yilmaz", role: "member", groups: [G.workshop, G.store], last: 0, passkey: true },
+  { name: "Felix Thal", role: "admin", groups: [G.workshop, G.sales, G.board], last: 0, passkey: true },
+  { name: "Lena Hartwig", role: "member", groups: [G.office, G.temps], last: 1, passkey: false },
+  { name: "Tom Oswald", role: "member", groups: [G.store], last: 6, passkey: true },
+  { name: "Jonas Kern", role: "member", groups: [G.workshop], last: 0, passkey: false },
+  { name: "Mira Brandt", role: "guest", groups: [G.temps], last: null, passkey: false },
+  { name: "Anika Weber", role: "member", groups: [G.sales, G.office], last: 15, passkey: false },
+  { name: "Paul Richter", role: "member", groups: [G.store, G.workshop], last: 3, passkey: true },
+  { name: "Clara Neumann", role: "admin", groups: [G.board, G.office, G.sales, G.temps], last: 2, passkey: true },
+  { name: "Erik Lang", role: "member", groups: [G.sales], last: 70, passkey: false },
   // a second account for Jonas from FreeIPA, with his address written differently: the duplicate address check finds it
   {
     name: "Jonas Hartwig",
@@ -129,6 +139,13 @@ export const FIXTURE_SERVICE_ACCOUNTS: AccountDirectoryEntry[] = [
   service(1, "agent", "Wochenbericht", "active", 1),
   service(2, "agent", "Festplaner", "active", null),
   service(3, "api-key", "Import Buchhaltung", "disabled", 60),
+  service(4, "agent", "Nachbestellung", "active", 0),
+  service(5, "agent", "Rechnungsexport", "disabled", 21),
+  service(6, "api-key", "Kalender-Abo Werkstatt", "active", 2, { appId: "spaces", type: "calendar", id: "werkstatt" }),
+  service(7, "agent", "Posteingang sortieren", "active", 0),
+  service(8, "agent", "Inventur-Assistent", "active", 4),
+  service(9, "agent", "Angebotsentwurf", "active", 1),
+  service(10, "api-key", "Formular Auftrag annehmen", "active", 0, { appId: "grids", type: "form", id: "auftrag-annehmen" }),
 ];
 export const FIXTURE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresses([...FIXTURE_PEOPLE, ...FIXTURE_SERVICE_ACCOUNTS]);
 
@@ -242,6 +259,24 @@ export const FIXTURE_HUGE_ACCOUNTS: AccountDirectoryEntry[] = withSharedAddresse
     );
   }),
 ]);
+
+/** What matters today over a sample, as the service counts it for the first row. */
+export const fixtureSummary = (sample: readonly AccountDirectoryEntry[]): AccountDirectorySummary => {
+  const today = todayStart(FIXTURE_TIME_ZONE, new Date(FIXTURE_NOW)).getTime();
+  const people = sample.filter((entry): entry is AccountDirectoryPerson => entry.kind === "person");
+  const addresses = new Map<string, number>();
+  for (const person of people) {
+    const address = person.mail?.trim().toLowerCase();
+    if (address) addresses.set(address, (addresses.get(address) ?? 0) + 1);
+  }
+  return {
+    signedInToday: people.filter((person) => person.lastLogin !== null && Date.parse(person.lastLogin) >= today).length,
+    invited: people.filter((person) => person.status === "invited").length,
+    expired: people.filter((person) => person.status === "expired").length,
+    withoutPasskey: people.filter((person) => person.status === "active" && !person.passkey).length,
+    sharedAddresses: [...addresses.values()].filter((count) => count > 1).length,
+  };
+};
 
 /** The sample a test opens (break-ui states): the demo, the worst case, the worst case among 1,284 accounts, or none. */
 export const fixtureSample = (name: string | null | undefined): readonly AccountDirectoryEntry[] =>

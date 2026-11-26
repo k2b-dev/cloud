@@ -1,4 +1,4 @@
-import { type AccountDirectoryEntry, AccountDirectoryEntrySchema } from "@k2b/cloud/contracts";
+import { type AccountDirectoryEntry, AccountDirectoryEntrySchema, type AccountDirectorySummary } from "@k2b/cloud/contracts";
 import { useLocale } from "@k2b/ui";
 import {
   Avatar,
@@ -10,6 +10,7 @@ import {
   Inline,
   Input,
   ListOrder,
+  Mark,
   Notice,
   Pane,
   StatusRow,
@@ -19,7 +20,7 @@ import {
   Workspace,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { z } from "zod";
 import AccountsNav from "../AccountsNav";
@@ -46,6 +47,8 @@ export type UsersScreenProps = {
   /** The accounts of the page and how many match in all; null when the list could not be read. */
   entries: AccountDirectoryEntry[] | null;
   total: number;
+  /** What matters today over all accounts, for the first row; null when it could not be read. */
+  summary: AccountDirectorySummary | null;
   /** Names of the groups the address filters by, which the server resolved. */
   groupNames: LookupItem[];
   /** Parameters of the address that did not apply, already worded. */
@@ -55,6 +58,9 @@ export type UsersScreenProps = {
   timeZone: string;
   pendingRequests: number;
 };
+
+/** How many of a person's groups show as faces before "+n". */
+const GROUP_FACES = 3;
 
 const ListResponseSchema = z.object({ accounts: z.array(AccountDirectoryEntrySchema), pagination: z.object({ total: z.number() }) });
 const GroupsResponseSchema = z.object({ groups: z.array(z.object({ id: z.string(), name: z.string() })) });
@@ -93,6 +99,10 @@ const SERVICE_LOOK = {
   agent: { icon: "robot", color: "#6d28d9" },
   "api-key": { icon: "key", color: "#0f766e" },
 } as const;
+
+/** The picture of an account's own: a person's or an agent's avatar, through the avatar route of Accounts. */
+const pictureOf = (entry: AccountDirectoryEntry) =>
+  entry.avatarHash ? `/api/accounts/users/${encodeURIComponent(entry.id)}/avatar?rev=${encodeURIComponent(entry.avatarHash)}` : undefined;
 
 /**
  * Where an account opens until the one account record lands: a person's page, an agent's page, and for an API key
@@ -222,42 +232,43 @@ export default function UsersScreen(props: UsersScreenProps) {
   const changed = () => query().serialize(state()).toString() !== query().serialize(base()).toString();
   const several = () => (grouping() === "member-of" ? inSeveralGroups(entries() ?? []) : 0);
   const shared = () => (grouping() === "mail" ? sharedAddresses(entries() ?? []) : 0);
-  const avatar = (entry: AccountDirectoryEntry) => {
-    const id = encodeURIComponent(entry.id);
-    const rev = entry.avatarHash ? `?rev=${encodeURIComponent(entry.avatarHash)}` : "";
-    if (entry.kind !== "person") return { name: entry.name, image: `/api/accounts/users/${id}/avatar${rev}` };
-    // a person without a picture shows initials; a service account always has its photo or its robot
-    return { name: entry.displayName || entry.mail || entry.uid, image: rev ? `/api/accounts/users/${id}/avatar${rev}` : undefined };
-  };
+  const nameOf = (entry: AccountDirectoryEntry) => (entry.kind === "person" ? entry.displayName || entry.mail || entry.uid : entry.name);
+  /** A person's face: their picture, or initials. */
+  const avatar = (entry: AccountDirectoryEntry) => ({ name: nameOf(entry), image: pictureOf(entry) });
+  /** A service account's sign: its kind's symbol in the kind's colour, or the agent's own picture over it. */
+  const mark = (entry: AccountDirectoryEntry & { kind: "agent" | "api-key" }) => ({ ...SERVICE_LOOK[entry.kind], image: pictureOf(entry) });
+  /** Every row leads with its sign: a person's avatar, an agent's robot, an API key account's key. */
+  const face = (entry: AccountDirectoryEntry) =>
+    entry.kind === "person" ? <Avatar {...avatar(entry)} decorative /> : <Mark {...mark(entry)} />;
   const roleWord = (entry: AccountDirectoryEntry) =>
     entry.kind === "person" ? { admin: t().admin, member: t().member, guest: t().guest }[entry.role] : "";
-  /** What an account is in the list: a person's role, or the kind of a service account in its colour. */
-  const roleCell = (entry: AccountDirectoryEntry) =>
-    entry.kind === "person" ? (
-      roleWord(entry)
-    ) : (
-      <Chip tag color={SERVICE_LOOK[entry.kind].color} icon={SERVICE_LOOK[entry.kind].icon}>
-        {kindWord(t(), entry)}
-      </Chip>
-    );
-  /** A person's first groups by name; the row says how many there are in all where these are not all of them. */
+  /** What an account is in the list: a person's role, or the kind of a service account (its mark shows it too). */
+  const roleCell = (entry: AccountDirectoryEntry) => (entry.kind === "person" ? roleWord(entry) : kindWord(t(), entry));
+  /** A person's first groups by name, as many as their stack shows. */
   const groupWords = (entry: AccountDirectoryEntry) =>
     entry.kind !== "person"
       ? ""
       : entry.groups
-          .slice(0, 3)
+          .slice(0, GROUP_FACES)
           .map((group) => group.name)
           .join(", ");
   const groupCount = (entry: AccountDirectoryEntry) => (entry.kind === "person" ? entry.groupCount : 0);
-  // k2b-ui gap: a cut text with a count after it that always stays visible (lanes QW/MW). Until then the count of all
-  // groups leads the cell, so the "…" of a long list of names never hides it.
+  /**
+   * A person's groups as a stack of faces with "+n" for the rest, then the names of those shown. The stack stands
+   * first, so the "…" of long names never hides how many groups there are.
+   */
   const groupCell = (entry: AccountDirectoryEntry) =>
-    groupCount(entry) > 3 ? (
-      <>
-        <Chip>{number(groupCount(entry))}</Chip> {groupWords(entry)}
-      </>
+    entry.kind !== "person" || entry.groups.length === 0 ? (
+      "–"
     ) : (
-      groupWords(entry) || "–"
+      <>
+        <Avatar.Stack
+          people={entry.groups.map((group) => ({ name: group.name }))}
+          max={GROUP_FACES}
+          label={t().groupsCount({ count: number(entry.groupCount) })}
+        />{" "}
+        {groupWords(entry)}
+      </>
     );
   const login = (entry: AccountDirectoryEntry) =>
     lastLoginText(entry.kind === "person" ? entry.lastLogin : entry.lastUsed, t(), {
@@ -281,11 +292,29 @@ export default function UsersScreen(props: UsersScreenProps) {
       count: number(members),
     };
   };
-  const lead = () => {
+  /** Whether the list holds people (then their columns show) or only service accounts (then they would be all "–"). */
+  const withPeople = () => state().filters.kind?.includes("person") ?? true;
+  const withKeys = () => state().filters.kind?.includes("api-key") ?? true;
+  const resourceWords = (resource: { appId: string; type: string }) => `${resource.appId} · ${resource.type}`;
+  /** How many accounts the list shows: a count, so it stands quiet beside the statement of the day. */
+  const counted = () => {
     const shown = entries()?.length ?? 0;
     return shown < total() || changed()
       ? t().accountsOf({ count: number(shown), total: number(total()) })
       : t().accountsCount({ count: number(total()) });
+  };
+  /** The first row says what matters today: who signed in, then what needs a hand as chips that open their view. */
+  const today = () => (props.summary ? t().signedInToday({ count: props.summary.signedInToday }) : counted());
+  const todo = () => {
+    const summary = props.summary;
+    if (!summary) return [];
+    const viewHref = (view: UserView) => href(USER_VIEWS[view](query()));
+    return [
+      { count: summary.invited, status: "warn" as const, label: t().invitedCount, href: viewHref("invited") },
+      { count: summary.expired, status: "bad" as const, label: t().expiredCount, href: viewHref("expired") },
+      { count: summary.withoutPasskey, status: "warn" as const, label: t().withoutPasskeyCount, href: viewHref("no-passkey") },
+      { count: summary.sharedAddresses, status: "warn" as const, label: t().sharedAddressesCount, href: viewHref("duplicates") },
+    ].filter((item) => item.count > 0);
   };
 
   // k2b-ui gap: virtualized list (lane MW). Until it lands, the server pages the table (100 accounts a page), so its DOM
@@ -359,16 +388,29 @@ export default function UsersScreen(props: UsersScreenProps) {
               timeZone={props.timeZone}
               results={t().accountsCount({ count: number(total()) })}
             />
+            {/* k2b-ui gap: a head of at most two full-width rows (PR #4208 part 2 joins filters, count and order). */}
             <StatusRow
-              lead={entries() ? lead() : t().loadFailed}
+              lead={entries() ? today() : t().loadFailed}
               loading={refreshing()}
               facts={[
+                ...(props.summary && entries() ? [{ after: counted() }] : []),
                 ...(several() > 0 ? [{ after: t().inSeveralGroups({ count: several() }) }] : []),
                 ...(shared() > 0 ? [{ after: t().sharedOnPage({ count: shared() }) }] : []),
                 // grouping arranges the rows of one page; with more pages, say so
                 ...(grouped() && pages() > 1 ? [{ after: t().groupedOnPage }] : []),
               ]}
-              filters={<ListOrder query={query()} state={state()} onChange={change} />}
+              filters={
+                <>
+                  <For each={todo()}>
+                    {(item) => (
+                      <Chip status={item.status} href={item.href}>
+                        {item.label({ count: item.count })}
+                      </Chip>
+                    )}
+                  </For>
+                  <ListOrder query={query()} state={state()} onChange={change} />
+                </>
+              }
             />
           </>
         }
@@ -400,44 +442,79 @@ export default function UsersScreen(props: UsersScreenProps) {
                   : { icon: "users", text: t().noAccounts }
             }
             phone={(row) => ({
-              lines: [avatar(row.entry).name, about(row.entry)],
-              avatar: avatar(row.entry),
+              lines: [nameOf(row.entry), about(row.entry)],
+              ...(row.entry.kind === "person" ? { avatar: avatar(row.entry) } : { mark: mark(row.entry) }),
               time: login(row.entry),
               marks: statusChip(t(), row.entry),
             })}
             columns={[
               {
                 title: t().name,
-                width: { min: 180, default: 240 },
+                width: { min: 180, default: 220 },
                 cell: (row) => (
                   <Inline>
-                    <Avatar {...avatar(row.entry)} decorative />
-                    <Text weight="strong">{avatar(row.entry).name}</Text>
+                    {face(row.entry)}
+                    <Text weight="strong">{nameOf(row.entry)}</Text>
                   </Inline>
                 ),
               },
+              ...(withPeople()
+                ? [
+                    {
+                      title: t().email,
+                      width: { min: 160, default: 220 },
+                      // the account name and who manages it tell apart two accounts on one address
+                      cell: (row: UserRow) =>
+                        row.entry.kind === "person"
+                          ? {
+                              lines: [
+                                row.entry.mail || "–",
+                                `${row.entry.uid} · ${row.entry.provider === "ipa" ? "FreeIPA" : t().local}`,
+                              ] as const,
+                            }
+                          : row.entry.resource
+                            ? { lines: ["–", resourceWords(row.entry.resource)] as const }
+                            : "–",
+                      drop: true,
+                    },
+                  ]
+                : withKeys()
+                  ? [
+                      {
+                        title: t().app,
+                        width: { min: 160, default: 220 },
+                        cell: (row: UserRow) =>
+                          row.entry.kind !== "person" && row.entry.resource ? resourceWords(row.entry.resource) : "–",
+                        drop: true,
+                      },
+                    ]
+                  : []),
               {
-                title: t().email,
-                width: { min: 160, default: 240 },
-                // the account name and who manages it tell apart two accounts on one address
-                cell: (row) =>
-                  row.entry.kind === "person"
-                    ? { lines: [row.entry.mail || "–", `${row.entry.uid} · ${row.entry.provider === "ipa" ? "FreeIPA" : t().local}`] }
-                    : row.entry.resource
-                      ? { lines: ["–", `${row.entry.resource.appId} · ${row.entry.resource.type}`] }
-                      : "–",
+                title: withPeople() ? t().role : t().kind,
+                width: { min: 90, default: 100 },
+                cell: (row: UserRow) => roleCell(row.entry),
                 drop: true,
               },
-              { title: t().role, width: { min: 100, default: 116 }, cell: (row) => roleCell(row.entry), drop: true },
-              { title: t().groups, width: { min: 140, default: 220 }, cell: (row) => groupCell(row.entry), drop: true },
-              { title: t().status, width: { min: 110, default: 120 }, cell: (row) => statusChip(t(), row.entry) },
+              ...(withPeople()
+                ? [{ title: t().groups, width: { min: 140, default: 200 }, cell: (row: UserRow) => groupCell(row.entry), drop: true }]
+                : []),
+              { title: t().status, width: { min: 110, default: 116 }, cell: (row: UserRow) => statusChip(t(), row.entry) },
+              ...(withPeople()
+                ? [
+                    {
+                      title: t().passkey,
+                      width: { min: 90, default: 100 },
+                      cell: (row: UserRow) => (row.entry.kind !== "person" ? "–" : row.entry.passkey ? t().passkeyYes : t().passkeyNo),
+                      drop: true,
+                    },
+                  ]
+                : []),
               {
-                title: t().passkey,
-                width: { min: 90, default: 110 },
-                cell: (row) => (row.entry.kind !== "person" ? "–" : row.entry.passkey ? t().passkeyYes : t().passkeyNo),
-                drop: true,
+                title: t().lastActive,
+                width: { min: 110, default: 120 },
+                align: "end" as const,
+                cell: (row: UserRow) => login(row.entry),
               },
-              { title: t().lastActive, width: { min: 110, default: 130 }, align: "end", cell: (row) => login(row.entry) },
             ]}
           />
         </Show>

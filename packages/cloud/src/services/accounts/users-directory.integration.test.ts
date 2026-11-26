@@ -133,6 +133,18 @@ suite("the administration's user list (integration)", () => {
   test("lists people, agents (agent and standalone) and API key accounts (resource-bound), never personal keys or code accounts", async () => {
     const tag = crypto.randomUUID().slice(0, 8);
     const day = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    // what matters today counts every account, so the test reads it before and after its own accounts
+    const today = new Date(day(4));
+    const summaryNow = async () => {
+      const result = await accountsAppService.account.directory({
+        actor: { userId: crypto.randomUUID(), uid: "acc-reader", roles: ["user", "admin"], provider: "local" },
+        kinds: [],
+        summary: { today },
+      });
+      if (!result.ok || !result.data.summary) throw new Error("no summary");
+      return result.data.summary;
+    };
+    const before = await summaryNow();
     const user = async (name: string, values: { mail?: string | null; login?: string; admin?: boolean } = {}) => {
       const [row] = await sql<{ id: string }[]>`
         INSERT INTO auth.users (uid, provider, profile, display_name, mail, admin, last_login_local)
@@ -224,6 +236,19 @@ suite("the administration's user list (integration)", () => {
       expect(byActivity.slice(4).sort()).toEqual(["agent:Importer", "api-key:Space", "person:Noor"]);
       expect(await list({ pagination: { page: 2, perPage: 4 } })).toEqual(["person:Jonny", "person:Noor", "api-key:Space"]);
 
+      // what matters today: Ada signed in since then; Noor never did; Ada, Jonas and Jonny are active without a
+      // passkey; Jonas and Jonny share one address
+      const after = await summaryNow();
+      expect({
+        signedInToday: after.signedInToday - before.signedInToday,
+        invited: after.invited - before.invited,
+        expired: after.expired - before.expired,
+        withoutPasskey: after.withoutPasskey - before.withoutPasskey,
+        sharedAddresses: after.sharedAddresses - before.sharedAddresses,
+      }).toEqual({ signedInToday: 1, invited: 1, expired: 0, withoutPasskey: 3, sharedAddresses: 1 });
+      const withSummary = await accountsAppService.account.directory({ actor: admin, search: tag, summary: { today } });
+      expect(withSummary.ok && withSummary.data.summary).toEqual(after);
+
       // the service checks the administrator role itself: a full account without it learns nothing
       const member = { userId: ada, uid: `acc-ada-${tag}`, roles: ["user"], provider: "local" };
       const refused = await accountsAppService.account.directory({ actor: member, search: tag });
@@ -240,7 +265,12 @@ suite("the administration's user list (integration)", () => {
             accountsAppService.account.directory({ actor: admin, duplicateMail: true, sort: { field: "mail", direction: "asc" } }),
           ),
         ];
-        expect(counted.map((statements) => statements.length)).toEqual([2, 2, 2]);
+        // what matters today rides on the count statement: still one count and one page, and one alone when nothing can match
+        counted.push(
+          await meter.during(() => accountsAppService.account.directory({ actor: admin, search: tag, summary: { today } })),
+          await meter.during(() => accountsAppService.account.directory({ actor: admin, kinds: [], summary: { today } })),
+        );
+        expect(counted.map((statements) => statements.length)).toEqual([2, 2, 2, 2, 1]);
       } finally {
         await meter.close();
       }

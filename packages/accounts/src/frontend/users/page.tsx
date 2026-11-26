@@ -13,6 +13,7 @@ import {
   isUserView,
   legacyUsersHref,
   parseUsersAddress,
+  todayStart,
   USER_VIEWS,
   USERS_PER_PAGE,
   usersHref,
@@ -45,7 +46,13 @@ export default ssr<AuthContext>(async (c) => {
   const [pendingRequests, list, groups] = await Promise.all([
     accountsService.accountRequest.countPending(),
     accountsService.account
-      .directory({ actor, ...directoryQueryOf(address.state, timeZone, now), pagination: { page: address.page, perPage: USERS_PER_PAGE } })
+      .directory({
+        actor,
+        ...directoryQueryOf(address.state, timeZone, now),
+        // what matters today stands in the first row; it rides on the count statement
+        summary: { today: todayStart(timeZone, now) },
+        pagination: { page: address.page, perPage: USERS_PER_PAGE },
+      })
       .then((result) => (result.ok ? result.data : null))
       .catch(() => null),
     groupIds
@@ -76,6 +83,7 @@ export default ssr<AuthContext>(async (c) => {
         state={address.state}
         page={address.page}
         entries={list?.items ?? null}
+        summary={list?.summary ?? null}
         total={list?.total ?? 0}
         groupNames={(groups?.items ?? []).map((group) => ({ value: group.id, label: group.name }))}
         ignored={ignored}

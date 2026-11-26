@@ -99,6 +99,20 @@ export const AccountDirectoryServiceAccountSchema = z.object({
   createdAt: z.string(),
 });
 
+/**
+ * What matters today on the account list, over all accounts and independent of its filters: sign-ins since the start
+ * of the day, people who never signed in, expired people, active people without a passkey, and the email addresses
+ * more than one account uses.
+ */
+export const AccountDirectorySummarySchema = z.object({
+  signedInToday: z.number().int().nonnegative(),
+  invited: z.number().int().nonnegative(),
+  expired: z.number().int().nonnegative(),
+  withoutPasskey: z.number().int().nonnegative(),
+  sharedAddresses: z.number().int().nonnegative(),
+});
+export type AccountDirectorySummary = z.infer<typeof AccountDirectorySummarySchema>;
+
 /** One account of the administration's account list. */
 export const AccountDirectoryEntrySchema = z.discriminatedUnion("kind", [
   AccountDirectoryPersonSchema,

@@ -3,6 +3,7 @@ import type {
   AccountDirectoryEntry,
   AccountDirectoryKind,
   AccountDirectoryStatus,
+  AccountDirectorySummary,
   UserDirectoryRole,
   UserProvider,
 } from "../../contracts/shared";
@@ -43,6 +44,11 @@ export type AccountDirectoryQuery = {
   passkey?: boolean;
   /** People whose address (trimmed, any case) another account shares, as the duplicate address check reads it. */
   duplicateMail?: boolean;
+  /**
+   * Also read what matters today (`AccountDirectorySummary`), with sign-ins counted from `today` on. It rides on the
+   * count statement, so the list still costs one count and one page.
+   */
+  summary?: { today: Date };
   /** `lastLogin` is a person's last sign-in and a service account's last API key use; `mail` lists accounts without one last. */
   sort?: { field: "name" | "lastLogin" | "mail"; direction: "asc" | "desc" };
   page?: number;
@@ -66,15 +72,51 @@ const or = (parts: SQL.Query<unknown>[]) => sql`(${parts.reduce((acc, part) => s
  * accounts) with filters, sort and the facts each row shows, in two statements (a count and the page). Groups are
  * direct memberships without personal Linux groups, the same set the row names.
  */
-export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ items: AccountDirectoryEntry[]; total: number }> => {
+export const accountDirectory = async (
+  query: AccountDirectoryQuery,
+): Promise<{ items: AccountDirectoryEntry[]; total: number; summary?: AccountDirectorySummary }> => {
   const page = query.page ?? 1;
   const perPage = query.perPage ?? 100;
   if (query.search && query.search.length > USER_DIRECTORY_SEARCH_MAX) throw new RangeError("search too long");
   const groupIds = query.groupIds;
   if (groupIds && (groupIds.length > USER_DIRECTORY_GROUP_FILTER_MAX || !groupIds.every((id) => UUID.test(id))))
     throw new RangeError("invalid group filter");
-  if (groupIds?.length === 0 || query.roles?.length === 0 || query.statuses?.length === 0 || query.kinds?.length === 0)
-    return { items: [], total: 0 };
+  // One address another account shares, as `listDuplicateEmails` groups them; Postgres hashes this set once.
+  const sharedAddresses = sql`(
+    SELECT lower(btrim(mail)) FROM auth.users WHERE NULLIF(btrim(mail), '') IS NOT NULL GROUP BY lower(btrim(mail)) HAVING count(*) > 1
+  )`;
+  const expiredNow = sql`(u.account_expires IS NOT NULL AND u.account_expires <= now())`;
+  // What matters today, over all people: one pass over the users and one over the shared addresses.
+  const summaryColumns = query.summary
+    ? sql`, (SELECT json_build_object(
+          'signedInToday', COUNT(*) FILTER (WHERE u.last_login_local >= ${query.summary.today}),
+          'invited', COUNT(*) FILTER (WHERE NOT ${expiredNow} AND u.last_login_local IS NULL),
+          'expired', COUNT(*) FILTER (WHERE ${expiredNow}),
+          'withoutPasskey', COUNT(*) FILTER (
+            WHERE NOT ${expiredNow} AND u.last_login_local IS NOT NULL
+              AND NOT EXISTS (SELECT 1 FROM auth.webauthn_credentials w WHERE w.user_id = u.id)
+          ),
+          'sharedAddresses', (SELECT COUNT(*) FROM ${sharedAddresses} d)
+        ) FROM auth.users u) AS summary`
+    : sql``;
+  const summaryOf = (row: DbRow | undefined): AccountDirectorySummary | undefined => {
+    if (!query.summary || !row) return undefined;
+    const value = (typeof row.summary === "string" ? JSON.parse(row.summary) : row.summary) as Record<string, number>;
+    return {
+      signedInToday: Number(value.signedInToday),
+      invited: Number(value.invited),
+      expired: Number(value.expired),
+      withoutPasskey: Number(value.withoutPasskey),
+      sharedAddresses: Number(value.sharedAddresses),
+    };
+  };
+  /** No account can match: the list is empty, and what matters today is still read when asked for, in one statement. */
+  const nothing = async () => {
+    if (!query.summary) return { items: [], total: 0 };
+    const [row] = await sql<DbRow[]>`SELECT 0 AS count ${summaryColumns}`;
+    return { items: [], total: 0, summary: summaryOf(row) };
+  };
+  if (groupIds?.length === 0 || query.roles?.length === 0 || query.statuses?.length === 0 || query.kinds?.length === 0) return nothing();
 
   const kinds = new Set(query.kinds ?? ["person", "agent", "api-key"]);
   const statuses = query.statuses ? new Set(query.statuses) : null;
@@ -90,12 +132,8 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
     ? []
     : (["agent", "api-key"] as const).filter((kind) => kinds.has(kind)).flatMap((kind) => SERVICE_KINDS[kind]);
   const services = serviceKinds.length > 0 && (!statuses || [...statuses].some((status) => SERVICE_STATUSES.has(status)));
-  if (!people && !services) return { items: [], total: 0 };
+  if (!people && !services) return nothing();
   const search = query.search ? `%${freeipa.util.escapeLike(query.search.toLowerCase())}%` : null;
-  // One address another account shares, as `listDuplicateEmails` groups them; Postgres hashes this set once.
-  const sharedAddresses = sql`(
-    SELECT lower(btrim(mail)) FROM auth.users WHERE NULLIF(btrim(mail), '') IS NOT NULL GROUP BY lower(btrim(mail)) HAVING count(*) > 1
-  )`;
 
   let personFrom: SQL.Query<unknown> | null = null;
   let personWhere: SQL.Query<unknown> | null = null;
@@ -109,7 +147,7 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
         WHERE eg.user_id = u.id AND eg.group_name = ANY(${toPgTextArray(groupsAdmin)}::text[])
       )
     END`;
-    const expired = sql`(u.account_expires IS NOT NULL AND u.account_expires <= now())`;
+    const expired = expiredNow;
     const conditions: SQL.Query<unknown>[] = [sql`TRUE`];
     if (query.provider) conditions.push(sql`u.provider = ${query.provider}`);
     if (search) {
@@ -174,8 +212,9 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
     personFrom && personWhere ? sql`(SELECT COUNT(*) FROM ${personFrom} WHERE ${personWhere})` : null,
     serviceWhere ? sql`(SELECT COUNT(*) FROM auth.service_accounts s WHERE ${serviceWhere})` : null,
   ].filter((part) => part !== null);
-  const countRows = await sql<DbRow[]>`SELECT (${counts.reduce((acc, part) => sql`${acc} + ${part}`)})::int AS count`;
+  const countRows = await sql<DbRow[]>`SELECT (${counts.reduce((acc, part) => sql`${acc} + ${part}`)})::int AS count ${summaryColumns}`;
   const total = (countRows[0]?.count as number) ?? 0;
+  const summary = summaryOf(countRows[0]);
 
   // The keys of every matching account, so only the page's rows read their groups, passkeys and shared address.
   const keys = [
@@ -235,6 +274,7 @@ export const accountDirectory = async (query: AccountDirectoryQuery): Promise<{ 
   const iso = (value: unknown) => (value ? (value as Date).toISOString() : null);
   return {
     total,
+    ...(summary ? { summary } : {}),
     items: rows.map((row): AccountDirectoryEntry => {
       if (row.entry_kind !== "person")
         return {

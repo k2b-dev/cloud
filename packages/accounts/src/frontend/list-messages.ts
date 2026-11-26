@@ -74,6 +74,7 @@ export const listMessages = i18n.define({
       // the account list
       accounts: "Accounts",
       kind: "Kind",
+      app: "App",
       person: "Person",
       agent: "Agent",
       apiKey: "API key",
@@ -89,6 +90,13 @@ export const listMessages = i18n.define({
       noAccounts: "No accounts yet.",
       noAccountMatches: "No account matches these filters.",
       noAgents: "No agents yet. Create one with cld admin agents create.",
+      signedInToday: ({ count }: { count: number }) =>
+        count === 0 ? "No sign-in today yet" : i18n.plural(count, "en", { one: "1 sign-in today", other: `${en(count)} sign-ins today` }),
+      invitedCount: ({ count }: { count: number }) => `${en(count)} invited`,
+      expiredCount: ({ count }: { count: number }) => `${en(count)} expired`,
+      withoutPasskeyCount: ({ count }: { count: number }) => `${en(count)} without passkey`,
+      sharedAddressesCount: ({ count }: { count: number }) =>
+        i18n.plural(count, "en", { one: "1 shared address", other: `${en(count)} shared addresses` }),
       sharedOnPage: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 address used by several accounts", other: `${en(count)} addresses used by several accounts` }),
       // groups
@@ -171,6 +179,7 @@ export const listMessages = i18n.define({
       expiresOn: ({ when }) => `abgelaufen ${when}`,
       accounts: "Konten",
       kind: "Art",
+      app: "App",
       person: "Person",
       agent: "Agent",
       apiKey: "API Key",
@@ -186,6 +195,14 @@ export const listMessages = i18n.define({
       noAccounts: "Noch keine Konten.",
       noAccountMatches: "Kein Konto passt zu diesen Filtern.",
       noAgents: "Noch keine Agenten. Lege einen mit cld admin agents create an.",
+      signedInToday: ({ count }) =>
+        count === 0
+          ? "Heute noch keine Anmeldung"
+          : i18n.plural(count, "de", { one: "1 Anmeldung heute", other: `${de(count)} Anmeldungen heute` }),
+      invitedCount: ({ count }) => `${de(count)} eingeladen`,
+      expiredCount: ({ count }) => `${de(count)} abgelaufen`,
+      withoutPasskeyCount: ({ count }) => `${de(count)} ohne Passkey`,
+      sharedAddressesCount: ({ count }) => i18n.plural(count, "de", { one: "1 doppelte Adresse", other: `${de(count)} doppelte Adressen` }),
       sharedOnPage: ({ count }) =>
         i18n.plural(count, "de", { one: "1 Adresse mit mehreren Konten", other: `${de(count)} Adressen mit mehreren Konten` }),
       scope: "Gruppen",
