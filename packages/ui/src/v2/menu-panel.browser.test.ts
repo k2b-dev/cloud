@@ -92,10 +92,11 @@ for (const [width, touch] of [
         await entry(page).click();
         await panel(page).waitFor();
         await settled(page);
-        // the entry says what it opens and which element that is
-        expect(await entry(page).getAttribute("aria-haspopup")).toBe("dialog");
-        expect(await entry(page).getAttribute("aria-expanded")).toBe("true");
-        const controls = await entry(page).getAttribute("aria-controls");
+        // the entry says what it opens and which element that is (on a wide screen its menu gave the panel its place)
+        const opener = page.locator('[role="menuitem"]', { hasText: "Notiz und Zeit …" });
+        expect(await opener.getAttribute("aria-haspopup")).toBe("dialog");
+        expect(await opener.getAttribute("aria-expanded")).toBe("true");
+        const controls = await opener.getAttribute("aria-controls");
         expect(controls && (await panel(page).getAttribute("id")) === controls).toBe(true);
         // no menu holds the dialog, and the menu stays open beside it
         expect(await page.locator('[role="menu"] [role="dialog"]').count()).toBe(0);
@@ -284,4 +285,25 @@ test("on the phone the head of a panel's sheet is named as the way back", async 
     },
     { width: 390, touch: true },
   );
+});
+
+// Design review of #4157: on a wide screen the panel takes the place of the menu its entry stands in, so no more than
+// two layers show; its head leads back, and the menu is there again with the focus on the entry.
+test("on a wide screen the panel takes its menu's place, and its head leads back to it", async () => {
+  await withPage(async (page) => {
+    await page.getByRole("button", { name: "Später" }).click();
+    const menu = page.locator('[role="menu"]');
+    const before = await menu.boundingBox();
+    await entry(page).click();
+    await panel(page).waitFor();
+    await settled(page);
+    expect(await menu.isVisible()).toBe(false);
+    const placed = await panel(page).boundingBox();
+    // against the same button, on the same side: it starts where the menu started
+    expect(!!before && !!placed && Math.abs(placed.y - before.y) <= 1).toBe(true);
+    await panel(page).getByRole("button", { name: "Zurück zu Notiz und Zeit …" }).click();
+    await panel(page).waitFor({ state: "detached" });
+    expect(await menu.isVisible()).toBe(true);
+    expect(await focused(page)).toBe("Notiz und Zeit …");
+  });
 });
