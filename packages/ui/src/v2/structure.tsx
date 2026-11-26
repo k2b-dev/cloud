@@ -1,5 +1,6 @@
-import { For, type JSX, children as resolveChildren, Show } from "solid-js";
+import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useDisclosure } from "./behavior/files";
 import { Button } from "./button";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
@@ -146,8 +147,8 @@ export type GroupProps = {
   /** At most two text buttons at the end of the head; more deeds go into `menu`. */
   actions?: TwoActions;
   /**
-   * Only the head with its result; the content is hidden, and a chevron at the end opens it. (Opening comes with the
-   * behaviour layer.)
+   * Starts as only the head with its result; the content is hidden, and the chevron at the end opens and closes it
+   * (a button that says whether the group is open).
    */
   folded?: boolean;
   /** What belongs together: text, `Steps`, a small `Table`, `Facts`, rows; never another group. */
@@ -162,8 +163,11 @@ export const Group = (props: GroupProps) => {
   // parts passed as JSX are made once and read from here
   const meta = resolveChildren(() => props.meta);
   const state = resolveChildren(() => props.state);
+  // a folded group opens and closes in place; one that is not folded has no toggle
+  const [open, setOpen] = createSignal(!props.folded);
+  const fold = useDisclosure(() => ({ defaultOpen: !props.folded, onOpenChange: setOpen }));
   return (
-    <section class="k2-group" data-k2-part="Group" aria-label={props.title} data-folded={props.folded ? "" : undefined}>
+    <section class="k2-group" data-k2-part="Group" aria-label={props.title} data-folded={props.folded && !open() ? "" : undefined}>
       <div class="k2-gh" data-meta={meta() !== undefined ? "" : undefined}>
         <Show when={props.icon} fallback={<span />}>
           {(name) => (
@@ -201,12 +205,55 @@ export const Group = (props: GroupProps) => {
             </Show>
             <HeadActions actions={props.actions} />
             <Show when={props.folded}>
-              <Button variant="ghost" icon="chevron-down" label={props.title} />
+              <fold.Trigger
+                class="k2-btn"
+                data-k2-part="Button"
+                data-variant="ghost"
+                data-icon-only=""
+                data-fold=""
+                aria-label={props.title}
+                title={props.title}
+              >
+                <Icon name="chevron-down" />
+              </fold.Trigger>
             </Show>
           </span>
         </Show>
       </div>
-      <Show when={!props.folded}>{props.children}</Show>
+      <Show when={props.folded} fallback={props.children}>
+        <fold.Panel class="k2-group-body">{props.children}</fold.Panel>
+      </Show>
     </section>
+  );
+};
+
+export type DisclosureProps = {
+  /** The question or the name of what is hidden; it is the button that opens and closes it. */
+  title: string;
+  /** Whether it is open. With `onOpenChange` the caller holds it; without, it starts so and keeps its own state. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** What opens: `Text`, `Prose`, `Facts`, a few rows. */
+  children: JSX.Element;
+};
+
+/**
+ * Something that opens in place, such as the answer to a question: a row of 44 px with the title and a chevron at the
+ * end, the content under it on the text edge, made only while it is open (as a folded `Group`), so the server and
+ * the first render show the same. Several stand one under the other in a `Section`, without lines.
+ */
+export const Disclosure = (props: DisclosureProps) => {
+  const parts = useDisclosure(() => ({
+    ...(props.onOpenChange ? { open: props.open === true } : { defaultOpen: props.open === true }),
+    onOpenChange: (open: boolean) => props.onOpenChange?.(open),
+  }));
+  return (
+    <parts.Root class="k2-disc" data-k2-part="Disclosure">
+      <parts.Trigger class="k2-disc-head">
+        <span class="k2-disc-title">{props.title}</span>
+        <Icon name="chevron-down" />
+      </parts.Trigger>
+      <parts.Panel class="k2-disc-body">{props.children}</parts.Panel>
+    </parts.Root>
   );
 };

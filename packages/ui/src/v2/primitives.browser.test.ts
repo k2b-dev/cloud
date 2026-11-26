@@ -951,3 +951,25 @@ describe("v2 heads that sort lead to an address", () => {
     TEST_TIMEOUT,
   );
 });
+
+describe("v2 section heads on the phone", () => {
+  test(
+    "390: a section's actions keep only their symbols and keep their words as their names",
+    async () => {
+      const page = await open("structure", { width: 390 });
+      try {
+        const action = page.getByRole("button", { name: "Todo anlegen", exact: true });
+        expect(await action.isVisible()).toBe(true);
+        const shape = await action.evaluate((button) => {
+          const label = button.querySelector(".k2-btn-label")!.getBoundingClientRect();
+          return { label: label.width > 1 && label.height > 1, inHead: button.closest(".k2-sh") !== null };
+        });
+        // the words are not in sight; the symbol stands alone
+        expect(shape).toEqual({ label: false, inHead: true });
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+});
