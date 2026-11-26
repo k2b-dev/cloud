@@ -111,10 +111,18 @@ const RUNS_STATUS: Record<WorkflowRunState, string> = {
   succeeded: "succeeded",
 };
 
-/** The workflow runs in Läufe, of one app and in one state when given. This page keeps definitions and findings. */
-export const workflowRunsHref = (filter: { app?: string; state?: WorkflowRunState } = {}) => {
+/**
+ * The workflow runs in Läufe with this page's filters: one definition (`workflow`) or a run's children (`parent`), the
+ * app, the run state and the window. Läufe's 24 hours are its default, so they stay out of the address.
+ */
+export const workflowRunsHref = (
+  filter: { workflow?: string; parent?: string; app?: string; state?: WorkflowRunState; window?: WindowFilter } = {},
+) => {
   const params = new URLSearchParams({ kind: "workflow" });
+  if (filter.workflow) params.set("workflow", filter.workflow);
+  if (filter.parent) params.set("parent", filter.parent);
   if (filter.app) params.set("app", filter.app);
   if (filter.state) params.set("status", RUNS_STATUS[filter.state]);
+  if (filter.window && filter.window !== "24h") params.set("time", `last-${filter.window}`);
   return `/admin/observability/runs?${params}`;
 };
