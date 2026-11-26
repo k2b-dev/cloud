@@ -9,7 +9,8 @@ import { type useNotebookSidebar, withoutPagingRows } from "./notebook-sidebar-s
 /**
  * The notebook sidebar's content on a wide screen: switcher, new note, search, quick filters, the note tree or the
  * filtered list, and Links, Attachments and Settings at its foot. The v1 sidebar frames it in `AppWorkspace.Sidebar`; the
- * v2 workspace puts it in its `sidebar` slot until v2 has a tree (k2b-ui gap: Nav tree).
+ * v2 workspace puts it in its `sidebar` slot until v2 has a tree (k2b-ui gap: Nav tree). Its own frame keeps the v2
+ * Nav's gutter there, so nothing touches the sidebar's edge (app.css `.notebook-sidebar-frame`).
  */
 export default function NotebookSidebarBody(props: {
   sidebar: ReturnType<typeof useNotebookSidebar>;
@@ -53,7 +54,7 @@ export default function NotebookSidebarBody(props: {
     switcher,
   } = props.sidebar;
   return (
-    <>
+    <div class="notebook-sidebar-frame">
       <div class="notebook-sidebar-head">
         <AppWorkspace.SidebarSwitcher {...switcher()} />
         <Show when={canWrite}>
@@ -240,6 +241,6 @@ export default function NotebookSidebarBody(props: {
           {t().settings}
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarFooter>
-    </>
+    </div>
   );
 }
