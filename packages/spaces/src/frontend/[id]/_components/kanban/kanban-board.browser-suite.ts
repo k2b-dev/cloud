@@ -386,6 +386,8 @@ const open = async (
     reducedMotion: scenario.workspace ? "reduce" : "no-preference",
   });
   const page = await context.newPage();
+  // A page that breaks while it starts says why, instead of leaving only a timeout on the hydrated board.
+  page.on("pageerror", (error) => console.error(`page error in case ${id}: ${error.message}`));
   if (scenario.now) await page.clock.setFixedTime(new Date(scenario.now));
   await page.goto(`${server.url}app/spaces/Space1?case=${id}${scenario.query ? `&${scenario.query.slice(1)}` : ""}`);
   await page.evaluate(() => window.document.fonts.ready);

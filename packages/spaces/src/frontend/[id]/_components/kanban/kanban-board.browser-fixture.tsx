@@ -1,9 +1,6 @@
 import { LocaleProvider } from "@k2b/ui";
-import { Nav, Pane, Workspace } from "@k2b/ui/v2";
 import type { ItemListResult, SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
-import { defaultFilter, parseFilterFromUrl } from "../filter/types";
-import BoardPane from "../workspace/BoardPane";
-import ItemsPane from "../workspace/ItemsPane";
+import SpaceScreen from "../workspace/SpaceScreen.island";
 import type { KanbanBucketInitial } from "./types";
 
 type Props = {
@@ -22,8 +19,12 @@ type Props = {
   itemsResult?: ItemListResult;
 };
 
-/** The board (or the table) as the Space page mounts it on v2: one Workspace below the server locale. */
+/**
+ * The board (or the table) as the Space page mounts it on v2: the page's one island, `SpaceScreen`, below the server
+ * locale, with the board or the table as the Space's own view (no `view` in the address).
+ */
 export default function KanbanFixture(props: Props) {
+  const view = props.workspace === "table" ? "table" : "kanban";
   const space = {
     id: props.spaceId,
     name: "Project",
@@ -37,49 +38,45 @@ export default function KanbanFixture(props: Props) {
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };
-  const filter = parseFilterFromUrl(new URL(props.baseUrl, "http://spaces.local"));
+  const query = new URL(props.baseUrl, "http://spaces.local").searchParams.toString();
   return (
     <LocaleProvider locale={props.locale}>
-      <Workspace
-        sidebar={
-          props.workspace ? (
-            <Nav
-              title="Spaces"
-              icon="layout-kanban"
-              groups={[{ items: [{ label: "Project", icon: "point-filled", href: "/app/spaces/Space1", current: true }] }]}
-            />
-          ) : undefined
-        }
-        detail={props.workspace ? true : undefined}
-        detailEmpty={props.workspace ? { icon: "click", text: "Selected item" } : undefined}
-      >
-        <Pane.Split>
-          {props.workspace === "table" && props.itemsResult ? (
-            <ItemsPane
-              space={space}
-              currentView="table"
-              filter={defaultFilter}
-              initialItemsResult={props.itemsResult}
-              itemLinkBaseUrl={props.baseUrl}
-              selectedItemId=""
-              canWrite={props.canWrite}
-              currentUserId={props.currentUserId}
-            />
-          ) : (
-            <BoardPane
-              space={space}
-              filter={filter}
-              baseUrl={props.baseUrl}
-              wormholes={props.wormholes}
-              initialBuckets={props.initialBuckets}
-              foldedColumns={props.foldedColumns}
-              selectedItemId={props.selectedItemId}
-              canWrite={props.canWrite}
-              currentUserId={props.currentUserId}
-            />
-          )}
-        </Pane.Split>
-      </Workspace>
+      <SpaceScreen
+        sidebar={{
+          spaces: [{ id: props.spaceId, name: space.name, color: space.color, description: null, openItemCount: 0 }],
+          pinnedSpaceIds: [],
+          myWorkCount: 0,
+        }}
+        people={[]}
+        mailIntegrationAvailable={false}
+        state={{
+          kind: "ok",
+          title: [{ title: "Spaces", href: "/app/spaces" }, { title: space.name }],
+          currentUserId: props.currentUserId,
+          space,
+          settings: { view, hideSettings: false, ...(props.foldedColumns.length ? { foldedColumns: props.foldedColumns } : {}) },
+          currentView: view,
+          hasOverride: false,
+          isAdmin: false,
+          canWrite: props.canWrite,
+          accessVisible: false,
+          query,
+          icalBaseUrl: "https://cloud.example.test",
+          eventCursor: null,
+          snapshotDay: "2026-10-01",
+          itemsResult: props.itemsResult ?? { items: [], total: 0, page: 1, pageSize: 50, totalPages: 0, groupCounts: {} },
+          kanbanBuckets: props.initialBuckets,
+          calendarView: "month",
+          calendarDate: "2026-10-01T00:00:00.000Z",
+          calendarFilter: { type: "all", assignedTo: "all", priorities: [], columnIds: [], tagIds: [], colorBy: "tag" },
+          calendarRange: { from: "2026-09-28T00:00:00.000Z", to: "2026-11-02T00:00:00.000Z" },
+          calendarItems: [],
+          calendarWeather: {},
+          calendarTray: null,
+          selectedItemDetail: null,
+          wormholes: props.wormholes,
+        }}
+      />
     </LocaleProvider>
   );
 }

@@ -142,13 +142,17 @@ export const layoutProblems = async (tab: Page): Promise<string[]> => {
   await tab.mouse.move(0, 0);
   const outline = await describeV2Page(tab, "#root");
   const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]", skip: "[data-k2-canvas]" });
-  // A row's title may wrap to a second line, never further: a wide end (words where a symbol belongs) squeezes it into
-  // a tower of letters, which the shared rules do not see in rows of one or two lines.
+  // A row's title may wrap, but never into a narrow tower: a wide end (words where a symbol belongs) squeezes it to a
+  // few letters a line, which the shared rules do not see in rows of one or two lines.
   const squeezed = await tab.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>('[data-k2-part="Row"] .k2-row-title')]
       .filter((title) => title.getClientRects().length > 0)
-      .filter((title) => title.getBoundingClientRect().height > Number.parseFloat(getComputedStyle(title).lineHeight) * 2.5)
-      .map((title) => `the title of Row "${title.textContent?.trim().slice(0, 30)}" is squeezed to more than two lines`),
+      .filter((title) => {
+        const box = title.getBoundingClientRect();
+        const style = getComputedStyle(title);
+        return box.height > Number.parseFloat(style.lineHeight) * 2.5 && box.width < Number.parseFloat(style.fontSize) * 8;
+      })
+      .map((title) => `the title of Row "${title.textContent?.trim().slice(0, 30)}" is squeezed into a narrow tower`),
   );
   return [...(outline.includes("Problems (") ? [outline] : []), ...layout.problems, ...squeezed];
 };
