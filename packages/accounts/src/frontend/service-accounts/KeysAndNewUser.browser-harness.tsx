@@ -26,7 +26,7 @@ import { apiKeysQuery, parseApiKeysAddress } from "./query";
  * API. "record" stands in for an account's record (lane E's frame) with the two sections in it.
  */
 type State =
-  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean }
+  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean; open?: string }
   | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -54,7 +54,7 @@ const record = (props: Extract<State, { screen: "record" }>) => {
       head={<Bar start={<RecordHead name={account.name} avatar={{ name: account.name }} kinds={["Agent"]} />} />}
     >
       <Pane label={account.name} scrollKey="harness-record">
-        <ApiKeysSection account={account} first={first} modelsAvailable timeZone="Europe/Berlin" />
+        <ApiKeysSection account={account} first={first} modelsAvailable timeZone="Europe/Berlin" open={props.open} />
         <DirectoryAccessSection account={account} initial={directoryPage} />
       </Pane>
     </Workspace>

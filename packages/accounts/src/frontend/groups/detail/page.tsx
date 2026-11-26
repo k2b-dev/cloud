@@ -218,41 +218,79 @@ export default ssr<AuthContext>(async (c) => {
   const relationsState = tab === "relations" ? { ...parseRelationsUrl((name) => c.req.query(name)), focus: groupId } : null;
   const noEntries = { items: [] as EntityListItem[], total: 0 };
   const summary = tab !== "relations";
-  const [pendingRequests, parentGroupIdsPage, managedGroupIdsPage, entries, directMembers, directManagers, relations, events] =
-    await Promise.all([
-      isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
-      accountsService.group.parent.list({ id: groupId }),
-      accountsService.group.managedGroup.list({ id: groupId }),
-      tab === "relations"
-        ? Promise.resolve(noEntries)
-        : accountsService.entity.list({
-            actor: accountsActor,
-            pagination: { page, perPage: PER_PAGE },
-            search: search || undefined,
-            ...(tab === "members"
-              ? { memberOfGroupId: groupId, recursive: indirect, kinds }
-              : tab === "managers"
-                ? { managerOfGroupId: groupId, kinds }
-                : { parentGroupId: groupId, kinds: ["group" as const] }),
-          }),
-      // Who stands in the group and who manages it directly: the key figures count them, the add dialogs leave them
-      // out, only they can be removed, and the first managers show their faces.
-      summary ? accountsService.group.member.list({ id: groupId, recursive: false }).then((result) => result.items) : Promise.resolve([]),
-      summary ? accountsService.group.manager.list({ id: groupId }).then((result) => result.items) : Promise.resolve([]),
-      relationsState ? readRelations(accountsActor, relationsState, c.req.raw.signal) : Promise.resolve(null),
-      isAdmin && summary ? readEvents(groupId) : Promise.resolve([] as AuditEvents),
-    ]);
-  // The managers' faces and the names of the activity: the page's own rows name most; one read names the rest.
-  const faceIds = directManagers.slice(0, MANAGER_FACES);
-  const wanted: Wanted = { user: new Set(), group: new Set(), service_account: new Set() };
-  for (const manager of faceIds) wanted[manager.type].add(manager.id);
-  eventIds(events, wanted);
-  const people = await nameAll(accountsActor, new Map(entries.items.map((item) => named(item, locale))), wanted, locale);
-  const activity = sentences(events, people, locale);
-  const faces = faceIds.flatMap((manager) => {
-    const face = people.get(manager.id);
-    return face ? [{ name: face.name, image: face.image }] : [];
+  // a count costs one statement: a page of one entry with its total
+  const counted = (filter: { memberOfGroupId: string; kinds: EntityListItem["kind"][] }) =>
+    accountsService.entity
+      .list({ actor: accountsActor, pagination: { page: 1, perPage: 1 }, recursive: false, ...filter })
+      .then((read) => read.total);
+  const [
+    pendingRequests,
+    parentGroupIdsPage,
+    managedGroupIdsPage,
+    entries,
+    directMembers,
+    directManagers,
+    peopleCount,
+    subGroupCount,
+    managersRead,
+    relations,
+    events,
+  ] = await Promise.all([
+    isAdmin ? accountsService.accountRequest.countPending() : Promise.resolve(0),
+    accountsService.group.parent.list({ id: groupId }),
+    accountsService.group.managedGroup.list({ id: groupId }),
+    tab === "relations"
+      ? Promise.resolve(noEntries)
+      : accountsService.entity.list({
+          actor: accountsActor,
+          pagination: { page, perPage: PER_PAGE },
+          search: search || undefined,
+          ...(tab === "members"
+            ? { memberOfGroupId: groupId, recursive: indirect, kinds }
+            : tab === "managers"
+              ? { managerOfGroupId: groupId, kinds }
+              : { parentGroupId: groupId, kinds: ["group" as const] }),
+        }),
+    // Who stands in or manages the group directly, as v1 read them on their own tab: the add dialog leaves them out,
+    // only they can be removed, and on the members tab the key figures count them by kind.
+    tab === "members"
+      ? accountsService.group.member.list({ id: groupId, recursive: false }).then((result) => result.items)
+      : Promise.resolve([]),
+    tab === "managers" ? accountsService.group.manager.list({ id: groupId }).then((result) => result.items) : Promise.resolve([]),
+    // On the other tabs the key figures count with one statement each: people and agents, and the sub-groups.
+    summary && tab !== "members" ? counted({ memberOfGroupId: groupId, kinds: ["user", "service_account"] }) : Promise.resolve(0),
+    summary && tab !== "members" ? counted({ memberOfGroupId: groupId, kinds: ["group"] }) : Promise.resolve(0),
+    // The managers tab has its managers on its page; elsewhere their first faces and their number are one statement.
+    summary && tab !== "managers"
+      ? accountsService.entity.list({
+          actor: accountsActor,
+          pagination: { page: 1, perPage: MANAGER_FACES },
+          managerOfGroupId: groupId,
+          kinds: ["user", "group", "service_account"],
+        })
+      : Promise.resolve(noEntries),
+    relationsState ? readRelations(accountsActor, relationsState, c.req.raw.signal) : Promise.resolve(null),
+    isAdmin && summary ? readEvents(groupId) : Promise.resolve([] as AuditEvents),
+  ]);
+  const managerFaces = (tab === "managers" ? entries.items : managersRead.items).slice(0, MANAGER_FACES);
+  const faces = managerFaces.map((item) => {
+    const [, face] = named(item, locale);
+    return { name: face.name, image: face.image };
   });
+  // The names of the activity: the page's rows and the managers' faces name most; one read names the rest.
+  const wanted: Wanted = { user: new Set(), group: new Set(), service_account: new Set() };
+  eventIds(events, wanted);
+  const known = new Map([...entries.items, ...managersRead.items].map((item) => named(item, locale)));
+  const activity = sentences(events, await nameAll(accountsActor, known, wanted, locale), locale);
+  const byKind = (type: "user" | "group" | "service_account") => directMembers.filter((entry) => entry.type === type).length;
+  const figures =
+    tab === "members"
+      ? {
+          members: byKind("user") + byKind("service_account"),
+          mix: { people: byKind("user"), agents: byKind("service_account") },
+          subGroups: byKind("group"),
+        }
+      : { members: peopleCount, mix: null, subGroups: subGroupCount };
 
   // A page past the end, from an old link or after the last entries of a page were removed, opens the last page instead
   // of an empty one that reads as "no members". The URL then names the page shown, so a reload or Back shows it again.
@@ -271,7 +309,6 @@ export default ssr<AuthContext>(async (c) => {
         ? parentGroupIds
         : []
       : (tab === "members" ? directMembers : directManagers).filter((entry) => entry.type === type).map((entry) => entry.id);
-  const count = (type: "user" | "group" | "service_account") => directMembers.filter((entry) => entry.type === type).length;
 
   const rows: GroupMember[] = entries.items.map((item): GroupMember => {
     const isDirect = tab === "member-of" || item.relation?.direct !== false;
@@ -356,10 +393,8 @@ export default ssr<AuthContext>(async (c) => {
           owner: group.personalOwner ? { id: group.personalOwner.id, name: group.personalOwner.displayName } : null,
           parents: parentGroupIds.length,
           managedGroups: managedGroupIdsPage.items.length,
-          people: count("user"),
-          agents: count("service_account"),
-          subGroups: count("group"),
-          managers: { total: directManagers.length, faces },
+          ...figures,
+          managers: { total: tab === "managers" ? directManagers.length : managersRead.total, faces },
         }}
         activity={activity}
         tab={tab}

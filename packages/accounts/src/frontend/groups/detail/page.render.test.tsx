@@ -112,7 +112,7 @@ const withGroup = async (
   },
   run: (
     app: Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>,
-    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; audit: number; names: unknown[] },
+    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; audit: number; names: unknown[]; faces: number; counts: number },
   ) => Promise<void>,
 ) => {
   const calls = {
@@ -150,7 +150,15 @@ const withGroup = async (
       return options.relations ? options.relations() : { ok: true, data: relationsAround };
     }),
     spyOn(accountsAppService.entity, "list").mockImplementation(async (input) => {
-      // the names of the managers' faces and of the activity are one read of their own
+      // the managers' first faces with their number, the key figures' counts and the activity's names are reads of their own
+      if (input.managerOfGroupId && input.pagination?.perPage === 4) {
+        calls.faces += 1;
+        return { items: [ada, memberGroup(7)], page: 1, perPage: 4, total: 3, hasNext: false };
+      }
+      if (input.memberOfGroupId && input.pagination?.perPage === 1) {
+        calls.counts += 1;
+        return { items: [], page: 1, perPage: 1, total: input.kinds?.includes("group") ? 2 : 11, hasNext: true };
+      }
       if (input.userIds || input.groupIds || input.serviceAccountIds) {
         calls.names.push(input);
         return { items: [ada, memberGroup(7)], page: 1, perPage: 10, total: 2, hasNext: false };
@@ -218,6 +226,7 @@ test("the members tab reads the search, the indirect members and the agents from
     expect(calls.entity[1]).not.toHaveProperty("recursive");
     // nobody to name: no read besides the tab's own
     expect(calls.names).toEqual([]);
+    expect(calls.faces).toBe(1);
   });
 });
 
@@ -401,23 +410,24 @@ test("the first row counts the direct members by kind, the managers with their f
     { type: "service_account" as const, id: "a1" },
     { type: "group" as const, id: "g1" },
   ];
-  const managers = [
-    { type: "user" as const, id: ada.kind === "user" ? ada.user.id : "" },
-    { type: "group" as const, id: "33333333-3333-4333-8333-000000000007" },
-    { type: "user" as const, id: "11111111-1111-4111-8111-0000000000ff" },
-  ];
-  await withGroup({ total: 3, direct, managers }, async (app, calls) => {
+  await withGroup({ total: 3, direct }, async (app, calls) => {
     const html = await (await open(app, "")).text();
     expect(html).toContain('data-k2-part="Cells"');
+    // the members tab counts by kind from the direct members it reads anyway
     expect(html).toContain("2 people · 1 agent");
     expect(html).toContain(">Sub-groups<");
-    // three managers; the ones the directory names show their faces, read once for all of them
+    // the managers' first faces and their number come in one read
     expect(html).toMatch(/data-k2-part="Avatar.Stack"[^>]*aria-label="Ada Renz, team-7"/);
-    expect(calls.names).toHaveLength(1);
+    expect(calls.faces).toBe(1);
+    expect(calls.counts).toBe(0);
+    expect(calls.names).toEqual([]);
   });
-  // the managers tab names its managers from its own rows: no further read
-  await withGroup({ total: 3, managers: [managers[1]!], entities: () => [memberGroup(7)] }, async (app, calls) => {
-    await open(app, "?tab=managers");
+  // the managers tab shows its own managers' faces; the members are counted, one read per kind
+  await withGroup({ total: 3, entities: () => [memberGroup(7)] }, async (app, calls) => {
+    const html = await (await open(app, "?tab=managers")).text();
+    expect(html).toContain("people and agents, direct");
+    expect(calls.faces).toBe(0);
+    expect(calls.counts).toBe(2);
     expect(calls.names).toEqual([]);
   });
 });
@@ -425,6 +435,7 @@ test("the first row counts the direct members by kind, the managers with their f
 test("administrators read the group's last changes as sentences; others never read the audit log", async () => {
   const adaId = ada.kind === "user" ? ada.user.id : "";
   const audited = [
+    event(4, "accounts.group.member.add", groupId, { userId: "11111111-1111-4111-8111-00000000beef" }),
     event(3, "accounts.group.member.add", groupId, { userId: adaId }),
     event(2, "accounts.group.member.add", "33333333-3333-4333-8333-000000000099", { userId: adaId }),
     event(1, "accounts.group.update", groupId),
@@ -436,10 +447,11 @@ test("administrators read the group's last changes as sentences; others never re
     // the actor in bold, the verb, and whom it concerned
     expect(html.replace(/<!--[^>]*-->/g, "")).toMatch(/>Ada Renz<\/span> added <span[^>]*>Ada Renz</);
     // the event of another group with a similar name stays out
-    expect(html.match(/changed the description|added /g)?.length).toBe(2);
+    expect(html.match(/changed the description|added /g)?.length).toBe(3);
     expect(calls.audit).toBe(1);
+    // Ada is one of the managers whose faces the page reads; only the one nobody on the page names costs a read
     expect(calls.names).toHaveLength(1);
-    expect(calls.names[0]).toMatchObject({ userIds: [adaId] });
+    expect(calls.names[0]).toMatchObject({ userIds: ["11111111-1111-4111-8111-00000000beef"], kinds: ["user"] });
   });
   await withGroup({ viewer: person, total: 3, audit: audited }, async (app, calls) => {
     const html = await (await open(app, "")).text();

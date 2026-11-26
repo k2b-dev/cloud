@@ -19,7 +19,7 @@ const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
 
 type State =
-  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean }
+  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean; open?: string }
   | { screen: "list"; rows?: "sample" | "worst" | "empty" }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
@@ -130,7 +130,8 @@ const api = (patch: Partial<Api> = {}): Api => ({
 });
 
 const routes: Record<string, (url: URL) => State> = {
-  [`/app/accounts/users/${AGENT_ID}`]: () => ({ screen: "record" }),
+  // as the record's server: `?key=` is what the key section opens
+  [`/app/accounts/users/${AGENT_ID}`]: (url) => ({ screen: "record", open: url.searchParams.get("key") ?? undefined }),
   "/app/accounts/api-keys": () => ({ screen: "list" }),
   "/app/accounts/users/new": (url) => ({ screen: "new-user", request: url.searchParams.has("request") }),
 };
@@ -302,6 +303,45 @@ describe("an account's API keys and directory access as record sections", () => 
       expect(answers.keyPages).toEqual([2]);
       expect(await tab.textContent("body")).toContain("Seite 2 von 26");
       expect(await keys.locator("[data-k2-part=Row]").count()).toBe(50);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the address opens a key, a reload keeps it, closing and opening write it, and a gone key says so", async () => {
+    const { context, tab, errors } = await open(wide, `${record}?key=${KEY_IDS[0]}`, api());
+    try {
+      const key = () => new URL(tab.url()).searchParams.get("key");
+      await dialog(tab).getByRole("heading", { name: "API Key Laptop Jana" }).waitFor();
+      await tab.reload();
+      await settled(tab);
+      await dialog(tab).getByRole("heading", { name: "API Key Laptop Jana" }).waitFor();
+      expect(key()).toBe(KEY_IDS[0]);
+      await tab.keyboard.press("Escape");
+      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
+      expect(key()).toBeNull();
+      await tab.getByRole("button", { name: "Alter Export-Job", exact: true }).click();
+      await dialog(tab).getByRole("heading", { name: "API Key Alter Export-Job" }).waitFor();
+      expect(key()).toBe(KEY_IDS[1]);
+      await dialog(tab).getByRole("button", { name: "Schließen" }).first().click();
+      await tab.waitForFunction(() => !document.querySelector("[data-k2-part=Dialog]"));
+      expect(key()).toBeNull();
+
+      // a key that is gone (revoked, or never there) leaves the list with a notice; hiding it clears the address
+      await tab.goto(`${origin}${record}?key=4e3f0000-0000-4000-8000-00000000dead`);
+      await settled(tab);
+      await tab.getByText("Diesen API Key gibt es nicht mehr.").waitFor();
+      expect(await tab.locator("[data-k2-part=Dialog]").count()).toBe(0);
+      await expectClean(tab);
+      await shoot(tab, "record-key-gone-light-1440");
+      await tab.getByRole("button", { name: "Ausblenden" }).click();
+      await tab.waitForFunction(() => !new URL(location.href).searchParams.has("key"));
+
+      // `new`, as old agent links carried it, opens the dialog for a new key
+      await tab.goto(`${origin}${record}?key=new`);
+      await settled(tab);
+      await dialog(tab).getByRole("heading", { name: "Neuer API Key für Wochenbericht" }).waitFor();
       expect(errors).toEqual([]);
     } finally {
       await context.close();

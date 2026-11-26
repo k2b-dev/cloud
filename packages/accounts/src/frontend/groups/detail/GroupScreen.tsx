@@ -55,9 +55,9 @@ export type GroupView = {
   owner: { id: string; name: string } | null;
   parents: number;
   managedGroups: number;
-  /** Direct members by kind: people, agents, and the groups it contains. */
-  people: number;
-  agents: number;
+  /** Direct members: people and agents, split by kind where the page knows it, and the groups it contains. */
+  members: number;
+  mix: { people: number; agents: number } | null;
   subGroups: number;
   /** How many manage it, and the first of them for their faces. */
   managers: { total: number; faces: GroupPerson[] };
@@ -347,7 +347,7 @@ export default function GroupScreen(props: GroupScreenProps) {
   /** How many each tab holds, where the page knows it. */
   const tabCount = (tab: GroupTab) =>
     tab === "members"
-      ? props.group.people + props.group.agents + props.group.subGroups
+      ? props.group.members + props.group.subGroups
       : tab === "managers"
         ? props.group.managers.total
         : tab === "member-of"
@@ -587,8 +587,8 @@ export default function GroupScreen(props: GroupScreenProps) {
                   icon="users"
                   color="#2563eb"
                   label={a().members}
-                  value={String(props.group.people + props.group.agents)}
-                  meta={t().memberMix({ people: props.group.people, agents: props.group.agents })}
+                  value={String(props.group.members)}
+                  meta={props.group.mix ? t().memberMix(props.group.mix) : t().membersMeta}
                   href={props.tab === "members" ? undefined : tabHref("members")}
                 />
                 <Cells.Cell

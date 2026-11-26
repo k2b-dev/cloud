@@ -63,6 +63,7 @@ export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, ac
         directory={directory}
         modelsAvailable={modelsAvailable === true}
         timeZone={timeZone}
+        openKey={c.req.query("key")}
         pendingRequests={pendingRequests}
       />
     </Layout>

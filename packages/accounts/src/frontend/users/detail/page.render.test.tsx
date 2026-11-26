@@ -148,7 +148,7 @@ const server = (options: Options = {}) => {
       },
     }),
     spyOn(services.accountsAppService.accountRequest, "countPending").mockResolvedValue(2),
-    spyOn(services.audit, "list").mockResolvedValue({ items: [], page: 1, perPage: 5, total: 0, hasNext: false }),
+    spyOn(services.audit, "latest").mockResolvedValue([]),
     spyOn(services.accountsAppService.group, "list").mockImplementation(async (input) =>
       page(
         input.scope?.ids

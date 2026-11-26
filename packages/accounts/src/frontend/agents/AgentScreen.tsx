@@ -31,6 +31,8 @@ type Props = {
   directory: DirectoryPage | undefined;
   modelsAvailable: boolean;
   timeZone: string;
+  /** What the address opens in the key section (`?key=`): a key's id, or `new` for a new key. */
+  openKey?: string;
   pendingRequests: number;
 };
 
@@ -97,6 +99,7 @@ export default function AgentScreen(props: Props) {
               first={props.keys}
               modelsAvailable={props.modelsAvailable}
               timeZone={props.timeZone}
+              open={props.openKey}
             />
             <DirectoryAccessSection account={{ id: props.agent.id, name: props.agent.name }} initial={props.directory} />
           </Pane>

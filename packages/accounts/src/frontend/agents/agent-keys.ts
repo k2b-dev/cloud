@@ -3,7 +3,13 @@ export const agentRecordHref = (agentId: string): string => `/app/accounts/users
 
 /**
  * Where an agent's page from before the one account record leads: `/app/accounts/agents/:id?…` becomes the record at
- * `/app/accounts/users/:id`. Its keys now live in the record's key section, which opens a key and a new key in place
- * and pages through the API itself, so the old `key`, `sort` and `page` parameters (and anything else) fall away.
+ * `/app/accounts/users/:id`. The open key (`key`: a key's id, or `new` for a new key) stays, so an old link still
+ * opens it in the record's key section; any other value, `sort`, `page` and the rest fall away, as the section pages
+ * and orders its keys itself.
  */
-export const legacyAgentHref = (agentId: string, _params: URLSearchParams): string => agentRecordHref(agentId);
+const KEY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export const legacyAgentHref = (agentId: string, params: URLSearchParams): string => {
+  const key = params.get("key")?.toLowerCase();
+  return key === "new" || (key && KEY_ID.test(key)) ? `${agentRecordHref(agentId)}?key=${key}` : agentRecordHref(agentId);
+};

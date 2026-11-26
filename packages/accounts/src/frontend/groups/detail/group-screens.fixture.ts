@@ -117,8 +117,8 @@ export const sampleDb = (): GroupDb => ({
     parents: 1,
     managedGroups: 2,
     // counted by `propsFor` from the members, as the server counts them
-    people: 0,
-    agents: 0,
+    members: 0,
+    mix: null,
     subGroups: 0,
     managers: { total: 0, faces: [] },
   },
@@ -226,8 +226,15 @@ export const propsFor = (db: GroupDb, url: URL): GroupScreenProps => {
   return {
     group: {
       ...db.group,
-      people: direct.filter((entry) => entry.kind === "user").length,
-      agents: direct.filter((entry) => entry.kind === "agent").length,
+      members: direct.filter((entry) => entry.kind === "user" || entry.kind === "agent").length,
+      // the members tab counts by kind from its own read, the other tabs only count
+      mix:
+        tab === "members"
+          ? {
+              people: direct.filter((entry) => entry.kind === "user").length,
+              agents: direct.filter((entry) => entry.kind === "agent").length,
+            }
+          : null,
       subGroups: direct.filter((entry) => entry.kind === "group").length,
       managers: { total: db.managers.length, faces: db.managers.slice(0, 4).map((entry) => ({ name: entry.name, image: entry.image })) },
     },

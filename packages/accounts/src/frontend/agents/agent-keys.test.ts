@@ -6,10 +6,15 @@ describe("the address of an agent's record", () => {
   test("an agent lives in the one account record", () => {
     expect(agentRecordHref(agent)).toBe(`/app/accounts/users/${agent}`);
   });
-  test("an agent's page from before leads to its record; its keys open in the record's key section", () => {
+  test("an agent's page from before leads to its record and keeps the open key; order and page fall away", () => {
     const at = (query: string) => legacyAgentHref(agent, new URLSearchParams(query));
     expect(at("")).toBe(`/app/accounts/users/${agent}`);
-    expect(at("sort=name&key=new&page=3")).toBe(`/app/accounts/users/${agent}`);
-    expect(at("key=4d1e8a20-0000-4000-8000-000000000001")).toBe(`/app/accounts/users/${agent}`);
+    expect(at("sort=name&page=3")).toBe(`/app/accounts/users/${agent}`);
+    expect(at("sort=name&key=new&page=3")).toBe(`/app/accounts/users/${agent}?key=new`);
+    expect(at("key=4d1e8a20-0000-4000-8000-000000000001&sort=used")).toBe(
+      `/app/accounts/users/${agent}?key=4d1e8a20-0000-4000-8000-000000000001`,
+    );
+    // anything that is no key's id and not "new" falls away, so the record never opens a guess
+    expect(at("key=a%26b%3Dc")).toBe(`/app/accounts/users/${agent}`);
   });
 });

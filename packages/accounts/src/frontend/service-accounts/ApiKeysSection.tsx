@@ -2,7 +2,7 @@ import { coreClient } from "@k2b/cloud/clients/core";
 import { query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Chip, Empty, Failed, Loading, Menu, type MenuItem, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "@/api/client";
 import { usePageSwap } from "../lib/page-swap";
@@ -29,6 +29,20 @@ export type ApiKeysSectionProps = {
   modelsAvailable: boolean;
   /** The person's time zone: dates and a key's last day follow it. */
   timeZone: string;
+  /**
+   * What the address opens (`?key=`): a key's id opens that key, `new` the dialog for a new key. Without it the
+   * section reads `key` from the address itself. A key that is gone (revoked, or not among the first page) leaves the
+   * list with a short notice.
+   */
+  open?: string;
+};
+
+/** The section keeps what it has open in the address (`?key=`), in place, so a reload shows the same and Back leaves. */
+const keepInAddress = (key: string | null) => {
+  const url = new URL(location.href);
+  if (key) url.searchParams.set("key", key);
+  else url.searchParams.delete("key");
+  history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
 };
 
 const SourceSchema = z.object({
@@ -62,6 +76,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
   const [page, setPage] = createSignal(1);
   const [creating, setCreating] = createSignal(false);
   const [opened, setOpened] = createSignal<AccountKey | null>(null);
+  const [gone, setGone] = createSignal(false);
   const [replacing, setReplacing] = createSignal<Replacing | null>(null);
   // a first page the server could not read shows its failure in place; "Erneut versuchen" then asks the API
   const [unread, setUnread] = createSignal(props.first === null);
@@ -97,10 +112,25 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
   const pages = () => Math.max(1, Math.ceil((total() ?? 0) / KEYS_PER_PAGE));
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const creatable = () => props.account.kind === "agent" && props.account.active;
-  const create = { label: t().createMachineKey, icon: "plus", onClick: () => setCreating(true) };
+  /** Opens or closes a key, the dialog for a new key, or nothing, and writes it into the address. */
+  const show = (target: AccountKey | "new" | null) => {
+    setOpened(target === "new" ? null : target);
+    setCreating(target === "new");
+    keepInAddress(target === "new" ? "new" : (target?.id ?? null));
+  };
+  const create = { label: t().createMachineKey, icon: "plus", onClick: () => show("new") };
+  // The address opens on the page's first picture; the dialogs live only in the browser, so the island opens them.
+  onMount(() => {
+    const wanted = props.open ?? new URLSearchParams(location.search).get("key");
+    if (!wanted) return;
+    if (wanted === "new") return creatable() ? show("new") : keepInAddress(null);
+    const entry = props.first?.keys.find((key) => key.id === wanted && key.active);
+    if (entry) setOpened(entry);
+    else setGone(true);
+  });
 
   const revoke = async (entry: AccountKey) => {
-    setOpened(null);
+    show(null);
     if (!(await confirmRevoke(t(), words(), entry))) return;
     try {
       await revokeCredential(entry.id, t().revokeApiKeyFailed);
@@ -112,7 +142,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
     }
   };
   const replace = (entry: AccountKey, serviceAccountId: string) => {
-    setOpened(null);
+    show(null);
     setReplacing({ name: entry.name, serviceAccountId, credentialId: entry.id });
   };
   const deeds = (entry: AccountKey): MenuItem[] => [
@@ -137,6 +167,23 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
         count={total() === undefined ? undefined : number(total()!)}
         actions={creatable() ? [create] : undefined}
       >
+        <Show when={gone()}>
+          <Notice
+            tone="warn"
+            icon="key-off"
+            actions={[
+              {
+                label: words().hideNotice,
+                onClick: () => {
+                  setGone(false);
+                  keepInAddress(null);
+                },
+              },
+            ]}
+          >
+            {words().keyGone}
+          </Notice>
+        </Show>
         <Show when={props.account.kind === "agent" && !props.account.active}>
           <Notice tone="warn">{words().agentInactive}</Notice>
         </Show>
@@ -170,7 +217,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
                       // k2b-ui gap: Row has no title for its full text; a long name is shortened in the middle, the open key shows it whole.
                       lines={[shortName(entry.name), `${accessLabel(t(), entry.access)} · ${used(entry)}`]}
                       mark={keyMark(entry)}
-                      onOpen={() => setOpened(entry)}
+                      onOpen={() => show(entry)}
                       end={
                         <>
                           <Show when={!entry.active || entry.expired}>
@@ -211,13 +258,13 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
             modelsAvailable={props.modelsAvailable}
             timeZone={props.timeZone}
             close={(changed) => {
-              setCreating(false);
+              show(null);
               if (changed) void showChanges();
             }}
           />
         )}
       </Show>
-      <KeyDialog entry={opened()} close={() => setOpened(null)} revoke={(entry) => void revoke(entry)} replace={replace} />
+      <KeyDialog entry={opened()} close={() => show(null)} revoke={(entry) => void revoke(entry)} replace={replace} />
       <Show when={replacing()}>
         {(target) => (
           <ReplaceKeyDialog

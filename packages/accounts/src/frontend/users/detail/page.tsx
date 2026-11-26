@@ -101,7 +101,8 @@ export default ssr<AuthContext>(async (c) => {
       appApproval.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
       pwaDevices.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
       // the newest things done to the account, as the audit log lists them for it
-      audit.list({ pagination: { page: 1, perPage: ACTIVITY_ROWS }, filter: { target: id, automatic: "hide" } }).catch(() => null),
+      // one statement, no count: the section shows the newest few and links on to the log
+      audit.latest({ filter: { target: id }, limit: ACTIVITY_ROWS }).catch(() => null),
     ],
   );
   const directGroupsPage =
@@ -165,14 +166,12 @@ export default ssr<AuthContext>(async (c) => {
     status: isExpired ? "expired" : user.lastLoginLocal ? "active" : "invited",
     lastSignIn: user.lastLoginLocal ? moment(user.lastLoginLocal) : null,
     activity: events
-      ? auditRows(events.items, { t, locale, timeZone, now, today: auditWords.today, yesterday: auditWords.yesterday, names: [] }).map(
-          (row) => ({
-            actor: row.actor.label,
-            actorImage: row.actor.userId ? cloudAvatarImage({ kind: "user", userId: row.actor.userId }) : undefined,
-            action: row.action.label,
-            when: `${row.day}, ${row.time}`,
-          }),
-        )
+      ? auditRows(events, { t, locale, timeZone, now, today: auditWords.today, yesterday: auditWords.yesterday, names: [] }).map((row) => ({
+          actor: row.actor.label,
+          actorImage: row.actor.userId ? cloudAvatarImage({ kind: "user", userId: row.actor.userId }) : undefined,
+          action: row.action.label,
+          when: `${row.day}, ${row.time}`,
+        }))
       : null,
     expires: user.accountExpires ? day(user.accountExpires) : null,
     facts,

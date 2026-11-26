@@ -41,6 +41,7 @@ export const groupDetailMessages = i18n.define({
       agentsTitle: "Agents",
       subGroups: "Sub-groups",
       subGroupsMeta: "groups inside this one",
+      membersMeta: "people and agents, direct",
       parentsMeta: "groups that contain it",
       memberMix: ({ people, agents }: { people: number; agents: number }) =>
         agents > 0
@@ -102,6 +103,7 @@ export const groupDetailMessages = i18n.define({
       agentsTitle: "Agenten",
       subGroups: "Untergruppen",
       subGroupsMeta: "Gruppen in dieser Gruppe",
+      membersMeta: "Personen und Agenten, direkt",
       parentsMeta: "Gruppen, die sie enthalten",
       memberMix: ({ people, agents }) =>
         agents > 0
