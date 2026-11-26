@@ -302,7 +302,7 @@ export default function Folder(props: Props) {
                 actions: [
                   { label: "Teilen", icon: "share" },
                   { label: "Verschieben", icon: "folder-symlink" },
-                  { label: "Als ZIP laden", icon: "download" },
+                  { label: "Laden", icon: "download" },
                   { label: "Löschen", icon: "trash" },
                 ],
                 clear: { label: "Auswahl aufheben", onClick: () => setSelected([]) },
@@ -372,7 +372,7 @@ export default function Folder(props: Props) {
                 columns={[
                   {
                     title: "Name",
-                    width: { min: 200, default: 280 },
+                    width: { min: 200, default: 240 },
                     mark: (row) => ({ ...type[row.kind], image: row.image, kind: row.badge }),
                     cell: (row) => row.name,
                   },

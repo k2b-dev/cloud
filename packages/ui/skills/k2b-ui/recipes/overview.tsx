@@ -153,7 +153,10 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.felix, people.jonas, people.mira, people.tom, people.sami],
                           foot: "Felix · vor 2 Min",
-                          trend: { values: [12, 22, 16, 28, 20, 34, 41], label: "Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen" },
+                          trend: {
+                            values: [12, 22, 16, 28, 20, 34, 41],
+                            label: "Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen",
+                          },
                         },
                         {
                           ...base.customers,

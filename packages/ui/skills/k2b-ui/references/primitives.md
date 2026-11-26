@@ -325,11 +325,14 @@ lines instead of cutting a thing.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
-  change says "geändert · vorher 12 Std." under its control), one control
-  as child. One setting of a settings page: the name (13, 500) and its hint
-  on the left, the control in a column of 300 px beside them, no line
-  between settings; one column on the phone. Never stack `Field`s as a
-  settings page.
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed at the end of the name's line, such as "Auf Standard
+  zurücksetzen" while the value differs from its default, as `Field
+  action`), one control as child. One setting of a settings page: the name
+  (13, 500) and its hint on the left, the control in a column of 300 px
+  beside them, no line between settings; one column when its pane is
+  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), one control as child. `Field.Row`
