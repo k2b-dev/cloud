@@ -19,12 +19,15 @@ const SCREENS = [
   "mailto",
   "encryption",
   "qr",
+  "speedtest",
   "image-converter",
   "image",
   "image-one",
   "image-open",
   "image-markup",
   "image-worst",
+  "document-markdown",
+  "markdown-pdf",
 ];
 const shots = process.env.CLOUD_TOOLS_SHOTS;
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
@@ -88,6 +91,39 @@ const check = async (page: Page, name: string, width: number) => {
   return { loaders, problems: outline.includes("Problems") ? outline : null, layout: layout.problems };
 };
 
+// The webhook tester at its own addresses: received, sent, a request open, and its fixtures (empty, failed, huge,
+// worst case). The first fixture name per page starts a fresh session, so each address names its own.
+const WEBHOOKS: Record<string, string> = {
+  webhooks: "/tools/webhooks?fixture=normal",
+  "webhooks-send": "/tools/webhooks?mode=send&fixture=normal",
+  "webhooks-open": "/tools/webhooks?fixture=normal&request=10000000-0000-4000-8000-000000000001",
+  "webhooks-sent-open": "/tools/webhooks?mode=send&fixture=normal&request=20000000-0000-4000-8000-000000000002",
+  "webhooks-filtered": "/tools/webhooks?fixture=normal&method=GET&q=zzz",
+  "webhooks-empty": "/tools/webhooks?fixture=empty",
+  "webhooks-failed": "/tools/webhooks?fixture=error",
+  "webhooks-worst": "/tools/webhooks?fixture=worst&request=10000000-0000-4000-8000-000000000001",
+};
+
+for (const [name, address] of Object.entries(WEBHOOKS))
+  test(`the webhook tester "${name}" holds its v2 shape at 1440, 1024 and 390 px`, async () => {
+    for (const width of [1440, 1024, 390]) {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      try {
+        const errors = pageErrors(page);
+        await page.goto(new URL(address, server.url).href);
+        expect({ width, errors, ...(await check(page, name, width)) }).toEqual({
+          width,
+          errors: [],
+          loaders: 0,
+          problems: null,
+          layout: [],
+        });
+      } finally {
+        await page.close();
+      }
+    }
+  }, 60_000);
+
 for (const name of SCREENS)
   test(`the Tools screen "${name}" holds its v2 shape at 1440, 1024 and 390 px`, async () => {
     for (const width of [1440, 1024, 390]) {
@@ -141,6 +177,189 @@ test("encoding shows its error at the field and the hash of the text", async () 
   }
 });
 
+// ── Webhook tester: the main paths on the invented fixture ──
+
+const webhooks = (page: Page, address: string) => page.goto(new URL(address, server.url).href);
+// the head of the requests: their count and the statement of what matters now
+const status = (page: Page) => page.locator('[data-k2-part="Section"][aria-label="Anfragen"]').first().textContent();
+const FIRST_REQUEST = "10000000-0000-4000-8000-000000000001";
+
+test("a request opens beside the list in place, stays in the address through back and reload, and closes", async () => {
+  for (const width of [1440, 390]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      const errors = pageErrors(page);
+      await webhooks(page, "/tools/webhooks?fixture=normal");
+      await page.locator(`a[href*="request=${FIRST_REQUEST}"]:visible`).first().click();
+      await page.getByText("Eingehende Anfrage", { exact: true }).waitFor();
+      expect(new URL(page.url()).searchParams.get("request")).toBe(FIRST_REQUEST);
+      expect(await page.getByText("payment_intent.succeeded", { exact: true }).count()).toBe(1);
+      // a reload shows the same request: the address holds it
+      await page.reload();
+      await page.getByText("Eingehende Anfrage", { exact: true }).waitFor();
+      if (width > 768) await page.getByRole("link", { name: "Schließen" }).click();
+      else await page.getByRole("link", { name: "Anfragen" }).click();
+      await page.getByText("Eingehende Anfrage", { exact: true }).waitFor({ state: "detached" });
+      expect(new URL(page.url()).searchParams.has("request")).toBe(false);
+      await page.goBack();
+      await page.getByText("Eingehende Anfrage", { exact: true }).waitFor();
+      expect(new URL(page.url()).searchParams.get("request")).toBe(FIRST_REQUEST);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }
+}, 60_000);
+
+test("a filter from the address and the search narrow the requests, and an empty result offers the reset", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await webhooks(page, "/tools/webhooks?fixture=normal&method=GET");
+    expect(await status(page)).toContain("Letzte Anfrage heute, 10:17");
+    expect(await status(page)).toContain("3 Anfragen");
+    expect(await page.locator('[data-k2-part="FilterBar"]').textContent()).toContain("GET");
+    const search = page.getByRole("searchbox", { name: "Anfragen durchsuchen" });
+    await search.fill("deploy");
+    await search.press("Enter");
+    await page.getByText("Keine Anfrage passt zu diesen Filtern.").waitFor();
+    expect(new URL(page.url()).searchParams.get("q")).toBe("deploy");
+    expect(new URL(page.url()).searchParams.get("method")).toBe("GET");
+    await page.getByRole("link", { name: "Filter zurücksetzen" }).click();
+    await page.waitForURL((url) => !url.searchParams.has("q") && !url.searchParams.has("method"));
+    await page.waitForFunction(() =>
+      document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes("24 Anfragen"),
+    );
+    // a press on an endpoint shows its requests, in the address
+    await page.getByRole("link", { name: "Shopify Bestellungen" }).first().click();
+    await page.waitForURL((url) => url.searchParams.get("endpoint") === "00000000-0000-4000-8000-000000000002");
+    await page.waitForFunction(() =>
+      document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes("7 Anfragen"),
+    );
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("back and forward undo a search and an endpoint press, and the list follows the address", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const shows = (count: string) =>
+    page.waitForFunction(
+      (text) => document.querySelector('[data-k2-part="Section"][aria-label="Anfragen"]')?.textContent?.includes(text),
+      count,
+    );
+  try {
+    await webhooks(page, "/tools/webhooks?fixture=normal");
+    await shows("24 Anfragen");
+    const search = page.getByRole("searchbox", { name: "Anfragen durchsuchen" });
+    await search.fill("deploy");
+    await search.press("Enter");
+    await page.waitForURL((url) => url.searchParams.get("q") === "deploy");
+    await page.getByRole("link", { name: "Shopify Bestellungen" }).first().click();
+    await page.waitForURL((url) => url.searchParams.get("endpoint") === "00000000-0000-4000-8000-000000000002");
+    await page.goBack();
+    await page.waitForURL((url) => !url.searchParams.has("endpoint") && url.searchParams.get("q") === "deploy");
+    await page.goBack();
+    await page.waitForURL((url) => !url.searchParams.has("q"));
+    await shows("24 Anfragen");
+    expect(await search.inputValue()).toBe("");
+    await page.goForward();
+    await page.waitForURL((url) => url.searchParams.get("q") === "deploy");
+    expect(await search.inputValue()).toBe("deploy");
+    expect(await status(page)).not.toContain("24 Anfragen");
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("an endpoint is created in a dialog and deleted after a question", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await webhooks(page, "/tools/webhooks?fixture=normal");
+    await page.getByRole("button", { name: "Endpunkt", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Neuer Endpunkt" });
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByText("Gib einen Namen ein.").waitFor();
+    await dialog.getByRole("textbox", { name: "Name" }).fill("Mollie Test");
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await page.getByText("Endpunkt erstellt", { exact: true }).waitFor();
+    await page.getByText("Mollie Test", { exact: true }).waitFor();
+    expect(await page.getByText("https://cloud.example.test/tools/api/webhooks/receive/wh_new1", { exact: true }).count()).toBe(1);
+
+    await page.getByRole("button", { name: "Aktionen für Paperless Eingang" }).click();
+    await page.getByRole("menuitem", { name: "Endpunkt Paperless Eingang löschen" }).click();
+    const question = page.getByRole("alertdialog", { name: "Paperless Eingang löschen?" });
+    await question.getByRole("button", { name: "Löschen" }).click();
+    await page.getByText("Endpunkt gelöscht", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Aktionen für Paperless Eingang" }).waitFor({ state: "detached" });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("a request is sent from its dialog, the form names what is wrong, and the answer opens beside the list", async () => {
+  for (const width of [1440, 390]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      await webhooks(page, "/tools/webhooks?mode=send&fixture=normal");
+      expect(await status(page)).toContain("3 Antworten mit Fehler");
+      expect(await status(page)).toContain("6 Anfragen");
+      await page.getByRole("button", { name: "Anfrage senden" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "Anfrage senden" });
+      await dialog.getByRole("button", { name: "Senden" }).click();
+      await dialog.getByText("Gib die Adresse ein, die aufgerufen wird.").waitFor();
+      await dialog.getByRole("textbox", { name: "Ziel-URL" }).fill("https://hooks.example.test/neu?x=1");
+      await dialog.getByRole("textbox", { name: "Header" }).fill("{");
+      await dialog.getByRole("button", { name: "Senden" }).click();
+      await dialog.getByText("Header müssen ein JSON-Objekt sein.").waitFor();
+      await dialog.getByRole("textbox", { name: "Header" }).fill('{ "x-test": "1" }');
+      await dialog.getByRole("button", { name: "Senden" }).click();
+      await page.getByText("Anfrage gesendet", { exact: true }).waitFor();
+      await page.getByText("Ausgehende Anfrage", { exact: true }).last().waitFor();
+      expect(new URL(page.url()).searchParams.get("mode")).toBe("send");
+      expect(new URL(page.url()).searchParams.get("request")).toMatch(/^40000000-/);
+      expect(await page.getByText("https://hooks.example.test/neu?x=1", { exact: true }).count()).toBeGreaterThan(0);
+    } finally {
+      await page.close();
+    }
+  }
+}, 60_000);
+
+test("a list that cannot be read says so in place and offers to try again", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await webhooks(page, "/tools/webhooks?fixture=error");
+    // both reads failed: one statement, one way to try again; no offer to create a first endpoint
+    await page.getByText("Endpunkte und Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
+    expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
+    expect(await page.getByText("Noch kein Endpunkt.", { exact: false }).count()).toBe(0);
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.getByText("Endpunkte und Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("1,000 received requests are ready quickly and never scroll the page sideways", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    const started = performance.now();
+    await webhooks(page, "/tools/webhooks?fixture=huge");
+    await page.locator('[data-k2-part="Table"]').waitFor();
+    const ready = performance.now() - started;
+    expect(await status(page)).toContain("1.000 Anfragen");
+    const nodes = await page.locator("#app *").count();
+    const rows = await page.locator('[data-k2-part="Table"] tbody tr').count();
+    if (shots) await Bun.write(resolve(shots, "webhooks-huge.txt"), `ready ${Math.round(ready)} ms\nnodes ${nodes}\nrows ${rows}\n`);
+    expect(ready).toBeLessThan(1_500);
+    // only the rows in view (and a margin) are in the page, however long the log is
+    expect(rows).toBeLessThanOrEqual(60);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("the photo editor exports from a dialog, crops on the stage and writes a text mark from a dialog", async () => {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
@@ -173,6 +392,74 @@ test("the photo editor exports from a dialog, crops on the stage and writes a te
     await page.locator('[data-k2-part="Tabs"]').getByText("1", { exact: true }).waitFor();
     expect(await page.getByRole("button", { name: "Markierung rückgängig machen" }).isEnabled()).toBe(true);
     expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+// ── Documents: the main paths against an answering API ──
+
+test("a chosen document converts to Markdown, and a refused one says why at the place", async () => {
+  for (const width of [1440, 390]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      let refuse = false;
+      await page.route("**/tools/api/documents/markdown", (route) =>
+        refuse
+          ? route.fulfill({ status: 422, json: { message: "Das PDF enthält keinen lesbaren Text." } })
+          : route.fulfill({
+              json: {
+                filename: "angebot-1047.docx",
+                format: "docx",
+                markdown: "# Angebot 1047\n\n- Küchenfront Eiche",
+                inputBytes: 18_432,
+                outputBytes: 42,
+                truncated: false,
+              },
+            }),
+      );
+      await page.goto(`${server.url.href}?screen=document-markdown`);
+      const choose = async () => {
+        const chooser = page.waitForEvent("filechooser");
+        await page.getByRole("button", { name: "Dokument wählen" }).first().click();
+        await (await chooser).setFiles({ name: "angebot-1047.docx", mimeType: "application/octet-stream", buffer: Buffer.from("fixture") });
+      };
+      await choose();
+      // one head row: the converted document is the last step of the path, no status row under the head
+      // (on the phone the path gives way to the shell's bar, so it is only attached there)
+      await page
+        .locator('[data-k2-part="Path"]')
+        .getByText("angebot-1047.docx")
+        .waitFor({ state: width > 768 ? "visible" : "attached" });
+      expect(await page.locator('[data-k2-part="StatusRow"]').count()).toBe(0);
+      expect(await page.getByRole("group", { name: "Reines Markdown, extrahiert aus angebot-1047.docx" }).textContent()).toContain(
+        "# Angebot 1047",
+      );
+      refuse = true;
+      await choose();
+      await page.getByText("Das PDF enthält keinen lesbaren Text.").waitFor();
+      expect(await page.locator('[data-k2-part="Notice"]').textContent()).toContain("Konvertierung fehlgeschlagen");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }
+}, 60_000);
+
+test("Markdown becomes a PDF in the preview, and a change marks it stale", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.route("**/tools/api/markdown/pdf", (route) =>
+      route.fulfill({ contentType: "application/pdf", body: Buffer.from("%PDF-1.4\n%fixture\n") }),
+    );
+    await page.goto(`${server.url.href}?screen=markdown-pdf`);
+    await page.getByRole("textbox", { name: "Markdown" }).fill("# Angebot 1047\n\nKüchenfront Eiche, 2 Stück");
+    await page.getByRole("button", { name: "PDF erstellen" }).first().click();
+    await page.getByText("PDF erstellt.").waitFor();
+    expect(await page.locator('iframe[title="Vorschau des erstellten PDFs"]').count()).toBe(1);
+    expect(await page.getByRole("button", { name: "PDF herunterladen" }).isEnabled()).toBe(true);
+    await page.getByRole("textbox", { name: "Markdown" }).fill("# Angebot 1048");
+    await page.getByText("Erstelle das PDF erneut, damit es deine letzten Änderungen enthält.").waitFor();
   } finally {
     await page.close();
   }

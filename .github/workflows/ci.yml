@@ -870,7 +870,7 @@ jobs:
           for locale in de en; do
             curl -fsS -D /tmp/speedtest-page-headers "http://127.0.0.1:18080/$locale" -o /tmp/speedtest-page.html
             grep -q "<html lang=\"$locale\"" /tmp/speedtest-page.html
-            grep -q 'tools-speedtest-terminal' /tmp/speedtest-page.html
+            grep -q 'data-k2-part="Cells"' /tmp/speedtest-page.html
             ! grep -qi '^set-cookie:' /tmp/speedtest-page-headers
           done
           test "$(curl -sS -o /dev/null -w '%{http_code}' 'http://127.0.0.1:18080/download?size=1')" = 401

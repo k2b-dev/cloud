@@ -41,7 +41,7 @@ export const markdownPdfMessages = i18n.define({
       templateLabel: "Template",
       filenameLabel: "Filename",
       markdownLabel: "Markdown",
-      markdownPlaceholder: "# Document title\\n\\nWrite or paste Markdown here…",
+      markdownPlaceholder: "# Document title\n\nWrite or paste Markdown here…",
       customCssLabel: "Custom CSS",
       customCssDescription: "This replaces the print template. External resources are not supported. Maximum 32 KiB.",
       serverNotice:
@@ -57,7 +57,6 @@ export const markdownPdfMessages = i18n.define({
       staleTitle: "Preview is out of date",
       staleBody: "Generate the PDF again to include your latest changes.",
       emptyTitle: "No PDF generated yet",
-      emptyDescription: "Enter Markdown, choose a template, and generate a PDF to preview the final pages.",
       generationComplete: "PDF generation complete.",
       iframeTitle: "Generated PDF preview",
     },
@@ -94,7 +93,7 @@ export const markdownPdfMessages = i18n.define({
       templateLabel: "Vorlage",
       filenameLabel: "Dateiname",
       markdownLabel: "Markdown",
-      markdownPlaceholder: "# Dokumenttitel\\n\\nSchreibe Markdown oder füge es hier ein…",
+      markdownPlaceholder: "# Dokumenttitel\n\nSchreibe Markdown oder füge es hier ein…",
       customCssLabel: "Eigenes CSS",
       customCssDescription: "Ersetzt die Druckvorlage vollständig. Externe Ressourcen werden nicht geladen. Maximal 32 KiB.",
       serverNotice:
@@ -110,7 +109,6 @@ export const markdownPdfMessages = i18n.define({
       staleTitle: "Vorschau ist veraltet",
       staleBody: "Erstelle das PDF erneut, damit es deine letzten Änderungen enthält.",
       emptyTitle: "Noch kein PDF erstellt",
-      emptyDescription: "Gib Markdown ein und wähle eine Vorlage. Die erstellten Seiten erscheinen anschließend hier.",
       generationComplete: "PDF erstellt.",
       iframeTitle: "Vorschau des erstellten PDFs",
     },
