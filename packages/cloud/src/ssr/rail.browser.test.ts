@@ -3,7 +3,7 @@ import { Rail } from "@k2b/ui/v2";
 import type { Page } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, settled } from "../../../ui/test/browser";
+import { hoverInPlace, launchBrowser, settled } from "../../../ui/test/browser";
 import { installCompactShellHarness, laptop, open } from "./compact-shell.browser-harness";
 
 installCompactShellHarness(launchBrowser);
@@ -84,7 +84,7 @@ const measure = (page: Page, kind: "shell" | "rail"): Promise<Measure> =>
 /** The fill and ink of the quiet place under the pointer. */
 const hovered = async (page: Page, selector: string) => {
   const target = page.locator(selector).first();
-  await target.hover();
+  await hoverInPlace(target);
   // the shell eases its fill in 150 ms; the harness turns transitions off
   await settled(page);
   return target.evaluate((element) => {
