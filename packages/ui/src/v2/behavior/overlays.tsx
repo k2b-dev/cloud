@@ -207,7 +207,10 @@ export type PopoverParts = {
   Close: SlotComponent;
 };
 
-/** A non-modal popover next to its trigger; Escape and an outside press close it. */
+/**
+ * A non-modal popover next to its trigger; Escape and an outside press close it. `presentation: "sheet"` slides it up
+ * from the bottom of the screen instead, modal, and a swipe down closes it too.
+ */
 export function usePopover(
   options: () => OverlayOptions & {
     /** Keeps the focus inside, as a dialog does; the page around it stays as it is. */
