@@ -2,6 +2,7 @@ import { createSignal, Show } from "solid-js";
 import {
   Bar,
   Button,
+  Cells,
   Check,
   Chip,
   Choice,
@@ -29,6 +30,8 @@ import {
 declare global {
   /** How often a cell of the table and the probe in the field row were made, on this side of the page. */
   var __k2Made: { cells: number; probe: number } | undefined;
+  /** Puts the facts and the cells into their loading form, or back (#4152). */
+  var __k2FactsLoading: ((on: boolean) => void) | undefined;
 }
 
 const made = () => {
@@ -54,6 +57,8 @@ const orders: Order[] = [
 export function Fixture() {
   const [side, setSide] = createSignal(true);
   const [opened, setOpened] = createSignal("nichts");
+  const [loading, setLoading] = createSignal(false);
+  globalThis.__k2FactsLoading = setLoading;
   return (
     <Workspace
       head={
@@ -150,11 +155,53 @@ export function Fixture() {
             </Field>
           </Section>
           <Facts
+            loading={loading()}
             items={[
               { label: "Kundennr.", value: "K-1042", copy: "K-1042" },
               { label: "Ort", value: "Auental", hint: "Lager Nord" },
             ]}
           />
+          {/* values that keep their room while they refresh: lines, a token that breaks, a chip; one not yet there */}
+          <Facts
+            loading={loading()}
+            items={[
+              {
+                label: "Anschrift",
+                value: (
+                  <>
+                    Holzweg 12
+                    <br />
+                    79102 Auental
+                    <br />
+                    Deutschland
+                  </>
+                ),
+              },
+              { label: "Schlüssel", value: "k2b_live_7Q4mX9pR2sT8vW1yZ3aB5cD6eF7gH8jK9", mono: true, copy: "k2b_live_7Q4mX9" },
+              { label: "Status", value: <Chip status="warn">Offen</Chip> },
+              { label: "Notiz", value: loading() ? "" : "Kommt morgen" },
+            ]}
+          />
+          <Facts
+            inline
+            loading={loading()}
+            items={[
+              { label: "Stand", value: "Angebot" },
+              { label: "Termin", value: "12. Dezember 2026" },
+              { label: "Betrag", value: "1.240,00 €" },
+              { label: "Ansprechperson", value: "Jonas Hartwig" },
+            ]}
+          />
+          <Cells>
+            <Cells.Cell icon="inbox" label="Offen" value="12" meta="3 davon heute" loading={loading()} />
+            <Cells.Cell
+              icon="check"
+              label="Erledigt"
+              value="31"
+              meta="Zuletzt die Treppe im Haus am Hang, der Einbauschrank im Flur und die Küche"
+              loading={loading()}
+            />
+          </Cells>
           <Prose
             markdown={
               'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))\n\n![Pixel](https://example.com/pixel.png) [Datei](ftp://example.com/a) [Seite](https://example.com) [Post](mailto:post@example.com)'
