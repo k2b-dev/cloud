@@ -1,5 +1,5 @@
 import { cloudAvatarImage } from "@k2b/cloud/account/ui";
-import { isLegacyLimitedApiKey, isModelsOnlyApiKey, type ServiceAccount } from "@k2b/cloud/contracts";
+import { isAgentServiceAccountKind, isLegacyLimitedApiKey, isModelsOnlyApiKey, type ServiceAccount } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, serviceAccountCredentials } from "@k2b/cloud/services";
@@ -24,8 +24,7 @@ import {
 } from "./agent-keys";
 
 /** The service accounts the account record opens as an agent: the kinds the agent page opened, nothing more. */
-export const isAgentRecordKind = (account: Pick<ServiceAccount, "kind">): boolean =>
-  account.kind === "standalone" || account.kind === "agent";
+export const isAgentRecordKind = (account: Pick<ServiceAccount, "kind">): boolean => isAgentServiceAccountKind(account.kind);
 
 const keyAccess = (credential: { scopes: readonly string[] }): AgentKey["access"] =>
   isModelsOnlyApiKey(credential) ? "models" : isLegacyLimitedApiKey(credential) ? "legacy" : "full";

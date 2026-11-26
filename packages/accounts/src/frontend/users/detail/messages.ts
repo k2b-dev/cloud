@@ -63,6 +63,8 @@ export const userRecordMessages = i18n.define({
       notified: "Notification sent.",
       tokenOnce: "Copy the values now. They are shown only once.",
       deedFailed: "That did not work. Try again.",
+      linuxPrepare: "Assign IDs",
+      linuxEdit: "Edit paths",
       showMore: ({ count }: { count: number }) => `Show ${number(count, "en")} more`,
     },
     de: {
@@ -120,6 +122,8 @@ export const userRecordMessages = i18n.define({
       notified: "Benachrichtigung gesendet.",
       tokenOnce: "Kopiere die Werte jetzt. Sie werden nur einmal angezeigt.",
       deedFailed: "Das hat nicht geklappt. Versuche es noch einmal.",
+      linuxPrepare: "IDs zuweisen",
+      linuxEdit: "Pfade ändern",
       showMore: ({ count }) => `${number(count, "de")} weitere anzeigen`,
     },
   },

@@ -6,6 +6,7 @@ import { Band, Bar, Button, Dialog, Facts, Field, Input, Notice, Section, Text }
 import { createSignal, Show } from "solid-js";
 import { accountLinuxError, linuxAccountMessages } from "@/shared/linux-messages";
 import { useAccountsMessages } from "../../messages";
+import { useUserRecordMessages } from "./messages";
 import type { LinuxSnapshot } from "./user-view";
 
 type NoticeInput = Parameters<typeof import("../../action-notice").showAccountActionNotice>[0];
@@ -23,6 +24,8 @@ const api = coreClient.admin.core["linux-identities"].users[":id"];
  */
 export default function LinuxIdentitySection(props: { initial: LinuxSnapshot }) {
   const messages = useAccountsMessages();
+  // short words for the section's head, where two text buttons share the room with the title
+  const r = useUserRecordMessages();
   const locale = useLocale();
   const t = () => linuxAccountMessages.resolve([locale()]).t;
   const [editing, setEditing] = createSignal(false);
@@ -76,8 +79,8 @@ export default function LinuxIdentitySection(props: { initial: LinuxSnapshot }) 
   };
   const actions = () => {
     const list = [
-      ...(canPrepare() ? [{ label: t().prepare, icon: "id", onClick: () => void submit("prepare"), disabled: busy() }] : []),
-      ...(canEdit() && !editing() ? [{ label: t().edit, icon: "pencil", onClick: startEditing, disabled: busy() }] : []),
+      ...(canPrepare() ? [{ label: r().linuxPrepare, icon: "id", onClick: () => void submit("prepare"), disabled: busy() }] : []),
+      ...(canEdit() && !editing() ? [{ label: r().linuxEdit, icon: "pencil", onClick: startEditing, disabled: busy() }] : []),
     ];
     return list.length === 2 ? ([list[0]!, list[1]!] as const) : list.length === 1 ? ([list[0]!] as const) : undefined;
   };
@@ -96,6 +99,7 @@ export default function LinuxIdentitySection(props: { initial: LinuxSnapshot }) 
   return (
     <Section
       icon="terminal-2"
+      color="#0f766e"
       title={t().title}
       summary={`${t().description} ${(identity()?.managedBy ?? user().provider) === "ipa" ? t().managedIpa : t().managedLocal}`}
       actions={actions()}

@@ -45,6 +45,9 @@ import {
 } from "./user-requests";
 import { type UserGroupView, type UserRecordView, type UserTab, userRecordHref } from "./user-view";
 
+/** One data colour per area of the record, the same in its cell, its section and its rows. */
+const area = { access: "#4f46e5", groups: "#2563eb", keys: "#8e1b6f", devices: "#c2410c" };
+
 /** Rows of direct groups the overview shows before "All groups". */
 const OVERVIEW_GROUPS = 6;
 /** Rows a long list shows at first and adds per press, so the page stays light with a thousand memberships. */
@@ -79,6 +82,12 @@ export default function UserScreen(props: Props) {
   const { showChanges, openPage } = usePageSwap();
   const record = () => props.record;
   const n = (count: number) => number(count, locale());
+  /** Both kinds of device, or null when either list could not be loaded. */
+  const deviceCount = () => {
+    const signIn = record().signInDevices;
+    const app = record().appDevices;
+    return signIn && app ? signIn.length + app.length : null;
+  };
   const user = () => props.record.user;
   const can = () => userActionAvailability(user(), record().freeIpaEnabled);
   const href = (tab: UserTab, recursive = false) => userRecordHref(user().id, props.list, { tab, recursive });
@@ -317,6 +326,7 @@ export default function UserScreen(props: Props) {
     return (
       <Row
         icon="users-group"
+        color={area.groups}
         lines={[name, group.description || r().noDescription]}
         meta={removable ? `${providerName(group)} · ${group.direct ? r().direct : r().inherited}` : providerName(group)}
         href={`/app/accounts/groups/${group.id}`}
@@ -356,6 +366,7 @@ export default function UserScreen(props: Props) {
       <Cells>
         <Cells.Cell
           icon={user().profile === "guest" ? "user" : "user-check"}
+          color={area.access}
           label={t().access}
           value={user().profile === "user" ? t().fullAccount : t().guestAccount}
           meta={
@@ -368,6 +379,7 @@ export default function UserScreen(props: Props) {
         />
         <Cells.Cell
           icon="users-group"
+          color={area.groups}
           label={t().groups}
           value={r().directCount({ count: record().directCount })}
           meta={
@@ -377,9 +389,17 @@ export default function UserScreen(props: Props) {
           }
           href={href("groups")}
         />
-        <Cells.Cell icon="key" label={t().apiKeys} value={n(record().keysTotal)} meta={r().keysMeta} href={href("keys")} />
+        <Cells.Cell
+          icon="key"
+          color={area.keys}
+          label={t().apiKeys}
+          value={n(record().keysTotal)}
+          meta={r().keysMeta}
+          href={href("keys")}
+        />
         <Cells.Cell
           icon="devices"
+          color={area.devices}
           label={r().devices}
           value={
             record().signInDevices && record().appDevices
@@ -394,6 +414,7 @@ export default function UserScreen(props: Props) {
         <Pane label={r().overview}>
           <Section
             icon="users-group"
+            color={area.groups}
             title={r().directGroupsTitle}
             count={n(record().directCount)}
             actions={[addAction()]}
@@ -406,7 +427,7 @@ export default function UserScreen(props: Props) {
           <Show when={record().linux}>{(linux) => <LinuxIdentitySection initial={linux()} />}</Show>
         </Pane>
         <Pane side label={r().details} width={{ min: 280, default: 360 }}>
-          <Section icon="id" title={t().account}>
+          <Section icon="id" color={area.access} title={t().account}>
             <Facts
               items={record().facts.map((fact) => ({
                 label: fact.label,
@@ -425,7 +446,7 @@ export default function UserScreen(props: Props) {
             />
           </Section>
           <Show when={record().sshFingerprints.length > 0}>
-            <Section icon="key" title={r().sshKeys} count={n(record().sshFingerprints.length)}>
+            <Section icon="key" color={area.keys} title={r().sshKeys} count={n(record().sshFingerprints.length)}>
               <Facts
                 items={record().sshFingerprints.map((value, index) => ({ label: String(index + 1), value, mono: true, copy: value }))}
               />
@@ -442,6 +463,7 @@ export default function UserScreen(props: Props) {
     <>
       <Section
         icon="users-group"
+        color={area.groups}
         title={r().memberOf}
         count={n(record().memberships.length)}
         summary={
@@ -465,6 +487,7 @@ export default function UserScreen(props: Props) {
       <Show when={record().managed.length > 0}>
         <Section
           icon="shield"
+          color={area.groups}
           title={t().manages}
           count={n(record().managed.length)}
           summary={t().manageableGroups({ count: record().managed.length })}
@@ -480,6 +503,7 @@ export default function UserScreen(props: Props) {
   const keys = () => (
     <Section
       icon="key"
+      color={area.keys}
       title={t().apiKeys}
       count={n(record().keysTotal)}
       summary={t().personalAutomationKeys({ count: record().keysTotal })}
@@ -490,6 +514,7 @@ export default function UserScreen(props: Props) {
           {(entry) => (
             <Row
               icon="key"
+              color={area.keys}
               lines={[
                 entry.name,
                 [
@@ -532,6 +557,7 @@ export default function UserScreen(props: Props) {
     <>
       <Section
         icon="login"
+        color={area.devices}
         title={t().cloudLogin}
         count={record().signInDevices?.length}
         summary={t().cloudLoginDescription}
@@ -552,6 +578,7 @@ export default function UserScreen(props: Props) {
                 {(device) => (
                   <Row
                     icon="device-mobile"
+                    color={area.devices}
                     lines={[
                       device.name,
                       [r().pairedOn({ date: device.paired }), device.assisted ? t().pairedWithAdmin : null].filter(Boolean).join(" · "),
@@ -586,6 +613,7 @@ export default function UserScreen(props: Props) {
       </Section>
       <Section
         icon="apps"
+        color={area.devices}
         title={t().cloudApp}
         count={record().appDevices?.length}
         summary={t().cloudAppDescription({ cloud: record().cloudApp.cloud })}
@@ -609,6 +637,7 @@ export default function UserScreen(props: Props) {
                 {(device) => (
                   <Row
                     icon={device.platform === "other" ? "device-tablet" : "device-mobile"}
+                    color={area.devices}
                     lines={[device.name, [platformName(device.platform), r().pairedOn({ date: device.paired })].join(" · ")]}
                     time={r().usedOn({ date: device.lastUsed })}
                     end={
@@ -682,7 +711,13 @@ export default function UserScreen(props: Props) {
                 current: props.tab === "groups",
               },
               { label: t().apiKeys, icon: "key", count: n(record().keysTotal), href: href("keys"), current: props.tab === "keys" },
-              { label: r().devices, icon: "devices", href: href("devices"), current: props.tab === "devices" },
+              {
+                label: r().devices,
+                icon: "devices",
+                count: deviceCount() === null ? undefined : n(deviceCount() ?? 0),
+                href: href("devices"),
+                current: props.tab === "devices",
+              },
             ]}
           />
         }

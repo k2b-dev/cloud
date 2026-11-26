@@ -120,6 +120,7 @@ export default function ApiKeysScreen(props: ApiKeysScreenProps) {
       toast(words().revoked_({ name: entry.name }), { status: "ok" });
       await refresh();
     } catch (failure) {
+      // k2b-ui gap: a v2 toast has no description line for the server's reason (baseline in toast-copy).
       toast(failure instanceof Error ? failure.message : t().revokeApiKeyFailed, { status: "bad" });
     }
   };

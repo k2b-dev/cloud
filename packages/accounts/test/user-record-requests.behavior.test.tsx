@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { isServer } from "solid-js/web";
+import { createDomTestHarness } from "../../ui/test/dom";
 
 // The deeds of a user's record against the API: each targets the person's own entry, and a refusal carries the
 // server's message or the deed's own sentence. The question before each deed and the page shown again after it are
@@ -28,7 +29,12 @@ describe("revoking and removing on a user's record", () => {
     test.skip("requires the package DOM runner", () => {});
     return;
   }
+  let dom: ReturnType<typeof createDomTestHarness>;
+  beforeEach(() => {
+    dom = createDomTestHarness();
+  });
   afterEach(() => {
+    dom.cleanup();
     requests.length = 0;
     answers = [];
   });

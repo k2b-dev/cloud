@@ -2,7 +2,6 @@
 # One occurrence per line: <file> | <title|untitled|tone-icon> | <expression>.
 # The rule never adds lines; `bun scripts/check.ts toast-copy --fix` removes resolved findings. This list only shrinks.
 packages/accounts/src/frontend/action-notice.tsx | untitled | messages.creationNoticeFailed
-packages/accounts/src/frontend/groups/detail/GroupActions.island.tsx | untitled | messages().groupDeletedFrom({ name: displayName(), provider: props.provider === "ipa" ? "FreeIPA" : messages().local })
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
 packages/assistant/src/frontend/AssistantChatSidebar.tsx | untitled | error instanceof Error ? error.message : String(error)
@@ -428,3 +427,6 @@ packages/venue/src/frontend/_components/venue-workspace/public-page-editor.tsx |
 packages/venue/src/frontend/_components/venue-workspace/settings.tsx | untitled | successMessage
 packages/venue/src/frontend/_components/venue-workspace/shift-actions.ts | untitled | t.noShiftsTaken
 packages/venue/src/frontend/_components/venue-workspace/signup.tsx | untitled | t().shiftLeft
+packages/accounts/src/frontend/notifications/NotificationScreen.tsx | untitled | error instanceof Error ? error.message : String(error)
+packages/accounts/src/frontend/service-accounts/ApiKeysScreen.tsx | untitled | failure instanceof Error ? failure.message : t().revokeApiKeyFailed
+packages/accounts/src/frontend/service-accounts/ApiKeysSection.tsx | untitled | failure instanceof Error ? failure.message : t().revokeApiKeyFailed

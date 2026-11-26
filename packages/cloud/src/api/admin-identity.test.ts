@@ -168,6 +168,38 @@ describe("identity key administration", () => {
     });
     expect(response.status).toBe(400);
   });
+  test("names of agents and API keys hold 120 characters; a longer one is refused before anything is created", async () => {
+    let created = 0;
+    const base = dependencies();
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        serviceAccounts: {
+          ...base.serviceAccounts,
+          createStandalone: async (input) => {
+            created++;
+            return base.serviceAccounts.createStandalone(input);
+          },
+        },
+        credentials: {
+          ...base.credentials,
+          createStandaloneApiToken: async (input) => {
+            created++;
+            return base.credentials.createStandaloneApiToken(input);
+          },
+        },
+      }),
+    );
+    const post = (path: string, body: unknown) =>
+      routes.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const keys = `/service-accounts/${STANDALONE_ID}/api-keys`;
+    expect((await post("/service-accounts", { name: "a".repeat(121), kind: "agent" })).status).toBe(400);
+    expect((await post(keys, { name: "k".repeat(121) })).status).toBe(400);
+    expect(created).toBe(0);
+    expect((await post("/service-accounts", { name: "a".repeat(120), kind: "agent" })).status).toBe(201);
+    expect((await post(keys, { name: "k".repeat(120) })).status).toBe(201);
+    expect(created).toBe(2);
+  });
   test("P15: omitted scopes reach issuance; explicit scopes are preserved", async () => {
     const base = dependencies();
     const calls: Array<{ scopes?: string[]; access?: string }> = [];

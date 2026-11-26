@@ -138,6 +138,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
   const draft = () => props.batch.status === "draft";
   const number = (value: number) => formatNumber(value, { locale: locale() });
   const statusLabel = () => batchStatusLabel(t(), props.batch.status);
+  // k2b-ui gap: a v2 toast has no description line for the server's reason (baseline in toast-copy).
   const fail = (error: unknown) => toast(error instanceof Error ? error.message : String(error), { status: "bad" });
 
   /** The bar wrote the address; a new filter starts at page 1, and the server shows the recipients for it. */
@@ -199,7 +200,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
         param: { id: props.batch.id, userId: row.userId },
       });
       if (!res.ok) throw new Error(await readError(res, t().retryRecipientFailed));
-      toast(words().recipientRetriedToast({ name: row.name }), { status: "ok" });
+      toast(words().recipientRetriedToast, { status: "ok" });
       void showChanges();
     } catch (error) {
       fail(error);

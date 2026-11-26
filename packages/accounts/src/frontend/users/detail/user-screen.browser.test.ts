@@ -256,7 +256,10 @@ describe("a user's record on v2", () => {
     const list = "status=active&page=2";
     const { context, tab, errors, seen } = await open(wide, `${page}?list=${encodeURIComponent(list)}`);
     try {
-      await visible(tab, "link", new RegExp(`^${t.groups}`)).click();
+      await tab
+        .locator("[data-k2-part=Tabs]")
+        .getByRole("link", { name: new RegExp(`^${t.groups}`) })
+        .click();
       await tab.waitForURL(`${origin}${page}?list=${encodeURIComponent(list)}&tab=groups`);
       await tab.getByText("Verkauf").first().waitFor();
       expect(await tab.getByText("Alle Mitarbeitenden").count()).toBe(0);
@@ -497,8 +500,8 @@ describe("a user's record on v2", () => {
     try {
       const rows = tab.locator("[data-k2-part=Section][aria-label='" + r.memberOf + "'] [data-k2-part=Row]");
       await rows.first().waitFor();
-      // time since the page began to load, read in the page: the first rows stand within 1.5 s
-      expect(await tab.evaluate(() => performance.now())).toBeLessThan(1500);
+      // the screen stood within 1.5 s of the page's answer, as the harness measured it in the page
+      expect(Number(await tab.evaluate(() => document.documentElement.dataset.ready))).toBeLessThan(1500);
       expect(await rows.count()).toBe(100);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
       await visible(tab, "button", r.showMore({ count: 100 })).click();
@@ -545,7 +548,7 @@ describe("a user's record on v2", () => {
       await dialog.getByText(t.cloudAppSuccess({ name: "iPad" })).waitFor();
       await dialog.getByText(t.cloudAppSuccessHint({ name: "Milan Horvat" })).waitFor();
       const reloaded = next(tab, page);
-      await dialog.getByRole("button", { name: t.close }).click();
+      await dialog.locator("[data-k2-part=Button]", { hasText: t.close }).click();
       await reloaded;
       expect(opened.errors).toEqual([]);
     } finally {

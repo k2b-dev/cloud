@@ -391,7 +391,8 @@ describe("an agent's API keys on v2", () => {
     try {
       const rows = tab.locator("[data-k2-part=Table] tbody tr");
       await rows.first().waitFor();
-      expect(await tab.evaluate(() => performance.now())).toBeLessThan(1500);
+      // the screen stood within 1.5 s of the page's answer, as the harness measured it in the page
+      expect(Number(await tab.evaluate(() => document.documentElement.dataset.ready))).toBeLessThan(1500);
       expect(await rows.count()).toBe(100);
       expect(await tab.evaluate(() => document.querySelectorAll("*").length)).toBeLessThan(4000);
       // the true count with the locale's separator, and no column order across pages

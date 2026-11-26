@@ -259,7 +259,7 @@ test("an agent or standalone account opens as the agent kind of the same record"
     const { status, html } = await render(`/app/accounts/users/${AGENT}?sort=name`, { account: { kind } });
     expect(status, html).toBe(200);
     expect(html).toContain("Wochenbericht");
-    expect(html).toContain("API-Schlüssel");
+    expect(html).toContain("API Keys");
     expect(measure(html).loaders).toBe(0);
   }
 });

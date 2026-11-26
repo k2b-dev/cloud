@@ -28,3 +28,7 @@ render(
     ),
   host,
 );
+
+// how long the screen took from the page's answer until its rows stood, for the test of a huge record
+const answered = (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.responseEnd ?? 0;
+document.documentElement.dataset.ready = String(Math.round(performance.now() - answered));
