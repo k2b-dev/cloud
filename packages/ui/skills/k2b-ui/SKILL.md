@@ -219,13 +219,11 @@ holds the state. Read [list queries](references/list-queries.md).
 
 Cheapest first; stop at the first step that finds something, fix, repeat.
 
-1. **Types** reject wrong props (a `Button` with only an icon and no
-   `label`, a `Chip` with two kinds).
+1. **Types** reject wrong props (an icon `Button` without a `label`).
 2. **The rule `v2-app-layout-css`** (`bun run check` in the Cloud monorepo)
    reports `class`, `style`, spreads and stylesheets outside `Canvas`.
 3. **The outline** from `describeV2` lists every part with its text and
-   count, and ends with `Problems` when something is off. About 30 lines,
-   no picture.
+   count, and ends with `Problems` when something is off; no picture.
 4. **The layout measurement** (`measureV2Layout`) checks edges, double
    lines, type roles and grips at 1440 and 390 px.
 5. **A screenshot** only when the outline leaves a doubt.
