@@ -142,6 +142,8 @@ function Harness() {
               notebookId="Book01"
               noteId="Note01"
               format={format()}
+              // as on the note page, which always offers the comments: the page pill stands at the end
+              comments={{ open: 2, onOpen: () => {} }}
               onUndo={() => {
                 const editor = view();
                 if (editor) undo(editor);
