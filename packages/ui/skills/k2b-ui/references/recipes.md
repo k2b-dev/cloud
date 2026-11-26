@@ -17,6 +17,27 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+## How a screen looks: dense, clear, with faces
+
+The target (design pass 26.11.): dense, clear, space-efficient, tailored
+and appealing. Dense is not busy: show more, never the same thing twice.
+
+1. **Each thing carries its mark.** Every row, card and sidebar entry for a
+   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
+   person's `Avatar`; without its own colour it takes its kind's, never grey.
+2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
+   a statement with a number, chips with a tone for what lets one act. A
+   count such as "6 Einträge" is never the biggest text.
+3. **A state is colour, symbol and word.** A value with a limit gets a bar,
+   a short history a `Spark`.
+4. **Space structures, lines separate groups**; no box inside a card.
+5. **No empty half**: a detail only while open, a side column only if full.
+6. **People beside what they did:** avatars, stacks, `Digest activity`.
+7. **Four type sizes** (12, 13, 14, 18); sample data dense and real.
+8. **At most two head rows** over list and detail: path and deeds, then
+   `FilterBar` with count, order and display at its `end`.
+9. **Settings are `Setting` rows**: value beside the name, never a form.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)
@@ -98,6 +119,23 @@ in its words. Its footer `Bar` saves with a default button.
 - A form beside a page with a head primary never gets a second primary.
 - On the phone the form is the page; `back` leads to the list.
 - States: `errors`, `saving`.
+
+## settings.tsx: settings with more than text
+
+![settings at 1440 px](../images/settings-1440.png)
+![settings at 390 px](../images/settings-390.png)
+
+The sign-in settings of an app: a `Field` with an `action` that resets it
+to its default, a `Select` the operator fixed (`disabled`), allowed
+domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
+`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+
+- A field's deed stands at the end of its label line and never moves the
+  field; it takes the place of `optional`.
+- A choice the person may not change is a dimmed control with the reason
+  in its hint, not a missing one.
+- States: `empty`, `locked`.
 
 ## record.tsx: a record, first tab
 

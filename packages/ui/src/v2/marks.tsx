@@ -91,7 +91,8 @@ const createPicture = (src: () => string | undefined) => {
   return { state, Picture };
 };
 
-export const Avatar = (props: AvatarProps) => {
+// `place`: its place in a stack, from 1, which the stylesheet hides faces by on a narrow place (internal)
+const Face = (props: AvatarProps & { place?: number }) => {
   // Shown, the initials under the picture leave, as a picture may be transparent.
   const picture = createPicture(() => props.image);
   return (
@@ -99,6 +100,7 @@ export const Avatar = (props: AvatarProps) => {
       class="k2-av"
       data-k2-part="Avatar"
       data-k2-avatar=""
+      data-place={props.place}
       data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.name}
@@ -111,6 +113,8 @@ export const Avatar = (props: AvatarProps) => {
     </span>
   );
 };
+
+export const Avatar = (props: AvatarProps) => <Face {...props} />;
 
 export type AvatarStackProps = {
   /** The people, in order: who changed last, who has access. */
@@ -146,7 +150,7 @@ Avatar.Stack = (props: AvatarStackProps) => {
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
       style={custom({ "--k2-avs-w": `${room()}px` })}
     >
-      <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
+      <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
       <For each={counts()}>
         {(count) => (
           <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">

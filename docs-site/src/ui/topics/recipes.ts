@@ -13,6 +13,7 @@ import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
 import * as overview from "../../../../packages/ui/skills/k2b-ui/recipes/overview";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
+import * as settings from "../../../../packages/ui/skills/k2b-ui/recipes/settings";
 import * as settingsPage from "../../../../packages/ui/skills/k2b-ui/recipes/settings-page";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
@@ -61,6 +62,7 @@ export const recipes = {
   record,
   "record-groups": recordGroups,
   "settings-page": settingsPage,
+  settings,
   states,
   table,
   tree,

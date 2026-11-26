@@ -89,6 +89,7 @@ const catalogs = {
   Setting: (await import("../v2/setting-messages")).checkSettingMessages,
   V2Tree: (await import("../v2/tree-messages")).checkTreeMessages,
   V2Drag: (await import("../v2/drag-messages")).checkDragMessages,
+  V2Controls: (await import("../v2/control-messages")).checkControlMessages,
 };
 
 describe("@k2b/ui message catalogs", () => {
