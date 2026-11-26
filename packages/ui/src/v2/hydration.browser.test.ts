@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, setSystemTime, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -23,6 +23,8 @@ const bundle = bundleV2Entry;
 
 type Server = { html: string; script: string; made: { cells: number; probe: number } };
 
+const now = new Date("2026-12-31T23:30:00Z");
+
 let browser: Browser;
 let client: string;
 let server: Server;
@@ -32,7 +34,10 @@ beforeAll(async () => {
   const serverFile = resolve(temp, "server.js");
   await Bun.write(serverFile, serverCode);
   const { render }: { render: () => Server } = await import(serverFile);
+  // one instant on both sides, the last half hour of 2026 in UTC and already 1 January 2027 in Berlin
+  setSystemTime(now);
   server = render();
+  setSystemTime();
   [client, browser] = await Promise.all([bundle("v2-hydration.client.tsx", "dom"), launchBrowser()]);
 }, launchHookMs);
 afterAll(async () => {
@@ -41,7 +46,7 @@ afterAll(async () => {
 });
 
 const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+  const page = await browser.newPage({ viewport: { width, height: 900 }, timezoneId: "Europe/Berlin" });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   const consoleErrors: string[] = [];
@@ -56,6 +61,22 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
     await page.evaluate(() => {
       window.__k2Sent = document.getElementById("root")!.cloneNode(true);
     });
+    // the browser stands on the same instant as the server (only `Date`; timers and frames stay real)
+    await page.evaluate((at) => {
+      const RealDate = Date;
+      const offset = at - RealDate.now(); // real clock: the page's distance to the pinned instant
+      class PinnedDate extends RealDate {
+        constructor(...args: ConstructorParameters<DateConstructor> | []) {
+          if (args.length === 0)
+            super(RealDate.now() + offset); // real clock: flows from the pinned instant
+          else super(...(args as ConstructorParameters<DateConstructor>));
+        }
+        static override now() {
+          return RealDate.now() + offset; // real clock: flows from the pinned instant
+        }
+      }
+      globalThis.Date = PinnedDate as DateConstructor;
+    }, now.getTime());
     await page.addScriptTag({ content: client });
     await waitInPage(
       page,
@@ -75,6 +96,14 @@ const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
 test("hydration: the live page is what the server sent, in elements, texts and attributes", async () => {
   await withPage(async (page) => {
     expect(await page.evaluate(sentVsLive)).toEqual([]);
+  });
+});
+
+test("hydration: a DateInput reads “heute” in its own time zone on the server and in the browser alike", async () => {
+  // a server in UTC would say 31 December, a browser in Berlin 1 January: `timeZone` gives both the same day
+  expect(server.html).toContain('name="since" value="2027-01-01"');
+  await withPage(async (page) => {
+    expect(await page.locator('input[name="since"]').inputValue()).toBe("2027-01-01");
   });
 });
 
