@@ -6,6 +6,7 @@ import { mutation, query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Bar, Button, Dialog, Failed, List, Loading, Menu, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import StateWord from "../_area/StateWord";
 import { groupFingerprint, type KeyEntry, TokenDialog } from "./keys-dialogs";
 import { keysMessages } from "./keys-messages";
 import { keysState } from "./keys-state";
@@ -225,7 +226,11 @@ export default function Keys(props: KeysProps) {
   };
   const stateChip = (status: "active" | "expired" | "revoked") =>
     // an active key is the good state: quiet words; expired and revoked are quiet too, only their words differ
-    status === "active" ? <Text>{t().active}</Text> : <Text muted>{status === "expired" ? t().expired : t().revoked}</Text>;
+    status === "active" ? (
+      <StateWord>{t().active}</StateWord>
+    ) : (
+      <StateWord muted>{status === "expired" ? t().expired : t().revoked}</StateWord>
+    );
   const KeyRow = (row: { key: KeyEntry }) => (
     <Row
       icon={row.key.status === "revoked" ? "key-off" : "key"}

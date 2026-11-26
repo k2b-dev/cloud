@@ -170,7 +170,8 @@ export default function NavigationScreen(props: NavigationScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={460}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={entry() ? 460 : undefined}
       detailEmpty={{ icon: "layout-sidebar", text: t().noneOpen }}
       // on the phone the main action floats over the list only; an open entry is a page of its own without it
       primary={entry() ? undefined : newAction}

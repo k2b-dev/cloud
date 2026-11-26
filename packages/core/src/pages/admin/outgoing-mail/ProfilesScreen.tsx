@@ -119,7 +119,8 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={480}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={creating() || opened() ? 480 : undefined}
       detailEmpty={{ icon: "mail-cog", text: t().noneOpen }}
       // on the phone the main action floats over the list only; an open entry is a page of its own without it
       primary={creating() || opened() ? undefined : newAction}

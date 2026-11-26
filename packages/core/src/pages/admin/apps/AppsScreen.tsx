@@ -3,7 +3,23 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Failed, Inline, Input, Mark, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Failed,
+  Icon,
+  Inline,
+  Input,
+  Mark,
+  type NavProps,
+  Notice,
+  Pane,
+  StatusRow,
+  Table,
+  Tabs,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
 import AddApp from "./AddApp";
@@ -108,8 +124,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
   return (
     <AdminWorkspace
       nav={props.nav}
-      // with no app at all there is nothing to open: no empty half beside the empty list (identity rule 5)
-      detail={apps().length ? 520 : undefined}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={app() ? 520 : undefined}
       detailEmpty={{ icon: "apps", text: t().noneOpen }}
       head={
         <Bar
@@ -201,7 +217,18 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                   }
                   phone={(entry) => ({
                     mark: { icon: markIcon(entry.icon), color: entry.accent ?? undefined },
-                    lines: [entry.name, `${statusLabel(t(), entry.status)} · ${entry.hints[0] ? problemLine(entry) : routesLine(entry)}`],
+                    // a problem state leads the meta line in its colour (identity B, phone); a good one in words
+                    lines: [
+                      entry.name,
+                      <>
+                        <Show when={entry.status === "warn" || entry.status === "error"} fallback={statusLabel(t(), entry.status)}>
+                          <Text tone={entry.status === "error" ? "bad" : "warn"}>
+                            <Icon name="point-filled" /> {statusLabel(t(), entry.status)}
+                          </Text>
+                        </Show>
+                        {` · ${entry.hints[0] ? problemLine(entry) : routesLine(entry)}`}
+                      </>,
+                    ],
                   })}
                   columns={[
                     {

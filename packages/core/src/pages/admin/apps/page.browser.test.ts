@@ -37,7 +37,7 @@ beforeEach(async () => {
 /** The list's row of one app: the table row around its name link. */
 const row = (name: string) => page.locator("main tbody tr").filter({ has: page.getByRole("link", { name: new RegExp(`^${name}`) }) });
 /** A fact of the open app: a row of the detail beside the list whose quiet second line is its label. */
-const fact = (label: string) => page.locator('main [data-k2-part="Pane"][data-detail] [data-k2-part="Row"]').filter({ hasText: label });
+const fact = (label: string) => page.locator('main [data-k2-part="Pane"][data-detail] dl > div').filter({ hasText: label });
 const notice = (text: string | RegExp) => page.locator('main [data-k2-part="Notice"]').filter({ hasText: text });
 
 /** The rows of the open app's view beside the list. */
@@ -385,7 +385,8 @@ test("domains: a promotion that stops halfway says so and can be finished", asyn
 test("domains: each domain shows its three checks, and the view keeps the v2 rules", async () => {
   for (const width of [1440, 390]) {
     await open("?app=lager&view=domains", width);
-    expect(await domain("lager.example.de").innerText()).toContain("DNS ok");
+    // a domain whose checks passed says so once, quietly; only a failed step would carry a chip
+    expect(await domain("lager.example.de").innerText()).toContain("Erreichbar");
     expect({ width, problems: (await measureV2Layout(page, { root: "main.k2-ui", skip: ".k2b-field" })).problems }).toEqual({
       width,
       problems: [],

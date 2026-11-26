@@ -4,6 +4,7 @@ import { query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import { Chip, Dialog, Empty, Failed, List, Loading, Menu, type MenuEntry, Notice, Row } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import StateWord from "../_area/StateWord";
 import { failure, STALE } from "./domains-api";
 import { domainError, domainsMessages } from "./domains-messages";
 import { type AppDomainEntry, aliasesOf, makePrimaryPlan, nextCheckAt, primaries } from "./domains-model";
@@ -128,11 +129,9 @@ export default function Domains(props: DomainsProps) {
     }
   };
 
-  const step = (label: string, value: Step) => {
-    const words = `${label} ${value ? (value.ok ? t().stepOk : t().stepFailed) : t().stepOpen}`;
-    // a failed step is the problem and carries the colour; a passed or open step stays a quiet chip
-    return value && !value.ok ? <Chip status="bad">{words}</Chip> : <Chip>{words}</Chip>;
-  };
+  /** A failed step as the problem's chip; a passed or open step shows nothing (colour only for problems). */
+  const failedStep = (label: string, value: Step) =>
+    value && !value.ok ? <Chip status="bad">{`${label} ${t().stepFailed}`}</Chip> : undefined;
   const DomainRow = (row: { domain: AppDomainEntry }) => {
     const domain = () => row.domain;
     const list = () => domains.data() ?? [];
@@ -184,12 +183,19 @@ export default function Domains(props: DomainsProps) {
           failed() ?? checked(),
         ]}
         icon="world"
+        // only a failed step carries a chip; a domain whose steps all passed says so once, quietly
         marks={
-          <>
-            {step(t().dns, domain().status?.dns)}
-            {step(t().certificate, domain().status?.certificate)}
-            {step(t().reachable, domain().status?.reachable)}
-          </>
+          [domain().status?.dns, domain().status?.certificate, domain().status?.reachable].some((value) => value && !value.ok) ? (
+            <>
+              {failedStep(t().dns, domain().status?.dns)}
+              {failedStep(t().certificate, domain().status?.certificate)}
+              {failedStep(t().reachable, domain().status?.reachable)}
+            </>
+          ) : domain().status?.dns?.ok && domain().status?.certificate?.ok && domain().status?.reachable?.ok ? (
+            <StateWord>{t().reachable}</StateWord>
+          ) : (
+            <StateWord muted>{t().checking}</StateWord>
+          )
         }
         action={{
           label: wait() > 0 ? t().checkIn({ seconds: wait() }) : t().check,

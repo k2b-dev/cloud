@@ -207,7 +207,8 @@ export default function AppsScreen(props: {
   const state = (app: AdminMailApp) =>
     app.appId === CORE_APP_ID ? t().systemMail : !app.registered ? t().notRegistered : app.declared ? t().requested : t().notRequested;
   return (
-    <AdminWorkspace nav={props.nav} detail={460} detailEmpty={{ icon: "apps", text: t().noAppOpen }}>
+    // a detail column only while an app is open: no empty half (identity rule 5)
+    <AdminWorkspace nav={props.nav} detail={opened() ? 460 : undefined} detailEmpty={{ icon: "apps", text: t().noAppOpen }}>
       <Pane.Split>
         <Pane
           label={t().apps}

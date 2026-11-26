@@ -1,6 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { Bar, Button, Chip, Dialog, Facts, Notice, Row, Section, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, Show } from "solid-js";
+import StateWord from "../_area/StateWord";
 import { adminToasts } from "../_area/toasts";
 import { domainHealthy, primaries } from "./domains-model";
 import { type AppsFormat, providerValues } from "./format";
@@ -36,7 +37,7 @@ export const markIcon = (icon: string) => icon.replace(/^ti\s+/, "").replace(/^t
 export const StatusChip = (props: { t: AppsPageMessages; status: AppStatusKind }) => (
   <Show
     when={props.status === "warn" || props.status === "error" ? STATUS[props.status] : undefined}
-    fallback={<Text muted={props.status === "idle"}>{statusLabel(props.t, props.status)}</Text>}
+    fallback={<StateWord muted={props.status === "idle"}>{statusLabel(props.t, props.status)}</StateWord>}
   >
     {(tone) => <Chip status={tone()}>{statusLabel(props.t, props.status)}</Chip>}
   </Show>
@@ -69,17 +70,18 @@ const Hint = (props: Ctx & { app: AppPageData; hint: AppHint; onRemove: () => vo
 };
 
 /** One fact of the app as a row; a fact with its own view opens it. */
-type Fact = { label: string; value: string; view?: AppView | null; href?: string };
+type Fact = { label: string; value: string; view?: AppView | null; href?: string; mono?: boolean };
 const FactRows = (props: Ctx & { app: string; title: string; icon: string; facts: readonly (Fact | false | null | undefined)[] }) => (
+  // facts label-left (identity B, rule 7); a value with a view of its own leads there
   <Section icon={props.icon} title={props.title}>
-    <For each={props.facts.filter((fact): fact is Fact => Boolean(fact))}>
-      {(fact) => (
-        <Row
-          lines={[fact.value, fact.label]}
-          href={fact.href ?? (fact.view ? appsHref({ app: props.app, view: fact.view, list: props.list }) : undefined)}
-        />
-      )}
-    </For>
+    <Facts
+      items={props.facts
+        .filter((fact): fact is Fact => Boolean(fact))
+        .map((fact) => {
+          const href = fact.href ?? (fact.view ? appsHref({ app: props.app, view: fact.view, list: props.list }) : undefined);
+          return { label: fact.label, value: href ? <Text href={href}>{fact.value}</Text> : fact.value, mono: fact.mono };
+        })}
+    />
   </Section>
 );
 
@@ -210,6 +212,7 @@ export function AppOverview(props: Ctx & { app: AppPageData }) {
           { label: t.runtime, value: runtime(), view: neverStarted ? null : "runtime" },
           {
             label: t.routes,
+            mono: entry.routes.length > 0,
             value: entry.routes.length ? `${routes.shown}${routes.more ? ` +${routes.more}` : ""}` : "–",
             view: neverStarted ? null : "routes",
           },
@@ -444,7 +447,7 @@ export function RoutesView(props: Ctx & { detail: Extract<DetailData, { view: "r
                     ) : row.router === "unknown" ? (
                       t.routerUnknown
                     ) : (
-                      <Text>{t.routerActive}</Text>
+                      <StateWord>{t.routerActive}</StateWord>
                     ),
                 },
               ]}

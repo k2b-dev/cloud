@@ -27,6 +27,7 @@ import {
 } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
 import RegistryForm from "../_area/RegistryForm";
+import StateWord from "../_area/StateWord";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { readBucket, readStorageAdmin, StorageAdminError, storageAdminApi } from "./client";
 import { type StorageAreaMessages, storageAreaMessages } from "./messages";
@@ -70,7 +71,10 @@ const draftOf = (bucket: AdminStorageBucket | null): Draft => ({
 const StateChip = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket }) => {
   const state = () => storageBucketState(props.bucket);
   return (
-    <Show when={TONE[state()] === "ok" ? undefined : TONE[state()]} fallback={<Text>{storageStateLabel(props.t, state())}</Text>}>
+    <Show
+      when={TONE[state()] === "ok" ? undefined : TONE[state()]}
+      fallback={<StateWord muted={state() !== "ok"}>{storageStateLabel(props.t, state())}</StateWord>}
+    >
       {(tone) => <Chip status={tone()}>{storageStateLabel(props.t, state())}</Chip>}
     </Show>
   );
@@ -615,7 +619,8 @@ export default function StorageScreen(props: StorageScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={480}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={props.items !== null && props.selection.kind !== "none" ? 480 : undefined}
       detailEmpty={{ icon: "database", text: t().noneOpen }}
       // on the phone the main action floats over the list only; an open entry is a page of its own without it
       primary={props.items !== null && props.selection.kind !== "none" ? undefined : add}

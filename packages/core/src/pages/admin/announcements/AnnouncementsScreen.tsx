@@ -21,6 +21,7 @@ import {
 } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import CacheSection from "../_area/CacheSection";
+import StateWord from "../_area/StateWord";
 import { adminMessages } from "../messages";
 
 export const ANNOUNCEMENTS_PATH = "/admin/announcements";
@@ -135,7 +136,8 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={460}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={props.open && (creating() || entry()) ? 460 : undefined}
       detailEmpty={{ icon: "speakerphone", text: t().noneOpen }}
       // on the phone the main action floats over the list only; an open entry is a page of its own without it
       primary={props.open && (creating() || entry()) ? undefined : newAction}
@@ -178,7 +180,7 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
                 title: t().state,
                 width: { min: 110, default: 130 },
                 // no state of an announcement is a problem: live in words, scheduled and expired quieter
-                cell: (row) => <Text muted={row.state !== "active"}>{t()[row.state]}</Text>,
+                cell: (row) => <StateWord muted={row.state !== "active"}>{t()[row.state]}</StateWord>,
               },
               { title: t().published, width: { min: 140, default: 140 }, drop: true, cell: (row) => row.published },
               { title: t().expires, width: { min: 140, default: 140 }, drop: true, cell: (row) => row.expires },

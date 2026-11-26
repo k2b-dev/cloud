@@ -21,6 +21,7 @@ import {
   useToast,
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
+import StateWord from "../_area/StateWord";
 import { type LogState, logFilter, logHref, logQuery, statusLabel } from "./log-query";
 import { outgoingMailMessages } from "./messages";
 import RetentionDialog from "./RetentionDialog";
@@ -43,7 +44,7 @@ const MailChip = (props: { status: MailStatus }) => {
   const label = () => statusLabel(props.status, outgoingMailMessages.resolve([locale()]).t);
   const tone = () => STATUS[props.status];
   return (
-    <Show when={tone() === "ok" ? undefined : tone()} fallback={<Text>{label()}</Text>}>
+    <Show when={tone() === "ok" ? undefined : tone()} fallback={<StateWord>{label()}</StateWord>}>
       {(status) => <Chip status={status()}>{label()}</Chip>}
     </Show>
   );
@@ -224,7 +225,8 @@ export default function LogScreen(props: LogScreenProps) {
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={420}
+      // a detail column only while something is open: no empty half (identity rule 5)
+      detail={record() ? 420 : undefined}
       detailEmpty={{ icon: "mail", text: t().noMessageOpen }}
       head={
         <Bar
