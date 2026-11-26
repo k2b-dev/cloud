@@ -9,12 +9,15 @@ import {
   Button,
   Cells,
   Chip,
+  type Column,
   Dialog,
   Empty,
   Facts,
   Icon,
+  Inline,
   Input,
   List,
+  Mark,
   Menu,
   type MenuEntry,
   Notice,
@@ -35,7 +38,7 @@ import { localizedSourceError } from "../../messages";
 import type { AlertAttention } from "../../service/base-attention";
 import { jsonFetch } from "../http";
 import { usePulseMessages } from "../use-messages";
-import { compactDateWithDelta, type PulseDateContext } from "../workspace/date-format";
+import { compactDate, compactDateWithDelta, type PulseDateContext } from "../workspace/date-format";
 import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import { launchPulseOverviewAssistant, launchPulseSqlAssistant } from "../workspace/pulse-assistant-launch";
 import { buildPulseWorkspaceHref } from "../workspace/routes";
@@ -98,7 +101,10 @@ const sourceLine = (source: PulseSource, t: Words) =>
       )
     : `${t.httpIngest} · ${t.tokenIngestEndpoint}`;
 
-const curlExample = (origin: string) => `curl -fsS -X POST ${origin}/api/pulse/ingest \\
+/** The path every push source sends its values to. */
+const INGEST_PATH = "/api/pulse/ingest";
+
+const curlExample = (origin: string) => `curl -fsS -X POST ${origin}${INGEST_PATH} \\
   -H "Authorization: Bearer <api-key>" \\
   -H "Content-Type: application/json" \\
   -H "Idempotency-Key: import-2026-10-19-0001" \\
@@ -128,6 +134,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const toast = useToast();
   const baseId = props.initialBaseId;
   const selectedSourceId = () => props.initialRouteState.sourceId;
+  // beside an open source the list keeps only the columns without `wide`, so it never scrolls sideways
+  const besideDetail = (columns: readonly (Column<PulseSource> & { wide?: true })[]) =>
+    selectedSourceId() ? columns.filter((column) => !column.wide) : columns;
   const [loading, setLoading] = createSignal(false);
   const [search, setSearch] = createSignal(props.initialSearch ?? "");
   const [adding, setAdding] = createSignal(false);
@@ -437,38 +446,55 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               // a healthy source needs no word; a failing or paused one shows its state in colour, symbol and word
               marks: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
-            columns={[
+            // one line per source (filtered-table recipe, dense rule a): what it is, how it reaches Pulse, its state for
+            // every row, when data came last, and today's values aligned at the end; beside an open source only the
+            // name, the state and today's values stay, so the list never scrolls sideways
+            columns={besideDetail([
               {
                 title: t().source,
-                width: { min: 180, default: 320 },
+                width: { min: 180, default: 240 },
                 mark: sourceMark,
-                cell: (source) => ({ lines: [source.name, sourceLine(source, t())] }),
+                cell: (source) => source.name,
+              },
+              {
+                title: words().kindColumn,
+                wide: true,
+                width: { min: 150, default: 190 },
+                drop: true,
+                cell: (source) =>
+                  source.kind === "metrics"
+                    ? `${t().metricsEndpoint} · ${t().scrapeEvery({ seconds: source.scrapeIntervalSeconds ?? 60 })}`
+                    : t().httpIngest,
+              },
+              {
+                title: words().endpointColumn,
+                wide: true,
+                width: { min: 160, default: 200 },
+                drop: true,
+                // the address Pulse reads, or the one a push source sends to
+                cell: (source) => (source.kind === "metrics" ? (source.endpointUrl ?? t().noEndpointShort) : INGEST_PATH),
               },
               {
                 title: words().sourceStatusColumn,
-                width: { min: 200, default: 270 },
-                // a healthy source needs no word (the figures above say how many are fine); only a failing or paused one
-                // shows its state and since when data are missing
-                cell: (source) =>
-                  sourceStatus(source, t()).tone === "ok"
-                    ? ""
-                    : // the state, and under it since when data are missing, so neither is cut
-                      {
-                        lines: [
-                          statusChip(source, t()),
-                          source.status.newestDataAt ? words().lastData({ time: when(source.status.newestDataAt) }) : t().noDataYet,
-                        ],
-                      },
+                width: { min: 120, default: 140 },
+                cell: (source) => statusChip(source, t()),
+              },
+              {
+                title: words().lastDataColumn,
+                wide: true,
+                width: { min: 150, default: 190 },
+                drop: true,
+                cell: (source) => (source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet),
               },
               {
                 title: words().dataColumn,
                 align: "end",
-                width: { min: 110, default: 130 },
+                width: { min: 100, default: 120 },
                 drop: true,
                 // one figure for every kind of source, so the column compares like with like
                 cell: (source) => (source.todayCount == null ? "—" : number(source.todayCount)),
               },
-            ]}
+            ])}
           />
           <Show when={queries.baseData.hasMore()}>
             <Bar
@@ -493,6 +519,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               source={source}
               origin={props.initialOrigin}
               when={when}
+              clock={(value) => compactDate(value, dateContext())}
               loading={loading() || writeBlocked()}
               scrapes={queries.currentDetail()?.scrapes ?? []}
               apiKeys={queries.currentDetail()?.apiKeys ?? []}
@@ -603,6 +630,8 @@ function SourceDetail(props: {
   source: PulseSource;
   origin: string;
   when: (value: string) => string;
+  /** A time as its clock time only, such as the start of a run of fetches. */
+  clock: (value: string) => string;
   loading: boolean;
   scrapes: import("../../contracts").PulseSourceScrape[];
   apiKeys: import("@k2b/cloud/access/ui").ResourceApiKey[];
@@ -644,6 +673,7 @@ function SourceDetail(props: {
     { label: t().removeSource, icon: "trash", danger: true, disabled: props.loading, onClick: props.remove },
   ];
   const facts = () => [
+    { label: words().kindColumn, value: source().kind === "metrics" ? t().metricsEndpoint : t().httpIngest },
     {
       label: t().target,
       // an address breaks at its slashes like words, not sign by sign as a token would
@@ -707,7 +737,12 @@ function SourceDetail(props: {
       back={{ label: words().backToSources, href: props.closeHref }}
       head={
         <Bar
-          start={<Text type="lead">{source().name}</Text>}
+          start={
+            <Inline>
+              <Mark {...sourceMark(source())} />
+              <Text type="lead">{source().name}</Text>
+            </Inline>
+          }
           end={
             <>
               <Button icon="pencil" keep disabled={props.loading} onClick={props.edit}>
@@ -739,7 +774,7 @@ function SourceDetail(props: {
           {t().throttledDetail}
         </Notice>
       </Show>
-      <Section icon="info-circle" title={t().properties} summary={source().kind === "metrics" ? t().metricsEndpoint : t().httpIngest}>
+      <Section icon="info-circle" title={t().properties}>
         <Facts items={facts()} />
       </Section>
       <Show when={source().kind === "http_ingest"}>
@@ -782,7 +817,7 @@ function SourceDetail(props: {
                     ]}
                     time={
                       run.count > 1
-                        ? `${props.when(run.last.finishedAt)} – ${props.when(run.first.finishedAt)}`
+                        ? `${props.clock(run.last.finishedAt)}–${props.when(run.first.finishedAt)}`
                         : props.when(run.first.finishedAt)
                     }
                   />
