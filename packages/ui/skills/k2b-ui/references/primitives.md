@@ -138,7 +138,9 @@ inside the `Canvas`: with a `height` it keeps that height, so nothing
 moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
 of another page). Directly in its `Pane`, it takes the height left under
 head and status by layout alone, from the first render (never measure it
-in a script); below 240 px the pane scrolls.
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it.
 
 ## Structure
 
@@ -293,11 +295,19 @@ lines instead of cutting a thing.
   its name). The place sets the size: 20 in the sidebar and in a sentence,
   24 leading a row of one line, 32 leading a row of two or three, 36 on a
   card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
-- `Avatar.Stack`: `people`, `max` (3), `label`. People over each other with
-  a ring and "+n"; one picture with every name.
-- `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
-  of a short history, the last in full colour; beside a number, never
-  instead of it.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`, `Preview`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
 - `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
   the open thing at the top of its detail, 4:3 from text edge to text edge;
   the symbol stands while it loads, fails or is missing.
@@ -317,11 +327,14 @@ lines instead of cutting a thing.
   whose words give way to its symbol in a narrow place). Without children
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
-  change says "geändert · vorher 12 Std." under its control), one control
-  as child. One setting of a settings page: the name (13, 500) and its hint
-  on the left, the control in a column of 300 px beside them, no line
-  between settings; one column on the phone. Never stack `Field`s as a
-  settings page.
+  change says "geändert · vorher 12 Std." under its control), `action`
+  (one quiet deed at the end of the name's line, such as "Auf Standard
+  zurücksetzen" while the value differs from its default, as `Field
+  action`), one control as child. One setting of a settings page: the name
+  (13, 500) and its hint on the left, the control in a column of 300 px
+  beside them, no line between settings; one column when its pane is
+  narrower than 600 px (by the pane, not the window). Never stack `Field`s
+  as a settings page.
 - `Field`: `label`, `name`, `hint`, `error` (replaces the hint, marks the
   control), `optional` (one quiet word at the end of the label line: a unit
   such as "Sekunden", or "optional"), one control as child. `Field.Row`
@@ -387,6 +400,11 @@ lines instead of cutting a thing.
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
+  From five places on, the places between the first and the last two fold
+  into a menu "…" in their order, the same on the server and in the browser.
+  Where room runs out, the place before the page shortens with "…" first,
+  then the page; their whole names show on hover. The deeds at the end keep
+  their words before the path does.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -411,7 +429,13 @@ lines instead of cutting a thing.
   [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
   display such as list or grid) makes the bar the one status row of its
   list (52 px) with `results` in quiet words before it: the page head then
-  has two rows, path and deeds, then this bar. While entries are selected a
+  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
   `StatusRow selection` takes its place at the same height; on the phone the
   selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in
