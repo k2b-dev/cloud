@@ -11,8 +11,10 @@ import {
   Cells,
   Dialog,
   Empty,
+  FilterBar,
   Input,
   List,
+  ListOrder,
   Menu,
   Nav,
   type NavGroup,
@@ -46,6 +48,7 @@ import { assignmentActionKey, FOLLOWING_WEEKS, resolveShiftSelection, slotAction
 import type { VenueView, VenueWorkspaceProps } from "../_components/venue-workspace/types";
 import { calendarDateOf, canAdmin, canWrite, dateKey, isSlotActive, timeZoneDateConfig } from "../_components/venue-workspace/utils";
 import { loadVenueDashboard, sameVenueDashboardSource } from "../dashboard-query";
+import { feedbackHref, feedbackQuery } from "../feedback-query";
 import {
   assignmentSelectionId,
   CALENDAR_VIEW_COOKIE,
@@ -510,21 +513,20 @@ function SetupSteps(props: VenueWorkspaceProps) {
   );
 }
 
-const feedbackUrl = (props: VenueWorkspaceProps, change: { days?: number; comments?: boolean; search?: string; page?: number }) => {
-  const url = new URL(`/app/venue/${props.dashboard.venue.id}/feedback`, "http://venue.local");
-  const days = change.days ?? props.initialFeedbackDays;
-  const comments = change.comments ?? props.initialFeedbackComments === true;
-  const search = change.search ?? props.initialFeedbackSearch;
-  if (days !== 30) url.searchParams.set("days", String(days));
-  if (comments) url.searchParams.set("comments", "1");
-  if (search) url.searchParams.set("search", search);
-  if (change.page && change.page > 1) url.searchParams.set("page", String(change.page));
-  return `${url.pathname}${url.search}`;
+/** The feedback list's declaration and the state the server read from the address. */
+const feedbackList = (props: VenueWorkspaceProps, locale: string) => {
+  const query = feedbackQuery(locale);
+  const params = new URLSearchParams();
+  if (props.initialFeedbackDays !== 30) params.set("days", String(props.initialFeedbackDays));
+  if (props.initialFeedbackComments) params.set("comments", "1");
+  if (props.initialFeedbackSearch) params.set("q", props.initialFeedbackSearch);
+  return { query, state: query.parse(params).state };
 };
 
 /** The search over comments in the head; Enter loads the page with the words in the address. */
 function FeedbackSearch(props: VenueWorkspaceProps) {
   const { t } = useVenueWords();
+  const locale = useLocale();
   const [text, setText] = createSignal(props.initialFeedbackSearch);
   return (
     <Input
@@ -535,7 +537,9 @@ function FeedbackSearch(props: VenueWorkspaceProps) {
       value={text()}
       onInput={setText}
       onKeyDown={(event) => {
-        if (event.key === "Enter" && !event.isComposing && !isServer) navigateTo(feedbackUrl(props, { search: text().trim(), page: 1 }));
+        if (event.key !== "Enter" || event.isComposing || isServer) return;
+        const { query, state } = feedbackList(props, locale());
+        navigateTo(feedbackHref(props.dashboard.venue.id, query, { ...state, search: text().trim() || undefined }));
       }}
     />
   );
@@ -548,6 +552,9 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
   const venue = () => props.dashboard.venue;
   const days = () => props.initialFeedbackDays;
   const comments = () => props.initialFeedbackComments === true;
+  const list = createMemo(() => feedbackList(props, locale()));
+  const query = () => list().query;
+  const state = () => list().state;
   const buckets = () => props.dashboard.feedback?.buckets ?? [];
   const average = () => props.dashboard.feedback?.averageRating ?? null;
   const labels = createMemo(() => buckets().map((bucket) => formatDateKey(bucket.date, locale())));
@@ -577,34 +584,23 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
       label={t().feedback}
       scrollKey={`venue-feedback-${venue().id}`}
       status={
-        <StatusRow
-          lead={t().feedbackDescription({ count: days() })}
-          loading={props.refreshing}
-          filters={
-            <Menu
-              variant="ghost"
-              items={[
-                {
-                  title: t().lastDays({ count: days() }),
-                  choice: String(days()),
-                  onChoose: (value) => navigateTo(feedbackUrl(props, { days: Number(value), page: 1 })),
-                  items: [7, 14, 30].map((count) => ({ label: t().lastDays({ count }), value: String(count) })),
-                },
-                {
-                  title: t().comments,
-                  choice: comments() ? "comments" : "all",
-                  onChoose: (value) => navigateTo(feedbackUrl(props, { comments: value === "comments", page: 1 })),
-                  items: [
-                    { label: t().allRatings, value: "all" },
-                    { label: t().onlyWithComment, value: "comments" },
-                  ],
-                },
-              ]}
-            >
-              {`${t().lastDays({ count: days() })} · ${comments() ? t().onlyWithComment : t().allRatings}`}
-            </Menu>
-          }
-        />
+        <>
+          <FilterBar
+            query={query()}
+            state={state()}
+            onChange={(next) => navigateTo(feedbackHref(venue().id, query(), next))}
+            results={t().feedbackEntriesRange({
+              from: 1,
+              to: props.dashboard.feedbackEntries.length,
+              total: props.dashboard.feedbackEntriesPage?.total ?? 0,
+            })}
+          />
+          <StatusRow
+            lead={t().feedbackDescription({ count: days() })}
+            loading={props.refreshing}
+            filters={<ListOrder query={query()} state={state()} onChange={() => undefined} />}
+          />
+        </>
       }
     >
       <Show when={venue().feedbackEnabled}>
@@ -710,14 +706,14 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
                   <Button
                     icon="chevron-left"
                     disabled={current().page <= 1}
-                    href={current().page > 1 ? feedbackUrl(props, { page: current().page - 1 }) : undefined}
+                    href={current().page > 1 ? feedbackHref(venue().id, query(), state(), current().page - 1) : undefined}
                   >
                     {words().previous}
                   </Button>
                   <Button
                     icon="chevron-right"
                     disabled={current().page >= pages()}
-                    href={current().page < pages() ? feedbackUrl(props, { page: current().page + 1 }) : undefined}
+                    href={current().page < pages() ? feedbackHref(venue().id, query(), state(), current().page + 1) : undefined}
                   >
                     {words().next}
                   </Button>

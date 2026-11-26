@@ -10,13 +10,11 @@ import { venueMessages } from "../../messages";
 import { venueService } from "../../service";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { venueDashboardRouteScope } from "../dashboard-query";
+import { feedbackQuery, legacyFeedbackHref, parseFeedbackAddress } from "../feedback-query";
 import { CALENDAR_VIEW_COOKIE, parseCalendarView, parseShiftSelection } from "../schedule-url";
 import VenueScreen from "../screens/VenueScreen.island";
 
 const log = logger("venue:workspace");
-
-const feedbackDaysOptions = [7, 14, 30] as const;
-type FeedbackDays = (typeof feedbackDaysOptions)[number];
 
 const parseCalendarDate = (value: string | null): string => {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date().toISOString().slice(0, 10);
@@ -24,15 +22,6 @@ const parseCalendarDate = (value: string | null): string => {
 };
 
 const viewPath = (id: string, view: VenueView) => `/app/venue/${id}/${view}`;
-const parseFeedbackDays = (value: string | null): FeedbackDays => {
-  const parsed = Number(value);
-  return feedbackDaysOptions.includes(parsed as FeedbackDays) ? (parsed as FeedbackDays) : 30;
-};
-/** A positive page number; the service clamps it to the last page. */
-const parsePage = (value: string | null): number => {
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) && parsed > 1 ? parsed : 1;
-};
 
 type ResolvedView = { initialView: VenueView; redirectTo?: string };
 
@@ -84,9 +73,13 @@ export default ssr<AuthContext>(async (c) => {
   const initialCalendarView = urlCalendarView ?? cookieCalendarView ?? "week";
   const initialCalendarViewSource = urlCalendarView ? "url" : cookieCalendarView ? "cookie" : "default";
   const initialCalendarDate = parseCalendarDate(url.searchParams.get("cd"));
-  const initialFeedbackDays = parseFeedbackDays(url.searchParams.get("days"));
-  const initialFeedbackSearch = (url.searchParams.get("search") ?? "").trim();
-  const initialFeedbackComments = url.searchParams.get("comments") === "1";
+  // The feedback list reads its address through its one declaration; old `search=` links lead to `q=`.
+  const legacy = resolved.initialView === "feedback" ? legacyFeedbackHref(url.pathname, url.searchParams) : null;
+  if (legacy) return c.redirect(legacy);
+  const feedback = parseFeedbackAddress(feedbackQuery(getLocale(c)), url.searchParams);
+  const initialFeedbackDays = feedback.days;
+  const initialFeedbackSearch = feedback.search;
+  const initialFeedbackComments = feedback.comments;
   const dashboardScope = venueDashboardRouteScope({
     venueId: id,
     view: resolved.initialView,
@@ -95,7 +88,7 @@ export default ssr<AuthContext>(async (c) => {
     feedbackDays: initialFeedbackDays,
     feedbackSearch: initialFeedbackSearch,
     feedbackComments: initialFeedbackComments,
-    feedbackPage: parsePage(url.searchParams.get("page")),
+    feedbackPage: feedback.page,
   });
   // The Public page view previews the page as visitors would see it, also while it is off. A failed preview
   // leaves the rest of the view usable; the view says so and offers to retry.

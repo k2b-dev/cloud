@@ -398,6 +398,23 @@ describe("Venue on v2", () => {
     }
   }, 60_000);
 
+  test("feedback filters are statements in the filter bar and live in the address", async () => {
+    const { context, tab, errors } = await open(desktop, "/app/venue/Cafe01/feedback");
+    try {
+      await shoot(tab, "feedback-1440");
+      await tab
+        .getByRole("button", { name: /Zeitraum/ })
+        .first()
+        .click();
+      await tab.getByRole("option", { name: /7 Tage/ }).click();
+      await tab.waitForURL(/days=7/);
+      expect(new URL(tab.url()).pathname).toBe("/app/venue/Cafe01/feedback");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
   test("every page keeps the layout rules at 1440, 1024 and 390 px", async () => {
     const addresses = [
       "/app/venue",

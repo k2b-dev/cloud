@@ -103,6 +103,8 @@ export const venueMessages = i18n.define({
       feedbackMatchesRange: ({ from, to, total, search }: { from: number; to: number; total: number; search: string }) =>
         `${from}–${to} of ${total} ${total === 1 ? "rating" : "ratings"} with “${search}”`,
       onlyWithComment: "Only with comment",
+      feedbackWindow: "Period",
+      newestFirst: "Newest first",
       allRatings: "All ratings",
       noFeedbackWithComment: ({ count }: { count: number }) => `No rating with a comment in the last ${count} days.`,
       ratingsPerDay: "Ratings per day",
@@ -673,6 +675,8 @@ export const venueMessages = i18n.define({
       feedbackMatchesRange: ({ from, to, total, search }) =>
         `${from}–${to} von ${total} ${total === 1 ? "Bewertung" : "Bewertungen"} mit „${search}“`,
       onlyWithComment: "Nur mit Kommentar",
+      feedbackWindow: "Zeitraum",
+      newestFirst: "Neueste zuerst",
       allRatings: "Alle Bewertungen",
       noFeedbackWithComment: ({ count }) => `Keine Bewertung mit Kommentar in den letzten ${count} Tagen.`,
       ratingsPerDay: "Bewertungen pro Tag",
