@@ -769,8 +769,8 @@ test("page swap replaces only the content column and its page data", async () =>
       expect(canvas.querySelectorAll("solid-island,solid-client").length).toBeLessThanOrEqual(4);
       expect(canvas.firstElementChild?.tagName).toBe("SOLID-ISLAND"); // ShellRuntime stays in the document.
     }
-    // A v2 page's shell hosts its search (`data-k2-host-search`), which a swap would not carry: between v1 and v2 the
-    // document loads, as its shell differs.
+    // A v2 page's <main> marks the host of its search (`data-k2-host-search`) and is swapped with the page; the
+    // header's `pageSearch` is not, so between v1 and v2 the document loads, as their shells differ.
     window.document.body.innerHTML = await (await swapServer.request("/app/swap?ui=v2")).text();
     const v2 = window.document.querySelector(".cloud-app-canvas")!;
     expect(v2.querySelector("main")?.hasAttribute("data-k2-host-search")).toBe(true);

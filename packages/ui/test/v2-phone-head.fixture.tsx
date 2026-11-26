@@ -10,7 +10,6 @@ export function PathAndSearch() {
       head={
         <Bar
           start={<Path label="Ort" items={[{ label: "Ablage", href: "#" }, { label: "Verträge" }]} />}
-          // no placeholder: a search shows its name while empty
           end={<Input type="search" icon="search" label="In Verträgen suchen" />}
         />
       }
