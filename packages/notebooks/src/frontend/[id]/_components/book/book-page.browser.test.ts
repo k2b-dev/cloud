@@ -329,10 +329,10 @@ test("an address with an anchor opens at its heading, and mounting the islands k
 test("390: the shell's menu reaches Book's page tree", async () => {
   const page = await open(390);
   try {
-    await page.evaluate(() => window.openShellMenu?.());
-    const menu = page.getByRole("dialog").filter({ hasText: "Überblick" });
-    await menu.waitFor();
-    expect(await menu.textContent()).toContain("Handbuch Lager");
+    // the phone's title row opens Cloud's menu with the navigation the sidebar provides: the notebook and its pages
+    const navigation = await page.evaluate(() => window.shellNavigation?.() ?? null);
+    expect(navigation?.label).toBe("Handbuch Lager");
+    expect(navigation?.entries).toEqual(expect.arrayContaining(["Überblick", "Wareneingang", "Kühlkette"]));
   } finally {
     await close(page);
   }
