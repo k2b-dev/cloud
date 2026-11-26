@@ -442,7 +442,8 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          {/* the deed is named by its words and then the row's title, so rows with the same deed are told apart */}
+          <Show when={props.action}>{(action) => <ActionButton action={action()} about={title} />}</Show>
           {end()}
         </span>
       </Show>
