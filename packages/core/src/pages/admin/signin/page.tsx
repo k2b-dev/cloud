@@ -57,6 +57,7 @@ const formSection = (section: FormSection, group: string, sections: (locale: str
           entries={entries.filter((entry) => keys.has(entry.key))}
           recent={recentChanges(
             entries.filter((entry) => keys.has(entry.key)),
+            locale,
             (iso) => formatDateTime(iso, dates),
           )}
           approvalState={section === "signin" ? approvalAvailability(approval ?? null) : undefined}

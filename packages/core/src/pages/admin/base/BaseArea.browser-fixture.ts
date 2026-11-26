@@ -249,7 +249,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       { label: "CLI", icon: "terminal-2", href: "/admin/base/cli", nested: true, current: section === "cli" },
     ]);
     const legacy = section === "general" ? (state === "legacy" ? legacyRows : []) : undefined;
-    const recent = recentChanges(entries, worded(locale));
+    const recent = recentChanges(entries, locale, worded(locale));
     const screen = { nav, section, groups, sections, entries, legacy, recent, documentationHref: "https://docs.example.org/en/docs/x" };
     const body = renderToString(() =>
       createComponent(AdminLayout, {
@@ -282,7 +282,7 @@ export async function baseAreaBrowserFixture(options: { port?: number } = {}) {
       groups: [group],
       sections,
       entries,
-      recent: recentChanges(entries, worded(locale)),
+      recent: recentChanges(entries, locale, worded(locale)),
     };
     const body = renderToString(() =>
       createComponent(AdminLayout, {

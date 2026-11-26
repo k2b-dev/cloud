@@ -1,6 +1,7 @@
 import { useLocale } from "@k2b/ui";
 import { List, Row, Section } from "@k2b/ui/v2";
 import { For } from "solid-js";
+import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { areaFormMessages } from "./messages";
 
@@ -8,14 +9,25 @@ import { areaFormMessages } from "./messages";
 export type RecentChange = { key: string; label: string; who: string; when: string };
 
 /** The latest stored changes of the given settings that name a person, newest first. */
-export const recentChanges = (entries: readonly SettingFieldDef[], word: (iso: string) => string, limit = 5): RecentChange[] =>
+export const recentChanges = (
+  entries: readonly SettingFieldDef[],
+  locale: string,
+  word: (iso: string) => string,
+  limit = 5,
+): RecentChange[] =>
   entries
     .filter((entry): entry is SettingFieldDef & { updatedAt: string; updatedBy: { id: string; name: string } } =>
       Boolean(entry.updatedAt && entry.updatedBy),
     )
     .toSorted((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
     .slice(0, limit)
-    .map((entry) => ({ key: entry.key, label: entry.label, who: entry.updatedBy.name, when: word(entry.updatedAt) }));
+    .map((entry) => ({
+      key: entry.key,
+      // the name the form shows for the setting, in the page's language
+      label: localizeSettingField(entry, locale).label,
+      who: entry.updatedBy.name,
+      when: word(entry.updatedAt),
+    }));
 
 /**
  * The column of a settings section while some of its settings name who changed them; none otherwise (rule 5). Called

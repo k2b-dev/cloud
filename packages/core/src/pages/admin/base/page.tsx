@@ -35,7 +35,7 @@ const formSection = (section: Exclude<BaseSection, "places">, groups: string[], 
           groups={groups}
           sections={sections(locale)}
           entries={entries}
-          recent={recentChanges(entries, (iso) => formatDateTime(iso, dates))}
+          recent={recentChanges(entries, locale, (iso) => formatDateTime(iso, dates))}
           legacy={legacy?.map((item) => ({ ...item, updated: formatDateTime(item.updatedAt, dates) }))}
         />
       </AdminLayout>
