@@ -6,6 +6,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { announce, useLocale } from "@k2b/ui";
 import {
   Avatar,
+  Band,
   Bar,
   Button,
   Canvas,
@@ -677,141 +678,161 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
 
   /** A property's value, and for editors the control that changes it in place. */
   const editable = (text: JSXElement, control: () => JSXElement) => (canEditItem() ? control() : text);
+  const names = () => itemPeople(item());
+  const people = () => names().join(", ");
+  // A button keeps its whole label on one line: the first person and "+n" for the rest, all of them in the picker.
+  const peopleLabel = () => (names().length > 1 ? `${names()[0]} +${names().length - 1}` : people());
+  // k2b-ui gap: no answer (RSVP) on an avatar; Spaces keeps no answers of participants yet either.
+  const stack = () =>
+    names().length > 0 ? <Avatar.Stack people={names().map((name): Person => ({ name }))} max={4} label={people()} /> : undefined;
+  /** When an event takes place: its day and hours on one line, how long beside it. */
+  const eventWhen = () => {
+    const start = scheduleStart()!;
+    const end = scheduleEnd()!;
+    return `${dates.formatDateTime(start, props.dateConfig)}–${
+      dates.formatDateKey(new Date(start), props.dateConfig) === dates.formatDateKey(new Date(end), props.dateConfig)
+        ? dates.formatTime(end, props.dateConfig)
+        : dates.formatDateTime(end, props.dateConfig)
+    }`;
+  };
+  /**
+   * The three key facts of the open item (identity B), said once: when, who, and its state; an overdue task stands red
+   * right there. Editors change each in place.
+   * k2b-ui gap (DP, tinted head): the study's open object (oauth-b) has a head on the owner's tint (7 % into white,
+   * padding 14 12 16 20) with a 40 px sign, the name in 600 18/24, one meta line 12/16, and these three facts as
+   * label 12/16 over value 600 15/20, 28 px apart; v2 has no tinted object head, so the facts stand as a Facts list
+   * (label 12 left, value 13) in a Band under the head. An inline Facts row would come closer, but on the phone it
+   * breaks a label away from its value (k2b-ui gap, owner DP: inline facts wrap pair by pair).
+   */
+  const keyFacts = () => (
+    <Band label={t.keyFacts}>
+      <Facts
+        items={[
+          isEvent()
+            ? {
+                label: t.when,
+                value: `${eventWhen()} · ${dates.formatDuration(scheduleStart()!, scheduleEnd()!, props.dateConfig)}`,
+              }
+            : {
+                label: t.due,
+                value: editable(dueText(deadlineEdit.value()), () => (
+                  // k2b-ui gap: no date-time picker in a fact; the day and an optional time are edited in a panel.
+                  <Popover
+                    variant="text"
+                    title={t.due}
+                    content={
+                      <>
+                        <Field label={t.date} name="due-day">
+                          <DateInput
+                            value={deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10)}
+                            onInput={(value) => setDeadlineDay(value)}
+                          />
+                        </Field>
+                        <Field label={t.time} name="due-time" optional={t.optional}>
+                          <Input
+                            value={
+                              deadlineTime() ||
+                              (deadlineEdit.value() && !isDateOnlyDeadline(deadlineEdit.value()!)
+                                ? dates.formatTime(deadlineEdit.value()!, props.dateConfig)
+                                : "")
+                            }
+                            placeholder="09:00"
+                            onInput={setDeadlineTime}
+                          />
+                        </Field>
+                        <Bar
+                          end={
+                            <>
+                              <Button onClick={() => void deadlineEdit.update(null)}>{t.clear}</Button>
+                              <Button
+                                onClick={() => {
+                                  const day = deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10);
+                                  if (!day) return;
+                                  const time = deadlineTime().trim();
+                                  if (time && !/^\d{1,2}:\d{2}$/.test(time)) return toast(t.invalidTime, { status: "bad" });
+                                  void deadlineEdit.update(
+                                    time
+                                      ? dates.zonedDateTimeToInstant(`${day}T${time}`, props.dateConfig?.timeZone ?? "UTC", {
+                                          disambiguation: "earlier",
+                                        })
+                                      : day,
+                                  );
+                                }}
+                              >
+                                {t.save}
+                              </Button>
+                            </>
+                          }
+                        />
+                      </>
+                    }
+                  >
+                    {dueText(deadlineEdit.value())}
+                  </Popover>
+                )),
+              },
+          {
+            label: isEvent() ? t.participants : t.assignedPeople,
+            value: editable(
+              <>
+                {stack()}
+                {people() || "—"}
+              </>,
+              () => (
+                <>
+                  {stack()}
+                  <Popover
+                    variant="text"
+                    title={isEvent() ? t.participants : t.assignedPeople}
+                    content={
+                      <Lookup
+                        label={t.searchPeople}
+                        value={(item().assignees ?? []).map((assignee) => assignee.id)}
+                        known={(item().assignees ?? []).map((assignee) => ({ value: assignee.id, label: assignee.displayName }))}
+                        load={loadPeople}
+                        onChange={(ids) => void updateAssignees(ids)}
+                      />
+                    }
+                  >
+                    {peopleLabel() || t.nobodyAssigned}
+                  </Popover>
+                </>
+              ),
+            ),
+          },
+          {
+            label: t.status,
+            value: editable(statusChip(), () => (
+              <Menu
+                variant="text"
+                items={[
+                  {
+                    title: t.status,
+                    choice: columnEdit.value(),
+                    onChoose: (value) => void columnEdit.update(value),
+                    items: props.space.columns.map((entry) => ({ label: entry.name, value: entry.id })),
+                  },
+                ]}
+              >
+                {statusChip()}
+              </Menu>
+            )),
+          },
+        ]}
+      />
+    </Band>
+  );
   const facts = (): Fact[] => {
     const schedule: Fact[] = isEvent()
       ? [
-          { label: t.start, value: dates.formatDateTime(scheduleStart()!, props.dateConfig) },
-          { label: t.end, value: dates.formatDateTime(scheduleEnd()!, props.dateConfig) },
-          { label: t.duration, value: dates.formatDuration(scheduleStart()!, scheduleEnd()!, props.dateConfig) },
           ...(recurrenceSummary() ? [{ label: t.repeatTerm, value: recurrenceSummary()! }] : []),
           ...(item().location ? [{ label: t.location, value: item().location! }] : []),
           ...(item().url ? [{ label: t.url, value: <Text href={item().url!}>{item().url}</Text> }] : []),
         ]
-      : [
-          ...(canEditItem() || deadlineEdit.value()
-            ? [
-                {
-                  label: t.due,
-                  value: editable(dueText(deadlineEdit.value()), () => (
-                    // k2b-ui gap: no date-time picker in a fact; the day and an optional time are edited in a panel.
-                    <Popover
-                      variant="text"
-                      title={t.due}
-                      content={
-                        <>
-                          <Field label={t.date} name="due-day">
-                            <DateInput
-                              value={deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10)}
-                              onInput={(value) => setDeadlineDay(value)}
-                            />
-                          </Field>
-                          <Field label={t.time} name="due-time" optional={t.optional}>
-                            <Input
-                              value={
-                                deadlineTime() ||
-                                (deadlineEdit.value() && !isDateOnlyDeadline(deadlineEdit.value()!)
-                                  ? dates.formatTime(deadlineEdit.value()!, props.dateConfig)
-                                  : "")
-                              }
-                              placeholder="09:00"
-                              onInput={setDeadlineTime}
-                            />
-                          </Field>
-                          <Bar
-                            end={
-                              <>
-                                <Button onClick={() => void deadlineEdit.update(null)}>{t.clear}</Button>
-                                <Button
-                                  onClick={() => {
-                                    const day = deadlineDay() || (deadlineEdit.value() ?? "").slice(0, 10);
-                                    if (!day) return;
-                                    const time = deadlineTime().trim();
-                                    if (time && !/^\d{1,2}:\d{2}$/.test(time)) return toast(t.invalidTime, { status: "bad" });
-                                    void deadlineEdit.update(
-                                      time
-                                        ? dates.zonedDateTimeToInstant(`${day}T${time}`, props.dateConfig?.timeZone ?? "UTC", {
-                                            disambiguation: "earlier",
-                                          })
-                                        : day,
-                                    );
-                                  }}
-                                >
-                                  {t.save}
-                                </Button>
-                              </>
-                            }
-                          />
-                        </>
-                      }
-                    >
-                      {dueText(deadlineEdit.value())}
-                    </Popover>
-                  )),
-                },
-              ]
-            : []),
-        ];
-    const names = itemPeople(item());
-    const people = names.join(", ");
-    // A button keeps its whole label on one line: the first person and "+n" for the rest, all of them in the picker.
-    const peopleLabel = names.length > 1 ? `${names[0]} +${names.length - 1}` : people;
-    const faces: Person[] = names.map((name) => ({ name }));
-    // k2b-ui gap: no answer (RSVP) on an avatar; Spaces keeps no answers of participants yet either.
-    const stack = () => (faces.length > 0 ? <Avatar.Stack people={faces} max={4} label={people} /> : undefined);
+      : [];
     return [
-      ...(canEditItem() || people
-        ? [
-            {
-              label: isEvent() ? t.participants : t.assignedPeople,
-              value: editable(
-                <>
-                  {stack()}
-                  {people || "—"}
-                </>,
-                () => (
-                  <>
-                    {stack()}
-                    <Popover
-                      variant="text"
-                      title={isEvent() ? t.participants : t.assignedPeople}
-                      content={
-                        <Lookup
-                          label={t.searchPeople}
-                          value={(item().assignees ?? []).map((assignee) => assignee.id)}
-                          known={(item().assignees ?? []).map((assignee) => ({ value: assignee.id, label: assignee.displayName }))}
-                          load={loadPeople}
-                          onChange={(ids) => void updateAssignees(ids)}
-                        />
-                      }
-                    >
-                      {peopleLabel || t.nobodyAssigned}
-                    </Popover>
-                  </>
-                ),
-              ),
-            },
-          ]
-        : []),
       ...(item().claim && !isEvent() ? [{ label: t.workingOnIt, value: item().claim!.displayName }] : []),
       ...schedule,
-      {
-        label: t.status,
-        value: editable(statusChip(), () => (
-          <Menu
-            variant="text"
-            items={[
-              {
-                title: t.status,
-                choice: columnEdit.value(),
-                onChoose: (value) => void columnEdit.update(value),
-                items: props.space.columns.map((entry) => ({ label: entry.name, value: entry.id })),
-              },
-            ]}
-          >
-            {statusChip()}
-          </Menu>
-        )),
-      },
       // Editors see the empty rows as places to set them in place; readers see only what is set. A Space without tags
       // has nothing to add, so its empty Tags row stays away for editors too.
       ...((canEditItem() && props.space.tags.length > 0) || tagNames()
@@ -1017,6 +1038,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         />
       }
     >
+      {keyFacts()}
       <Section
         icon="list-details"
         title={t.properties}

@@ -3,6 +3,7 @@ import { useLocale } from "@k2b/ui";
 import { Bar, Button, Empty, Failed, FilterBar, ListOrder, Menu, Pane, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemGroupBy, ItemListResult, SpaceDetail, SpaceItem } from "@/contracts";
+import type { SpacePulse as SpacePulseData } from "@/overview-contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
 import { useSpaceMessages } from "../../messages";
 import { listStateOf, type SpaceListState, spaceListQuery } from "../filter/query";
@@ -11,6 +12,7 @@ import ItemList from "../list/ItemList";
 import { createLeavingItems } from "../shared/leaving";
 import ItemsTable from "../table/ItemsTable";
 import { useSpacesRouteQuery } from "./route-query";
+import SpacePulse from "./SpacePulse";
 import { subscribeToSpacesDetailStep } from "./workspace-events";
 
 type Props = {
@@ -25,6 +27,8 @@ type Props = {
   dateConfig?: DateContext;
   canWrite: boolean;
   currentUserId: string;
+  /** The Space's first band above the rows. */
+  pulse: SpacePulseData;
 };
 
 const GROUPS = ["deadline", "column", "priority", "tag", "none"] as const satisfies readonly ItemGroupBy[];
@@ -147,6 +151,7 @@ export default function ItemsPane(props: Props) {
         />
       }
     >
+      <SpacePulse pulse={props.pulse} color={props.space.color} />
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
       <Show
         when={!empty()}

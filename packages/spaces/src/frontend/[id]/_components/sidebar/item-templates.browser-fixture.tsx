@@ -40,6 +40,7 @@ export default function ItemTemplatesFixture(props: Props) {
         }}
         people={[]}
         mailIntegrationAvailable={false}
+        pulse={{ done: Array(14).fill(0), overdue: 0, unassigned: 0 }}
         dateConfig={props.dateConfig}
         state={{
           kind: "ok",

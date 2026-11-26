@@ -47,6 +47,7 @@ export default function KanbanFixture(props: Props) {
         }}
         people={[]}
         mailIntegrationAvailable={false}
+        pulse={{ done: Array(14).fill(0), overdue: 0, unassigned: 0 }}
         state={{
           kind: "ok",
           title: [{ title: "Spaces", href: "/app/spaces" }, { title: space.name }],

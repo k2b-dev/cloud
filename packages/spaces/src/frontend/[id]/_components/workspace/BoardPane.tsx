@@ -3,6 +3,7 @@ import { useLocale } from "@k2b/ui";
 import { Canvas, Failed, FilterBar, ListOrder, Pane } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { SpaceDetail, SpaceWormhole } from "@/contracts";
+import type { SpacePulse as SpacePulseData } from "@/overview-contracts";
 import { useSpaceMessages } from "../../messages";
 import { boardStateOf, type SpaceBoardState, spaceBoardQuery } from "../filter/query";
 import { boardFilter, type FilterState } from "../filter/types";
@@ -10,6 +11,7 @@ import KanbanBoard from "../kanban/KanbanBoard";
 import type { KanbanBucketInitial } from "../kanban/types";
 import { writeSpaceSettings } from "../settings/SpaceSettingsStore";
 import { useSpacesRouteQuery } from "./route-query";
+import SpacePulse from "./SpacePulse";
 
 type Props = {
   /** Hands the head its search: it writes `q` into the address of this view and loads it. */
@@ -25,6 +27,8 @@ type Props = {
   dateConfig?: DateContext;
   canWrite: boolean;
   currentUserId: string;
+  /** The Space's first band above the board. */
+  pulse: SpacePulseData;
 };
 
 /**
@@ -87,6 +91,7 @@ export default function BoardPane(props: Props) {
         />
       }
     >
+      <SpacePulse pulse={props.pulse} color={props.space.color} />
       <Show when={view.error()}>{(error) => <Failed text={error().message} onRetry={() => void view.refresh()} />}</Show>
       {/* The board is the rest of the pane and scrolls inside its own columns. k2b-ui gap: columns page with "Load
           more" and are not virtualized yet. */}

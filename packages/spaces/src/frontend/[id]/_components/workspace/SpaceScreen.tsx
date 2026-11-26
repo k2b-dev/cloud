@@ -6,6 +6,7 @@ import { useLocale } from "@k2b/ui";
 import { Avatar, Bar, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
+import type { SpacePulse } from "@/overview-contracts";
 import { spaceCommandMessages } from "../../../../commands";
 import SpacesNav, { useSpacesNav } from "../../../_components/spaces-nav";
 import { createSpaceCommands } from "../../../space-commands";
@@ -39,6 +40,8 @@ export type SpaceScreenProps = {
   mailIntegrationAvailable: boolean;
   /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
   estimateSuggestions?: boolean;
+  /** The Space's first band: tasks done per day over 14 days, overdue and unassigned, read on the server. */
+  pulse: SpacePulse;
 };
 
 const VIEWS = [
@@ -326,10 +329,12 @@ export default function SpaceScreen(props: SpaceScreenProps) {
             dateConfig={props.dateConfig}
             canWrite={state.canWrite}
             currentUserId={state.currentUserId}
+            pulse={props.pulse}
           />
         </Show>
         <Show when={view === "kanban"}>
           <BoardPane
+            pulse={props.pulse}
             space={state.space}
             onSearchReady={(run) => setSearch(() => run)}
             filter={route.filter}

@@ -86,6 +86,7 @@ const spies: { mockRestore(): void }[] = [];
 beforeEach(() => {
   spies.push(
     spyOn(overview, "loadSpacesSidebar").mockResolvedValue({ spaces: [], pinnedSpaceIds: [], myWorkCount: 0 }),
+    spyOn(overview, "loadSpacePulse").mockResolvedValue({ done: Array(14).fill(0), overdue: 0, unassigned: 0 }),
     stubRailSnapshot(),
     spyOn(layoutHelp, "preloadLayoutHelp").mockResolvedValue(null),
     spyOn(cloudServices, "get").mockResolvedValue("https://cloud.test"),

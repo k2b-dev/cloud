@@ -483,6 +483,13 @@ export const spaceScreenProps = (href: string, state: SpaceFixtureState = "usual
             { id: kim.id, uid: "kim", displayName: kim.displayName, kind: "user", avatarHash: null },
           ],
     state: okState,
+    // Invented history: the team's tasks done per day over 14 days, today last.
+    pulse:
+      state === "worst"
+        ? { done: [0, 0, 0, 98_765, 0, 0, 1, 0, 0, 0, 0, 0, 12_345, 1_234_567], overdue: 4_321, unassigned: 87_654 }
+        : state === "empty"
+          ? { done: Array(14).fill(0), overdue: 0, unassigned: 0 }
+          : { done: [3, 1, 0, 4, 6, 2, 0, 0, 5, 7, 3, 4, 1, 2], overdue: 1, unassigned: 2 },
     dateConfig: SPACE_DATES,
     // The invitations section of an event shows only where Mail can take a draft; `?mail` turns it on.
     mailIntegrationAvailable: url.searchParams.has("mail"),

@@ -7,7 +7,7 @@ import { spacesPageHelp } from "../../help";
 import { spacesService } from "../../service";
 import { isEstimateSuggestionAvailable } from "../../service/estimate-suggestion";
 import { isMailInvitationIntegrationAvailable } from "../../service/mail-integration";
-import { loadSpacesSidebar } from "../../service/overview";
+import { loadSpacePulse, loadSpacesSidebar } from "../../service/overview";
 import { spacesPublicResources } from "../../service/public-resources";
 import { legacyFilterHref } from "./_components/filter/query";
 import SpaceScreen from "./_components/workspace/SpaceScreen.island";
@@ -44,12 +44,14 @@ export default ssr<AuthContext>(async (c) => {
   const estimatePromise = statePromise.then((state) =>
     state.kind === "ok" && state.canWrite ? isEstimateSuggestionAvailable(c.get("accessSubject")) : false,
   );
-  const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions] = await Promise.all([
+  const [state, mailIntegrationAvailable, sidebar, people, estimateSuggestions, pulse] = await Promise.all([
     statePromise,
     isMailInvitationIntegrationAvailable(appAccessAuthority(c)),
     loadSpacesSidebar({ userId: user.id, cookieHeader: c.req.header("Cookie"), dateConfig }),
     peoplePromise,
     estimatePromise,
+    // The Space's first band: one aggregate statement with the overview's access condition.
+    loadSpacePulse({ userId: user.id, spaceId, dateConfig }),
   ]);
 
   if (state.kind !== "ok")
@@ -76,6 +78,7 @@ export default ssr<AuthContext>(async (c) => {
         estimateSuggestions={estimateSuggestions}
         sidebar={sidebar}
         people={people}
+        pulse={pulse}
       />
     </Layout>
   );
