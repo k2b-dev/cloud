@@ -7,7 +7,14 @@ import type { GraphView } from "./graph-controller";
 import type { GraphNote } from "./model";
 import { sortByChange } from "./timeline";
 
-const SHOWN_TITLES = 3;
+/** A title of at most this many characters, cut after its last whole word. */
+const TITLE_CHARACTERS = 24;
+const shortTitle = (title: string) => {
+  if (title.length <= TITLE_CHARACTERS) return title;
+  const cut = title.slice(0, TITLE_CHARACTERS);
+  const word = cut.lastIndexOf(" ");
+  return `${(word > 8 ? cut.slice(0, word) : cut).trimEnd()}…`;
+};
 
 /**
  * The same notes, links and filters as the graph, as a table as wide as the pane: the note opens from its row, and
@@ -23,6 +30,7 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     const sort = g().state().sort;
     return sort ? sortByChange(shown, sort === "changed" ? "desc" : "asc") : shown;
   });
+  // The count and the first note it links: one line that ends at a word, never in one.
   const related = (ids: ReadonlySet<string>) => {
     const notes = [...ids].flatMap((id) => {
       const note = g().visibleIds().has(id) ? g().model.byId.get(id) : undefined;
@@ -30,12 +38,9 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     });
     notes.sort((a, b) => a.order - b.order);
     if (notes.length === 0) return "–";
-    const titles = notes
-      .slice(0, SHOWN_TITLES)
-      .map((note) => note.title || t().untitled)
-      .join(", ");
-    const more = notes.length > SHOWN_TITLES ? ` ${t().graphAndMore({ count: notes.length - SHOWN_TITLES })}` : "";
-    return `${notes.length}: ${titles}${more}`;
+    const first = shortTitle(notes[0]!.title || t().untitled);
+    // the count says how many; the ellipsis that there are more than the one named
+    return notes.length > 1 ? `${notes.length}: ${first} …` : `1: ${first}`;
   };
   const sortNext = () => (g().state().sort === "changed" ? "changed-asc" : "changed");
   const columns = (): Column<GraphNote>[] => [
@@ -50,7 +55,11 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     },
     {
       title: t().graphColumnArea,
-      cell: (note) => (note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled),
+      cell: (note) => (
+        <>
+          <AreaMark slot={note.area.slot} /> {note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled}
+        </>
+      ),
       drop: true,
     },
     { title: t().graphLinksTo, cell: (note) => related(note.out) },

@@ -197,10 +197,9 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Only unlinked",
       graphAreas: "Areas",
       graphTopLevel: "Top level",
-      graphScope: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
-        `${shown.toLocaleString("en")} of ${total.toLocaleString("en")} pages, around “${title}”`,
-      graphScopeHelp: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
-        `This notebook has ${total.toLocaleString("en")} pages. The graph shows the ${shown.toLocaleString("en")} around “${title}”: its links, their links, its sub-pages and their places in the notebook. To see the pages around another page, move it to the center in Neighborhood or open the graph from there.`,
+      graphNoteCountScoped: ({ notes, total, links }: { notes: number; total: number; links: number }) =>
+        `${notes} of ${total.toLocaleString("en")} notes · ${links === 1 ? "1 link" : `${links} links`}`,
+      graphNoLinksYet: "No links yet: insert a link to another note in the editor with /note.",
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
@@ -237,11 +236,6 @@ export const notebookWorkspaceMessages = i18n.define({
       graphClearSelection: "Clear selection",
       graphLinksTo: "Links to",
       graphLinkedFrom: "Linked from",
-      graphNoLinks: "No links yet",
-      graphNoLinksDescription: ({ name }: { name: string }) =>
-        `When a note links to another one, you see here how “${name}” fits together.`,
-      graphNoLinksHintBefore: "Insert a link in the editor with",
-      graphNoLinksHintAfter: ".",
       graphUnlinkedNotes: ({ count }: { count: number }) => `${count === 1 ? "1 note" : `${count} notes`}, not linked yet`,
       graphBackToNote: "Back to note",
       graphNoNotes: "This notebook has no notes yet.",
@@ -258,7 +252,6 @@ export const notebookWorkspaceMessages = i18n.define({
       graphOrderTree: "As in the notebook",
       graphOrderNewest: "Changed, newest first",
       graphOrderOldest: "Changed, oldest first",
-      graphAndMore: ({ count }: { count: number }) => `and ${count} more`,
       attachmentMarkdownCopied: "Attachment Markdown copied",
       attachmentMarkdownCopyFailed: "Could not copy attachment Markdown",
       attachmentUsageFailed: "Failed to check attachment usage",
@@ -777,9 +770,9 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Nur ohne Verknüpfung",
       graphAreas: "Bereiche",
       graphTopLevel: "Oberste Ebene",
-      graphScope: ({ shown, total, title }) => `${shown.toLocaleString("de")} von ${total.toLocaleString("de")} Seiten rund um „${title}“`,
-      graphScopeHelp: ({ shown, total, title }) =>
-        `Dieses Notizbuch hat ${total.toLocaleString("de")} Seiten. Der Graph zeigt die ${shown.toLocaleString("de")} rund um „${title}“: ihre Links, deren Links, ihre Unterseiten und deren Orte im Notizbuch. Um die Seiten um eine andere Seite zu sehen, bringe sie in Umgebung in die Mitte oder öffne den Graphen von dort.`,
+      graphNoteCountScoped: ({ notes, total, links }) =>
+        `${notes} von ${total.toLocaleString("de")} Notizen · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
+      graphNoLinksYet: "Noch keine Verknüpfungen: einen Verweis auf eine andere Notiz fügst du im Editor mit /note ein.",
       graphNoteCount: ({ notes, links }) =>
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
@@ -803,10 +796,6 @@ export const notebookWorkspaceMessages = i18n.define({
       graphClearSelection: "Auswahl aufheben",
       graphLinksTo: "Verweist auf",
       graphLinkedFrom: "Verwiesen von",
-      graphNoLinks: "Noch keine Verknüpfungen",
-      graphNoLinksDescription: ({ name }) => `Sobald eine Notiz auf eine andere verweist, siehst du hier, wie „${name}“ zusammenhängt.`,
-      graphNoLinksHintBefore: "Einen Verweis fügst du im Editor mit",
-      graphNoLinksHintAfter: "ein.",
       graphUnlinkedNotes: ({ count }) => `${count === 1 ? "1 Notiz" : `${count} Notizen`}, noch ohne Verknüpfung`,
       graphBackToNote: "Zurück zur Notiz",
       graphNoNotes: "Dieses Notizbuch hat noch keine Notizen.",
@@ -823,7 +812,6 @@ export const notebookWorkspaceMessages = i18n.define({
       graphOrderTree: "Wie im Notizbuch",
       graphOrderNewest: "Geändert, neueste zuerst",
       graphOrderOldest: "Geändert, älteste zuerst",
-      graphAndMore: ({ count }) => `und ${count} weitere`,
       attachmentMarkdownCopied: "Markdown für den Anhang kopiert",
       attachmentMarkdownCopyFailed: "Das Markdown für den Anhang konnte nicht kopiert werden",
       attachmentUsageFailed: "Die Verwendung des Anhangs konnte nicht geprüft werden",

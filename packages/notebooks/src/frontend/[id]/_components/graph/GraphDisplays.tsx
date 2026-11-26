@@ -64,6 +64,9 @@ export default function GraphDisplays(props: {
     get claimFocus() {
       return g().claimFocus;
     },
+    get scopeTotal() {
+      return props.graph.graph.scope?.total;
+    },
   };
   const network = () => <NetworkDisplay {...common} displayName={graphDisplayLabel("network", t())} layout={g().networkLayout} />;
   const circle = () => <CircleDisplay {...common} displayName={graphDisplayLabel("circle", t())} />;
@@ -79,29 +82,6 @@ export default function GraphDisplays(props: {
   );
   return (
     <div class="notebook-graph" data-display={g().display() ?? undefined}>
-      {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
-      <Show when={props.graph.graph.scope}>
-        {(scope) => (
-          <p
-            class="notebook-graph__scope"
-            role="note"
-            title={t().graphScopeHelp({
-              shown: g().model.notes.length,
-              total: scope().total,
-              title: g().model.byId.get(scope().around)?.title || t().untitled,
-            })}
-          >
-            <i class="ti ti-zoom-in-area" aria-hidden="true" />
-            <span>
-              {t().graphScope({
-                shown: g().model.notes.length,
-                total: scope().total,
-                title: g().model.byId.get(scope().around)?.title || t().untitled,
-              })}
-            </span>
-          </p>
-        )}
-      </Show>
       <div class="notebook-graph__body">
         <Show
           when={g().display() !== "timeline"}

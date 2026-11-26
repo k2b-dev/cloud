@@ -1,5 +1,5 @@
 import { Button, NoticeCard, useLocale } from "@k2b/ui";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -72,10 +72,31 @@ export default function BookGraphLive(props: Props) {
       window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
     });
   });
-  // Over the page, not in its flow, so the notice moves nothing when it appears. It starts below the workspace head and
-  // the pane head, so it never covers Close, the search or the filters.
+  // Over the page, not in its flow, so the notice moves nothing when it appears: centred over the graph's pane and below
+  // whatever heads the pane has (the pane head may be absent, a phone's heads are different), measured while it shows.
+  const [place, setPlace] = createSignal<{ top: number; left: number; width: number } | null>(null);
+  const measure = () => {
+    const pane = document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="Pane"]');
+    // the pane's last part is its content, under its head and status
+    const content = (pane?.lastElementChild ?? pane)?.getBoundingClientRect();
+    setPlace(content ? { top: content.top, left: content.left, width: content.width } : null);
+  };
+  createEffect(() => {
+    if (!failed()) return;
+    measure();
+    window.addEventListener("resize", measure);
+    onCleanup(() => window.removeEventListener("resize", measure));
+  });
   return (
-    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none fixed inset-x-0 z-20 flex justify-center px-12">
+    <div
+      aria-live="polite"
+      class="notebook-graph-live-notice pointer-events-none fixed z-20 flex justify-center px-12"
+      style={
+        place()
+          ? { top: `${place()!.top + 12}px`, left: `${place()!.left}px`, width: `${place()!.width}px` }
+          : { top: "0", left: "0", right: "0" }
+      }
+    >
       <Show when={failed()}>
         <NoticeCard role="alert" tone="danger" title={t().updateLoadFailed} class="pointer-events-auto max-w-md">
           <Button variant="secondary" size="xs" loading={retrying()} onClick={retry}>

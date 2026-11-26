@@ -173,10 +173,40 @@ for (const viewport of [
         const row = (await bar.boundingBox())!;
         expect(box.y).toBeGreaterThanOrEqual(row.y + row.height);
       }
+      // centred over the graph's pane, not over the window with the sidebar
+      const pane = (await page.locator('[data-k2-part="Pane"]').first().boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - (pane.x + pane.width / 2))).toBeLessThanOrEqual(2);
     } finally {
       await close(page);
     }
   }, 30_000);
+
+test(`${browserName}: one change in the notebook asks Book once`, async () => {
+  const page = await open(graphPath("hand01"));
+  const asked: string[] = [];
+  try {
+    // every live part that follows the notebook asks the server for Book's state; one change, one question
+    await page.route("**/api/notebooks/hand01/book?*", async (route) => {
+      asked.push(route.request().url());
+      await route.continue();
+    });
+    await page.evaluate(() =>
+      window.dispatchEvent(
+        new CustomEvent("notebooks.workspace.event", {
+          detail: {
+            cursor: null,
+            event: { type: "note.updated", notebookId: "hand01" },
+            cover: (coverage: Promise<void>) => coverage.catch(() => {}),
+          },
+        }),
+      ),
+    );
+    await page.locator(".notebook-graph-live-notice").getByRole("alert").waitFor();
+    expect(asked).toHaveLength(1);
+  } finally {
+    await close(page);
+  }
+}, 30_000);
 
 test(`${browserName}: Book's live updates arrive in the list and survive a switch to the drawing`, async () => {
   const page = await open(graphPath("hand01", "&list=1"));

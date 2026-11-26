@@ -740,11 +740,11 @@ const renderLinkedNotebook = async (
 };
 
 for (const [locale, line] of [
-  ["en", "1 of 20,000 pages, around “Welcome”"],
-  ["de", "1 von 20.000 Seiten rund um „Welcome“"],
+  ["en", "1 of 20,000 notes · 0 links"],
+  ["de", "1 von 20.000 Notizen · 0 Verknüpfungen"],
 ]) {
   test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
-    const html = await renderLinkedNotebook("write", "graph", locale, "write", { around: "note01", total: 20_000 });
+    const html = await renderLinkedNotebook("write", "graph&list=1", locale, "write", { around: "note01", total: 20_000 });
     // the line stands above the graph from the first paint, so nothing moves when the browser takes over
     const [pane] = await select(html, '[data-k2-part="Pane"]');
     expect(pane?.text).toContain(line);

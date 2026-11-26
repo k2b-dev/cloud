@@ -1,7 +1,7 @@
 import NotebookSidebarBody from "../sidebar/NotebookSidebarBody";
 import { useNotebookSidebar } from "../sidebar/notebook-sidebar-state";
 import type { NotebookContext } from "../sidebar/types";
-import GraphFrame, { type GraphFrameProps } from "./GraphWorkspace";
+import GraphFrame, { type GraphFrameProps, type GraphShell } from "./GraphWorkspace";
 
 /** The notebook's Links graph in the notebook's shell: its sidebar marks Links as the current page. */
 export default function NotebookGraphWorkspace(
@@ -12,14 +12,11 @@ export default function NotebookGraphWorkspace(
   },
 ) {
   const sidebar = useNotebookSidebar({ ctx: props.ctx, current: "graph", graphBack: props.graphBack });
-  return (
-    <GraphFrame
-      {...props}
-      shell={{
-        sidebar: <NotebookSidebarBody sidebar={sidebar} current="graph" />,
-        navigation: sidebar.mobileNavigation,
-        navigationLabel: props.ctx.notebook.name,
-      }}
-    />
-  );
+  // Made once: an object literal in JSX props becomes a getter, which would draw the sidebar anew on every read.
+  const shell: GraphShell = {
+    sidebar: <NotebookSidebarBody sidebar={sidebar} current="graph" />,
+    navigation: sidebar.mobileNavigation,
+    navigationLabel: props.ctx.notebook.name,
+  };
+  return <GraphFrame {...props} shell={shell} />;
 }
