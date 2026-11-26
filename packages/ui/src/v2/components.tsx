@@ -359,13 +359,9 @@ export const Tabs = (props: TabsProps) => {
       const least = Math.min(widths[open]!, 96);
       let before = Math.min(fits, open);
       while (before > 0 && until(before) + gap + least > room + 0.5) before -= 1;
-      const left = Math.floor(room - until(before) - (before > 0 ? gap : 0));
-      // without room even for a short name the open tab hides like the others (a cut to nothing says nothing)
-      if (left < least) {
-        setKept(undefined);
-        setFit(fits);
-        return;
-      }
+      // the open tab never hides (Spaces, Notebooks 26.11.): without room even for a short name it stands alone, cut
+      // to the room the line has, and the others fold
+      const left = Math.max(0, Math.floor(room - until(before) - (before > 0 ? gap : 0)));
       setFit(before);
       setKept({ index: open, room: left });
     };

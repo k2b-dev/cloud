@@ -338,7 +338,7 @@ test("a link in a cut second line shows its whole focus ring", async () => {
 });
 
 // Review of #4251: a tab that is open on one device only keeps the rules of the open tab there: without room it stays
-// after the tabs that fit, and where even a short name has no room it folds into the menu, ticked, the menu tab open.
+// after the tabs that fit, and where even a short name has no room it stands alone, cut, and is no entry of the menu.
 for (const [width, device] of [
   [390, "phone"],
   [1440, "desktop"],
@@ -368,11 +368,57 @@ for (const [width, device] of [
         // the last of six stays after the tabs that fit
         expect(open(many)).toEqual(["Notizen"]);
         expect(await page.locator(`nav[aria-label="Viele"] .k2-tab`, { hasText: "Notizen" }).getAttribute("data-kept")).toBe("");
-        // too little room even for a short name: the menu tab is the open one, the tab its ticked entry
-        expect(open(tight)).toEqual(["Mehr"]);
+        // too little room even for a short name: it still stands, alone and cut; the menu holds the others only
+        expect(open(tight)).toEqual(["Notizen der Woche"]);
         await page.locator(`nav[aria-label="Eng"] .k2-tab[data-menu]`).click();
-        expect(await page.getByRole("menuitemcheckbox", { name: "Notizen der Woche" }).getAttribute("aria-checked")).toBe("true");
+        const entries = (await page.getByRole("menu").getByRole("menuitem").allTextContents()).map((entry) => entry.trim());
+        expect(entries).toEqual(["Übersicht", "Verlauf"]);
       },
       "tabsfold",
+    );
+  });
+
+// Spaces and Notebooks (26.11.): with five views and the last one open, the open view folded into "Mehr" at 1024 and
+// 390 px. The open tab always stands in the line, whole or cut with "…", and the others fold first, also when the
+// open one depends on the device.
+for (const width of [1024, 390])
+  test(`with five views the open one stays in sight at ${width} px, also as a device default`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const seen = (label: string) =>
+          page.locator(`nav[aria-label="${label}"] .k2-tab[aria-current="page"]`).evaluateAll((tabs) =>
+            tabs.map((tab) => {
+              const box = tab.getBoundingClientRect();
+              const line = tab.closest(".k2-tabs-nav")!.getBoundingClientRect();
+              const words = tab.querySelector(".k2-tab-label")?.getBoundingClientRect();
+              return {
+                name: tab.textContent?.trim(),
+                visible:
+                  getComputedStyle(tab).visibility === "visible" && box.width > 0 && box.top < line.bottom && box.right <= line.right + 0.5,
+                words: Math.round(words?.width ?? box.width) >= 40,
+              };
+            }),
+          );
+        // the views do not all fit: some fold (else the test proves nothing)
+        const folded = await page
+          .locator(".k2-tab[data-overflow]")
+          .evaluateAll((tabs) => tabs.map((tab) => tab.closest("nav")!.getAttribute("aria-label")));
+        expect(new Set(folded)).toEqual(new Set(["Raum", "Notizbuch"]));
+        expect(await seen("Raum")).toEqual([{ name: "Einstellungen des Raums", visible: true, words: true }]);
+        const device = width < 768 ? "Einstellungen des Raums" : "Dateien und Ordner";
+        expect(await seen("Notizbuch")).toEqual([{ name: device, visible: true, words: true }]);
+        // the menu of further views does not name the open view again
+        for (const label of ["Raum", "Notizbuch"]) {
+          const more = page.locator(`nav[aria-label="${label}"] .k2-tab[data-menu]`);
+          if ((await more.count()) === 0) continue;
+          await more.click();
+          const entries = (await page.getByRole("menu").getByRole("menuitem").allTextContents()).map((entry) => entry.trim());
+          expect(entries).not.toContain(label === "Raum" ? "Einstellungen des Raums" : device);
+          await page.keyboard.press("Escape");
+          await page.getByRole("menu").waitFor({ state: "hidden" });
+        }
+      },
+      "tabsfive",
     );
   });
