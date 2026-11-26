@@ -7,7 +7,8 @@ import { demoBundle } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-recipes.entry";
 import { describeV2Page, measureV2Layout } from "./testing";
 
-// Every state of every k2b-ui recipe, mounted in the browser as Fibel's Example shows it: in the frame of a host. A
+// Every k2b-ui recipe, its default screen and each of its states, mounted in the browser as Fibel's Example shows it:
+// in the frame of a host. A
 // state with `press` opens an overlay (a menu, a panel, a dialog, a toast) by pressing the buttons and menu entries it
 // names, as a person would; then the page and each open surface keep the v2 rules at 1440, 1024 and 390 px, so a
 // picture of an open menu never teaches a mistake either. Every thing a recipe lists carries its sign (a mark, a
@@ -86,16 +87,18 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
     // The states come from the bundle, which imports every recipe compiled for the browser; the test process never
     // imports a recipe's .tsx itself (its own JSX transform is not the browser's). A file that exports `states` while
     // the bundle lists none still fails.
-    test(`${name}: states`, async () => {
+    // The default screen first: it is the recipe's picture, Fibel's first view and what agents copy, so it keeps every
+    // rule below as each state does, a recipe without states (mail) too.
+    test(`${name}: default and states`, async () => {
       const states = Object.keys(listed[name] ?? {});
       const exportsStates = /^export const states\b/m.test(readFileSync(resolve(recipesDir, name), "utf8"));
       expect(states.length > 0).toBe(exportsStates);
-      for (const state of states)
+      for (const state of [undefined, ...states])
         for (const width of [1440, 1024, 390]) {
-          const { page, errors } = await open(width, { name, state });
+          const { page, errors } = await open(width, state ? { name, state } : { name });
           try {
-            const where = `${name} ${state} at ${width} px`;
-            for (const step of listed[name]?.[state] ?? [])
+            const where = `${name} ${state ?? "default"} at ${width} px`;
+            for (const step of state ? (listed[name]?.[state] ?? []) : [])
               await press(page, step).catch((error: unknown) => {
                 throw new Error(`${where}: could not press \"${step}\"`, { cause: error });
               });
@@ -110,7 +113,7 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
             const modal = await page.locator("[data-k2-part='Dialog']").locator("visible=true").count();
             const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", ...(modal ? { grips: "[data-k2-no-grip]" } : {}) });
             expect([where, layout.problems]).toEqual([where, []]);
-            if ((listed[name]?.[state] ?? []).length > 0) {
+            if (state && (listed[name]?.[state] ?? []).length > 0) {
               // what the presses opened stands above the page: a surface, or a toast
               const opened = page.locator(`${surfaces}, [data-slot='toast']`).locator("visible=true");
               expect([where, await opened.count()]).not.toEqual([where, 0]);

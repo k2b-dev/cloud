@@ -60,10 +60,10 @@ screen, recipe, test screen and documentation example:
     the value at a fixed width beside it, its current state visible at a
     glance; never full-width fields stacked one under the other.
 
-Prove it before you show it: `v2-preview` draws the screen in the frame
-of its host (icon rail, tinted page); put your 1440 and 390 px pictures
-beside the matching recipe's and fix every difference in faces, density
-and hierarchy.
+Prove it before you show it: in the monorepo `v2-preview` draws the
+screen in its host's frame (rail, tinted page); elsewhere compare the bare
+screen. Put your 1440 and 390 px pictures beside the matching recipe's and
+fix every difference in faces, density and hierarchy.
 
 ## Start here
 
