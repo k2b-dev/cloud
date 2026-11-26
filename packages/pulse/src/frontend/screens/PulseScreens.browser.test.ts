@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
-import { FIXTURE_NOW, figuresOf, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
+import { FIXTURE_NOW, figuresOf, fixtureApiKeys, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
 import { type Crumb, renderPulseShell } from "./pulse-shell.browser-fixture";
 
 // The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
@@ -173,7 +173,7 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
     });
   if (call.path.endsWith("/scrape")) return route.fulfill({ json: { metrics: 12, events: 0, states: 0 } });
   if (call.path.endsWith("/scrapes")) return route.fulfill({ json: fixtureScrapesFor(call.path.split("/").at(-2) ?? "") });
-  if (call.path.endsWith("/api-keys")) return route.fulfill({ json: [] });
+  if (call.path.endsWith("/api-keys")) return route.fulfill({ json: call.path.includes("s4Cc5Dd6") ? fixtureApiKeys : [] });
   if (call.path.startsWith(`${base}/sources/`) && call.method === "PATCH")
     return route.fulfill({
       json: { ...fixtureSources.find((source) => call.path.endsWith(source.id)), ...(call.body as object), revision: 2 },
@@ -406,12 +406,12 @@ describe("Pulse on v2", () => {
     const { context, tab, errors } = await open(desktop, `/app/pulse/${baseId}/queries`);
     try {
       await tab
-        .getByRole("link", { name: /CPU pro Host/ })
+        .getByRole("link", { name: /CPU je Stunde/ })
         .first()
         .click();
       await tab.waitForURL(`${origin}/app/pulse/${baseId}/sql/q1Ab2Cd3`);
       await settled(tab);
-      expect(await tab.getByText("CPU pro Host, letzte Stunde").first().isVisible()).toBe(true);
+      expect(await tab.getByText("CPU je Stunde, letzter Tag").first().isVisible()).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -120,6 +120,12 @@ export default function SettingsScreen(props: SettingsScreenProps) {
       <Workspace
         sidebar={<Nav title={t().appName} icon="activity-heartbeat" groups={groups()} />}
         sidebarLabel={words().bases}
+        // on the phone the head gives way, so saving stands as the floating main action while the form has changes
+        primary={
+          props.canAdmin && (props.tab === "general" || props.tab === "retention")
+            ? { label: words().save, icon: "check", disabled: form.changes() === 0 || loading(), onClick: () => void form.save() }
+            : undefined
+        }
         // The sidebar shows the base as the open entry; the head holds the areas of its settings.
         head={
           <Bar
@@ -179,13 +185,14 @@ export default function SettingsScreen(props: SettingsScreenProps) {
             />
           </Show>
           <Show when={props.tab === "danger"}>
-            <Section icon="alert-triangle" title={t().settingsDanger} summary={t().destructiveBaseActions}>
+            {/* the tab says "Leeren und löschen"; the section says what these deeds have in common */}
+            <Section icon="alert-triangle" title={words().irreversible} summary={t().destructiveBaseActions}>
               <List label={t().settingsDanger}>
                 <Row
                   icon="eraser"
                   lines={[t().clearTelemetry, base().store.writeBlockReason ? store().clearBlockedText : t().clearTelemetryDescription]}
                   action={{
-                    label: t().clearTelemetry,
+                    label: words().clear,
                     icon: "eraser",
                     disabled: !props.canAdmin || loading() || Boolean(base().store.writeBlockReason),
                     onClick: () => void controller.clearData(base()),
@@ -195,7 +202,7 @@ export default function SettingsScreen(props: SettingsScreenProps) {
                   icon="trash"
                   lines={[t().deletePulseBase, t().deletePulseBaseDescription]}
                   action={{
-                    label: t().deletePulseBase,
+                    label: words().delete,
                     icon: "trash",
                     disabled: !props.canAdmin || loading(),
                     onClick: () => void controller.deleteBase(base()),

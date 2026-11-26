@@ -318,10 +318,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                   label={words().errorsCell}
                   value={number(all().failingCount)}
                   meta={
+                    // the newest failure by name, the others as a number, so a long name never fills the cell
                     all().failingCount
-                      ? all()
-                          .failing.map((source) => source.name)
-                          .join(", ")
+                      ? all().failingCount > 1
+                        ? `${all().failing[0]?.name} +${all().failingCount - 1}`
+                        : all().failing[0]?.name
                       : words().sourcesFine
                   }
                   href={all().failingCount === 1 ? sourceHref(all().failing[0]!) : undefined}
@@ -419,7 +420,7 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               mark: sourceMark(source),
               lines: [source.name, sourceLine(source, t())],
               // a healthy source needs no word; a failing or paused one shows its state in colour, symbol and word
-              states: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
+              marks: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
             columns={[
               {
@@ -431,10 +432,11 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               {
                 title: words().sourceStatusColumn,
                 width: { min: 200, default: 270 },
-                // a healthy source says so once in a quiet word; only a failing or paused one tells since when data are missing
+                // a healthy source needs no word (the figures above say how many are fine); only a failing or paused one
+                // shows its state and since when data are missing
                 cell: (source) =>
                   sourceStatus(source, t()).tone === "ok"
-                    ? statusChip(source, t())
+                    ? ""
                     : // the state, and under it since when data are missing, so neither is cut
                       {
                         lines: [

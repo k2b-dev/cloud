@@ -121,15 +121,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   ? words().matchesCount({ count: shown().length, total: props.bases.length })
                   : words().storeTrouble({ count: troubledBases().length })
               }
-              // which ones, and what is wrong with each
-              // k2b-ui gap (#4259 StatusRow marks): the names stand as figures, not yet as tinted chips with their mark
-              facts={
-                query().trim()
-                  ? undefined
-                  : troubledBases()
-                      .slice(0, 3)
-                      .map((base) => ({ value: base.name, after: storeState(base.store, store()).label }))
-              }
             />
           ) : undefined
         }
@@ -157,7 +148,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
               phone={(base) => ({
                 mark: { icon: iconName(base.icon), color: baseColor(base.color) },
                 lines: [base.name, base.description ?? words().membersMeta({ count: base.memberCount })],
-                states: troubled(base) ? <StoreChip store={base.store} t={store()} /> : undefined,
+                marks: troubled(base) ? <StoreChip store={base.store} t={store()} /> : undefined,
               })}
               columns={[
                 {

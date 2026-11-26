@@ -1,3 +1,4 @@
+import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import type { PulseBase, PulseSource, PulseSourceScrape, SourceFigures } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
@@ -38,13 +39,16 @@ const PEOPLE = ["Jana Petersen", "Jonas Wolf", "Mira Aydın", "Ole Brandt", "Lea
 
 export const fixtureBase = (patch: Partial<PulseBase> & Pick<PulseBase, "id" | "name">): PulseBase => ({
   memberCount: 4,
+  // storage differs from base to base, as real bases fill at their own pace
+  store: store({
+    usage: { bytes: ((patch.id.charCodeAt(1) % 17) + 1) * 0.81 * 1024 ** 3, rows: 9_000_000, measuredAt: FIXTURE_NOW },
+  }),
   // a base's first three members as an admin of it reads them, admins first; rotated so the bases differ
   members: [...PEOPLE.slice(patch.id.charCodeAt(0) % 5), ...PEOPLE].slice(0, Math.min(3, patch.memberCount ?? 4)).map((name, index) => ({
     principal: { type: "user" as const, userId: `00000000-0000-4000-9000-00000000000${PEOPLE.indexOf(name)}` },
     permission: index === 0 ? ("admin" as const) : ("write" as const),
     displayName: name,
   })),
-  store: store(),
   description: null,
   shortId: patch.id,
   icon: "ti ti-activity",
@@ -283,10 +287,47 @@ export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
     states: 0,
     errorMessage: failing ? TIMEOUT : null,
   }));
-  return failing ? fetches.slice(1) : fetches.slice(0, 4);
+  // the printer times out since this morning; yesterday evening it still answered
+  if (failing)
+    return [
+      ...fetches.slice(1, 4),
+      {
+        id: `${sourceId}-ok`,
+        sourceId,
+        startedAt: "2026-11-24T17:20:00.000Z",
+        finishedAt: "2026-11-24T17:20:01.000Z",
+        durationMs: 618,
+        success: true,
+        metrics: 1_206,
+        events: 0,
+        states: 0,
+        errorMessage: null,
+      },
+    ];
+  return fetches.slice(0, 4);
 };
 
 /** The page props of a base on Sources, as the server builds them, from the invented data above. */
+/** The key the shop's backend sends its events with, used a minute ago. */
+export const fixtureApiKeys: ResourceApiKey[] = [
+  {
+    id: "00000000-0000-4000-8000-0000000000c1",
+    serviceAccountId: "00000000-0000-4000-8000-0000000000c2",
+    name: "Webshop-Backend",
+    kind: "api_token",
+    status: "active",
+    tokenPrefix: "puls_7f3a",
+    scopes: ["write"],
+    expiresAt: "2027-02-23T23:59:59.000Z",
+    lastUsedAt: "2026-11-25T09:40:00.000Z",
+    createdBy: null,
+    createdAt: "2026-09-12T08:00:00.000Z",
+    revokedAt: null,
+    revokedBy: null,
+    permission: "write",
+  },
+];
+
 /** The figures the server reads for a list of sources: the same sums over all of them. */
 export const figuresOf = (sources: PulseSource[]): SourceFigures => {
   const failing = sources.filter((source) => source.enabled && source.status.lastError);
@@ -319,7 +360,8 @@ export const sourcesProps = (
       alerts: options.alerts ?? fixtureAlerts,
     },
     initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
-    initialSourceApiKeys: {},
+    // a source that receives data has the key it receives them with
+    initialSourceApiKeys: open && sources.find((source) => source.id === open)?.kind === "http_ingest" ? { [open]: fixtureApiKeys } : {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },
     initialFigures: figuresOf(sources),
     initialDateConfig: { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 },
@@ -361,7 +403,7 @@ export const fixtureQueries: SavedQuery[] = [
   {
     id: "q1Ab2Cd3",
     baseId: "b7Kq2mX9",
-    name: "CPU pro Host, letzte Stunde",
+    name: "CPU je Stunde, letzter Tag",
     sql: "-- Last of every host\nSELECT toStartOfMinute(ts) AS time, host, avg(value) AS cpu\nFROM samples\nWHERE name = :metric\nGROUP BY time, host",
     params: { metric: "node_cpu" },
     revision: 3,
