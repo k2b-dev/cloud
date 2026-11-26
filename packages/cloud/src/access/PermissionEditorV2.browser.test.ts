@@ -162,21 +162,19 @@ describe("the permission editor on v2", () => {
     }
   });
 
-  test("after a removal that leaves only the protected last manager, the focus stays in the list", async () => {
-    const { context, tab } = await open(views[0]!, "?pair");
+  test("removing the last row moves the focus to the Remove of the row before it", async () => {
+    const { context, tab } = await open(views[0]!);
     try {
-      await row(tab, "Jonas Weber")
-        .getByRole("button", { name: /Remove Jonas Weber/ })
-        .click();
+      const last = tab.locator('[data-k2-part="Row"]').last();
+      const name = (await last.getByRole("button", { name: /^Remove / }).getAttribute("aria-label")) ?? "";
+      await last.getByRole("button", { name: /^Remove / }).click();
       await tab
         .getByRole("alertdialog")
         .getByRole("button", { name: /Remove/ })
         .click();
-      await tab.locator('[data-k2-part="Row"]').filter({ hasText: "Jonas Weber" }).waitFor({ state: "detached" });
+      await tab.getByRole("button", { name, exact: true }).waitFor({ state: "detached" });
       await settled(tab);
-      expect(
-        await tab.evaluate(() => document.activeElement?.closest('[data-k2-part="Row"]')?.textContent ?? document.activeElement?.tagName),
-      ).toContain("Mia Hoffmann");
+      expect(await tab.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Remove Lagerbot");
     } finally {
       await context.close();
     }

@@ -1,5 +1,5 @@
 import type { MarkProps, Person } from "@k2b/ui/v2";
-import { cloudAvatarImage } from "../account/Avatar";
+import { cloudAvatarImage } from "../account/avatar-url";
 import type { Principal, ServiceAccountKind } from "../contracts/shared";
 
 /** The kind colours of the v1 avatars, so a group, everyone signed in and Code read apart at a glance in both looks. */
