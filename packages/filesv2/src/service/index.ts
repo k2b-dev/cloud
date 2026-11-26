@@ -1470,6 +1470,7 @@ export function createFilesService(
     page?: Awaited<ReturnType<typeof authorized>>,
   ): ReturnType<ActivityReaderDependencies["requestContext"]> {
     const state = page?.state ?? (await context(actor, budget));
+    if (page && !state.candidates.includes(page.inspection.candidate)) throw new FilesError("not_found", 404);
     let admin = false;
     if (!page)
       try {

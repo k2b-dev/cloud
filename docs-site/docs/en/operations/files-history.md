@@ -190,8 +190,8 @@ Cloud content change; it is null when no author is available or the reader
 cannot read local history. Renames and moves do not replace that author. Stable
 item IDs preserve attribution after a move; roots without them match the current
 full path. This describes recorded Cloud work, not changes by external writers.
-Foreign administrator listings also return null; foreign history remains behind
-the audited history reader. `links` counts active download links created by the
+Listings exist only for the reader's own authorized bases; foreign history stays
+behind the audited history reader. `links` counts active download links created by the
 reader, including for administrators. It excludes other people's links, expired
 links and revoked links, so zero does not mean an item has no public link.
 

@@ -377,6 +377,22 @@ suite("administrative read history with real Filegate", () => {
     expect((await audits()).filter((event) => event.outcome === "allowed")).toHaveLength(0);
   });
 
+  test("an administrator browsing a foreign base gets audited entries without listing facts", async () => {
+    const file = await fixture("foreign-facts");
+    await sql`INSERT INTO filesv2.activity(id,started_at,finished_at,state,action,server_url,root,base_id,
+      item_after_id,directory,name,path_after,actor_kind,actor_user_id,via)
+      VALUES(gen_random_uuid(),${stamp},${stamp},'done','file.create',${config.url},'cloud',${bindingId}::uuid,
+        ${file.before.id ?? null},false,'evidence.txt',${file.target},'user',${owner.user.id}::uuid,'web')`;
+    const result = await service.adminList(callFor("list"), locator("list", file));
+    expect(result.items.map((item) => item.path)).toEqual([file.path]);
+    expect(result.items.every((item) => !Object.hasOwn(item, "facts"))).toBe(true);
+    expect((await rows()).filter((entry) => entry.action === "admin.read")).toHaveLength(1);
+    expect((await audits()).filter((event) => event.action === "filesv2.admin.read")).toHaveLength(1);
+    await expect(
+      service.list(testCall(administrator), { baseId: `cloud:users:${owner.user.id}`, path: "foreign-facts" }),
+    ).rejects.toMatchObject({ code: "not_found", status: 404 });
+  });
+
   test("ordinary list, download and versions reads do not emit administrative history or audit", async () => {
     const file = await fixture("ordinary-read");
     const call = testCall(owner);

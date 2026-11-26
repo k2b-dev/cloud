@@ -22,6 +22,12 @@ export function readListingFacts(input: ListingFactsInput) {
       ${toPgTextArray(input.items.map((item) => item.itemId ?? ""))}::text[],
       ${toPgTextArray(input.items.map((item) => String(item.directory)))}::boolean[]
     ) AS entry(path,target,item_id,directory)
+  ), own AS MATERIALIZED (
+    SELECT target_snapshots,items FROM filesv2.shares
+    WHERE created_by=${input.userId}::uuid AND kind='download'
+      AND base_id=${input.bindingId}::uuid AND root=${input.root} AND base_path=${input.basePath}
+      AND (server_url IS NULL OR server_url=${input.serverUrl})
+      AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at>now())
   )
   SELECT page.path, author.actor_user_id AS author_id, links.count::integer AS links
   FROM page
@@ -43,12 +49,8 @@ export function readListingFacts(input: ListingFactsInput) {
     ORDER BY coalesce(a.finished_at,a.started_at) DESC,a.id DESC LIMIT 1
   ) author ON true
   LEFT JOIN LATERAL (
-    SELECT count(*) FROM filesv2.shares s
-    WHERE s.created_by=${input.userId}::uuid AND s.kind='download'
-      AND s.base_id=${input.bindingId}::uuid AND s.root=${input.root} AND s.base_path=${input.basePath}
-      AND (s.server_url IS NULL OR s.server_url=${input.serverUrl})
-      AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at>now())
-      AND (EXISTS (
+    SELECT count(*) FROM own s
+    WHERE (EXISTS (
         SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(s.target_snapshots)='array'
           THEN s.target_snapshots ELSE '[]'::jsonb END) AS snapshot(value)
         WHERE snapshot.value->'directory'=to_jsonb(page.directory)
