@@ -39,6 +39,8 @@ const events = Array.from({ length: 30 }, (_, index) => {
     ...(index === 0 ? { colorHex: "rot" } : {}),
   };
 });
+// alone in the evening, 50 minutes: on a phone its hour is lower than on a wide screen, and its title still fits whole
+events.push({ id: "e30", title: "Rückruf Steuerbüro wegen Jahresabschluss und Umsatzsteuervoranmeldung", start: at(19 * 60), end: at(19 * 60 + 50), color: "cyan" });
 render(() => createComponent(Calendar, { view: options.view, date: "2026-11-05", events, timeZone: "Europe/Berlin", dayHours: [7, 21] }), document.getElementById("host"));
 `;
 const build = await Bun.build({
@@ -81,8 +83,9 @@ const open = async (view: "week" | "day", width: number, dir: "ltr" | "rtl" = "l
 
 /** Every band of 5 November: its title's lines, how far the title reaches, and whether a line is wider than the band. */
 const bands = (page: Page) =>
-  page.evaluate(() =>
-    [...document.querySelectorAll<HTMLElement>(".k2b-calendar-band")].flatMap((band) => {
+  page.evaluate(() => {
+    const all = [...document.querySelectorAll<HTMLElement>(".k2b-calendar-band")];
+    return all.flatMap((band, index) => {
       const title = band.querySelector<HTMLElement>(".k2b-calendar-event__title");
       const event = band.querySelector<HTMLElement>(".k2b-calendar-event");
       if (!title || !event || band.getBoundingClientRect().width === 0) return [];
@@ -91,6 +94,19 @@ const bands = (page: Page) =>
       const box = title.getBoundingClientRect();
       const line = Number.parseFloat(getComputedStyle(title).lineHeight);
       const rect = band.getBoundingClientRect();
+      const meta = band.querySelector<HTMLElement>(".k2b-calendar-event__meta");
+      const metaBottom = meta && getComputedStyle(meta).display !== "none" ? meta.getBoundingClientRect().bottom : box.bottom;
+      // the bands painted over this one: later in its column, starting lower, where they meet it
+      const over = all.slice(index + 1).filter((other) => {
+        const next = other.getBoundingClientRect();
+        return (
+          other.parentElement === band.parentElement &&
+          next.top > rect.top + 0.5 &&
+          next.top < rect.bottom &&
+          next.left < rect.right - 0.5 &&
+          rect.left < next.right - 0.5
+        );
+      });
       return [
         {
           id: band.dataset.calendarEntry ?? "",
@@ -110,10 +126,12 @@ const bands = (page: Page) =>
           // filled in its colour, with a colour edge of 3 px at its start
           filled: getComputedStyle(band).backgroundColor !== "rgb(255, 255, 255)",
           edge: getComputedStyle(band).boxShadow.includes("3px 0px 0px"),
+          // a band laid over this one (a phone's week) starts below its title and time
+          clear: over.every((other) => Math.max(box.bottom, metaBottom) <= other.getBoundingClientRect().top + 0.5),
         },
       ];
-    }),
-  );
+    });
+  });
 
 /** The boxes of the "+n" buttons and of the bands, in the page's pixels. */
 const boxes = (page: Page, selector: string) =>
@@ -145,6 +163,7 @@ for (const view of ["week", "day"] as const)
             twoLinesAtMost: band.lines <= 2,
             filled: band.filled,
             edge: band.edge,
+            clear: band.clear,
           }).toEqual({
             id: band.id,
             inside: true,
@@ -154,15 +173,16 @@ for (const view of ["week", "day"] as const)
             twoLinesAtMost: true,
             filled: true,
             edge: true,
+            clear: true,
           });
         }
-        // at most two bands at any time; the rest are counted in "+n" buttons, and together they are all 30
+        // at most two bands at any time; the rest are counted in "+n" buttons, and together they are all 31
         for (const band of shown)
           expect(shown.filter((other) => other.top <= band.top + 0.5 && other.bottom > band.top + 0.5).length).toBeLessThanOrEqual(2);
         const more = page.locator(".k2b-calendar-more");
         expect(await more.count()).toBeGreaterThan(0);
         const counts = await more.evaluateAll((buttons) => buttons.map((button) => Number(button.textContent?.replace("+", "") ?? 0)));
-        expect(shown.length + counts.reduce((sum, count) => sum + count, 0)).toBe(30);
+        expect(shown.length + counts.reduce((sum, count) => sum + count, 0)).toBe(31);
         // no "+n" covers another or a band
         const chips = await boxes(page, ".k2b-calendar-more");
         const drawn = await boxes(page, ".k2b-calendar-band");
@@ -172,14 +192,24 @@ for (const view of ["week", "day"] as const)
         }
         // "+n" opens the list of the entries it stands for; Escape closes it and gives the focus back to the "+n"
         const first = more.first();
-        expect(await first.getAttribute("aria-label")).toMatch(/^\d+ weitere ab \d\d:\d\d$/);
+        // its name starts with what it shows (WCAG 2.5.3)
+        const name = (await first.getAttribute("aria-label")) ?? "";
+        expect(name).toMatch(/^\+(1 weiterer Termin|\d+ weitere Termine) ab \d\d:\d\d$/);
+        expect(name.startsWith((await first.textContent()) ?? "-")).toBe(true);
         await first.click();
-        const list = page.getByRole("dialog", { name: (await first.getAttribute("aria-label")) ?? "" });
+        const list = page.getByRole("dialog", { name });
         await list.waitFor();
         expect(await list.locator("[data-calendar-event]").count()).toBe(counts[0] ?? 0);
         await page.keyboard.press("Escape");
         await list.waitFor({ state: "hidden" });
         expect(await first.evaluate((button) => document.activeElement === button)).toBe(true);
+        // pressing the "+n" of an open list closes it, and it stays closed
+        await first.click();
+        await list.waitFor();
+        await first.click();
+        await list.waitFor({ state: "hidden" });
+        await settled(page);
+        expect(await list.isVisible()).toBe(false);
       } finally {
         await page.close();
       }
@@ -210,7 +240,7 @@ for (const view of ["week", "day"] as const)
     }
   });
 
-test('right to left: the edge and the "+n" stand on the right side, also for a selected band', async () => {
+test('right to left: the edge stands on the right, also for a selected band, and the "+n" on the left', async () => {
   const page = await open("week", 1440, "rtl");
   try {
     const band = page.locator(".k2b-calendar-band[data-calendar-entry='e1']");

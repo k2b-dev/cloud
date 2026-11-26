@@ -1162,6 +1162,8 @@ const WeekColumn = (props: {
               dayKey={props.dayKey}
               expanded={props.expanded}
               hourPx={WEEK_HOUR_PX}
+              phoneHourPx={WEEK_PHONE_HOUR_PX}
+              overlay
               tabIndex={props.tabOf(`b:${entry.band.item.id}:${props.dayKey}`)}
               stop={{ id: `b:${entry.band.item.id}:${props.dayKey}`, column: props.column, minute: entry.band.start }}
               scroller={props.scroller}

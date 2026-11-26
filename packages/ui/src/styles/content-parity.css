@@ -2511,10 +2511,33 @@
   display: -webkit-box;
   flex: none;
   white-space: normal;
-  hyphens: auto;
+  hyphens: var(--k2b-calendar-hyphens, auto);
   overflow-wrap: break-word;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: var(--k2b-calendar-lines, 2);
+}
+
+/* A phone has lower hours: its own count of lines and its own room for the time (TimeBand). */
+@container k2b-calendar-days (max-width: 40rem) {
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
+    hyphens: var(--k2b-calendar-hyphens-phone, auto);
+    -webkit-line-clamp: var(--k2b-calendar-lines-phone, 2);
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {
+    display: none;
+  }
+}
+
+@container k2b-calendar-week (max-width: 40rem) {
+  .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__title {
+    hyphens: var(--k2b-calendar-hyphens-phone, auto);
+    -webkit-line-clamp: var(--k2b-calendar-lines-phone, 2);
+  }
+
+  .k2b-ui .k2b-calendar-band[data-meta-phone="none"] .k2b-calendar-event__meta {
+    display: none;
+  }
 }
 
 .k2b-ui .k2b-calendar-band:is([data-size="m"], [data-size="l"]) .k2b-calendar-event__meta {
@@ -2601,6 +2624,8 @@
 
 
 .k2b-ui .k2b-calendar-band .k2b-calendar-event__meta {
+  /* as wide as the band at most, so a time too long ends in "…" instead of a cut letter */
+  max-width: 100%;
   margin: 0;
   color: var(--k2b-text-secondary);
   font-size: 0.6875rem;
@@ -4289,14 +4314,31 @@
 
   /* A phone's day is too narrow for two bands side by side: a later band lies over the earlier one, indented by
      1 rem, with a line of the page between them (Apple's week on a phone). Bands that start together stay side by
-     side, else the later one would cover the earlier one's title. */
+     side, else the later one would cover the earlier one's title. The line of the page lies outside every state's
+     edge and ring. */
   .k2b-ui .k2b-calendar-week .k2b-calendar-band:not([data-beside]) {
     --k2b-calendar-band-start: calc(var(--k2b-calendar-inset-start, 0px) + var(--k2b-calendar-inset) + var(--k2b-calendar-lane) * 1rem);
     width: calc(
       100% - var(--k2b-calendar-more, 0px) - var(--k2b-calendar-inset-start, 0px) - 2 * var(--k2b-calendar-inset) - var(--k2b-calendar-lane) *
         1rem
     );
-    outline: 1px solid var(--k2b-surface);
+    box-shadow:
+      var(--k2b-calendar-band-edge),
+      0 0 0 1px var(--k2b-surface);
+  }
+
+  .k2b-ui .k2b-calendar-week .k2b-calendar-band:not([data-beside]):has(> .k2b-calendar-event[data-selected="true"]) {
+    box-shadow:
+      var(--k2b-calendar-band-edge),
+      inset 0 0 0 1px var(--k2b-calendar-edge),
+      0 0 0 1px var(--k2b-surface);
+  }
+
+  .k2b-ui .k2b-calendar-week .k2b-calendar-band:not([data-beside])[data-running="true"] {
+    box-shadow:
+      var(--k2b-calendar-band-edge),
+      0 0 0 1px var(--k2b-calendar-edge),
+      0 0 0 2px var(--k2b-surface);
   }
 }
 

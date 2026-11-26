@@ -877,6 +877,7 @@ const DaySection = (props: {
                 expanded={expanded()}
                 showLocation
                 hourPx={DAY_HOUR_PX}
+                phoneHourPx={DAY_PHONE_HOUR_PX}
                 scroller={props.scroller}
               />
             ) : entry.kind === "more" ? (
