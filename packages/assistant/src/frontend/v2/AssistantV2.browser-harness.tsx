@@ -4,7 +4,6 @@ import { type ShellData, ShellDataProvider } from "@k2b/cloud/ssr/shell-data";
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { render } from "solid-js/web";
-import { registerGlobalSearchHost } from "../../../../cloud/src/browser/search-bridge";
 import AssistantWorkspace from "../AssistantWorkspace.island";
 
 declare global {
@@ -43,7 +42,11 @@ const shell: ShellData = {
 };
 // The shell's search host, as ShellRuntime registers it: the test reads which search the page asked for.
 window.searches = [];
-registerGlobalSearchHost((options) => window.searches.push(options));
+window.addEventListener("cloud.search.open", (event) => {
+  const request = (event as CustomEvent<{ options: unknown; accepted: boolean }>).detail;
+  request.accepted = true;
+  window.searches.push(request.options);
+});
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>

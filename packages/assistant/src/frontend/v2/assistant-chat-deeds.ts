@@ -1,6 +1,6 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
 import { navigateTo } from "@k2b/ssr/nav";
-import { confirm, type ShowToast } from "@k2b/ui/v2";
+import { confirm, useToast } from "@k2b/ui/v2";
 import { assistantApi } from "../../api/client";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import type { AssistantLiveHub } from "../assistant-live";
@@ -13,7 +13,6 @@ import { assistantV2Messages } from "./assistant-v2-messages";
 export type AssistantChatDeedsOptions = {
   basePath: string;
   locale: () => string;
-  toast: ShowToast;
   live: AssistantLiveHub;
   projects: () => readonly AiProject[];
   conversations: () => readonly AiConversation[];
@@ -30,6 +29,7 @@ export type AssistantChatDeedsOptions = {
  * (v1's chat settings), archive it after asking, and open the list of every chat.
  */
 export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => {
+  const toast = useToast();
   const t = () => assistantMessages.resolve([options.locale()]).t;
   const text = (value: string) => assistantCopyFor(options.locale()).text({ value });
   const v2 = () => assistantV2Messages.resolve([options.locale()]).t;
@@ -57,9 +57,9 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
     try {
       await assistantApi.archiveConversation(conversation.id);
       options.onArchived(conversation);
-      options.toast(text("Chat archived"), { status: "ok" });
+      toast(text("Chat archived"), { status: "ok" });
     } catch {
-      options.toast(v2().archiveFailed, { status: "bad", retry: () => archive(conversation) });
+      toast(v2().archiveFailed, { status: "bad", retry: () => archive(conversation) });
     }
   };
 

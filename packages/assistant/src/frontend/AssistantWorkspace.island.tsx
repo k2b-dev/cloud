@@ -69,7 +69,6 @@ import {
   toast,
   useLocale,
 } from "@k2b/ui";
-import { useToast as useToastV2 } from "@k2b/ui/v2";
 import {
   batch,
   createEffect,
@@ -3674,11 +3673,9 @@ export default function AssistantWorkspace(props: Props) {
   const archiveBlocker = (conversation: AiConversation) =>
     assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null);
   const PageFrame = () => {
-    const toastV2 = useToastV2();
     const deeds = createAssistantChatDeeds({
       basePath,
       locale,
-      toast: toastV2,
       live: liveHub,
       projects,
       conversations,
