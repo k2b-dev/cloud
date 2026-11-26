@@ -300,7 +300,8 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(html).toContain('data-k2-part="Path"');
     expect(html).toContain('data-k2-part="FilterBar"');
     // The open entry stands beside the list from the first picture, with its deeds and properties.
-    expect(html).toContain("Properties");
+    // the facts of the open file, without a head of their own
+    expect(html).toContain('data-k2-part="Facts"');
     expect(html).toContain("Download");
     // Zero loading indicators on the first render (quality bar of the v2 migration).
     expect(html).not.toContain('data-k2-part="Loading"');

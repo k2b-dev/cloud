@@ -54,9 +54,16 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
+- A screen is a component that returns one `Workspace`. It renders on the
+  server; only the parts that need the browser are islands (`.island.tsx`):
+  a button with its action, a field, a row's actions, a filter bar. An island
+  stands wherever its primitive stands. v2.css and `describeV2` look through
+  the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
+  same. Never make the whole screen one island to keep its layout.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
 
 ## What to use for what
 
@@ -94,6 +101,10 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -104,7 +115,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
@@ -164,42 +175,30 @@ says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
 ## How a screen looks: dense, clear, with faces
-
-The target (design pass 26.11.): dense, clear, space-efficient, tailored
-and appealing. Dense is not busy: show more, never the same thing twice.
-
-1. **Each thing carries its mark.** Every row, card and sidebar entry for a
-   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
-   person's `Avatar`; without its own colour it takes its kind's, never grey.
-2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
-   a statement with a number, chips with a tone for what lets one act. A
-   count such as "6 Einträge" is never the biggest text.
-3. **A state is colour, symbol and word.** A value with a limit gets a bar,
-   a short history a `Spark`.
-4. **Space structures, lines separate groups**; no box inside a card.
-5. **No empty half**: a detail only while open, a side column only if full.
-6. **People beside what they did:** avatars, stacks, `Digest activity`.
-7. **Four type sizes** (12, 13, 14, 18); sample data dense and real.
-8. **At most two head rows** over list and detail: path and deeds, then
-   `FilterBar` with count, order and display at its `end`.
-9. **Settings are `Setting` rows**: value beside the name, never a form.
+Dense is not busy: show more, never the same thing twice (design pass 26.11.).
+- **Each thing carries its mark** (`Mark`, or a person's `Avatar`), never grey.
+- **The first line says what counts today** (`StatusRow` lead, `Cells`).
+- **A state is colour, symbol and word**; a limit a bar. **Space structures,
+  lines separate groups**; no box in a card, no empty half.
+- **People beside what they did**: avatars, stacks, `Digest activity`.
+- **Four type sizes** (12, 13, 14, 18); sample data dense and real.
 
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`,
+  `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
-  `Select`, `DateInput`, `Check`, `Choice`. **Media:** `Preview`.
+  `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
+  `ImageInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`.
-- **States:** `Empty`, `Loading`, `Failed`.
+  `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
 - **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
   and `@k2b/ui/v2/testing` for Playwright tests.
 
