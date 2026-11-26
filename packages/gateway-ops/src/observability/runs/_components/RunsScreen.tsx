@@ -19,6 +19,7 @@ import {
   Tabs,
   Text,
 } from "@k2b/ui/v2";
+import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import RunNow from "../../sync/_components/RunNow";
@@ -51,6 +52,8 @@ export type RunsScreenProps = {
   run: RunRef | null;
   tab: "runs" | "schedules";
   ignored: string | null;
+  /** Names of the workflow definition and parent run the address names, read by the server for the first picture. */
+  names?: { workflow?: LookupItem[]; parent?: LookupItem[] };
   parts: RunsPart[];
   record: { record: RunRecord | null; error: string | null } | null;
   schedules: { schedules: SyncScheduleRow[]; warnings: string[]; error: string | null } | null;
@@ -72,7 +75,24 @@ const STATUS_ICON: Record<RunStatus, string> = {
 export default function RunsScreen(props: RunsScreenProps) {
   const locale = useLocale();
   const t = () => runsMessages.resolve([locale()]).t;
-  const query = createMemo(() => runsQuery(locale(), props.apps, props.state.filters.app));
+  const query = createMemo(() =>
+    runsQuery(locale(), props.apps, props.state.filters.app, async (text, context) => {
+      const time = state().filters.time;
+      const response = await client.workflows.$get(
+        {
+          query: {
+            q: text,
+            limit: String(context.limit),
+            time: time.kind === "preset" ? time.preset : "last-24h",
+            ...(state().filters.app ? { app: state().filters.app } : {}),
+          },
+        },
+        { init: { signal: context.signal } },
+      );
+      if (!response.ok) throw new Error(response.statusText);
+      return response.json();
+    }),
+  );
   const [state, setState] = createSignal<RunsState>(props.state);
   const [parts, setParts] = createSignal<RunsPart[]>(props.parts);
   const [loading, setLoading] = createSignal(false);
@@ -239,6 +259,7 @@ export default function RunsScreen(props: RunsScreenProps) {
               channel: "send",
             }}
             results={lead()}
+            names={props.names}
           />
           <StatusRow lead={lead()} loading={loading()} filters={<ListOrder query={query()} state={state()} onChange={change} />} />
         </>

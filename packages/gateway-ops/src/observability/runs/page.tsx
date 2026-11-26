@@ -9,7 +9,7 @@ import { syncOpsCredentials } from "../sync/service";
 import RunsScreen from "./_components/RunsScreen.island";
 import { runsMessages } from "./messages";
 import { kindsOf, parseRunsAddress, RUNS_PER_PAGE, RUNS_PREVIEW, runsQuery } from "./query";
-import { listRuns, readRunRecord } from "./service";
+import { listRuns, readRunRecord, workflowFilterNames } from "./service";
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
@@ -31,7 +31,7 @@ export default ssr<AuthContext>(async (c) => {
   const kinds = kindsOf(address.state);
   const now = new Date();
 
-  const [parts, record, schedules, attention] = await Promise.all([
+  const [parts, record, schedules, attention, names] = await Promise.all([
     address.tab === "runs"
       ? listRuns(address.state, kinds, { page: address.page, perPage: RUNS_PER_PAGE, preview: RUNS_PREVIEW, credentials, now })
       : Promise.resolve([]),
@@ -47,6 +47,7 @@ export default ssr<AuthContext>(async (c) => {
           .catch((error: unknown) => ({ schedules: [], warnings: [], error: message(error) }))
       : Promise.resolve(null),
     readAttention(),
+    workflowFilterNames(address.state),
   ]);
 
   const ignored =
@@ -68,6 +69,7 @@ export default ssr<AuthContext>(async (c) => {
         tab={address.tab}
         ignored={ignored}
         parts={parts}
+        names={names}
         record={record}
         schedules={schedules}
       />

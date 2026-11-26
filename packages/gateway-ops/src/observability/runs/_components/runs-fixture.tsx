@@ -28,6 +28,11 @@ export const RunsScreenFixture = (props: { search: string; locale?: string }) =>
         ignored={address.issues.length ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null}
         parts={address.tab === "runs" ? fixtureParts(props.search, address.page) : []}
         record={address.run ? { record: address.run.kind === "job" ? fixtureJobRecord : null, error: null } : null}
+        names={
+          address.state.filters.workflow
+            ? { workflow: [{ value: address.state.filters.workflow, label: "Neue Anfrage zuordnen", meta: "mail" }] }
+            : undefined
+        }
         schedules={address.tab === "schedules" ? { schedules: fixtureSchedules, warnings: [], error: null } : null}
       />
     </LocaleProvider>

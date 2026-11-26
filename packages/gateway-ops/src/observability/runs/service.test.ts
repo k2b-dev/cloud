@@ -3,7 +3,7 @@ import { notifications, trace } from "@k2b/cloud/services";
 import * as workflowStore from "@k2b/cloud/workflows/store";
 import { syncOpsService } from "../sync/runtime";
 import { parseRunsAddress, runsQuery } from "./query";
-import { listRuns } from "./service";
+import { listRuns, workflowFilterNames } from "./service";
 
 const definition = "5b1e9a00-0000-4000-8000-000000000001";
 const parent = "5b1e9a00-0000-4000-8000-000000000002";
@@ -49,4 +49,27 @@ test("one workflow definition and one parent run reach the workflow store; the o
     ["delivery", 0, 0],
     ["deadLetter", 0, 0],
   ]);
+});
+
+test("the chosen definition and parent run are named with one read each, and nothing is read without them", async () => {
+  const definitionRead = spyOn(workflowStore, "getWorkflow").mockResolvedValue({
+    id: definition,
+    name: "Rechnung ablegen",
+    appId: "mail",
+  } as never);
+  const parentRead = spyOn(workflowStore, "getWorkflowRun").mockResolvedValue({
+    id: parent,
+    workflowName: "Monatsabschluss",
+    appId: "mail",
+  } as never);
+  spies.push(definitionRead, parentRead);
+  const query = runsQuery("de");
+  const named = await workflowFilterNames(parseRunsAddress(query, new URLSearchParams(`workflow=${definition}&parent=${parent}`)).state);
+  expect(named).toEqual({
+    workflow: [{ value: definition, label: "Rechnung ablegen", meta: "mail" }],
+    parent: [{ value: parent, label: "Monatsabschluss", meta: "mail" }],
+  });
+  expect([definitionRead.mock.calls.length, parentRead.mock.calls.length]).toEqual([1, 1]);
+  expect(await workflowFilterNames(parseRunsAddress(query, new URLSearchParams("kind=job")).state)).toEqual({});
+  expect([definitionRead.mock.calls.length, parentRead.mock.calls.length]).toEqual([1, 1]);
 });

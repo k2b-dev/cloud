@@ -4,7 +4,8 @@
  */
 import { notifications, type TraceEvent, type TraceListFilter, type TraceSpan, trace } from "@k2b/cloud/services";
 import type { WorkflowRunState } from "@k2b/cloud/workflows";
-import { listWorkflowRuns, type WorkflowRunSummary } from "@k2b/cloud/workflows/store";
+import { getWorkflow, getWorkflowRun, listWorkflowFamilies, listWorkflowRuns, type WorkflowRunSummary } from "@k2b/cloud/workflows/store";
+import type { LookupItem } from "@k2b/ui/v2/list-query";
 import { syncOpsService } from "../sync/runtime";
 import type { SyncDeadLetterRow, SyncOpsCredentials } from "../sync/service";
 import { RUN_WINDOW_HOURS, RUN_WINDOWS, type RunKind, type RunRef, type RunStatus, type RunsState } from "./query";
@@ -320,4 +321,34 @@ export const readRunRecord = async (ref: RunRef): Promise<RunRecord | null> => {
     return item ? { kind: "delivery", item } : null;
   }
   return null;
+};
+
+// ── Names of chosen workflow filters ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The names of the workflow definition and the parent run the address names, for the first picture of the filter bar.
+ * One read each, only while that filter is set; never one per row.
+ */
+export const workflowFilterNames = async (state: RunsState): Promise<{ workflow?: LookupItem[]; parent?: LookupItem[] }> => {
+  const [definition, parent] = await Promise.all([
+    state.filters.workflow ? getWorkflow(state.filters.workflow).catch(() => null) : null,
+    state.filters.parent ? getWorkflowRun(state.filters.parent).catch(() => null) : null,
+  ]);
+  return {
+    ...(definition ? { workflow: [{ value: definition.id, label: definition.name, meta: definition.appId }] } : {}),
+    ...(parent ? { parent: [{ value: parent.id, label: parent.workflowName, meta: parent.appId }] } : {}),
+  };
+};
+
+/** Workflow definitions that ran in the window, for the workflow filter's search: names that contain the text. */
+export const searchWorkflowDefinitions = async (
+  text: string,
+  options: { appId?: string; since: Date; limit: number },
+): Promise<LookupItem[]> => {
+  const needle = text.trim().toLowerCase();
+  const families = await listWorkflowFamilies({ ...(options.appId ? { appId: options.appId } : {}), since: options.since });
+  return families
+    .filter((family) => !needle || family.workflowName.toLowerCase().includes(needle))
+    .slice(0, options.limit)
+    .map((family) => ({ value: family.workflowId, label: family.workflowName, meta: family.appId }));
 };

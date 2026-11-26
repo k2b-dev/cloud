@@ -67,6 +67,13 @@ describe("the runs list on the server", () => {
     expect(text).toContain("Jetzt ausführen");
   });
 
+  test("a workflow filter from a link names the definition, not its ID", () => {
+    const id = "00000000-0000-4000-8000-000000000000";
+    const { text } = render(`kind=workflow&workflow=${id}`);
+    expect(text).toContain("Workflow-Definition ist Neue Anfrage zuordnen");
+    expect(text).not.toContain(`ist ${id}`);
+  });
+
   test("a parameter the list cannot apply is named, not dropped", () => {
     expect(render("window=2d").text).toContain("window=2d");
   });

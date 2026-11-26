@@ -3,7 +3,7 @@
  * time. The SSR page reads the address only through it; each kind's own reader filters (`service.ts`). The kinds come
  * from different stores, so each kind pages on its own: there is no sort across kinds.
  */
-import { defineListQuery, field, type ListQueryIssue, type ListQueryStateOf } from "@k2b/ui/v2/list-query";
+import { defineListQuery, field, type ListQueryIssue, type ListQueryStateOf, type LookupItem } from "@k2b/ui/v2/list-query";
 import { type RunsMessages, runsMessages } from "./messages";
 
 export const RUNS_PATH = "/admin/observability/runs";
@@ -61,7 +61,21 @@ const appOptions = (apps: readonly { id: string; label: string }[], selected?: s
 };
 
 /** Builds the declaration in the request's language with the apps the person can filter by. */
-export const runsQuery = (locale: string, apps: readonly { id: string; label: string }[] = [], selectedApp?: string) => {
+/** Searches workflow definitions for the workflow filter; only the browser loads, the server names the chosen one. */
+export type WorkflowLookup = (
+  text: string,
+  context: { readonly signal: AbortSignal; readonly limit: number },
+) => Promise<{ items: readonly LookupItem[] }>;
+
+/** Chosen values without names yet read as their code; the page hands the names to the bar for the first picture. */
+const asItems = async (values: readonly string[]): Promise<readonly LookupItem[]> => values.map((value) => ({ value, label: value }));
+
+export const runsQuery = (
+  locale: string,
+  apps: readonly { id: string; label: string }[] = [],
+  selectedApp?: string,
+  workflows?: WorkflowLookup,
+) => {
   const { t } = runsMessages.resolve([locale]);
   return defineListQuery({
     key: "gateway-ops.runs",
@@ -110,8 +124,15 @@ export const runsQuery = (locale: string, apps: readonly { id: string; label: st
       source: field.text({ label: t.jobSource }),
       channel: field.text({ label: t.channel }),
       // Workflow runs of one definition, or the children of one run (a fan-out): links from the Workflows record land here.
-      workflow: field.text({ label: t.workflowDefinition }),
-      parent: field.text({ label: t.parentRun }),
+      workflow: field.lookup({
+        label: t.workflowDefinition,
+        multiple: false,
+        limit: 20,
+        load: async (text, context) => (workflows ? workflows(text, context) : { items: [] }),
+        resolve: asItems,
+      }),
+      // A parent run comes from a link on a workflow run; it is named, not searched.
+      parent: field.lookup({ label: t.parentRun, multiple: false, limit: 1, load: async () => ({ items: [] }), resolve: asItems }),
     },
     search: { label: t.search },
     sort: { fixed: { field: "started", direction: "desc", label: t.newestFirst } },

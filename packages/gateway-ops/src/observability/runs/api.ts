@@ -2,8 +2,17 @@ import { type AuthContext, auth, middleware, rateLimit, respond } from "@k2b/clo
 import { err, fail, ok } from "@k2b/stdlib";
 import { Hono } from "hono";
 import { syncOpsCredentials } from "../sync/service";
-import { kindsOf, parseRunsAddress, RUNS_PER_PAGE, RUNS_PREVIEW, runsQuery } from "./query";
-import { listRuns } from "./service";
+import {
+  kindsOf,
+  parseRunsAddress,
+  RUN_WINDOW_HOURS,
+  RUNS_PER_PAGE,
+  RUNS_PREVIEW,
+  RUNS_SEARCH_MAX,
+  type RunWindowPreset,
+  runsQuery,
+} from "./query";
+import { listRuns, searchWorkflowDefinitions } from "./service";
 
 /**
  * Mounted at `/api/gateway/runs`: the runs list for an address, as the page reads it. The query names the same
@@ -32,6 +41,19 @@ const app = new Hono<AuthContext>()
       credentials: syncOpsCredentials(c.req.raw),
     });
     return respond(c, ok({ parts }));
+  })
+  // The workflow filter's search: definitions that ran in the address's window, by name.
+  .get("/workflows", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const text = (params.get("q") ?? "").slice(0, RUNS_SEARCH_MAX);
+    const hours = RUN_WINDOW_HOURS[(params.get("time") as RunWindowPreset) ?? "last-24h"] ?? 24;
+    const limit = Math.min(50, Math.max(1, Number(params.get("limit")) || 20));
+    const items = await searchWorkflowDefinitions(text, {
+      appId: params.get("app") || undefined,
+      since: new Date(Date.now() - hours * 3_600_000),
+      limit,
+    });
+    return respond(c, ok({ items }));
   });
 
 export default app;
