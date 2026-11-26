@@ -1,13 +1,11 @@
 import { openAccessDialog } from "@k2b/cloud/access/ui";
 import type { AccessEntry } from "@k2b/cloud/contracts";
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Dropdown, prompts, toast, useLocale } from "@k2b/ui";
-import { onCleanup } from "solid-js";
+import { confirm, type ShowToast } from "@k2b/ui/v2";
 import { apiClient } from "@/api/client";
 import { notebooksAdminMessages } from "../admin-messages";
 
-type AdminNotebookActionsProps = {
+export type AdminNotebookActionsProps = {
   notebookId: string;
   notebookName: string;
 };
@@ -24,7 +22,8 @@ const readErrorMessage = async (response: Pick<Response, "json">, fallback: stri
   return fallback;
 };
 
-const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: string, signal: AbortSignal) => {
+/** Opens the notebook's access, as stored now; a failure to load it throws its reason. */
+export const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: string, signal: AbortSignal) => {
   const t = notebooksAdminMessages.resolve([locale]).t;
   const response = await apiClient[":id"].access.$get({ param: { id: props.notebookId } }, { init: { signal } });
   if (!response.ok) throw new Error(await readErrorMessage(response, t.loadPermissionsFailed));
@@ -60,71 +59,23 @@ const openPermissionDialog = async (props: AdminNotebookActionsProps, locale: st
   });
 };
 
-const deleteNotebook = async (props: AdminNotebookActionsProps, locale: string) => {
+/** Deletes the notebook after asking; the toast says what happened, a failure with the server's reason. */
+export const deleteNotebook = async (props: AdminNotebookActionsProps, locale: string, toast: ShowToast) => {
   const t = notebooksAdminMessages.resolve([locale]).t;
-  const confirmed = await prompts.confirm(t.deleteNotebookQuestion({ name: props.notebookName }), {
+  const confirmed = await confirm({
     title: t.deleteNotebook,
-    icon: "ti ti-trash",
-    confirmText: t.delete,
-    variant: "danger",
+    description: t.deleteNotebookQuestion({ name: props.notebookName }),
+    confirm: t.delete,
+    cancel: t.cancel,
   });
   if (!confirmed) return;
-
   const response = await apiClient[":id"].$delete({
     param: { id: props.notebookId },
   });
   if (!response.ok) {
-    await prompts.error(await readErrorMessage(response, t.deleteFailed));
+    toast(await readErrorMessage(response, t.deleteFailed), { status: "bad" });
     return;
   }
-
-  toast.success(t.deleted);
+  toast(t.deleted, { status: "ok" });
   refreshCurrentPath();
 };
-
-const AdminNotebookActions = (props: AdminNotebookActionsProps) => {
-  const locale = useLocale();
-  const t = () => notebooksAdminMessages.resolve([locale()]).t;
-  const loading = new AbortController();
-  onCleanup(() => loading.abort());
-  // Loading the stored entries shows on the trigger; a failure says why instead of opening an empty dialog.
-  const permissions = mutations.create<void, void>({
-    mutation: () => openPermissionDialog(props, locale(), loading.signal),
-    onError: (error) => {
-      if (!loading.signal.aborted) void prompts.error(error.message);
-    },
-  });
-  return (
-    <Dropdown.Root
-      position="bottom-left"
-      width="13rem"
-      items={[
-        {
-          items: [
-            {
-              icon: "ti ti-shield",
-              label: t().permissions,
-              action: () => void (permissions.loading() || permissions.mutate()),
-            },
-          ],
-        },
-        {
-          items: [
-            {
-              icon: "ti ti-trash",
-              label: t().delete,
-              action: () => void deleteNotebook(props, locale()),
-              variant: "danger",
-            },
-          ],
-        },
-      ]}
-    >
-      <Dropdown.Trigger iconOnly label={t().actionsFor({ name: props.notebookName })} size="xs" tooltip={t().notebookActions}>
-        <i class={permissions.loading() ? "ti ti-loader-2 animate-spin text-sm" : "ti ti-settings text-sm"} />
-      </Dropdown.Trigger>
-    </Dropdown.Root>
-  );
-};
-
-export default AdminNotebookActions;
