@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Check, Chip, Empty, Facts, List, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Check, Chip, Empty, Facts, List, Menu, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { ShiftAssignment, UpcomingSlot, Venue } from "../../contracts";
 import { formatVenueSpan } from "../../time-format";
@@ -106,8 +106,14 @@ export default function ShiftDetailPane(props: {
           <Section icon="calendar-event" title={t().properties} summary={span()}>
             <Facts
               items={[
-                { label: t().staffing, value: t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) }) },
-                { label: words().kind, value: slotChip(current(), t()) },
+                {
+                  label: t().staffing,
+                  value: (
+                    <>
+                      {t().staffed({ assigned: current().assignedCount, target: slotTarget(current()) })} {slotChip(current(), t())}
+                    </>
+                  ),
+                },
               ]}
             />
             <Show when={permissions().take && current().template.date === null}>
@@ -131,15 +137,15 @@ export default function ShiftDetailPane(props: {
                         ]
                       : [person.userId === props.userId ? t().personYou({ name: person.userDisplayName }) : person.userDisplayName]
                   }
-                  action={
-                    permissions().remove(person)
-                      ? {
-                          label: t().removePerson({ name: person.userDisplayName }),
-                          icon: "user-minus",
-                          disabled: props.pending(assignmentActionKey(person)),
-                          onClick: () => props.onRemove(person),
-                        }
-                      : undefined
+                  // removing someone is rare and asks first, so it waits behind the person's "…"
+                  end={
+                    permissions().remove(person) ? (
+                      <Menu
+                        label={t().removePerson({ name: person.userDisplayName })}
+                        disabled={props.pending(assignmentActionKey(person))}
+                        items={[{ label: t().remove, icon: "user-minus", danger: true, onClick: () => props.onRemove(person) }]}
+                      />
+                    ) : undefined
                   }
                 />
               )}

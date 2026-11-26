@@ -253,6 +253,7 @@ describe("Venue on v2", () => {
     const admin = await open(desktop, `${schedule}&shift=${lunchId}`);
     try {
       await detail(admin.tab).getByRole("button", { name: "Sam Beispiel entfernen" }).click();
+      await admin.tab.getByRole("menuitem", { name: "Entfernen" }).click();
       const question = admin.tab.getByRole("alertdialog");
       expect(await question.innerText()).toContain("Mittagstheke");
       await question.getByRole("button", { name: "Entfernen" }).click();
