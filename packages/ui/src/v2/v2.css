@@ -946,10 +946,10 @@
 /* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5).
    "The last button" skips popups: a menu or popover renders right after its button while it is open (in the top
    layer), and the button must not jump when it opens. */
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -6px;
 }
 .k2-ui .k2-group[data-folded] {
@@ -1172,12 +1172,12 @@
   color: var(--k2-subtle);
 }
 /* a text button at the end of a row stands with its text, not its box, on the text edge (K5) */
-.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
@@ -1318,7 +1318,7 @@
   vertical-align: top;
   margin-block: -2px;
 }
-.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
@@ -1625,7 +1625,7 @@
   align-items: center;
 }
 /* an icon button at the end stands with its icon on the text edge */
-.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 

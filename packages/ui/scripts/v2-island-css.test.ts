@@ -48,9 +48,17 @@ describe("transparentIslands", () => {
     expect(transparentIslands(".a:not(:hover){x:1}")).toBe(".a:not(:hover){x:1}");
   });
 
-  test(":has() looks through a wrapper, and past the wrapper of its anchor", () => {
+  test(":has() looks through a wrapper below its anchor", () => {
     expect(transparentIslands(".r:has(> .l){x:1}")).toBe(`.r:has(>.l,>${W}>.l){x:1}`);
-    expect(transparentIslands(".b:has(~ .c){x:1}")).toBe(`.b:is(:has(~.c,~${W}>.c),${W}:has(~.c,~${W}>.c)>*){x:1}`);
+    // never past the anchor's own wrapper: `W:has(~ …)` would restyle the whole island on every change in it
+    expect(transparentIslands(".b:has(~ .c){x:1}")).toBe(`.b:has(~.c,~${W}>.c){x:1}`);
+  });
+
+  test("the last of some siblings counts like the last child: the wrapper's place, and empty wrappers count as none", () => {
+    const last = `:nth-last-child(1 of :is(:not([popover])):not(${E}))`;
+    expect(transparentIslands(".a > .b:nth-last-child(1 of :not([popover])){x:1}")).toBe(
+      `:is(.a>.b${last}:where(:not(${W}>*),${W}${last}>*),.a>${W}>.b${last}:where(:not(${W}>*),${W}${last}>*)){x:1}`,
+    );
   });
 
   test("a rule without a relation, an at-rule and keyframes stay as written", () => {

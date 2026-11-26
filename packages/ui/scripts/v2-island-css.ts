@@ -16,7 +16,9 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 //   none, which keeps the sheet small;
 // - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place, and
 //   skip any number of empty wrappers;
-// - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper, and an anchor in a wrapper looks past it;
+// - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper below the anchor, never past the anchor's own wrapper;
+// - `:nth-child(1 of S)` and `:nth-last-child(1 of S)` count like `:first-child` and `:last-child` among the siblings that
+//   match S;
 // - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
 // - a run of compounds holds at most one sibling relation.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
@@ -76,6 +78,14 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
         body += `${PLACE[name]}:where(:not(${WRAPPER}>*),${WRAPPER}${PLACE[name]}>*)`;
         continue;
       }
+      // `:nth-child(1 of S)` and `:nth-last-child(1 of S)`: first or last among the siblings that match S, as
+      // `:first-child` and `:last-child` are among all; empty wrappers count as none of S
+      const among = /^:nth-(last-)?child\(\s*1\s+of\s+([\s\S]+)\)$/.exec(String(node).trim());
+      if (among) {
+        const place = `:nth-${among[1] ?? ""}child(1 of :is(${among[2]}):not(${EMPTY}))`;
+        body += `${place}:where(:not(${WRAPPER}>*),${WRAPPER}${place}>*)`;
+        continue;
+      }
       if (/^:nth-|-of-type$|^:empty$/.test(name)) {
         if (!context.placeholder) fail(context, name);
         body += String(node).trim();
@@ -89,16 +99,11 @@ const compound = (nodes: Node[], context: Context, argument = false): Compound =
         if (context.inHas) fail(context, ":has() inside :has()");
         const inner = { ...context, inHas: true };
         const alternatives: string[] = [];
-        const pastWrapper: string[] = [];
-        for (const argument of node.nodes) {
-          const relative = relativeAlternatives(argument, inner);
-          alternatives.push(...relative.alternatives);
-          // An anchor in a wrapper: what follows the wrapper follows the anchor too.
-          if (relative.lead === "+") pastWrapper.push(`${WRAPPER}:has(${relative.alternatives.join(",")})>:where(:last-child)`);
-          if (relative.lead === "~") pastWrapper.push(`${WRAPPER}:has(${relative.alternatives.join(",")})>*`);
-        }
-        const has = `:has(${alternatives.join(",")})`;
-        body += pastWrapper.length ? `:is(${[has, ...pastWrapper].join(",")})` : has;
+        // Not past the anchor's own wrapper: `W:has(+ …)` or `W:has(~ …)` would restyle the whole island on every
+        // change inside it, on every page (cloud's shell-restyle test). A rule that must see past the wrapper says
+        // "the last but popovers" with `:nth-last-child(1 of S)` instead of `:not(:has(~ :not(S)))`.
+        for (const argument of node.nodes) alternatives.push(...relativeAlternatives(argument, inner).alternatives);
+        body += `:has(${alternatives.join(",")})`;
         continue;
       }
       body += String(node).trim();
