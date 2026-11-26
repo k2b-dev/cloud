@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
+import { Bar, Pane, Tabs, Text, Workspace } from "../src/v2";
 
 declare global {
   interface Window {
@@ -7,7 +8,6 @@ declare global {
     __manyTabs?: boolean;
   }
 }
-import { Bar, Pane, Tabs, Text, Workspace } from "../src/v2";
 
 // Both kinds of tabs: views in the head that change the address (a navigation), and "Vorschau | Code" of an example
 // that switch a panel in place (the WAI-ARIA tabs pattern), with the same look.
@@ -36,7 +36,11 @@ export function Demo() {
       <Pane
         label="Beispiel"
         head={
-          <Tabs label="Beispiel" panel="example" items={[tab("preview", "Vorschau"), tab("code", "Code"), tab("props", "Eigenschaften"), ...more]} />
+          <Tabs
+            label="Beispiel"
+            panel="example"
+            items={[tab("preview", "Vorschau"), tab("code", "Code"), tab("props", "Eigenschaften"), ...more]}
+          />
         }
       >
         <Tabs.Panel id="example">
