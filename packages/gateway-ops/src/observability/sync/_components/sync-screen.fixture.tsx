@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { syncQuery } from "../../_components/sync-nats-query";
-import SyncScreen, { type SyncDeadLetterView, type SyncScreenProps } from "./SyncScreen";
+import SyncScreen, { type SyncDeadLetterView, type SyncScreenProps } from "./SyncScreen.island";
 
 const facets = { apps: ["mail", "spaces", "notebooks"] };
 const base = "/admin/observability/nats/sync";

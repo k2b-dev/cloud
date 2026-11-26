@@ -16,7 +16,6 @@ import {
   listStrandedWorkflowEffects,
   listUndispatchedWorkflowEvents,
   listWorkflowFamilies,
-  listWorkflowRuns,
   listWorkflowRunTimeline,
   type WorkflowAppHealth,
   type WorkflowRunDetail,
@@ -31,7 +30,7 @@ import { areaText, readAttention } from "../_components/ObservabilityArea";
 import WorkflowsScreen, { type RunDetailView, type Worded } from "./_components/WorkflowsScreen.island";
 import { FINDINGS_PER_PAGE, RUNS_PER_PAGE, type WindowFilter, type WorkflowView, windowStart } from "./filters";
 import { eventState, LAG_WARN_MS, runErrorSummary, stepDetail } from "./presentation";
-import { findingsQuery, legacyWorkflowsHref, runsQuery, workflowsHref } from "./query";
+import { findingsQuery, legacyWorkflowsHref, runsQuery, workflowRunsHref, workflowsHref } from "./query";
 import { buildWorkflowTimelineRows } from "./timeline";
 
 const UUID = z.string().uuid();
@@ -92,7 +91,10 @@ const TIMELINE_STATES = (t: GatewayOpsMessages) => [
 
 const json = (value: unknown) => JSON.stringify(value, null, 2) ?? "null";
 
-/** Workflows on v2. The address holds the view, the filters, the workflow or parent, the page and the open run. */
+/**
+ * Workflows on v2: definitions, the run timeline and the findings queues, with one run open beside them. The runs
+ * themselves are listed in Läufe; `?workflow=` and `?parent=` lead there.
+ */
 export default ssr<AuthContext>(async (c) => {
   const url = new URL(c.req.url);
   const legacy = legacyWorkflowsHref(url.searchParams);
@@ -117,25 +119,24 @@ export default ssr<AuthContext>(async (c) => {
   const since = windowStart(window);
   const pageSize = view === "runs" ? RUNS_PER_PAGE : FINDINGS_PER_PAGE;
   const offset = (page - 1) * pageSize;
-  const showRunList = view === "runs" && Boolean(workflow || parent);
-  const showFamilies = view === "runs" && !showRunList;
+  // The runs of one workflow and a fan-out's children are listed in Läufe; the workflow's app narrows it there.
+  if (view === "runs" && !run && (workflow || parent)) {
+    const owner = workflow ? await getWorkflow(workflow) : null;
+    return c.redirect(workflowRunsHref({ app: owner?.appId, state: filters.state as WorkflowRunState | undefined }));
+  }
+  const showFamilies = view === "runs";
   const runFilter = {
     appId: filters.app || undefined,
-    workflowId: workflow || undefined,
     state: view === "runs" ? (filters.state as WorkflowRunState | undefined) : undefined,
     mode: view === "runs" ? (filters.mode as "execute" | "dryRun" | undefined) : undefined,
     since,
   };
 
-  const [detail, selectedWorkflow, health, familyRows, runRows, timelineResult, effectRows, eventRows, attention] = await Promise.all([
+  const [detail, health, familyRows, timelineResult, effectRows, eventRows, attention] = await Promise.all([
     run ? getWorkflowRun(run) : Promise.resolve(null),
-    workflow ? getWorkflow(workflow) : Promise.resolve(null),
     workflowHealth({ since }),
     showFamilies ? listWorkflowFamilies({ ...runFilter, limit: RUNS_PER_PAGE + 1, offset }) : Promise.resolve([]),
-    showRunList
-      ? listWorkflowRuns({ ...runFilter, parentRunId: parent || undefined, limit: RUNS_PER_PAGE + 1, offset })
-      : Promise.resolve([]),
-    view === "runs" && !parent ? listWorkflowRunTimeline(runFilter, { limit: 2_000 }) : Promise.resolve({ runs: [], total: 0 }),
+    view === "runs" ? listWorkflowRunTimeline(runFilter, { limit: 2_000 }) : Promise.resolve({ runs: [], total: 0 }),
     view === "effects"
       ? listStrandedWorkflowEffects({ appId: filters.app || undefined, limit: FINDINGS_PER_PAGE + 1, offset })
       : Promise.resolve([]),
@@ -148,7 +149,7 @@ export default ssr<AuthContext>(async (c) => {
   const apps = [...new Set(health.map((entry) => entry.appId))].sort();
   const runs = runsQuery(locale, apps, selectedApp);
   const findings = findingsQuery(locale, apps, selectedApp);
-  const rows = view === "runs" ? (showFamilies ? familyRows : runRows) : view === "effects" ? effectRows : eventRows;
+  const rows = view === "runs" ? familyRows : view === "effects" ? effectRows : eventRows;
   const hasNextPage = rows.length > pageSize;
   const totals = totalsFor(filters.app ? health.filter((entry) => entry.appId === filters.app) : health);
   const number = (value: number) => formatNumber(value, { locale });
@@ -158,7 +159,7 @@ export default ssr<AuthContext>(async (c) => {
   const listParams = view === "runs" ? runs.serialize(runsAddress.state) : findings.serialize(findingsAddress.state);
   if (view !== "runs") listParams.set("view", view);
   const href = (extra: Parameters<typeof workflowsHref>[1]) =>
-    workflowsHref(listParams, { workflow, parent, page: page > 1 ? String(page) : "", run, ...extra });
+    workflowsHref(listParams, { page: page > 1 ? String(page) : "", run, ...extra });
   const viewHref = (next: WorkflowView) => {
     const base =
       next === "runs" ? runs.serialize(runsAddress.state) : findings.serialize({ ...findingsAddress.state, filters: { app: filters.app } });
@@ -166,7 +167,6 @@ export default ssr<AuthContext>(async (c) => {
     return workflowsHref(base);
   };
   const countLabel = (count: number) => `${number(Math.min(count, pageSize))}${hasNextPage ? "+" : ""}`;
-  const allWorkflowsHref = href({ workflow: "", parent: "", run: "", page: "" });
 
   const cells: KeyCell[] = [
     { icon: "player-play", label: t.runs, value: number(totals.runs), meta: t.lastWindow({ window }) },
@@ -206,7 +206,7 @@ export default ssr<AuthContext>(async (c) => {
 
   const timelineWindow = { fromMs: since.getTime(), toMs: nowMs };
   const timeline =
-    !detail && view === "runs" && !parent
+    !detail && view === "runs"
       ? {
           domain: [timelineWindow.fromMs, timelineWindow.toMs] as [number, number],
           states: TIMELINE_STATES(t),
@@ -216,7 +216,7 @@ export default ssr<AuthContext>(async (c) => {
               : null,
           rows: buildWorkflowTimelineRows(timelineResult.runs, timelineWindow).map((row) => ({
             label: row.label,
-            href: href({ workflow: row.workflowId, run: "", parent: "", page: "" }),
+            href: workflowRunsHref({ app: row.appId }),
             tooltip: `${row.label} · ${row.appId}`,
             intervals: row.intervals.map(({ run: item, ...interval }) => {
               const timing =
@@ -230,7 +230,7 @@ export default ssr<AuthContext>(async (c) => {
               return {
                 ...interval,
                 label: timing,
-                href: href({ workflow: item.workflowId, run: item.id, parent: "", page: "" }),
+                href: href({ run: item.id, page: "" }),
                 tooltip: [
                   item.workflowName,
                   stateLabel(item.state, t),
@@ -273,119 +273,77 @@ export default ssr<AuthContext>(async (c) => {
 
   const filtered = Boolean(filters.app || filters.state || filters.mode);
   const missing =
-    run && !detail
-      ? { title: t.workflowRunNotFound, action: { label: t.returnToView({ view }), href: href({ run: "" }) } }
-      : workflow && !selectedWorkflow
-        ? { title: t.workflowNotFound, action: { label: t.returnToWorkflows, href: allWorkflowsHref } }
-        : null;
+    run && !detail ? { title: t.workflowRunNotFound, action: { label: t.returnToView({ view }), href: href({ run: "" }) } } : null;
   const list =
-    workflow && !selectedWorkflow
-      ? null
-      : view === "runs"
-        ? showFamilies
-          ? {
-              title: t.workflowFamilies,
-              count: countLabel(familyRows.length),
-              summary: t.matchingDefinitions({ count: countLabel(familyRows.length), window }),
-              actions: [],
-              empty: t.noWorkflowsWindow,
-              filtered,
-              families: familyRows.slice(0, RUNS_PER_PAGE).map((row) => {
-                const queuedAge = row.oldestQueuedAt ? nowMs - row.oldestQueuedAt.getTime() : null;
-                return {
-                  key: row.workflowId,
-                  name: row.workflowName,
-                  meta: `${row.appId} · ${row.eventTypes.length === 0 ? t.directInvocation : row.eventTypes.join(", ")} · r${row.latestRevision}`,
-                  latest: worded(row.latestState, t),
-                  runs: number(row.runs),
-                  failed: `${number(row.failed)} · ${formatPercent(row.runs === 0 ? 0 : row.failed / row.runs, { locale })}`,
-                  failedBad: row.failed > 0,
-                  runtime: `${duration(row.avgDurationMs)} / ${duration(row.p99DurationMs)}`,
-                  backlog: `${number(row.active)} / ${queuedAge === null ? "—" : duration(queuedAge)}`,
-                  backlogWarn: row.needsAttention > 0 || (queuedAge ?? 0) > LAG_WARN_MS,
-                  activity: relative(row.latestRunAt),
-                  href: href({ workflow: row.workflowId, run: "", parent: "", page: "" }),
-                };
-              }),
-            }
-          : {
-              title: parent ? t.childRuns : selectedWorkflow ? t.namedRuns({ name: selectedWorkflow.name }) : t.runs,
-              count: countLabel(runRows.length),
-              summary: t.runsInWindow({ count: countLabel(runRows.length), window }),
-              actions: [
-                ...(parent ? [{ label: t.openParent, href: href({ run: parent, parent: "", page: "" }) }] : []),
-                { label: t.allWorkflows, href: allWorkflowsHref },
-              ],
-              empty: filtered || parent ? t.noRunsFilters : t.noWorkflowRan,
-              filtered,
-              runs: runRows.slice(0, RUNS_PER_PAGE).map((row) => {
-                const error = runErrorSummary(row.error);
-                const queuedMs = row.state === "queued" ? nowMs - row.createdAt.getTime() : null;
-                return {
-                  key: row.id,
-                  name: `${row.workflowName} r${row.revision}`,
-                  meta: `${row.appId} · ${row.mode} · ${row.id.slice(0, 8)}`,
-                  error: error?.message ?? null,
-                  state:
-                    queuedMs !== null
-                      ? {
-                          label: `${stateLabel(row.state, t)} · ${duration(queuedMs)}`,
-                          status: queuedMs > LAG_WARN_MS ? ("warn" as const) : null,
-                        }
-                      : worded(row.state, t),
-                  lag: row.startedAt === null ? t.notStarted : duration(row.startLagMs),
-                  lagWarn: row.startedAt === null ? (queuedMs ?? 0) > LAG_WARN_MS : (row.startLagMs ?? 0) > LAG_WARN_MS,
-                  duration: duration(row.durationMs ?? (row.startedAt ? nowMs - row.startedAt.getTime() : null)),
-                  attempts: row.attempt === 0 ? t.notStarted : number(row.attempt),
-                  attemptsWarn: row.attempt > 1,
-                  created: relative(row.createdAt),
-                  href: href({ run: row.id }),
-                };
-              }),
-            }
-        : view === "effects"
-          ? {
-              title: t.effectsRequiringEvidence,
-              count: countLabel(effectRows.length),
-              summary: t.unsettledEffectsCount({ count: countLabel(effectRows.length) }),
-              actions: [],
-              empty: filters.app ? t.noEffectsForApp : t.noEffectsDecision,
-              filtered: Boolean(filters.app),
-              effects: effectRows.slice(0, FINDINGS_PER_PAGE).map((row) => ({
-                key: `${row.runId}:${row.stepKey}`,
-                workflow: row.workflowName,
-                app: row.appId,
-                step: row.stepKey,
-                action: row.action ?? "—",
-                state: worded(row.effectState, t),
-                age: duration(row.ageMs),
-                href: href({ run: row.runId }),
-              })),
-            }
-          : {
-              title: t.eventsWithoutRunTitle,
-              count: countLabel(eventRows.length),
-              summary: t.undispatchedEventsCount({ count: countLabel(eventRows.length) }),
-              actions: [],
-              empty: filters.app ? t.noEventsForApp : t.allEventsDispatched,
-              filtered: Boolean(filters.app),
-              events: eventRows.slice(0, FINDINGS_PER_PAGE).map((row) => {
-                const state = eventState(row);
-                return {
-                  key: row.id,
-                  type: row.type,
-                  app: row.appId,
-                  scope: row.scopeId,
-                  state: {
-                    label: state.label === "No activation" ? t.noActivation : state.label === "Dead letter" ? t.deadLetter : t.retrying,
-                    status: state.tone === "error" ? ("bad" as const) : ("warn" as const),
-                  },
-                  attempts: number(row.attempts),
-                  occurred: relative(row.occurredAt),
-                  error: row.lastError ?? "",
-                };
-              }),
+    view === "runs"
+      ? {
+          title: t.workflowFamilies,
+          count: countLabel(familyRows.length),
+          summary: t.matchingDefinitions({ count: countLabel(familyRows.length), window }),
+          actions: [{ label: t.allWorkflowRuns, href: workflowRunsHref({ app: filters.app }) }],
+          empty: t.noWorkflowsWindow,
+          filtered,
+          families: familyRows.slice(0, RUNS_PER_PAGE).map((row) => {
+            const queuedAge = row.oldestQueuedAt ? nowMs - row.oldestQueuedAt.getTime() : null;
+            return {
+              key: row.workflowId,
+              name: row.workflowName,
+              meta: `${row.appId} · ${row.eventTypes.length === 0 ? t.directInvocation : row.eventTypes.join(", ")} · r${row.latestRevision}`,
+              latest: worded(row.latestState, t),
+              runs: number(row.runs),
+              failed: `${number(row.failed)} · ${formatPercent(row.runs === 0 ? 0 : row.failed / row.runs, { locale })}`,
+              failedBad: row.failed > 0,
+              runtime: `${duration(row.avgDurationMs)} / ${duration(row.p99DurationMs)}`,
+              backlog: `${number(row.active)} / ${queuedAge === null ? "—" : duration(queuedAge)}`,
+              backlogWarn: row.needsAttention > 0 || (queuedAge ?? 0) > LAG_WARN_MS,
+              activity: relative(row.latestRunAt),
+              href: workflowRunsHref({ app: row.appId }),
             };
+          }),
+        }
+      : view === "effects"
+        ? {
+            title: t.effectsRequiringEvidence,
+            count: countLabel(effectRows.length),
+            summary: t.unsettledEffectsCount({ count: countLabel(effectRows.length) }),
+            actions: [],
+            empty: filters.app ? t.noEffectsForApp : t.noEffectsDecision,
+            filtered: Boolean(filters.app),
+            effects: effectRows.slice(0, FINDINGS_PER_PAGE).map((row) => ({
+              key: `${row.runId}:${row.stepKey}`,
+              workflow: row.workflowName,
+              app: row.appId,
+              step: row.stepKey,
+              action: row.action ?? "—",
+              state: worded(row.effectState, t),
+              age: duration(row.ageMs),
+              href: href({ run: row.runId }),
+            })),
+          }
+        : {
+            title: t.eventsWithoutRunTitle,
+            count: countLabel(eventRows.length),
+            summary: t.undispatchedEventsCount({ count: countLabel(eventRows.length) }),
+            actions: [],
+            empty: filters.app ? t.noEventsForApp : t.allEventsDispatched,
+            filtered: Boolean(filters.app),
+            events: eventRows.slice(0, FINDINGS_PER_PAGE).map((row) => {
+              const state = eventState(row);
+              return {
+                key: row.id,
+                type: row.type,
+                app: row.appId,
+                scope: row.scopeId,
+                state: {
+                  label: state.label === "No activation" ? t.noActivation : state.label === "Dead letter" ? t.deadLetter : t.retrying,
+                  status: state.tone === "error" ? ("bad" as const) : ("warn" as const),
+                },
+                attempts: number(row.attempts),
+                occurred: relative(row.occurredAt),
+                error: row.lastError ?? "",
+              };
+            }),
+          };
 
   const runDetail = (value: WorkflowRunDetail): RunDetailView => {
     const attentionStep = value.steps.find(
@@ -416,18 +374,15 @@ export default ssr<AuthContext>(async (c) => {
         { label: t.occurred, value: relative(value.occurredAt) },
         { label: t.startLag, value: duration(value.startLagMs) },
         { label: t.duration, value: duration(value.durationMs) },
-        ...(value.parentRunId
-          ? [{ label: t.parentRun, value: value.parentRunId, href: href({ run: value.parentRunId, parent: "" }) }]
-          : []),
+        ...(value.parentRunId ? [{ label: t.parentRun, value: value.parentRunId, href: href({ run: value.parentRunId }) }] : []),
       ],
       children: (Object.entries(value.children) as [WorkflowRunState, number][])
         .filter(([, count]) => count > 0)
         .map(([state, count]) => {
-          const childParams = runs.serialize({ ...runsAddress.state, filters: { ...runsAddress.state.filters, state } });
           return {
             label: `${number(count)} ${stateLabel(state, t).toLocaleLowerCase(locale)}`,
             status: STATUS[state] ?? null,
-            href: workflowsHref(childParams, { parent: value.id }),
+            href: workflowRunsHref({ app: value.appId, state }),
           };
         }),
       steps: value.steps.map((step) => ({

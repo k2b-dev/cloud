@@ -157,7 +157,7 @@ export default function PostgresScreen(props: PostgresScreenProps) {
               {
                 title: t().signals,
                 width: { min: 140, default: 200 },
-                cell: (row) => (row.warnings.length ? <Chip status="warn">{row.warnings.join(", ")}</Chip> : "—"),
+                cell: (row) => (row.warnings.length ? <Text tone="warn">{row.warnings.join(", ")}</Text> : "—"),
                 drop: true,
               },
             ]}
@@ -183,17 +183,23 @@ export default function PostgresScreen(props: PostgresScreenProps) {
               phone={(row) => ({ lines: [row.application ?? t().unnamed, `PID ${row.pid} · ${row.query}`], marks: worded(row.state) })}
               columns={[
                 { title: "PID", width: { min: 70, default: 80 }, align: "end", cell: (row) => row.pid },
-                { title: t().state, width: { min: 120, default: 160 }, cell: (row) => worded(row.state) },
+                { title: t().state, width: { min: 180, default: 200 }, cell: (row) => worded(row.state) },
                 {
                   title: t().application,
                   width: { min: 120, default: 160 },
                   cell: (row) => row.application ?? <Text tone="warn">{t().unnamed}</Text>,
                   drop: true,
                 },
-                { title: t().waitingOn, width: { min: 120, default: 160 }, cell: (row) => row.wait, drop: true },
-                { title: t().transaction, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.transactionAge, drop: true },
-                { title: t().query, width: { min: 80, default: 90 }, align: "end", cell: (row) => row.queryAge, drop: true },
-                { title: t().statement, width: { min: 200, default: 320 }, cell: (row) => row.query, drop: true },
+
+                {
+                  title: t().transaction,
+                  width: { min: 90, default: 100 },
+                  align: "end",
+                  cell: (row) => ({ lines: [row.transactionAge, row.queryAge] }),
+                  drop: true,
+                },
+
+                { title: t().statement, cell: (row) => ({ lines: [row.query, row.wait] }), drop: true },
               ]}
             />
           </Show>

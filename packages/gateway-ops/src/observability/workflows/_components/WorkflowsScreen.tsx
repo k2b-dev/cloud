@@ -44,20 +44,6 @@ export type FamilyView = {
   activity: string;
   href: string;
 };
-export type RunView = {
-  key: string;
-  name: string;
-  meta: string;
-  error: string | null;
-  state: Worded;
-  lag: string;
-  lagWarn: boolean;
-  duration: string;
-  attempts: string;
-  attemptsWarn: boolean;
-  created: string;
-  href: string;
-};
 export type EffectView = {
   key: string;
   workflow: string;
@@ -134,7 +120,6 @@ export type WorkflowsScreenProps = {
     empty: string;
     filtered: boolean;
     families?: FamilyView[];
-    runs?: RunView[];
     effects?: EffectView[];
     events?: EventView[];
   } | null;
@@ -169,6 +154,15 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
   const goFindings = (next: Pick<FindingsState, "filters">) =>
     location.replace(workflowsHref(findings().serialize({ ...props.findingsState, filters: next.filters })));
   const list = () => props.list;
+  /** Times on the timeline's axis: days only when the window is longer than one. */
+  const timelineFormat = (value: number) => {
+    const domain = props.timeline?.domain ?? [0, 0];
+    return new Intl.DateTimeFormat(locale(), {
+      ...(domain[1] - domain[0] > 86_400_000 ? { day: "2-digit", month: "short" } : {}),
+      hour: "2-digit",
+      minute: "2-digit",
+    }).format(value);
+  };
   return (
     <AdminWorkspace
       nav={props.nav}
@@ -251,7 +245,16 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
               <Section icon="timeline" title={t().runTimeline} summary={timeline().sample ?? t().workflowTimelineDescription}>
                 <Canvas label={t().runTimeline} height={Math.max(160, 96 + timeline().rows.length * 24)}>
                   <Show when={timeline().rows.length > 0} fallback={<Empty icon="timeline" text={t().noWorkflowRunsWindow} />}>
-                    <Timeline timeline={timeline()} />
+                    <Chart
+                      kind="stateTimeline"
+                      rows={timeline().rows}
+                      states={timeline().states}
+                      domain={timeline().domain}
+                      xAxis={{ format: timelineFormat }}
+                      legend
+                      interactive
+                      style={{ height: "100%" }}
+                    />
                   </Show>
                 </Canvas>
               </Section>
@@ -273,16 +276,8 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
                 summary={current().summary}
                 actions={twoActions(current().actions)}
               >
-                <Show when={current().families}>{(rows) => <FamiliesTable rows={rows()} empty={current().empty} />}</Show>
-                <Show when={current().runs}>
-                  {(rows) => (
-                    <RunsTable
-                      rows={rows()}
-                      empty={current().empty}
-                      current={props.detail?.actions.runId}
-                      compact={Boolean(props.detail)}
-                    />
-                  )}
+                <Show when={current().families}>
+                  {(rows) => <FamiliesTable rows={rows()} empty={current().empty} compact={Boolean(props.detail)} />}
                 </Show>
                 <Show when={current().effects}>{(rows) => <EffectsTable rows={rows()} empty={current().empty} />}</Show>
                 <Show when={current().events}>{(rows) => <EventsTable rows={rows()} empty={current().empty} />}</Show>
@@ -310,31 +305,7 @@ export default function WorkflowsScreen(props: WorkflowsScreenProps) {
   );
 }
 
-/** The run timeline: one lane per workflow, a mark per run; lanes and marks open their workflow or run. */
-function Timeline(props: { timeline: TimelineView }) {
-  const locale = useLocale();
-  const span = () => props.timeline.domain[1] - props.timeline.domain[0];
-  const format = (value: number) =>
-    new Intl.DateTimeFormat(locale(), {
-      ...(span() > 86_400_000 ? { day: "2-digit", month: "short" } : {}),
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(value);
-  return (
-    <Chart
-      kind="stateTimeline"
-      rows={props.timeline.rows}
-      states={props.timeline.states}
-      domain={props.timeline.domain}
-      xAxis={{ format }}
-      legend
-      interactive
-      style={{ height: "100%" }}
-    />
-  );
-}
-
-function FamiliesTable(props: { rows: FamilyView[]; empty: string }) {
+function FamiliesTable(props: { rows: FamilyView[]; empty: string; compact?: boolean }) {
   const locale = useLocale();
   const t = () => gatewayOpsMessages.resolve([locale()]).t;
   return (
@@ -345,64 +316,24 @@ function FamiliesTable(props: { rows: FamilyView[]; empty: string }) {
       open={(row) => ({ href: row.href })}
       empty={{ icon: "binary-tree", text: props.empty }}
       phone={(row) => ({ lines: [row.name, `${row.runs} · ${row.failed}`], marks: worded(row.latest) })}
-      columns={[
-        { title: t().workflowTrigger, width: { min: 200, default: 240 }, cell: (row) => ({ lines: [row.name, row.meta] }) },
-        { title: t().latest, width: { min: 120, default: 140 }, cell: (row) => worded(row.latest) },
-        { title: t().runs, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.runs, drop: true },
-        {
-          title: t().failed,
-          width: { min: 110, default: 130 },
-          align: "end",
-          cell: (row) => toned(row.failed, row.failedBad && "bad"),
-          drop: true,
-        },
-        { title: t().runtime, width: { min: 100, default: 110 }, align: "end", cell: (row) => row.runtime, drop: true },
-        {
-          title: t().backlog,
-          width: { min: 110, default: 130 },
-          align: "end",
-          cell: (row) => toned(row.backlog, row.backlogWarn && "warn"),
-          drop: true,
-        },
-        { title: t().activity, align: "end", cell: (row) => row.activity, drop: true },
-      ]}
-    />
-  );
-}
-
-function RunsTable(props: { rows: RunView[]; empty: string; current?: string; compact?: boolean }) {
-  const locale = useLocale();
-  const t = () => gatewayOpsMessages.resolve([locale()]).t;
-  return (
-    <Table
-      label={t().runs}
-      rows={props.rows}
-      rowKey={(row) => row.key}
-      current={props.current}
-      open={(row) => ({ href: row.href })}
-      empty={{ icon: "player-play", text: props.empty }}
-      phone={(row) => ({ lines: [row.name, row.error ?? `${row.meta} · ${row.created}`], marks: worded(row.state) })}
       columns={(
         [
-          { title: t().workflowRun, width: { min: 220, default: 300 }, cell: (row) => ({ lines: [row.name, row.error ?? row.meta] }) },
-          { title: t().state, width: { min: 120, default: 150 }, cell: (row) => worded(row.state) },
           {
-            title: t().startLag,
-            width: { min: 100, default: 110 },
+            title: t().workflowTrigger,
+            width: { min: 200, default: 240 },
+            cell: (row) => ({ lines: [row.name, `${row.meta} · ${row.activity}`] }),
+          },
+          { title: t().latest, width: { min: 170, default: 190 }, cell: (row) => worded(row.latest) },
+          {
+            title: t().runs,
+            width: { min: 100, default: 120 },
             align: "end",
-            cell: (row) => toned(row.lag, row.lagWarn && "warn"),
+            cell: (row) => ({ lines: [row.runs, row.failed] }),
             drop: true,
           },
-          { title: t().duration, width: { min: 90, default: 100 }, align: "end", cell: (row) => row.duration, drop: true },
-          {
-            title: t().attempts,
-            width: { min: 80, default: 90 },
-            align: "end",
-            cell: (row) => toned(row.attempts, row.attemptsWarn && "warn"),
-            drop: true,
-          },
-          { title: t().created, align: "end", cell: (row) => row.created, drop: true },
-        ] satisfies Column<RunView>[]
+          { title: t().runtime, width: { min: 100, default: 110 }, align: "end", cell: (row) => row.runtime, drop: true },
+          { title: t().backlog, align: "end", cell: (row) => toned(row.backlog, row.backlogWarn && "warn"), drop: true },
+        ] satisfies Column<FamilyView>[]
       ).filter((_, index) => !props.compact || index < 2)}
     />
   );
@@ -422,7 +353,7 @@ function EffectsTable(props: { rows: EffectView[]; empty: string }) {
       columns={[
         { title: t().workflow, width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.workflow, `${row.app} · ${row.step}`] }) },
         { title: t().actionLabel, width: { min: 120, default: 160 }, cell: (row) => row.action, drop: true },
-        { title: t().state, width: { min: 110, default: 130 }, cell: (row) => worded(row.state) },
+        { title: t().state, width: { min: 150, default: 170 }, cell: (row) => worded(row.state) },
         { title: t().unsettledFor, align: "end", cell: (row) => row.age, drop: true },
       ]}
     />
@@ -441,7 +372,7 @@ function EventsTable(props: { rows: EventView[]; empty: string }) {
       phone={(row) => ({ lines: [row.type, row.error || `${row.app} · ${row.occurred}`], marks: worded(row.state) })}
       columns={[
         { title: t().event, width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.type, `${row.app} · ${row.scope}`] }) },
-        { title: t().state, width: { min: 110, default: 130 }, cell: (row) => worded(row.state) },
+        { title: t().state, width: { min: 150, default: 170 }, cell: (row) => worded(row.state) },
         { title: t().attempts, width: { min: 70, default: 80 }, align: "end", cell: (row) => row.attempts, drop: true },
         { title: t().occurred, width: { min: 100, default: 120 }, align: "end", cell: (row) => row.occurred, drop: true },
         { title: t().lastError, cell: (row) => row.error || "—", drop: true },

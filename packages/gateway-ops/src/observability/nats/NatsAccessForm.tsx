@@ -1,10 +1,11 @@
 import { createSettingsDraft, saveFailure } from "@k2b/cloud/ssr/settings-draft";
 import { useLocale } from "@k2b/ui";
 import { Band, Check, Choice, Field, Input, Notice } from "@k2b/ui/v2";
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { responseErrorMessage } from "../../frontend/health-webhook-queries";
 import { gatewayOpsMessages } from "../../messages";
+import { SettingsOutcome, UnreadableValues } from "../_components/SettingsOutcome";
 import { natsMessages } from "./messages";
 
 export type NatsAccessValues = { servers: string[]; kind: string; ca: string };
@@ -90,43 +91,16 @@ export default function NatsAccessForm(props: { values: NatsAccessValues; unread
   // The servers field keeps what the person typed, blank lines included; the draft holds the list it means.
   const [serversText, setServersText] = createSignal(props.values.servers.join("\n"));
   const disabled = (key: Key) => form.saving() || (unreadable()[key] && !replace()[key]);
-  const outcome = () => form.outcome();
   return (
     <>
-      <Show when={outcome()}>
-        {(failed) =>
-          failed().kind === "failed" ? (
-            <Notice tone="bad" title={t().notSaved} actions={[{ label: t().retry, icon: "refresh", onClick: () => void form.save() }]}>
-              {failed().message} {t().notSavedKeep}
-            </Notice>
-          ) : (
-            <Notice
-              tone="warn"
-              title={t().unknownOutcome}
-              actions={[{ label: t().checkNow, icon: "refresh", onClick: () => window.location.reload() }]}
-            >
-              {t().unknownOutcomeKeep}
-            </Notice>
-          )
-        }
-      </Show>
-      <Show when={keys.some((key) => unreadable()[key])}>
-        <Notice tone="warn" title={g().unreadableTitle}>
-          {g().unreadableDetail}
-        </Notice>
-        <Band>
-          <For each={keys.filter((key) => unreadable()[key])}>
-            {(key) => (
-              <Check
-                label={`${g().replaceStored}: ${label(key)}`}
-                checked={replace()[key] === true}
-                onChange={(checked) => setReplace({ ...replace(), [key]: checked })}
-                disabled={form.saving()}
-              />
-            )}
-          </For>
-        </Band>
-      </Show>
+      <SettingsOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
+      <UnreadableValues
+        keys={keys.filter((key) => unreadable()[key])}
+        label={label}
+        replace={replace()}
+        onReplace={(key, checked) => setReplace({ ...replace(), [key]: checked })}
+        disabled={form.saving()}
+      />
       <Band>
         <Field label={t().accessServers} hint={t().accessServersHint}>
           {/* k2b-ui gap: a tags input (one chip per value); until then one server per line */}

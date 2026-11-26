@@ -1,7 +1,7 @@
 import { LocaleProvider } from "@k2b/ui";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { metricsQuery } from "../query";
-import MetricsScreen, { type MetricRow } from "./MetricsScreen";
+import MetricsScreen, { type MetricRow } from "./MetricsScreen.island";
 
 const sources = [
   { id: "gateway", label: "Gateway" },

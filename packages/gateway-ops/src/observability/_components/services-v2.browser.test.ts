@@ -110,6 +110,10 @@ const open = async (view: View, screen: string, address: string, options: { wors
 };
 
 const SCREENS = [
+  ["alerts", "/admin/observability/settings?webhook=hw_bereitschaft"],
+  ["alerts", "/admin/observability/settings?webhook=new"],
+  ["health", "/admin/observability/settings/health-check"],
+  ["retention", "/admin/observability/settings/retention?state=unreadable"],
   ["infrastructure", "/admin/observability/infrastructure"],
   ["infrastructure", "/admin/observability/infrastructure?failed"],
   ["nats", "/admin/observability/nats?state=problems&stream=MAIL_DLQ"],
@@ -145,7 +149,7 @@ describe("the service pages of Observability on v2", () => {
               }));
               expect(evidence[screen]?.loaders).toBe(0);
             }
-            if (shots && view !== tablet) await tab.screenshot({ path: join(shots, `${screen}${worst ? "-worst" : ""}-${view.name}.png`) });
+            if (shots) await tab.screenshot({ path: join(shots, `${screen}${worst ? "-worst" : ""}-${view.name}.png`) });
             for (const error of errors) findings.push(`${where}: ${error}`);
           } finally {
             await context.close();
@@ -157,24 +161,28 @@ describe("the service pages of Observability on v2", () => {
     expect(findings).toEqual([]);
   }, 600_000);
 
-  test("a dead letter is deleted only after the question, once, and leaves the list", async () => {
+  test("an open dead letter is deleted only after the question, once, and the page returns to the list", async () => {
     const deletes: string[] = [];
-    const { context, tab, errors } = await open(desktop, "sync", "/admin/observability/nats/sync", {
-      api: (route, url) => {
-        if (route.request().method() === "DELETE") deletes.push(url.pathname);
-        return route.fulfill({ json: { success: true } });
+    const { context, tab, errors } = await open(
+      desktop,
+      "sync",
+      "/admin/observability/nats/sync?storeApp=mail&store=outbox&kind=queue&message=m-1",
+      {
+        api: (route, url) => {
+          if (route.request().method() === "DELETE") deletes.push(url.pathname);
+          return route.fulfill({ json: { success: true } });
+        },
       },
-    });
+    );
     try {
-      await tab.locator('[data-k2-part="Table"]').first().getByRole("button", { name: "Aktionen" }).first().click();
-      await tab.getByRole("menuitem", { name: "Dead Letter löschen" }).click();
+      await tab.getByRole("button", { name: "Dead Letter löschen" }).click();
       const dialog = tab.getByRole("alertdialog");
       await dialog.waitFor();
       expect(deletes).toEqual([]);
       await dialog.getByRole("button", { name: "Dead Letter löschen" }).click();
-      await tab.getByText("Dead Letter gelöscht").waitFor();
+      // the open letter is gone: the page returns to the list
+      await tab.waitForURL((url) => !url.searchParams.has("message"));
       expect(deletes).toEqual(["/api/gateway/sync/dead-letters/mail/queue/outbox/m-1"]);
-      expect(await tab.getByText("handler_failed — SMTP 451: greylisted").count()).toBe(1);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -247,6 +255,96 @@ describe("the service pages of Observability on v2", () => {
       } finally {
         await context.close();
       }
+    }
+  }, 60_000);
+
+  test("an alert saves from its column, and a refused save keeps the draft until Discard", async () => {
+    let refuse = false;
+    const puts: unknown[] = [];
+    const { context, tab, errors } = await open(desktop, "alerts", "/admin/observability/settings?webhook=hw_bereitschaft", {
+      api: (route, url) => {
+        if (route.request().method() === "PUT" && url.pathname.includes("hw_bereitschaft")) {
+          puts.push(route.request().postDataJSON());
+          if (refuse) return route.fulfill({ status: 400, json: { message: "Die Adresse ist nicht erlaubt." } });
+          return route.fulfill({
+            json: {
+              ...(route.request().postDataJSON() as object),
+              id: "hw_bereitschaft",
+              lastStatus: "ok",
+              lastSentAt: null,
+              lastError: null,
+            },
+          });
+        }
+        return route.fulfill({ status: 404, json: { message: "Not found" } });
+      },
+    });
+    try {
+      const name = tab.getByRole("textbox", { name: /^Name/ });
+      const save = tab.getByRole("button", { name: "Speichern" });
+      expect(await save.isDisabled()).toBe(true);
+      await name.fill("Bereitschaft Nacht");
+      await save.click();
+      await tab.getByText(/^Gespeichert \d/).waitFor();
+      expect(puts.at(-1)).toEqual(expect.objectContaining({ name: "Bereitschaft Nacht" }));
+      refuse = true;
+      await name.fill("Anders");
+      await save.click();
+      await tab.getByText("Nicht gespeichert.").waitFor();
+      expect(await name.inputValue()).toBe("Anders");
+      await tab.getByRole("button", { name: "Verwerfen" }).click();
+      expect(await name.inputValue()).toBe("Bereitschaft Nacht");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("an empty schedule blocks Save; an unreadable value is replaced only after the box", async () => {
+    const empty = await open(desktop, "health", "/admin/observability/settings/health-check");
+    try {
+      await empty.tab.getByRole("textbox", { name: /^Prüfplan/ }).fill("");
+      expect(await empty.tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
+      expect(await empty.tab.getByText("Bitte einen Prüfplan angeben.").count()).toBeGreaterThan(0);
+      expect(empty.errors).toEqual([]);
+    } finally {
+      await empty.context.close();
+    }
+    const stored = await open(desktop, "health", "/admin/observability/settings/health-check?state=unreadable");
+    try {
+      const { tab } = stored;
+      expect(await tab.getByRole("textbox", { name: /^Prüfplan/ }).isDisabled()).toBe(true);
+      expect(await tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
+      await tab.getByRole("checkbox", { name: "Gespeicherten Wert ersetzen: Prüfplan" }).check();
+      expect(await tab.getByRole("button", { name: "Speichern" }).isDisabled()).toBe(false);
+      await tab.getByRole("button", { name: "Verwerfen" }).click();
+      expect(await tab.getByRole("checkbox", { name: "Gespeicherten Wert ersetzen: Prüfplan" }).isChecked()).toBe(false);
+      expect(stored.errors).toEqual([]);
+    } finally {
+      await stored.context.close();
+    }
+  }, 60_000);
+
+  test("a webhook target the server refuses stays marked at its field", async () => {
+    const { context, tab, errors } = await open(desktop, "health", "/admin/observability/settings/health-check", {
+      api: (route) => {
+        const body = route.request().postDataJSON() as { value: string[] };
+        if (body.value.includes("0.0.0.0/0")) return route.fulfill({ status: 400, json: { message: "0.0.0.0/0 is forbidden" } });
+        return route.fulfill({ json: { success: true } });
+      },
+    });
+    try {
+      const targets = tab.getByRole("textbox", { name: /^Erlaubte Health-Webhook-Ziele/ });
+      await targets.fill("alerts.internal\n10.20.0.0/16\n0.0.0.0/0");
+      await tab.getByRole("button", { name: "Speichern" }).click();
+      await tab
+        .getByText(/0\.0\.0\.0\/0 is forbidden/)
+        .first()
+        .waitFor();
+      expect(await targets.getAttribute("aria-invalid")).toBe("true");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
     }
   }, 60_000);
 });

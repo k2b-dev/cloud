@@ -1,14 +1,16 @@
-import SettingsSaveOutcome from "@k2b/cloud/ssr/SettingsSaveOutcome";
 import { createSettingsDraft, oneStepFailure, SaveRejected } from "@k2b/cloud/ssr/settings-draft";
-import { Checkbox, NoticeCard, NumberInput, SettingsField, useLocale } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { Band, Field, Input } from "@k2b/ui/v2";
+import { createSignal, For } from "solid-js";
 import { apiClient } from "../../api/client";
 import { gatewayOpsMessages } from "../../messages";
 import { areaMessages } from "../_components/area-messages";
+import { SettingsOutcome, UnreadableValues } from "../_components/SettingsOutcome";
 import { apiClient as loggingClient } from "../logs/api-client";
 
 export type RetentionValues = { logs: number; events: number; rollups: number };
 type Key = keyof RetentionValues;
+const KEYS = ["logs", "events", "rollups"] as const;
 
 const SETTING: Record<Exclude<Key, "logs">, string> = {
   events: "gateway.telemetry_event_retention_days",
@@ -26,6 +28,7 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
   const [unreadable, setUnreadable] = createSignal<Partial<Record<Key, boolean>>>({ ...props.unreadable });
   const [replace, setReplace] = createSignal<Partial<Record<Key, boolean>>>({});
   const label = (key: Key) => ({ logs: t().logRetention, events: t().eventRetention, rollups: t().rollupRetention })[key];
+  const help = (key: Key) => ({ logs: t().logRetentionHelp, events: t().eventRetentionHelp, rollups: t().rollupRetentionHelp })[key];
   let stored = props.values;
 
   // After the server reports an unreadable value, read from its owner which values are unreadable now.
@@ -63,12 +66,8 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
     initial: props.values,
     locale,
     validate: (value) =>
-      Object.fromEntries(
-        (Object.keys(value) as Key[])
-          .filter((key) => !Number.isInteger(value[key]) || value[key] < 1)
-          .map((key) => [key, t().atLeastOneDay]),
-      ),
-    pending: () => (Object.keys(unreadable()) as Key[]).some((key) => confirmed(key)),
+      Object.fromEntries(KEYS.filter((key) => !Number.isInteger(value[key]) || value[key] < 1).map((key) => [key, t().atLeastOneDay])),
+    pending: () => KEYS.some((key) => confirmed(key)),
     save: async (value, commit) => {
       // Each value is written on its own; after a partial failure the stored state is what reached the server.
       if (value.logs !== stored.logs || confirmed("logs")) {
@@ -94,45 +93,31 @@ export default function RetentionForm(props: { values: RetentionValues; unreadab
       return stored;
     },
   });
-  const unreadableKeys = () => (Object.keys(unreadable()) as Key[]).filter((key) => unreadable()[key]);
-  const field = (key: Key, help: string) => (
-    <SettingsField label={label(key)} description={help} error={undefined} width="short">
-      {(control) => (
-        <NumberInput
-          aria-label={label(key)}
-          aria-describedby={control.describedBy()}
-          min={1}
-          suffix={t().days}
-          value={() => form.draft()[key]}
-          onValueChange={(days) => form.update({ [key]: days ?? 0 } as Partial<RetentionValues>)}
-          error={() => form.errors()[key]}
-          disabled={form.saving() || (unreadable()[key] === true && !replace()[key])}
-        />
-      )}
-    </SettingsField>
-  );
   return (
-    <div class="flex flex-col gap-4 pb-[var(--ui-space-shell)]">
-      <SettingsSaveOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
-      <Show when={unreadableKeys().length > 0}>
-        <NoticeCard tone="warning" title={g().unreadableTitle} detail={g().unreadableDetail}>
-          <For each={unreadableKeys()}>
-            {(key) => (
-              <Checkbox
-                label={`${g().replaceStored}: ${label(key)}`}
-                value={replace()[key] === true}
-                onValueChange={(checked) => setReplace({ ...replace(), [key]: checked })}
-                disabled={form.saving()}
+    <>
+      <SettingsOutcome outcome={form.outcome()} onRetry={() => void form.save()} />
+      <UnreadableValues
+        keys={KEYS.filter((key) => unreadable()[key])}
+        label={label}
+        replace={replace()}
+        onReplace={(key, checked) => setReplace({ ...replace(), [key]: checked })}
+        disabled={form.saving()}
+      />
+      <Band>
+        <For each={KEYS}>
+          {(key) => (
+            <Field label={label(key)} hint={help(key)} optional={t().days} error={form.errors()[key]}>
+              <Input
+                type="number"
+                min={1}
+                value={String(form.draft()[key])}
+                onInput={(text) => form.update({ [key]: text === "" ? 0 : Number(text) })}
+                disabled={form.saving() || (unreadable()[key] === true && !replace()[key])}
               />
-            )}
-          </For>
-        </NoticeCard>
-      </Show>
-      <div class="flex flex-col">
-        {field("logs", t().logRetentionHelp)}
-        {field("events", t().eventRetentionHelp)}
-        {field("rollups", t().rollupRetentionHelp)}
-      </div>
-    </div>
+            </Field>
+          )}
+        </For>
+      </Band>
+    </>
   );
 }

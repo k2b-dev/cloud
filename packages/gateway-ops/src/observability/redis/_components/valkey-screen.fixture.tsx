@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { valkeyQuery } from "../query";
-import ValkeyScreen from "./ValkeyScreen";
+import ValkeyScreen from "./ValkeyScreen.island";
 
 const PREFIXES: [string, number][] = [
   ["mail:session", 18_204],

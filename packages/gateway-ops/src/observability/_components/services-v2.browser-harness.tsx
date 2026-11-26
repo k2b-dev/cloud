@@ -3,10 +3,11 @@ import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import { InfrastructureScreenFixture } from "../infrastructure/_components/infrastructure-screen.fixture";
 import { MetricsScreenFixture } from "../metrics/_components/metrics-screen.fixture";
-import NatsAccessScreen from "../nats/_components/NatsAccessScreen";
+import NatsAccessScreen from "../nats/_components/NatsAccessScreen.island";
 import { NatsScreenFixture } from "../nats/_components/nats-screen.fixture";
 import { PostgresScreenFixture } from "../postgres/_components/postgres-screen.fixture";
 import { ValkeyScreenFixture } from "../redis/_components/valkey-screen.fixture";
+import { SettingsScreenFixture } from "../settings/_components/settings-screen.fixture";
 import { SyncScreenFixture } from "../sync/_components/sync-screen.fixture";
 import { BrowserScreenFixture, TelemetryScreenFixture } from "../telemetry/_components/telemetry-screen.fixture";
 import { WorkflowsScreenFixture } from "../workflows/_components/workflows-screen.fixture";
@@ -19,7 +20,12 @@ const { screen, worst, locale = "de" } = document.documentElement.dataset;
 const search = location.search;
 const options = { search, worst: worst === "true", locale };
 const params = new URLSearchParams(search);
+const state = params.get("state");
+const settingsState = state === "empty" || state === "loadfail" || state === "unreadable" ? state : "normal";
 const screens: Record<string, () => JSX.Element> = {
+  alerts: () => <SettingsScreenFixture {...options} open={params.get("webhook")} state={settingsState} />,
+  health: () => <SettingsScreenFixture {...options} area="health" state={settingsState} />,
+  retention: () => <SettingsScreenFixture {...options} area="retention" state={settingsState} />,
   infrastructure: () => (
     <InfrastructureScreenFixture {...options} state={params.has("slow") ? "slow" : params.has("failed") ? "failed" : "normal"} />
   ),

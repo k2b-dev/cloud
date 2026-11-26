@@ -693,6 +693,34 @@ the current values and versions of one settings group for administrators.
 Operators: no migration is needed. Update bookmarks and links in your own
 runbooks.
 
+## Observability infrastructure and settings are two records
+
+**Administration → Observability** now shows Postgres, Valkey and NATS as one
+**Infrastructure** record, and alerts, the health check and retention as one
+**Settings** record. The pages run on UI v2 inside the administration sidebar,
+where the area's sections stand one level in under Observability. The
+infrastructure overview shows each backend in its own section; a backend that
+answers slowly loads in its section without holding the others back. The old
+addresses redirect with their query:
+
+| Before | Now |
+| --- | --- |
+| `/admin/observability/postgres` | `/admin/observability/infrastructure/postgres` |
+| `/admin/observability/valkey` | `/admin/observability/infrastructure/valkey` |
+| `/admin/observability/nats` | `/admin/observability/infrastructure/nats` |
+| `/admin/observability/nats/access` | `/admin/observability/infrastructure/nats-access` |
+| `/admin/observability/alerts` | `/admin/observability/settings` |
+| `/admin/observability/health-check` | `/admin/observability/settings/health-check` |
+| `/admin/observability/retention` | `/admin/observability/settings/retention` |
+
+List filters live in the address in the v2 form (`q=` for the search,
+`sort=<field>.<direction>`); old filter parameters lead to the same list. An
+alert opens beside the list at `/admin/observability/settings?webhook=<id>`,
+and `?webhook=new` opens the form for a new one.
+
+Operators: no migration is needed. Update bookmarks and links in your own
+runbooks.
+
 ## Observability is one administration area with new addresses
 
 **Administration → Observability** is now one area: the sidebar shows one

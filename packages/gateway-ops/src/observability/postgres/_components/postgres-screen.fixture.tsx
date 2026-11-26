@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import { opsCharts } from "../../_components/ops-chart";
 import { fixtureNav, LONG } from "../../_components/services-fixture-area";
 import { postgresQuery } from "../query";
-import PostgresScreen, { type PostgresTableRow } from "./PostgresScreen";
+import PostgresScreen, { type PostgresTableRow } from "./PostgresScreen.island";
 
 const schemas = ["mail", "spaces", "accounts"];
 

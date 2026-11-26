@@ -23,9 +23,7 @@ export const OBSERVABILITY_SECTIONS = [
   "deliveries",
   "gateway",
   "infrastructure",
-  "alerts",
-  "healthCheck",
-  "retention",
+  "settings",
 ] as const;
 export type ObservabilitySection = (typeof OBSERVABILITY_SECTIONS)[number];
 
@@ -40,9 +38,7 @@ export const OBSERVABILITY_SECTION_HREF: Record<ObservabilitySection, string> = 
   deliveries: "/admin/observability/deliveries",
   gateway: "/admin/observability/gateway/routes",
   infrastructure: "/admin/observability/infrastructure",
-  alerts: "/admin/observability/alerts",
-  healthCheck: "/admin/observability/health-check",
-  retention: "/admin/observability/retention",
+  settings: "/admin/observability/settings",
 };
 
 const SECTION_ICON: Record<ObservabilitySection, string> = {
@@ -56,16 +52,14 @@ const SECTION_ICON: Record<ObservabilitySection, string> = {
   deliveries: "ti ti-bell-ringing",
   gateway: "ti ti-route",
   infrastructure: "ti ti-server-2",
-  alerts: "ti ti-webhook",
-  healthCheck: "ti ti-heart-rate-monitor",
-  retention: "ti ti-archive",
+  settings: "ti ti-settings",
 };
 
 const GROUPS: { title?: keyof AreaMessages; sections: ObservabilitySection[] }[] = [
   { sections: ["home"] },
   { title: "groupView", sections: ["logs", "runs", "workflows", "capabilities", "telemetry", "metrics", "deliveries"] },
   { title: "groupServices", sections: ["gateway", "infrastructure"] },
-  { title: "groupSetup", sections: ["alerts", "healthCheck", "retention"] },
+  { title: "groupSetup", sections: ["settings"] },
 ];
 
 export type Attention = Partial<Record<ObservabilitySection, "warning" | "error">>;

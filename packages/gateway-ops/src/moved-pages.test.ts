@@ -8,6 +8,15 @@ export const MOVED_PAGES: [old: string, moved: string][] = [
   ["/admin/observability/valkey?depth=2", "/admin/observability/infrastructure/valkey?depth=2"],
   ["/admin/observability/nats?stream=MAIL_DLQ&offset=50", "/admin/observability/infrastructure/nats?stream=MAIL_DLQ&offset=50"],
   ["/admin/observability/nats/access", "/admin/observability/infrastructure/nats-access"],
+  ["/admin/observability/alerts?webhook=hw_1", "/admin/observability/settings?webhook=hw_1"],
+  ["/admin/observability/health-check", "/admin/observability/settings/health-check"],
+  ["/admin/observability/retention", "/admin/observability/settings/retention"],
+  // A fan-out's children are listed in Läufe; the workflow's own runs too (`?workflow=` looks up its app first).
+  ["/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001", "/admin/observability/runs?kind=workflow"],
+  [
+    "/admin/observability/workflows?parent=6f1c2d3e-0000-4000-8000-000000000001&state=failed",
+    "/admin/observability/runs?kind=workflow&status=failed",
+  ],
 ];
 
 if (process.env.GATEWAY_MOVED_PAGES_CHILD !== "1") {

@@ -112,7 +112,9 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
               <FilterBar query={query()} state={props.state} onChange={change} icons={{ range: "clock", app: "apps", only: "filter" }} />
               <StatusRow
                 lead={t().routesCount({ count: props.routes.length })}
-                filters={<ListOrder query={query()} state={props.state} onChange={change} />}
+                // k2b-ui gap: in a status row narrowed by an open detail, ListOrder loses its words to its icon; the order
+                // stays in the address and comes back when the route closes.
+                filters={props.route ? undefined : <ListOrder query={query()} state={props.state} onChange={change} />}
               />
             </>
           }
@@ -147,7 +149,11 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
               phone={(row) => ({ lines: [row.route, `${row.app} · ${row.requests} · ${row.errorRate}`] })}
               columns={(
                 [
-                  { title: t().route, width: { min: 200, default: 320 }, cell: (row) => ({ lines: [row.route, row.app] }) },
+                  {
+                    title: t().route,
+                    width: props.route ? { min: 150, default: 180 } : { min: 200, default: 260 },
+                    cell: (row) => ({ lines: [row.route, row.app] }),
+                  },
                   {
                     title: t().requests,
                     width: { min: 90, default: 110 },
@@ -157,7 +163,7 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
                   },
                   {
                     title: t().errorRate,
-                    width: { min: 90, default: 110 },
+                    width: { min: 170, default: 170 },
                     align: "end",
                     sort: sortHref("errorRate"),
                     cell: (row) => (row.problem ? <Text tone="bad">{row.errorRate}</Text> : row.errorRate),
@@ -186,7 +192,7 @@ export default function TelemetryScreen(props: TelemetryScreenProps) {
                     drop: true,
                   },
                 ] satisfies Column<TelemetryRouteView>[]
-              ).filter((_, index) => !props.route || index < 3)}
+              ).filter((_, index) => !props.route || index === 0 || index === 2)}
             />
           </Section>
         </Pane>

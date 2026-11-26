@@ -3,6 +3,7 @@ import { useLocale } from "@k2b/ui";
 import { Button, confirm, Dialog, Field, Input, Menu, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { gatewayOpsMessages } from "../../../messages";
+import { afterMenu } from "../../_components/after-menu";
 import { apiClient } from "../api-client";
 
 export type RunActionsProps = {
@@ -88,11 +89,11 @@ export default function RunActions(props: RunActionsProps) {
           items={[
             ...(props.attentionStep
               ? [
-                  { label: t().markSucceeded, icon: "check", onClick: () => setDeciding("succeeded") },
-                  { label: t().markFailed, icon: "x", onClick: () => setDeciding("failed") },
+                  { label: t().markSucceeded, icon: "check", onClick: afterMenu(() => setDeciding("succeeded")) },
+                  { label: t().markFailed, icon: "x", onClick: afterMenu(() => setDeciding("failed")) },
                 ]
               : []),
-            ...(props.cancelable ? [{ label: t().cancelRun, icon: "player-stop", danger: true, onClick: () => void cancel() }] : []),
+            ...(props.cancelable ? [{ label: t().cancelRun, icon: "player-stop", danger: true, onClick: afterMenu(cancel) }] : []),
           ]}
         />
       </Show>
