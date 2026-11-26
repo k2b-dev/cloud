@@ -85,6 +85,7 @@ export default ssr<AuthContext>(async (c) => {
           openAiBaseUrl: openAiApiEnabled ? `${cloudUrl}/api/ai/openai/v1` : null,
           mcpEndpoint: cloudMcpResourceUri(rawAppUrl),
           cloudUrl,
+          timeZone: getDateConfig(c).timeZone ?? "UTC",
         }}
         now={new Date().toISOString()}
       />

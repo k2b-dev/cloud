@@ -35,7 +35,14 @@ export type SecurityScreenProps = {
   } | null;
   /** The phones of the mobile app, while the installation offers it. */
   phones: { devices: PwaDeviceView[]; dateConfig: DateContext; summary: string } | null;
-  apiKeys: { keys: ServiceAccountCredential[]; openAiBaseUrl: string | null; mcpEndpoint: string; cloudUrl: string };
+  apiKeys: {
+    keys: ServiceAccountCredential[];
+    openAiBaseUrl: string | null;
+    mcpEndpoint: string;
+    cloudUrl: string;
+    /** The person's zone: a key expires at the end of the chosen day there. */
+    timeZone: string;
+  };
   now: string;
 };
 
@@ -64,6 +71,7 @@ export default function SecurityScreen(props: SecurityScreenProps) {
     initialKeys: props.apiKeys.keys,
     openAiBaseUrl: props.apiKeys.openAiBaseUrl,
     now: props.now,
+    timeZone: props.apiKeys.timeZone,
     connect: { mcpEndpoint: props.apiKeys.mcpEndpoint, cloudUrl: props.apiKeys.cloudUrl },
   });
   return (

@@ -14,7 +14,6 @@ import { confirm as ask, Bar, Button, Canvas, Dialog, Empty, Field, Icon, Input,
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
-import { autocomplete } from "../auth/autocomplete";
 import { useAccountMessages } from "./AccountWorkspace";
 
 const pwaApi = apiClient.auth.pwa.v1;
@@ -498,9 +497,11 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
               value={code()}
               placeholder="000000"
               disabled={busy()}
+              autocomplete="one-time-code"
+              inputMode="numeric"
+              maxLength={6}
               ref={(element) => {
                 codeInput = element;
-                autocomplete("one-time-code")(element);
               }}
               onInput={(value) => {
                 const digits = value.replace(/\D/g, "").slice(0, 6);

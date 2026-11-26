@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { isModelsOnlyApiKey, type ServiceAccountCredential } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Button, Choice, confirm, Dialog, Empty, Facts, Field, Input, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
+import { Button, Choice, confirm, DateInput, Dialog, Empty, Facts, Field, Input, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
@@ -12,21 +12,32 @@ const CREATE_INTENT = { key: "create", value: "api-key" };
 
 type ApiKeyAccess = "full" | "models";
 type ApiKeyDraft = { name: string; expiresAt: string | null; access?: ApiKeyAccess };
-/** How long a new key lives, in days; "never" for long-lived automation. */
-const EXPIRY_CHOICES = ["30", "90", "365", "never"] as const;
+/** How long a new key lives, in days; "never" for long-lived automation; "date" until the end of a chosen day. */
+const EXPIRY_CHOICES = ["30", "90", "365", "never", "date"] as const;
 type Expiry = (typeof EXPIRY_CHOICES)[number];
+const DAY_MS = 24 * 60 * 60 * 1000;
 
-const expiryInstant = (choice: Expiry, now = Date.now()) =>
-  choice === "never" ? null : new Date(now + Number(choice) * 24 * 60 * 60 * 1000).toISOString();
+/** The last moment of a day (a date key) in a zone: a key chosen "until 15 December" works through that day. */
+const endOfDay = (day: string, timeZone: string): string =>
+  new Date(Date.parse(dates.zonedDateTimeToInstant(`${day}T23:59`, timeZone, { disambiguation: "compatible" })) + 59_999).toISOString();
+
+/** The instant a choice expires at; undefined for a chosen day that is missing or not in the future. */
+const expiryInstant = (choice: Expiry, day: string, timeZone: string, now = Date.now()): string | null | undefined => {
+  if (choice === "never") return null;
+  if (choice !== "date") return new Date(now + Number(choice) * DAY_MS).toISOString();
+  if (!day) return undefined;
+  const end = endOfDay(day, timeZone);
+  return Date.parse(end) > now ? end : undefined;
+};
 
 /** A draft restored after "Confirm identity"; anything else opens the dialog with its defaults. */
-const readApiKeyDraft = (value: unknown): { name: string; access?: ApiKeyAccess; never: boolean } | null => {
+const readApiKeyDraft = (value: unknown): { name: string; access?: ApiKeyAccess; expiresAt: string | null } | null => {
   if (!value || typeof value !== "object") return null;
   const name = "name" in value ? value.name : undefined;
   const expiresAt = "expiresAt" in value ? value.expiresAt : undefined;
   const access = "access" in value ? value.access : undefined;
   if (typeof name !== "string" || (expiresAt !== null && typeof expiresAt !== "string")) return null;
-  return { name, never: expiresAt === null, ...(access === "full" || access === "models" ? { access } : {}) };
+  return { name, expiresAt, ...(access === "full" || access === "models" ? { access } : {}) };
 };
 
 /**
@@ -38,6 +49,8 @@ export const useApiKeys = (props: {
   initialKeys: ServiceAccountCredential[];
   openAiBaseUrl: string | null;
   now: string;
+  /** The person's zone: a key chosen until a day expires at the end of that day there. */
+  timeZone: string;
   /** Where the CLI and agents connect, for the set-up behind the section deed. */
   connect: { mcpEndpoint: string; cloudUrl: string };
 }) => {
@@ -52,6 +65,8 @@ export const useApiKeys = (props: {
   const [name, setName] = createSignal("");
   const [access, setAccess] = createSignal<ApiKeyAccess>("full");
   const [expiry, setExpiry] = createSignal<Expiry>("90");
+  // the day a key chosen "until a day" works through, as a date key
+  const [expiryDay, setExpiryDay] = createSignal("");
   const [tried, setTried] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -61,7 +76,10 @@ export const useApiKeys = (props: {
   const openCreate = (draft?: ReturnType<typeof readApiKeyDraft>) => {
     setName(draft?.name ?? "");
     setAccess(draft?.access ?? "full");
-    setExpiry(draft?.never ? "never" : "90");
+    // A draft back from "Confirm identity" keeps its exact end: forever, or the day it was chosen until.
+    const expiresAt = draft?.expiresAt;
+    setExpiry(draft ? (expiresAt === null ? "never" : expiresAt ? "date" : "90") : "90");
+    setExpiryDay(expiresAt ? dates.instantToZonedInput(new Date(expiresAt), props.timeZone).slice(0, 10) : "");
     setTried(false);
     setError(null);
     setCreated(null);
@@ -71,8 +89,9 @@ export const useApiKeys = (props: {
   const create = async () => {
     setTried(true);
     const trimmed = name().trim();
-    if (busy() || !trimmed) return;
-    const draft: ApiKeyDraft = { name: trimmed, expiresAt: expiryInstant(expiry()), ...(modelsAvailable ? { access: access() } : {}) };
+    const expiresAt = expiryInstant(expiry(), expiryDay(), props.timeZone);
+    if (busy() || !trimmed || expiresAt === undefined) return;
+    const draft: ApiKeyDraft = { name: trimmed, expiresAt, ...(modelsAvailable ? { access: access() } : {}) };
     setBusy(true);
     setError(null);
     try {
@@ -225,7 +244,6 @@ export const useApiKeys = (props: {
                   />
                 </Field>
               </Show>
-              {/* k2b-ui gap: no date picker yet; a key lives for one of the preset spans or forever. */}
               <Field name="expires" label={t().expires} hint={t().apiKeyExpiryDescription}>
                 <Select
                   value={expiry()}
@@ -235,9 +253,21 @@ export const useApiKeys = (props: {
                     { value: "90", label: t().days90 },
                     { value: "365", label: t().year1 },
                     { value: "never", label: t().never },
+                    { value: "date", label: t().customDate },
                   ]}
                 />
               </Field>
+              <Show when={expiry() === "date"}>
+                <Field
+                  name="expiresOn"
+                  label={t().expiryDate}
+                  hint={t().expiryDateHint}
+                  error={tried() && expiryInstant("date", expiryDay(), props.timeZone) === undefined ? t().expiryDateRequired : undefined}
+                  required
+                >
+                  <DateInput value={expiryDay()} onInput={setExpiryDay} timeZone={props.timeZone} />
+                </Field>
+              </Show>
               <Show when={error()}>{(message) => <Notice tone="bad">{message()}</Notice>}</Show>
             </>
           }

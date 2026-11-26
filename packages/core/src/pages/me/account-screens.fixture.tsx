@@ -1,4 +1,4 @@
-import type { ServiceAccountCredential, WebAuthnPasskey } from "@k2b/cloud/contracts";
+import type { NotificationQuietSettings, ServiceAccountCredential, WebAuthnPasskey } from "@k2b/cloud/contracts";
 import type { AccountUserView } from "./account-view";
 import type { SecurityScreenProps } from "./SecurityScreen.island";
 
@@ -58,6 +58,14 @@ export const securityProps = (): SecurityScreenProps => ({
     openAiBaseUrl: "https://cloud.example.test/api/ai/openai/v1",
     mcpEndpoint: "https://cloud.example.test/api/mcp/v1",
     cloudUrl: "https://cloud.example.test",
+    timeZone: "Europe/Berlin",
   },
   now: NOW,
 });
+
+/** Do not disturb with no pause and quiet hours on weekday nights, in Berlin. */
+export const quietSettings: NotificationQuietSettings = {
+  doNotDisturbUntil: null,
+  quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00" }] },
+  state: { active: false, reason: null, until: null, nextStart: null },
+};

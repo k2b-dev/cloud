@@ -9,7 +9,6 @@ import { createSignal, onMount, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { signInAgainHref } from "../sign-out-others";
 import { useAuthMessages } from "./AuthFrame";
-import { autocomplete } from "./autocomplete";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { PasswordInput } from "./PasswordSetupFields";
 
@@ -82,7 +81,7 @@ export function FreeIpaForm(props: {
             value={username()}
             onInput={setUsername}
             placeholder={t().usernamePlaceholder}
-            ref={autocomplete(props.forget ? "off" : "username")}
+            autocomplete={props.forget ? "off" : "username"}
             onKeyDown={onEnter(send)}
           />
         </Field>
@@ -189,7 +188,7 @@ export function EmailForm(props: {
                 value={tokenInput()}
                 onInput={setTokenInput}
                 placeholder={t().loginCode}
-                ref={autocomplete("one-time-code")}
+                autocomplete="one-time-code"
                 onKeyDown={onEnter(verify)}
               />
             </Field>
@@ -225,7 +224,7 @@ export function EmailForm(props: {
             value={email()}
             onInput={setEmail}
             placeholder={t().emailOrUsernamePlaceholder}
-            ref={autocomplete(props.forget ? "off" : "username")}
+            autocomplete={props.forget ? "off" : "username"}
             onKeyDown={onEnter(sendEmail)}
           />
         </Field>

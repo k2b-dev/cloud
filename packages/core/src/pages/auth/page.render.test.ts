@@ -96,6 +96,20 @@ test("FreeIPA opens with the password and the name from the link, one link away 
   expect((await page(back, usedApp)).form).toBe("LoginForm");
 });
 
+test("a password manager finds the sign-in fields in the server's markup, before any script runs", async () => {
+  const password = await page("?method=ipa");
+  expect(password.form).toBe("LoginForm");
+  expect(password.html).toMatch(/<input[^>]*autocomplete="username"/);
+  expect(password.html).toMatch(
+    /<input[^>]*type="password"[^>]*autocomplete="current-password"|<input[^>]*autocomplete="current-password"[^>]*type="password"/,
+  );
+  // On a shared workstation the browser remembers nothing.
+  spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
+  const shared = await page("?method=ipa");
+  expect(shared.html).not.toContain('autocomplete="username"');
+  expect(shared.html).toMatch(/<input[^>]*autocomplete="off"/);
+});
+
 test("a browser that last signed in to FreeIPA with the app opens FreeIPA with the app", async () => {
   expect((await page("", "login_method=ipa")).form).toBe("LoginForm");
   const remembered = await page("", usedApp);

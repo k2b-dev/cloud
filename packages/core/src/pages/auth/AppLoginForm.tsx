@@ -8,7 +8,6 @@ import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-a
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
 import ApprovalFeedback from "../app-approval/Feedback";
 import { appApprovalMessages } from "../app-approval/messages";
-import { autocomplete } from "./autocomplete";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 
 export default function AppLoginForm(props: {
@@ -165,7 +164,7 @@ export default function AppLoginForm(props: {
                     value={identifier()}
                     onInput={setIdentifier}
                     placeholder={t().identifierPlaceholder}
-                    ref={autocomplete(props.forget ? "off" : "username")}
+                    autocomplete={props.forget ? "off" : "username"}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" && !event.isComposing) void start();
                     }}

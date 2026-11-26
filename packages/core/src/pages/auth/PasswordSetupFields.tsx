@@ -2,7 +2,6 @@ import { i18n, password } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Button, Dialog, Facts, Field, Input, Progress, Text } from "@k2b/ui/v2";
 import { type Accessor, createMemo, createSignal, type JSX } from "solid-js";
-import { autocomplete } from "./autocomplete";
 
 type PasswordSetupFieldsProps = {
   newPassword: Accessor<string>;
@@ -89,7 +88,7 @@ export function PasswordInput(props: {
       value={props.value}
       onInput={props.onInput}
       placeholder={props.placeholder}
-      ref={autocomplete(props.autocomplete)}
+      autocomplete={props.autocomplete}
       onKeyDown={(event) => {
         if (event.key === "Enter" && !event.isComposing) props.onEnter?.();
       }}

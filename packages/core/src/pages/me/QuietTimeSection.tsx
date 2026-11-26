@@ -9,7 +9,7 @@ import {
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Field, Group, Menu, Row, Section, Select, useToast } from "@k2b/ui/v2";
+import { Bar, Button, DatePicker, Dialog, Empty, Field, Group, Menu, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, Index, onCleanup, onMount } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import type { AccountMessages } from "./messages";
@@ -133,16 +133,41 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
     }
   };
 
-  const pause = async (until: string | null) => {
-    if (until && Date.parse(until) <= Date.now()) {
-      toast(t().pauseInPast, { status: "bad" });
-      return;
+  /** Why a pause cannot end at this instant, or null when it can. */
+  const pauseProblem = (until: string): string | null => {
+    if (Date.parse(until) <= Date.now()) return t().pauseInPast;
+    if (Date.parse(until) > Date.now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * HOUR_MS) return t().pauseTooFar;
+    return null;
+  };
+  const pause = async (until: string | null): Promise<boolean> => {
+    const problem = until ? pauseProblem(until) : null;
+    if (problem) {
+      toast(problem, { status: "bad" });
+      return false;
     }
-    if (until && Date.parse(until) > Date.now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * HOUR_MS) {
-      toast(t().pauseTooFar, { status: "bad" });
-      return;
-    }
-    if (await save("pause", { doNotDisturbUntil: until })) toast(until ? t().pauseSaved : t().pauseResumed, { status: "ok" });
+    const saved = await save("pause", { doNotDisturbUntil: until });
+    if (saved) toast(until ? t().pauseSaved : t().pauseResumed, { status: "ok" });
+    return saved;
+  };
+
+  // ── A pause until a chosen day and time, in the zone of the person ──
+  const zone = () => props.dateConfig.timeZone ?? "UTC";
+  const [customOpen, setCustomOpen] = createSignal(false);
+  const [customError, setCustomError] = createSignal<string | undefined>();
+  const dayIn = (instant: number) => dates.instantToZonedInput(new Date(instant), zone()).slice(0, 10);
+  const customValue = () => {
+    const until = pausedUntil();
+    return until ? dates.instantToZonedInput(new Date(until), zone()).slice(0, 16) : undefined;
+  };
+  const openCustom = () => {
+    setCustomError(undefined);
+    setCustomOpen(true);
+  };
+  const pickCustom = async (wallTime: string) => {
+    const until = dates.zonedDateTimeToInstant(wallTime, zone(), { disambiguation: "compatible" });
+    const problem = pauseProblem(until);
+    if (problem) return setCustomError(problem);
+    if (await pause(until)) setCustomOpen(false);
   };
 
   const saveHours = async () => {
@@ -173,100 +198,130 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
   const pausedUntil = () => settings().doNotDisturbUntil;
 
   return (
-    <Section icon="moon" title={t().quietTitle} summary={t().quietDescription}>
-      <Row
-        icon={settings().state.active ? "moon" : "moon-off"}
-        lines={[t().pauseTitle, statusLabel(settings(), t(), now(), context())]}
-        end={
-          // k2b-ui gap: no date and time picker yet; a pause ends at one of the presets (the old free time is gone).
-          <Menu
-            label={t().pauseUntil}
-            disabled={saving() !== null}
-            items={[
-              ...presets().map((preset) => ({ label: preset.label, icon: "player-pause", onClick: () => void pause(preset.value) })),
-              ...(pausedUntil()
-                ? ["separator" as const, { label: t().pauseResume, icon: "player-play", onClick: () => void pause(null) }]
-                : []),
-            ]}
-          >
-            {pausedUntil() ? t().pauseChange : t().pauseTitle}
-          </Menu>
-        }
-      />
-      <Index each={draft().periods} fallback={<Empty icon="clock" text={t().quietNoPeriods} />}>
-        {(period, index) => (
-          <Group
-            icon="clock"
-            title={t().quietPeriodTitle({ from: period().start, to: period().end })}
-            meta={days(period())}
-            actions={[
-              {
-                label: t().quietRemovePeriod,
-                icon: "trash",
-                onClick: () =>
-                  setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) })),
-              },
-            ]}
-          >
-            <Field.Row>
-              <Field
-                name={`quietDays${index}`}
-                label={t().quietDays}
-                error={period().days.length === 0 ? t().quietDaysRequired : undefined}
-              >
-                <Menu
-                  label={t().quietDays}
-                  items={weekdayOptions(locale()).map((option) => ({
-                    label: option.label,
-                    checked: period().days.includes(Number(option.value)),
-                    onClick: () => toggleDay(index, period(), Number(option.value)),
-                  }))}
-                >
-                  {period().days.length > 0 ? days(period()) : t().quietDaysRequired}
-                </Menu>
-              </Field>
-              <Field name={`quietFrom${index}`} label={t().quietFrom}>
-                <Select
-                  options={timeOptions(period().start)}
-                  value={period().start}
-                  onChange={(start) => start && updatePeriod(index, { start })}
-                />
-              </Field>
-              <Field name={`quietTo${index}`} label={t().quietTo}>
-                <Select options={timeOptions(period().end)} value={period().end} onChange={(end) => end && updatePeriod(index, { end })} />
-              </Field>
-            </Field.Row>
-          </Group>
-        )}
-      </Index>
-      <Field name="quietTimeZone" label={t().quietTimeZone} hint={t().quietHoursDescription}>
-        <Select
-          options={timeZones()}
-          value={draft().timeZone}
-          onChange={(timeZone) => timeZone && setDraft((current) => ({ ...current, timeZone }))}
+    <>
+      <Section icon="moon" title={t().quietTitle} summary={t().quietDescription}>
+        <Row
+          icon={settings().state.active ? "moon" : "moon-off"}
+          lines={[t().pauseTitle, statusLabel(settings(), t(), now(), context())]}
+          end={
+            <Menu
+              label={t().pauseUntil}
+              disabled={saving() !== null}
+              items={[
+                ...presets().map((preset) => ({ label: preset.label, icon: "player-pause", onClick: () => void pause(preset.value) })),
+                { label: t().customDate, icon: "calendar", onClick: openCustom },
+                ...(pausedUntil()
+                  ? ["separator" as const, { label: t().pauseResume, icon: "player-play", onClick: () => void pause(null) }]
+                  : []),
+              ]}
+            >
+              {pausedUntil() ? t().pauseChange : t().pauseTitle}
+            </Menu>
+          }
         />
-      </Field>
-      <Bar
-        end={
-          <>
-            <Button
-              icon="plus"
-              disabled={draft().periods.length >= NOTIFICATION_QUIET_PERIOD_LIMIT}
-              onClick={() => setDraft((current) => ({ ...current, periods: [...current.periods, DEFAULT_PERIOD] }))}
+        <Index each={draft().periods} fallback={<Empty icon="clock" text={t().quietNoPeriods} />}>
+          {(period, index) => (
+            <Group
+              icon="clock"
+              title={t().quietPeriodTitle({ from: period().start, to: period().end })}
+              meta={days(period())}
+              actions={[
+                {
+                  label: t().quietRemovePeriod,
+                  icon: "trash",
+                  onClick: () =>
+                    setDraft((current) => ({ ...current, periods: current.periods.filter((_, position) => position !== index) })),
+                },
+              ]}
             >
-              {t().quietAddPeriod}
-            </Button>
-            <Button
-              variant="primary"
-              busy={saving() === "hours"}
-              disabled={saving() === "pause" || !dirty() || invalid()}
-              onClick={() => void saveHours()}
-            >
-              {t().save}
-            </Button>
-          </>
+              <Field.Row>
+                <Field
+                  name={`quietDays${index}`}
+                  label={t().quietDays}
+                  error={period().days.length === 0 ? t().quietDaysRequired : undefined}
+                >
+                  <Menu
+                    label={t().quietDays}
+                    items={weekdayOptions(locale()).map((option) => ({
+                      label: option.label,
+                      checked: period().days.includes(Number(option.value)),
+                      onClick: () => toggleDay(index, period(), Number(option.value)),
+                    }))}
+                  >
+                    {period().days.length > 0 ? days(period()) : t().quietDaysRequired}
+                  </Menu>
+                </Field>
+                <Field name={`quietFrom${index}`} label={t().quietFrom}>
+                  <Select
+                    options={timeOptions(period().start)}
+                    value={period().start}
+                    onChange={(start) => start && updatePeriod(index, { start })}
+                  />
+                </Field>
+                <Field name={`quietTo${index}`} label={t().quietTo}>
+                  <Select
+                    options={timeOptions(period().end)}
+                    value={period().end}
+                    onChange={(end) => end && updatePeriod(index, { end })}
+                  />
+                </Field>
+              </Field.Row>
+            </Group>
+          )}
+        </Index>
+        <Field name="quietTimeZone" label={t().quietTimeZone} hint={t().quietHoursDescription}>
+          <Select
+            options={timeZones()}
+            value={draft().timeZone}
+            onChange={(timeZone) => timeZone && setDraft((current) => ({ ...current, timeZone }))}
+          />
+        </Field>
+        <Bar
+          end={
+            <>
+              <Button
+                icon="plus"
+                disabled={draft().periods.length >= NOTIFICATION_QUIET_PERIOD_LIMIT}
+                onClick={() => setDraft((current) => ({ ...current, periods: [...current.periods, DEFAULT_PERIOD] }))}
+              >
+                {t().quietAddPeriod}
+              </Button>
+              <Button
+                variant="primary"
+                busy={saving() === "hours"}
+                disabled={saving() === "pause" || !dirty() || invalid()}
+                onClick={() => void saveHours()}
+              >
+                {t().save}
+              </Button>
+            </>
+          }
+        />
+      </Section>
+      <Dialog
+        title={t().pauseCustomTitle}
+        open={customOpen()}
+        onOpenChange={(open) => saving() === null && setCustomOpen(open)}
+        foot={
+          <Button disabled={saving() !== null} onClick={() => setCustomOpen(false)}>
+            {t().cancel}
+          </Button>
         }
-      />
-    </Section>
+      >
+        <Text muted>{t().pauseCustomHint}</Text>
+        <DatePicker
+          time
+          value={customValue()}
+          defaultTime="08:00"
+          min={dayIn(now())}
+          max={dayIn(now() + NOTIFICATION_DO_NOT_DISTURB_MAX_DAYS * 24 * HOUR_MS)}
+          timeZone={zone()}
+          label={t().pauseUntil}
+          error={customError()}
+          onPick={(value) => void pickCustom(value)}
+          autoFocus
+        />
+      </Dialog>
+    </>
   );
 }

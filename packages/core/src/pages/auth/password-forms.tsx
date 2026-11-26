@@ -4,7 +4,6 @@ import { Band, Bar, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, type JSX, Show } from "solid-js";
 import { retrySignOutOthers, signInAgainHref, signOutOthersRetryPath } from "../sign-out-others";
 import { useAuthMessages } from "./AuthFrame";
-import { autocomplete } from "./autocomplete";
 import { afterSignInHref, confirmationRequestOptions } from "./login-redirect";
 import { PasswordInput, PasswordSetupFields } from "./PasswordSetupFields";
 
@@ -113,7 +112,7 @@ export function NewPasswordForm(props: {
               value={username()}
               onInput={setUsername}
               placeholder={t().usernameShortPlaceholder}
-              ref={autocomplete("username")}
+              autocomplete="username"
             />
           </Field>
           <Field name="currentPassword" label={t().currentPassword} hint={t().currentPasswordDescription}>
@@ -182,7 +181,7 @@ export function PasswordResetRequestForm(props: { redirectTo?: string; start?: J
             value={email()}
             onInput={setEmail}
             placeholder="you@example.org"
-            ref={autocomplete("email")}
+            autocomplete="email"
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.isComposing) send();
             }}

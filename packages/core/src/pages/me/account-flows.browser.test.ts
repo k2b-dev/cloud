@@ -231,6 +231,70 @@ describe("account deeds on v2", () => {
       await context.close();
     }
   }, 30_000);
+
+  test("a key until a chosen day works through the end of that day in the person's zone; no day sends nothing", async () => {
+    const { context, tab, errors, seen } = await open("security", "/me/security", {
+      "POST /api/me/api-keys": [{ status: 500, json: { code: "INTERNAL" } }],
+    });
+    try {
+      await tab.getByRole("button", { name: "Create API key" }).first().click();
+      await dialog(tab).getByRole("textbox").first().fill("Backup");
+      await dialog(tab).locator('[data-k2-part="Select"]').click();
+      await tab.getByRole("option", { name: "Custom date…" }).click();
+      const day = dialog(tab).getByRole("textbox", { name: "Expires on" });
+      await day.waitFor();
+      // without a day the key is not created
+      await dialog(tab).getByRole("button", { name: "Create key" }).click();
+      await dialog(tab).getByText("Choose a day in the future.").waitFor();
+      expect(seen.filter((entry) => entry.path === "/api/me/api-keys")).toEqual([]);
+      await day.fill("12/15/2026");
+      await day.press("Enter");
+      await dialog(tab).getByRole("button", { name: "Create key" }).click();
+      await eventually(() => seen.some((entry) => entry.path === "/api/me/api-keys"));
+      const body = seen.find((entry) => entry.path === "/api/me/api-keys")?.body as { expiresAt: string };
+      // 15 December 2026, 23:59:59.999 in Berlin (UTC+1)
+      expect(body.expiresAt).toBe("2026-12-15T22:59:59.999Z");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
+  test("do not disturb pauses until a chosen day and time in the person's zone, and refuses a time in the past", async () => {
+    const { context, tab, errors, seen } = await open("quiet", "/me/notifications", {
+      "PATCH /api/me/notifications/quiet": [
+        {
+          json: {
+            doNotDisturbUntil: "2026-11-27T13:30:00.000Z",
+            quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "22:00", end: "07:00" }] },
+            state: { active: true, reason: "doNotDisturb", until: "2026-11-27T13:30:00.000Z", nextStart: null },
+          },
+        },
+      ],
+    });
+    try {
+      await tab.getByRole("button", { name: "Pause", exact: true }).click();
+      await tab.getByRole("menuitem", { name: "Custom date…" }).click();
+      const picker = dialog(tab);
+      // the pinned clock is 24 November 2026, 11:00 in Berlin: earlier days cannot be picked
+      expect(await picker.locator('[data-value="2026-11-23"]').getAttribute("aria-disabled")).toBe("true");
+      await picker.locator('[data-value="2026-11-24"]').click();
+      const time = picker.getByRole("textbox", { name: "Time" });
+      await time.fill("09:00");
+      await time.press("Enter");
+      await picker.getByText("Choose a time in the future.").waitFor();
+      expect(seen.filter((entry) => entry.method === "PATCH")).toEqual([]);
+      await picker.locator('[data-value="2026-11-27"]').click();
+      await time.fill("14:30");
+      await time.press("Enter");
+      await picker.waitFor({ state: "detached" });
+      const body = seen.find((entry) => entry.method === "PATCH")?.body as { doNotDisturbUntil: string };
+      expect(body.doNotDisturbUntil).toBe("2026-11-27T13:30:00.000Z");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
 });
 
 describe("sign-in deeds on v2", () => {

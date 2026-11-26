@@ -1,8 +1,11 @@
 import { LocaleProvider } from "@k2b/ui";
+import { Pane } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import ConsentScreen from "../auth/ConsentScreen.island";
 import LoginScreen from "../auth/LoginScreen.island";
-import { securityProps } from "./account-screens.fixture";
+import AccountWorkspace from "./AccountWorkspace";
+import { quietSettings, securityProps, userView } from "./account-screens.fixture";
+import QuietTimeSection from "./QuietTimeSection";
 import SecurityScreen from "./SecurityScreen.island";
 
 /** Account and sign-in screens for a browser test: `<html data-screen>` names the screen; the test answers the API. */
@@ -14,6 +17,12 @@ render(
     <LocaleProvider locale="en">
       {screen === "security" ? (
         <SecurityScreen {...securityProps()} />
+      ) : screen === "quiet" ? (
+        <AccountWorkspace user={userView} place="account">
+          <Pane label="Do not disturb">
+            <QuietTimeSection initial={quietSettings} dateConfig={{ timeZone: "Europe/Berlin", locale: "en", firstDayOfWeek: 1 }} />
+          </Pane>
+        </AccountWorkspace>
       ) : screen === "consent" ? (
         <ConsentScreen
           appName="Cloud"
