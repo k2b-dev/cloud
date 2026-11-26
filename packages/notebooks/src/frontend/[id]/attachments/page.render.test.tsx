@@ -72,7 +72,7 @@ test("readers cannot enter the attachments workspace through a direct URL", asyn
   expect(attachments).not.toHaveBeenCalled();
 });
 
-test("attachments render their current sidebar destination and unframed empty panel, preserving search and presentation", async () => {
+test("attachments render their current sidebar destination and the v2 empty state, preserving search and presentation", async () => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -111,9 +111,8 @@ test("attachments render their current sidebar destination and unframed empty pa
       expect(current).toHaveLength(1);
       expect(current[0]?.attributes.href).toBe(`/app/notebooks/book01/attachments?mode=${mode}`);
       expect(current[0]?.text).toContain("Attachments");
-      const empty = await selectHtml(html, '.k2b-app-workspace__main .k2b-placeholder[data-variant="panel"]');
+      const empty = await selectHtml(html, '[data-k2-part="Empty"]');
       expect(empty).toHaveLength(1);
-      expect(empty[0]?.attributes["data-surface"]).not.toBe("paper");
       expect(empty[0]?.text).toContain(search ? "No attachments match “team”." : "No attachments yet");
     }
   }

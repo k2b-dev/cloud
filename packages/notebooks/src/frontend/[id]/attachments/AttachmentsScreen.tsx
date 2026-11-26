@@ -184,21 +184,22 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
                 )}
               </For>
             </List>
-            <Show when={props.pages > 1}>
-              <Bar
-                start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
-                end={
-                  <>
-                    <Button icon="chevron-left" href={href(props.search, props.page - 1)} disabled={props.page <= 1}>
-                      {t().previousPage}
-                    </Button>
-                    <Button href={href(props.search, props.page + 1)} disabled={props.page >= props.pages} forward>
-                      {t().nextPage}
-                    </Button>
-                  </>
-                }
-              />
-            </Show>
+          </Show>
+          {/* The pages stay reachable also when this page shows none (a deletion, an old link). */}
+          <Show when={props.pages > 1}>
+            <Bar
+              start={<Text type="meta">{t().pageOf({ page: props.page, pages: props.pages })}</Text>}
+              end={
+                <>
+                  <Button icon="chevron-left" href={href(props.search, props.page - 1)} disabled={props.page <= 1}>
+                    {t().previousPage}
+                  </Button>
+                  <Button href={href(props.search, props.page + 1)} disabled={props.page >= props.pages} forward>
+                    {t().nextPage}
+                  </Button>
+                </>
+              }
+            />
           </Show>
         </Pane>
       </Workspace>
