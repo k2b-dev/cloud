@@ -252,6 +252,32 @@ describe("the access dialog on v2", () => {
     }
   });
 
+  test("API keys: an expiry on a picked day must lie ahead and goes with the key", async () => {
+    const { context, tab, dialog } = await open(views[0]!, "?keys");
+    try {
+      await dialog.getByRole("region", { name: "API keys" }).getByRole("button", { name: "Add" }).click();
+      const create = tab.getByRole("dialog", { name: "Create API key" });
+      await create.getByRole("textbox").first().fill("Monatsabschluss");
+      await create.getByRole("radio", { name: "On a date" }).check({ force: true });
+      const day = create.getByRole("textbox", { name: "Expires on" });
+      await day.fill("2020-01-01");
+      await day.press("Enter");
+      await create.getByRole("button", { name: "Create key" }).click();
+      await create.getByText("Pick a day in the future.").waitFor();
+      await day.fill("2099-12-31");
+      await day.press("Enter");
+      await create.getByRole("button", { name: "Create key" }).click();
+      await tab.getByRole("dialog", { name: /API key created/i }).waitFor();
+      expect(((await calls(tab)) as Record<string, unknown>[]).find((call) => "createKey" in call)).toEqual({
+        createKey: "Monatsabschluss",
+        permission: "read",
+        expires: true,
+      });
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const view of [views[0]!, views[2]!])
     test(`${view.name} px: the worst case stays readable and nothing overflows`, async () => {
       const { context, tab, errors, dialog } = await open(view, "?worst");
