@@ -10,6 +10,22 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="list-detail" height="560" default="Open" />
 
+## An overview of things
+
+<Example recipe="overview" height="720" default="Bases" />
+
+## The home of one place
+
+<Example recipe="home" height="720" default="Busy" />
+
+## A folder of files
+
+<Example recipe="files" height="720" default="List" />
+
+## A settings page
+
+<Example recipe="settings-page" height="720" default="Changed" />
+
 ## Table with a status row
 
 <Example recipe="table" height="440" default="Rows" />
@@ -33,6 +49,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 ## Form beside a list
 
 <Example recipe="form-detail" height="640" default="Filled" />
+
+## Settings with more than text
+
+<Example recipe="settings" height="760" />
 
 ## Deeds and menus
 
