@@ -1080,6 +1080,8 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
             />
           </Show>
           <Show when={canEditItem()}>
+            {/* k2b-ui gap: a Bar that ends a Section draws its line on the Section's end line (two lines at one edge), and
+                Section actions take no Popover; the add stays a Bar until Section has a foot place. */}
             <Bar
               end={
                 <Popover

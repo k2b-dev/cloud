@@ -188,6 +188,16 @@ test("an open task reads its due time against the snapshot's time, so the server
   expect(html).not.toContain("Overdue");
 });
 
+test("the Space is named once: by its entry in the sidebar and the phone bar, not again in the head", async () => {
+  spies.push(spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue(state));
+  const html = await (await request()).text();
+  const head = html.slice(html.indexOf('data-slot="head"'), html.indexOf('data-k2-part="Pane.Split"'));
+  expect(head).toContain('data-k2-part="Tabs"');
+  expect(head).not.toContain(">Launch<");
+  // The phone bar names it: its menu carries the Space's name.
+  expect(html).toContain('data-cloud-workspace-navigation>{"label":"Launch"');
+});
+
 test("a writable Space with a long query still renders its primary command link", async () => {
   spies.push(
     spyOn(workspaceState, "loadSpacesWorkspaceState").mockResolvedValue({

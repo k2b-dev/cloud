@@ -120,6 +120,9 @@ describe("Spaces task checklist", () => {
     expect(entries[0]?.label).toBe("Review final copy");
 
     const add = dom.root.querySelector<HTMLInputElement>('input[placeholder="Add subtask…"]')!;
+    // The words stand once: as the field's hint and name, never also as a label right above the same words.
+    expect(add.getAttribute("aria-label")).toBe("Add subtask…");
+    expect(dom.root.textContent).not.toContain("Add subtask…");
     add.value = "Publish";
     add.dispatchEvent(new Event("input", { bubbles: true }));
     enter(add);

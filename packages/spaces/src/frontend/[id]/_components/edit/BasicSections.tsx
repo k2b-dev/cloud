@@ -69,6 +69,8 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
         <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
       </Field>
       <Show when={save.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
+      {/* k2b-ui gap: a Bar that ends a Section draws its line on the Section's end line (two lines at one edge); Section
+          has no foot place for the buttons of its form. */}
       <Bar
         start={<Text type="meta">{changes() > 0 ? m.changesPending({ count: changes() }) : ""}</Text>}
         end={

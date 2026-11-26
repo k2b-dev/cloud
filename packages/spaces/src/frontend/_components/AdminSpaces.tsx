@@ -97,8 +97,9 @@ export default function AdminSpaces(props: AdminSpacesProps) {
     <AdminWorkspace
       nav={props.nav}
       head={
+        // The current place is the navigation's "Spaces" entry; the head holds only the search (review 26.11.).
+        // k2b-ui gap: the search should be a symbol that opens over the head on click or "/"; Input has no such form.
         <Bar
-          start={<Text type="lead">{t().spaces}</Text>}
           end={
             <Input
               type="search"

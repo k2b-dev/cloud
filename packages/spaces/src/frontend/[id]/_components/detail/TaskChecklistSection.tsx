@@ -148,17 +148,18 @@ export default function TaskChecklistSection(props: Props) {
           )}
         </For>
         <Show when={props.canWrite}>
-          <Field label={t.addChecklistEntry} name="checklist-new">
-            <Input
-              value={newLabel()}
-              placeholder={t.addChecklistEntry}
-              disabled={createEntry.loading()}
-              onInput={setNewLabel}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.isComposing) add(newLabel());
-              }}
-            />
-          </Field>
+          {/* The words stand once, as the field's hint and name, not again as a label above it. */}
+          <Input
+            label={t.addChecklistEntry}
+            name="checklist-new"
+            value={newLabel()}
+            placeholder={t.addChecklistEntry}
+            disabled={createEntry.loading()}
+            onInput={setNewLabel}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.isComposing) add(newLabel());
+            }}
+          />
         </Show>
       </Show>
     </Section>
