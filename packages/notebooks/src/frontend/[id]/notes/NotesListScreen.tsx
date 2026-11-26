@@ -180,21 +180,16 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                 <Cells.Cell
                   icon="clock"
                   label={t().lastChange}
-                  value={
-                    <Show when={props.figures.latest} fallback={t().nothingChanged}>
-                      {(latest) => (
-                        <Inline>
-                          <Avatar {...personOf(latest().actor)} decorative />
-                          <Text>{latest().actor.displayName}</Text>
-                        </Inline>
-                      )}
-                    </Show>
+                  // the note that changed last, as plain words so a long title ends in "…"; the cell opens it
+                  value={props.figures.latest?.note?.title ?? (props.figures.latest ? t().deletedNote : t().nothingChanged)}
+                  href={
+                    props.figures.latest?.note
+                      ? buildNoteUrl(notebookId(), props.figures.latest.note.shortId, props.mode === "book" ? "book" : undefined)
+                      : undefined
                   }
                   meta={
                     props.figures.latest
-                      ? props.figures.latest.note
-                        ? t().inNote({ when: when(props.figures.latest.at), title: props.figures.latest.note.title })
-                        : when(props.figures.latest.at)
+                      ? t().byWhom({ name: props.figures.latest.actor.displayName, when: when(props.figures.latest.at) })
                       : undefined
                   }
                 />
@@ -243,15 +238,18 @@ export default function NotesListScreen(props: NotesListScreenProps) {
             columns={[
               {
                 title: t().note,
+                // sized columns keep every row one line: long words end in "…" (B: rows keep one height)
+                width: { min: 180, default: 260 },
                 mark: (note) => ({ icon: note.lockedAt ? "lock" : "file-text", label: note.lockedAt ? t().locked : undefined }),
                 cell: (note) => note.title,
               },
               {
                 title: t().tags,
+                width: { min: 120, default: 170 },
                 drop: true,
                 cell: (note) => (
                   <Inline>
-                    <For each={note.tags.slice(0, 3)}>
+                    <For each={note.tags.slice(0, 2)}>
                       {(tag) => (
                         <Chip tag href={tagHref(tag)}>
                           {`#${tag}`}
@@ -262,16 +260,19 @@ export default function NotesListScreen(props: NotesListScreenProps) {
                 ),
               },
               {
-                title: t().changedBy,
-                drop: true,
-                // the data column: who changed the note lately, the last one first
-                cell: (note) =>
-                  note.editors.length > 0 ? <Avatar.Stack people={note.editors.map(personOf)} label={editorsLabel(note.editors)} /> : "",
-              },
-              {
                 title: state().sort.field === "created" ? t().created : t().lastChanged,
+                width: { min: 110, default: 130 },
                 align: "end",
                 cell: (note) => timeOf(note),
+              },
+              {
+                // the data column, last: it takes the rest of a wide row, so the facts stay together on the left
+                // instead of the row stretching between them (B: large screens never stretch rows)
+                title: t().changedBy,
+                drop: true,
+                // who changed the note lately, the last one first
+                cell: (note) =>
+                  note.editors.length > 0 ? <Avatar.Stack people={note.editors.map(personOf)} label={editorsLabel(note.editors)} /> : "",
               },
             ]}
           />

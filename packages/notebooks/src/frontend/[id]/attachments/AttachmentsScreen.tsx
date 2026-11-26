@@ -160,7 +160,7 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
         sidebar={<NotebookSidebarBody sidebar={sidebar} current="attachments" />}
         head={
           <Bar
-            start={<Text type="body">{t().attachments}</Text>}
+            // no title: the sidebar's current entry names the page, and on the phone the hero's label does
             end={
               <Input
                 type="search"
@@ -232,9 +232,10 @@ export default function AttachmentsScreen(props: AttachmentsScreenProps) {
                   <Menu.Context items={menu(attachment)}>
                     <Row
                       mark={markOf(attachment)}
-                      lines={[attachment.filename]}
-                      meta={formatBytes(attachment.sizeBytes)}
-                      time={when(attachment.createdAt)}
+                      // k2b-ui gap: a Row of one line draws its time and its end (the "…") in one place and keeps its
+                      // note beside the title on the phone, so the rows keep two lines (name; size · date) until Row has
+                      // B's one line on the desktop and two on the phone (B rule 4).
+                      lines={[attachment.filename, `${formatBytes(attachment.sizeBytes)} · ${when(attachment.createdAt)}`]}
                       onOpen={() => openAttachment(notebookId(), attachment, items())}
                       end={<Menu label={t().attachmentActions({ filename: attachment.filename })} items={menu(attachment)} />}
                     />

@@ -66,6 +66,36 @@ export const worstNotes = (): PageListEntry[] => [
     })),
   },
   { shortId: "W00002", title: "A", preview: null, tags: [], createdAt: at(900), updatedAt: at(800), lockedAt: null, editors: [] },
+  {
+    shortId: "W00003",
+    title: "https://intranet.northwind-industries-holdings.example.com/lager/wareneingang/protokolle/2026/kw48/export?format=pdf",
+    preview: null,
+    tags: ["研究"],
+    createdAt: at(30),
+    updatedAt: at(3),
+    lockedAt: at(3),
+    editors: [
+      { kind: "user", id: "u-li", name: "李小龍", avatarHash: null },
+      { kind: "user", id: "u-jo", name: "Jo", avatarHash: null },
+    ],
+  },
+  {
+    shortId: "W00004",
+    title: "🧪 Versuchsreihe Kühlhaus – Ergebnisse 研究 مختبر",
+    preview: "Temperaturkurven",
+    tags: ["🧪", "labor"],
+    createdAt: at(60),
+    updatedAt: at(24 * 400),
+    lockedAt: null,
+    editors: [
+      {
+        kind: "service_account",
+        id: "s-import",
+        name: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+        avatarHash: null,
+      },
+    ],
+  },
   ...sampleNotes(),
 ];
 

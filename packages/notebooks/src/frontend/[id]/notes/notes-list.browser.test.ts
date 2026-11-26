@@ -213,7 +213,26 @@ describe("the notes list on v2", () => {
       await expectOutlineClean(tab);
       await shoot(tab, "worst-light-390");
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      expect(await titles(tab)).toHaveLength(12);
+      expect(await titles(tab)).toHaveLength(14);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("on a wide screen the notebook's figures lead, and each row shows who changed the note; the worst case fits", async () => {
+    const { context, tab, errors } = await open(wide, PATH, { sample: "worst" });
+    try {
+      await expectOutlineClean(tab);
+      await shoot(tab, "worst-light-1440");
+      // the hero: the changes of 30 days with their real trend, then the notes and the last change
+      const cells = tab.locator('[data-k2-part="Cells.Cell"]');
+      expect(await cells.count()).toBe(3);
+      expect(await cells.first().locator('[data-k2-part="Spark"] i').count()).toBe(30);
+      // the data column: a stack of faces with every name, also for eight people
+      const stack = tab.locator('[data-k2-part="Table"] [data-k2-part="Avatar.Stack"]').first();
+      expect(await stack.getAttribute("aria-label")).toMatch(/^Zuletzt geändert von Maximiliane Alexandra .*Person 8$/);
+      expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

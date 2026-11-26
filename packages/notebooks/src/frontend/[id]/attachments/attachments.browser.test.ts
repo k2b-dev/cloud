@@ -189,7 +189,7 @@ describe("the attachments page on v2", () => {
       await expectOutlineClean(tab);
       await shoot(tab, "worst-light-390");
       expect(await tab.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-      expect(await tab.getByRole("button", { name: /^Aktionen für / }).count()).toBe(16);
+      expect(await tab.getByRole("button", { name: /^Aktionen für / }).count()).toBe(19);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

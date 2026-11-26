@@ -6,7 +6,7 @@ import AttachmentsScreen from "./AttachmentsScreen";
 
 /**
  * The attachments page for a browser test, rendered as the server would for its address: `?search=` filters the
- * invented sample by name. `data-sample="worst"` adds long names and many files.
+ * invented sample by name. `data-sample="worst"` adds long names and many files, `empty` shows none.
  */
 const host = document.getElementById("root");
 if (!host) throw new Error("Missing harness root");
@@ -40,24 +40,30 @@ const ATTACHMENTS: Attachment[] = [
 const worst: Attachment[] = [
   file("Att900", "Statikberechnungsnachweisprüfungsergebnisprotokoll_final_v12_wirklich_final_neu_2.pdf", "application/pdf", 9_999_999, 1),
   file("Att901", "a", "application/octet-stream", 0, 3),
+  file("Att902", "報告書_最終版_倉庫管理システム.pdf", "application/pdf", 1_234_567, 4),
+  file("Att903", "📸 Rampe Süd.jpeg", "image/jpeg", 2_147_483_647, 6),
+  file("Att904", "bartholomew.fitzgerald@northwind-industries-holdings.example.com.vcf", "text/vcard", 512, 24 * 400),
   ...ATTACHMENTS,
 ];
-const all = document.documentElement.dataset.sample === "worst" ? worst : ATTACHMENTS;
+const sample = document.documentElement.dataset.sample;
+const all = sample === "empty" ? [] : sample === "worst" ? worst : ATTACHMENTS;
 const search = new URLSearchParams(location.search).get("search") ?? "";
+// uploads per day in 30 days, the same uploads the figure counts
+const uploads = Array.from({ length: 30 }, (_, index) => (all.length === 0 || index % 7 > 4 ? 0 : (index * 5) % 4));
 const shown = all.filter((attachment) => attachment.filename.toLowerCase().includes(search.toLowerCase()));
 
 render(
   () => (
     <LocaleProvider locale="de">
       <AttachmentsScreen
-        ctx={notesContext(sampleNotes())}
+        ctx={{ ...notesContext(sampleNotes()), attachmentCount: all.length }}
         attachments={shown}
         total={shown.length}
         figures={{
-          days: Array.from({ length: 30 }, (_, index) => (index % 7 > 4 ? 0 : (index * 5) % 4)),
+          days: uploads,
           count: all.length,
           bytes: all.reduce((sum, attachment) => sum + attachment.sizeBytes, 0),
-          added: 3,
+          added: uploads.reduce((sum, value) => sum + value, 0),
         }}
         search={search}
         page={1}
