@@ -17,12 +17,12 @@ import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
-import { useUiMessages } from "../intl/messages";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
 import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
+import { useNumberMessages } from "./number-messages";
 import { readNumber, readPlain, showNumber } from "./number-text";
 import { textEdge } from "./tokens";
 
@@ -359,7 +359,7 @@ export const Input = (props: InputProps) => {
 // only core's reading and showing of numbers (behavior/number) is used, not its number-input.
 const useNumberText = (props: InputProps) => {
   const locale = useLocale();
-  const said = useUiMessages();
+  const said = useNumberMessages();
   /** What a plain value shows: in the locale's form where that is exact, else the value as it is (it is refused). */
   const show = (value: string) => {
     const read = readPlain(value);

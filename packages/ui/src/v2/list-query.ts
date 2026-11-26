@@ -431,8 +431,8 @@ export type SortOption = {
   /** Final display text, such as "Price". */
   readonly label: string;
   /**
-   * Directions offered. Picking this sort keeps the direction shown when it is offered, else takes the first one.
-   * Default `["asc", "desc"]`.
+   * Directions offered; picking this sort takes the first one (`["desc", "asc"]`: newest or highest first). Without
+   * it both are offered and picking this sort keeps the direction shown.
    */
   readonly directions?: readonly SortDirection[];
   /** What the sort orders; it gives the words of its directions (see {@link SortKind}). */

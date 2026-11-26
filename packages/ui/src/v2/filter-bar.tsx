@@ -1908,8 +1908,14 @@ const sortChoices = <F extends Fields, S extends string, G extends string>(
   const options = sortOptions(query);
   const directionsOf = (key: string) => options[key]?.directions ?? bothDirections;
   const fields = Object.entries(options).map(([key, option]) => {
-    const offered = directionsOf(key);
-    const direction = offered.includes(state.sort.direction) ? state.sort.direction : (offered[0] ?? state.sort.direction);
+    // the field shown keeps its order; another field starts with the first of its declared directions (an app that
+    // says `["desc", "asc"]` means newest first), and without a declaration it keeps the order shown
+    const direction =
+      key === state.sort.field
+        ? state.sort.direction
+        : option.directions
+          ? (option.directions[0] ?? state.sort.direction)
+          : state.sort.direction;
     return { value: key, label: option.label, sort: `${key}.${direction}` };
   });
   const current = options[state.sort.field];
