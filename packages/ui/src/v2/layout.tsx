@@ -569,9 +569,14 @@ export type BarProps = {
  */
 export const Bar = (props: BarProps) => {
   // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
-  const [title, setTitle] = createSignal(false);
-  const [toolbar, setToolbar] = createSignal(false);
-  const [more, setMore] = createSignal(false);
+  const [title, setTitle] = createSignal(0);
+  const [toolbar, setToolbar] = createSignal(0);
+  const [more, setMore] = createSignal(0);
+  const counter = (set: (change: (count: number) => number) => void) => () => {
+    set((count) => count + 1);
+    return () => set((count) => count - 1);
+  };
+  const marks = { title: counter(setTitle), toolbar: counter(setToolbar), more: counter(setMore) };
   // the main actions at its end; more than one become one "+" menu (one create action at a head's end)
   const [creates, setCreates] = createSignal<readonly (() => MenuEntry)[]>([]);
   const create = (entry: () => MenuEntry) => {
@@ -581,22 +586,18 @@ export const Bar = (props: BarProps) => {
   const many = () => creates().length > 1;
   const t = useOverlayMessages();
   const start = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => (what === "toolbar" ? setToolbar(true) : setTitle(true)) }}>
-      {props.start}
-    </BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "start", mark: (what) => marks[what]() }}>{props.start}</BarPlaceContext.Provider>
   ));
   const end = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => what === "more" && setMore(true), create }}>
-      {props.end}
-    </BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "end", mark: (what) => marks[what](), create }}>{props.end}</BarPlaceContext.Provider>
   ));
   return (
-    <div class="k2-bar" data-k2-part="Bar" data-title={title() ? "" : undefined} data-toolbar={toolbar() ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="Bar" data-title={title() > 0 ? "" : undefined} data-toolbar={toolbar() > 0 ? "" : undefined}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end" data-more={more() ? "" : undefined} data-creates={many() ? "" : undefined}>
+        <div class="k2-bar-end" data-more={more() > 0 ? "" : undefined} data-creates={many() ? "" : undefined}>
           {end()}
           <Show when={many()}>
             {/* the bar's own "+": outside its end's place, so it joins no "+" itself */}

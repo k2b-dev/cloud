@@ -253,7 +253,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         }
         const startWords = start ? words(start) : [];
         const endWords = end ? words(end) : [];
-        return `Bar: ${startWords.join(" ") || "–"}${endWords.length ? ` | ${endWords.join(" ")}` : ""}`;
+        // a bar that names its page in its start (`data-title`) gives way last with its title
+        const kind = element.hasAttribute("data-title") ? " · title" : "";
+        return `Bar${kind}: ${startWords.join(" ") || "–"}${endWords.length ? ` | ${endWords.join(" ")}` : ""}`;
       }
       case "Nav": {
         const items = [...element.querySelectorAll("[data-k2-part='Nav.Item']")];

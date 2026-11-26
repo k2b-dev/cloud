@@ -421,6 +421,35 @@ describe("Mail on the v2 pilot", () => {
     }
   }, 60_000);
 
+  // On the phone the reader's head keeps "Später" and its "…"; the buttons that give way stand once in "…", which the
+  // platform fills (Mail adds none of them itself), and "Später" holds only its own entries.
+  test('390 px: each action of the reader\'s head stands once in its "…", and Später keeps its own entries', async () => {
+    const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`, 390);
+    try {
+      const head = page.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
+      const entries = async () => {
+        const menu = page.locator('[data-k2-part="Menu"]:visible');
+        await menu.waitFor();
+        return (await menu.locator('[role="menuitem"], [role="menuitemcheckbox"]').allTextContents()).map((entry) => entry.trim());
+      };
+      await head.getByRole("button", { name: "Weitere Aktionen" }).click();
+      const more = await entries();
+      for (const action of ["Erledigt", "Archivieren", "Löschen"]) expect(more.filter((entry) => entry === action)).toEqual([action]);
+      // the × beside the way back is no entry: Back leads to the same list
+      expect(more).not.toContain("Schließen");
+      expect(new Set(more).size).toBe(more.length);
+      await page.keyboard.press("Escape");
+      await head.getByRole("button", { name: "Später" }).click();
+      const later = await entries();
+      expect(later).toContain("Erinnere mich …");
+      expect(later).not.toContain("Archivieren");
+      expect(later).not.toContain("Erledigt");
+      expect(errorsOf.get(page)).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
   test("Forward in the reader's More opens Mail's reply box as a forward", async () => {
     const page = await open(`${MAIL_V2_PATH}?conversation=Demo01`);
     try {

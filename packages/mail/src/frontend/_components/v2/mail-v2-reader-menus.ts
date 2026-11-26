@@ -171,54 +171,18 @@ export function createMailV2ReaderMenus(props: {
 
   /**
    * "…" holds the rare deeds (design guide): what the head shows as a button (Done, Later, Assign, Archive, Delete)
-   * stays out of it, except on the phone, where the head keeps only its "…" and those buttons give way.
+   * stays out of it. Where those buttons give way (on the phone), the head's "…" takes them in by itself.
    */
-  const headButtonsShown = () => typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches;
   const headActionLabels = () => new Set([mailActionLabel(t(), "archive"), mailActionLabel(t(), "trash")]);
 
   const moreItems = (): DropdownItem[] => {
-    const assignment = headButtonsShown() ? null : c().assignment();
-    const status = headButtonsShown() ? null : workStatus();
     const reply = props.reply?.();
     const items = mailConversationMenuItems({
       t: t(),
       ...(reply ? { respond: { replyAll: reply.canReplyAll(), run: (intent) => reply.respond(intent) } } : {}),
       ...(c().canWrite()
         ? {
-            ...(assignment
-              ? {
-                  assignToMe: {
-                    assigned: assignment.assigned,
-                    others: assignment.others,
-                    disabled: c().assignToMe.loading(),
-                    run: () => void c().assignOpenConversationToMe(),
-                  },
-                }
-              : {}),
-            ...(status
-              ? {
-                  completion: {
-                    done: status === "done",
-                    disabled: c().completion.loading(),
-                    run: () => c().setOpenConversationCompletion(status === "done" ? "open" : "done"),
-                  },
-                }
-              : {}),
-            followUp: [
-              ...(assignment
-                ? [
-                    {
-                      label: readerText().assign,
-                      icon: "ti ti-user-plus",
-                      disabled: c().structureMutationLoading(),
-                      action: () => void c().assignOpenConversation(),
-                    },
-                  ]
-                : []),
-              ...(collaboration() && !headButtonsShown()
-                ? [{ label: readerText().showLater, icon: "ti ti-clock", disabled: status === "done", action: () => void showLater() }]
-                : []),
-            ],
+            followUp: [],
             organize: {
               unread: c().selectedUnread(),
               flagged: c().selectedFlagged(),
@@ -281,7 +245,6 @@ export function createMailV2ReaderMenus(props: {
         ...cloudId.actions({ conversationId: data().selectedConversationId }),
       ],
     });
-    if (!headButtonsShown()) return items;
     const shown = headActionLabels();
     return items.map((item) =>
       "items" in item && !("label" in item) ? { ...item, items: item.items.filter((entry) => !shown.has(entry.label)) } : item,

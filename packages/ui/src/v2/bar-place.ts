@@ -1,13 +1,13 @@
 import { createContext, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
-/** A place of a `Bar`, its start or its end, which hears what stands in it. */
 /** What marks a bar: a title in its start, a toolbar (a filter bar) in its start, the "…" at its end. */
 export type BarMark = "title" | "toolbar" | "more";
 
+/** A place of a `Bar`, its start or its end, which hears what stands in it. */
 type BarPlace = {
   place: "start" | "end";
-  mark: (what: BarMark) => void;
+  mark: (what: BarMark) => () => void;
   /** At the end: a main action (`variant="primary"`) as an entry of the one "+" its bar makes of several. */
   create?: (entry: () => MenuEntry) => () => void;
 };
@@ -17,12 +17,13 @@ export const BarPlaceContext = createContext<BarPlace>();
 /**
  * Tells the bar what stands in one of its places, already as the server renders it: a `Text` in its start names the
  * page (the bar's `data-title`), a filter bar there is its toolbar (`data-toolbar`), the "…" at its end takes in what
- * gives way (`data-more`). The head's rules ask these
- * marks instead of a `:has()`, which a change deep in the page would make the browser check again and again.
+ * gives way (`data-more`). The head's rules ask these marks instead of a `:has()`, which a change deep in the page
+ * would make the browser check again and again.
  */
 export const markBarPlace = (place: "start" | "end", what: BarMark) => {
   const bar = useContext(BarPlaceContext);
-  if (bar?.place === place) bar.mark(what);
+  // the mark goes with the part that made it
+  if (bar?.place === place) onCleanup(bar.mark(what));
 };
 
 /**

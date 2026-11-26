@@ -2369,6 +2369,40 @@
   border-color: var(--k2-blue);
   background: var(--k2-surface);
 }
+/* The head of a workspace and the toolbar rows of the column under it (a filter bar, a status row) are one block
+   (Valentin 26.11.): no line between the head and the rows nor between the rows, 4 px between them, and the last row
+   draws the one line under the block. The pane marks its status place with its rows (`data-block="filter status"`),
+   and the workspace takes its head's line away. A row the pane does not know (a bar of its own) keeps its line. */
+.k2-ui [data-slot="status"][data-block] :is(.k2-fbar, .k2-bar[data-status-row]) {
+  margin-top: 4px;
+}
+.k2-ui [data-slot="status"][data-block="filter status"] .k2-fbar {
+  border-bottom-color: transparent;
+}
+/* A filter bar in the head's start (the toolbar, in a Bar of its own form) stands in the head line while the head has
+   room; below 1100 px it wraps as the head's second row, without a line between: the head stays one block. */
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] {
+  height: auto;
+  min-height: var(--k2-h-head);
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-end {
+  min-height: var(--k2-h-head);
+}
+.k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-start > .k2-fbar {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+@container k2-head (max-width: 1059px) {
+  .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-start {
+    display: contents;
+  }
+  .k2-ui .k2-ws-main > [data-slot="head"] > .k2-bar[data-toolbar] > .k2-bar-start > .k2-fbar {
+    order: 1;
+    flex: 1 0 100%;
+  }
+}
 /* several main actions at a bar's end stand as its one "+" menu, which lists them */
 .k2-ui .k2-bar-end[data-creates] > [data-variant="primary"] {
   display: none;

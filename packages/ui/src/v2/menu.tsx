@@ -60,15 +60,24 @@ const isSection = (entry: MenuEntry): entry is MenuSection => entry !== "separat
 /** A menu's button carries its entries, so the "…" of its head can show them while the menu gives way. */
 const itemsKey = Symbol.for("k2b.ui.v2.menuItems");
 
+/** The element a part stands in, past the wrappers of islands, which draw no box. */
+const placeOf = (node: Element) => {
+  let parent = node.parentElement;
+  while (parent && (parent.localName === "solid-island" || parent.localName === "solid-client")) parent = parent.parentElement;
+  return parent;
+};
+
 /**
- * The actions of a head that gave way (on the phone, or in a head without room), as entries of the head's "…": the
- * same names, symbols and deeds. A button runs its own click, a link opens its address, a menu with words becomes a
- * submenu. What is not a button or a link (the people of a Space) and the main action that floats as the round button
- * on the phone stay away. Nothing of a head vanishes unseen.
+ * The actions of a head that gave way (on the phone, or in a head without room), as entries of the head's "…" (the
+ * dots: a `Menu` without words or a symbol of its own, standing at the end of the head's bar): the same names,
+ * symbols, states and deeds. A button or a link runs its own click (so a link keeps its way of opening), a menu with
+ * words becomes a submenu, a disabled one stays disabled. What is not a button or a link (the people of a Space), the
+ * main action while it floats as the round button, and the × of a detail with its way back (`Back` leads there) stay
+ * away. Nothing of a head vanishes unseen.
  */
 const foldedActions = (trigger: HTMLElement): MenuEntry[] => {
-  const end = trigger.closest('[data-slot="head"] > .k2-bar > .k2-bar-end');
-  if (!end) return [];
+  const end = placeOf(trigger);
+  if (!end?.matches('[data-slot="head"] > .k2-bar > .k2-bar-end')) return [];
   const fab = end.closest("[data-k2-workspace]")?.querySelector(".k2-fab");
   const floating = fab !== null && fab !== undefined && fab.getClientRects().length > 0;
   const entries: MenuEntry[] = [];
@@ -78,19 +87,20 @@ const foldedActions = (trigger: HTMLElement): MenuEntry[] => {
       for (const child of node.children) visit(child);
       return;
     }
-    if (!(node instanceof HTMLElement) || node === trigger || !node.matches("button, a[href]") || node.getClientRects().length > 0) return;
+    if (!(node instanceof HTMLElement) || node === trigger || node.getClientRects().length > 0) return;
+    if (!node.matches("button, a[href], a[aria-disabled='true']")) return;
     if (floating && node.dataset.variant === "primary") return;
-    const label = node.getAttribute("aria-label") ?? node.textContent?.trim() ?? "";
+    if (node.matches("a[data-icon-only]") && node.closest(".k2-pane[data-back]")) return;
+    const label = node.getAttribute("aria-label") ?? node.querySelector(".k2-btn-label")?.textContent?.trim() ?? "";
     if (!label) return;
     const icon = [...(node.querySelector(".ti")?.classList ?? [])]
       .find((name) => name.startsWith("ti-") && name !== "ti-chevron-down")
       ?.slice(3);
     const disabled = node.matches(":disabled, [aria-disabled='true']");
+    const pressed = node.getAttribute("aria-pressed");
     const items: unknown = Reflect.get(node, itemsKey);
-    const href = node.getAttribute("href");
     if (typeof items === "function") entries.push({ label, icon, disabled, items: items() });
-    else if (href !== null) entries.push({ label, icon, href });
-    else entries.push({ label, icon, disabled, onClick: () => node.click() });
+    else entries.push({ label, icon, disabled, ...(pressed === null ? {} : { checked: pressed === "true" }), onClick: () => node.click() });
   };
   for (const child of end.children) visit(child);
   return entries;
@@ -371,13 +381,15 @@ const MenuRoot = (props: MenuProps) => {
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
-  // the "…" at the end of a bar takes in what gives way beside it; a main action there joins the bar's one "+"
-  if (iconOnly()) markBarPlace("end", "more");
-  else if (props.variant === "primary")
+  // the dots (no words, no symbol of their own) at the end of a bar are its "…", which takes in what gives way beside
+  // it; a main action there joins the bar's one "+"
+  const dots = () => iconOnly() && props.icon === undefined;
+  if (dots()) markBarPlace("end", "more");
+  else if (!iconOnly() && props.variant === "primary")
     markBarCreate(() => {
       const label = words();
       return {
-        label: props.label ?? (typeof label === "string" ? label : (trigger?.textContent?.trim() ?? "")),
+        label: props.label ?? (typeof label === "string" ? label : (trigger?.querySelector(".k2-btn-label")?.textContent?.trim() ?? "")),
         icon: props.icon,
         items: props.items,
       };
@@ -391,7 +403,7 @@ const MenuRoot = (props: MenuProps) => {
     onOpenChange: (open: boolean) => {
       if (!open) return;
       setAlign(alignTo(trigger));
-      setFolded(iconOnly() && trigger ? foldedActions(trigger) : []);
+      setFolded(dots() && trigger ? foldedActions(trigger) : []);
     },
   }));
   const entries = () => (folded().length > 0 ? [...folded(), "separator" as const, ...props.items] : props.items);
