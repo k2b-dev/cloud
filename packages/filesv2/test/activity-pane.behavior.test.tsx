@@ -661,8 +661,9 @@ describe("Activity on UI v2", () => {
       },
       actions: { onOpen: () => {}, onMoveBack: async () => {} },
     });
-    const history = [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="Section"]')].find((section) =>
-      section.getAttribute("aria-label")?.startsWith("Verlauf"),
+    // the history stands in the hit's own section, as its list (one line ends hit and history)
+    const history = [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="List"]')].find((list) =>
+      list.getAttribute("aria-label")?.startsWith("Verlauf"),
     )!;
     const lead = history.querySelector<HTMLElement>('[data-k2-part="Row"]')!;
     expect(lead.textContent).toContain("mit 41 weiteren Elementen");

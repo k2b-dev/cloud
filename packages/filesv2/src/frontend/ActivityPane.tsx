@@ -7,6 +7,7 @@ import ActivitySearch from "./ActivitySearch";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import type { ActivityListState, ActivityQuery } from "./activity-query";
 import { activitySummary } from "./activity-summary";
+import { entryMark } from "./entry-mark";
 import { type HistoryActions, type HistoryEnvironment, historyRows, runDestination, searchHits } from "./history-actions";
 import { loadActivity } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
@@ -149,150 +150,145 @@ export default function ActivityPane(props: ActivityPaneProps) {
   const summary = createMemo(() => activitySummary(entries(), h(), props.env));
   const KIND_ICONS = { added: "plus", changed: "pencil", moved: "arrows-move", removed: "trash", shared: "world-share", other: "dots" };
   const showSummary = () => !!props.initial && !props.filters.q && !unavailable() && entries().length > 0;
+  const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
   return (
-    <Pane.Split>
-      <Pane
-        label={h().activity}
-        scrollKey="filesv2-activity"
-        status={
-          <>
-            <FilterBar
-              query={props.query}
-              state={props.state}
-              onChange={props.onChange}
-              // "Zurücksetzen" leads back to where Activity starts: "Me".
-              base={props.query.parse("view=activity&who=me").state}
-              icons={FILTER_ICONS}
-              names={props.who ? { who: [props.who] } : undefined}
-              timeZone={props.env.timeZone}
-              results={props.initial ? lead() : undefined}
-              // the count is quiet words in the filter row, with the fixed order; no second row of figures
-              end={<ListOrder query={props.query} state={props.state} onChange={props.onChange} />}
-            />
-          </>
+    <Pane
+      label={h().activity}
+      scrollKey="filesv2-activity"
+      status={
+        <>
+          <FilterBar
+            query={props.query}
+            state={props.state}
+            onChange={props.onChange}
+            // "Zurücksetzen" leads back to where Activity starts: "Me".
+            base={props.query.parse("view=activity&who=me").state}
+            icons={FILTER_ICONS}
+            names={props.who ? { who: [props.who] } : undefined}
+            timeZone={props.env.timeZone}
+            results={props.initial ? lead() : undefined}
+            // the count is quiet words in the filter row, with the fixed order; no second row of figures
+            end={<ListOrder query={props.query} state={props.state} onChange={props.onChange} />}
+          />
+        </>
+      }
+    >
+      <Show
+        when={
+          !props.filters.baseId &&
+          props.bases.some((base) => base.id.startsWith("cloud:")) &&
+          props.bases.some((base) => base.id.startsWith("freeipa:"))
         }
       >
-        <Show
-          when={
-            !props.filters.baseId &&
-            props.bases.some((base) => base.id.startsWith("cloud:")) &&
-            props.bases.some((base) => base.id.startsWith("freeipa:"))
-          }
-        >
-          <Notice tone="note">{h().historyOverviewUnavailable}</Notice>
-        </Show>
-        <Switch>
-          <Match when={unavailable()}>
-            <Empty icon="history-off" text={h().historyUnavailable} />
-          </Match>
-          <Match when={!props.initial}>
-            <Failed text={`${h().errorTitle}. ${h().errorText}`} onRetry={props.onReload} />
-          </Match>
-          <Match when={props.filters.q}>
-            {(words) => (
-              <ActivitySearch
-                query={words()}
-                entries={entries()}
-                hasMore={!!next()}
-                loadingMore={loadingOlder()}
-                moreFailed={olderFailed()}
-                onLoadMore={() => void more()}
-                limitReached={limited()}
-                env={props.env}
-                actions={props.actions}
-                loadChain={props.loadChain}
-                loadBatch={props.loadBatch}
-                retentionDays={props.retentionDays}
-                clearHref={activityUrl({ ...props.filters, q: undefined })}
-                onNavigate={props.env.onNavigate}
-                onChanged={changed}
-              />
-            )}
-          </Match>
-          <Match when={lines().length === 0 && (next() || olderFailed())}>
-            <Empty icon="history" text={h().nothingVisibleYet} />
-          </Match>
-          <Match when={lines().length === 0 && mine() && !narrowed()}>
-            {/* Nothing of their own yet: the way to everyone else's changes is one click. */}
-            <Empty
-              icon="history"
-              text={`${h().noMineTitle}. ${h().noMineText}`}
-              action={{ label: h().showAll, icon: "users", href: allHref(), onNavigate: props.env.onNavigate }}
-            />
-          </Match>
-          <Match when={lines().length === 0 && filtered()}>
-            <Empty
-              icon="filter-off"
-              text={h().emptyTitle}
-              action={{ label: h().resetFilters, icon: "filter-off", href: resetHref(), onNavigate: props.env.onNavigate }}
-            />
-          </Match>
-          <Match when={lines().length === 0}>
-            <Empty icon="history" text={`${h().noActivityTitle}. ${h().noActivityText}`} />
-          </Match>
-          <Match when={lines().length > 0}>
-            {/* the day stands once over its changes, so each row says its time alone */}
-            <List
-              label={h().activity}
-              items={lines()}
-              rowKey={(item) => item.key}
-              group={(item) => ({ key: item.day.key, label: item.day.label })}
-              row={line}
-            />
-          </Match>
-        </Switch>
-        <Show when={props.initial && !props.filters.q && !unavailable()}>
-          <Show when={olderFailed()}>
-            <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>
-              {h().olderFailed}
-            </Notice>
-          </Show>
-          <Show when={next() && !olderFailed()}>
-            <Bar
-              start={<Text type="meta">{lead()}</Text>}
-              end={
-                <Button icon="chevron-down" busy={loadingOlder()} onClick={() => void more()}>
-                  {h().loadOlder}
-                </Button>
-              }
-            />
-          </Show>
-          <Show when={limited()}>
-            <Notice tone="note">{h().searchLimit}</Notice>
-          </Show>
-        </Show>
-      </Pane>
-      <Show when={showSummary()}>
-        <Pane label={h().v2Summary} side width={{ min: 260, default: 300 }} scrollKey="filesv2-activity-summary">
-          <Section
-            title={h().v2Summary}
-            summary={h().v2SummaryOf.replace("{count}", new Intl.NumberFormat(locale()).format(entries().length))}
-          >
-            {/* under "Ich" every change is the person's own: who would say nothing */}
-            <Show when={!mine()}>
-              <List label={h().v2SummaryWho}>
-                {summary().people.map((person) => (
-                  <Row avatar={{ name: person.label }} lines={[person.label]} time={String(person.count)} />
-                ))}
-              </List>
-            </Show>
-          </Section>
-          <Section title={h().v2SummaryWhere}>
-            <List label={h().v2SummaryWhere}>
-              {summary().places.map((place) => (
-                <Row mark={{ icon: "folder", color: "#ea580c" }} lines={[place.label]} time={String(place.count)} />
-              ))}
-            </List>
-          </Section>
-          <Section title={h().v2SummaryWhat}>
-            <List label={h().v2SummaryWhat}>
-              {summary().kinds.map((kind) => (
-                <Row icon={KIND_ICONS[kind.kind]} lines={[kind.label]} time={String(kind.count)} />
-              ))}
-            </List>
-          </Section>
-        </Pane>
+        <Notice tone="note">{h().historyOverviewUnavailable}</Notice>
       </Show>
-    </Pane.Split>
+      <Switch>
+        <Match when={unavailable()}>
+          <Empty icon="history-off" text={h().historyUnavailable} />
+        </Match>
+        <Match when={!props.initial}>
+          <Failed text={`${h().errorTitle}. ${h().errorText}`} onRetry={props.onReload} />
+        </Match>
+        <Match when={props.filters.q}>
+          {(words) => (
+            <ActivitySearch
+              query={words()}
+              entries={entries()}
+              hasMore={!!next()}
+              loadingMore={loadingOlder()}
+              moreFailed={olderFailed()}
+              onLoadMore={() => void more()}
+              limitReached={limited()}
+              env={props.env}
+              actions={props.actions}
+              loadChain={props.loadChain}
+              loadBatch={props.loadBatch}
+              retentionDays={props.retentionDays}
+              clearHref={activityUrl({ ...props.filters, q: undefined })}
+              onNavigate={props.env.onNavigate}
+              onChanged={changed}
+            />
+          )}
+        </Match>
+        <Match when={lines().length === 0 && (next() || olderFailed())}>
+          <Empty icon="history" text={h().nothingVisibleYet} />
+        </Match>
+        <Match when={lines().length === 0 && mine() && !narrowed()}>
+          {/* Nothing of their own yet: the way to everyone else's changes is one click. */}
+          <Empty
+            icon="history"
+            text={`${h().noMineTitle}. ${h().noMineText}`}
+            action={{ label: h().showAll, icon: "users", href: allHref(), onNavigate: props.env.onNavigate }}
+          />
+        </Match>
+        <Match when={lines().length === 0 && filtered()}>
+          <Empty
+            icon="filter-off"
+            text={h().emptyTitle}
+            action={{ label: h().resetFilters, icon: "filter-off", href: resetHref(), onNavigate: props.env.onNavigate }}
+          />
+        </Match>
+        <Match when={lines().length === 0}>
+          <Empty icon="history" text={`${h().noActivityTitle}. ${h().noActivityText}`} />
+        </Match>
+        <Match when={lines().length > 0}>
+          {/* the day stands once over its changes, so each row says its time alone */}
+          <List
+            label={h().activity}
+            items={lines()}
+            rowKey={(item) => item.key}
+            group={(item) => ({ key: item.day.key, label: item.day.label })}
+            row={line}
+          />
+        </Match>
+      </Switch>
+      <Show when={props.initial && !props.filters.q && !unavailable()}>
+        <Show when={olderFailed()}>
+          <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>
+            {h().olderFailed}
+          </Notice>
+        </Show>
+        <Show when={next() && !olderFailed()}>
+          <Bar
+            start={<Text type="meta">{lead()}</Text>}
+            end={
+              <Button icon="chevron-down" busy={loadingOlder()} onClick={() => void more()}>
+                {h().loadOlder}
+              </Button>
+            }
+          />
+        </Show>
+        <Show when={limited()}>
+          <Notice tone="note">{h().searchLimit}</Notice>
+        </Show>
+      </Show>
+      {/* Under the list, in its column (Valentin 26.11.: give the page structure; beside it, it squeezed the list at
+          1024): who changed most, where and what kind of change, over the changes shown */}
+      <Show when={showSummary()}>
+        <Show when={!mine()}>
+          <Section title={h().v2SummaryWho}>
+            <List label={h().v2SummaryWho}>
+              {summary().people.map((person) => (
+                <Row avatar={{ name: person.label }} lines={[person.label]} time={count(person.count)} />
+              ))}
+            </List>
+          </Section>
+        </Show>
+        <Section title={h().v2SummaryWhere}>
+          <List label={h().v2SummaryWhere}>
+            {summary().places.map((place) => (
+              <Row mark={entryMark({ name: place.label, directory: true })} lines={[place.label]} time={count(place.count)} />
+            ))}
+          </List>
+        </Section>
+        <Section title={h().v2SummaryWhat}>
+          <List label={h().v2SummaryWhat}>
+            {summary().kinds.map((kind) => (
+              <Row icon={KIND_ICONS[kind.kind]} lines={[kind.label]} time={count(kind.count)} />
+            ))}
+          </List>
+        </Section>
+      </Show>
+    </Pane>
   );
 }

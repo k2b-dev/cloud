@@ -713,7 +713,9 @@ describe("the views beside the folders on v2", () => {
 
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
-      await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
+      await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
+      // the storages are the sidebar's; the page does not list them a second time (Valentin 26.11.)
+      expect(await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
       // beside the storages, the viewer's own last changes in the row design of Activity, under their day
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
       expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
@@ -807,7 +809,9 @@ describe("the views beside the folders on v2", () => {
       // saving and closing end the editor's own bar, which every width shows; saving waits for a change
       const save = tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" });
       expect(await save.isDisabled()).toBe(true);
-      expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Schließen" }).count()).toBe(1);
+      // no close of its own: the sidebar marks the file's place and leads back there
+      expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Schließen" }).count()).toBe(0);
+      expect(await tab.locator("[data-k2-part=Nav] [aria-current=page]").innerText()).toContain("Werkstatt");
       await editor.click();
       await tab.keyboard.type(" Neu.");
       await tab.getByText("Ungespeicherte Änderungen").first().waitFor();
@@ -907,10 +911,8 @@ describe("the views beside the folders on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
     try {
       const ready = performance.now() - started;
-      // the storages are one list that keeps only its rows in view; it says how many it holds
-      const storages = tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]");
-      expect(await storages.first().getAttribute("aria-setsize")).toBe("201");
-      expect(await storages.count()).toBeLessThan(80);
+      // the storages are the sidebar's: the page lists none of them, so 200 cost it nothing
+      expect(await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
       console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
       await expectClean(tab);
       expect(ready).toBeLessThan(5000);

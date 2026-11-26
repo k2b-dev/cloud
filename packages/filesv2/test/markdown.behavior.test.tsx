@@ -53,7 +53,6 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
     () =>
       createComponent(MarkdownDocument, {
         launch,
-        onBack: () => {},
         onGuard: (value) => {
           guard = value;
         },
@@ -76,10 +75,11 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   expect(editor.value).toBe("hello");
   // no title row of its own: saving and closing end the editor's own bar, which every width shows
   const tools = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')];
-  expect(tools.slice(-2).map((tool) => tool.getAttribute("aria-label"))).toEqual(["Save", "Close"]);
+  // "Speichern" ends it; no close of its own, the sidebar leads back
+  expect(tools.at(-1)!.getAttribute("aria-label")).toBe("Save");
+  expect(tools.map((tool) => tool.getAttribute("aria-label"))).not.toContain("Close");
   expect(dom.root.querySelector('[data-slot="status"]')).toBeNull();
-  expect(head!.canWrite).toBe(true);
-  expect(head!.canSave()).toBe(false);
+  expect(head!.dirty()).toBe(false);
   expect(dom.root.textContent).not.toContain("Back to folder");
   expect(dom.root.querySelector('[data-variant="embedded"][data-fill="true"]')).not.toBeNull();
   expect(await guard!()).toBe(true);

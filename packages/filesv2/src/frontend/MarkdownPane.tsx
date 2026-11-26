@@ -9,30 +9,22 @@ import { createEditorFill } from "./editor-fill";
 import { apiFailure } from "./file-preview";
 import { uploadFile } from "./uploads";
 
-/**
- * A Markdown file in the Markdown editor, on a v2 frame: the state of the draft in the status row, a problem as a
- * notice with its way out, the editor itself in the rest of the pane. Leaving with unsaved changes asks first, also
- * for links of the shell; the browser asks before the tab closes.
- */
-/** What the workspace's head shows of the editor: its draft's state and the deed that saves it. */
+/** What the workspace's head shows of the editor: its draft's state. */
 export type EditorHead = {
   state: () => string;
   dirty: () => boolean;
-  saving: () => boolean;
-  canWrite: boolean;
-  canSave: () => boolean;
-  save: () => void;
 };
 
+/**
+ * A Markdown file in the Markdown editor, on a v2 frame: the state of the draft in the workspace's head, a problem as a
+ * notice with its way out, the editor itself in the rest of the pane, its own bar ending with "Speichern". Leaving with
+ * unsaved changes asks first, also for links of the shell; the browser asks before the tab closes.
+ */
 export default function MarkdownPane(props: {
   launch: MarkdownLaunch;
-  onBack: () => void;
   /** The workspace asks this before it leaves the editor; `false` stays. */
   onGuard: (guard: (() => Promise<boolean>) | null) => void;
-  /**
-   * The draft's state and its save for the workspace's head: the file's name stands small at the end of the path there,
-   * never as a title row of its own (Valentin 26.11.).
-   */
+  /** The draft's state for the workspace's head, beside the file's name (no title row of its own, Valentin 26.11.). */
   onHead: (head: EditorHead | null) => void;
 }) {
   const t = useAssetMessages();
@@ -209,14 +201,7 @@ export default function MarkdownPane(props: {
   });
   const state = () =>
     saving() ? t().saving : dirty() ? t().unsaved : saved() ? t().saved : props.launch.canWrite ? t().v2AllSaved : t().v2ReadOnly;
-  props.onHead({
-    state,
-    dirty,
-    saving,
-    canWrite: props.launch.canWrite,
-    canSave: () => props.launch.canWrite && dirty() && ready() && !saving(),
-    save: () => void save(),
-  });
+  props.onHead({ state, dirty });
   onCleanup(() => props.onHead(null));
   return (
     <Pane label={props.launch.entry.name}>
@@ -249,10 +234,10 @@ export default function MarkdownPane(props: {
                 fill
                 variant="embedded"
                 disabled={!props.launch.canWrite}
-                // saving and closing stand at the end of the editor's own bar, the one place every width shows (the
-                // phone's head keeps only its search); Ctrl/Cmd+S saves there too
-                onClose={props.onBack}
-                onSave={() => void save()}
+                // saving ends the editor's own bar, the one place every width shows (the phone's head keeps only its
+                // search); Ctrl/Cmd+S saves there too. A read-only file offers no saving. The sidebar's entry of the
+                // file's folder leads back, so the bar holds no close that would push "Speichern" into a second row.
+                onSave={props.launch.canWrite ? () => void save() : undefined}
                 saving={saving()}
                 saved={saved()}
                 saveDisabled={!dirty() || !props.launch.canWrite}

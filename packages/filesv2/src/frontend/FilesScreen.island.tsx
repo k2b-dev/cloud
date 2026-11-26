@@ -304,6 +304,12 @@ export default function FilesScreen(props: {
   const openPath = () => params().get("file");
   // The view in place; an address of another view never stays here, so a folder is the fallback.
   const screen = () => screenViewOf(params(), snapshot().bases.items.length);
+  const editing = () => (screen() === "edit" ? (snapshot().editor ?? undefined) : undefined);
+  /** The folder the sidebar marks: the open one, or the folder of the file being edited. */
+  const navFolder = () => {
+    const launch = editing();
+    return launch ? parentPath(launch.entry.path) : folder();
+  };
   const hasOverview = () => snapshot().bases.items.length > 1;
   const canCreate = () => directory()?.actions?.create !== false && selected()?.status === "existing";
   const label = (base: NonNullable<ReturnType<typeof selected>>) => baseLabel(base, b(), locale());
@@ -932,22 +938,23 @@ export default function FilesScreen(props: {
           color: storageMark(base).color,
           href: filesUrl(base.id),
           onNavigate,
-          current: open && screen() === "folder" && !folder() && !searching(),
+          current: open && ((screen() === "folder" && !folder() && !searching()) || (!!editing() && !navFolder())),
           ...(base.area === "cloud"
             ? { menu: [{ label: b().activityOfStorage, icon: "history", href: activityUrl({ baseId: base.id }), onNavigate }] }
             : {}),
         };
         // k2b-ui gap: Nav has no tree (lane Y2: Nav tree, lazy with paging). The open storage folds out the folders
         // down to this one; other branches open from the listing until then.
+        // while a file is edited its folder is the current entry: the editor's head names the file alone (Valentin 26.11.)
         const chain =
-          open && screen() === "folder" && !snapshot().moved
-            ? ancestors(folder()).map((path) => ({
+          open && ((screen() === "folder" && !snapshot().moved) || editing())
+            ? ancestors(navFolder()).map((path) => ({
                 label: path.split("/").at(-1) ?? path,
                 icon: "folder",
                 href: folderHref(path),
                 onNavigate,
                 nested: true,
-                current: path === folder() && !searching(),
+                current: path === navFolder() && (!!editing() || !searching()),
               }))
             : [];
         return [item, ...chain];
@@ -1019,7 +1026,6 @@ export default function FilesScreen(props: {
     const partial = !!shown?.next || Object.keys(folderState()?.filters ?? {}).length > 0;
     return links ? b().v2WhoAndLinks({ who, links, more: partial ? "+" : "" }) : who;
   };
-  const uploadAction = () => (canCreate() && !searching() ? { label: b().upload, icon: "upload", onClick: actions.pickFiles } : undefined);
 
   return (
     <>
@@ -1030,7 +1036,8 @@ export default function FilesScreen(props: {
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
         // No empty half (look rule 5): the detail stands only while an entry is open.
         detail={screen() === "folder" && !snapshot().moved && openPath() ? true : undefined}
-        primary={screen() === "folder" && !snapshot().moved ? uploadAction() : undefined}
+        // no floating main action: the head's "+" is the one create action (Valentin 26.11.), and nothing floats over
+        // an open file on the phone
         head={
           <Bar
             start={
@@ -1145,7 +1152,6 @@ export default function FilesScreen(props: {
               launch.kind === "markdown" ? (
                 <MarkdownPane
                   launch={launch}
-                  onBack={editorBack}
                   onGuard={(guard) => {
                     editorGuard = guard;
                   }}
@@ -1498,7 +1504,14 @@ export default function FilesScreen(props: {
       };
     // an empty folder says how its first files come: dropped anywhere on the page, or with the one "Hochladen" of the
     // head (the phone's button), so the page offers it once
-    return canCreate() ? { icon: "upload", text: `${b().emptyTitle}. ${b().v2EmptyDrop}` } : { icon: "folder", text: b().emptyTitle };
+    // an empty folder offers its first files right where the person looks: dropped on the page or chosen here
+    return canCreate()
+      ? {
+          icon: "upload",
+          text: `${b().emptyTitle}. ${b().v2EmptyDrop}`,
+          action: { label: b().upload, icon: "upload", onClick: actions.pickFiles },
+        }
+      : { icon: "folder", text: b().emptyTitle };
   }
 
   /** A search waits in its shape while it runs, so the old results never stand under new words. */

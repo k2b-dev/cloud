@@ -503,21 +503,28 @@ function MissingHit(props: {
             </Notice>
           )}
         </Show>
-      </Section>
-      <Section title={kind() === "Folder" ? h().folderHistory : kind() === "File" ? h().fileHistory : h().itemHistory}>
-        <For each={hops()}>
-          {(hop) => (
-            <Row
-              avatar={personOf(actorOf(hopEntry(hop), h(), props.env))}
-              lines={[<SentenceText parts={hopSentence(hop, h(), props.env)} />, formatWhen(hop.time, locale(), h(), props.env)]}
-            />
-          )}
-        </For>
-        <For each={rows()}>
-          {(row) => (
-            <ChainRow row={row} env={props.env} actions={props.actions} loadedOthers={props.batchOthers(row)} loadBatch={props.loadBatch} />
-          )}
-        </For>
+        {/* its history in the same section, so one line ends the hit and its steps (no second line 8 px below) */}
+        <List label={kind() === "Folder" ? h().folderHistory : kind() === "File" ? h().fileHistory : h().itemHistory}>
+          <For each={hops()}>
+            {(hop) => (
+              <Row
+                avatar={personOf(actorOf(hopEntry(hop), h(), props.env))}
+                lines={[<SentenceText parts={hopSentence(hop, h(), props.env)} />, formatWhen(hop.time, locale(), h(), props.env)]}
+              />
+            )}
+          </For>
+          <For each={rows()}>
+            {(row) => (
+              <ChainRow
+                row={row}
+                env={props.env}
+                actions={props.actions}
+                loadedOthers={props.batchOthers(row)}
+                loadBatch={props.loadBatch}
+              />
+            )}
+          </For>
+        </List>
       </Section>
     </>
   );

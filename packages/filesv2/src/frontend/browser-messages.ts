@@ -11,7 +11,6 @@ export const browserMessages = i18n.define({
       activity: "Activity",
       allStorageUp: "Up to all storage",
       onlyYou: "Only you",
-      createInStorage: "To create folders or upload files, open a storage location.",
       folderReadme: "Folder description",
       showAll: "Show all",
       list: "List",
@@ -326,6 +325,7 @@ export const browserMessages = i18n.define({
       revoke: "Revoke",
       revokeQuestion: "No new transfers can start. Already issued transfer leases remain valid until they expire. This cannot be undone.",
       revoked: "Share revoked.",
+      v2Revoking: "Revoking…",
       revokeFailed: "The share could not be revoked.",
       createdBy: "Created by",
       publicDownloadAll: "Download everything as ZIP",
@@ -412,7 +412,6 @@ export const browserMessages = i18n.define({
       noFavoritesInline: "No favorites yet. Mark files or folders with the star in their details.",
       favoritesFailed: "Favorites could not be loaded.",
       showAllFavorites: "Show all",
-      storageSection: "Storage",
       recentByYou: "Recently by you",
       noRecentByYou: "No activity of yours yet. What you upload, change or open appears here.",
       recentFailed: "Your recent activity could not be loaded.",
@@ -477,10 +476,6 @@ export const browserMessages = i18n.define({
       v2Accesses: "Opened",
       v2EntriesSize: (values: { count: number; more: string; size: string }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "entry" : "entries"} · ${values.size}`,
-      v2TodayByYou: (values: { count: number; more: string }) =>
-        values.count === 0
-          ? "Nothing changed by you today"
-          : `Today ${values.count}${values.more} ${values.count === 1 ? "change" : "changes"} by you`,
       v2From: "By",
       v2Sharing: "Sharing",
       v2Team: "Team",
@@ -491,7 +486,6 @@ export const browserMessages = i18n.define({
         values.count === 1 && !values.more ? "1 active link" : `${values.count}${values.more} active links`,
       v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 link shown" : `${values.count} links shown`),
       v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 storage location" : `${values.count} storage locations`),
-      v2Unreachable: "unavailable",
     },
     de: {
       personal: "Persönlich",
@@ -499,7 +493,6 @@ export const browserMessages = i18n.define({
       activity: "Aktivität",
       allStorageUp: "Zu allen Ablagen",
       onlyYou: "Nur du",
-      createInStorage: "Neue Ordner und Dateien legst du in einer Ablage an.",
       folderReadme: "Ordnerbeschreibung",
       showAll: "Alles anzeigen",
       list: "Liste",
@@ -818,6 +811,7 @@ export const browserMessages = i18n.define({
       revokeQuestion:
         "Neue Übertragungen werden gesperrt. Bereits ausgestellte Übertragungsfreigaben gelten bis zu ihrem Ablauf. Dies kann nicht rückgängig gemacht werden.",
       revoked: "Freigabe widerrufen.",
+      v2Revoking: "Wird widerrufen…",
       revokeFailed: "Die Freigabe konnte nicht widerrufen werden.",
       createdBy: "Erstellt von",
       publicDownloadAll: "Alles als ZIP herunterladen",
@@ -904,7 +898,6 @@ export const browserMessages = i18n.define({
       noFavoritesInline: "Noch keine Favoriten. Markiere Dateien oder Ordner in ihren Details mit dem Stern.",
       favoritesFailed: "Favoriten konnten nicht geladen werden.",
       showAllFavorites: "Alle anzeigen",
-      storageSection: "Ablagen",
       recentByYou: "Zuletzt von dir",
       noRecentByYou: "Noch keine Aktivität von dir. Was du hochlädst, änderst oder öffnest, steht hier.",
       recentFailed: "Deine letzte Aktivität konnte nicht geladen werden.",
@@ -970,10 +963,6 @@ export const browserMessages = i18n.define({
       v2Accesses: "Geöffnet",
       v2EntriesSize: (values: { count: number; more: string; size: string }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "Eintrag" : "Einträge"} · ${values.size}`,
-      v2TodayByYou: (values: { count: number; more: string }) =>
-        values.count === 0
-          ? "Heute noch nichts von dir geändert"
-          : `Heute ${values.count}${values.more} ${values.count === 1 ? "Änderung" : "Änderungen"} von dir`,
       v2From: "Von",
       v2Sharing: "Freigabe",
       v2Team: "Team",
@@ -984,7 +973,6 @@ export const browserMessages = i18n.define({
         values.count === 1 && !values.more ? "1 aktiver Link" : `${values.count}${values.more} aktive Links`,
       v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 Link angezeigt" : `${values.count} Links angezeigt`),
       v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 Ablage" : `${values.count} Ablagen`),
-      v2Unreachable: "nicht verfügbar",
     },
   },
 });

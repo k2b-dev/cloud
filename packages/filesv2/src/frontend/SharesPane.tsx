@@ -160,9 +160,10 @@ export default function SharesPane(props: {
                   title: b().shareState,
                   width: { min: 112, default: 116 },
                   drop: true,
-                  cell: (share) => state(share),
+                  // while its revoke runs, the row says so in words
+                  cell: (share) => (busy() === share.id ? <Text type="meta">{b().v2Revoking}</Text> : state(share)),
                 },
-                { title: b().shareExpires, width: { min: 72, default: 76 }, drop: true, cell: expiresCell },
+                { title: b().shareExpires, width: { min: 88, default: 92 }, drop: true, cell: expiresCell },
                 {
                   title: b().v2Accesses,
                   width: { min: 64, default: 72 },

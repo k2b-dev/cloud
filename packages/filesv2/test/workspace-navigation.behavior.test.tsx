@@ -260,8 +260,9 @@ describe("Filesv2 progressive navigation", () => {
     await flush();
     // The server read every part: nothing asks for itself after the first picture.
     expect(apiRequests).toHaveLength(0);
+    // the storages are the sidebar's: the page does not list them a second time
     const cards = () => dom.root.querySelectorAll('[data-k2-part="List"][aria-label="All storage"] [data-k2-part="Row"]');
-    expect(cards()).toHaveLength(2);
+    expect(cards()).toHaveLength(0);
     const failed = () => [...dom.root.querySelectorAll('[data-k2-part="Failed"]')];
     expect(failed()).toHaveLength(2);
     failed()[0]!.querySelector<HTMLButtonElement>("button")!.click();
@@ -280,7 +281,7 @@ describe("Filesv2 progressive navigation", () => {
     expect(failed()).toHaveLength(0);
     expect(dom.root.textContent).toContain("No favorites yet.");
     expect(dom.root.textContent).toContain("No activity of yours yet.");
-    expect(cards()).toHaveLength(2);
+    expect(cards()).toHaveLength(0);
   });
 
   test("the favorites pane loads, links each favorite, removes at once and brings a favorite back when removing fails", async () => {

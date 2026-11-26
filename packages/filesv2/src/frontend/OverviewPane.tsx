@@ -1,12 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
+import { Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
+import { entryMark, FILES_COLOR } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
@@ -14,7 +14,7 @@ import { formatWhen, type HistoryEnvironment, historyRows, runDestination } from
 import { useHistoryMessages } from "./history-messages";
 import { ActivityLineRow } from "./history-v2";
 import { useFilesMessages } from "./messages";
-import { activityUrl, filesUrl } from "./urls";
+import { activityUrl } from "./urls";
 
 /** The overview shows this many favorites; the page lists all of them. */
 export const FAVORITES_PREVIEW = 6;
@@ -88,28 +88,8 @@ export default function OverviewPane(props: {
             {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
           </Notice>
         ))}
-        <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length}>
-          {/* Rows, not cards: a few storages fill no grid, and many stay one list that keeps only its rows in view. */}
-          <List
-            label={b().allStorage}
-            items={props.bases}
-            rowKey={(base) => base.id}
-            row={(base) => (
-              <Row
-                mark={storageMark(base)}
-                lines={[
-                  baseLabel(base, b(), locale()),
-                  [base.kind === "users" ? b().onlyYou : t().group, t()[base.area], base.kind === "users" ? base.name : ""]
-                    .filter(Boolean)
-                    .join(" · "),
-                ]}
-                href={filesUrl(base.id)}
-                onNavigate={props.onNavigate}
-                end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
-              />
-            )}
-          />
-        </Section>
+        {/* no list of the storages: the sidebar names them; the dense table with usage, people and last change comes with
+            its data (Valentin 26.11.) */}
         <Section
           icon="star"
           color="#ca8a04"
