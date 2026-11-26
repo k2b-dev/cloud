@@ -138,6 +138,8 @@ else if (scenario === "table" || scenario === "head" || scenario === "headmenu" 
                 lines: [file.name, file.detail],
                 time: file.changed,
                 marks: file.id === "f3" ? <Chip status="ok">POST</Chip> : undefined,
+                // the row's deeds, which a column of deeds offers on the desktop
+                end: <Menu label={`Aktionen für ${file.name}`} items={[{ label: "Umbenennen", onClick: () => undefined }]} />,
               })}
             />
           </Pane>

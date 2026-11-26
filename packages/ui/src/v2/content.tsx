@@ -558,9 +558,10 @@ type TableBase<T> = {
   open?: (row: T) => OpenTarget;
   /**
    * On the phone each row becomes a row of two lines instead (rule 7): `time` stands top right, `marks` at the end of
-   * the second line, such as the state of the entry as a chip.
+   * the second line, such as the state of the entry as a chip; `end` holds the row's deeds (as `Row end`), such as its
+   * "…": what a column of deeds offers on the desktop.
    */
-  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element };
+  phone?: (row: T) => { lines: readonly [JSX.Element, JSX.Element]; avatar?: Person; time?: JSX.Element; marks?: JSX.Element; end?: JSX.Element };
   /**
    * While the rows load: the head stays and square placeholders hold the place of the rows, so nothing moves when they
    * come; `rows` (3 when not set) and `lines` (1 or 2) say how many and how high.
@@ -909,6 +910,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                             avatar={form.avatar}
                             time={form.time}
                             marks={form.marks}
+                            end={form.end}
                             strong
                             href={target?.href}
                             onNavigate={target?.onNavigate}
