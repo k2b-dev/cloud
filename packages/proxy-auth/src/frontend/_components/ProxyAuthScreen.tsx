@@ -192,6 +192,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           {t().blockedNotice}
         </Notice>
       </Show>
+      {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
       <Facts
         items={[
           { label: t().verifyUrl, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) },
