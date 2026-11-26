@@ -1,4 +1,6 @@
-import { Bar, Button, Canvas, Chip, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { createSignal } from "solid-js";
+import { Bar, Button, Canvas, Chip, FilterBar, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
 // states, a state longer than the row, rows with and without states side by side. Beside it a drawing that is the
@@ -114,3 +116,39 @@ export const DeepPathScreen = () => (
     </Pane>
   </Workspace>
 );
+
+// A list whose search already fills the address almost to its limit: a sort more would not fit, so the phone's menu
+// "Ansicht" locks it as the order's own menu does.
+const longQuery = defineListQuery({
+  key: "long",
+  fields: {},
+  search: { label: "Name" },
+  sort: {
+    options: { name: { label: "Name", directions: ["asc", "desc"] }, changed: { label: "Geändert", directions: ["desc", "asc"] } },
+    default: { field: "name", direction: "asc" },
+  },
+});
+
+export const LongAddressScreen = () => {
+  const [state, setState] = createSignal<ListQueryStateOf<typeof longQuery>>(longQuery.parse(`q=${"x".repeat(1995)}`).state);
+  return (
+    <Workspace>
+      <Pane
+        label="Dateien"
+        status={
+          <FilterBar
+            query={longQuery}
+            state={state()}
+            onChange={setState}
+            results="0 Einträge"
+            display={[{ title: "Darstellung", choice: "list", onChoose: () => {}, items: [{ label: "Liste", value: "list" }] }]}
+          />
+        }
+      >
+        <Section title="Dateien" count={0}>
+          <List label="Dateien">{[]}</List>
+        </Section>
+      </Pane>
+    </Workspace>
+  );
+};
