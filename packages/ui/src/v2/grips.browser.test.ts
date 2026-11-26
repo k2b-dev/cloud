@@ -390,6 +390,7 @@ test("1440: grips rest hidden and show under the pointer along their line and in
     await page.locator(grips.list).evaluate((grip) => grip.blur());
     await drag(page, grips.list, 20);
     expect(await page.locator(`${grips.list}[data-dragging]`).count()).toBe(1);
+    // settled: the grip while it is dragged is the subject; the button is still held.
     expect((await shown(page)).list).toBe("1");
     await page.mouse.up();
     await widths(page, { list: 380 });

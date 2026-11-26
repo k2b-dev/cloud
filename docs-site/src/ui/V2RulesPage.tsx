@@ -151,7 +151,8 @@ const rules: readonly V2Rule[] = [
       // Taken at device pixel ratio 4 and shown twice as large as on screen.
       { src: "/assets/ui-v2/grip.png", alt: "A grip pill centred on the line between list and reader, enlarged", width: 184, height: 160 },
     ],
-    checked: "measureV2Layout shows every grip while it measures, then measures each grip in the DOM and again in a screenshot, inside the grip only.",
+    checked:
+      "measureV2Layout shows every grip while it measures, then measures each grip in the DOM and again in a screenshot, inside the grip only.",
     code: {
       title: "A browser test",
       language: "ts",
