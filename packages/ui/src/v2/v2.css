@@ -614,14 +614,20 @@
   border-bottom: 0;
   background: var(--k2-surface);
 }
-.k2-ui .k2-scroll:has(> [data-slot="foot"]) > :is(.k2-sec, .k2-row):nth-last-child(1 of :not([data-slot="foot"])),
-.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-list:nth-last-child(1 of :not([data-slot="foot"])) > .k2-row:last-child {
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > :is(.k2-sec, .k2-row, .k2-notice, .k2-band):nth-last-child(1 of :not([data-slot="foot"])),
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-list:nth-last-child(1 of :not([data-slot="foot"])) > .k2-row:last-child,
+.k2-ui .k2-scroll:has(> [data-slot="foot"]) > .k2-table-phone:nth-last-child(1 of :not([data-slot="foot"])) > .k2-list > .k2-row:last-child {
   border-bottom: 0;
 }
 .k2-ui .k2-scroll > [data-slot="foot"][data-unsaved] > .k2-bar {
   position: sticky;
   bottom: 0;
   z-index: 2;
+}
+/* a field that takes the focus (Tab) is scrolled into view above the foot that stays, never under it, with room to
+   spare (WebKit stops a little short of the padding) */
+.k2-ui .k2-pane > .k2-scroll:has(> [data-slot="foot"][data-unsaved]) {
+  scroll-padding-bottom: calc(var(--k2-h-head) + 16px);
 }
 .k2-ui .k2-split > .k2-pane > .k2-scroll:has(> [data-slot="foot"][data-unsaved]) {
   -webkit-mask-image: none;
@@ -3891,6 +3897,17 @@
     -webkit-mask-image: none;
     mask-image: none;
     animation: none;
+  }
+  /* the panes stand one under the other and scroll as one page: the split is the scroller of the column (a foot
+     that stays sticks to it, and a focused field is scrolled above that foot) */
+  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])) {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+  }
+  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])):has(> .k2-pane > .k2-scroll > [data-slot="foot"][data-unsaved]) {
+    scroll-padding-bottom: calc(var(--k2-h-head) + 16px);
   }
   /* a detail that is there (a mail that is open) is the page; the list is the page while no detail is there */
   .k2-ui .k2-split > .k2-pane[data-detail] {
