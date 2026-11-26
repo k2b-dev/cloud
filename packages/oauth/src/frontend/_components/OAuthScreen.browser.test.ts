@@ -1,11 +1,10 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { loadShellAssets, type ShellAssets } from "@k2b/cloud/testing";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
 import { FAKE_SECRET } from "./oauth-fixture-data";
 
 // OAuth on v2, from invented clients: the screen keeps the v2 layout rules at desktop, tablet and phone width with
@@ -53,9 +52,7 @@ let assets: ShellAssets;
 beforeAll(async () => {
   harness = await buildHarness();
   // the shell's own stylesheets, Plex fonts and icons, as the page loads them
-  assets = await loadShellAssets(
-    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../../styles/app.css"), v2Page: true }, import.meta.dir),
-  );
+  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../../styles/app.css") });
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);

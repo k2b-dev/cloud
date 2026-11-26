@@ -1151,7 +1151,7 @@ suite("OAuth resource access tokens", () => {
         body: new URLSearchParams({ request: requestId!, decision: "approve" }),
         redirect: "manual",
       });
-      expect(crossOriginApproval.headers.get("location")).toContain("/oauth/error?error=invalid_request");
+      expect(crossOriginApproval.headers.get("location")).toBe("/oauth/error?error=origin_invalid");
 
       const approve = await consentActionRoutes().request("/oauth/consent", {
         method: "POST",
@@ -1181,7 +1181,7 @@ suite("OAuth resource access tokens", () => {
         body: new URLSearchParams({ request: requestId!, decision: "approve" }),
         redirect: "manual",
       });
-      expect(replay.headers.get("location")).toContain("/oauth/error?error=invalid_request");
+      expect(replay.headers.get("location")).toBe("/oauth/error?error=consent_invalid");
 
       const exchange = await oauthRoutes.request("/oauth/token", {
         method: "POST",

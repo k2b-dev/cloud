@@ -2,12 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin";
+import { loadShellAssets, openShellPage, type ShellAssets } from "@k2b/cloud/testing";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
-import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
-import { hoverInPlace, launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
 // Every page a person sees during an authorization, as the server sends it, in a real engine with Cloud's stylesheets,
@@ -19,9 +18,7 @@ const states = Object.keys(authorizationStates) as AuthorizationState[];
 let browser: Browser;
 let assets: ShellAssets;
 beforeAll(async () => {
-  assets = await loadShellAssets(
-    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true }, import.meta.dir),
-  );
+  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true });
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -30,7 +27,12 @@ afterAll(async () => {
 });
 
 const open = async (state: AuthorizationState, locale: "en" | "de", width: number) =>
-  openShellPage(browser, assets, { path: "/authorization-page", html: await renderAuthorizationState(state, locale), width });
+  openShellPage(browser, assets, {
+    errors: pageErrors,
+    path: "/authorization-page",
+    html: await renderAuthorizationState(state, locale),
+    width,
+  });
 
 /**
  * Every box in the page and the footer on the document, rounded to hundredths of a pixel: a page taller than the window
@@ -286,14 +288,13 @@ describe("OAuth authorization pages in a browser", () => {
             text: element.textContent,
             size: Number.parseFloat(look.fontSize),
             family: look.fontFamily,
-            strip: look.backgroundColor,
+            align: look.textAlign,
           };
         });
         expect(code.text).toBe("WDJB-MJHT");
         expect(code.size).toBeGreaterThanOrEqual(28);
         expect(code.family).toContain("monospace");
-        // a strip of its own: tinted, not the page's surface
-        expect(code.strip).not.toBe("rgba(0, 0, 0, 0)");
+        expect(code.align).toBe("center");
       } finally {
         await context.close();
       }

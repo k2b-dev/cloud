@@ -119,7 +119,7 @@ describe("MinimalLayout ui v2", () => {
   });
 
   for (const width of [1440, 390])
-    test(`with a measure at ${width} px the task stands as a column of 560 px on the tinted page, on the phone across the window`, async () => {
+    test(`with a measure at ${width} px the task stands as a column of 560 px on the tinted page, on the phone across the window, without a line under its last part`, async () => {
       const tab = await browser.newPage({ viewport: { width, height: 900 } });
       try {
         const { html } = render(false, "with v2.css", true);
@@ -140,8 +140,14 @@ describe("MinimalLayout ui v2", () => {
             page: getComputedStyle(document.querySelector(".minimal-layout")!).backgroundColor,
             card: getComputedStyle(workspace).backgroundColor,
             edge: getComputedStyle(workspace).borderTopWidth,
+            // the line under the last part of each pane: none, neither above the empty window nor beside the card's edge
+            lasts: [...workspace.querySelectorAll(".k2-pane > .k2-scroll")].map(
+              (scroll) => getComputedStyle(scroll.lastElementChild!).borderBottomWidth,
+            ),
           };
         });
+        expect(page.lasts.length).toBeGreaterThan(0);
+        expect(new Set(page.lasts)).toEqual(new Set(["0px"]));
         if (width === 1440) {
           expect(page.right - page.left).toBeLessThanOrEqual(560);
           expect(Math.abs(page.left - (page.view - page.right))).toBeLessThanOrEqual(1);

@@ -153,6 +153,10 @@ export const LayoutFixture = (props: { open?: boolean; back?: string }) =>
           <Notice tone="ai" title="Kurz gesagt" actions={[{ label: "Bearbeiten" }]}>
             Brandt liefert 14 Eichenplatten in KW 49.
           </Notice>
+          {/* a notice of one line without a title: its sign stands beside that line */}
+          <Notice tone="warn" icon="alert-triangle">
+            Die Lieferung kommt einen Tag später.
+          </Notice>
           <Band>
             <Row
               avatar={{ name: "Holzwerk Brandt", color: "#57534e" }}

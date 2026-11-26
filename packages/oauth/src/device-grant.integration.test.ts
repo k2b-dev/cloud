@@ -685,7 +685,7 @@ suite("OAuth device authorization grant", () => {
     const started = await startDevice({ scope: "openid offline_access read" });
     const confirm = await confirmRequest(who, started.user_code);
 
-    expect(await decide(who, confirm.request, "approve", "https://attacker.example")).toContain("/oauth/error?error=access_denied");
+    expect(await decide(who, confirm.request, "approve", "https://attacker.example")).toContain("/oauth/error?error=origin_invalid");
     expect(await decide(other, confirm.request, "approve")).toBe("/oauth/device?result=expired");
     expect((await deviceRow(started.device_code)).status).toBe("pending");
 

@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import type { MiddlewareHandler } from "hono";
 import { createComponent } from "solid-js";
-import { serveCoreV2Sheet } from "../../../../scripts/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Every page a person sees during an authorization, rendered as the full HTML document the SSR
@@ -142,8 +142,7 @@ export const authorizationStates = {
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",
-  // the description is the one the app sends with this code, in the person's language (see `renderAuthorizationState`)
-  error: "/oauth/error?error=access_denied",
+  error: "/oauth/error?error=account_not_allowed",
 } as const;
 
 export type AuthorizationState = keyof typeof authorizationStates;
@@ -158,11 +157,7 @@ export const renderAuthorizationState = async (
   locale: "en" | "de",
   theme: "light" | "dark" = "light",
 ): Promise<string> => {
-  const path =
-    state === "error"
-      ? `${authorizationStates.error}&${new URLSearchParams({ error_description: oauthMessages.resolve([locale]).t.deviceNoAccess })}`
-      : authorizationStates[state];
-  const response = await pages.request(`https://cloud.test${path}`, {
+  const response = await pages.request(`https://cloud.test${authorizationStates[state]}`, {
     headers: { "Accept-Language": locale, Cookie: `theme=${theme}` },
   });
   // A session that may not grant access gets its answer as 403.
