@@ -8,6 +8,8 @@ import type { Finding, Rule } from "./rule";
 
 // Production static closures include Solid, the mount runtime and Cloud's error fallback.
 // Measured 2026-11-04: 88,446 / 103,432 / 213,247 B; budgets round up with approximately 10% headroom.
+// PwaPartCount imports its mark from `@k2b/ui/sidebar-status`, not the main entry: measured 2026-11-26 on main
+// 90,473 B (92,479 B before).
 // Dynamic imports are excluded, exactly as in the production SSR asset manifest.
 const budgets = [
   { file: "packages/cloud/src/ssr/PwaPartCount.island.tsx", kib: 96 },
