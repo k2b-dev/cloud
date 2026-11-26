@@ -47,7 +47,6 @@ a running application for detailed usage instructions.
 | --- | --- |
 | [Accounts](/en/apps/accounts) | Account requests, users, groups, and access administration |
 | [API Docs](/en/apps/api-docs) | Browsing the OpenAPI contracts published by Cloud applications |
-| [Capabilities](/en/apps/capabilities) | Inspecting and running the Queries and Actions available to an account |
 | [Core](/en/apps/core) | Shared authentication, search, administration, and platform surfaces |
 | [Dashboard](/en/apps/dashboard) | A personal home assembled from application widgets |
 | [OAuth](/en/apps/oauth) | OAuth and OIDC clients, redirects, scopes, and secrets |
