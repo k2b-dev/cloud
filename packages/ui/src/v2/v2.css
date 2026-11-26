@@ -63,6 +63,11 @@
   --k2-bad-dot: #ef4444;
   --k2-ai: #8e1b6f;
   --k2-ai-tint: #fcf3f8;
+  /* the fill of the assistant's own primary action (white words on it, 7.7:1, in both themes) */
+  --k2-ai-fill: #8e1b6f;
+  /* the primary action: blue, or the main colour of an app that has its own (appearance.primary, below) */
+  --k2-primary: var(--k2-blue);
+  --k2-primary-ink: var(--k2-white);
   --k2-note: #fef9c3;
   --k2-note-tint: #fefce8;
   --k2-note-ink: #713f12;
@@ -161,6 +166,7 @@
   --k2-bad-dot: #ef4444;
   --k2-ai: #f0abdc;
   --k2-ai-tint: #3a0f2e;
+  --k2-ai-fill: #8e1b6f;
   --k2-note: #3f3a0c;
   --k2-note-tint: #2a2709;
   --k2-note-ink: #fde68a;
@@ -1931,9 +1937,20 @@
   }
 }
 .k2-ui .k2-btn[data-variant="primary"] {
-  background: var(--k2-blue);
-  border-color: var(--k2-blue);
-  color: var(--k2-white);
+  background: var(--k2-primary);
+  border-color: var(--k2-primary);
+  color: var(--k2-primary-ink);
+}
+/* An app whose main colour is the assistant's (appearance.primary "ai", which the platform puts on the page as
+   data-k2b-primary): its primary action is plum, never blue. One token; no app brings CSS of its own. */
+[data-k2b-primary="ai"] .k2-ui,
+.k2-ui[data-k2b-primary="ai"] {
+  --k2-primary: var(--k2-ai-fill);
+}
+/* a part of such an app that keeps blue on purpose (a dialog opened with primary "blue") */
+[data-k2b-primary="ai"] [data-k2b-primary="blue"] .k2-ui,
+[data-k2b-primary="ai"] .k2-ui[data-k2b-primary="blue"] {
+  --k2-primary: var(--k2-blue);
 }
 .k2-ui .k2-btn[data-variant="ghost"] {
   border-color: transparent;
