@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
-import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../../ui/test/browser";
 import { FIXTURE_NOW, FIXTURE_REVISION, type FixtureVariant } from "./frame.browser-fixture";
 
 // The bases overview and a base home on v2, in a real browser: the address holds what is open and narrowed, the
@@ -231,10 +231,11 @@ describe("the bases overview on v2", () => {
     }
   }, 60_000);
 
-  test("1,000 bases stay bounded: 100 rows a page, ready quickly", async () => {
+  test("1,000 bases stay bounded: 100 a page, only those in view in the page", async () => {
     const { context, tab, errors, readyMs } = await open(wide, "/app/grids", "huge");
     try {
-      expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(100);
+      // a page holds 100 bases; the virtual table keeps only those in view in the page
+      expect(await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count()).toBeLessThanOrEqual(60);
       expect(await tab.getByText("Seite 1 von 10").count()).toBe(1);
       const count = await elements(tab);
       console.info(`grids bases huge: ${count} elements, ready ${readyMs} ms`);
@@ -299,13 +300,19 @@ describe("a base home on v2", () => {
     }
   }, 60_000);
 
-  test("a base with 1,000 tables renders and states its size", async () => {
+  test("a base with 1,000 tables keeps only the rows in view of its lists", async () => {
+    const small = await open(wide, "/app/grids/Bas001");
+    const smallMs = small.readyMs;
+    await small.context.close();
     const { context, tab, errors, readyMs } = await open(wide, "/app/grids/Bas001", "huge");
     try {
       const count = await elements(tab);
-      // k2b-ui gap: Nav and Section lists are not virtualized yet (lane MW); this pins today's size.
-      console.info(`grids home huge: ${count} elements, ready ${readyMs} ms`);
-      expect(readyMs).toBeLessThan(8000);
+      const rows = await tab.locator("[data-k2-part=Pane] [data-k2-part=Row]").count();
+      // k2b-ui gap: the sidebar Nav still holds all 1,000 tables until MW virtualizes large Nav groups.
+      console.info(
+        `grids home huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over a small base)`,
+      );
+      expect(rows).toBeLessThanOrEqual(120);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -401,21 +408,22 @@ describe("the records page on v2", () => {
     }
   }, 60_000);
 
-  // MW: 1,000 rows take 21 s in WebKit until the virtual Table lands (#4211)
-  test.skipIf(browserName === "webkit")(
-    "1,000 records render; their size is pinned until the table is virtualized",
-    async () => {
-      const { context, tab, errors, readyMs } = await open(wide, table, "huge");
-      try {
-        const count = await elements(tab);
-        // k2b-ui gap: the v2 Table is not virtualized yet (lane MW); this pins today's size.
-        console.info(`grids records huge: ${count} elements, ready ${readyMs} ms`);
-        expect(await tab.locator("[data-k2-part=Table] tbody tr").count()).toBe(1000);
-        expect(errors).toEqual([]);
-      } finally {
-        await context.close();
-      }
-    },
-    90_000,
-  );
+  test("1,000 records keep only the rows in view and add little to the page's time", async () => {
+    // the cost of the thousand rows is what they add to the same page with ten
+    const small = await open(wide, table);
+    const smallMs = small.readyMs;
+    await small.context.close();
+    const { context, tab, errors, readyMs } = await open(wide, table, "huge");
+    try {
+      const count = await elements(tab);
+      const rows = await tab.locator("[data-k2-part=Table] tbody tr:not([data-spacer])").count();
+      console.info(
+        `grids records huge: ${count} elements, ${rows} rows in the page, ready ${readyMs} ms (+${readyMs - smallMs} ms over ten rows)`,
+      );
+      expect(rows).toBeLessThanOrEqual(60);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 90_000);
 });

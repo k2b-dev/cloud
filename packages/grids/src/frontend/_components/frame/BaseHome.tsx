@@ -255,9 +255,7 @@ function HomeList(props: HomeProps) {
               <For each={byKind()}>
                 {(group) => (
                   <Section icon={sectionIcon[group.type]} title={sectionLabel(group.type)} count={number(group.entries.length)}>
-                    <List label={sectionLabel(group.type)}>
-                      <For each={group.entries}>{row}</For>
-                    </List>
+                    <List label={sectionLabel(group.type)} items={group.entries} rowKey={navigationReferenceKey} row={row} />
                   </Section>
                 )}
               </For>
@@ -268,9 +266,7 @@ function HomeList(props: HomeProps) {
             <For each={byGroup()}>
               {(group) => (
                 <Section icon="folder" title={group.name} count={number(group.entries.length)}>
-                  <List label={group.name}>
-                    <For each={group.entries}>{row}</For>
-                  </List>
+                  <List label={group.name} items={group.entries} rowKey={navigationReferenceKey} row={row} />
                 </Section>
               )}
             </For>
