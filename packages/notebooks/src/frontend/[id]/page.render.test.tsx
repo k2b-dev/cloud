@@ -3,9 +3,11 @@ import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as cloudServices from "@k2b/cloud/services";
 import * as layoutHelp from "@k2b/cloud/ssr/help";
+import { serializeAppWorkspaceLayoutState } from "@k2b/ui";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import { app as notebooksApp } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import type { PresentationMode } from "../../lib/presentation-mode";
 import { notebooksService } from "../../service";
@@ -167,7 +169,8 @@ test("an empty book shows its sidebar placeholder as one line below the pages he
   expect(await select(html, '[role="tree"]')).toEqual([]);
 });
 
-const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
+/** `sidebarCollapsed`: the app's workspace cookie as Cloud's layout writes it, with the notebooks app registered. */
+const renderBookPage = async (preferences: Record<string, unknown> = {}, layout?: { sidebarCollapsed: boolean }) => {
   const page = (shortId: string, title: string, parentId: string | null = null) => ({
     id: `uuid-${shortId}`,
     shortId,
@@ -213,12 +216,17 @@ const renderBookPage = async (preferences: Record<string, unknown> = {}) => {
   app.use("*", async (c, next) => {
     c.set("actor", { kind: "user", user });
     c.set("user", user);
-    c.set("runtime", { apps: [] });
+    c.set("runtime", { apps: layout ? [{ ...notebooksApp.meta, nav: { href: "/app/notebooks", section: "primary" } }] : [] });
     await next();
   });
   app.get("/app/notebooks/:id/notes/:noteId", ...handler);
+  const cookies = [`settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}`];
+  if (layout)
+    cookies.push(
+      `cloud_workspace_notebooks=${serializeAppWorkspaceLayoutState({ version: 2, sidebarCollapsed: layout.sidebarCollapsed })}`,
+    );
   const response = await app.request("https://cloud.example.test/app/notebooks/book01/notes/note04?mode=book", {
-    headers: { "accept-language": "de", cookie: `settings-app-notebooks=${encodeURIComponent(JSON.stringify(preferences))}` },
+    headers: { "accept-language": "de", cookie: cookies.join("; ") },
   });
   expect(response.status).toBe(200);
   return response.text();
@@ -231,8 +239,17 @@ test("a book page is server-rendered with the start page first and the other pag
   expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note01", "note03", "note02"]);
 });
 
+test("a book page renders its sidebar hidden when the app's workspace cookie says so, and shown otherwise", async () => {
+  for (const sidebarCollapsed of [true, false]) {
+    const html = await renderBookPage({}, { sidebarCollapsed });
+    const [workspace] = await select(html, "[data-k2-workspace]");
+    expect(workspace?.attributes["data-collapsible"]).toBe("");
+    expect(workspace?.attributes["data-collapsed"]).toBe(sidebarCollapsed ? "" : undefined);
+  }
+});
+
 test("a book page is one v2 workspace with the reading order beside the note and math styles", async () => {
-  // Hiding the navigation belongs to the v2 frame (lane Z2); until then a hidden navigation shows as well.
+  // The notebook's own navigation preference is the v1 frame's; the v2 workspace hides its sidebar by its own cookie.
   for (const navigationHidden of [false, true]) {
     const html = await renderBookPage({ navigationHidden });
     expect(await select(html, "[data-k2-workspace]")).toHaveLength(1);

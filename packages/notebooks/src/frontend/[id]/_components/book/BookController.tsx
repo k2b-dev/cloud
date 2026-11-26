@@ -9,7 +9,7 @@ import { attachmentFromContentUrl } from "../../../lib/editor/attachment-url";
 import { notebookWorkspaceMessages } from "../../messages";
 import { followFullWidth } from "../full-width";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
-import { followBookReadingPosition, keepBookReadingPosition } from "./book-reading-position";
+import { followBookReadingPosition } from "./book-reading-position";
 import {
   BOOK_CONTENT_EVENT,
   BOOK_SNAPSHOT_EVENT,
@@ -189,13 +189,8 @@ export default function BookController(props: Props) {
     mounted = true;
     article = document.getElementById("notebook-book-content");
     scrollContainer = article?.closest<HTMLElement>(".notebook-book-main") ?? null;
-    if (scrollContainer) {
-      followFullWidth(
-        scrollContainer,
-        () => (article && scrollContainer ? keepBookReadingPosition(article, scrollContainer) : null),
-        workspaceText,
-      );
-    }
+    // Full width changes the article's width, which the reading position follows below; no second restore here.
+    if (scrollContainer) followFullWidth(scrollContainer, () => null, workspaceText);
     const previousScrollRestoration = history.scrollRestoration;
     history.scrollRestoration = "manual";
     history.replaceState(history.state, "", `${initialHref}${window.location.hash}`);
@@ -365,8 +360,18 @@ export default function BookController(props: Props) {
     document.addEventListener("submit", onSubmit);
     window.addEventListener("popstate", onPopState);
     window.addEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
-    scrollContainer?.addEventListener("scroll", saveScroll, { passive: true });
-    window.addEventListener("scroll", saveScroll, { passive: true });
+    // The entry keeps the position at most every 150 ms (browsers limit history writes; WebKit throws after about 100
+    // in a row), and once more when the page goes.
+    let saving = 0;
+    const saveScrollSoon = () => {
+      saving ||= window.setTimeout(() => {
+        saving = 0;
+        saveScroll();
+      }, 150);
+    };
+    scrollContainer?.addEventListener("scroll", saveScrollSoon, { passive: true });
+    window.addEventListener("scroll", saveScrollSoon, { passive: true });
+    window.addEventListener("pagehide", saveScroll);
     onCleanup(() => {
       mounted = false;
       pending?.settled?.();
@@ -376,8 +381,10 @@ export default function BookController(props: Props) {
       window.removeEventListener("popstate", onPopState);
       window.removeEventListener(WORKSPACE_EVENT, onWorkspaceEvent);
       stopFollowing();
-      scrollContainer?.removeEventListener("scroll", saveScroll);
-      window.removeEventListener("scroll", saveScroll);
+      window.clearTimeout(saving);
+      scrollContainer?.removeEventListener("scroll", saveScrollSoon);
+      window.removeEventListener("scroll", saveScrollSoon);
+      window.removeEventListener("pagehide", saveScroll);
       history.scrollRestoration = previousScrollRestoration;
     });
   });

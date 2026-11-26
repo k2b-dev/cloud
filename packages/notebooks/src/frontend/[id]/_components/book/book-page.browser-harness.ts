@@ -1,4 +1,5 @@
 import { attachWorkspaces } from "@k2b/ui/v2";
+import { openCloudMobileMenu } from "../../../../../../cloud/src/ssr/MobileNavigation";
 import { mount } from "../../../../../../ssr/src/mount";
 import BookCharts from "./BookCharts";
 import BookController from "./BookController";
@@ -19,5 +20,7 @@ attachWorkspaces({
     document.cookie = `book-sidebar=${collapsed ? "hidden" : "shown"}; path=/`;
   },
 });
+// the phone's shell menu, as its title row opens it: it shows the navigation the page's sidebar provides
+(window as Window & { openShellMenu?: () => void }).openShellMenu = () => void openCloudMobileMenu({ apps: [], legalLinks: [] });
 // mount renders every wrapper that is there at once, so the page is live from here
 (window as Window & { bookReady?: boolean }).bookReady = true;

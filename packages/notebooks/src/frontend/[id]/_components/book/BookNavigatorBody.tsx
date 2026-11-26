@@ -5,7 +5,6 @@ import type { SidebarTreeState } from "../../../../lib/sidebar-tree";
 import { buildGraphUrl, buildNoteUrl, buildTagPageUrl } from "../../../params";
 import { notebookWorkspaceMessages } from "../../messages";
 import { focusTreeRow } from "../sidebar/NoteTree";
-import { createNavigationHidden, followStoredNavigationHidden } from "../sidebar/navigation-visibility";
 import { createNotebookSwitcher } from "../sidebar/notebook-switcher";
 import { createSidebarTree, type SidebarTree } from "../sidebar/sidebar-tree";
 import { WORKSPACE_EVENT, type WorkspaceEventDetail } from "../sidebar/workspace-events";
@@ -27,7 +26,7 @@ export type BookNavigatorProps = {
   canWrite?: boolean;
   locked?: boolean;
   /** The notebook navigation preference: a hidden contents list renders no page titles at all. */
-  navigationHidden: boolean;
+  navigationHidden?: boolean;
   /** The Book page this navigation stands beside, when it is its footer item; the open note then is not the current page. */
   current?: "graph";
   /** While the graph shows: the page it opened from, which its Links item keeps. */
@@ -115,9 +114,6 @@ export function useBookNavigator(props: BookNavigatorProps) {
   const [state, setState] = createSignal(props);
   // The reading order a level at a time, as the workspace sidebar loads it.
   const tree = createSidebarTree({ notebookId: () => props.notebookId, initial: props.navigation, sort: () => "title", book: true });
-  // Book view's contents list is the notebook navigation and follows the same hidden preference.
-  const navigationHidden = createNavigationHidden(props.navigationHidden);
-  followStoredNavigationHidden(navigationHidden);
   // A page load also unfolds the open note, so its sub-notes stay reachable before or without JavaScript.
   // After that, folding belongs to the reader: opening another note only reveals it, and its own
   // sub-notes and every later snapshot of the same note (live refreshes) leave the folds as they are.
@@ -316,7 +312,7 @@ export function useBookNavigator(props: BookNavigatorProps) {
       if (id.startsWith("note:")) tree.setOpen(id.slice("note:".length), open);
     },
   });
-  return { t, workspaceText, state, navigationHidden, navigation, graphHref, switcher, mobileNavigation };
+  return { t, workspaceText, state, navigation, graphHref, switcher, mobileNavigation };
 }
 
 /**

@@ -297,9 +297,9 @@ for (const width of [1440, 390]) {
   test(`${width}: a reader stays in Book and reaches the note's open comments from the head`, async () => {
     const page = await open(width, "/app/notebooks/book01/notes/note01?mode=book&reader=1");
     try {
-      // no views into the workspace; the head names the notebook, the article its note
+      // no views into the workspace; the switcher names the notebook, the article its note
       expect(await tabs(page).count()).toBe(0);
-      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).toContain("Handbuch Lager");
+      expect(await page.locator('[data-k2-workspace] [data-slot="head"]').textContent()).not.toContain("Handbuch Lager");
       // the comments: their sign and number in sight, named in words, also on the phone
       const comments = page.locator('[data-k2-workspace] a[title="2 offene Kommentare"]');
       expect(await comments.isVisible()).toBe(true);
@@ -321,6 +321,55 @@ test("an address with an anchor opens at its heading, and mounting the islands k
     const heading = page.locator("#heading-ablauf");
     const margin = await heading.evaluate((element) => Number.parseFloat(getComputedStyle(element).scrollMarginTop) || 0);
     expect(Math.abs((await offset(heading)) - margin)).toBeLessThanOrEqual(2);
+  } finally {
+    await close(page);
+  }
+}, 60_000);
+
+test("390: the shell's menu reaches Book's page tree", async () => {
+  const page = await open(390);
+  try {
+    await page.evaluate(() => (window as Window & { openShellMenu: () => void }).openShellMenu());
+    const menu = page.getByRole("dialog").filter({ hasText: "Überblick" });
+    await menu.waitFor();
+    expect(await menu.textContent()).toContain("Handbuch Lager");
+  } finally {
+    await close(page);
+  }
+}, 60_000);
+
+test("scrolling keeps the reading position in the entry at most every 150 ms, and finding it reads few styles", async () => {
+  const page = await open(1440);
+  try {
+    await page.evaluate(() => {
+      const counts = { writes: 0, styles: 0 };
+      (window as Window & { counts?: typeof counts }).counts = counts;
+      const replace = history.replaceState.bind(history);
+      history.replaceState = (...args: Parameters<History["replaceState"]>) => {
+        counts.writes++;
+        replace(...args);
+      };
+      const style = window.getComputedStyle.bind(window);
+      window.getComputedStyle = (...args: Parameters<typeof getComputedStyle>) => {
+        counts.styles++;
+        return style(...args);
+      };
+    });
+    // sixty scroll steps, one a frame: about a second of reading
+    await page.locator(main).evaluate(async (port) => {
+      for (let step = 1; step <= 60; step++) {
+        port.scrollTop = step * 20;
+        await new Promise((frame) => requestAnimationFrame(frame));
+      }
+    });
+    await page.waitForFunction(
+      () => (history.state as { notebooksBookScroll?: { top: number } } | null)?.notebooksBookScroll?.top === 1200,
+    );
+    const counts = await page.evaluate(() => (window as Window & { counts?: { writes: number; styles: number } }).counts!);
+    // browsers limit history writes (WebKit throws after about 100 in a row)
+    expect(counts.writes).toBeLessThanOrEqual(12);
+    // the position is read once a frame, from the children at the port's edge, not from all of the note's
+    expect(counts.styles).toBeLessThanOrEqual(60 * 4);
   } finally {
     await close(page);
   }

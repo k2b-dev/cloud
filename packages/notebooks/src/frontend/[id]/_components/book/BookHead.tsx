@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Tabs, Text } from "@k2b/ui/v2";
+import { Bar, Button, Tabs } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { withPresentationMode } from "../../../../lib/presentation-url";
 import { notebookWorkspaceMessages } from "../../messages";
@@ -42,9 +42,11 @@ export default function BookHead(props: BookHeadProps) {
   return (
     <Bar
       start={
-        // Readers stay in Book: only writers get the way into the workspace, as the note's head offers it. A reader's
-        // head names the notebook; the note's own title is the article's first heading.
-        <Show when={shown().canWrite} fallback={<Text weight="strong">{shown().notebookName}</Text>}>
+        // Readers stay in Book: only writers get the way into the workspace, as the note's head offers it. The notebook's
+        // name stands in the sidebar's switcher; the head may name it only while the sidebar is hidden or a drawer,
+        // which v2's Workspace does not offer a place for yet (k2b-ui gap, lane Z2). The note's title is the article's
+        // first heading.
+        <Show when={shown().canWrite}>
           <Tabs
             label={t().view}
             items={[

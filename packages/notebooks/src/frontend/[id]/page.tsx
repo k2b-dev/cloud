@@ -56,7 +56,6 @@ export default ssr<AuthContext>(async (c) => {
               : `/app/notebooks/${data.notebook.id}?mode=book`,
             canWrite: data.canWrite,
             locked: !!data.selectedNote?.lockedAt,
-            navigationHidden: data.ctx.navigationHidden,
             current: "graph",
             graphBack: data.graphBack,
           }}
@@ -105,7 +104,6 @@ export default ssr<AuthContext>(async (c) => {
           locked={!!data.selectedNote?.lockedAt}
           historyIncomplete={data.selectedNote?.historyIncomplete ?? false}
           cursor={data.ctx.workspaceCursor}
-          navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}
           openComments={data.bookOpenComments}
         />

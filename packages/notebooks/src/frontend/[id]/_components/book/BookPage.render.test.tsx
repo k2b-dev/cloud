@@ -110,8 +110,17 @@ describe("Book on v2", () => {
       "BookMermaid.island.tsx",
       "BookCharts.island.tsx",
     ]);
-    expect((await selectHtml(render(), '[data-slot="head"]'))[0]?.text).toContain("Company handbook");
-    expect((await selectHtml(html, '[data-slot="head"]'))[0]?.text).not.toContain("Company handbook");
+    // the notebook's name stands in the sidebar's switcher, never a second time beside it in the head
+    for (const page of [render(), html]) {
+      const [head] = await selectHtml(page, '[data-slot="head"]');
+      expect(head?.text).not.toContain("Company handbook");
+      // the view menu stands in the server's frame, so nothing moves into the head when the browser takes over
+      expect((await selectHtml(page, '[data-slot="head"] button[data-slot="menu-trigger"]')).map((button) => button.text.trim())).toContain(
+        "View",
+      );
+    }
+    // the pane keeps one name while the reader moves from note to note
+    expect((await selectHtml(html, '[data-k2-part="Pane"]'))[0]?.attributes["aria-label"]).toBe("Company handbook");
   });
   test("the sidebar can be hidden, and a page renders it hidden as the person left it", async () => {
     expect(await selectHtml(render(), "[data-k2-workspace][data-collapsible]:not([data-collapsed])")).toHaveLength(1);
@@ -137,7 +146,7 @@ describe("Book on v2", () => {
       ["Book", "/app/notebooks/book01/notes/note02?mode=book", "page"],
     ]);
     expect((await views(render(true, true))).map(([label]) => label)).toEqual(["Read", "Book"]);
-    // readers stay in Book: the head names the notebook, and the note's title is the article's first heading
+    // readers stay in Book: no views; the note's title is the article's first heading
     expect(await views(render())).toEqual([]);
     expect(render()).not.toMatch(/mode=write|mode=readonly/);
   });

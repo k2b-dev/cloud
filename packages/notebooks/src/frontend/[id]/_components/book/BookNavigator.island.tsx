@@ -1,7 +1,12 @@
 import { WorkspaceNavigationProvider } from "@k2b/cloud/ssr/islands";
 import { AppWorkspace } from "@k2b/ui";
 import NavigationVisibilityControls from "../sidebar/NavigationVisibilityControls";
-import { NOTEBOOK_NAVIGATION_ID, setNavigationHidden } from "../sidebar/navigation-visibility";
+import {
+  createNavigationHidden,
+  followStoredNavigationHidden,
+  NOTEBOOK_NAVIGATION_ID,
+  setNavigationHidden,
+} from "../sidebar/navigation-visibility";
 import BookNavigatorBody, { type BookNavigatorProps, useBookNavigator } from "./BookNavigatorBody";
 
 export type { BookNavigatorProps, BookTreeNode } from "./BookNavigatorBody";
@@ -9,7 +14,10 @@ export type { BookNavigatorProps, BookTreeNode } from "./BookNavigatorBody";
 /** Book's navigation in the v1 frame: only test harnesses still use it, until the v1 sidebars' cleanup. */
 export default function BookNavigator(props: BookNavigatorProps) {
   const navigator = useBookNavigator(props);
-  const { workspaceText, state, navigationHidden, mobileNavigation } = navigator;
+  const { workspaceText, state, mobileNavigation } = navigator;
+  // the v1 frame's own preference; the v2 workspace hides its sidebar itself
+  const navigationHidden = createNavigationHidden(props.navigationHidden ?? false);
+  followStoredNavigationHidden(navigationHidden);
   return (
     <>
       <WorkspaceNavigationProvider navigation={mobileNavigation} label={state().notebookName} />

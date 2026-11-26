@@ -1,11 +1,10 @@
 type Anchor = { element: Element; within: number; offset: number };
 
-/** Children that stack as blocks; inline content wraps with its block and never anchors on its own. */
-const blockChildren = (parent: Element) =>
-  Array.from(parent.children).filter((child) => {
-    const display = getComputedStyle(child).display;
-    return display !== "none" && display !== "contents" && !display.startsWith("inline");
-  });
+/** A child that stacks as a block; inline content wraps with its block and never anchors on its own. */
+const isBlock = (child: Element) => {
+  const display = getComputedStyle(child).display;
+  return display !== "none" && display !== "contents" && !display.startsWith("inline");
+};
 
 /**
  * The innermost block at the port's top edge, such as a paragraph or a list
@@ -17,7 +16,8 @@ const readingAnchor = (article: HTMLElement, portTop: number): Anchor | null => 
   if (article.getBoundingClientRect().top >= portTop) return null;
   let element: Element = article;
   for (;;) {
-    const next = blockChildren(element).find((child) => child.getBoundingClientRect().bottom > portTop);
+    // Its box first, its style only then: a long note reads the style of the children at the edge, not of all.
+    const next = Array.from(element.children).find((child) => child.getBoundingClientRect().bottom > portTop && isBlock(child));
     if (!next) break;
     element = next;
     const { top } = next.getBoundingClientRect();
