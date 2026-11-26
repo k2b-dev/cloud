@@ -341,28 +341,36 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
           />
         </Setting>
         {/* k2b-ui gap (#4191): no colour or image input in v2; the v1 inputs keep their behaviour in a canvas. */}
-        <Canvas label={t().publicBranding}>
-          <ColorInput
-            aria-label={t().themeColor}
-            label={t().themeColor}
-            value={() => draft().accentColor}
-            onValueChange={(value) => set("accentColor", value)}
-          />
-          <ImageInput
-            aria-label={t().logo}
-            label={t().logo}
-            value={() => draft().logoBase64}
-            onValueChange={(value) => set("logoBase64", value)}
-            variant="small"
-          />
-          <ImageInput
-            aria-label={t().bannerImage}
-            label={t().bannerImage}
-            value={() => draft().bannerBase64}
-            onValueChange={(value) => set("bannerBase64", value)}
-            transform={bannerTransform}
-          />
-        </Canvas>
+        {/* each v1 input stands in the value column of its own setting row, so the page keeps one grid */}
+        <Setting name="accentColor" label={t().themeColor} was={was("accentColor", (value) => value)}>
+          <Canvas label={t().themeColor}>
+            <ColorInput
+              aria-label={t().themeColor}
+              value={() => draft().accentColor}
+              onValueChange={(value) => set("accentColor", value)}
+            />
+          </Canvas>
+        </Setting>
+        <Setting name="logo" label={t().logo}>
+          <Canvas label={t().logo}>
+            <ImageInput
+              aria-label={t().logo}
+              value={() => draft().logoBase64}
+              onValueChange={(value) => set("logoBase64", value)}
+              variant="small"
+            />
+          </Canvas>
+        </Setting>
+        <Setting name="banner" label={t().bannerImage}>
+          <Canvas label={t().bannerImage}>
+            <ImageInput
+              aria-label={t().bannerImage}
+              value={() => draft().bannerBase64}
+              onValueChange={(value) => set("bannerBase64", value)}
+              transform={bannerTransform}
+            />
+          </Canvas>
+        </Setting>
       </Section>
       <Bar
         end={

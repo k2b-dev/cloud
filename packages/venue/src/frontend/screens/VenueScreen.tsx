@@ -348,7 +348,8 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
                 <SetupSteps {...props} accessEntries={props.accessEntries} dashboard={dashboard()} />
               </Show>
               {/* k2b-ui gap: no calendar in v2; the v1 Calendar keeps its behaviour and draws inside a canvas. */}
-              <Canvas label={t().schedule} height={calendarView() === "mobile-month" ? undefined : 680}>
+              {/* the week reaches the pane's foot: the calendar draws the evening shifts too, without white below */}
+              <Canvas label={t().schedule} height={calendarView() === "mobile-month" ? undefined : 780}>
                 <Calendar
                   // Inside the canvas the calendar's own frame gives way to the pane's lines, and its scrollbar (WebKit shows one)
                   // keeps a gap to the grip, so no second line stands at the grip.
@@ -662,12 +663,13 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
               : t().noFeedbackInDays({ count: days() }),
         }}
         phone={(entry) => ({
-          lines: [`${stars(entry.rating)} ${entry.rating}/5`, entry.comment || t().noComment],
+          lines: [`${stars(entry.rating)} ${entry.rating}/5`, entry.comment || "–"],
           time: formatVenueDateTime(entry.createdAt, venue().timezone, locale()),
         })}
         columns={[
           { title: words().ratingColumn, width: { min: 120, default: 130 }, cell: (entry) => `${stars(entry.rating)} ${entry.rating}/5` },
-          { title: words().commentColumn, wrap: true, cell: (entry) => entry.comment || t().noComment },
+          // a rating without words leaves its cell quiet instead of saying "Kein Kommentar" in every such row
+          { title: words().commentColumn, wrap: true, cell: (entry) => entry.comment || "" },
           {
             title: words().submittedColumn,
             width: { min: 150, default: 170 },
@@ -676,7 +678,8 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
           },
         ]}
       />
-      <Show when={page()}>
+      {/* the filter bar says the range already; paging stands only when there is more than one page */}
+      <Show when={pages() > 1 ? page() : null}>
         {(current) => {
           const from = () => (current().page - 1) * current().pageSize + 1;
           const range = () => ({ from: from(), to: from() + props.dashboard.feedbackEntries.length - 1, total: current().total });

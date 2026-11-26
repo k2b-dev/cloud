@@ -220,13 +220,41 @@ const brunch = slotOf(
   ],
 );
 
-/** The opening hours: Monday to Friday 8–16, Saturday 9–14. */
+/** Two of the viewer's shifts next week, beyond the calendar's week. */
+const nextWeek = [
+  person(
+    "Asg011",
+    "user-1",
+    "Robin Example",
+    { startsAt: "2026-12-01T10:00:00.000Z", endsAt: "2026-12-01T13:00:00.000Z" },
+    "Temp01",
+    "Mittagstheke",
+  ),
+  person(
+    "Asg012",
+    "user-1",
+    "Robin Example",
+    { startsAt: "2026-12-04T07:00:00.000Z", endsAt: "2026-12-04T10:00:00.000Z" },
+    "Temp04",
+    "Frühstück",
+  ),
+];
+
+/** The opening hours: Monday to Thursday 8–16, Friday 8–14, Saturday 9–13. */
+const HOURS: Record<number, [string, string]> = {
+  1: ["08:00", "16:00"],
+  2: ["08:00", "16:00"],
+  3: ["07:30", "16:00"],
+  4: ["08:00", "18:00"],
+  5: ["08:00", "14:00"],
+  6: ["09:00", "13:00"],
+};
 const openingRules = [1, 2, 3, 4, 5, 6].map((weekday) => ({
   id: `Open0${weekday}`,
   venueId: "Cafe01",
   weekday,
-  startTime: weekday === 6 ? "09:00" : "08:00",
-  endTime: weekday === 6 ? "14:00" : "16:00",
+  startTime: HOURS[weekday]![0],
+  endTime: HOURS[weekday]![1],
   note: null,
   position: weekday - 1,
   createdAt: "2026-09-01T08:00:00.000Z",
@@ -259,9 +287,9 @@ export const fixtureDashboard = (patch: Partial<VenueDashboard> = {}): VenueDash
     nextGap: { templateId: "Temp01", date: SHIFT_DAY, title: "Mittagstheke", ...lunchTimes, missingPeople: 1 },
   },
   assignments: [...stocktaking.assignments, ...lunch.assignments, ...evening.assignments, ...breakfast.assignments, ...brunch.assignments],
-  // the viewer (user-1) works today's stocktaking, Thursday evening and Saturday's brunch
-  myUpcomingShifts: [stocktaking.assignments[1]!, evening.assignments[0]!, brunch.assignments[2]!],
-  myShiftCount: 3,
+  // the viewer (user-1) works today's stocktaking, Thursday evening, Saturday's brunch and two shifts next week
+  myUpcomingShifts: [stocktaking.assignments[1]!, evening.assignments[0]!, brunch.assignments[2]!, ...nextWeek],
+  myShiftCount: 5,
   sections: [
     {
       id: "Sec001",
