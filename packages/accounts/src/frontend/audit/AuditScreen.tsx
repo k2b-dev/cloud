@@ -27,7 +27,7 @@ import { useAccountsMessages } from "../messages";
 import { entityLookup } from "./entities";
 import { useAuditMessages } from "./messages";
 import { AUDIT_PAGE_PATH, type AuditState, auditHref, auditQuery } from "./query";
-import type { AuditRow } from "./rows";
+import { type AuditRow, targetMark } from "./rows";
 
 export type AuditScreenProps = {
   state: AuditState;
@@ -265,15 +265,3 @@ export default function AuditScreen(props: AuditScreenProps) {
     </Workspace>
   );
 }
-
-/** The mark of what an event was done to, in the colour of its kind: a person, a group, an agent, an approval. */
-const targetMark = (type: string | null): { icon: string; color?: string } =>
-  type === "user"
-    ? { icon: "user", color: "#2563eb" }
-    : type === "group"
-      ? { icon: "users-group", color: "#7c3aed" }
-      : type === "service_account" || type === "service_account_credential"
-        ? { icon: "robot", color: "#0e7490" }
-        : type === "ai_approval"
-          ? { icon: "checks", color: "#8e1b6f" }
-          : { icon: "target" };

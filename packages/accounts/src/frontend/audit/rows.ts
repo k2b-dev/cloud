@@ -83,3 +83,15 @@ export const auditRows = (
     reason: event.reason ?? event.errorMessage,
   }));
 };
+
+/** The mark of what an event was done to, in the colour of its kind: a person, a group, an agent, an approval. */
+export const targetMark = (type: string | null): { icon: string; color?: string } =>
+  type === "user"
+    ? { icon: "user", color: "#2563eb" }
+    : type === "group"
+      ? { icon: "users-group", color: "#7c3aed" }
+      : type === "service_account" || type === "service_account_credential"
+        ? { icon: "robot", color: "#0e7490" }
+        : type === "ai_approval"
+          ? { icon: "checks", color: "#8e1b6f" }
+          : { icon: "target" };

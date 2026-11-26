@@ -2,7 +2,7 @@ import { useLocale } from "@k2b/ui";
 import { Bar, Button, Cells, Chip, Digest, Mark, Menu, Pane, Row, Section, Tabs, Text, Workspace } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
-import type { AuditRow } from "../audit/rows";
+import { type AuditRow, targetMark } from "../audit/rows";
 import { useAccountsMessages } from "../messages";
 import { useOverviewMessages } from "./messages";
 
@@ -75,18 +75,6 @@ const kind = {
 };
 
 const runKind = { ipaSync: kind.sync, ipaDemotion: kind.demotion, reminders: kind.reminder } as const;
-
-/** The mark of what an event was done to, in the colour of its kind, as the audit log shows it (`audit/AuditScreen.tsx`). */
-const targetMark = (type: string | null): { icon: string; color?: string } =>
-  type === "user"
-    ? { icon: "user", color: "#2563eb" }
-    : type === "group"
-      ? { icon: "users-group", color: "#7c3aed" }
-      : type === "service_account" || type === "service_account_credential"
-        ? { icon: "robot", color: "#0e7490" }
-        : type === "ai_approval"
-          ? { icon: "checks", color: "#8e1b6f" }
-          : { icon: "target" };
 
 /**
  * The Accounts overview on v2: the first row says what waits today, then who I am here and my groups, and for

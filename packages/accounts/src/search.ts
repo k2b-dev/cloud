@@ -7,15 +7,15 @@ import { accountsSearchMessages } from "./search-messages";
 type FoundServiceAccount = { id: string; name: string; kind: string; delegatedUserId: string | null };
 
 /**
- * Where a found service account opens: an agent in its record, a person's own key at the person, an API key account
- * (and any other kind) in the account list searched by its name.
+ * Where a found service account opens: an agent or an API key account in its record, a person's own key at the person,
+ * any other kind (such as a Code account) in the account list searched by its name.
  */
 export const serviceAccountHref = (account: FoundServiceAccount): string => {
-  if (account.kind === "agent" || account.kind === "standalone") return `/app/accounts/users/${encodeURIComponent(account.id)}`;
+  if (account.kind === "agent" || account.kind === "standalone" || account.kind === "resource_bound")
+    return `/app/accounts/users/${encodeURIComponent(account.id)}`;
   if (account.kind === "user_delegated" && account.delegatedUserId)
     return `/app/accounts/users/${encodeURIComponent(account.delegatedUserId)}`;
   const params = new URLSearchParams({ q: account.name });
-  if (account.kind === "resource_bound") params.set("kind", "api-key");
   return `/app/accounts/users?${params}`;
 };
 
