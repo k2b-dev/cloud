@@ -433,7 +433,7 @@ export type PathProps = { items: readonly { label: string; href?: string }[]; la
 
 type PathItem = PathProps["items"][number];
 
-/** How many places a path shows before the places between its first and its last two fold into a menu. */
+/** How many places a path shows before the places between its first and its page fold into a menu. */
 const PATH_SHOWN = 4;
 /** The longest name that stays narrower than the 48 px a long name shortens to (six letters of 14 px type). */
 const PATH_SHORT = 6;
@@ -522,9 +522,10 @@ export type StatusRowProps = {
   selection?: { count: string; meta?: string; actions: readonly Action[]; clear: Action };
 };
 
-/** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 /** A selection with more deeds than fit: the first three stand, the rest wait in "Mehr" (as many as the mockup shows). */
 const SELECTION_SHOWN = 3;
+
+/** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
@@ -595,11 +596,13 @@ export const StatusRow = (props: StatusRowProps) => {
               <Show when={selection().actions.length > SELECTION_SHOWN + 1}>
                 <Menu
                   icon="dots"
+                  titled
                   items={selection()
                     .actions.slice(SELECTION_SHOWN)
                     .map((action) => ({
                       label: action.label,
                       icon: action.icon,
+                      meta: action.meta,
                       href: action.href,
                       onNavigate: action.onNavigate,
                       onClick: action.onClick,

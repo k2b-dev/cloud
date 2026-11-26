@@ -3501,7 +3501,7 @@
   font-size: 14px;
   color: var(--k2-n400);
 }
-/* where the room runs out, the place before the page shortens first, then the page; the first place stays whole */
+/* where the room runs out, the places between shorten first, then the first; the page only when nothing else is left */
 .k2-ui .k2-bar-start > .k2-path {
   flex: 0 1 auto;
 }
@@ -3516,6 +3516,9 @@
 .k2-ui .k2-bar-start > .k2-inline > .k2-path {
   flex: 0 1 auto;
   min-width: 0;
+}
+.k2-ui .k2-bar-start > .k2-inline:has(> .k2-path) {
+  overflow: visible;
 }
 .k2-ui .k2-bar-start > .k2-inline > .k2-text {
   flex: 0 1 auto;
