@@ -49,11 +49,19 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
     const least = Math.min(4, fontSize / 3);
     let shownWidth = box.width;
+    // Text that wrapped wholly out of sight below (or above) a box that hides what wraps gave way whole on purpose (the
+    // key figures of a StatusRow): it is not pressed, it is gone as a whole.
+    let outOfSight = false;
     for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
       const style = getComputedStyle(ancestor);
-      if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
-      shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
+      if (style.display === "contents") continue;
+      const clip = ancestor.getBoundingClientRect();
+      if ((style.overflowY === "hidden" || style.overflowY === "clip") && (box.top >= clip.bottom - 0.5 || box.bottom <= clip.top + 0.5))
+        outOfSight = true;
+      if (style.overflowX !== "hidden" && style.overflowX !== "clip") continue;
+      shownWidth = Math.min(shownWidth, clip.width);
     }
+    if (outOfSight) continue;
     if ([...words].length >= 2 && shownWidth < least) {
       squeezed.push(
         `${name(parent)} "${labelOf(parent)}" is ${round(shownWidth)} px wide; its text is gone, give it room or cut it with "…"`,
