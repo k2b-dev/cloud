@@ -412,9 +412,10 @@ export function PublicPageEditor(props: {
   return (
     <Pane.Split>
       <Pane label={t().sections} width={{ min: 360, default: 520 }} scrollKey={`venue-public-${venue().id}`}>
+        {/* named by what it holds, not by the page the sidebar already names */}
         <Section
           icon="world"
-          title={t().publicPage}
+          title={words().visibilityAndLinks}
           summary={publicEnabled() ? t().previewLiveDescription : t().publicPageOffNotice}
           actions={[{ label: t().copyPageLink, icon: "copy", disabled: copying() !== null, onClick: () => void copyLink("page") }]}
         >

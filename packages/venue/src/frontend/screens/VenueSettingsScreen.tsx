@@ -144,7 +144,7 @@ export default function VenueSettingsScreen(props: VenueSettingsProps) {
 
   const tabs = () =>
     TABS.map((id) => ({
-      label: { general: t().general, access: t().access, schedule: t().schedule, danger: t().dangerZone }[id],
+      label: { general: t().general, access: t().access, schedule: words.words().hoursAndShifts, danger: t().dangerZone }[id],
       icon: { general: "id", access: "shield", schedule: "calendar-time", danger: "alert-triangle" }[id],
       href: venueSettingsHref(venue().id, id),
       current: props.tab === id,
@@ -308,7 +308,7 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
           <Select options={zones()} value={draft().timezone} onChange={(value) => set("timezone", value)} />
         </Setting>
       </Section>
-      <Section icon="world" title={t().publicPage}>
+      <Section icon="world" title={words().visibility}>
         <Setting name="publicEnabled" label={t().publicPageOn} hint={t().publicPageOnDescription} was={was("publicEnabled", onOff)}>
           <Check
             switch
