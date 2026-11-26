@@ -48,7 +48,6 @@ packages/ui/src/content/calendar-days.browser.test.ts | 1
 packages/ui/src/content/content-files-docs.render.test.tsx | 1
 packages/ui/src/feedback/hover-preview.browser.test.ts | 1
 packages/ui/src/inputs/date-picker-today.browser.test.ts | 1
-packages/venue/test/admin-setup.behavior.test.tsx | 1
 pwas/pwa-auth/src/App.behavior.test.tsx | 2
 pwas/pwa-auth/src/Clouds.behavior.test.tsx | 2
 pwas/pwa-auth/src/authenticator.behavior.test.ts | 3

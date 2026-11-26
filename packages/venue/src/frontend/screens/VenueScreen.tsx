@@ -3,7 +3,7 @@ import { documentNavigate, listenPopState, navigate, navigateTo } from "@k2b/ssr
 import { dates } from "@k2b/stdlib";
 import { cookies } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { Calendar, type CalendarEvent, Chart, prompts, useLocale } from "@k2b/ui";
+import { Calendar, type CalendarEvent, Chart, useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
@@ -33,7 +33,6 @@ import { formatDateKey, formatVenueDateTime, formatVenueSpan, formatVenueWeekday
 import { feedbackCountTooltip, feedbackRatingTooltip, formatFeedbackRating } from "../_components/venue-workspace/feedback-chart-tooltips";
 import { PublicPageEditor } from "../_components/venue-workspace/public-page-editor";
 import { slotStaffingLabel, slotState } from "../_components/venue-workspace/schedule";
-import { SettingsDialog, type VenueSettingsTab } from "../_components/venue-workspace/settings";
 import { scheduleIsEmpty, setupSteps } from "../_components/venue-workspace/setup-checklist";
 import {
   announceTaken,
@@ -58,12 +57,12 @@ import {
   slotSelectionId,
   type VenueCalendarView,
 } from "../schedule-url";
-import { reconcileChangedSettings } from "../settings-contract";
 import { CalendarSubscriptionDialog, PublicLinkDialog } from "./LinkDialogs";
 import { useVenueWords } from "./messages";
 import ShiftDetailPane from "./ShiftDetailPane";
 import SignupDialog from "./SignupDialog";
 import { iconName } from "./VenueOverviewScreen";
+import { venueNav, venueSettingsHref } from "./venue-nav";
 
 /**
  * One venue on v2: its areas in the sidebar (schedule, my shifts, feedback, public page), the area's own head and
@@ -92,7 +91,6 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
   const [subscribing, setSubscribing] = createSignal(false);
   const [linking, setLinking] = createSignal(false);
   const [calendarUrl, setCalendarUrl] = createSignal(props.calendarUrl);
-  const [accessEntries, setAccessEntries] = createSignal(props.accessEntries);
   const actions = createActionKeys((message) => toast(message, { status: "bad" }));
   let disposed = false;
   onCleanup(() => {
@@ -112,26 +110,6 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
       return false;
     }
   };
-  // k2b-ui gap: the venue settings are not rebuilt on v2 yet; the v1 dialog keeps its behaviour over this page.
-  const openSettings = async (tab?: VenueSettingsTab) => {
-    const changed = await prompts.dialog<boolean>(
-      (close) => (
-        <SettingsDialog
-          dashboard={dashboard()}
-          accessEntries={accessEntries()}
-          onAccessEntriesChange={setAccessEntries}
-          initialTab={tab}
-          apiKeys={props.apiKeys}
-          close={close}
-        />
-      ),
-      { surface: "bare", header: false, size: "large", cancelBehavior: "ignore" },
-    );
-    await reconcileChangedSettings(changed, async () => {
-      await reconcileDashboard();
-    });
-  };
-
   // ── the schedule ────────────────────────────────────────────────────────────────────────────────────────
   const calendarHref = (nextView: VenueCalendarView, nextDate: Date | string, shift: string | null = null, gaps = gapsOnly()) =>
     scheduleHref(venue().id, {
@@ -259,31 +237,7 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
   });
 
   // ── the frame ───────────────────────────────────────────────────────────────────────────────────────────
-  const areas = () => [
-    { id: "shifts" as const, label: t().schedule, icon: "calendar-event", count: undefined as number | undefined },
-    { id: "my-shifts" as const, label: t().myShifts, icon: "user-check", count: dashboard().myShiftCount || undefined },
-    ...(canWrite(venue())
-      ? [{ id: "feedback" as const, label: t().feedback, icon: "message-star", count: dashboard().feedback?.count || undefined }]
-      : []),
-    ...(canAdmin(venue()) ? [{ id: "public" as const, label: t().publicPage, icon: "world", count: undefined }] : []),
-  ];
-  const groups = (): NavGroup[] => [
-    { items: [{ label: words().allVenues, icon: "layout-grid", href: "/app/venue" }] },
-    {
-      label: venue().name,
-      items: [
-        ...areas().map((area) => ({
-          label: area.label,
-          icon: area.icon,
-          href: viewHref(area.id),
-          current: view() === area.id,
-          count: area.count,
-        })),
-        ...(canAdmin(venue()) ? [] : [{ label: t().publicPage, icon: "world", onClick: () => setLinking(true) }]),
-      ],
-    },
-  ];
-  const foot = () => (canAdmin(venue()) ? [{ label: t().venueSettings, icon: "settings", onClick: () => void openSettings() }] : []);
+  const nav = () => venueNav({ t, words }, dashboard(), view(), () => setLinking(true));
   const signup = { label: t().signUp, icon: "user-plus", onClick: () => setSigningUp(true) };
   const head = (end?: JSX.Element) => (
     <Bar
@@ -303,9 +257,9 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
 
   return (
     <>
-      <V2WorkspaceNavigation label={venue().name} groups={groups()} />
+      <V2WorkspaceNavigation label={venue().name} groups={nav().groups} foot={nav().foot} />
       <Workspace
-        sidebar={<Nav title={t().appName} icon={iconName(venue().icon)} groups={groups()} foot={foot()} />}
+        sidebar={<Nav title={t().appName} icon={iconName(venue().icon)} groups={nav().groups} foot={nav().foot} />}
         sidebarLabel={words().views}
         detail={selection() ? 380 : undefined}
         primary={canWrite(venue()) ? signup : undefined}
@@ -381,12 +335,7 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
                   .map((slot) => slot.startsAt)}
               />
               <Show when={scheduleIsEmpty(dashboard())}>
-                <SetupSteps
-                  {...props}
-                  accessEntries={accessEntries()}
-                  dashboard={dashboard()}
-                  openSettings={(tab) => void openSettings(tab)}
-                />
+                <SetupSteps {...props} accessEntries={props.accessEntries} dashboard={dashboard()} />
               </Show>
               {/* k2b-ui gap: no calendar in v2; the v1 Calendar keeps its behaviour and draws inside a canvas. */}
               <Canvas label={t().schedule} height={calendarView() === "mobile-month" ? undefined : 680}>
@@ -533,7 +482,7 @@ function TimeZoneNote(props: { timeZone: string; times: readonly string[] }) {
 }
 
 /** What an empty schedule says: admins get the open setup steps with a way into the right settings. */
-function SetupSteps(props: VenueWorkspaceProps & { openSettings: (tab: VenueSettingsTab) => void }) {
+function SetupSteps(props: VenueWorkspaceProps) {
   const { t } = useVenueWords();
   const steps = () => setupSteps(props.dashboard, props.accessEntries, props.userId);
   const copy = (id: "hours" | "shifts" | "team") =>
@@ -554,7 +503,9 @@ function SetupSteps(props: VenueWorkspaceProps & { openSettings: (tab: VenueSett
               <Row
                 icon={step.done ? "circle-check" : "circle-dashed"}
                 lines={[copy(step.id).title, copy(step.id).detail]}
-                action={step.done ? undefined : { label: copy(step.id).action, onClick: () => props.openSettings(step.tab) }}
+                action={
+                  step.done ? undefined : { label: copy(step.id).action, href: venueSettingsHref(props.dashboard.venue.id, step.tab) }
+                }
               />
             )}
           </For>

@@ -1,5 +1,6 @@
 import type { ShiftAssignment, ShiftTemplate, UpcomingSlot, Venue, VenueDashboard, VenueTemplateSummary } from "../../contracts";
 import type { VenueWorkspaceProps } from "../_components/venue-workspace/types";
+import type { VenueSettingsContext } from "./VenueSettingsScreen";
 
 /** Invented data for the v2 screens' tests and previews; the page pins its clock to `FIXTURE_NOW`. */
 export const FIXTURE_NOW = "2026-11-25T09:00:00.000Z";
@@ -170,4 +171,38 @@ export const venueProps = (patch: Partial<VenueWorkspaceProps> = {}): VenueWorks
   initialFeedbackDays: 30,
   initialFeedbackSearch: "",
   ...patch,
+});
+
+/** The settings of the venue as the server reads them for the settings page. */
+export const fixtureSettings = (): VenueSettingsContext => ({
+  venue: fixtureVenue(),
+  openingRules: [
+    {
+      id: "Open01",
+      venueId: "Cafe01",
+      weekday: 1,
+      startTime: "08:00",
+      endTime: "16:00",
+      note: null,
+      position: 0,
+      createdAt: "2026-09-01T08:00:00.000Z",
+      updatedAt: "2026-09-01T08:00:00.000Z",
+    },
+  ],
+  overrides: [
+    {
+      id: "Exc001",
+      venueId: "Cafe01",
+      date: "2026-12-24",
+      kind: "closed",
+      startTime: null,
+      endTime: null,
+      note: "Heiligabend",
+      createdAt: "2026-11-01T08:00:00.000Z",
+      updatedAt: "2026-11-01T08:00:00.000Z",
+    },
+  ],
+  templates: [lunch.template, evening.template],
+  accessEntries: [],
+  apiKeys: [],
 });

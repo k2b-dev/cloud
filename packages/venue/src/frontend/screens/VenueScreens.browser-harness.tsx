@@ -2,9 +2,11 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { VenueView } from "../_components/venue-workspace/types";
 import { parseCalendarView, parseShiftSelection } from "../schedule-url";
-import { fixtureTemplates, fixtureVenue, fixtureVenues, venueProps } from "./fixtures";
+import { fixtureSettings, fixtureTemplates, fixtureVenue, fixtureVenues, venueProps } from "./fixtures";
 import VenueOverviewScreen from "./VenueOverviewScreen";
 import VenueScreen from "./VenueScreen";
+import VenueSettingsScreen from "./VenueSettingsScreen";
+import type { VenueSettingsTab } from "./venue-nav";
 
 /**
  * Every Venue page for the browser tests, rendered from the address as the server would. `data-variant` picks the
@@ -35,7 +37,13 @@ const screen = () => {
   const params = new URLSearchParams(location.search);
   if (path === "/app/venue")
     return <VenueOverviewScreen venues={venues} templates={fixtureTemplates} initialQuery={params.get("q") ?? ""} />;
-  const view = (path.split("/")[4] ?? "shifts") as VenueView;
+  const view = (path.split("/")[4] ?? "shifts") as VenueView | "settings";
+  if (view === "settings") {
+    const tab =
+      (["access", "schedule", "danger"] as const).find((entry) => entry === path.split("/")[5]) ?? ("general" satisfies VenueSettingsTab);
+    const settings = fixtureSettings();
+    return <VenueSettingsScreen initial={settings} dashboard={{ venue: settings.venue, myShiftCount: 1, feedback: null }} tab={tab} />;
+  }
   const base = venueProps();
   const venue = { ...base.dashboard.venue, permission, ...(variant === "worst" ? { name: worst[0]!.name } : {}) };
   return (

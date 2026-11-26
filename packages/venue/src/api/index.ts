@@ -57,6 +57,7 @@ import {
 } from "../contracts";
 import { venueMessages } from "../messages";
 import { venueService } from "../service";
+import { listVenueApiKeys, loadVenueSettingsContext } from "../service/settings-context";
 import { notifyShiftCancelled } from "../shift-notices";
 import { formatVenueDateTime } from "../time-format";
 
@@ -132,34 +133,6 @@ const projectResult = async <T, U>(result: Result<T>, project: (value: T) => Pro
 const readVenue = async (c: Context<AuthContext>, id: string) => requireVenue(c, id, "read");
 const writeVenue = async (c: Context<AuthContext>, id: string) => requireVenue(c, id, "write");
 const adminVenue = async (c: Context<AuthContext>, id: string) => requireVenue(c, id, "admin");
-
-const listVenueApiKeys = async (venueId: string): Promise<VenueApiKey[]> => {
-  const [keys, accessEntries] = await Promise.all([
-    serviceAccountCredentials.listOverview({
-      pagination: { page: 1, perPage: 500 },
-      filter: {
-        serviceAccountKind: "resource_bound",
-        credentialStatus: "active",
-        appId: VENUE_APP_ID,
-        resourceType: VENUE_RESOURCE_TYPE,
-        resourceId: venueId,
-      },
-    }),
-    venueService.access.list(venueId),
-  ]);
-
-  const permissionByServiceAccountId = new Map(
-    accessEntries
-      .filter((entry) => entry.principal.type === "service_account")
-      .map((entry) => [(entry.principal as { type: "service_account"; serviceAccountId: string }).serviceAccountId, entry.permission]),
-  );
-
-  return keys.items.map((item) => {
-    const permission = permissionByServiceAccountId.get(item.serviceAccount.id) ?? "none";
-    const { serviceAccount: _serviceAccount, owner: _owner, ...credential } = item;
-    return { ...credential, permission };
-  });
-};
 
 const root = new Hono<AuthContext>().onError((error, c) => {
   if (error instanceof ImageMetadataError)
@@ -422,25 +395,7 @@ const venueRoutes = new Hono<AuthContext>()
     async (c) => {
       const venue = await readVenue(c, c.req.valid("param").id);
       if (!venue.ok) return respond(c, venue);
-      const isAdmin = venue.data.permission === "admin";
-      const [openingRules, overrides, templates, accessEntries, apiKeys] = await Promise.all([
-        venueService.openingRules.list(venue.data.id),
-        venueService.overrides.list(venue.data.id),
-        venueService.templates.list(venue.data.id),
-        isAdmin ? venueService.access.list(venue.data.id, venue.data.permission) : Promise.resolve([]),
-        isAdmin ? listVenueApiKeys(venue.data.id) : Promise.resolve([]),
-      ]);
-      return respond(
-        c,
-        ok({
-          venue: (await venueService.publicResources.projectVenues([venue.data]))[0]!,
-          openingRules: await venueService.publicResources.projectOpeningRules(openingRules),
-          overrides: await venueService.publicResources.projectOverrides(overrides),
-          templates: await venueService.publicResources.projectTemplates(templates),
-          accessEntries,
-          apiKeys,
-        }),
-      );
+      return respond(c, ok(await loadVenueSettingsContext(venue.data)));
     },
   )
   .get(

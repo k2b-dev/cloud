@@ -3,7 +3,7 @@ import { Button, Placeholder, useLocale } from "@k2b/ui";
 import { createUniqueId, For, Show } from "solid-js";
 import type { VenueDashboard } from "../../../contracts";
 import { venueMessages } from "../../../messages";
-import type { VenueSettingsTab } from "./settings";
+import type { VenueSettingsTab } from "../../screens/venue-nav";
 
 type SetupStep = { id: "hours" | "shifts" | "team"; done: boolean; tab: VenueSettingsTab };
 

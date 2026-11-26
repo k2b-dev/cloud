@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
-import { evening, FIXTURE_NOW, fixtureDashboard, lunch, SHIFT_DAY } from "./fixtures";
+import { evening, FIXTURE_NOW, fixtureDashboard, fixtureSettings, lunch, SHIFT_DAY } from "./fixtures";
 
 // The main paths of Venue on v2: find and create a venue, open a shift from the calendar, join it with the following
 // weeks, remove someone as an admin, Back and Forward over the selection, sign up from the dialog, leave one of my
@@ -116,6 +116,9 @@ const answer = async (route: Route, calls: Call[]) => {
   if (call.method === "POST" && call.path.includes("/signup-weeks")) return route.fulfill({ status: 201, json: [{}, {}, {}] });
   if (call.method === "POST" && call.path.endsWith("/signup")) return route.fulfill({ status: 201, json: {} });
   if (call.method === "DELETE") return route.fulfill({ json: { message: "Shift cancelled" } });
+  if (call.path.endsWith("/settings-context")) return route.fulfill({ json: fixtureSettings() });
+  if (call.method === "PATCH" && call.path === "/api/venue/venues/Cafe01") return route.fulfill({ json: {} });
+  if (call.method === "PATCH" && call.path.includes("/templates/")) return route.fulfill({ json: {} });
   if (call.path.endsWith("/calendar/my/renew"))
     return route.fulfill({ json: { href: "https://cloud.example.test/api/venue/calendar/new-token.ics" } });
   return route.fulfill({ status: 404, json: { message: "Not found" } });
@@ -294,8 +297,70 @@ describe("Venue on v2", () => {
     }
   }, 60_000);
 
+  test("settings save the general fields once and read the settings again", async () => {
+    const { context, tab, errors, calls } = await open(desktop, "/app/venue/Cafe01/settings");
+    try {
+      await tab.getByRole("textbox", { name: "Name", exact: true }).fill("Campus-Café Süd");
+      await tab.getByRole("button", { name: "Speichern" }).click();
+      await tab.waitForFunction(() => document.body.innerText.includes("gespeichert") || document.body.innerText.includes("Gespeichert"));
+      expect(writes(calls)).toHaveLength(1);
+      expect(writes(calls)[0]).toMatchObject({
+        method: "PATCH",
+        path: "/api/venue/venues/Cafe01",
+        body: { name: "Campus-Café Süd", slug: "campus-cafe" },
+      });
+      expect(calls.some((call) => call.path.endsWith("/settings-context"))).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a shift pauses from its menu; deleting the venue takes its typed name", async () => {
+    const schedulePage = await open(desktop, "/app/venue/Cafe01/settings/schedule");
+    try {
+      await shoot(schedulePage.tab, "settings-schedule-1440");
+      await schedulePage.tab
+        .getByRole("button", { name: /Mittagstheke/ })
+        .first()
+        .click();
+      await schedulePage.tab.getByRole("menuitem", { name: /pausieren/i }).click();
+      await schedulePage.tab.waitForFunction(() => document.body.innerText.length > 0);
+      await settled(schedulePage.tab);
+      const pause = writes(schedulePage.calls).find((call) => call.method === "PATCH");
+      expect(pause).toMatchObject({ path: "/api/venue/venues/Cafe01/templates/Temp01", body: { active: false, title: "Mittagstheke" } });
+      expect(schedulePage.errors).toEqual([]);
+    } finally {
+      await schedulePage.context.close();
+    }
+    const danger = await open(desktop, "/app/venue/Cafe01/settings/danger");
+    try {
+      await danger.tab.getByRole("button", { name: "Standort löschen" }).first().click();
+      const dialog = danger.tab.getByRole("dialog");
+      const confirm = dialog.getByRole("button", { name: "Standort löschen" });
+      expect(await confirm.isDisabled()).toBe(true);
+      await dialog.getByRole("textbox").fill("Campus-Café Nord");
+      await confirm.click();
+      await danger.tab.waitForURL(`${origin}/app/venue`);
+      expect(writes(danger.calls)).toEqual([{ method: "DELETE", path: "/api/venue/venues/Cafe01", body: null }]);
+      expect(danger.errors).toEqual([]);
+    } finally {
+      await danger.context.close();
+    }
+  }, 90_000);
+
   test("every page keeps the layout rules at 1440, 1024 and 390 px", async () => {
-    const addresses = ["/app/venue", schedule, `${schedule}&shift=${lunchId}`, "/app/venue/Cafe01/my-shifts", "/app/venue/Cafe01/feedback"];
+    const addresses = [
+      "/app/venue",
+      schedule,
+      `${schedule}&shift=${lunchId}`,
+      "/app/venue/Cafe01/my-shifts",
+      "/app/venue/Cafe01/feedback",
+      "/app/venue/Cafe01/settings",
+      "/app/venue/Cafe01/settings/access",
+      "/app/venue/Cafe01/settings/schedule",
+      "/app/venue/Cafe01/settings/danger",
+    ];
     const found: string[] = [];
     for (const view of [desktop, tablet, phone])
       for (const address of addresses) {

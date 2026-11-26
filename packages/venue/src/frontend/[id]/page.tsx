@@ -1,7 +1,6 @@
-import type { ResourceApiKey } from "@k2b/cloud/access/ui";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
-import { logger, serviceAccountCredentials } from "@k2b/cloud/services";
+import { logger } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
 import { getCookie } from "hono/cookie";
 import { ssr } from "../../config";
@@ -108,22 +107,10 @@ export default ssr<AuthContext>(async (c) => {
       return null;
     }
   };
-  const [internalDashboard, calendarUrl, accessEntries, apiKeyOverview, publicPreview] = await Promise.all([
+  const [internalDashboard, calendarUrl, accessEntries, publicPreview] = await Promise.all([
     venueService.dashboard(venue, user, dashboardScope.options),
     venueService.ical.getOrCreateToken(user.id).then(venueService.ical.url),
     venue.permission === "admin" ? venueService.access.list(venue.id, venue.permission) : Promise.resolve([]),
-    venue.permission === "admin"
-      ? serviceAccountCredentials.listOverview({
-          pagination: { page: 1, perPage: 500 },
-          filter: {
-            serviceAccountKind: "resource_bound",
-            credentialStatus: "active",
-            appId: "venue",
-            resourceType: "venue",
-            resourceId: venue.id,
-          },
-        })
-      : Promise.resolve({ items: [] }),
     resolved.initialView === "public" ? loadPreview() : Promise.resolve(null),
   ]);
   const dashboard = await venueService.publicResources.projectDashboard(internalDashboard);
@@ -135,16 +122,6 @@ export default ssr<AuthContext>(async (c) => {
     dashboard.sections.some((section) => section.id === sectionParam)
       ? sectionParam
       : null;
-  const permissionByServiceAccountId = new Map(
-    accessEntries
-      .filter((entry) => entry.principal.type === "service_account")
-      .map((entry) => [(entry.principal as { type: "service_account"; serviceAccountId: string }).serviceAccountId, entry.permission]),
-  );
-  const apiKeys: ResourceApiKey[] = apiKeyOverview.items.map((item) => {
-    const permission = permissionByServiceAccountId.get(item.serviceAccount.id) ?? "none";
-    const { serviceAccount: _serviceAccount, owner: _owner, ...credential } = item;
-    return { ...credential, permission };
-  });
 
   return () => (
     <Layout
@@ -159,7 +136,8 @@ export default ssr<AuthContext>(async (c) => {
         userId={user.id}
         calendarUrl={calendarUrl}
         accessEntries={accessEntries}
-        apiKeys={apiKeys}
+        // API keys live on the settings page now (settings.page.tsx).
+        apiKeys={[]}
         initialView={resolved.initialView}
         initialSectionId={initialSectionId}
         initialPublicPreview={publicPreview}
