@@ -30,7 +30,7 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     const sort = g().state().sort;
     return sort ? sortByChange(shown, sort === "changed" ? "desc" : "asc") : shown;
   });
-  // The count, the first note it links, and how many more: one line that ends at a word, never in one.
+  // The count and the first note it links: one line that ends at a word, never in one.
   const related = (ids: ReadonlySet<string>) => {
     const notes = [...ids].flatMap((id) => {
       const note = g().visibleIds().has(id) ? g().model.byId.get(id) : undefined;
@@ -39,7 +39,8 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     notes.sort((a, b) => a.order - b.order);
     if (notes.length === 0) return "–";
     const first = shortTitle(notes[0]!.title || t().untitled);
-    return notes.length > 1 ? `${notes.length}: ${first} ${t().graphAndMore({ count: notes.length - 1 })}` : `1: ${first}`;
+    // the count says how many; the ellipsis that there are more than the one named
+    return notes.length > 1 ? `${notes.length}: ${first} …` : `1: ${first}`;
   };
   const sortNext = () => (g().state().sort === "changed" ? "changed-asc" : "changed");
   const columns = (): Column<GraphNote>[] => [
