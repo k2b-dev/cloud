@@ -231,7 +231,9 @@ export default function FilteredOrders(props: Props) {
     const next = orderQuery.set(state(), "q", text.trim());
     if (!next) return;
     const params = orderQuery.serialize(next, location.search).toString();
-    history.pushState(history.state, "", `${location.pathname}${params ? `?${params}` : ""}${location.hash}`);
+    // the same search again is no new step back
+    if (params !== location.search.slice(1))
+      history.pushState(history.state, "", `${location.pathname}${params ? `?${params}` : ""}${location.hash}`);
     setState(next);
   };
   return (

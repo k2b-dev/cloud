@@ -243,6 +243,9 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
       await field.fill("Regal");
       await field.press("Enter");
       await settled(page);
+      // the same search again is no new step back (delta review r3)
+      await field.press("Enter");
+      await settled(page);
       expect(new URL(page.url()).searchParams.get("q")).toBe("Regal");
       expect(new URL(page.url()).searchParams.get("status")).toBe("open");
       // back leaves the search, forward brings it again: the bar follows the address
