@@ -4636,7 +4636,8 @@
   gap: 8px;
   pointer-events: none;
 }
-.k2-ui .k2-notice-stack:empty {
+/* without a notice (an island's wrapper around one counts as none) */
+.k2-ui .k2-notice-stack:not(:has(.k2-notice)) {
   display: none;
 }
 .k2-ui .k2-notice-stack > .k2-notice {
