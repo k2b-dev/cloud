@@ -5,16 +5,13 @@
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* The code a device shows, in its own drawing (`DeviceCode`): large and in the mono face, so a person compares it with
-   the terminal sign by sign before allowing. */
+/* The code a device shows, in its own drawing (`DeviceCodeDrawing` in a Canvas): large and in the mono face in the
+   block of its question, so a person compares it with the terminal sign by sign before allowing. No strip or edge of
+   its own: the block's one line below it is the only line. A drawing reads no v2 token. */
 .oauth-device-code {
-  margin: 0 var(--k2-edge);
-  padding: 16px;
-  border: var(--k2-hairline);
-  border-radius: var(--k2-r-control);
-  background: var(--k2-canvas);
-  color: var(--k2-text);
-  font-family: var(--k2-font-mono);
+  margin: 0;
+  padding: 8px 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 32px;
   line-height: 40px;
   font-weight: 600;

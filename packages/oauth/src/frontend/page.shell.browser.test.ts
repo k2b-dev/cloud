@@ -5,12 +5,12 @@ import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
+import { loadShellAssets, openShellPage, type ShellAssets } from "@k2b/cloud/testing";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
-import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
 import { FAKE_SECRET, NORMAL, WORST } from "./_components/oauth-fixture-data";
@@ -155,8 +155,13 @@ describe("OAuth in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 390]) {
-        const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/oauth${search}`, html, width });
+      for (const width of [1440, 1024, 390]) {
+        const { context, tab, errors } = await openShellPage(browser, assets, {
+          errors: pageErrors,
+          path: `/admin/oauth${search}`,
+          html,
+          width,
+        });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
           expect({ name, width, problems: layout.problems }).toEqual({ name, width, problems: [] });
@@ -174,8 +179,9 @@ describe("OAuth in the Cloud shell", () => {
   test("a new client, its access and its secret open in the shell's frame; the secret is a fake", async () => {
     const nav = (await firstHtml("?nav", "normal")).replaceAll("<", "\\u003c");
     const html = await firstHtml("", "normal");
-    for (const width of [1440, 390]) {
+    for (const width of [1440, 1024, 390]) {
       const { context, tab, errors } = await openShellPage(browser, assets, {
+        errors: pageErrors,
         path: "/admin/oauth",
         html,
         width,

@@ -385,7 +385,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         items={[
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
           { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
-          { label: t().description, value: client.description || t().noDescription },
+          ...(client.description ? [{ label: t().description, value: client.description }] : []),
           ...(client.redirectUris.length === 0
             ? [{ label: t().redirectUri, value: t().noRedirect }]
             : client.redirectUris.map((uri) => ({ label: t().redirectUriOne, value: uri, mono: true, copy: uri }))),
@@ -433,8 +433,8 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       {/* the figures say what the lead does not; before the first client there is nothing to count */}
       <Show when={props.figures.total > 0}>
         <Cells>
-          <Cells.Cell icon="key" label={t().clients} value={number(props.figures.total)} meta={t().registered} />
-          <Cells.Cell icon="lock-open" label={t().public} value={number(props.figures.public)} meta={t().publicSubtitle} />
+          <Cells.Cell icon="key" label={t().clients} value={number(props.figures.total)} />
+          <Cells.Cell icon="lock-open" label={t().public} value={number(props.figures.public)} />
         </Cells>
       </Show>
       <Table
@@ -470,7 +470,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           {
             title: t().client,
             width: { min: 200, default: 300 },
-            cell: (client) => ({ lines: [client.name, client.description || t().noDescription] }),
+            cell: (client) => (client.description ? { lines: [client.name, client.description] } : client.name),
           },
           { title: t().type, width: { min: 190, default: 220 }, cell: (client) => <>{kindChips(client)}</>, drop: true },
           { title: t().access, width: { min: 150, default: 180 }, cell: (client) => accessChip(client), drop: true },

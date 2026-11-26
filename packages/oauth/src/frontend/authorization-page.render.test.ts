@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type AuthorizationState, authorizationStates, renderAuthorizationState, sample } from "./authorization-page.test-fixture";
+import {
+  type AuthorizationState,
+  authorizationStates,
+  renderAuthorizationState,
+  renderErrorPage,
+  sample,
+} from "./authorization-page.test-fixture";
 
 /**
  * The visible text of the page body, without scripts, with tags as spaces and whitespace collapsed.
@@ -225,15 +231,34 @@ describe("OAuth authorization pages", () => {
     expect(failed).toContain("<title>Authorization error");
     expect(heading(failed)).toBe("Authorization failed");
     expect(text(failed)).toContain("Your account is not allowed to use this application.");
-    expect(text(failed)).toContain("Error code access_denied");
+    expect(text(failed)).toContain("Error code account_not_allowed");
     expect(linkTo(failed, "Back to home")).toBe("/");
 
-    // a German page says it in German, from the error code; the description its sender wrote stays a detail
+    // a German page says it in German, from the error code, once
     const german = await renderAuthorizationState("error", "de");
     expect(heading(german)).toBe("Autorisierung fehlgeschlagen");
-    expect(text(german)).toContain("Der Zugriff wurde nicht erlaubt.");
-    expect(text(german)).toContain("Details Your account is not allowed to use this application.");
-    expect(text(failed)).toMatch(/^.*Access was not allowed\..*Details Your account is not allowed/);
+    expect(text(german)).toContain("Dein Konto darf diese Anwendung nicht verwenden.");
+
+    // the page shows no text from the address: a code it does not send is an unknown error, and a description or a
+    // client name in the address appears nowhere
+    const forged = text(
+      await renderErrorPage({ error: "<b>Bitte hier klicken</b>", error_description: "Ruf 0800 an", client_name: "Bank" }, "de"),
+    );
+    expect(forged).toContain("Ein unbekannter Fehler ist aufgetreten.");
+    expect(forged).toContain("Fehlercode unknown_error");
+    for (const made of ["Bitte hier klicken", "Ruf 0800 an", "Bank"]) expect(forged).not.toContain(made);
+    const described = text(await renderErrorPage({ error: "consent_expired", error_description: "Ruf 0800 an" }, "de"));
+    expect(described).toContain("Die Zustimmungsanfrage ist nicht mehr gültig");
+    expect(described).not.toContain("Ruf 0800 an");
+    // a refusal that is no denial says what to do, not that access was not allowed
+    for (const [error, sentence] of [
+      ["sign_in_again", "Melde dich erneut im Browser an und gib den Code noch einmal ein."],
+      ["web_session_required", "Zugriff freigeben geht nur im Web."],
+    ] as const) {
+      const page = text(await renderErrorPage({ error }, "de"));
+      expect(page).toContain(sentence);
+      expect(page).not.toContain("Der Zugriff wurde nicht erlaubt.");
+    }
 
     const blocked = await renderAuthorizationState("blocked", "en");
     expect(heading(blocked)).toBe("Authorization failed");

@@ -232,7 +232,7 @@ suite("Lasting OAuth access requires confirmed browser sign-in", () => {
       const request = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
       const response = await post("/oauth/device", who.cookie, { request, decision: "approve", user_code: "ABCD-EFGH" });
       const location = new URL(response.headers.get("location")!, origin);
-      expect(location.searchParams.get("error_description")).toBe("Sign in again in the browser, then enter the code again.");
+      expect(`${location.pathname}?${location.searchParams}`).toBe("/oauth/error?error=sign_in_again");
       const denial = await oauth.device.createConfirmation({ deviceAuthorizationId: started.id, userId: who.userId });
       expect((await post("/oauth/device", who.cookie, { request: denial, decision: "deny" })).headers.get("location")).toBe(
         "/oauth/device?result=denied",

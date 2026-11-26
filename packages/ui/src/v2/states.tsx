@@ -1,8 +1,8 @@
-import { For, Index, Show } from "solid-js";
+import { For, Index, type JSX, children as resolveChildren, Show } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton, Button } from "./button";
 import { Icon } from "./marks";
-import type { Action } from "./types";
+import type { Action, Status } from "./types";
 
 // The three states every place that shows data has, in the place where the data will stand (design guide "Zustände"):
 // empty, loading and failed. None draws a box; each stands where the list, the table or the content would stand, so
@@ -21,8 +21,11 @@ export type EmptyProps = {
    * opens, not announced.
    */
   live?: boolean;
-  /** A result that went well: the sign in the colour of success (colour, sign and word together). */
-  tone?: "ok";
+  /**
+   * The sign in the colour of the state, with its symbol and its sentence: `ok` for a result that went well, `warn` for
+   * something that cannot happen now, `bad` for something that is refused.
+   */
+  tone?: Status;
 };
 
 /** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
@@ -140,6 +143,38 @@ export const LoadingStatus = () => {
     <span class="k2-hidden-text" role="status">
       {t().loading}
     </span>
+  );
+};
+
+/**
+ * A value still on its way (internal: a loading `Facts` and `Cells.Cell`): a quiet bar exactly one line of the value
+ * high, so nothing moves when the value comes; assistive technology hears "loading" at its place.
+ */
+export const PlaceholderValue = (props: {
+  /** The value the place holds while a newer one comes (a refresh): it keeps its room, unseen, under the bar. */
+  children?: JSX.Element;
+  /** `false`: no words for assistive technology, for a second line of the same value (a cell's meta). */
+  said?: boolean;
+}) => {
+  const t = useUiMessages();
+  const held = resolveChildren(() => props.children);
+  const holds = () => {
+    const value = held();
+    return value !== undefined && value !== null && value !== false && value !== "" && !(Array.isArray(value) && value.length === 0);
+  };
+  return (
+    <>
+      {/* a value that is there keeps its exact room (lines, chips, wrapping); only a value not yet there is one line */}
+      <Show when={holds()} fallback={<span class="k2-skel" aria-hidden="true" />}>
+        <span class="k2-held" aria-hidden="true">
+          {held()}
+        </span>
+        <span class="k2-skel" data-over="" aria-hidden="true" />
+      </Show>
+      <Show when={props.said !== false}>
+        <span class="k2-hidden-text">{t().loading}</span>
+      </Show>
+    </>
   );
 };
 

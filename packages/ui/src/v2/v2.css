@@ -1470,12 +1470,12 @@
 .k2-ui .k2-table[data-grid] td .k2-mark {
   vertical-align: middle;
 }
-/* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
+/* the phone form of a large table: rows of two lines, a group head as plain words with its count (spacing groups,
+   no tinted band); the table itself leaves */
 .k2-ui .k2-table-phone {
   display: none;
 }
 .k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
   height: var(--k2-h-columns);
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
@@ -2616,6 +2616,8 @@
   grid-template-columns: 16px minmax(0, 1fr) auto;
   gap: 0 8px;
   align-items: center;
+  /* the rows keep their own height inside the band's least height: the sign stands beside a single line, not below */
+  align-content: center;
   min-height: var(--k2-h-row2);
   padding: 8px var(--k2-edge);
   border-bottom: var(--k2-hairline);
@@ -3139,6 +3141,20 @@
   gap: 8px;
   outline: none;
 }
+/* On the phone the panel is a sheet, as a dialog is: the whole width at the bottom, its top corners round, as high as
+   its content up to most of the screen; a swipe down closes it. */
+.k2-ui .k2-pop[data-presentation="sheet"] {
+  position: fixed;
+  inset: auto 0 0;
+  /* as high as its content: on a touch screen core places the sheet by its top, and a bottom of 0 would squeeze it */
+  height: fit-content;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  box-shadow: var(--k2-float-large);
+}
 .k2-ui .k2-pop-title {
   margin: 0;
   padding: 0 var(--k2-edge);
@@ -3271,6 +3287,34 @@
   width: 104px;
   height: var(--k2-h-dense);
   font-variant-numeric: tabular-nums;
+}
+/* The time: hour and minute as segments in one field, each as wide as two digits; the focused one is marked like a
+   selection, the separator stays quiet. */
+.k2-ui .k2-time {
+  gap: 0;
+  cursor: text;
+}
+.k2-ui .k2-time > .k2-time-seg {
+  flex: none;
+  width: 2.4ch;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--k2-r-mark);
+  text-align: center;
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  caret-color: transparent;
+}
+.k2-ui .k2-time > .k2-time-seg:focus {
+  background: var(--k2-blue-tint);
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-time > .k2-time-seg::placeholder {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-time > .k2-time-sep {
+  color: var(--k2-subtle);
+  font: var(--k2-t-row);
 }
 .k2-ui .k2-dpick-error {
   margin: 0;
@@ -3518,6 +3562,35 @@
     border-color: var(--k2-blue);
     background: var(--k2-surface);
   }
+  /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
+     `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep
+     the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
+     way as a head with only a path does, also while its search is open: the field then lies over the content's first
+     row, so nothing below moves. */
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) {
+    height: 0;
+    padding-block: 0;
+    border-bottom: 0;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) {
+    overflow: hidden;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):has(> .k2-bar-end > .k2-input[data-search])::after {
+    content: none;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:focus-within {
+    top: calc((var(--k2-h-status) - var(--k2-h-control)) / 2);
+  }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
     height: var(--k2-h-tabs);
   }
@@ -3728,6 +3801,10 @@
   background: var(--k2-ok-tint);
   color: var(--k2-ok);
 }
+.k2-ui .k2-sign[data-tone="warn"] {
+  background: var(--k2-warn-tint);
+  color: var(--k2-warn);
+}
 /* Loading: square placeholders, each exactly one text line of its place high (20 in a row, 16 for a quiet line), so a
    placeholder row is as high as the row that replaces it; the bar of 12 px sits in the middle of that line */
 .k2-ui .k2-skel {
@@ -3749,6 +3826,24 @@
 }
 .k2-ui .k2-table td[data-align="end"] .k2-skel {
   margin-left: auto;
+}
+/* a value on its way in an inline line of facts holds a short place of its own: the line has no column to fill */
+.k2-ui .k2-facts[data-inline] .k2-skel {
+  width: 48px;
+}
+/* A value that is there while a newer one comes keeps its exact room, unseen (its lines, chips and wrapping), and the
+   bar lies over its first line, so nothing moves when the newer one comes. */
+.k2-ui .k2-held {
+  display: contents;
+  visibility: hidden;
+}
+.k2-ui :is(.k2-fact-value, .k2-cell-value, .k2-cell-meta):has(> .k2-skel[data-over]) {
+  position: relative;
+}
+.k2-ui .k2-skel[data-over] {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 /* words for assistive technology only, such as "loading" beside the placeholders */
 .k2-ui .k2-hidden-text {

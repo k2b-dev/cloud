@@ -464,7 +464,7 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
-    "line 2 of a row reaches its end, a person has the colour of their name, a notice's sign stands beside its title",
+    "line 2 of a row reaches its end, a person has the colour of their name, a notice's sign stands beside its title or its one line",
     async () => {
       const page = await open("layout");
       try {
@@ -482,6 +482,10 @@ describe("v2 primitives keep the numbers of the mockup", () => {
             notices: [...document.querySelectorAll(".k2-notice[data-title]")].map(
               (notice) => centre(notice.querySelector(":scope > .k2-icon")!) - centre(notice.querySelector(".k2-notice-title")!),
             ),
+            // a notice of one line without a title: its rows keep their height inside the band's least height
+            lines: [...document.querySelectorAll(".k2-notice:not([data-title])")].map(
+              (notice) => centre(notice.querySelector(":scope > .k2-icon")!) - centre(notice.querySelector(".k2-notice-text")!),
+            ),
           };
         });
         // line 2 is as wide as the row's text area: its right edge is the right edge of the time above it
@@ -492,6 +496,9 @@ describe("v2 primitives keep the numbers of the mockup", () => {
         // with and without deeds at the end, the sign stands on the title's line
         expect(found.notices.length).toBe(2);
         for (const offset of found.notices) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
+        // and without a title, the sign stands on its one line
+        expect(found.lines.length).toBe(1);
+        for (const offset of found.lines) expect(Math.abs(offset)).toBeLessThanOrEqual(1);
       } finally {
         await page.close();
       }

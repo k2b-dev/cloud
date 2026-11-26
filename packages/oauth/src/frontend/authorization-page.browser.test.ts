@@ -2,11 +2,11 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { sessionOriginGuard } from "@k2b/cloud/server/middleware/session-origin";
+import { loadShellAssets, openShellPage, type ShellAssets } from "@k2b/cloud/testing";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser, Page } from "playwright";
-import { hoverInPlace, launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
-import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
+import { hoverInPlace, launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { type AuthorizationState, authorizationStates, renderAuthorizationState } from "./authorization-page.test-fixture";
 
 // Every page a person sees during an authorization, as the server sends it, in a real engine with Cloud's stylesheets,
@@ -18,7 +18,7 @@ const states = Object.keys(authorizationStates) as AuthorizationState[];
 let browser: Browser;
 let assets: ShellAssets;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true });
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -27,7 +27,12 @@ afterAll(async () => {
 });
 
 const open = async (state: AuthorizationState, locale: "en" | "de", width: number) =>
-  openShellPage(browser, assets, { path: "/authorization-page", html: await renderAuthorizationState(state, locale), width });
+  openShellPage(browser, assets, {
+    errors: pageErrors,
+    path: "/authorization-page",
+    html: await renderAuthorizationState(state, locale),
+    width,
+  });
 
 /**
  * Every box in the page and the footer on the document, rounded to hundredths of a pixel: a page taller than the window
@@ -142,7 +147,7 @@ describe("OAuth authorization pages in a browser", () => {
     }
   });
 
-  for (const width of [390, 1440]) {
+  for (const width of [390, 1024, 1440]) {
     test(`every state keeps the v2 rules in both languages at ${width} px`, async () => {
       for (const state of states) {
         for (const locale of ["de", "en"] as const) {
@@ -239,7 +244,7 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
 
-    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width, at ${width} px`, async () => {
+    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width (the measure starts at 768 px), at ${width} px`, async () => {
       for (const state of ["consent", "confirm", "entry", "logout"] as const) {
         const { context, tab } = await open(state, "de", width);
         try {
@@ -257,7 +262,7 @@ describe("OAuth authorization pages in a browser", () => {
             };
           });
           const name = `${state} at ${width} px`;
-          if (width === 1440) {
+          if (width >= 768) {
             expect(page.right - page.left, name).toBeLessThanOrEqual(560);
             // centred: as much room on the left as on the right
             expect(Math.abs(page.left - (page.view - page.right)), name).toBeLessThanOrEqual(1);
@@ -279,12 +284,17 @@ describe("OAuth authorization pages in a browser", () => {
         const code = await tab.evaluate(() => {
           const element = document.querySelector('[data-testid="device-user-code"]')!;
           const look = getComputedStyle(element);
-          return { text: element.textContent, size: Number.parseFloat(look.fontSize), family: look.fontFamily, edge: look.borderTopWidth };
+          return {
+            text: element.textContent,
+            size: Number.parseFloat(look.fontSize),
+            family: look.fontFamily,
+            align: look.textAlign,
+          };
         });
         expect(code.text).toBe("WDJB-MJHT");
         expect(code.size).toBeGreaterThanOrEqual(28);
         expect(code.family).toContain("monospace");
-        expect(code.edge).toBe("1px");
+        expect(code.align).toBe("center");
       } finally {
         await context.close();
       }

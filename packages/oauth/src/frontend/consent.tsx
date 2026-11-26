@@ -9,23 +9,25 @@ import { oauth } from "../service/oauth";
 import { isConfirmedBrowserSignIn } from "../service/sign-in";
 import { AuthorizationPage } from "./_components/AuthorizationPage";
 import { ConsentDecision } from "./_components/ConsentDecision";
+import { type ErrorReason, errorPageHref } from "./error-reasons";
 import { oauthMessages } from "./messages";
 
-function localError<E extends Env>(c: Context<E>, description: string) {
-  return c.redirect(`/oauth/error?error=invalid_request&error_description=${encodeURIComponent(description)}`);
+/** The error page says the reason in the person's language by its code. */
+function refused<E extends Env>(c: Context<E>, reason: ErrorReason) {
+  return c.redirect(errorPageHref(reason));
 }
 
 /** Browser confirmation for one validated client authorization request. */
 export default ssr<AuthContext>(async (c) => {
   const { t } = oauthMessages.resolve([getLocale(c)]);
   const requestId = c.req.query("request");
-  if (!requestId) return localError(c, t.consentMissing);
+  if (!requestId) return refused(c, "consent_missing");
   const request = await oauth.consent.get(requestId);
   const user = expectUserBackedActor(c);
-  if (!request || request.userId !== user.id) return localError(c, t.consentInvalid);
+  if (!request || request.userId !== user.id) return refused(c, "consent_invalid");
   const client = await oauth.clients.getByClientId({ clientId: request.clientId });
   if (!client || (client.registrationKind !== "dynamic" && client.registrationKind !== "first_party"))
-    return localError(c, t.clientUnavailable);
+    return refused(c, "client_unavailable");
 
   const issuer = publicCloudOrigin(await get<string>("app.url"));
   const reauthenticateHref =

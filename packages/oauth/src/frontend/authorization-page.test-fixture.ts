@@ -2,9 +2,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
+import { serveCoreV2Sheet } from "@k2b/cloud/testing";
 import type { MiddlewareHandler } from "hono";
 import { createComponent } from "solid-js";
-import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Every page a person sees during an authorization, rendered as the full HTML document the SSR
@@ -142,10 +142,14 @@ export const authorizationStates = {
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",
-  error: `/oauth/error?${new URLSearchParams({ error: "access_denied", error_description: "Your account is not allowed to use this application." })}`,
+  error: "/oauth/error?error=account_not_allowed",
 } as const;
 
 export type AuthorizationState = keyof typeof authorizationStates;
+
+/** The error page for an address a sender (or anyone) wrote, in one language. */
+export const renderErrorPage = async (query: Record<string, string>, locale: "en" | "de"): Promise<string> =>
+  (await pages.request(`https://cloud.test/oauth/error?${new URLSearchParams(query)}`, { headers: { "Accept-Language": locale } })).text();
 
 /** The complete HTML document of one state in one language and theme. */
 export const renderAuthorizationState = async (

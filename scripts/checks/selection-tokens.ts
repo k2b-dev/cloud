@@ -216,11 +216,6 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
     reason: "Data: notification channel color; the chip shows the channel icon and name.",
   },
   {
-    file: "packages/oauth/src/frontend/page.tsx",
-    subject: '? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"',
-    reason: "Data: client type color; the chip names the type (public or confidential).",
-  },
-  {
     file: "packages/tools/src/frontend/tools/WebhookTester.island.tsx",
     subject: 'if (method === "GET") return "bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300";',
     reason: "Data: HTTP method color; the chip names the method.",

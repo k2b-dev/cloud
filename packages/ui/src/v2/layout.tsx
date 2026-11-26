@@ -19,7 +19,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
-import { Empty } from "./states";
+import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
@@ -337,7 +337,7 @@ export type PaneProps = {
    * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width. Only inside `Pane.Split`. */
+  /** A column that can be dragged wider: its minimum and default width (`fixed`: its width, no grip). Only inside `Pane.Split`. */
   width?: Width;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
@@ -494,7 +494,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
     const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
-    return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
+    return moving?.width && !moving.width.fixed ? { label: moving.label ?? "Column", width: moving.width } : undefined;
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
@@ -584,6 +584,12 @@ export type CellProps = {
   meta?: JSX.Element;
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
+  /**
+   * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
+   * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
+   * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   */
+  loading?: boolean;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
@@ -604,6 +610,7 @@ Cells.Cell = (props: CellProps) => {
       class="k2-cell"
       data-k2-part="Cells.Cell"
       data-open={props.href !== undefined ? "" : undefined}
+      aria-busy={props.loading ? "true" : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       <Icon name={props.icon} />
@@ -613,9 +620,17 @@ Cells.Cell = (props: CellProps) => {
       <Show when={props.href} fallback={<span />}>
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
-      <span class="k2-cell-value">{props.value}</span>
+      <span class="k2-cell-value">
+        <Show when={!props.loading} fallback={<PlaceholderValue>{props.value}</PlaceholderValue>}>
+          {props.value}
+        </Show>
+      </span>
       <Show when={meta() !== undefined}>
-        <span class="k2-cell-meta">{meta()}</span>
+        <span class="k2-cell-meta">
+          <Show when={!props.loading} fallback={<PlaceholderValue said={false}>{meta()}</PlaceholderValue>}>
+            {meta()}
+          </Show>
+        </span>
       </Show>
     </div>
   );
