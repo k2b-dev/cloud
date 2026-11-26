@@ -1,11 +1,10 @@
-import { spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import type { MiddlewareHandler } from "hono";
 import { createComponent } from "solid-js";
-import * as watcher from "../../../cloud/src/_internal/runtime-watcher";
+import { serveCoreV2Sheet } from "../../../../tests/fixtures/core-v2-sheet";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // Every page a person sees during an authorization, rendered as the full HTML document the SSR
@@ -15,7 +14,7 @@ const root = mkdtempSync(resolve(tmpdir(), "oauth-authorization-pages-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 // The registered Core serves its v2.css, as every installation from the v2 visitor pages on does: the pages link it
 // alone and draw the v2 frame (tinted page, v2 footer), the state a person sees.
-spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+serveCoreV2Sheet();
 
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
