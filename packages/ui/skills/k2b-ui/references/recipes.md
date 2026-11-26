@@ -122,8 +122,12 @@ avatars, and `Digest activity`.
 - What needs a person comes first; history comes after.
 - Area colours (`color`) mark the same area in cells, sections and groups
   (tabs carry no colour).
-- States: `empty` (a new customer), `loading` and `failed` (the history,
-  which loads on its own: its state stands in its section).
+- The data comes as one object (`Customer`); the screen only places it.
+- States: `worst` (the same customer at its limits: long compound names,
+  one letter, right-to-left and Chinese script, joined emoji, ten-digit
+  amounts, ids that cannot wrap, a deleted person), `empty` (a new
+  customer), `loading` and `failed` (the history, which loads on its own:
+  its state stands in its section).
 
 ## record-groups.tsx: a record tab with groups
 
@@ -140,7 +144,8 @@ and lists with their marks.
 
 - Never a `Group` inside a `Group`, never a line inside one.
 - "You are next" is `Chip yours`, not a red badge.
-- States: `empty`, `loading`, `failed`, in the place of the groups.
+- States: `worst` (the same tab at its limits, as in `record.tsx`),
+  `empty`, `loading`, `failed`, in the place of the groups.
 
 ## mail.tsx: a list with a reader
 
