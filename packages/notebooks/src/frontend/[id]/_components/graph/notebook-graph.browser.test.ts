@@ -191,6 +191,17 @@ for (const viewport of [
         const moved = document.querySelector('[data-k2-part="Pane"]')!.getBoundingClientRect();
         return Math.abs(notice.left + notice.width / 2 - (moved.left + moved.width / 2)) <= 2;
       });
+      // a pane the workspace puts in place of the old one is followed too
+      await page.evaluate(() => {
+        const old = document.querySelector('[data-k2-workspace] [data-k2-part="Pane"]')!;
+        old.replaceWith(old.cloneNode(true));
+      });
+      await page.evaluate(() => document.querySelector<HTMLElement>("[data-k2-workspace]")!.style.setProperty("--k2-ws-side", "248px"));
+      await page.waitForFunction(() => {
+        const notice = document.querySelector(".notebook-graph-live-notice [role=alert]")!.getBoundingClientRect();
+        const replaced = document.querySelector('[data-k2-part="Pane"]')!.getBoundingClientRect();
+        return Math.abs(notice.left + notice.width / 2 - (replaced.left + replaced.width / 2)) <= 2;
+      });
     } finally {
       await close(page);
     }
@@ -574,11 +585,19 @@ test(`${browserName}: a touch tap selects a note and Open opens it`, async () =>
 test(`${browserName}: notebooks without links and filters that leave nothing show their way out`, async () => {
   const page = await open(graphPath("free01"));
   try {
-    expect(await page.getByText("No links yet").isVisible()).toBe(true);
-    expect(await page.getByRole("link", { name: "Back to note" }).isVisible()).toBe(true);
-    expect(
-      await page.locator('[data-k2-part="Section"]', { hasText: "6 notes, not linked yet" }).locator('[data-k2-part="Row"]').count(),
-    ).toBe(6);
+    // one section says it all once: how many and that none is linked, and how to link one; the head's × is the way back
+    const section = page.locator('[data-k2-part="Section"]', { hasText: "6 notes, not linked yet" });
+    expect(await section.getByText("Insert a link to another note in the editor with /note.").isVisible()).toBe(true);
+    expect(await page.locator('[data-k2-part="Empty"]').count()).toBe(0);
+    expect(await section.locator('[data-k2-part="Row"]').count()).toBe(6);
+    expect(await head(page).getByRole("link", { name: "Close graph" }).isVisible()).toBe(true);
+    // no gap between the hint and the notes: the first row follows the section's head
+    const gap = await section.evaluate((element) => {
+      const head = element.querySelector(".k2-sec-summary")!.getBoundingClientRect();
+      const row = element.querySelector('[data-k2-part="Row"]')!.getBoundingClientRect();
+      return row.top - head.bottom;
+    });
+    expect(gap).toBeLessThanOrEqual(24);
     // without links there is nothing to filter or zoom
     expect(await whichNotes(page).count()).toBe(0);
     expect(await page.getByRole("button", { name: "Zoom in" }).count()).toBe(0);
@@ -613,17 +632,19 @@ test(`${browserName}: notebooks without links and filters that leave nothing sho
   }
 }, 30_000);
 
-test(`${browserName}: a no-links state taller than the canvas scrolls to its way back`, async () => {
+test(`${browserName}: a no-links state taller than the canvas scrolls to its last note, and the head keeps the way back`, async () => {
   const page = await open(graphPath("free01"), { width: 390, height: 300 });
   try {
     // the pane scrolls the empty state and its notes
     const empty = page.locator('[data-k2-part="Pane"] .k2-scroll');
     expect(await empty.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
-    const back = page.getByRole("link", { name: "Back to note" });
-    await back.scrollIntoViewIfNeeded();
-    const box = (await back.boundingBox())!;
+    const last = page.locator('[data-k2-part="Section"] [data-k2-part="Row"]').last();
+    await last.scrollIntoViewIfNeeded();
+    const box = (await last.boundingBox())!;
     const area = (await empty.boundingBox())!;
     expect(box.y + box.height).toBeLessThanOrEqual(area.y + area.height);
+    // the way back stays in the head, on the phone too
+    expect(await head(page).getByRole("link", { name: "Close graph" }).isVisible()).toBe(true);
   } finally {
     await close(page);
   }
@@ -1673,6 +1694,10 @@ test(`${browserName}: a list sorted by Changed shows when each note changed on a
     const rows = page.locator('[data-k2-part="Row"]').filter({ visible: true });
     await rows.first().waitFor();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    // without the columns' heads, each row starts with the note's sign and says what its counts mean
+    const first = rows.first();
+    expect(await first.locator(".notebook-graph-note-sign").count()).toBe(1);
+    expect(await first.textContent()).toMatch(/links to \d+ · linked from \d+/);
     // the list's count stands whole in the pane head, where the list replaces the display tabs; each row names its links
     const count = filters(page).locator('[data-k2-part="Text"]', { hasText: "notes" });
     expect((await count.textContent())?.trim()).toBe("49 notes");

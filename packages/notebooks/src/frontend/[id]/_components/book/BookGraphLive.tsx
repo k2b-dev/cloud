@@ -83,16 +83,25 @@ export default function BookGraphLive(props: Props) {
   };
   createEffect(() => {
     if (!failed()) return;
-    measure();
-    // the pane moves or resizes with the window and the sidebar's grip; its content changes with the list and the
-    // drawing, which can bring or take the pane's head
-    const target = pane();
+    // The pane moves or resizes with the window and the sidebar's grip; its content changes with the list and the
+    // drawing, which can bring or take the pane's head; and the workspace can put a new pane in its place. The
+    // workspace is watched, and a new pane is followed; other changes inside it (the drawing's labels) cost a compare.
     const sizes = new ResizeObserver(measure);
-    const parts = new MutationObserver(measure);
-    if (target) {
-      sizes.observe(target);
-      parts.observe(target, { childList: true });
-    }
+    let observed: HTMLElement | null = null;
+    const follow = (changes: readonly MutationRecord[] = []) => {
+      const next = pane();
+      if (next !== observed) {
+        sizes.disconnect();
+        observed = next;
+        if (next) sizes.observe(next);
+      } else if (!changes.some((change) => change.target === observed)) return;
+      measure();
+    };
+    const workspace = document.querySelector<HTMLElement>("[data-k2-workspace]");
+    const parts = new MutationObserver(follow);
+    if (workspace) parts.observe(workspace, { childList: true, subtree: true });
+    follow();
+    measure();
     window.addEventListener("resize", measure);
     onCleanup(() => {
       sizes.disconnect();

@@ -199,7 +199,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphTopLevel: "Top level",
       graphNoteCountScoped: ({ notes, total, links }: { notes: number; total: number; links: number }) =>
         `${notes} of ${total.toLocaleString("en")} notes · ${links === 1 ? "1 link" : `${links} links`}`,
-      graphNoLinksYet: "No links yet: insert a link to another note in the editor with /note.",
+      graphLinkHint: "Insert a link to another note in the editor with /note.",
       graphListCount: ({ notes }: { notes: number }) => (notes === 1 ? "1 note" : `${notes} notes`),
       graphListCountScoped: ({ notes, total }: { notes: number; total: number }) => `${notes} of ${total.toLocaleString("en")} notes`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
@@ -775,7 +775,7 @@ export const notebookWorkspaceMessages = i18n.define({
       graphTopLevel: "Oberste Ebene",
       graphNoteCountScoped: ({ notes, total, links }) =>
         `${notes} von ${total.toLocaleString("de")} Notizen · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
-      graphNoLinksYet: "Noch keine Verknüpfungen: einen Verweis auf eine andere Notiz fügst du im Editor mit /note ein.",
+      graphLinkHint: "Einen Verweis auf eine andere Notiz fügst du im Editor mit /note ein.",
       graphListCount: ({ notes }) => (notes === 1 ? "1 Notiz" : `${notes} Notizen`),
       graphListCountScoped: ({ notes, total }) => `${notes} von ${total.toLocaleString("de")} Notizen`,
       graphNoteCount: ({ notes, links }) =>

@@ -31,11 +31,13 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     return sort ? sortByChange(shown, sort === "changed" ? "desc" : "asc") : shown;
   });
   // The count and the first note it links: one line that ends at a word, never in one.
-  const related = (ids: ReadonlySet<string>) => {
-    const notes = [...ids].flatMap((id) => {
+  const shownRelated = (ids: ReadonlySet<string>) =>
+    [...ids].flatMap((id) => {
       const note = g().visibleIds().has(id) ? g().model.byId.get(id) : undefined;
       return note ? [note] : [];
     });
+  const related = (ids: ReadonlySet<string>) => {
+    const notes = shownRelated(ids);
     notes.sort((a, b) => a.order - b.order);
     if (notes.length === 0) return "–";
     const first = shortTitle(notes[0]!.title || t().untitled);
@@ -80,10 +82,16 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
       current={g().currentId() ?? undefined}
       sort={g().state().sort ? { column: 4, direction: g().state().sort === "changed" ? "descending" : "ascending" } : undefined}
       open={(note) => ({ href: g().noteHref(note.id) })}
+      // On the phone the columns' heads are gone: the row starts with the note's sign in its area's colour, and its
+      // second line says what its counts mean.
       phone={(note) => ({
-        lines: [note.title || t().untitled, related(note.out)],
+        lines: [
+          <>
+            <NoteSign slot={note.area.slot} /> {note.title || t().untitled}
+          </>,
+          t().graphLinkCounts({ out: shownRelated(note.out).length, incoming: shownRelated(note.in).length }),
+        ],
         time: changed(note),
-        marks: <AreaMark slot={note.area.slot} />,
       })}
     />
   );
