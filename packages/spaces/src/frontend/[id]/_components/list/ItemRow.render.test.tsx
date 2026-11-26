@@ -45,7 +45,7 @@ const task = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   ...overrides,
 });
 
-const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
+const renderRow = (item: SpaceItem, canWrite = true, locale = "en", columnColor: string | null = null) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -53,7 +53,7 @@ const renderRow = (item: SpaceItem, canWrite = true, locale = "en") =>
         return createComponent(ItemRow, {
           item,
           spaceId: item.spaceId,
-          columns: [{ id: "Col001", spaceId: item.spaceId, name: "To Do", color: null, rank: "1024", isDone: false }],
+          columns: [{ id: "Col001", spaceId: item.spaceId, name: "To Do", color: columnColor, rank: "1024", isDone: false }],
           tags: [],
           isSelected: false,
           baseUrl: "/app/spaces/Space1",
@@ -156,5 +156,14 @@ test("SSR renders a German all-day deadline as the same calendar day", () => {
     expect(renderRow(item, true, "de")).toBe(html);
   } finally {
     setSystemTime();
+  }
+});
+
+test("a status colour reaches the row's style only as a colour", () => {
+  expect(renderRow(task(), true, "en", "#ef4444")).toContain("background-color:#ef4444");
+  for (const color of ["#ef4444;position:fixed;inset:0", "red;background:url(https://example.org/x.png)", "#ef4444}body{display:none"]) {
+    const html = renderRow(task(), true, "en", color);
+    expect(html).not.toMatch(/position:\s*fixed|url\(|display:\s*none/);
+    expect(html).toContain("background-color:#6b7280");
   }
 });
