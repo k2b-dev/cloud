@@ -791,6 +791,18 @@ for (const viewport of [
                 option.getBoundingClientRect().right,
             ),
         ).toBe(true);
+        // where the displays keep only their symbols (the phone), the title names the chosen one in sight; on a wide
+        // Main the option shows it and the title does not repeat it
+        const named = await page.locator(".notebook-graph__title-display").isVisible();
+        expect({ name, named }).toEqual({ name, named: viewport.width < 768 });
+        if (viewport.width < 768) {
+          expect(await page.locator(".notebook-graph__title small").innerText()).toContain(name);
+          // equal parts of the row, tall enough to tap
+          const heights = await switcher
+            .locator('[role="radio"]')
+            .evaluateAll((options) => options.map((option) => option.getBoundingClientRect().height));
+          for (const height of heights) expect(height).toBeGreaterThanOrEqual(44);
+        }
       }
     } finally {
       await close(page);
@@ -1625,6 +1637,8 @@ for (const display of ["network", "neighborhood", "timeline"]) {
         }, width);
         expect(box.overflow).toBeLessThanOrEqual(0);
         expect(box.search).toBeGreaterThanOrEqual(128);
+        // the displays keep only their symbols here, so the title names the chosen one
+        expect(await page.locator(".notebook-graph__title-display").isVisible()).toBe(true);
       }
     } finally {
       await close(page);
