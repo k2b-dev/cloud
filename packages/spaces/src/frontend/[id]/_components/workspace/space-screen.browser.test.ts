@@ -49,8 +49,6 @@ const open = (view: View, address: string, state: SpaceFixtureState = "usual") =
 describe("a Space on v2", () => {
   // k2b-ui gap: on the phone the shell's Back cuts a Space name near the 100-character limit, and the floating main
   // action, which the rules require, covers a field of a long item at rest; the phone test below checks the rest.
-  // An editor sees every property row to set in place (review 26.11.), so the usual open item is long enough as well:
-  // there the floating action over a field is the one finding allowed.
   for (const view of [wide, narrow, phone])
     for (const [address, state] of [
       ["/app/spaces/Space1?view=list", "usual"],
@@ -72,19 +70,7 @@ describe("a Space on v2", () => {
         test(`${view.name} ${address.split("?")[1]} ${state}: keeps the v2 rules and shows no loading on the first picture`, async () => {
           const { context, tab, errors } = await open(view, address, state);
           try {
-            const problems = await layoutProblems(tab);
-            // The outline lists its findings as "- …" lines under "Problems (n):"; the measurements are findings each.
-            const findings = problems.flatMap((problem) =>
-              problem.includes("Problems (")
-                ? problem
-                    .slice(problem.indexOf("Problems ("))
-                    .split("\n")
-                    .filter((line) => line.startsWith("- "))
-                : [problem],
-            );
-            if (view === phone && address.includes("item="))
-              expect(findings.filter((line) => !line.startsWith('- the floating main action "New task" covers'))).toEqual([]);
-            else expect(problems).toEqual([]);
+            expect(await layoutProblems(tab)).toEqual([]);
             expect(await tab.locator('[data-k2-part="Loading"]').count()).toBe(0);
             expect(errors).toEqual([]);
           } finally {
