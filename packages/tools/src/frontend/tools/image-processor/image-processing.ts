@@ -3,6 +3,10 @@ import { PREVIEW_MAX } from "./constants";
 import { applyMarkupToImage } from "./markup";
 import type { ImageEntry } from "./types";
 
+/** The face of an image in the strip and the presets: a square cut from its middle, sharp on a dense screen. */
+export const makeThumbnail = (preview: ImgData): Promise<string> =>
+  imageTools.resize(96, 96, "cover")(preview).then(imageTools.toBase64("jpeg", 0.8));
+
 export const rotatedImageDimensions = (width: number, height: number, degrees: number) => {
   const radians = (degrees * Math.PI) / 180;
   const normalizeTrig = (value: number) => {

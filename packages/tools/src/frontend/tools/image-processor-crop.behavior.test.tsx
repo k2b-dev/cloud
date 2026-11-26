@@ -25,14 +25,22 @@ const image: ImageEntry = {
   cropBounds: { x: 0, y: 0, w: 1, h: 1 },
 };
 
+/** The DOM of a wide window: v2's dialogs and the stage ask `matchMedia` for the phone layout. */
+const harness = () => {
+  const dom = createDomTestHarness();
+  const media = () => ({ matches: true, addEventListener: () => {}, removeEventListener: () => {} });
+  Object.defineProperty(dom.window, "matchMedia", { configurable: true, value: media });
+  Object.defineProperty(globalThis, "matchMedia", { configurable: true, value: media });
+  return dom;
+};
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 const waitFor = async (condition: () => boolean) => {
   for (let attempt = 0; attempt < 100 && !condition(); attempt++) await settle();
   expect(condition()).toBe(true);
 };
+// The page takes dropped images anywhere (v2 has no drop target of its own).
 const drop = (root: HTMLElement, files: File[]) => {
-  const target = root.querySelector(".k2b-app-workspace__main");
-  if (!target) throw new Error("Image workspace missing");
+  const target = root.ownerDocument.body;
   const event = new Event("drop", { bubbles: true, cancelable: true });
   Object.defineProperty(event, "dataTransfer", {
     value: { types: ["Files"], files, items: files.map((file) => ({ kind: "file", type: file.type })) },
@@ -42,8 +50,9 @@ const drop = (root: HTMLElement, files: File[]) => {
 };
 const mockImages = (preview = async () => image.thumbUrl) => [
   spyOn(imageTools, "create").mockResolvedValue({ ...imageData, width: 48, height: 32 }),
-  spyOn(imageTools.presets, "thumbnail").mockResolvedValue(image.thumbUrl),
-  spyOn(imageTools, "toBase64").mockReturnValue(preview),
+  spyOn(imageTools, "resize").mockReturnValue(async (data: ImgData | Promise<ImgData>) => data),
+  // the stage's preview is a PNG; a thumbnail (JPEG) never waits on it
+  spyOn(imageTools, "toBase64").mockImplementation((format) => (format === "png" ? preview : async () => image.thumbUrl)),
 ];
 
 describe("Image Processor crop drag", () => {
@@ -53,13 +62,13 @@ describe("Image Processor crop drag", () => {
   }
 
   test("a crop drag holds page text selection until its pointer is released", async () => {
-    const dom = createDomTestHarness();
+    const dom = harness();
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
     const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image], initialCropActive: true }), dom.root);
     try {
       // The mount builds the preview; let it settle while the document still exists.
       while (dom.root.querySelector(".ti-loader-2")) await new Promise((resolve) => setTimeout(resolve, 0));
-      const handle = dom.root.querySelector<HTMLElement>(".cursor-nwse-resize");
+      const handle = dom.root.querySelector<HTMLElement>('[data-crop-handle="nw"]');
       if (!handle) throw new Error(dom.root.innerHTML);
       const userSelect = () => document.documentElement.style.getPropertyValue("user-select");
       const win = dom.window as unknown as { PointerEvent: typeof PointerEvent };
@@ -83,20 +92,24 @@ describe("Image Processor crop drag", () => {
   });
 
   test("the header's more menu still removes the active image", async () => {
-    const dom = createDomTestHarness();
+    const dom = harness();
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
     const second: ImageEntry = { ...image, id: "image-2", name: "receipt.png" };
     const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image, second] }), dom.root);
-    const title = () => dom.root.querySelector(".k2b-detail-panel__header h2")?.textContent;
+    // the status row above the stage names the open photo
+    const title = () => dom.root.querySelector('[data-k2-part="StatusRow"] .k2-status-lead')?.textContent;
     try {
       while (dom.root.querySelector(".ti-loader-2")) await settle();
       expect(title()).toBe("invoice.png");
-      expect(dom.root.querySelector('[aria-label="More image actions"]')).not.toBeNull();
-      const remove = Array.from(dom.root.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+      const more = dom.root.querySelector<HTMLButtonElement>('button[aria-label="More image actions"]');
+      if (!more) throw new Error("The head has no more menu");
+      more.click();
+      await settle();
+      const remove = Array.from(dom.document.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
         (item) => item.textContent?.trim() === "Remove image",
       );
       if (!remove) throw new Error("Remove image is missing from the more menu");
-      expect(remove.disabled).toBe(false);
+      expect(remove.getAttribute("aria-disabled")).not.toBe("true");
       remove.click();
       await waitFor(() => title() === "receipt.png");
       // Let the preview of the next image finish building while the document still exists.
@@ -108,44 +121,25 @@ describe("Image Processor crop drag", () => {
     }
   });
 
-  test("below the desktop width a failed file closes the inspector that would cover the failure notice", async () => {
-    const dom = createDomTestHarness();
-    Object.defineProperty(dom.window, "matchMedia", {
-      configurable: true,
-      value: () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }),
-    });
+  test("a file that fails beside an open photo says why in the inspector, and can be hidden", async () => {
+    const dom = harness();
     const mocks = [...mockImages(), spyOn(defaultDeps, "decodeNative").mockRejectedValue(new Error("Damaged PNG"))];
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
-    const { AppWorkspace } = await import("@k2b/ui");
-    const dispose = render(
-      () =>
-        createComponent(AppWorkspace, {
-          get children() {
-            return createComponent(AppWorkspace.Content, {
-              get children() {
-                return createComponent(ImageProcessorView, { initialImages: [image] });
-              },
-            });
-          },
-        }),
-      dom.root,
-    );
-    const inspector = () => dom.root.querySelector("#k2b-workspace-detail-image-processor-inspector");
+    const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image] }), dom.root);
+    const notices = () => Array.from(dom.root.querySelectorAll('[data-k2-part="Notice"]'));
     try {
       await settle();
-      expect(inspector()?.hasAttribute("hidden")).toBe(false);
       drop(dom.root, [new File(["x"], "broken.png", { type: "image/png" })]);
-      await waitFor(() => !!dom.root.querySelector('[aria-label="Files that could not be added"]'));
-      expect(dom.root.querySelector('[aria-label="Files that could not be added"]')?.textContent).toContain("broken.png");
-      expect(inspector()?.hasAttribute("hidden")).toBe(true);
-      // The failure stays exposed until the person explicitly requests controls.
+      await waitFor(() => notices().some((notice) => notice.textContent?.includes("broken.png")));
+      const notice = notices().find((each) => each.textContent?.includes("broken.png"))!;
+      expect(notice.closest('[aria-label="Image controls"]')).not.toBeNull();
+      expect(notice.textContent).toContain("This image could not be read.");
+      Array.from(notice.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("Hide broken.png"))!
+        .click();
       await settle();
-      expect(inspector()?.hasAttribute("hidden")).toBe(true);
-      const toggle = dom.root.querySelector<HTMLButtonElement>("[data-app-workspace-detail-toggle]")!;
-      expect(toggle.disabled).toBe(false);
-      toggle.click();
-      expect(inspector()?.hasAttribute("hidden")).toBe(false);
-      expect(dom.root.querySelector('[aria-label="Files that could not be added"]')?.textContent).toContain("broken.png");
+      expect(notices().some((each) => each.textContent?.includes("broken.png"))).toBe(false);
+      await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
     } finally {
       dispose();
       for (const mock of mocks) mock.mockRestore();
@@ -154,28 +148,22 @@ describe("Image Processor crop drag", () => {
   });
 
   test("files dropped during crop get visible per-file refusals, cleared by the next fresh load", async () => {
-    const dom = createDomTestHarness();
+    const dom = harness();
     const mocks = [...mockImages(), spyOn(defaultDeps, "decodeNative").mockResolvedValue({ width: 1200, height: 800 })];
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
     const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image], initialCropActive: true }), dom.root);
     try {
       await settle();
       drop(dom.root, [new File([], "later.png", { type: "image/png" }), new File([], "also-later.png", { type: "image/png" })]);
-      const notice = dom.root.querySelector('[aria-label="Files that could not be added"]');
-      expect(notice?.closest(".k2b-app-workspace__main")).not.toBeNull();
-      expect(notice?.textContent).toContain("later.png");
-      expect(notice?.textContent).toContain("also-later.png");
-      expect(notice?.querySelectorAll("li")).toHaveLength(2);
-      for (const item of notice!.querySelectorAll("li")) {
-        expect(item.textContent).toContain("Apply or cancel the crop before adding images");
-        // The name line and the reason line; a crop refusal has no extra hint.
-        expect(item.querySelectorAll("p")).toHaveLength(2);
-        expect(item.querySelector(".text-dimmed")).toBeNull();
-      }
+      // one notice per refused file, each with its name and what to do
+      const notices = Array.from(dom.root.querySelectorAll('[data-k2-part="Notice"]'));
+      expect(notices).toHaveLength(2);
+      expect(notices[0]!.textContent).toContain("later.png: Apply or cancel the crop before adding images");
+      expect(notices[1]!.textContent).toContain("also-later.png: Apply or cancel the crop before adding images");
       const cancel = Array.from(dom.root.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Cancel");
       cancel!.click();
       drop(dom.root, [new File([], "fresh.png", { type: "image/png" })]);
-      expect(dom.root.querySelector('[aria-label="Files that could not be added"]')).toBeNull();
+      expect(dom.root.querySelector('[data-k2-part="Notice"]')).toBeNull();
       await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
     } finally {
       dispose();
@@ -185,7 +173,7 @@ describe("Image Processor crop drag", () => {
   });
 
   test("queues drops in order, counts queued files, and retains failures only for the running load", async () => {
-    const dom = createDomTestHarness();
+    const dom = harness();
     const files = ["first.png", "second.png", "third.png", "fourth.png", "fresh.png"].map(
       (name) => new File([], name, { type: "image/png" }),
     );
@@ -212,7 +200,10 @@ describe("Image Processor crop drag", () => {
         }),
       dom.root,
     );
-    const notice = () => dom.root.querySelector('[aria-label="Files that could not be added"]');
+    const notice = () => {
+      const all = Array.from(dom.root.querySelectorAll('[data-k2-part="Notice"]'));
+      return all.length ? { textContent: all.map((each) => each.textContent).join(" ") } : null;
+    };
     try {
       await settle();
       drop(dom.root, files.slice(0, 2));
@@ -240,10 +231,11 @@ describe("Image Processor crop drag", () => {
       await waitFor(() => started.length === 4);
       gates[3]!.resolve({ width: 1200, height: 800 });
       await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
-      expect(Array.from(dom.root.querySelectorAll<HTMLButtonElement>("nav button[title]")).map((button) => button.title)).toEqual([
-        "second.png",
-        "fourth.png",
-      ]);
+      expect(
+        Array.from(dom.root.querySelectorAll<HTMLButtonElement>('nav[aria-label="Images"] button[aria-label^="Open"]')).map(
+          (button) => button.title,
+        ),
+      ).toEqual(["second.png", "fourth.png"]);
       drop(dom.root, [files[4]!]);
       expect(notice()).toBeNull();
       gates[4]!.resolve({ width: 1200, height: 800 });
