@@ -21,24 +21,23 @@ import SpeedTest from "../tools/SpeedTest.island";
 import UuidGenerator from "../tools/UuidGenerator.island";
 import WebhookTester, { parseWebhookTesterState, type WebhookTesterInitialState } from "../tools/WebhookTester.island";
 
-const toolComponents: Record<
-  string,
-  (props: {
-    speedtestConfig?: { server: string; enabled: boolean };
-    webhookState?: WebhookTesterInitialState;
-    baseHref?: string;
-  }) => JSX.Element
-> = {
+type ToolProps = {
+  speedtestConfig?: { server: string; enabled: boolean };
+  webhookState?: WebhookTesterInitialState;
+  baseHref?: string;
+};
+
+const toolComponents: Record<string, (props: ToolProps) => JSX.Element> = {
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
-  speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   webhooks: (props) => <WebhookTester initialState={props.webhookState} baseHref={props.baseHref} />,
 };
 
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
-const v2Tools: Partial<Record<string, () => JSX.Element>> = {
+const v2Tools: Partial<Record<string, (props: ToolProps) => JSX.Element>> = {
+  speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
   password: () => <PasswordGenerator />,
   uuid: () => <UuidGenerator />,
   lorem: () => <LoremIpsumGenerator />,
@@ -70,7 +69,7 @@ export default ssr<AuthContext>(async (c) => {
   if (v2)
     return () => (
       <Layout c={c} fullWidth ui="v2" title={breadcrumbs}>
-        {v2()}
+        {v2({ speedtestConfig, webhookState, baseHref: `/tools/${tool.id}` })}
       </Layout>
     );
 

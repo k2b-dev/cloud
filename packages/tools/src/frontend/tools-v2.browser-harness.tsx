@@ -10,6 +10,7 @@ import LoremIpsumGenerator from "./tools/LoremIpsumGenerator.island";
 import MailtoGenerator from "./tools/MailtoGenerator.island";
 import PasswordGenerator from "./tools/PasswordGenerator.island";
 import QrCodeGenerator from "./tools/QrCodeGenerator.island";
+import SpeedTest from "./tools/SpeedTest.island";
 import UuidGenerator from "./tools/UuidGenerator.island";
 
 // One Tools screen on v2 per address: `?screen=catalog` (with `q`), or a tool id.
@@ -24,6 +25,7 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   mailto: () => <MailtoGenerator />,
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
+  speedtest: () => <SpeedTest server="https://speedtest.example.test" enabled />,
 };
 
 const params = new URL(location.href).searchParams;
