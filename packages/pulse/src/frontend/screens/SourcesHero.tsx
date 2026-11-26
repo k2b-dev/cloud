@@ -1,86 +1,101 @@
 import { useLocale } from "@k2b/ui";
-import { Cells, Chip, Inline, Text } from "@k2b/ui/v2";
-import { FETCH_BUCKET_MINUTES, type SourceFigures } from "../../contracts";
+import { Band, Canvas } from "@k2b/ui/v2";
+import type { SourceFigures } from "../../contracts";
 import { useScreenMessages } from "./messages";
-
-/** Pulse's own colour, for the figure that matters today. */
-const PULSE = "#1e40af";
+import { type HeroException, SourcesHeroDrawing } from "./sources-drawings";
 
 /**
- * The one statement of the sources page (identity B, rule 1): the values that came in today, beside it the real trend
- * of today's fetches per hour, and the exceptions as "● number word · who". One slot: it becomes the shared hero band
- * once @k2b/ui has it, without the page changing around it.
+ * The one statement of the sources page (identity B, rule 1): the values that came in today, beside it today's
+ * fetches per ten minutes (red where one failed), and under both the exceptions as "● number word · who". One slot:
+ * the Band with its drawing becomes the shared hero band once @k2b/ui has it, without the page changing around it.
  */
-export function SourcesHero(props: { figures: SourceFigures; loading: boolean; failingHref?: string }) {
+export function SourcesHero(props: {
+  figures: SourceFigures;
+  /** The clock time now in the base's zone, the chart's end. */
+  now: string;
+  /** A time as its clock time in the base's zone, for "seit 10:40". */
+  clock: (value: string) => string;
+  /** The base's alerts that need a look, as one exception that opens their list. */
+  alerts?: { count: number; name: string; critical: boolean; href: string };
+}) {
   const words = useScreenMessages();
   const locale = useLocale();
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const fetches = () => props.figures.fetchesToday;
-  // today's fetches per hour, oldest first: the buckets of an hour summed, the running hour as far as it got
-  const hourly = () => {
-    const perHour = 60 / FETCH_BUCKET_MINUTES;
-    const buckets = fetches()?.buckets ?? [];
-    return Array.from({ length: Math.ceil(buckets.length / perHour) }, (_, hour) =>
-      buckets.slice(hour * perHour, (hour + 1) * perHour).reduce((sum, bucket) => sum + bucket.ok + bucket.failed, 0),
-    );
+  const paused = () => props.figures.total - props.figures.active;
+  const delivering = () => Math.max(0, props.figures.active - props.figures.failingCount - props.figures.waiting);
+  const exceptions = (): HeroException[] => {
+    const first = props.figures.failing[0];
+    const failing: HeroException[] =
+      props.figures.failingCount > 0
+        ? [
+            {
+              tone: "bad",
+              count: number(props.figures.failingCount),
+              word: words().errorWord,
+              meta: first
+                ? [
+                    first.since ? words().failingSince({ name: first.name, time: props.clock(first.since) }) : first.name,
+                    props.figures.failingCount > 1 ? `+${number(props.figures.failingCount - 1)}` : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")
+                : undefined,
+            },
+          ]
+        : [];
+    const resting = paused() + props.figures.waiting;
+    const alerts: HeroException[] = props.alerts
+      ? [
+          {
+            tone: props.alerts.critical ? "bad" : "warn",
+            count: number(props.alerts.count),
+            word: words().alertsWord,
+            meta: props.alerts.count > 1 ? `${props.alerts.name} +${number(props.alerts.count - 1)}` : props.alerts.name,
+            href: props.alerts.href,
+          },
+        ]
+      : [];
+    return [
+      { tone: "ok", count: number(delivering()), word: words().deliverWord },
+      ...failing,
+      ...alerts,
+      ...(resting > 0
+        ? [
+            {
+              tone: "off" as const,
+              count: number(resting),
+              word: words().restWord,
+              meta: [
+                paused() > 0 ? words().pausedCount({ count: number(paused()) }) : "",
+                props.figures.waiting > 0 ? words().newCount({ count: number(props.figures.waiting) }) : "",
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            },
+          ]
+        : []),
+    ];
   };
-  const delivering = () => Math.max(0, props.figures.active - props.figures.failingCount);
-  const resting = () => props.figures.total - props.figures.active;
   return (
-    <Cells>
-      <Cells.Cell
-        icon="activity-heartbeat"
-        color={PULSE}
-        label={words().todayCell}
-        value={props.figures.today === null ? "—" : number(props.figures.today)}
-        meta={words().sinceMidnightSeries({ series: number(props.figures.series) })}
-        loading={props.loading}
-      />
-      <Cells.Cell
-        icon="refresh"
-        color={PULSE}
-        label={words().fetchesTodayCell}
-        value={fetches() ? words().fetchesOk({ count: number(fetches()!.ok) }) : "—"}
-        meta={
-          fetches()?.failed ? <Text tone="bad">{words().fetchesFailed({ count: number(fetches()!.failed) })}</Text> : words().noneFailed
-        }
-        trend={
-          fetches() && hourly().some((value) => value > 0)
-            ? {
-                values: hourly(),
-                label: words().fetchesTrend({ ok: number(fetches()!.ok), failed: number(fetches()!.failed) }),
-              }
-            : undefined
-        }
-        loading={props.loading}
-      />
-      <Cells.Cell
-        icon="list-check"
-        label={words().stateCell}
-        // what delivers and what rests in one statement; under it only the failures carry a colour, with the name
-        value={
-          resting() > 0
-            ? `${words().delivering({ count: number(delivering()) })} · ${words().resting({ count: number(resting()) })}`
-            : words().delivering({ count: number(delivering()) })
-        }
-        meta={
-          props.figures.failingCount > 0 ? (
-            <Inline>
-              {/* the count in its colour as a whole word, the name after it as text that may give way */}
-              <Chip status="bad">{words().errorsCount({ count: number(props.figures.failingCount) })}</Chip>
-              <Text muted>
-                {props.figures.failingCount > 1
-                  ? `${props.figures.failing[0]?.name ?? ""} +${number(props.figures.failingCount - 1)}`
-                  : (props.figures.failing[0]?.name ?? "")}
-              </Text>
-            </Inline>
-          ) : (
-            words().noErrors
-          )
-        }
-        href={props.failingHref}
-        loading={props.loading}
-      />
-    </Cells>
+    <Band label={words().todayCell}>
+      <Canvas label={words().todayCell}>
+        <SourcesHeroDrawing
+          figure={props.figures.today === null ? "—" : number(props.figures.today)}
+          label={words().todayCell}
+          meta={words().sinceMidnightSeries({ series: number(props.figures.series) })}
+          buckets={fetches()?.buckets ?? []}
+          start="00:00"
+          caption={
+            fetches() ? words().fetchesCaption({ ok: number(fetches()!.ok), failed: number(fetches()!.failed) }) : words().fetchesUnknown
+          }
+          end={props.now}
+          chartLabel={
+            fetches() ? words().fetchesTrend({ ok: number(fetches()!.ok), failed: number(fetches()!.failed) }) : words().fetchesUnknown
+          }
+          exceptions={exceptions()}
+        />
+      </Canvas>
+    </Band>
   );
 }

@@ -1,32 +1,57 @@
 import { sql } from "@k2b/cloud";
-import { FETCH_BUCKET_MINUTES, FETCH_TICKS, type FetchesToday, type FetchSlot } from "../contracts";
+import { err, fail, ok, type Result } from "@k2b/cloud/server";
+import { FETCH_BUCKET_MINUTES, FETCH_TICKS, type FetchesToday, type FetchMinute, type FetchSlot, SOURCE_HOUR_MINUTES } from "../contracts";
+import { type AccessScope, requireBaseAccess } from "./access-control";
 import { sqlAdmission } from "./sql-admission";
 
 /**
- * The last FETCH_TICKS minutes of each metrics source's fetches, one slot per minute, oldest first: "ok" when every
- * fetch of that minute succeeded, "bad" when one failed, "none" when there was none. One read for all given sources;
- * the caller has required read access to their base. Push sources record no fetches and get none.
+ * The last `minutes` minutes of each given source's fetches, one slot per minute, oldest first: "ok" when every fetch
+ * of that minute succeeded, "bad" when one failed, "none" when there was none, with the values those fetches brought.
+ * One read for all given sources through the (source_id, started_at) index; the caller has required read access to
+ * their base. Push sources record no fetches and get only empty minutes.
  */
-export const fetchTicks = async (sourceIds: readonly string[], now: Date): Promise<Map<string, FetchSlot[]>> => {
+export const fetchMinutes = async (sourceIds: readonly string[], now: Date, minutes: number): Promise<Map<string, FetchMinute[]>> => {
   if (sourceIds.length === 0) return new Map();
-  const rows = await sql<{ source_id: string; ago: number; ok: boolean }[]>`
+  const rows = await sql<{ source_id: string; ago: number; ok: boolean; values: number }[]>`
     SELECT source_id::text AS source_id,
       floor(extract(epoch FROM (${now}::timestamptz - started_at)) / 60)::int AS ago,
-      bool_and(success) AS ok
+      bool_and(success) AS ok,
+      sum(metrics_count + events_count + states_count)::int AS values
     FROM pulse.source_scrapes
     WHERE source_id = ANY(${sql.array([...sourceIds], "UUID")})
-      AND started_at > ${now}::timestamptz - make_interval(mins => ${FETCH_TICKS})
+      AND started_at > ${now}::timestamptz - make_interval(mins => ${minutes})
       AND started_at <= ${now}::timestamptz
     GROUP BY 1, 2
   `;
-  const ticks = new Map<string, FetchSlot[]>();
+  const result = new Map<string, FetchMinute[]>();
   for (const row of rows) {
-    if (row.ago < 0 || row.ago >= FETCH_TICKS) continue;
-    const slots = ticks.get(row.source_id) ?? Array.from({ length: FETCH_TICKS }, (): FetchSlot => "none");
-    slots[FETCH_TICKS - 1 - row.ago] = row.ok ? "ok" : "bad";
-    ticks.set(row.source_id, slots);
+    if (row.ago < 0 || row.ago >= minutes) continue;
+    const slots = result.get(row.source_id) ?? Array.from({ length: minutes }, (): FetchMinute => ({ slot: "none", values: 0 }));
+    slots[minutes - 1 - row.ago] = { slot: row.ok ? "ok" : "bad", values: row.values };
+    result.set(row.source_id, slots);
   }
-  return ticks;
+  return result;
+};
+
+/** The last FETCH_TICKS minutes of each metrics source's fetches, as the list shows them. */
+export const fetchTicks = async (sourceIds: readonly string[], now: Date): Promise<Map<string, FetchSlot[]>> =>
+  new Map([...(await fetchMinutes(sourceIds, now, FETCH_TICKS))].map(([id, minutes]) => [id, minutes.map((minute) => minute.slot)]));
+
+/** One source's last SOURCE_HOUR_MINUTES minutes: values per minute and whether its fetches worked, for its detail. */
+export const sourceHour = async (params: {
+  baseId: string;
+  sourceId: string;
+  user: AccessScope;
+  now?: Date;
+}): Promise<Result<FetchMinute[]>> => {
+  const access = await requireBaseAccess(params.baseId, params.user, "read");
+  if (!access.ok) return fail(access.error);
+  // the source must belong to the base the access was checked for
+  const [source] = await sql<{ id: string }[]>`
+    SELECT id FROM pulse.sources WHERE id = ${params.sourceId}::uuid AND base_id = ${params.baseId}::uuid AND NOT deleted`;
+  if (!source) return fail(err.notFound("Source"));
+  const minutes = await fetchMinutes([params.sourceId], params.now ?? new Date(), SOURCE_HOUR_MINUTES);
+  return ok(minutes.get(params.sourceId) ?? Array.from({ length: SOURCE_HOUR_MINUTES }, (): FetchMinute => ({ slot: "none", values: 0 })));
 };
 
 /**

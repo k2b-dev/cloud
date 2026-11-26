@@ -13,6 +13,7 @@ import {
   updateBase,
   updateBaseAccess,
 } from "./base-management";
+import { sourceHour } from "./fetch-timeline";
 import { ingestBatch, ingestByApiKey } from "./ingest-writer";
 import { runMetricsSourceScrape } from "./metrics-scraper";
 import {
@@ -68,6 +69,7 @@ export const pulseService = {
     figures: sourceFigures,
     get: getSource,
     scrapes: listSourceScrapes,
+    hour: sourceHour,
     apiKeys: {
       list: listSourceApiKeys,
       create: createSourceApiKey,

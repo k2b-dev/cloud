@@ -5,8 +5,10 @@ import { text } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
   Button,
+  Canvas,
   Chip,
   Dialog,
   Empty,
@@ -30,7 +32,7 @@ import {
 import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { AlertRule } from "../../alert-contracts";
-import type { PulseBaseRead, PulseSource, PulseSourceScrape } from "../../contracts";
+import type { FetchMinute, FetchSlot, PulseBaseRead, PulseSource } from "../../contracts";
 import { localizedSourceError } from "../../messages";
 import type { AlertAttention } from "../../service/base-attention";
 import { jsonFetch } from "../http";
@@ -48,6 +50,7 @@ import BaseFrame, { baseHref } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
 import { EditSourceDialog, NewSourceDialog } from "./SourceDialogs";
 import { SourcesHero } from "./SourcesHero";
+import { FetchLogDrawing, FetchTicksDrawing, SourceHourDrawing } from "./sources-drawings";
 
 export type SourcesScreenProps = PulseWorkspaceProps & {
   /** `?q=`: the words the source list is filtered by. */
@@ -58,6 +61,22 @@ export type SourcesScreenProps = PulseWorkspaceProps & {
 
 type Words = ReturnType<ReturnType<typeof usePulseMessages>>;
 
+const stateWord = (source: PulseSource, t: Words) => {
+  const status = sourceStatus(source, t);
+  const tone = { ok: "ok", warning: "warn", error: "bad", neutral: undefined } as const;
+  const kind = tone[status.tone];
+  return (
+    <Inline>
+      <Text tone={kind} muted={kind === undefined}>
+        ●
+      </Text>
+      <Text tone={kind === "ok" ? undefined : kind} muted={kind === undefined} weight={kind === "ok" ? undefined : "medium"}>
+        {status.label}
+      </Text>
+    </Inline>
+  );
+};
+
 const statusChip = (source: PulseSource, t: Words) => {
   const status = sourceStatus(source, t);
   const tone = { ok: "ok", warning: "warn", error: "bad", neutral: undefined } as const;
@@ -65,19 +84,6 @@ const statusChip = (source: PulseSource, t: Words) => {
   // A source that delivers says so quietly, without colour (identity B, rule 7); only a problem gets colour.
   if (kind === "ok") return <Text>{status.label}</Text>;
   return kind ? <Chip status={kind}>{status.label}</Chip> : <Chip>{status.label}</Chip>;
-};
-
-/** Fetches newest first, with failures of the same kind in a row folded into one run. */
-const scrapeRuns = (scrapes: readonly PulseSourceScrape[]) => {
-  const runs: { first: PulseSourceScrape; last: PulseSourceScrape; count: number }[] = [];
-  for (const scrape of scrapes) {
-    const previous = runs.at(-1);
-    if (previous && !scrape.success && !previous.first.success && previous.first.errorMessage === scrape.errorMessage) {
-      previous.last = scrape;
-      previous.count += 1;
-    } else runs.push({ first: scrape, last: scrape, count: 1 });
-  }
-  return runs;
 };
 
 /** An address that may break after each of its slashes, so it wraps at its segments and never inside a word. */
@@ -120,6 +126,12 @@ export default function SourcesScreen(props: SourcesScreenProps) {
   const toast = useToast();
   const baseId = props.initialBaseId;
   const selectedSourceId = () => props.initialRouteState.sourceId;
+  // the fetches of the last minutes in words, for assistive technology
+  const fetchesLabel = (slots: readonly FetchSlot[]) =>
+    words().fetchesSlots({
+      ok: number(slots.filter((slot) => slot === "ok").length),
+      failed: number(slots.filter((slot) => slot === "bad").length),
+    });
   // the phone's second line: the kind, and today's values (the state stands as a chip at its end)
   const phoneLine = (source: PulseSource) =>
     [
@@ -325,8 +337,18 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             {(all) => (
               <SourcesHero
                 figures={all()}
-                loading={refreshing()}
-                failingHref={all().failingCount === 1 ? sourceHref(all().failing[0]!) : undefined}
+                now={compactDate(props.initialNow, dateContext())}
+                clock={(value) => compactDate(value, dateContext())}
+                alerts={
+                  alerts().length > 0
+                    ? {
+                        count: alerts().length,
+                        name: alerts()[0]!.name,
+                        critical: alerts().some((alert) => alert.severity === "critical" || alert.state === "error"),
+                        href: buildPulseWorkspaceHref({ baseId, state: { view: "sources", alertId: alerts()[0]!.reference } }),
+                      }
+                    : undefined
+                }
               />
             )}
           </Show>
@@ -370,7 +392,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               </Notice>
             )}
           </Show>
-          <Show when={alerts().length > 0}>
+          {/* the alerts stand as one exception in the hero; their list with its deeds opens from there (and from an
+              alert's notification), so it never stands as a block above the sources */}
+          <Show when={alerts().length > 0 && props.initialRouteState.alertId}>
             <FiredAlerts
               alerts={alerts()}
               selected={props.initialRouteState.alertId}
@@ -398,28 +422,42 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               // a source that delivers needs no word; a failing or paused one shows its state in colour and word
               marks: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
-            // identity B: one line per source with its name, its state (quiet when it delivers) and today's values; the
-            // fetches of the last 30 minutes join as the one column over time once @k2b/ui has ticks. Kind, endpoint
-            // and last data stand in the detail, and on the phone in the second line.
+            // identity B (study Pulse B): one line per source with its name, its state as dot and word, its fetches of the
+            // last 30 minutes as the one column over time, and today's values. Kind, endpoint and last data stand in the
+            // detail, and on the phone in the second line.
             columns={[
               {
                 title: t().source,
                 width: { min: 200, default: 320 },
                 mark: sourceMark,
-                cell: (source) => source.name,
+                cell: (source) => <Text weight="strong">{source.name}</Text>,
               },
               {
                 title: words().sourceStatusColumn,
                 width: { min: 130, default: 150 },
-                cell: (source) => statusChip(source, t()),
+                cell: (source) => stateWord(source, t()),
+              },
+              {
+                title: words().fetchesColumn,
+                width: { min: 130, default: 140 },
+                drop: true,
+                // drawn in a Canvas until @k2b/ui has Ticks; push sources record no fetches and leave it empty
+                cell: (source) =>
+                  source.fetches ? (
+                    <Canvas label={words().fetchesOf({ name: source.name })}>
+                      <FetchTicksDrawing slots={source.fetches} label={fetchesLabel(source.fetches)} />
+                    </Canvas>
+                  ) : (
+                    ""
+                  ),
               },
               {
                 title: words().dataColumn,
                 align: "end",
-                width: { min: 100, default: 120 },
+                width: { min: 100, default: 108 },
                 drop: true,
-                // one figure for every kind of source, so the column compares like with like
-                cell: (source) => (source.todayCount == null ? "—" : number(source.todayCount)),
+                // one figure for every kind of source, so the column compares like with like; none today is a dash
+                cell: (source) => (source.todayCount ? number(source.todayCount) : "–"),
               },
             ]}
           />
@@ -449,6 +487,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
               clock={(value) => compactDate(value, dateContext())}
               loading={loading() || writeBlocked()}
               scrapes={queries.currentDetail()?.scrapes ?? []}
+              minutes={queries.currentDetail()?.minutes ?? []}
+              now={props.initialNow}
+              timeZone={dateContext().timeZone}
               apiKeys={queries.currentDetail()?.apiKeys ?? []}
               closeHref={listHref()}
               edit={() => {
@@ -562,6 +603,12 @@ function SourceDetail(props: {
   loading: boolean;
   scrapes: import("../../contracts").PulseSourceScrape[];
   apiKeys: import("@k2b/cloud/access/ui").ResourceApiKey[];
+  /** A metrics source's last hour per minute, oldest first. */
+  minutes: FetchMinute[];
+  /** Now, for the hour's end. */
+  now: string;
+  /** The base's zone, in which the fetches' times stand. */
+  timeZone?: string;
   closeHref: string;
   edit: () => void;
   toggle: () => void;
@@ -578,16 +625,65 @@ function SourceDetail(props: {
   const source = () => props.source;
   const status = () => source().status;
   const command = () => curlExample(props.origin);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  // what the source is, in one line: its kind, how often it is read, how many series it fills
+  const metaLine = () =>
+    [
+      source().kind === "metrics" ? t().metricsEndpoint : t().httpIngest,
+      source().kind === "metrics" ? t().scrapeEvery({ seconds: source().scrapeIntervalSeconds ?? 60 }) : "",
+      words().seriesShort({ count: number(source().seriesCount ?? 0) }),
+      !status().lastError && status().newestDataAt ? words().lastValuesAt({ time: props.when(status().newestDataAt!) }) : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  // the failures at the head of the fetches, newest first, that end now
+  const failedInARow = () => {
+    let count = 0;
+    for (const scrape of props.scrapes) {
+      if (scrape.success) break;
+      count += 1;
+    }
+    return count;
+  };
+  const hourStart = () => props.clock(new Date(Date.parse(props.now) - (props.minutes.length - 1) * 60_000).toISOString());
+  const hourLabel = () =>
+    words().hourLabel({
+      values: number(props.minutes.reduce((sum, minute) => sum + minute.values, 0)),
+      failed: number(props.minutes.filter((minute) => minute.slot === "bad").length),
+    });
+  // the newest fetches one per line: when, what came or why not, how long it took
+  const logRows = () =>
+    props.scrapes.slice(0, 5).map((scrape) => ({
+      time: new Intl.DateTimeFormat(locale(), {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+        timeZone: props.timeZone,
+      }).format(new Date(scrape.startedAt)),
+      failed: !scrape.success,
+      result: scrape.success ? words().metricsCount({ count: number(scrape.metrics) }) : shortError(scrape.errorMessage),
+      duration:
+        scrape.durationMs >= 1000
+          ? `${new Intl.NumberFormat(locale(), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(scrape.durationMs / 1000)} s`
+          : `${number(scrape.durationMs)} ms`,
+    }));
+  const shortError = (message: string | null) =>
+    !message
+      ? words().failedShort
+      : /timed out/.test(message)
+        ? words().timeoutShort
+        : (/returned HTTP (\d{3})/.exec(message)?.[1] ?? null)
+          ? `HTTP ${/returned HTTP (\d{3})/.exec(message)![1]}`
+          : words().failedShort;
   const deeds = (): MenuEntry[] => [
+    { label: t().edit, icon: "pencil", disabled: props.loading, onClick: props.edit },
     {
       label: source().enabled ? t().pause : t().resume,
       icon: source().enabled ? "player-pause" : "player-play",
       disabled: props.loading,
       onClick: props.toggle,
     },
-    ...(source().kind === "metrics"
-      ? [{ label: t().scrape, icon: "refresh", disabled: props.loading || !source().enabled, onClick: props.scrape }]
-      : []),
     ...(cloudId.available()
       ? [
           {
@@ -607,13 +703,6 @@ function SourceDetail(props: {
       value: atSegments(source().kind === "metrics" ? (source().endpointUrl ?? t().noEndpoint) : `POST ${props.origin}/api/pulse/ingest`),
       copy: source().kind === "metrics" ? (source().endpointUrl ?? undefined) : `${props.origin}/api/pulse/ingest`,
     },
-    // an error stands once, in its notice above the facts
-    ...(status().lastError ? [] : [{ label: words().sourceStatusColumn, value: statusChip(source(), t()) }]),
-    { label: t().newestData, value: status().newestDataAt ? props.when(status().newestDataAt!) : t().noDataYet },
-    // the last contact is worth a line only where it differs from the newest data
-    ...(source().lastSeenAt && source().lastSeenAt !== status().newestDataAt
-      ? [{ label: t().lastSeen, value: props.when(source().lastSeenAt!) }]
-      : []),
     ...(source().kind === "metrics"
       ? [
           { label: t().interval, value: t().scrapeEvery({ seconds: source().scrapeIntervalSeconds ?? 60 }) },
@@ -655,6 +744,10 @@ function SourceDetail(props: {
           },
         ]
       : []),
+    {
+      label: words().created,
+      value: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date(source().createdAt)),
+    },
   ];
   return (
     <Pane
@@ -672,9 +765,11 @@ function SourceDetail(props: {
           }
           end={
             <>
-              <Button icon="pencil" keep disabled={props.loading} onClick={props.edit}>
-                {t().edit}
-              </Button>
+              <Show when={source().kind === "metrics"}>
+                <Button icon="refresh" keep disabled={props.loading || !source().enabled} onClick={props.scrape}>
+                  {words().fetchNow}
+                </Button>
+              </Show>
               <Menu label={t().moreSourceActions} items={deeds()} />
               <Button variant="ghost" icon="x" label={t().closeSourceDetails} href={props.closeHref} />
             </>
@@ -682,28 +777,52 @@ function SourceDetail(props: {
         />
       }
     >
-      {/* the failure is the first thing the open source says: a row with its colour, symbol and word, the detail under it */}
-      <Show when={status().lastError}>
-        {(error) => (
-          <List label={t().error}>
-            <Row
-              mark={{ icon: "alert-circle", color: "#dc2626" }}
-              lines={[
-                status().lastErrorAt ? words().fetchFailingSince({ time: props.when(status().lastErrorAt!) }) : words().fetchFailing,
-                localizedSourceError(error(), t()) ?? "",
-              ]}
-            />
-          </List>
-        )}
-      </Show>
+      {/* the head of the open source (identity B): what it is in one line and, when it fails, the cause in red right
+          there; it becomes the tinted object head once @k2b/ui has it */}
+      <Band label={source().name}>
+        <Text muted>{metaLine()}</Text>
+        <Show when={status().lastError}>
+          {(error) => (
+            <>
+              <Text tone="bad" weight="medium">
+                {status().lastErrorAt ? words().noValuesSince({ time: props.clock(status().lastErrorAt!) }) : words().fetchFailing}
+              </Text>
+              <Text tone="bad" type="meta">
+                {[localizedSourceError(error(), t()), failedInARow() > 1 ? words().inARow({ count: failedInARow() }) : ""]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Text>
+            </>
+          )}
+        </Show>
+      </Band>
       <Show when={status().throttled}>
         <Notice tone="warn" icon="gauge" title={t().throttled}>
           {t().throttledDetail}
         </Notice>
       </Show>
-      <Section icon="info-circle" title={t().properties}>
-        <Facts items={facts()} />
-      </Section>
+      <Show when={source().kind === "metrics" && props.minutes.length > 0}>
+        <Section title={words().valuesPerMinute} count={words().lastHourWord}>
+          <Canvas label={words().valuesPerMinute}>
+            <SourceHourDrawing
+              minutes={props.minutes}
+              start={hourStart()}
+              middle={words().fetchesWord}
+              end={props.clock(props.now)}
+              label={hourLabel()}
+            />
+          </Canvas>
+        </Section>
+      </Show>
+      <Show when={source().kind === "metrics"}>
+        <Section title={words().scrapesTitle}>
+          <Show when={props.scrapes.length > 0} fallback={<Empty icon="history" text={t().noScrapes} />}>
+            <Canvas label={words().scrapesTitle}>
+              <FetchLogDrawing rows={logRows()} label={words().scrapesTitle} />
+            </Canvas>
+          </Show>
+        </Section>
+      </Show>
       <Show when={source().kind === "http_ingest"}>
         <ResourceApiKeySection
           title={t().apiKeys}
@@ -723,37 +842,9 @@ function SourceDetail(props: {
           <Prose markdown={`\`\`\`bash\n${command()}\n\`\`\``} />
         </Section>
       </Show>
-      <Show when={source().kind === "metrics"}>
-        <Section icon="history" title={words().scrapesTitle} count={props.scrapes.length || undefined}>
-          <Show when={props.scrapes.length > 0} fallback={<Empty icon="history" text={t().noScrapes} />}>
-            <List label={words().scrapesTitle}>
-              {/* fetches that failed the same way in a row stand once, with how many and since when */}
-              <For each={scrapeRuns(props.scrapes)}>
-                {(run) => (
-                  <Row
-                    mark={run.first.success ? { icon: "circle-check", color: "#059669" } : { icon: "alert-circle", color: "#dc2626" }}
-                    lines={[
-                      run.first.success
-                        ? `${t().success} · ${t().ingestCounts(run.first)}`
-                        : run.count > 1
-                          ? words().failedFetches({ count: run.count })
-                          : t().error,
-                      run.first.errorMessage
-                        ? (localizedSourceError(run.first.errorMessage, t()) ?? run.first.errorMessage)
-                        : `${run.first.durationMs} ms`,
-                    ]}
-                    time={
-                      run.count > 1
-                        ? `${props.clock(run.last.finishedAt)}–${props.when(run.first.finishedAt)}`
-                        : props.when(run.first.finishedAt)
-                    }
-                  />
-                )}
-              </For>
-            </List>
-          </Show>
-        </Section>
-      </Show>
+      <Section title={words().sourceSettings}>
+        <Facts items={facts()} />
+      </Section>
     </Pane>
   );
 }

@@ -63,17 +63,33 @@ describe("Pulse pages on the server", () => {
     expect(page.text).not.toContain("Archiv 2025");
   });
 
-  test("sources show alerts, the table and the open source with its facts", () => {
+  test("sources lead with the hero and its exceptions, the table and the open source with its cause and hour", () => {
     const page = render(() => createComponent(SourcesScreen, sourcesProps({ open: "s7Ee8Ff9" })));
-    expect(page.text).toContain("Drucker Halle 2");
-    expect(page.text).toContain("Fehler");
-    expect(page.text).toContain("Braucht Aufmerksamkeit");
-    expect(page.text).toContain("Alarm „CPU Werkstatt“ ausgelöst");
-    expect(page.text).toContain("Drucker Halle 2");
+    expect(page.text).toContain("2.193.522");
+    expect(page.text).toContain("Werte heute");
+    // the alerts stand as one exception in the hero, not as a block above the list
+    expect(page.text).toContain("Alarme");
+    expect(page.text).not.toContain("Braucht Aufmerksamkeit");
+    expect(page.text).toContain("Drucker Halle 2 seit 10:40");
+    expect(page.text).toContain("Liefert seit 10:40 keine Werte");
+    expect(page.text).toContain("Werte je Minute");
     // the address stands in the open source, breakable at its slashes
     expect(page.text).toContain("10.0.0.12:9100");
     expect(page.text).toContain("Letzte Abrufe");
+    expect(page.text).toContain("Zeitüberschreitung");
     expect(page.loading).toBe(0);
+  });
+
+  test("the alerts open from the hero's exception as their list with its deeds", () => {
+    const props = sourcesProps();
+    const page = render(() =>
+      createComponent(SourcesScreen, {
+        ...props,
+        initialRouteState: { ...props.initialRouteState, alertId: props.initialAttention!.alerts[0]!.reference },
+      }),
+    );
+    expect(page.text).toContain("Braucht Aufmerksamkeit");
+    expect(page.text).toContain("Alarm „CPU Werkstatt“ ausgelöst");
   });
 
   test("a store that does not answer says so above the sources", () => {

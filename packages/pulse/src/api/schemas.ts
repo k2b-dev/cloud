@@ -1,9 +1,9 @@
 import { AccessMemberSchema, PermissionLevelSchema, PrincipalSchema, ServiceAccountCredentialSchema } from "@k2b/cloud/contracts";
 import { z } from "zod";
 import { BaseColorSchema, BaseIconSchema, BaseTimezoneSchema } from "../base-settings";
-import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
+import { FETCH_BUCKET_MINUTES, FETCH_TICKS, METRIC_TYPES, SOURCE_HOUR_MINUTES, SOURCE_KINDS, SOURCE_PAGE_MAX } from "../contracts";
 
-export { SOURCE_PAGE_MAX };
+export { SOURCE_HOUR_MINUTES, SOURCE_PAGE_MAX };
 
 import { PULSE_EXTERNAL_INGEST_BATCH_LIMIT, PULSE_EXTERNAL_INGEST_COLLECTION_LIMIT } from "../ingest-limits";
 import { MetricFiltersSchema } from "../metric-filters";
@@ -261,9 +261,10 @@ export const SourceFiguresSchema = z.object({
   active: z.number().int().nonnegative(),
   failingCount: z.number().int().nonnegative(),
   failing: z
-    .array(z.object({ id: z.string(), name: z.string() }))
+    .array(z.object({ id: z.string(), name: z.string(), since: z.string().nullable() }))
     .max(3)
-    .describe("The first three failing sources, newest failure first"),
+    .describe("The first three failing sources, newest failure first, with since when they fail"),
+  waiting: z.number().int().nonnegative().describe("Enabled sources that have never delivered"),
   series: z.number().int().nonnegative(),
   today: z
     .number()
@@ -310,6 +311,11 @@ export const SourceSchema = z.object({
   lastErrorAt: z.string().nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
+});
+
+export const FetchMinuteSchema = z.object({
+  slot: z.enum(["ok", "bad", "none"]).describe("ok: every fetch of the minute worked; bad: one failed; none: none ran"),
+  values: z.number().int().nonnegative().describe("Values the minute's fetches brought"),
 });
 
 export const SourceScrapeSchema = z.object({

@@ -120,13 +120,17 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
     const sourceId = await resolveBasePublicId("sources", baseId, route.sourceId);
     const source = sources.data.find((source) => source.id === sourceId);
     if (!source) return { kind: "error", status: 404 };
-    const [scrapes, keys] = await Promise.all([
+    const [scrapes, keys, minutes] = await Promise.all([
       pulseService.source.scrapes({ baseId, sourceId: source.id, user }),
       source.kind === "http_ingest"
         ? pulseService.source.apiKeys.list({ baseId, sourceId: source.id, user })
         : Promise.resolve({ ok: true as const, data: [] }),
+      source.kind === "metrics"
+        ? pulseService.source.hour({ baseId, sourceId: source.id, user })
+        : Promise.resolve({ ok: true as const, data: [] }),
     ]);
     props.initialSourceScrapes[route.sourceId] = scrapes.ok ? scrapes.data : [];
+    props.initialSourceMinutes = { [route.sourceId]: minutes.ok ? minutes.data : [] };
     props.initialSourceApiKeys[route.sourceId] = keys.ok ? keys.data : [];
     props.initialQueryCoverage.sourceDetail = scrapes.ok && keys.ok;
   }

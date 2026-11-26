@@ -349,7 +349,7 @@ describe("Pulse on v2", () => {
     }
   }, 60_000);
 
-  test("on the phone a tap on a source opens it as the page, with its name, the way back and its edit button", async () => {
+  test("on the phone a tap on a source opens it as the page, with its name, the way back and its fetch button", async () => {
     const { context, tab, errors } = await open(phone, `/app/pulse/${baseId}`);
     try {
       // a tap on the row, as a finger opens it: the phone shows the rows as a list, the row on screen takes the tap
@@ -360,7 +360,7 @@ describe("Pulse on v2", () => {
       expect(await tab.locator(':text-is("Drucker Halle 2"):visible').count()).toBeGreaterThan(0);
       const back = tab.getByRole("link", { name: "Quellen" }).first();
       expect(await back.isVisible()).toBe(true);
-      expect(await tab.getByRole("button", { name: "Bearbeiten" }).isVisible()).toBe(true);
+      expect(await tab.getByRole("button", { name: "Jetzt abrufen" }).isVisible()).toBe(true);
       expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       // the way back is a tap too, and leads to the list
       await back.tap();
@@ -396,7 +396,9 @@ describe("Pulse on v2", () => {
   test("editing and removing the open source send one write each", async () => {
     const { context, tab, errors, calls } = await open(desktop, `/app/pulse/${baseId}/sources/s7Ee8Ff9`);
     try {
-      await tab.getByRole("button", { name: "Bearbeiten" }).click();
+      // editing stands in the menu of the open source; its head keeps the name first
+      await tab.getByRole("button", { name: "Weitere Aktionen zur Quelle" }).click();
+      await tab.getByRole("menuitem", { name: "Bearbeiten" }).click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("textbox", { name: "Name" }).fill("Drucker Halle 3");
       await dialog.getByRole("button", { name: "Speichern" }).click();

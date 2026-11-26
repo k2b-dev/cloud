@@ -4,10 +4,12 @@ import {
   FETCH_BUCKET_MINUTES,
   FETCH_TICKS,
   type FetchesToday,
+  type FetchMinute,
   type FetchSlot,
   type PulseBase,
   type PulseSource,
   type PulseSourceScrape,
+  SOURCE_HOUR_MINUTES,
   type SourceFigures,
 } from "../../contracts";
 import type { BaseAttention } from "../../service/base-attention";
@@ -228,59 +230,69 @@ const fixtureSource0 = (patch: Partial<PulseSource> & Pick<PulseSource, "id" | "
   ...patch,
 });
 
+/**
+ * The base's sources as the list reads them, problems first (as identity study B shows them): the printer fails since
+ * 10:40 after a morning of values, the hall light is new and waits for its first values, the inverter is paused.
+ */
 export const fixtureSources: PulseSource[] = [
-  fixtureSource({ id: "s1Aa2Bb3", name: "Server Werkstatt" }),
+  fixtureSource({
+    id: "s7Ee8Ff9",
+    name: "Drucker Halle 2",
+    endpointUrl: "http://10.0.0.12:9100/metrics",
+    status: status({ newestDataAt: "2026-11-25T09:39:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
+    lastError: TIMEOUT,
+    lastErrorAt: "2026-11-25T09:40:00.000Z",
+    lastSeenAt: "2026-11-25T09:42:00.000Z",
+    seriesCount: 86,
+    todayCount: 55_040,
+    // fine all morning, three timeouts since 10:40
+    fetches: [...Array.from({ length: FETCH_TICKS - 3 }, (): FetchSlot => "ok"), "bad", "bad", "bad"],
+  }),
+  fixtureSource({
+    id: "s5Hh6Ll7",
+    name: "Hallenlicht",
+    endpointUrl: "http://10.0.0.44:9100/metrics",
+    status: status({ newestDataAt: null }),
+    lastSeenAt: null,
+    seriesCount: 0,
+    todayCount: 0,
+    createdAt: "2026-11-25T09:31:00.000Z",
+    fetches: Array.from({ length: FETCH_TICKS }, (): FetchSlot => "none"),
+  }),
+  fixtureSource({
+    id: "s0Gg1Hh2",
+    name: "Wechselrichter",
+    enabled: false,
+    scrapeIntervalSeconds: 300,
+    seriesCount: 212,
+    todayCount: 0,
+    // paused since yesterday, so its newest data are from then
+    status: status({ newestDataAt: "2026-11-24T16:05:00.000Z" }),
+    lastSeenAt: "2026-11-24T16:05:00.000Z",
+  }),
+  fixtureSource({
+    id: "s3Jj4Kk5",
+    name: "Switch Halle 1",
+    endpointUrl: "https://switch-h1.werkstatt.example:9116/snmp",
+    seriesCount: 2_184,
+    todayCount: 1_402_560,
+  }),
+  fixtureSource({ id: "s1Aa2Bb3", name: "Server Werkstatt", seriesCount: 1_110, todayCount: 712_480 }),
+  fixtureSource({
+    id: "s9Nn0Pp1",
+    name: "Kühlraum Sensoren",
+    endpointUrl: "http://10.0.0.31:9100/metrics",
+    seriesCount: 24,
+    todayCount: 15_408,
+  }),
   fixtureSource({
     id: "s4Cc5Dd6",
     name: "Webshop-Ereignisse",
     kind: "http_ingest",
     endpointUrl: null,
     scrapeIntervalSeconds: null,
-    seriesCount: undefined,
+    seriesCount: 38,
     todayCount: 4_812,
-  }),
-  fixtureSource({
-    id: "s7Ee8Ff9",
-    name: "Drucker Halle 2",
-    endpointUrl: "http://10.0.0.12:9100/metrics",
-    status: status({ newestDataAt: "2026-11-24T17:20:00.000Z", lastError: TIMEOUT, lastErrorAt: "2026-11-25T09:40:00.000Z" }),
-    lastError: TIMEOUT,
-    // no answer since yesterday evening, so nothing came today
-    todayCount: 0,
-  }),
-  fixtureSource({
-    id: "s0Gg1Hh2",
-    name: "Wechselrichter",
-    enabled: false,
-    seriesCount: 42,
-    todayCount: 0,
-    // paused since Monday, so its newest data are from then
-    status: status({ newestDataAt: "2026-11-23T16:05:00.000Z" }),
-    lastSeenAt: "2026-11-23T16:05:00.000Z",
-  }),
-  fixtureSource({
-    id: "s3Jj4Kk5",
-    name: "Switch Halle 1",
-    endpointUrl: "https://switch-h1.werkstatt.example:9116/snmp",
-    seriesCount: 3_906,
-    todayCount: 1_402_560,
-  }),
-  fixtureSource({
-    id: "s6Ll7Mm8",
-    name: "Zugangsportal",
-    kind: "http_ingest",
-    endpointUrl: null,
-    scrapeIntervalSeconds: null,
-    seriesCount: undefined,
-    todayCount: 318,
-  }),
-  fixtureSource({
-    id: "s9Nn0Pp1",
-    name: "Kühlraum Sensoren",
-    endpointUrl: "http://10.0.0.31:9100/metrics",
-    scrapeIntervalSeconds: 30,
-    seriesCount: 96,
-    todayCount: 9_216,
   }),
   fixtureSource({
     id: "s2Qq3Rr4",
@@ -288,45 +300,55 @@ export const fixtureSources: PulseSource[] = [
     kind: "http_ingest",
     endpointUrl: null,
     scrapeIntervalSeconds: null,
-    seriesCount: undefined,
+    seriesCount: 61,
     todayCount: 2_904,
+  }),
+  fixtureSource({
+    id: "s6Ll7Mm8",
+    name: "Zugangsportal",
+    kind: "http_ingest",
+    endpointUrl: null,
+    scrapeIntervalSeconds: null,
+    seriesCount: 9,
+    todayCount: 318,
+    lastSeenAt: "2026-11-25T09:28:00.000Z",
   }),
 ];
 
-/** A source's last fetches, matching its state: the failing printer times out since yesterday evening, the others answer. */
+/**
+ * A metrics source's last hour per minute, matching its state: the printer brought its 86 values every minute until
+ * 10:39 and has timed out since 10:40; a paused or new source has none; the others bring theirs every minute.
+ */
+export const fixtureMinutesFor = (sourceId: string): FetchMinute[] => {
+  const source = fixtureSources.find((item) => item.id === sourceId);
+  if (!source || source.kind !== "metrics") return [];
+  return Array.from({ length: SOURCE_HOUR_MINUTES }, (_, index): FetchMinute => {
+    if (!source.enabled || (!source.lastError && !source.status.newestDataAt)) return { slot: "none", values: 0 };
+    if (source.lastError && index >= SOURCE_HOUR_MINUTES - 3) return { slot: "bad", values: 0 };
+    // a little real-looking wobble around the series count, the same on every render
+    return { slot: "ok", values: (source.seriesCount ?? 0) + ((index * 7) % 5) - 2 };
+  });
+};
+
+/** A source's last fetches, matching its state: the printer timed out at 10:40, 10:41 and 10:42; the others answer. */
 export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
   const failing = sourceId === "s7Ee8Ff9";
   const at = (minute: number) => `2026-11-25T09:${String(minute).padStart(2, "0")}:00.000Z`;
-  const fetches = [41, 40, 39, 38, 37].map((minute, index) => ({
-    id: `${sourceId}-r${index}`,
-    sourceId,
-    startedAt: at(minute),
-    finishedAt: at(minute).replace(":00.000Z", failing ? ":10.000Z" : ":01.000Z"),
-    durationMs: failing ? 10_000 : 412 - index * 7,
-    success: !failing,
-    metrics: failing ? 0 : 1_284 - index * 2,
-    events: 0,
-    states: 0,
-    errorMessage: failing ? TIMEOUT : null,
-  }));
-  // the printer times out since this morning; yesterday evening it still answered
-  if (failing)
-    return [
-      ...fetches.slice(1, 4),
-      {
-        id: `${sourceId}-ok`,
-        sourceId,
-        startedAt: "2026-11-24T17:20:00.000Z",
-        finishedAt: "2026-11-24T17:20:01.000Z",
-        durationMs: 618,
-        success: true,
-        metrics: 1_206,
-        events: 0,
-        states: 0,
-        errorMessage: null,
-      },
-    ];
-  return fetches.slice(0, 4);
+  return [42, 41, 40, 39, 38].map((minute, index) => {
+    const failed = failing && minute >= 40;
+    return {
+      id: `${sourceId}-r${index}`,
+      sourceId,
+      startedAt: at(minute),
+      finishedAt: at(minute).replace(":00.000Z", failed ? ":15.000Z" : ":01.000Z"),
+      durationMs: failed ? 15_000 : failing ? 588 + index * 4 : 412 - index * 7,
+      success: !failed,
+      metrics: failed ? 0 : failing ? 86 : 1_110,
+      events: 0,
+      states: 0,
+      errorMessage: failed ? TIMEOUT : null,
+    };
+  });
 };
 
 /** The page props of a base on Sources, as the server builds them, from the invented data above. */
@@ -357,7 +379,8 @@ export const figuresOf = (sources: PulseSource[]): SourceFigures => {
     total: sources.length,
     active: sources.filter((source) => source.enabled).length,
     failingCount: failing.length,
-    failing: failing.slice(0, 3).map((source) => ({ id: source.id, name: source.name })),
+    failing: failing.slice(0, 3).map((source) => ({ id: source.id, name: source.name, since: source.lastErrorAt })),
+    waiting: sources.filter((source) => source.enabled && !source.lastError && !source.status.newestDataAt && !source.lastSeenAt).length,
     series: sources.reduce((sum, source) => sum + (source.seriesCount ?? 0), 0),
     today: sources.reduce((sum, source) => sum + (source.todayCount ?? 0), 0),
     fetchesToday: fetchesTodayOf(sources),
@@ -371,13 +394,20 @@ export const figuresOf = (sources: PulseSource[]): SourceFigures => {
 const fetchesTodayOf = (sources: PulseSource[]): FetchesToday => {
   const minutes = 10 * 60 + 42;
   const buckets = Array.from({ length: Math.ceil(minutes / FETCH_BUCKET_MINUTES) }, (_, index) => {
-    const span = Math.min(FETCH_BUCKET_MINUTES, minutes - index * FETCH_BUCKET_MINUTES);
+    // the last bucket counts the minute now too (a fetch at 10:42 is today's), like the minute slots of the list
+    const span = Math.min(FETCH_BUCKET_MINUTES, minutes + 1 - index * FETCH_BUCKET_MINUTES);
     const bucket = { ok: 0, failed: 0 };
     for (const source of sources) {
       if (source.kind !== "metrics" || !source.enabled) continue;
-      const fetches = Math.round((span * 60) / (source.scrapeIntervalSeconds ?? 60));
-      if (source.lastError) bucket.failed += fetches;
-      else bucket.ok += fetches;
+      const every = source.scrapeIntervalSeconds ?? 60;
+      // minutes since midnight in Berlin (23:00 UTC the evening before) when the source began to fail
+      const failsFrom = source.lastErrorAt
+        ? (Date.parse(source.lastErrorAt) - Date.parse("2026-11-24T23:00:00.000Z")) / 60_000
+        : Number.POSITIVE_INFINITY;
+      const from = index * FETCH_BUCKET_MINUTES;
+      const failedMinutes = Math.max(0, Math.min(span, from + span - failsFrom));
+      bucket.ok += Math.round(((span - failedMinutes) * 60) / every);
+      bucket.failed += Math.round((failedMinutes * 60) / every);
     }
     return bucket;
   });
@@ -407,6 +437,7 @@ export const sourcesProps = (
       alerts: options.alerts ?? fixtureAlerts,
     },
     initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
+    initialSourceMinutes: open ? { [open]: fixtureMinutesFor(open) } : {},
     // a source that receives data has the key it receives them with
     initialSourceApiKeys: open && sources.find((source) => source.id === open)?.kind === "http_ingest" ? { [open]: fixtureApiKeys } : {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },

@@ -211,7 +211,14 @@ export const listSources = async (
     FROM pulse.sources
     WHERE NOT deleted AND base_id = ${baseId}::uuid
       AND (${pattern}::text IS NULL OR name ILIKE ${pattern} ESCAPE '\\')
-    ORDER BY created_at DESC, id ASC
+    -- problems first: failing, then new without any data, then paused, then the ones that deliver
+    ORDER BY CASE
+        WHEN enabled AND last_error IS NOT NULL THEN 0
+        WHEN enabled AND last_data_at IS NULL AND last_seen_at IS NULL THEN 1
+        WHEN NOT enabled THEN 2
+        ELSE 3
+      END,
+      created_at DESC, id ASC
     LIMIT ${limit}
     OFFSET ${offset}
   `;
@@ -260,10 +267,13 @@ export const sourceFigures = async (
   const access = await requireBaseAccess(baseId, user, "read");
   if (!access.ok) return fail(access.error);
   const [totals, failing, counts] = await Promise.all([
-    sql<{ total: number; active: number; failing: number; ids: string[]; metrics: string[]; timezone: string }[]>`
+    sql<{ total: number; active: number; failing: number; waiting: number; ids: string[]; metrics: string[]; timezone: string }[]>`
       SELECT count(s.id)::int AS total,
         count(s.id) FILTER (WHERE s.enabled)::int AS active,
         count(s.id) FILTER (WHERE s.enabled AND s.last_error IS NOT NULL)::int AS failing,
+        count(s.id) FILTER (
+          WHERE s.enabled AND s.last_error IS NULL AND s.last_data_at IS NULL AND s.last_seen_at IS NULL
+        )::int AS waiting,
         COALESCE(array_agg(s.id::text) FILTER (WHERE s.id IS NOT NULL), '{}') AS ids,
         COALESCE(array_agg(s.id::text) FILTER (WHERE s.kind = 'metrics'), '{}') AS metrics,
         b.timezone
@@ -271,8 +281,8 @@ export const sourceFigures = async (
       LEFT JOIN pulse.sources s ON s.base_id = b.id AND NOT s.deleted
       WHERE b.id = ${baseId}::uuid
       GROUP BY b.timezone`,
-    sql<{ id: string; name: string }[]>`
-      SELECT short_id AS id, name FROM pulse.sources
+    sql<{ id: string; name: string; since: Date | null }[]>`
+      SELECT short_id AS id, name, last_error_at AS since FROM pulse.sources
       WHERE NOT deleted AND enabled AND last_error IS NOT NULL AND base_id = ${baseId}::uuid
       ORDER BY last_error_at DESC NULLS LAST, name LIMIT 3`,
     // the base's cached aggregate, the same one the page's list reads in this request
@@ -286,7 +296,8 @@ export const sourceFigures = async (
     total: totals[0]?.total ?? 0,
     active: totals[0]?.active ?? 0,
     failingCount: totals[0]?.failing ?? 0,
-    failing,
+    failing: failing.map((source) => ({ id: source.id, name: source.name, since: isoNullable(source.since) })),
+    waiting: totals[0]?.waiting ?? 0,
     series: ids.reduce((sum, id) => sum + (counts.get(id)?.seriesCount ?? 0), 0),
     today: known ? ids.reduce((sum, id) => sum + (counts.get(id)?.todayCount ?? 0), 0) : null,
     fetchesToday: fetches,

@@ -46,5 +46,5 @@ export const sourceStatus = (
   if (source.status.lastError) return { label: labels.error, tone: "error" };
   if (source.staleSince) return { label: labels.stale, tone: "warning" };
   if (source.status.newestDataAt || source.lastSeenAt) return { label: labels.healthy, tone: "ok" };
-  return { label: labels.waiting, tone: "neutral" };
+  return { label: labels.waiting, tone: "warning" };
 };

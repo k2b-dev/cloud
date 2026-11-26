@@ -4,6 +4,7 @@ import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { adminFixtureIdentity } from "../store/admin-identity.test-fixture";
 import { accessScopeFor } from "./access-control";
+import { sourceHour } from "./fetch-timeline";
 import { listSources, sourceFigures } from "./source-management";
 
 // 10:42 in Berlin; the base's day began at 23:00 UTC the evening before
@@ -44,8 +45,9 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
       [sourceId, baseId, "2026-11-24T22:30:00Z", true],
       [elsewhere, otherBaseId, "2026-11-25T09:41:00Z", false],
     ] as const)
-      await sql`INSERT INTO pulse.source_scrapes(base_id, source_id, started_at, finished_at, duration_ms, success)
-        VALUES (${base}::uuid, ${source}::uuid, ${at}::timestamptz, ${at}::timestamptz + interval '1 second', 600, ${success})`;
+      await sql`INSERT INTO pulse.source_scrapes(base_id, source_id, started_at, finished_at, duration_ms, success, metrics_count)
+        VALUES (${base}::uuid, ${source}::uuid, ${at}::timestamptz, ${at}::timestamptz + interval '1 second', 600, ${success},
+          ${success ? 86 : 0})`;
   });
   afterAll(async () => {
     for (const id of [baseId, otherBaseId]) if (id) await sql`DELETE FROM pulse.bases WHERE id=${id}::uuid`;
@@ -70,6 +72,24 @@ suiteFor("database", "valkey")("Pulse fetch timeline", () => {
     expect(server?.fetches?.[8]).toBe("ok");
     expect(server?.fetches?.filter((slot) => slot !== "none")).toHaveLength(3);
     expect(shop && "fetches" in shop).toBe(false);
+  });
+
+  test("the open source's hour has a minute per slot with the values its fetches brought, and stays closed to others", async () => {
+    const hour = await sourceHour({ baseId, sourceId, user: scope(), now: NOW });
+    if (!hour.ok) throw new Error("The hour is not readable");
+    expect(hour.data).toHaveLength(60);
+    expect(hour.data[59]).toEqual({ slot: "ok", values: 86 });
+    // a failed and a successful fetch in the same minute: the minute failed, the values still count
+    expect(hour.data[58]).toEqual({ slot: "bad", values: 86 });
+    // 10:00 lies 42 minutes back
+    expect(hour.data[17]).toEqual({ slot: "ok", values: 86 });
+    expect(hour.data.filter((minute) => minute.slot !== "none")).toHaveLength(4);
+    const otherBase = await sourceHour({ baseId: otherBaseId, sourceId, user: scope(), now: NOW });
+    expect(otherBase.ok).toBe(false);
+    // a source of another base read through a base the person may read stays unknown
+    const [elsewhere] = await sql<{ id: string }[]>`SELECT id FROM pulse.sources WHERE base_id = ${otherBaseId}::uuid`;
+    const crossed = await sourceHour({ baseId, sourceId: elsewhere!.id, user: scope(), now: NOW });
+    expect(crossed.ok).toBe(false);
   });
 
   test("the figures count today's fetches since midnight in the base's zone, in ten-minute buckets", async () => {

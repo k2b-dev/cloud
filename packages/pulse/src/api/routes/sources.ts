@@ -17,7 +17,9 @@ import { ingestJsonBody, ingestResponses, ingestTimeout, respondIngest } from ".
 import {
   CreateSourceApiKeySchema,
   CreateSourceSchema,
+  FetchMinuteSchema,
   IngestBatchSchema,
+  SOURCE_HOUR_MINUTES,
   SOURCE_PAGE_MAX,
   SourceApiKeySchema,
   SourceFiguresSchema,
@@ -209,6 +211,26 @@ const routes = new Hono<AuthContext>()
           projectPublicRelations,
         ),
       );
+    },
+  )
+  .get(
+    "/bases/:baseId/sources/:sourceId/minutes",
+    describeRoute({
+      tags: ["Pulse"],
+      summary: "Read a Pulse source's last hour of fetches per minute",
+      responses: {
+        200: jsonResponse(
+          z.array(FetchMinuteSchema).max(SOURCE_HOUR_MINUTES),
+          `The last ${SOURCE_HOUR_MINUTES} minutes, oldest first: whether the fetches worked and the values they brought`,
+        ),
+      },
+    }),
+    async (c) => {
+      const baseId = await requirePublicIdParam(c.req.param("baseId"), "base ID", "bases");
+      if (!baseId.ok) return respond(c, baseId.result);
+      const sourceId = await requireBaseResourceParam(c.req.param("sourceId"), "source ID", "sources", baseId.value);
+      if (!sourceId.ok) return respond(c, sourceId.result);
+      return respond(c, await pulseService.source.hour({ baseId: baseId.value, sourceId: sourceId.value, user: requestAccessScope(c) }));
     },
   )
   .get(

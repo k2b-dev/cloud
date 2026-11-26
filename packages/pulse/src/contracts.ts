@@ -59,6 +59,10 @@ export const FETCH_TICKS = 30;
 export const FETCH_BUCKET_MINUTES = 10;
 /** One minute of a source's fetches: all succeeded, one failed, or none ran. */
 export type FetchSlot = "ok" | "bad" | "none";
+/** Minutes of fetches the open source shows. */
+export const SOURCE_HOUR_MINUTES = 60;
+/** One minute of a source's fetches with the values they brought. */
+export type FetchMinute = { slot: FetchSlot; values: number };
 /** Today's fetches of a base: how many succeeded and failed, per FETCH_BUCKET_MINUTES since midnight in its zone. */
 export type FetchesToday = { ok: number; failed: number; buckets: { ok: number; failed: number }[] };
 
@@ -66,7 +70,10 @@ export type SourceFigures = {
   total: number;
   active: number;
   failingCount: number;
-  failing: { id: string; name: string }[];
+  /** The first three failing sources, newest failure first, with since when they fail. */
+  failing: { id: string; name: string; since: string | null }[];
+  /** Enabled sources that have never delivered: new ones waiting for their first values. */
+  waiting: number;
   series: number;
   today: number | null;
   /** Today's fetches of the base's metrics sources; null when they could not be read. */
