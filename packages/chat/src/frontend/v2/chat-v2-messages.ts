@@ -23,6 +23,7 @@ export const chatV2Messages = i18n.define({
       info: "Info",
       closeInfo: "Close info",
       searchResults: "Search results",
+      adminProviders: "Places that cannot notify",
     },
     de: {
       sidebarWidth: "Breite der Seitenleiste",
@@ -43,6 +44,7 @@ export const chatV2Messages = i18n.define({
       info: "Info",
       closeInfo: "Info schließen",
       searchResults: "Suchergebnisse",
+      adminProviders: "Orte ohne Benachrichtigung",
     },
   },
 });
