@@ -1,8 +1,8 @@
 name: CI
 
 # One workflow gates every change. `gate` is the only required status check:
-# it needs every other job and passes only when each one succeeded or, for a
-# path-filtered job, was skipped by its own `if:`. Any other result, such as
+# it needs every other job and passes only when each one succeeded or was
+# skipped by its path filter or the draft-only policy below. Any other result, such as
 # failure, cancelled, timed_out, or abandoned during an Actions outage, fails it.
 
 # No job installs dependencies directly: .github/actions/install restores the Bun
@@ -29,6 +29,7 @@ name: CI
 # never re-verified here: main.yml starts straight from the push.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 
@@ -36,7 +37,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # PRs share a group; other events have a unique group so even pending merge
+  # queue runs cannot supersede one another.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -121,7 +124,10 @@ jobs:
           } | tee -a "$GITHUB_OUTPUT"
 
   # Copies listed images that the mirror lacks; every job that pulls a Docker Hub image needs it.
+  # Drafts run only changes, setup, check, and gate. Keep the full-CI condition
+  # on every other job; ci-gate checks it and the draft-only skip allowance.
   mirror:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     uses: ./.github/workflows/mirror-images.yml
     permissions:
       contents: read
@@ -180,6 +186,7 @@ jobs:
       - run: bun run check
 
   unit:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     needs: [setup, mirror]
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
@@ -251,7 +258,7 @@ jobs:
   # strategy.job-total is the divisor.
   webkit:
     needs: [changes, setup]
-    if: needs.changes.outputs.webkit == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.webkit == 'true')
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
     strategy:
@@ -284,6 +291,7 @@ jobs:
           docker rm --force playwright
 
   integration:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true
     needs: [setup, mirror]
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 30
@@ -471,7 +479,7 @@ jobs:
 
   grids:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.grids == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ${{ vars.CI_HEAVY_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 40
     strategy:
@@ -555,7 +563,7 @@ jobs:
   # The runner image ships Java and Python; the scripts download and verify their pinned inputs.
   stdlib:
     needs: [changes, setup]
-    if: needs.changes.outputs.stdlib == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.stdlib == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -570,7 +578,7 @@ jobs:
 
   ui:
     needs: [changes, setup]
-    if: needs.changes.outputs.ui == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.ui == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -586,7 +594,7 @@ jobs:
 
   docs:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.docs == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.docs == 'true' || needs.changes.outputs.ui == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -643,7 +651,7 @@ jobs:
   # Normal PRs use workspace tarballs because their changes get version bumps in the release PR.
   packed:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true' || needs.changes.outputs.release == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.packed == 'true' || needs.changes.outputs.cloud == 'true' || needs.changes.outputs.release == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -699,7 +707,7 @@ jobs:
   # HTML-like release notes can swallow another release section (#1298).
   release-body:
     needs: changes
-    if: needs.changes.outputs.release == 'true' || needs.changes.outputs.releasebody == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.release == 'true' || needs.changes.outputs.releasebody == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -723,7 +731,7 @@ jobs:
   # application's image, without Docker.
   bundles:
     needs: [changes, setup]
-    if: needs.changes.outputs.bundles != ''
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.bundles != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
@@ -752,7 +760,7 @@ jobs:
 
   images:
     needs: [changes, mirror]
-    if: needs.changes.outputs.images == 'true' || needs.changes.outputs.cloud == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.images == 'true' || needs.changes.outputs.cloud == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -972,7 +980,7 @@ jobs:
 
   runner-attacks:
     needs: [changes, setup, mirror]
-    if: needs.changes.outputs.runner == 'true'
+    if: (github.event_name != 'pull_request' || github.event.pull_request.draft != true) && (needs.changes.outputs.runner == 'true')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     services:
@@ -1058,11 +1066,15 @@ jobs:
     steps:
       - env:
           RESULTS: ${{ toJSON(needs) }}
+          IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}
           # The path-filtered jobs, whose `if:` reads the `changes` outputs.
-          # Only they may be skipped; every other job must succeed (`ci-gate` check).
+          # Ready PRs and merge groups allow only these skips (`ci-gate` check).
           MAY_SKIP: webkit grids stdlib ui docs packed release-body bundles images runner-attacks
+          # Additional skips are allowed only for an actual draft PR event.
+          DRAFT_MAY_SKIP: mirror unit integration
         run: |
           set -euo pipefail
+          if [[ "$IS_DRAFT" == true ]]; then MAY_SKIP="$MAY_SKIP $DRAFT_MAY_SKIP"; fi
           jq -e 'type == "object" and length > 0' <<<"$RESULTS" >/dev/null || { echo "The gate got no job results" >&2; exit 1; }
           echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
           failed=$(echo "$RESULTS" | jq -r --arg maySkip "$MAY_SKIP" '

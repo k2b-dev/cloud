@@ -5,7 +5,7 @@ section: Contributing
 order: 1304
 description: Run unit, render, and integration tests locally, and understand what the pull request gate and nightly run check.
 tags: [contributing, testing, ci]
-updated: 2026-11-19
+updated: 2026-11-26
 ---
 
 # Testing
@@ -1362,13 +1362,36 @@ through their own runner with disposable containers. See
 
 ## What CI runs
 
-The pull request `gate` runs `bun run check`, `bun run test`, and the
+Draft pull requests run only `changes`, the shared UI build in `setup`,
+`check` (`bun run check` and PR metadata checks), and `gate`. They skip all
+test shards and path-filtered jobs, including browser tests, integration,
+Grids certification, documentation builds, production bundles, images, and
+the image mirror. Run focused tests locally while the PR is a draft; its
+green gate confirms only the light checks.
+
+Marking a PR ready for review (`ready_for_review`) starts the full gate,
+even without a new commit. Opening, reopening, or pushing to a non-draft PR
+also runs the full gate. Every `merge_group` and manual workflow run uses
+the full gate, regardless of draft state. New PR runs cancel older runs of
+the same PR; merge queue runs each have a unique concurrency group and are
+never cancelled by this concurrency policy.
+This reduces draft runner demand but does not give merge queue jobs a
+scheduler priority over other jobs already queued.
+
+The full `gate` runs `bun run check`, `bun run test`, and the
 integration suites against PostgreSQL 17, NATS JetStream, Valkey,
 Gotenberg, and Stalwart 1.0.0 for JMAP. Path-filtered jobs, such as the Grids
 certification, the WebKit browser tests, the documentation checks, and the image
 boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
+
+`gate` always aggregates every job. Only actual draft PR events allow the
+additional `mirror`, `unit`, and `integration` skips; ready PRs and merge
+groups require those jobs to succeed. Existing path filters still control
+the other optional jobs. Failed or cancelled jobs fail the gate in either
+mode. The `ci-gate` rule and its tests check the job list, draft conditions,
+skip allowances, event triggers, and concurrency policy.
 
 Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in
