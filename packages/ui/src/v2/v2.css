@@ -2383,6 +2383,10 @@
   background: var(--k2-n100);
   max-width: 100%;
 }
+/* a chip with its remove button: the button sits in its round end */
+.k2-ui .k2-chip:has(> .k2-chip-x) {
+  padding-right: 2px;
+}
 .k2-ui .k2-chip-x {
   display: grid;
   place-items: center;
@@ -3401,6 +3405,20 @@
   margin: 0;
   border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
   padding-bottom: env(safe-area-inset-bottom);
+}
+/* the grip of the sheet: a short bar in the middle of its top edge, shown only on the sheet */
+.k2-ui .k2-dialog-grip {
+  display: none;
+}
+.k2-ui .k2-dialog[data-presentation="sheet"] > .k2-dialog-grip {
+  display: block;
+  position: absolute;
+  top: 8px;
+  left: calc(50% - 18px);
+  width: 36px;
+  height: 4px;
+  border-radius: var(--k2-r-round);
+  background: var(--k2-n300);
 }
 .k2-ui .k2-dialog-title {
   font: var(--k2-t-body);

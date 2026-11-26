@@ -176,6 +176,8 @@ export function useCombobox(
     onQueryChange?: (query: string) => void;
     /** Text that matches no item becomes a value on Enter (with `multiple`, a new chip): the value is the text. */
     allowCustomValue?: boolean;
+    /** Core never empties the typed text by itself (leaving the field, a press outside): its owner does. */
+    keepQuery?: boolean;
   },
 ): ComboboxParts {
   const announcement = listAnnouncement(useBehaviorMessages());
