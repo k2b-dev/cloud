@@ -758,6 +758,46 @@ for (const viewport of [
   }, 30_000);
 }
 
+// The display switcher keeps one geometry: choosing a display, also one with a long name on the phone where only the
+// checked one shows its name, moves no option and does not change the control's width (#4165).
+for (const viewport of [
+  { width: 1440, height: 900 },
+  { width: 390, height: 844 },
+]) {
+  test(`${browserName}: choosing a display moves no option of the switcher at ${viewport.width}`, async () => {
+    const page = await open(graphPath("hand01"), viewport);
+    try {
+      const switcher = page.getByRole("radiogroup", { name: "Display", exact: true });
+      const boxes = () =>
+        switcher.evaluate((group) =>
+          [group, ...group.querySelectorAll('[role="radio"]')].map((element) => {
+            const box = element.getBoundingClientRect();
+            return [Math.round(box.left), Math.round(box.width)];
+          }),
+        );
+      const before = await boxes();
+      for (const name of ["Network", "Circle", "Neighborhood", "Timeline", "Network"]) {
+        await switcher.getByRole("radio", { name, exact: true }).click();
+        await switcher.locator('[role="radio"][aria-checked="true"]', { hasText: name }).waitFor();
+        await settled(page);
+        expect({ name, boxes: await boxes() }).toEqual({ name, boxes: before });
+        // the checked display's name stays whole within its share
+        expect(
+          await switcher
+            .locator('[aria-checked="true"]')
+            .evaluate(
+              (option) =>
+                option.querySelector(".notebook-graph__display-label")!.getBoundingClientRect().right <=
+                option.getBoundingClientRect().right,
+            ),
+        ).toBe(true);
+      }
+    } finally {
+      await close(page);
+    }
+  }, 30_000);
+}
+
 for (const notebook of ["hand01", "big001"])
   for (const viewport of [
     { width: 1440, height: 900 },

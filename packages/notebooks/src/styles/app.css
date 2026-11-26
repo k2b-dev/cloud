@@ -1690,9 +1690,8 @@
 .notebook-graph__phone-default {
   display: none;
 }
-/* Display switcher: equal segments, so checking one never changes a width. */
+/* Display switcher: every segment shows its name and keeps its width, so checking one moves nothing. */
 .notebook-graph__display-switcher {
-  width: 20rem;
   flex: none;
 }
 /* Depth: content-sized segments that never wrap; the checked one has the same width as before. */
@@ -1950,8 +1949,9 @@
     align-items: center;
     order: 1;
   }
-  /* Only the checked display shows its name; the others keep it for assistive technology. */
-  .notebook-graph__display-switcher [aria-checked="false"] .notebook-graph__display-label {
+  /* On the phone every display shows only its symbol and keeps its name for assistive technology: a name shown only
+     on the checked one changed its width and moved the others (#4221). */
+  .notebook-graph__display-switcher .notebook-graph__display-label {
     position: absolute;
     width: 1px;
     height: 1px;
