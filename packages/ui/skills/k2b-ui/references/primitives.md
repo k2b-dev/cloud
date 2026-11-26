@@ -136,6 +136,9 @@ a limit, "1,5 von 3 h": a thin bar under it, amber from the limit on),
 unseen under it, a value not there yet is one line; symbol and label stay,
 a `trend` keeps its place unseen). Use for the key statements of a record
 or the home of a place.
+The cells count themselves in their order to stand in these forms: each
+`Cells.Cell` stays in the same island as its `Cells` (never an island root
+of its own).
 
 ### Tiles
 
@@ -418,13 +421,13 @@ lines instead of cutting a thing.
   it needs `label`.
 - `Setting`: `label`, `name`, `hint`, `error`, `was` ("12 Std.": an unsaved
   change says "geändert · vorher 12 Std." under its control), `action`
-  (one quiet deed at the end of the name's line, such as "Auf Standard
-  zurücksetzen" while the value differs from its default, as `Field
-  action`), one control as child. One setting of a settings page: the name
-  (13, 500) and its hint together on the left, beside the middle of the
-  control in a column of 300 px, the name keeping at least 240 px; one
-  column when its pane is narrower than 640 px (800 px with an `action`; by
-  the pane, not the window). `compact` (a number with its unit, a short
+  (one quiet deed after the value, such as "Auf Standard zurücksetzen"
+  while the value differs from its default), one control as child. One
+  setting of a settings page: the name (13, 500) alone in a column of 240
+  px, beside the middle of the control in a column of 300 px; the one line
+  of help and what it was under the control. One column, the hint under
+  the name, when its pane is narrower than 640 px (800 px with an
+  `action`; by the pane, not the window). `compact` (a number with its unit, a short
   selection) and a `Check` keep the value beside the name also there. A
   column of settings ends above the phone's floating main action. Never
   stack `Field`s
@@ -528,6 +531,9 @@ lines instead of cutting a thing.
   the page. The way to `current` stands open (also when `current` changes);
   give the loaded nodes down to it. The tree is one Tab stop and scrolls on
   its own in the sidebar; levels step 12 px in, at most six steps.
+- Counts of `Nav` and `Tabs`: a number is written in the page's language and
+  in full (12.345 in German, 12,345 in English), never cut to "9.999+"; words
+  you give (`"99+"`, `"+8"`) stay as they are.
 - `Tabs`: `label`, `items: { label, icon?, count?, href?, onClick?,
   current?, menu? }[]`. In a head `Bar start` they share the bar with actions; as a `Pane`
   head they are their own 44 px bar. `menu` takes the entries of a `Menu`:
@@ -537,7 +543,8 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab.
-- `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
+- `StatusRow`: `lead` (the one statement, "7 ungelesen"; cut with "…"
+  where it does not fit before the filters), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where
   the row never refreshes), `facts: { before?, value?, after? }[]` (where
@@ -546,7 +553,9 @@ lines instead of cutting a thing.
   `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
-  `Button variant="ghost" menu`; leave on the phone),
+  `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
+  they keep only their symbols, the words stay their names; leave on the
+  phone),
   `selection: { count, meta?, actions, clear }` (while rows are selected the
   row becomes the bar of what can be done with them; `meta` says quietly
   what is selected after the count, such as "12,9 MB · 3 Bilder"; the count

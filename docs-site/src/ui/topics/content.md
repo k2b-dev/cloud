@@ -86,7 +86,7 @@ A code a person compares between two devices or reads aloud, in large figures; h
 
 ### Disclosure
 
-Something that opens in place, such as the answer to a question; a closed one is still found by the browser's find in page.
+Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.
 
 <Props of="Disclosure" />
 

@@ -156,7 +156,8 @@ export default function BasesOverview(props: Props) {
         status={
           props.empty ? undefined : (
             <StatusRow
-              lead="318 Änderungen heute"
+              // what asks for a deed today, not a count of what happened (CLEAR AND DENSE): the chips name the two
+              lead="2 Dinge brauchen dich"
               facts={[{ value: 5, after: "Bases" }]}
               filters={
                 <>

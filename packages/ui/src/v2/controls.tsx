@@ -163,7 +163,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
-  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes where
+  // it stands, so Tab follows the eye: in a field before the control (on the label's line), in a setting after the
+  // value (the grid places both)
   const deed = (
     <Show when={props.action}>
       {(action) => (
@@ -198,8 +200,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
@@ -216,8 +219,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
@@ -233,8 +237,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
@@ -625,11 +630,16 @@ export const TagsInput = (props: TagsInputProps) => {
   const [own, setOwn] = createSignal<string[]>([...(props.value ?? [])]);
   const values = () => (props.onChange ? [...(props.value ?? [])] : own());
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
+  // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
+  let input: HTMLInputElement | undefined;
+  field?.named(() => input?.focus());
+  // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
+  const initial = [...(props.value ?? [])];
   const combo = useCombobox(() => ({
     items: items(),
     multiple: true as const,
     allowCustomValue: true,
-    value: values(),
+    ...(props.onChange ? { value: values() } : { defaultValue: initial }),
     onValueChange: (next: string[]) => {
       const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
       setOwn(clean);
@@ -645,6 +655,7 @@ export const TagsInput = (props: TagsInputProps) => {
         class="k2-input"
         data-k2-part="TagsInput"
         data-tags=""
+        aria-labelledby={field?.label}
         data-invalid={field?.invalid ? "" : undefined}
         data-disabled={props.disabled ? "" : undefined}
       >
@@ -659,8 +670,11 @@ export const TagsInput = (props: TagsInputProps) => {
           )}
         </For>
         <combo.Input
-          id={field?.control}
+          ref={(element: HTMLElement) => {
+            input = element as HTMLInputElement;
+          }}
           placeholder={values().length ? undefined : props.placeholder}
+          aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
           aria-invalid={field?.invalid ? "true" : undefined}
           aria-describedby={field?.described}
@@ -669,7 +683,7 @@ export const TagsInput = (props: TagsInputProps) => {
       {/* core's form input validates and resets the field; the values are sent one entry each under the name */}
       <combo.FormInput />
       <Show when={props.name ?? field?.name}>
-        {(name) => <For each={values()}>{(value) => <input type="hidden" name={name()} value={value} />}</For>}
+        {(name) => <For each={values()}>{(value) => <input type="hidden" name={name()} value={value} disabled={props.disabled} />}</For>}
       </Show>
       <Show when={props.suggestions?.length}>
         <combo.Popup
@@ -731,25 +745,36 @@ export const ImageInput = (props: ImageInputProps) => {
   const [busy, setBusy] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const value = () => props.value || null;
+  // The last pick wins: a file picked while an earlier one is still read replaces it, and the earlier one's value is
+  // dropped when it arrives, so the image shown, the value sent and "Bild gewählt" all name the same file.
+  let picks = 0;
   const take = async (file: File | undefined) => {
-    if (!file || busy()) return;
+    if (!file) return;
+    const mine = ++picks;
     setBusy(true);
     setFailed(false);
     try {
-      props.onChange(await (props.transform ?? squareImage)(file));
+      const made = await (props.transform ?? squareImage)(file);
+      if (mine === picks) props.onChange(made);
     } catch {
-      setFailed(true);
+      if (mine === picks) setFailed(true);
     } finally {
-      setBusy(false);
+      if (mine === picks) setBusy(false);
     }
   };
+  // The file input only picks: it has no name, so a form never sends the file itself, and it is required only while
+  // there is no image yet. What the form sends is the value, in a hidden input under the name.
   const pick = useFilePick(() => ({
     accept: props.accept ?? imageAccept,
-    disabled: props.disabled || busy(),
-    name: props.name ?? field?.name,
+    // not disabled while a picked file is read: a disabled input is left out of the form's checks, so a required
+    // field would let the form go without its image (a second pick meanwhile replaces the first, see `take`)
+    disabled: props.disabled,
+    required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
     onReject: () => setFailed(true),
+    announcement: (change) => (change.added.length ? t().imageChosen : change.rejected.length ? t().imageFailed : null),
   }));
+  const name = () => props.name ?? field?.name;
   return (
     <pick.Root class="k2-image" data-k2-part="ImageInput" role={field ? undefined : "group"} aria-label={field ? undefined : props.label}>
       <pick.Dropzone class="k2-image-preview" data-round={props.round ? "" : undefined}>
@@ -785,6 +810,7 @@ export const ImageInput = (props: ImageInputProps) => {
         </Show>
       </span>
       <pick.Input />
+      <Show when={name()}>{(sent) => <input type="hidden" name={sent()} value={value() ?? ""} disabled={props.disabled} />}</Show>
       <Show when={failed()}>
         <span class="k2-image-failed" role="alert">
           {t().imageFailed}
@@ -825,6 +851,7 @@ export type SliderProps = {
 export const Slider = (props: SliderProps) => {
   const field = useField();
   const locale = useLocale();
+  const initial = props.value ?? props.min ?? 0;
   const range = useRange(() => ({
     ...(props.onChange ? { value: props.value ?? props.min ?? 0 } : { defaultValue: props.value ?? props.min ?? 0 }),
     onValueChange: (next: number) => props.onChange?.(next),
@@ -851,7 +878,22 @@ export const Slider = (props: SliderProps) => {
         <range.Track class="k2-slider-track">
           <range.Indicator class="k2-slider-fill" />
         </range.Track>
-        <range.Thumb class="k2-slider-thumb" />
+        <range.Thumb
+          class="k2-slider-thumb"
+          input={{
+            get "aria-describedby"() {
+              return field?.described;
+            },
+            get "aria-invalid"() {
+              return field?.invalid ? "true" : undefined;
+            },
+            // a form's reset returns a native range input to its default; the default is the slider's first value, so
+            // the input, the number shown and the value sent come back together
+            ref: (element: HTMLElement) => {
+              (element as HTMLInputElement).defaultValue = String(initial);
+            },
+          }}
+        />
       </range.Control>
       <range.Value class="k2-slider-value">{(state: { text?: string }) => state.text ?? ""}</range.Value>
       <range.Input />
@@ -911,10 +953,15 @@ export const ColorInput = (props: ColorInputProps) => {
       </span>
       <picker.Popup class="k2-pop k2-color-pop" data-k2-part="Popover" side="bottom" align="start" sideOffset={4} collisionPadding={8}>
         <color.Area class="k2-color-area">
-          <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} />
+          <color.AreaThumb class="k2-color-thumb" aria-label={t().colorArea} valueText={(attrs) => t().areaValue(areaPercents(attrs))} />
         </color.Area>
         <color.Slider class="k2-color-hue" channel="hue">
-          <color.SliderThumb class="k2-color-thumb" channel="hue" aria-label={t().hue} />
+          <color.SliderThumb
+            class="k2-color-thumb"
+            channel="hue"
+            aria-label={t().hue}
+            valueText={(attrs) => t().hueValue({ degrees: Math.round(Number(attrs["aria-valuenow"] ?? 0)) })}
+          />
         </color.Slider>
       </picker.Popup>
       <Show when={props.swatches?.length}>
@@ -927,6 +974,20 @@ export const ColorInput = (props: ColorInputProps) => {
       <color.HiddenInput />
     </color.Root>
   );
+};
+
+/**
+ * Saturation and brightness in percent, read from where core puts the thumb of the colour surface (`--area-x` and
+ * `--area-y`, fractions of the surface): the words follow the colour core holds, also on black or white.
+ */
+const areaPercents = (attrs: Record<string, unknown>) => {
+  const style = typeof attrs.style === "string" ? attrs.style : "";
+  // the whole value up to the next declaration, read as a number (core may write 1e-7)
+  const fraction = (axis: "x" | "y") => {
+    const value = Number(new RegExp(`--area-${axis}:([^;]+)`).exec(style)?.[1]?.trim());
+    return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+  };
+  return { saturation: Math.round(fraction("x") * 100), brightness: Math.round(fraction("y") * 100) };
 };
 
 export type DateInputProps = {

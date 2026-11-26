@@ -436,7 +436,9 @@ export const Row = (props: RowProps) => {
           />
         </Show>
       </Show>
-      <span class="k2-row-lead">
+      {/* in a selection with a mark the lead holds both, the box before the mark (a mark the stylesheet cannot ask for
+          through an island's wrapper) */}
+      <span class="k2-row-lead" data-pair={props.select && props.mark ? "" : undefined}>
         <Show
           when={props.select}
           fallback={

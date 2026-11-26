@@ -17,6 +17,10 @@ const controlMessages = i18n.define({
       hue: "Hue",
       colorCode: "Colour code",
       color: ({ value }: { value: string }) => `Colour ${value}`,
+      hueValue: ({ degrees }: { degrees: number }) => `${degrees} degrees`,
+      areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
+        `Saturation ${saturation} %, brightness ${brightness} %`,
+      imageChosen: "Image chosen",
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
@@ -30,6 +34,10 @@ const controlMessages = i18n.define({
       hue: "Farbton",
       colorCode: "Farbcode",
       color: ({ value }: { value: string }) => `Farbe ${value}`,
+      hueValue: ({ degrees }: { degrees: number }) => `${degrees} Grad`,
+      areaValue: ({ saturation, brightness }: { saturation: number; brightness: number }) =>
+        `Sättigung ${saturation} %, Helligkeit ${brightness} %`,
+      imageChosen: "Bild gewählt",
     },
   },
 });

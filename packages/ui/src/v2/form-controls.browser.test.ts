@@ -53,8 +53,8 @@ test("server markup: the code is one named input under drawn boxes, the folded g
   expect(markup).toContain(">werkstatt.example<");
   expect(markup).toContain('aria-expanded="false"');
   expect(markup).not.toContain("Drei Pakete");
-  // the closed answer stays in the page (in the browser as hidden="until-found", so find in page reaches it)
-  expect(markup).toContain("Sie gelten bis zu ihrem Ende weiter.");
+  // a closed answer is not sent: the server and the first render show the same closed disclosure
+  expect(markup).not.toContain("Sie gelten bis zu ihrem Ende weiter.");
 });
 
 test("field action: in the 20 px label line, the field keeps its height, a press runs it", async () => {
@@ -96,20 +96,20 @@ test("tags: Enter adds the typed text as a chip, Backspace in the empty field ta
     await input.click();
     await page.keyboard.type("k2b.example");
     await page.keyboard.press("Enter");
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 2);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 2);
     expect(await deeds(page)).toEqual(["tags:werkstatt.example,k2b.example"]);
     expect(await input.inputValue()).toBe("");
     await input.focus();
     await page.keyboard.press("Backspace");
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 1);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 1);
     // each value is sent under the field's name
     expect(
       await page
         .locator('input[type="hidden"][name="domains"]')
-        .evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value)),
+        .evaluateAll((inputs) => inputs.map((input) => (input instanceof HTMLInputElement ? input.value : ""))),
     ).toEqual(["werkstatt.example"]);
     await page.getByRole("button", { name: "werkstatt.example entfernen" }).click();
-    await page.waitForFunction(() => document.querySelectorAll("[data-tags] > .k2-chip").length === 0);
+    await page.waitForFunction(() => document.querySelector("[data-tags]")?.querySelectorAll(":scope > .k2-chip").length === 0);
     expect((await deeds(page)).at(-1)).toBe("tags:");
   });
 });
@@ -150,10 +150,10 @@ test("slider: named by its field, arrows step it, the end of a key press commits
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("End");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("dim:100"));
-    expect(await page.locator(".k2-slider-value").textContent()).toBe("100");
+    expect(await field(page, "Abdunkeln").locator(".k2-slider-value").textContent()).toBe("100");
     const [control, thumb] = [
       await field(page, "Abdunkeln").locator(".k2-slider").boundingBox(),
-      await page.locator(".k2-slider-thumb").boundingBox(),
+      await field(page, "Abdunkeln").locator(".k2-slider-thumb").boundingBox(),
     ];
     expect(control?.height).toBe(36);
     expect(thumb?.width).toBe(16);
@@ -162,22 +162,28 @@ test("slider: named by its field, arrows step it, the end of a key press commits
 
 test("colour: a swatch press sets it, a typed CSS colour becomes its code, the hue thumb is named and steps", async () => {
   await withPage(async (page) => {
-    const code = page.getByRole("textbox", { name: "Farbcode" });
+    const accent = field(page, "Akzentfarbe");
+    const code = accent.getByRole("textbox", { name: "Farbcode" });
     expect(await code.inputValue()).toBe("#b45309");
-    await page.getByRole("option", { name: "Farbe #1d4ed8" }).click();
+    await accent.getByRole("option", { name: "Farbe #1d4ed8" }).click();
     expect(await code.inputValue()).toBe("#1d4ed8");
     await code.fill("rgb(15, 118, 110)");
     await code.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
-    expect(await page.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
+    expect(await accent.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
     // area and hue stand on a panel behind the swatch, so a settings row stays one line
-    await page.getByRole("button", { name: "Farbe wählen" }).click();
+    await accent.getByRole("button", { name: "Farbe wählen" }).click();
     const hue = page.getByRole("slider", { name: "Farbton" });
     const before = await hue.getAttribute("aria-valuenow");
     await hue.focus();
     await page.keyboard.press("ArrowRight");
     expect(await hue.getAttribute("aria-valuenow")).not.toBe(before);
-    expect(await page.getByRole("slider", { name: "Sättigung und Helligkeit" }).count()).toBe(1);
+    expect(await accent.getByRole("slider", { name: "Sättigung und Helligkeit" }).count()).toBe(1);
+    // the values are said in the page's language
+    expect(await hue.getAttribute("aria-valuetext")).toMatch(/^\d+ Grad$/);
+    expect(await accent.getByRole("slider", { name: "Sättigung und Helligkeit" }).getAttribute("aria-valuetext")).toMatch(
+      /^Sättigung \d+ %, Helligkeit \d+ %$/,
+    );
   });
 });
 
@@ -196,6 +202,181 @@ test("disclosure and folded group open and close in place and say so", async () 
     expect(await page.locator(".k2-group").getAttribute("data-folded")).toBeNull();
     await page.keyboard.press("Enter");
     await page.getByText("Drei Pakete").waitFor({ state: "hidden" });
+  });
+});
+
+// What a form sends and what its reset puts back, read as the browser sends it.
+const sent = (page: Page) =>
+  page.evaluate(() => {
+    const form = document.getElementById("sent");
+    if (!(form instanceof HTMLFormElement)) return { entries: [], valid: false };
+    const entries = [...new FormData(form)].map(([name, value]) => ({
+      name,
+      value: typeof value === "string" ? value : `file:${value.name}`,
+    }));
+    return { entries, valid: form.checkValidity() };
+  });
+const reset = (page: Page) =>
+  page.evaluate(() => {
+    const form = document.getElementById("sent");
+    if (form instanceof HTMLFormElement) form.reset();
+  });
+type Entry = { name: string; value: string };
+const entriesOf = (entries: Entry[], name: string) => entries.filter((entry) => entry.name === name).map((entry) => entry.value);
+const files = (entries: Entry[]) => entries.filter((entry) => entry.value.startsWith("file:"));
+
+test("a form sends the tags one entry each, nothing of a locked list, the image's value and no file entry", async () => {
+  await withPage(async (page) => {
+    let form = await sent(page);
+    expect(entriesOf(form.entries, "hosts")).toEqual(["mx1.example"]);
+    expect(entriesOf(form.entries, "locked")).toEqual([]);
+    expect(files(form.entries)).toEqual([]);
+    // the image is required and still empty: the form is not valid
+    expect(entriesOf(form.entries, "banner")).toEqual([""]);
+    expect(form.valid).toBe(false);
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    form = await sent(page);
+    expect(entriesOf(form.entries, "banner")).toEqual(["data:text/plain,b"]);
+    expect(files(form.entries)).toEqual([]);
+    expect(form.valid).toBe(true);
+    // the picker said nothing in English
+    expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/accepted|rejected/i);
+  });
+});
+
+test("tags: named by their field's label; a form's reset puts the uncontrolled list back", async () => {
+  await withPage(async (page) => {
+    const input = page.getByRole("combobox", { name: "Server", exact: true });
+    expect(await input.count()).toBe(1);
+    await input.click();
+    await page.keyboard.type("mx2.example");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 3);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
+    await reset(page);
+    await page.waitForFunction(() => document.querySelectorAll("#sent [data-tags] > .k2-chip").length === 2);
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example"]);
+  });
+});
+
+test("slider: its thumb carries the field's label and hint; a form's reset puts the input, the number shown and the value sent back together", async () => {
+  await withPage(async (page) => {
+    const thumb = page.getByRole("slider", { name: "Stufe" });
+    expect(await thumb.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(
+      "Wie stark abgedunkelt wird.",
+    );
+    await thumb.focus();
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => document.querySelector("#sent .k2-slider-value")?.textContent === "100");
+    expect(entriesOf((await sent(page)).entries, "level")).toEqual(["100"]);
+    await reset(page);
+    await page.waitForFunction(() => document.querySelector("#sent .k2-slider-value")?.textContent === "30");
+    expect(await thumb.inputValue()).toBe("30");
+    expect(entriesOf((await sent(page)).entries, "level")).toEqual(["30"]);
+  });
+});
+
+test("image: while a picked image is still being read, the required field keeps the form from being sent", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__k2Gate = new Promise((done) => {
+        Reflect.set(window, "__k2Open", done);
+      });
+    });
+    await field(page, "Banner")
+      .locator('input[type="file"]')
+      .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await page.waitForFunction(() => document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    expect((await sent(page)).valid).toBe(false);
+    await page.evaluate(() => Reflect.get(window, "__k2Open")?.());
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    expect((await sent(page)).valid).toBe(true);
+  });
+});
+
+test("image: a second image picked while the first is still read wins; the first one's value never arrives", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__k2Gate = new Promise((done) => {
+        Reflect.set(window, "__k2Open", done);
+      });
+    });
+    const picker = field(page, "Banner").locator('input[type="file"]');
+    await picker.setInputFiles({ name: "a.png", mimeType: "image/png", buffer: Buffer.from("a") });
+    await page.waitForFunction(() => document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    await picker.setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await page.evaluate(() => Reflect.get(window, "__k2Open")?.());
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    await page.waitForFunction(() => !document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    expect(entriesOf((await sent(page)).entries, "banner")).toEqual(["data:text/plain,b"]);
+  });
+});
+
+test("slider held by the page: after a form reset the input, the number shown and the value sent all show the page's value", async () => {
+  await withPage(async (page) => {
+    const thumb = page.getByRole("slider", { name: "Zoom" });
+    await thumb.focus();
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-slider-value")[1]?.textContent === "100");
+    await reset(page);
+    await page.evaluate(() => new Promise((done) => setTimeout(done, 50)));
+    expect(await thumb.inputValue()).toBe("100");
+    expect(await page.evaluate(() => document.querySelectorAll("#sent .k2-slider-value")[1]?.textContent)).toBe("100");
+    expect(entriesOf((await sent(page)).entries, "zoom")).toEqual(["100"]);
+  });
+});
+
+test("colour on black: a hue step says the hue core holds, not the black of the code", async () => {
+  await withPage(async (page) => {
+    await field(page, "Ton").getByRole("button", { name: "Farbe wählen" }).click();
+    const hue = page.getByRole("slider", { name: "Farbton" });
+    await hue.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('#sent [aria-label="Farbton"]')].some((thumb) => thumb.getAttribute("aria-valuenow") === "1"),
+    );
+    expect(await hue.getAttribute("aria-valuetext")).toBe("1 Grad");
+  });
+});
+
+test("colour: the swatch opens area and hue on a panel and says so; Escape closes it and gives the swatch the focus", async () => {
+  await withPage(async (page) => {
+    const accent = field(page, "Akzentfarbe");
+    const swatch = accent.getByRole("button", { name: "Farbe wählen" });
+    // closed, the row is one line: swatch and code, no area and no hue in the page
+    expect(await page.getByRole("slider", { name: "Farbton" }).count()).toBe(0);
+    expect(await swatch.getAttribute("aria-expanded")).toBe("false");
+    await swatch.click();
+    await page.getByRole("slider", { name: "Farbton" }).waitFor();
+    expect(await swatch.getAttribute("aria-expanded")).toBe("true");
+    await page.getByRole("slider", { name: "Farbton" }).focus();
+    await page.keyboard.press("Escape");
+    await page.getByRole("slider", { name: "Farbton" }).waitFor({ state: "detached" });
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Farbe wählen");
+  });
+});
+
+test("a form reads down one column: a field in a wide pane is at most 600 px wide", async () => {
+  await withPage(async (page) => {
+    const widths = await page.evaluate(() =>
+      [...document.querySelectorAll(".k2-pane .k2-field")].map((element) => Math.round(element.getBoundingClientRect().width)),
+    );
+    expect(widths.length).toBeGreaterThan(5);
+    expect(widths.filter((width) => width > 600)).toEqual([]);
+  });
+});
+
+test("a disclosure head is a plain line: no frame, no fill, no padding of a native button", async () => {
+  await withPage(async (page) => {
+    const head = page.locator(".k2-disc-head").first();
+    const look = await head.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { border: style.borderTopWidth, background: style.backgroundColor, appearance: style.appearance };
+    });
+    expect(look).toEqual({ border: "0px", background: "rgba(0, 0, 0, 0)", appearance: "none" });
   });
 });
 

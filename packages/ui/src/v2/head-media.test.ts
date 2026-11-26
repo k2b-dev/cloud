@@ -157,3 +157,15 @@ test("a value with a limit shows a meter inside the limit, says the value in wor
   expect(part).not.toContain("data-full");
   expect(html(Cells.Cell, { icon: "clock", label: "Arbeitszeit", value: "0 h", meter: { value: 0, of: 0 } })).not.toContain('role="meter"');
 });
+
+test("key numbers count themselves on the server: the cells say how many they are and each its place", () => {
+  const markup = html(Cells, {
+    get children() {
+      return ["Aufträge", "Offen", "Erledigt"].map((label, index) =>
+        createComponent(Cells.Cell, { icon: "circle", label, value: String(index + 1) }),
+      );
+    },
+  });
+  expect(markup).toMatch(/class="k2-cells"[^>]*data-n="3"/);
+  expect([...markup.matchAll(/data-k2-part="Cells.Cell" data-i="(\d)"/g)].map((match) => match[1])).toEqual(["1", "2", "3"]);
+});

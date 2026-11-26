@@ -246,8 +246,8 @@ export type DisclosureProps = {
 
 /**
  * Something that opens in place, such as the answer to a question: a row of 44 px with the title and a chevron at the
- * end, the content under it on the text edge. A closed answer stays in the page (`hidden="until-found"`), so the
- * browser's find in page reaches it and opens it. Several stand one under the other in a `Section`, without lines.
+ * end, the content under it on the text edge, made only while it is open (as a folded `Group`), so the server and
+ * the first render show the same. Several stand one under the other in a `Section`, without lines.
  */
 export const Disclosure = (props: DisclosureProps) => {
   const parts = useDisclosure(() => ({
@@ -260,9 +260,7 @@ export const Disclosure = (props: DisclosureProps) => {
         <span class="k2-disc-title">{props.title}</span>
         <Icon name="chevron-down" />
       </parts.Trigger>
-      <parts.Panel class="k2-disc-body" hiddenUntilFound>
-        {props.children}
-      </parts.Panel>
+      <parts.Panel class="k2-disc-body">{props.children}</parts.Panel>
     </parts.Root>
   );
 };

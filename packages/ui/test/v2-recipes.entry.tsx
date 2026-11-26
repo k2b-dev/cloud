@@ -43,6 +43,7 @@ const recipes: Record<string, Recipe> = {
   "overview.tsx": overview,
   "pairing.tsx": pairing,
   "record-groups.tsx": recordGroups,
+  "settings.tsx": settings,
   "record.tsx": record,
   "settings-page.tsx": settingsPage,
   "settings.tsx": settings,

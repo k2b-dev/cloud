@@ -6,6 +6,7 @@
  */
 import { colorPicker } from "@ui-sdk/core/color-picker";
 import { slider } from "@ui-sdk/core/slider";
+import { mergeProps, onCleanup, onMount } from "solid-js";
 import { type PartProps, part, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 
 export type RangeOptions = {
@@ -33,8 +34,8 @@ export type RangeParts = {
   Track: SlotComponent;
   /** The filled part of the track, from the start to the thumb. */
   Indicator: SlotComponent;
-  /** The one thumb, with its native range input inside. */
-  Thumb: (props: PartProps) => ReturnType<SlotComponent>;
+  /** The one thumb, with its native range input inside; `input` are that input's element props (its description). */
+  Thumb: (props: PartProps & { input?: PartProps }) => ReturnType<SlotComponent>;
   /** The value as it reads. */
   Value: SlotComponent;
   /** The hidden input a form sends. */
@@ -56,14 +57,37 @@ export function useRange(options: () => RangeOptions): RangeParts {
     Control: slotComponent(handle, "control", "div"),
     Track: slotComponent(handle, "track", "div"),
     Indicator: slotComponent(handle, "indicator", "div"),
-    Thumb: (props) =>
-      part(
+    Thumb: (props) => {
+      const { input, ...thumb } = props;
+      // A form's reset returns the native range input to its default after core has taken its own value back (or kept
+      // the value the page holds): one task later the input shows core's value again, so the input, the number shown
+      // and the value sent agree.
+      let element: HTMLInputElement | undefined;
+      onMount(() => {
+        const form = element?.form;
+        if (!form) return;
+        const again = () =>
+          setTimeout(() => {
+            if (element?.isConnected) handle.api.internal.syncInput(element, 0);
+          });
+        form.addEventListener("reset", again);
+        onCleanup(() => form.removeEventListener("reset", again));
+      });
+      // mergeProps keeps the getters of the input's props (its description follows the field)
+      const inputProps: PartProps = mergeProps(input ?? {}, {
+        ref: (el: HTMLElement) => {
+          if (el instanceof HTMLInputElement) element = el;
+          input?.ref?.(el);
+        },
+      });
+      return part(
         handle,
         "thumb",
         () => ({ index: 0 }),
-        { ...props, children: part(handle, "thumb-input", () => ({ index: 0 }), {}, "input") },
+        { ...thumb, children: part(handle, "thumb-input", () => ({ index: 0 }), inputProps, "input") },
         "div",
-      ),
+      );
+    },
     Value: slotComponent(handle, "value", "output"),
     Input: slotComponent(handle, "input", "input"),
   };

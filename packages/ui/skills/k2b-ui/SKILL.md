@@ -102,11 +102,12 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
-- Strings come from the app's message catalog; recipes inline German sample
-  text only to look like the real thing.
-- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
-  page's language: the `@k2b/ui` entry belongs to v1.
+- A screen is one `Workspace`, rendered on the server; only what needs the
+  browser is an island (`.island.tsx`: a button with its action, a field, a
+  row's actions, a filter bar). v2.css and `describeV2` look through the island
+  wrappers; never make the whole screen one island. An island imports only
+  from `@k2b/ui/v2` (also `useLocale`); the `@k2b/ui` entry belongs to v1.
+- Strings come from the app's catalog; recipes inline German sample text.
 - On the phone one search place and no empty head row: a host whose bar
   holds the page's search marks the v2 scope with `data-k2-host-search`. A
   detail `Pane` always has `back`: on the phone a page with its way back and

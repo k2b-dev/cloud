@@ -691,24 +691,43 @@ export type CellProps = {
   loading?: boolean;
 };
 
+// The cells count themselves in the order they render, the same on the server and in the browser: the stylesheet
+// places them by their number and their count, since a sibling count (:nth-child) cannot see through an island's
+// wrapper.
+const CellCount = createContext<() => number>();
+
 /** Two to six equal cells with a line between them, never one tall cell alone in a row (see the stylesheet). */
 export const Cells = (props: {
   /** Two to six `Cells.Cell`: four two by two and five or six in rows of three in a narrow pane; on the phone two to a
    * row, an odd last one as one line across. */
   children: JSX.Element;
-}) => (
-  <div class="k2-cells" data-k2-part="Cells">
-    {props.children}
-  </div>
-);
+}) => {
+  let count = 0;
+  const cells = resolveChildren(() => {
+    count = 0;
+    return <CellCount.Provider value={() => ++count}>{props.children}</CellCount.Provider>;
+  });
+  // read after the cells, which counted themselves while they were made
+  const counted = () => {
+    cells();
+    return String(count);
+  };
+  return (
+    <div class="k2-cells" data-k2-part="Cells" data-n={counted()}>
+      {cells()}
+    </div>
+  );
+};
 
 Cells.Cell = (props: CellProps) => {
+  const place = useContext(CellCount)?.();
   const meta = resolveChildren(() => props.meta);
   return (
     // a cell that leads somewhere: its label is the link, stretched over the cell, so a value may hold its own controls
     <div
       class="k2-cell"
       data-k2-part="Cells.Cell"
+      data-i={place === undefined ? undefined : String(place)}
       data-open={props.href !== undefined ? "" : undefined}
       aria-busy={props.loading ? "true" : undefined}
       style={custom({ "--k2-c": props.color })}

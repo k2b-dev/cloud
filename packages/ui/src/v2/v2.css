@@ -3,7 +3,12 @@
 
    Everything stays below the v2 root `.k2-ui`, in its own namespace: classes start with `k2-`, custom properties
    with `--k2-`. A page can load this sheet beside the v1 sheet (`.k2b-ui`, `--k2b-*`) without either touching the
-   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own. */
+   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own.
+
+   Write relations as usual (`>`, `+`, `~`, `:first-child`, `:last-child`, `:has(> …)`): the build ships every one
+   also through an island wrapper of @k2b/ssr (scripts/v2-island-css.ts), so a primitive keeps its layout inside a
+   small island. A form that cannot do that (`:nth-*`, `:*-of-type`, `:empty`) fails the build; only placeholders
+   (`.k2-skel`) may use `:nth-*`. */
 
 .k2-ui {
   /* neutral scale */
@@ -564,6 +569,7 @@
   min-width: 400px;
 }
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
+/* one primitive: Pane.Split puts a seam after every pane */
 .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
   width: calc(var(--k2-pane-w) - 1px);
 }
@@ -774,7 +780,7 @@
   align-content: start;
   align-items: center;
 }
-.k2-ui .k2-cell + .k2-cell {
+.k2-ui .k2-cell ~ .k2-cell {
   border-left: var(--k2-hairline);
 }
 /* A cell under 220 px (half a phone, four cells in a pane of 600 px) leaves no room for a big number in 18 px
@@ -807,25 +813,25 @@
    phone), so a big number keeps its 18 px; five and six stand in rows of three. */
 @container k2-pane (max-width: 879.98px) {
   /* four: two by two */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) {
+  .k2-ui .k2-cells[data-n="4"] {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) > .k2-cell:nth-child(odd) {
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)):not(:has(> .k2-cell:nth-child(5))) > .k2-cell:nth-child(n + 3) {
+  .k2-ui .k2-cells[data-n="4"] > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
   /* five and six: rows of three */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) {
     grid-auto-flow: row;
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(3n + 1) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="4"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(5)) > .k2-cell:nth-child(n + 4) {
+  .k2-ui .k2-cells:is([data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
 }
@@ -1240,6 +1246,7 @@
   font-size: 14px;
 }
 /* the 20 px tile stands on the symbol axis; the title after it keeps the one text edge of 44 px */
+/* one primitive: the symbol and the title of a Section head */
 .k2-ui .k2-sh > .k2-stile + h3 {
   margin-left: -4px;
 }
@@ -1358,10 +1365,10 @@
 /* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5).
    "The last button" skips popups: a menu or popover renders right after its button while it is open (in the top
    layer), and the button must not jump when it opens. */
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -6px;
 }
 .k2-ui .k2-group[data-folded] {
@@ -1611,12 +1618,12 @@
   color: var(--k2-subtle);
 }
 /* a text button at the end of a row stands with its text, not its box, on the text edge (K5) */
-.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
@@ -1815,58 +1822,7 @@
   vertical-align: top;
   margin-block: -2px;
 }
-/* Numbers, amounts and times are never cut (a cut one reads as another value): tabular figures, one line; the
-   column is measured to its longest value, so nothing needs cutting. */
-.k2-ui .k2-table :is(th, td)[data-numeric] {
-  font-variant-numeric: tabular-nums;
-}
-.k2-ui .k2-table td[data-numeric] > .k2-cell-line:not([data-second]) {
-  white-space: nowrap;
-  overflow-wrap: normal;
-}
-/* A person with their lines in a cell: the picture, then the lines, each cut with "…" (never in the middle of a sign);
-   24 px beside one line, 32 px beside two. */
-.k2-ui .k2-cell-person {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-.k2-ui .k2-table[data-lines="2"] .k2-cell-person > .k2-av {
-  width: 32px;
-  height: 32px;
-  font-size: 12px;
-}
-.k2-ui .k2-cell-lines {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.k2-ui .k2-cell-lines > .k2-cell-line {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k2-ui .k2-cell-lines > .k2-cell-line[data-second] {
-  font: var(--k2-t-meta);
-  color: var(--k2-subtle);
-}
-.k2-ui .k2-table[data-lines="2"] td:has(> .k2-cell-person) {
-  vertical-align: middle;
-}
-/* things in one line in a cut cell (a picture and a name): the words give way with "…", not cut through a sign */
-.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)),
-.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-row-open > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
-  flex: 0 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
@@ -2281,7 +2237,7 @@
   align-items: center;
 }
 /* an icon button at the end stands with its icon on the text edge */
-.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 
@@ -2370,13 +2326,19 @@
   row-gap: 8px;
 }
 /* A bar in the flow of a column or in a pane's status place (not a head or a status row, which have their own narrow
-   forms) with such a line: its things and its end flow as one line that wraps, the end after the last thing when it
-   has room there. One line stays the bar's 40 px (a small control of 28 px with equal air above and below, the line
-   below), only a second line makes it higher. */
-.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]):has(> .k2-bar-start > .k2-inline) {
+   forms): its things and its end flow as one line that wraps, the end after the last thing when it has room there and
+   on a line of its own when not, so it never runs under them (the deeds of an open file beside its size). One line
+   stays the bar's 40 px (a small control of 28 px with equal air above and below, the line below), only a second line
+   makes it higher. */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) {
   height: auto;
   min-height: var(--k2-h-bar);
   padding-block: calc((var(--k2-h-bar) - 1px - var(--k2-h-control-small)) / 2);
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+/* its deeds wrap too where the column is narrower than they are, so none is cut */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, [data-slot="status"]) > .k2-bar:not([data-status-row]) > .k2-bar-start {
   flex-wrap: wrap;
   row-gap: 8px;
 }
@@ -2671,7 +2633,7 @@
   column-gap: 12px;
 }
 /* in a selection the box stands before the thing's mark: a file keeps its thumbnail beside its box */
-.k2-ui .k2-row-lead:has(> .k2-mark + .k2-mk) {
+.k2-ui .k2-row-lead[data-pair] {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2731,7 +2693,7 @@
    20 + (j - 1) × 18 + 30 px. A stack whose people all show
    (data-all) needs no count while its faces fit; narrower, a count takes the place of the faces that go. */
 @container k2-avs (max-width: 121.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2742,7 +2704,7 @@
   }
 }
 @container k2-avs (max-width: 103.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2753,7 +2715,7 @@
   }
 }
 @container k2-avs (max-width: 91.98px) {
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="4"] {
@@ -2762,7 +2724,7 @@
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="4"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="3"] {
@@ -2773,7 +2735,7 @@
   }
 }
 @container k2-avs (max-width: 85.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2782,7 +2744,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="2"] {
@@ -2793,7 +2755,7 @@
   }
 }
 @container k2-avs (max-width: 73.98px) {
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="3"] {
@@ -2802,7 +2764,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="3"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="2"] {
@@ -2813,7 +2775,7 @@
   }
 }
 @container k2-avs (max-width: 67.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2822,7 +2784,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="1"] {
@@ -2831,7 +2793,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="1"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="1"] {
@@ -2842,7 +2804,7 @@
   }
 }
 @container k2-avs (max-width: 55.98px) {
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="2"] {
@@ -2851,7 +2813,7 @@
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="2"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="1"] {
@@ -2862,7 +2824,7 @@
   }
 }
 @container k2-avs (max-width: 37.98px) {
-  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="2"] > .k2-avs-rest[data-visible="1"] {
@@ -3115,6 +3077,7 @@
   opacity: 0;
   cursor: default;
 }
+/* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
 .k2-ui .k2-mark-input:focus-visible + .k2-switch {
@@ -3307,13 +3270,14 @@
 .k2-ui .k2-field-message[data-error] {
   color: var(--k2-bad);
 }
-/* Setting: the name (13, 500) and its hint on the left, the control in a column of 300 px beside them, so the values
-   of a settings page stand in one line and are read at a glance; "geändert · vorher …" under the control. No line
-   between settings: a section separates them from the next topic. */
+/* Setting: a narrow column with the name (13, 500) alone, the control in a column of 300 px beside it, so the names and
+   the values of a settings page each stand in one line and are read at a glance; the one line of help and "geändert ·
+   vorher …" under the control, where they may take the rest of the row (CLEAR AND DENSE f). No line between settings:
+   a section separates them from the next topic. */
 .k2-ui .k2-field[data-setting] {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 240px) minmax(0, 300px) minmax(0, 1fr);
   grid-template-rows: auto auto auto;
-  grid-template-areas: "label control" "message control" ". was";
+  grid-template-areas: "label control ." ". message message" ". was was";
   column-gap: 24px;
   row-gap: 0;
   align-items: center;
@@ -3322,8 +3286,8 @@
 }
 .k2-ui .k2-field[data-setting] > .k2-field-label {
   grid-area: label;
-  /* the name and its hint stand together, beside the middle of the value */
-  align-self: end;
+  /* the name stands beside the middle of the value */
+  align-self: center;
   font: var(--k2-t-row);
   font-weight: 500;
   color: var(--k2-text);
@@ -3332,6 +3296,7 @@
 .k2-ui .k2-field[data-setting] > .k2-field-message {
   grid-area: message;
   align-self: start;
+  padding-top: 4px;
 }
 .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
   grid-area: control;
@@ -3341,15 +3306,15 @@
   grid-area: was;
   padding-top: 4px;
 }
-/* a deed of the setting (such as "Auf Standard zurücksetzen") at the end of the name's line, as in a field: the value's
-   column keeps its 300 px, so the deed coming or going moves nothing */
+/* a deed of the setting (such as "Auf Standard zurücksetzen") after the value: the name's and the value's columns keep
+   their widths, so the deed coming or going moves nothing */
 .k2-ui .k2-field[data-setting][data-action] {
-  grid-template-columns: minmax(0, 1fr) auto 300px;
-  grid-template-areas: "label action control" "message message control" ". . was";
+  grid-template-areas: "label control action" ". message message" ". was was";
 }
 .k2-ui .k2-field[data-setting] > .k2-field-action {
   grid-area: action;
-  align-self: end;
+  align-self: center;
+  justify-self: start;
   display: flex;
   align-items: center;
   height: 20px;
@@ -3386,6 +3351,9 @@
   .k2-ui .k2-field[data-setting] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
   }
+  .k2-ui .k2-field[data-setting] > .k2-field-message {
+    padding-top: 0;
+  }
 }
 /* A setting with a deed needs the deed's room too ("Auf Standard zurücksetzen", about 170 px): below 800 px of pane its
    name would get less than its room, so the deed stays at the end of the name's line and the value goes under it. */
@@ -3398,6 +3366,9 @@
   }
   .k2-ui .k2-field[data-setting][data-action] > :is(.k2-field-label, .k2-field-action) {
     align-self: start;
+  }
+  .k2-ui .k2-field[data-setting][data-action] > .k2-field-message {
+    padding-top: 0;
   }
 }
 
@@ -4403,11 +4374,23 @@
   font-weight: 600;
 }
 
-/* StatusRow: one lead statement, key figures; filters on the right */
+/* StatusRow: one lead statement, key figures; filters on the right. The start takes the room up to the filters; in
+   it the lead comes first and the figures take only what the lead leaves (#4149). A lead longer than that room is cut
+   with "…", so it never runs under a control; the controls keep their words until the row is too narrow (#4166). */
 .k2-ui .k2-status-lead {
   font: var(--k2-t-lead);
   white-space: nowrap;
   /* in a column of 320 px the statement gives way with "…" before it runs past the edge */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-bar[data-status-row] > .k2-bar-start {
+  flex: 1 1 0;
+}
+/* the lead gives way before a control is cut or covered; with controls that fold it keeps about a word down to 320 px */
+.k2-ui .k2-bar-start > .k2-status-lead {
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -4421,17 +4404,18 @@
   color: var(--k2-text);
   font-weight: 600;
 }
+/* one primitive: the facts of a StatusRow */
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
 }
 /* The key figures stand on one line that hides what wraps: where not all fit before the filters, the later ones wrap
    out of sight, whole figure by whole figure, and none runs under a control (#4149). The empty first item, one line
    high, lets even the first figure go whole instead of being cut; its gap and the row's make the 16 px after the
-   lead. The filters keep their room. */
+   lead. The filters keep their room, and so does the lead: the figures start from no width and take what is left. */
 .k2-ui .k2-bar-start > .k2-status-facts {
   display: flex;
   flex-wrap: wrap;
-  flex: 0 1 auto;
+  flex: 1 1 0;
   column-gap: 8px;
   min-width: 0;
   height: 1lh;
@@ -5381,6 +5365,7 @@
     width: auto;
     height: 1px;
   }
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane,
   .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
     flex: none;
@@ -5395,6 +5380,7 @@
     overflow: visible;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > [data-detail-empty],
   .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
     display: none;
@@ -5432,7 +5418,9 @@
      page, with its way back or without, and so does the floating main action of the list (the detail has its own
      deeds) */
   .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
-  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail]) .k2-fab {
+  .k2-ui
+    .k2-ws:has(> .k2-ws-main > .k2-split > .k2-pane[data-detail], > .k2-ws-main > .k2-pane > .k2-scroll > .k2-split > .k2-pane[data-detail])
+    > .k2-fab {
     display: none;
   }
   .k2-ui .k2-pane-back {
@@ -5459,6 +5447,7 @@
     overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
@@ -5466,6 +5455,7 @@
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
   /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
     --k2-table-end: 0;
   }
@@ -5760,8 +5750,14 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
+  /* a section's actions keep only their symbols; the words stay their names (not `display: none`, which took them) */
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
@@ -5779,6 +5775,24 @@
     padding: 6px 0;
   }
 }
+/* On the phone a row that leads with a thing's mark is 56 px with a mark of 40 (the mockup's phone lists of files and
+   folders), still above the touch target of 44; a row without a mark keeps its 60 px. */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-row[data-mark],
+  .k2-ui .k2-row[data-mark][data-lines="1"] {
+    min-height: 56px;
+    padding-block: 8px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+  .k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
+    font-size: 22px;
+  }
+}
+
 
 /* ── Narrow column: below 480 px of its pane, by the pane's own width (a side panel on the desktop too) ─────────
    What simply has no room changes with the column, not the window: a large table becomes rows and drops columns,
@@ -5796,6 +5810,7 @@
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
   }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  /* one primitive: the large and the phone form of a Table */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;
   }
@@ -5821,35 +5836,39 @@
   /* On the phone key numbers stand two to a row from three on (three need 150 px each to stand side by side with
      their values whole). An odd last one becomes one line across, its label on the left and its value at the end, so
      no tall cell stands alone in a row. Each layout draws its own lines. */
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="1"], [data-i="3"], [data-i="5"]) {
     border-left: 0;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(even) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="2"], [data-i="4"], [data-i="6"]) {
     border-left: var(--k2-hairline);
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(n + 3) {
+  .k2-ui .k2-cells:is([data-n="3"], [data-n="4"], [data-n="5"], [data-n="6"]) > .k2-cell:is([data-i="3"], [data-i="4"], [data-i="5"], [data-i="6"]) {
     border-top: var(--k2-hairline);
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"],
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] {
     grid-column: 1 / -1;
     grid-template-columns: 16px minmax(0, 1fr) auto auto;
     padding-block: 10px;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > .k2-cell-value {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-value,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-value {
     grid-row: 1;
     grid-column: 3;
     margin-top: 0;
     text-align: right;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > .k2-cell-go {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > .k2-cell-go,
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > .k2-cell-go {
     grid-row: 1;
     grid-column: 4;
   }
-  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell:nth-child(odd):last-child > :is(.k2-cell-meter, .k2-cell-meta) {
+  .k2-ui .k2-cells[data-n="3"] > .k2-cell[data-i="3"] > :is(.k2-cell-meter, .k2-cell-meta),
+  .k2-ui .k2-cells[data-n="5"] > .k2-cell[data-i="5"] > :is(.k2-cell-meter, .k2-cell-meta) {
     grid-column: 2 / -1;
   }
   /* in a narrow column and on the phone key numbers keep their rows (see above): the value and its line take the
@@ -6606,15 +6625,24 @@
 .k2-ui .k2-order .k2-btn > .k2-icon {
   font-size: 14px;
 }
-/* a narrow status row: sort and group keep their symbols; the words stay their names */
-@container k2-status (max-width: 479px) {
-  .k2-ui .k2-order .k2-btn > .k2-btn-label {
+/* A narrow status row (below 600 px, as for the bar of a selection): every control at its end that has a symbol
+   keeps only the symbol, as the head's controls on the phone, sort and group included; the words stay its name. A
+   menu keeps its chevron. A control with words alone keeps them, and the lead gives way to it. */
+@container k2-status (max-width: 599px) {
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:has(> .k2-icon:first-child) > .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn:not([data-menu]):has(> .k2-icon:first-child) {
+    width: var(--k2-h-control);
+    padding: 0;
+  }
+  .k2-ui .k2-bar[data-status-row] > .k2-bar-end .k2-btn[data-variant="text"]:not([data-menu]):has(> .k2-icon:first-child) {
+    width: var(--k2-h-control-small);
   }
 }
 
@@ -6776,37 +6804,24 @@
     flex: none;
     padding-right: 48px;
   }
-  /* the one menu of how the list shows stays at the end of the strip, also while the statements scroll under it */
+  /* the one menu of how the list shows stands at the end, beside the statements, never over them */
   .k2-ui .k2-fbar-view {
     display: inline-flex;
     flex: none;
-    position: sticky;
-    right: 0;
     margin-left: auto;
-    padding-left: 8px;
-    background: var(--k2-surface);
   }
-  /* with it the strip fades before the menu, not under it: the menu stays whole and the statements run out beside it */
+  /* with it the bar itself does not fade: the statements fade at the end of their own strip (below) */
   .k2-ui .k2-fbar[data-view] {
     -webkit-mask-image: none;
     mask-image: none;
-  }
-  .k2-ui .k2-fbar-view::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    right: 100%;
-    width: 24px;
-    background: linear-gradient(90deg, transparent, var(--k2-surface));
-    pointer-events: none;
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;
     flex: none;
   }
-  /* with that menu only the statements scroll, between the filter button and the menu: a statement longer than its
-     room runs out at the menu's fade, never under its words. The strip keeps room for a focus ring (3 px) around. */
+  /* with that menu only the statements scroll, between the filter button and the menu: at rest a statement longer
+     than its room fades out at the end of its own strip, before the menu, and scrolling shows the rest. The strip keeps
+     room for a focus ring (3 px) around. */
   .k2-ui .k2-fbar[data-view] > .k2-fbar-flow {
     flex: 1 1 auto;
     min-width: 0;
@@ -6815,6 +6830,8 @@
     scrollbar-width: none;
     padding: 4px;
     margin: -4px;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
   }
   .k2-ui .k2-fbar[data-view] > .k2-fbar-flow::-webkit-scrollbar {
     display: none;
