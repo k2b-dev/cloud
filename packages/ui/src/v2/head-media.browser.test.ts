@@ -27,6 +27,7 @@ type Case =
   | "cells"
   | "cells-narrow"
   | "path"
+  | "path-chip"
   | "split-canvas"
   | "long"
   | "areas"
@@ -338,8 +339,15 @@ test("the open file shows a large preview 4:3 from edge to edge, and the list le
         mark: element.querySelector(".k2-mk")?.getBoundingClientRect().width,
         name: element.querySelector(".k2-cell-line")?.textContent,
       }));
-    expect(cell.mark).toBe(24);
+    // a table whose rows lead with a mark: rows of 44 px, marks of 32, as the mockup's list of files
+    expect(cell.mark).toBe(32);
     expect(cell.name).toBe("Aufmaß");
+    expect(
+      await page
+        .locator(".k2-table[data-marks] tbody tr:not([data-group]) td")
+        .first()
+        .evaluate((td) => Math.round(td.getBoundingClientRect().height)),
+    ).toBe(44);
     // the owner leads its cell as a person
     expect(await page.locator(".k2-table td .k2-cell-lead > .k2-av").count()).toBeGreaterThan(5);
   });
@@ -583,9 +591,9 @@ test("the states of an entry stand whole under its lines and wrap; rows without 
             })(),
           };
         });
-        // without states the rows keep their heights: 40 for one line, 52 for two (in a section no line between rows);
-        // on the phone a row of one line takes its 60
-        expect(found.heights).toEqual(width === 1440 ? [40, 52] : [60, 52]);
+        // without states the rows keep their heights: 44 for one line that leads with a mark, 52 for two (in a section
+        // no line between rows); on the phone a row of one line takes its 60
+        expect(found.heights).toEqual(width === 1440 ? [44, 52] : [60, 52]);
         expect(found.edge).toBe(0);
         expect(found.under).toBe(true);
         expect(found.whole).toBe(true);
@@ -798,6 +806,24 @@ for (const width of [1440, 1024])
       width,
     );
   });
+
+test("a deep path with a chip after it gives way before the deeds; the chip is read whole (W1b #4206)", async () => {
+  await withPage(
+    "path-chip",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const chip = document.querySelector<HTMLElement>("[data-slot='head'] .k2-inline > .k2-chip")!;
+        const start = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-start")!.getBoundingClientRect();
+        const end = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-end")!.getBoundingClientRect();
+        return { chip: chip.scrollWidth <= chip.clientWidth + 1, apart: start.right <= end.left };
+      });
+      expect(found).toEqual({ chip: true, apart: true });
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    1024,
+  );
+});
 
 test("on the phone a deep path gives way to the shell's bar, and the head keeps only its search", async () => {
   await withPage(

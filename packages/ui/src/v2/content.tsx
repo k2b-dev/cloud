@@ -706,6 +706,8 @@ export const Table = <T,>(props: TableProps<T>) => {
           data-lines={lines()}
           data-sized={sized() ? "" : undefined}
           data-grid={grid() ? "" : undefined}
+          // a column that leads with the thing's mark makes every row 44 px with a mark of 32, as the mockup's lists
+          data-marks={props.columns.some((column) => column.mark) ? "" : undefined}
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
         >

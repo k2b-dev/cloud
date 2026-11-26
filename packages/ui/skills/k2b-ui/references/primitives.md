@@ -181,7 +181,7 @@ inside it.
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
-  table; 24 px on one line, 32 px on two or three), or `avatar`, or a
+  table; 32 px, and a row of one line with it is 44 px), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -227,7 +227,8 @@ lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
 page itself if it needs one. The last column takes the rest. Chips,
 `Progress`, text buttons are fine in cells. `open(row) => { href } | {
 onOpen }` makes each row open its entry. A column's `mark(row)` leads its
-cell with the thing's `Mark` (a file's thumbnail or type, 24 px), its
+cell with the thing's `Mark` (a file's thumbnail or type, 32 px; the
+table's rows are then 44 px, as the mockup's lists), its
 `avatar(row)` with a person (the name in the cell names it); `phone(row)`
 takes a `mark` as well.
 

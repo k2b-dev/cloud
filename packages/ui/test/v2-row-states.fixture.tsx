@@ -8,6 +8,7 @@ import {
   Digest,
   FilterBar,
   Group,
+  Inline,
   Input,
   List,
   Menu,
@@ -182,11 +183,21 @@ const levels = [
 
 export const deepPath = levels.map((label, index) => (index < levels.length - 1 ? { label, href: `#level-${index}` } : { label }));
 
-export const DeepPathScreen = () => (
+// `chip`: the path stands in an `Inline` with a chip after it (the folder's sharing, W1b #4206).
+export const DeepPathScreen = (props: { chip?: boolean }) => (
   <Workspace
     head={
       <Bar
-        start={<Path label="Ort" items={deepPath} />}
+        start={
+          props.chip ? (
+            <Inline>
+              <Path label="Ort" items={deepPath} />
+              <Chip icon="users">Mit 4 Personen geteilt</Chip>
+            </Inline>
+          ) : (
+            <Path label="Ort" items={deepPath} />
+          )
+        }
         end={
           <>
             <Input type="search" icon="search" label="In diesem Ordner" placeholder="In diesem Ordner" />

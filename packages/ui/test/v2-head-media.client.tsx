@@ -29,6 +29,7 @@ declare global {
       | "cells"
       | "cells-narrow"
       | "path"
+      | "path-chip"
       | "split-canvas"
       | "long"
       | "areas"
@@ -56,8 +57,8 @@ render(
         <AreasMenuScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
-      ) : which === "path" ? (
-        <DeepPathScreen />
+      ) : which === "path" || which === "path-chip" ? (
+        <DeepPathScreen chip={which === "path-chip"} />
       ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
         <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
       ) : which === "cells" || which === "cells-narrow" ? (
