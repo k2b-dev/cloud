@@ -42,8 +42,6 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-// `<body data-case="tabsfold">`: tabs whose open tab depends on the device, with too little room: in a box of 300 px the
-// phone's tab is the last of six (it stays, as the open tab does), in a box of 150 px it stands alone, cut
 // `<body data-case="tabsfive">`: a space with five views, the last one open, in the head beside a deed (Spaces), and a
 // pane with five views whose open one depends on the device, the late ones (Notebooks)
 const fiveViews = ["Übersicht", "Kalender", "Aufgaben", "Dateien und Ordner", "Einstellungen des Raums"];
@@ -92,6 +90,9 @@ if (scenario === "tabsfive")
     ),
     root,
   );
+// `<body data-case="tabsfold">`: tabs whose open tab depends on the device, with too little room: in a box of 300 px the
+// phone's tab is the last of six (it stays, as the open tab does), in a box of 150 px it stands alone, cut, and
+// in a box of 90 px, too small for a symbol and "…", it is the ticked entry of the menu
 else if (scenario === "tabsfold")
   render(
     () => (
@@ -113,6 +114,16 @@ else if (scenario === "tabsfold")
           <div style={{ width: "150px" }}>
             <Tabs
               label="Eng"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Notizen der Woche", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+          <div style={{ width: "90px" }}>
+            <Tabs
+              label="Winzig"
               items={[
                 { label: "Übersicht", current: "desktop", onClick: () => undefined },
                 { label: "Verlauf", onClick: () => undefined },

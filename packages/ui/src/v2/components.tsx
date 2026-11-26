@@ -281,6 +281,9 @@ const shownOn = (tab: Tab, wide: boolean | undefined) =>
 /** The width from which v2 lays a page out for the desktop, the one width of v2.css (`textEdge.phoneBelow`). */
 const DESKTOP = `(min-width: ${textEdge.phoneBelow}px)`;
 
+/** The least room of an open tab that stands cut: a symbol or one letter, and "…". */
+const OPEN_TAB_FLOOR = 24;
+
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
 const asEntry = (tab: Tab, shown: boolean): MenuEntry => ({
   label: tab.label,
@@ -310,7 +313,8 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
  * Only the open tab never hides (break-ui 25.11.): when it has no room, it takes the place after the tabs that fit,
- * cut with "…" (its whole name on hover), and the tabs between join the menu.
+ * cut with "…" (its whole name on hover), alone if it must, and the tabs between join the menu. Where not even a
+ * symbol and "…" fit (24 px), it is the ticked entry of that menu, whose tab is then the open one.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -360,8 +364,15 @@ export const Tabs = (props: TabsProps) => {
       let before = Math.min(fits, open);
       while (before > 0 && until(before) + gap + least > room + 0.5) before -= 1;
       // the open tab never hides (Spaces, Notebooks 26.11.): without room even for a short name it stands alone, cut
-      // to the room the line has, and the others fold
+      // to the room the line has, and the others fold ...
       const left = Math.max(0, Math.floor(room - until(before) - (before > 0 ? gap : 0)));
+      // ... down to the room of a symbol and "…": below that a cut says nothing, and it is the ticked entry of the menu,
+      // whose tab is then the open one
+      if (left < OPEN_TAB_FLOOR) {
+        setKept(undefined);
+        setFit(fits);
+        return;
+      }
       setFit(before);
       setKept({ index: open, room: left });
     };

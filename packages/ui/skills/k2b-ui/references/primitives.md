@@ -337,7 +337,9 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab. The open tab never hides: without room it stands
-  after the tabs that fit, cut with "…" (whole on hover), and is not named
+  after the tabs that fit, cut with "…" (whole on hover), alone if it must
+  (only below 24 px, a symbol and "…", it is the ticked entry of the menu,
+  whose tab is then the open one), and is not named
   in the menu again (leave it out of your `menu` entries too). A default
   that depends on the device (the list on the phone, the graph on the
   desktop, while the address names no view) is `current: "phone"` on one tab

@@ -360,19 +360,36 @@ for (const [width, device] of [
           tabs.filter((tab) => tab.current === "page" && tab.shown).map((tab) => tab.name);
         const many = await state("Viele");
         const tight = await state("Eng");
+        const tiny = await state("Winzig");
         if (device === "desktop") {
           expect(open(many)).toEqual(["Übersicht"]);
           expect(open(tight)).toEqual(["Übersicht"]);
+          expect(open(tiny)).toEqual(["Übersicht"]);
           return;
         }
         // the last of six stays after the tabs that fit
         expect(open(many)).toEqual(["Notizen"]);
         expect(await page.locator(`nav[aria-label="Viele"] .k2-tab`, { hasText: "Notizen" }).getAttribute("data-kept")).toBe("");
-        // too little room even for a short name: it still stands, alone and cut; the menu holds the others only
+        // too little room even for a short name (less than 96 px): it still stands, alone and cut, at least a symbol and
+        // "…" wide; the menu holds the others only
         expect(open(tight)).toEqual(["Notizen der Woche"]);
+        const cut = await page.locator(`nav[aria-label="Eng"] .k2-tab[aria-current]`).evaluate((tab) => ({
+          kept: tab.hasAttribute("data-kept"),
+          width: Math.round(tab.getBoundingClientRect().width),
+        }));
+        expect(cut.kept).toBe(true);
+        expect(cut.width).toBeLessThan(96);
+        expect(cut.width).toBeGreaterThanOrEqual(24);
         await page.locator(`nav[aria-label="Eng"] .k2-tab[data-menu]`).click();
         const entries = (await page.getByRole("menu").getByRole("menuitem").allTextContents()).map((entry) => entry.trim());
         expect(entries).toEqual(["Übersicht", "Verlauf"]);
+        await page.keyboard.press("Escape");
+        await page.getByRole("menu").waitFor({ state: "hidden" });
+        // not even a symbol and "…" fit: a cut would say nothing, so the open view is the menu's ticked entry, and the
+        // menu tab is the open one
+        expect(open(tiny)).toEqual(["Mehr"]);
+        await page.locator(`nav[aria-label="Winzig"] .k2-tab[data-menu]`).click();
+        expect(await page.getByRole("menuitemcheckbox", { name: "Notizen der Woche" }).getAttribute("aria-checked")).toBe("true");
       },
       "tabsfold",
     );
@@ -397,6 +414,8 @@ for (const width of [1024, 390])
                 visible:
                   getComputedStyle(tab).visibility === "visible" && box.width > 0 && box.top < line.bottom && box.right <= line.right + 0.5,
                 words: Math.round(words?.width ?? box.width) >= 40,
+                // it stands by the rule of the open tab: after the tabs that fit, the others folded
+                kept: tab.hasAttribute("data-kept"),
               };
             }),
           );
@@ -405,9 +424,9 @@ for (const width of [1024, 390])
           .locator(".k2-tab[data-overflow]")
           .evaluateAll((tabs) => tabs.map((tab) => tab.closest("nav")!.getAttribute("aria-label")));
         expect(new Set(folded)).toEqual(new Set(["Raum", "Notizbuch"]));
-        expect(await seen("Raum")).toEqual([{ name: "Einstellungen des Raums", visible: true, words: true }]);
+        expect(await seen("Raum")).toEqual([{ name: "Einstellungen des Raums", visible: true, words: true, kept: true }]);
         const device = width < 768 ? "Einstellungen des Raums" : "Dateien und Ordner";
-        expect(await seen("Notizbuch")).toEqual([{ name: device, visible: true, words: true }]);
+        expect(await seen("Notizbuch")).toEqual([{ name: device, visible: true, words: true, kept: true }]);
         // the menu of further views does not name the open view again
         for (const label of ["Raum", "Notizbuch"]) {
           const more = page.locator(`nav[aria-label="${label}"] .k2-tab[data-menu]`);
