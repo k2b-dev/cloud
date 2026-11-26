@@ -19,7 +19,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
 - **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
-- **An installed app:** where no shell holds the app's places, a `TabBar` at the bottom edge holds them on the phone: four places and "Mehr" with the others in a sheet. From 768 px it leaves, and the app's `Nav` beside the page holds them.
+- **An installed app:** where no shell holds the app's places, a `TabBar` at the bottom edge holds them on the phone: four places and "Mehr" with the others in a sheet. From 768 px it leaves, and the app's `Nav` or a `Rail` beside the page holds them.
 
 ## Tabs or path?
 
@@ -68,6 +68,12 @@ The app's places in the sidebar: groups with a heading and a deed, quiet counts 
 The places of an installed app on the phone, at the bottom edge with the safe area: four and "Mehr" with the others and their counts in a sheet; a count that calls for attention stands as a filled figure on its symbol and is read out in words. From 768 px it leaves.
 
 <Props of="TabBar TabBarItem" />
+
+### Rail
+
+The places of an app from 768 px, on the canvas beside its page, in the measures of Cloud's app bar: a column of 56 px with the logo at the top, a symbol of 20 px per place as a target of 44 px, the open one filled, a count that calls for attention on the symbol's corner, and the places of the `foot` (such as Settings) at the bottom, always in view while the places above them scroll. Each place is a link in the tab order, named by its words, which also show as a hint to its right. Below 768 px it leaves; give the `TabBar` the same places. A `tone` gives a place's symbol its own colour, such as its app's; the platform may set the rail's colours (`--k2-rail-ink`, `--k2-rail-hover`, `--k2-rail-current`, `--k2-rail-current-ink`, `--k2-rail-unread`), and Cloud sets the shell's.
+
+<Props of="Rail RailItem" />
 
 ### Tabs
 

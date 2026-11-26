@@ -1,4 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
+import { Rail } from "@k2b/ui/v2";
 import { For, type JSX, Show } from "solid-js";
 import FilterScreen from "./FilterScreen.island";
 import FormScreen from "./FormScreen.island";
@@ -201,27 +202,39 @@ export const PhoneBar = (props: V2Screen["phone"]) => (
   </div>
 );
 
+/** The installation's logo of the demo: a "C" on a dark tile. */
+const DEMO_LOGO =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><rect width="20" height="20" rx="5" fill="#09090b"/><text x="10" y="14.5" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" fill="#fff">C</text></svg>',
+  );
+
+/** The names of the rail's places in the demo, by their symbol. */
+const RAIL_NAMES: Record<string, string> = {
+  home: "Start",
+  users: "Kunden",
+  "file-invoice": "Rechnungen",
+  "building-bank": "Bank",
+  package: "Lager",
+  "id-badge-2": "Personal",
+  "user-circle": "Profil",
+};
+
 /**
- * The rail of the Cloud shell beside the app (56 px), drawn as the mockup has it: the logo, the apps with the open one
- * marked, search and help at the foot. A picture of the shell, not part of v2, so assistive technology skips it.
+ * The rail of the Cloud shell beside the app: the v2 `Rail` in the shell's place, with the apps of the mockup, the
+ * open one marked, and search and help at the foot.
  */
-export const RailPicture = (props: NonNullable<V2Screen["rail"]>) => (
-  <div class="ui-v2-rail" aria-hidden="true">
-    <span class="ui-v2-rail__logo">C</span>
-    <For each={props.apps}>
-      {(app) => (
-        <span class="ui-v2-rail__app" data-current={app === props.current ? "" : undefined}>
-          <i class={`ti ti-${app}`} />
-        </span>
-      )}
-    </For>
-    <span class="ui-v2-rail__fill" />
-    <span class="ui-v2-rail__app">
-      <i class="ti ti-search" />
-    </span>
-    <span class="ui-v2-rail__app">
-      <i class="ti ti-help" />
-    </span>
+const ScreenRail = (props: NonNullable<V2Screen["rail"]>) => (
+  <div class="ui-v2-screen__rail">
+    <Rail
+      label="Cloud"
+      logo={DEMO_LOGO}
+      items={props.apps.map((app) => ({ label: RAIL_NAMES[app] ?? app, icon: app, href: "#", current: app === props.current }))}
+      foot={[
+        { label: "Suche", icon: "search", href: "#" },
+        { label: "Hilfe", icon: "help", href: "#" },
+      ]}
+    />
   </div>
 );
 
@@ -234,7 +247,7 @@ export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => 
   return (
     <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
-      <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
+      <Show when={screen.rail}>{(rail) => <ScreenRail {...rail()} />}</Show>
       {/* the demo data is German, so the library's own words are too; islands read it from <html lang> (see server.tsx) */}
       <div class="ui-v2-screen__card">
         <LocaleProvider locale={DEMO_LOCALE}>{screen.render(props.search ?? "")}</LocaleProvider>
