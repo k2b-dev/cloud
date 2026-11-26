@@ -2855,10 +2855,6 @@
 .k2-ui .k2-notice[data-title] .k2-notice-text {
   grid-column: 2 / -1;
 }
-/* with a title the deeds stand beside the title and the text (no more specific than the phone's rule below) */
-.k2-ui .k2-notice:where([data-title]) > .k2-notice-end {
-  grid-row: 1 / span 2;
-}
 .k2-ui .k2-notice[data-tone="note"] .k2-notice-text,
 .k2-ui .k2-notice[data-tone="ai"] .k2-notice-text {
   font: var(--k2-t-row);
@@ -2911,6 +2907,8 @@
   border-radius: var(--k2-r-mark);
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
+/* the deeds stand beside the first line: the text, or with a title the title, whose text then runs under both across
+   the full width (spanning a second row, they would lie over that text) */
 .k2-ui .k2-notice > .k2-notice-end {
   padding-left: 4px;
   grid-column: 3;
@@ -4746,7 +4744,8 @@
 
 /* ── Unread, TabBar, NoticeStack: the parts of an app's frame on the phone ─────────────────────────────────────── */
 
-/* A count that calls for attention: a filled figure in the app's colour; its words are for assistive technology. */
+/* A count that calls for attention: a filled figure in the app's colour; its words are for assistive technology
+   (`.k2-hidden-text`). */
 .k2-ui .k2-unread {
   box-sizing: border-box;
   display: inline-flex;
@@ -4763,14 +4762,6 @@
   font-variant-numeric: tabular-nums;
   flex: none;
 }
-.k2-ui .k2-vh {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
 
 /* The tab bar is the phone's; from 768 px the app's Nav takes its place. */
 .k2-ui .k2-tabbar {
@@ -4783,7 +4774,7 @@
   display: flex;
   flex: 1 1 0;
   min-width: 0;
-  height: 56px;
+  height: var(--k2-h-head);
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -4820,7 +4811,9 @@
   box-shadow: 0 0 0 2px var(--k2-surface);
 }
 
-/* Notices that float above the tab bar and the safe area; the panes keep their height free (`--k2-notice-stack`). */
+/* Notices that float above the tab bar and the safe area; the panes keep their height free (`--k2-notice-stack`,
+   measured in the browser). Where they stand comes from the stylesheet alone, so the server's page shows them in
+   place: a stack that says the page has a tab bar (`data-tab-bar`) stands above its known height on the phone. */
 .k2-ui .k2-notice-stack {
   position: fixed;
   right: max(24px, calc(env(safe-area-inset-right) + 24px));
@@ -4858,9 +4851,13 @@
   }
   .k2-ui .k2-notice-stack {
     right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(var(--k2-tabbar-h, 0px), env(safe-area-inset-bottom)) + 12px);
+    bottom: calc(env(safe-area-inset-bottom) + 12px);
     left: max(12px, env(safe-area-inset-left));
     width: auto;
+  }
+  /* above the tab bar: its row of the head's height, its line, and the bottom safe area it holds */
+  .k2-ui .k2-notice-stack[data-tab-bar] {
+    bottom: calc(var(--k2-h-head) + 1px + env(safe-area-inset-bottom) + 12px);
   }
   /* a floating notice keeps its deeds in the end column, each a framed button of at least 44 px */
   .k2-ui .k2-notice-stack > .k2-notice {

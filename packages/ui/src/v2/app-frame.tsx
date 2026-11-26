@@ -21,7 +21,7 @@ export const Unread = (props: { count: number | undefined }) => {
       <span class="k2-unread" data-k2-part="Unread" aria-hidden="true">
         {count() > 99 ? "99+" : count()}
       </span>
-      <span class="k2-vh">{count() > 99 ? t().unreadMany : t().unread({ count: count() })}</span>
+      <span class="k2-hidden-text">{count() > 99 ? t().unreadMany : t().unread({ count: count() })}</span>
     </Show>
   );
 };
@@ -74,9 +74,10 @@ const TabLink = (props: { item: TabBarItem }) => (
 /**
  * The navigation of an app on the phone, at the bottom edge: a symbol and its words per place, the open one in the
  * app's colour, a count that calls for attention as a filled figure on its symbol. It takes the bottom safe area into
- * its own height. With more than five places, "More" opens a sheet with the others. From 768 px it leaves, and the
- * app's `Nav` takes its place. Its height is `--k2-tabbar-h` on the document, so floating parts such as
- * `NoticeStack` stand above it.
+ * its own height. With more than five places, "More" opens a sheet with the others; while one of them is the open
+ * place, "More" is the current one. From 768 px it leaves, and the app's `Nav` takes its place. Its height is known to
+ * the stylesheet (the head's height, its line and the safe area), so a `NoticeStack tabBar` stands above it from the
+ * server's page on.
  */
 export const TabBar = (props: TabBarProps) => {
   const t = useUiMessages();
@@ -84,26 +85,18 @@ export const TabBar = (props: TabBarProps) => {
   const rest = () => (props.items.length <= TAB_SLOTS ? [] : props.items.slice(TAB_SLOTS - 1));
   const restUnread = () => rest().reduce((sum, item) => sum + Math.max(0, item.unread ?? 0), 0);
   const [open, setOpen] = createSignal(false);
-  let bar: HTMLElement | undefined;
-  onMount(() => {
-    if (!bar || typeof ResizeObserver === "undefined") return;
-    const root = document.documentElement;
-    const sizes = new ResizeObserver(() => root.style.setProperty("--k2-tabbar-h", `${bar?.offsetHeight ?? 0}px`));
-    sizes.observe(bar);
-    onCleanup(() => {
-      sizes.disconnect();
-      root.style.removeProperty("--k2-tabbar-h");
-    });
-  });
+  const restCurrent = () => rest().some((item) => item.current);
   return (
-    <nav ref={bar} class="k2-tabbar" data-k2-part="TabBar" aria-label={props.label}>
+    <nav class="k2-tabbar" data-k2-part="TabBar" aria-label={props.label}>
       <For each={shown()}>{(item) => <TabLink item={item} />}</For>
       <Show when={rest().length > 0}>
         <button
           type="button"
           class="k2-tab"
           data-k2-part="TabBar.More"
-          data-current={rest().some((item) => item.current) ? "" : undefined}
+          data-current={restCurrent() ? "" : undefined}
+          // the open place is in its sheet: assistive technology hears that "More" holds it
+          aria-current={restCurrent() ? "page" : undefined}
           aria-haspopup="dialog"
           aria-expanded={open() ? "true" : "false"}
           onClick={() => setOpen(true)}
@@ -143,6 +136,8 @@ export const TabBar = (props: TabBarProps) => {
 // ── NoticeStack ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type NoticeStackProps = {
+  /** The page has a `TabBar` on the phone: the stack stands above it, from the server's page on. */
+  tabBar?: boolean;
   /** `Notice`s that stay until their state ends or the person hides them, such as "Offline" or a new version. */
   children: JSX.Element;
 };
@@ -158,18 +153,19 @@ export const NoticeStack = (props: NoticeStackProps) => {
   onMount(() => {
     if (!stack || typeof ResizeObserver === "undefined") return;
     const root = document.documentElement;
-    const bar = document.querySelector<HTMLElement>(".k2-tabbar");
+    const sizes = new ResizeObserver(() => measure());
     // The room is what the stack covers of the window above the tab bar: from its top to the window's end, less the
     // bar. A pane ends at the bar on the phone and near the window's end beside it, so the last row stays reachable.
+    // The bar is looked up each time, so a bar that comes later counts too, and its size is watched from then on.
     const measure = () => {
+      const bar = document.querySelector<HTMLElement>(".k2-tabbar");
+      if (bar) sizes.observe(bar);
       const empty = !stack || stack.offsetHeight === 0;
       const covered = empty ? 0 : innerHeight - stack!.getBoundingClientRect().top - (bar?.offsetHeight ?? 0);
       root.style.setProperty("--k2-notice-stack", `${Math.max(0, Math.ceil(covered))}px`);
     };
     // the stack grows and shrinks with its notices, and moves with the bar (a screen of its own hides it) and the window
-    const sizes = new ResizeObserver(measure);
     sizes.observe(stack);
-    if (bar) sizes.observe(bar);
     addEventListener("resize", measure);
     measure();
     onCleanup(() => {
@@ -179,7 +175,7 @@ export const NoticeStack = (props: NoticeStackProps) => {
     });
   });
   return (
-    <div ref={stack} class="k2-notice-stack" data-k2-part="NoticeStack" aria-live="polite">
+    <div ref={stack} class="k2-notice-stack" data-k2-part="NoticeStack" data-tab-bar={props.tabBar ? "" : undefined} aria-live="polite">
       {props.children}
     </div>
   );
