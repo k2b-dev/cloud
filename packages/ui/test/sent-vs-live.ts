@@ -5,7 +5,9 @@
  * - the keys of hydration (`data-hk`) and comments do not count;
  * - a style counts by its declarations, not their spelling;
  * - a place the live page measures after hydration does not count: a grip in the middle of the part of its line in
- *   sight (`--k2-grip-top`, layout.tsx). Add a property here only for such a measured place, never for a mismatch;
+ *   sight (`--k2-grip-top`, layout.tsx), and what a column grip says once it has measured its column: the width the
+ *   column has and the most it can take (`aria-valuenow`, `aria-valuetext`, `aria-valuemax` of a separator,
+ *   `useGrip`). Add a property here only for such a measured value, never for a mismatch;
  * - the live parts `attachWorkspace` adds at the end of a Workspace (`data-k2-ws-live`, attach.tsx: its drawer,
  *   alert dialog and toaster, which the server never renders) do not count.
  *
@@ -13,6 +15,9 @@
  */
 export const sentVsLive = (): string[] => {
   const measured = new Set(["--k2-grip-top"]);
+  const measuredAttributes = new Set(["aria-valuenow", "aria-valuetext", "aria-valuemax"]);
+  const measuredAttribute = (element: Element, name: string) =>
+    measuredAttributes.has(name) && element.getAttribute("role") === "separator";
   const sent = Reflect.get(window, "__k2Sent");
   const live = document.getElementById("root");
   if (!(sent instanceof Node) || !live) return ["the page holds no sent copy (window.__k2Sent) or no #root"];
@@ -43,7 +48,11 @@ export const sentVsLive = (): string[] => {
       found.push(`${path}: <${a.tagName}> became <${b.tagName}>`);
       return;
     }
-    const names = new Set([...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk"));
+    const names = new Set(
+      [...a.getAttributeNames(), ...b.getAttributeNames()].filter(
+        (name) => name !== "data-hk" && !measuredAttribute(b, name),
+      ),
+    );
     for (const name of names) {
       const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);
       if (!same) found.push(`${path} ${a.tagName.toLowerCase()}[${name}]: "${a.getAttribute(name)}" became "${b.getAttribute(name)}"`);
