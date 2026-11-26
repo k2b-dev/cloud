@@ -941,14 +941,20 @@ export const dashboardSnapshot = async (params: {
   dateConfig?: DateContext;
   /** Omit for the dashboard widget; overview routes load only their selected list. */
   view?: "today" | "upcoming" | "counts";
+  /** Also read the first entry of today that starts after this moment, however many entries came before it. */
+  nextAfter?: Date;
 }): Promise<{
   openTodoCount: number;
   assignedToMeCount: number;
+  /** Open tasks assigned to the reader whose due day has passed (isTaskOverdue), counted with the other counts. */
+  assignedOverdueCount: number;
   urgentCount: number;
   todayCount: number;
   upcomingCount: number;
   events: DashboardItem[];
   todos: DashboardItem[];
+  /** Only with `nextAfter`; null when nothing starts later today. */
+  next: DashboardItem | null;
 }> => {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
@@ -959,6 +965,7 @@ export const dashboardSnapshot = async (params: {
     {
       open_count: number;
       assigned_count: number;
+      assigned_overdue_count: number;
       urgent_count: number;
       today_count: number;
       upcoming_count: number;
@@ -970,6 +977,10 @@ export const dashboardSnapshot = async (params: {
         WHERE i.completed_at IS NULL AND c.is_done = false
           AND EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)
       )::int AS assigned_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false AND ${overdueMatch(params.dateConfig)}
+          AND EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)
+      )::int AS assigned_overdue_count,
       COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND i.priority = 'urgent')::int AS urgent_count,
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND (
@@ -1037,6 +1048,29 @@ export const dashboardSnapshot = async (params: {
     LIMIT 5
   `;
 
+  // The next entry of today: a list of today's first entries may end before it, so it has its own read.
+  const [nextRow] = params.nextAfter
+    ? await sql<DbWidget[]>`
+    SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
+           i.title, i.priority,
+           i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline, i.deadline_date::text AS deadline_date
+    FROM spaces.items i
+    JOIN spaces.spaces s ON s.id = i.space_id
+    WHERE i.completed_at IS NULL
+      ${spaceFilter}
+      AND i.starts_at > ${params.nextAfter.toISOString()}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz
+      AND EXISTS (
+        SELECT 1 FROM spaces.space_access sa
+        JOIN auth.access a ON a.id = sa.access_id
+        WHERE sa.space_id = i.space_id
+          AND a.permission <> 'none'
+          AND ${principalMatch}
+      )
+    ORDER BY i.starts_at ASC, i.id ASC
+    LIMIT 1
+  `
+    : [];
+
   // Next-up todos: open, not in is_done columns, ordered by deadline.
   const todoRows =
     params.view && params.view !== "upcoming"
@@ -1082,11 +1116,13 @@ export const dashboardSnapshot = async (params: {
   return {
     openTodoCount: agg?.open_count ?? 0,
     assignedToMeCount: agg?.assigned_count ?? 0,
+    assignedOverdueCount: agg?.assigned_overdue_count ?? 0,
     urgentCount: agg?.urgent_count ?? 0,
     todayCount: agg?.today_count ?? 0,
     upcomingCount: agg?.upcoming_count ?? 0,
     events: eventRows.map(map),
     todos: todoRows.map(map),
+    next: nextRow ? map(nextRow) : null,
   };
 };
 

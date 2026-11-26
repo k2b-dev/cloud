@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
+import type { OverviewWork } from "../overview-contracts";
 
 const root = mkdtempSync(join(tmpdir(), "spaces-overview-render-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -27,7 +28,8 @@ const textOf = (html: string) => {
   return plain;
 };
 
-const render = (initialActivityError: string | null = null, locale = "en") =>
+type Extra = { itemTitle?: string; initialView?: "mine" | "today"; day?: OverviewWork["day"] };
+const render = (initialActivityError: string | null = null, locale = "en", extra: Extra = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
       locale,
@@ -49,10 +51,10 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
               openItemCount: 0,
             },
           ],
-          initialView: "mine",
+          initialView: extra.initialView ?? "mine",
           initialPinnedSpaceIds: ["Space1"],
           initialWork: {
-            view: "mine",
+            view: extra.initialView ?? "mine",
             items: [
               {
                 shortId: "Item01",
@@ -69,13 +71,14 @@ const render = (initialActivityError: string | null = null, locale = "en") =>
               },
             ],
             counts: { mine: 1, today: 0, upcoming: 0 },
+            day: extra.day,
           },
           initialActivity: {
             items: [
               {
                 id: "1",
                 space: { id: "Space1", name: "Launch", color: "#3b82f6" },
-                item: { id: "Item01", title: "Ship overview" },
+                item: { id: "Item01", title: extra.itemTitle ?? "Ship overview" },
                 actor: { kind: "user", id: "00000000-0000-4000-8000-000000000001", displayName: "Sofie", avatarHash: null },
                 action: "task.completed",
                 metadata: {},
@@ -135,5 +138,32 @@ describe("Spaces overview", () => {
     expect(html).not.toContain("Space and item changes will appear here.");
     expect(html.indexOf("Activity unavailable")).toBeLessThan(html.indexOf("Completed"));
     expect(html.indexOf("Completed")).toBeGreaterThan(-1);
+  });
+
+  test("puts the item's name where the sentence names it, also when the deed says the same word", () => {
+    // "Completed “Completed” in Launch": the title is the slot of the message, not the first place its words appear.
+    expect(textOf(render(null, "en", { itemTitle: "Completed" }))).toContain("Sofie · Completed Completed in Launch");
+    expect(textOf(render(null, "de", { itemTitle: "erledigt" }))).toContain("Sofie · erledigt in Launch erledigt");
+  });
+
+  test("reads what counts today from the server in every view: overdue and the next entry", () => {
+    const next = {
+      shortId: "Event9",
+      spaceShortId: "Space1",
+      spaceName: "Launch",
+      spaceColor: "#3b82f6",
+      title: "Late review",
+      priority: null,
+      startsAt: "2026-08-20T15:00:00.000Z",
+      endsAt: null,
+      deadline: null,
+      deadlineAllDay: false,
+      canWrite: true,
+    };
+    // Opened on Today, whose rows hold no assigned task: the overdue count still comes from the day.
+    const text = textOf(render(null, "en", { initialView: "today", day: { agenda: [], next, overdue: 2 } }));
+    expect(text).toContain("1 for you · 2 overdue");
+    expect(text).toContain("Late review");
+    expect(text).toContain("in 3 hr");
   });
 });

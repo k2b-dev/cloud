@@ -28,7 +28,7 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { deadlineDayKey, formatDeadline } from "@/presentation/deadline";
+import { formatDeadline } from "@/presentation/deadline";
 import { spaceCommandMessages } from "../commands";
 import type { OverviewView, OverviewWork } from "../overview-contracts";
 import SpacesNav, { SPACE_MARK_ICON, useSpacesNav } from "./_components/spaces-nav";
@@ -67,6 +67,11 @@ type Props = {
 const VIEWS = ["mine", "today", "upcoming"] as const;
 const viewHref = (view: OverviewView) => (view === "mine" ? "/app/spaces" : `/app/spaces?view=${view}`);
 const priorityStatus = { urgent: "bad", high: "warn" } as const;
+/** Stands for the item's title in an activity message, a sign no title or message contains (Unicode private use). */
+const TITLE_SLOT = "";
+/** The quotes the catalogs put around a title, right before and right after its slot. */
+const OPENING_QUOTE = /[“„"«]$/u;
+const CLOSING_QUOTE = /^[”“"»]/u;
 
 /**
  * Spaces home on v2: the work that waits for this person in three views, and what changed lately in their Spaces
@@ -83,7 +88,7 @@ export default function SpacesOverview(props: Props) {
     source: view,
     initial: { source: props.initialView, data: props.initialWork },
     load: async (next, { abortSignal }) => {
-      const response = await apiClient.overview.work.$get({ query: { view: next } }, { init: { signal: abortSignal } });
+      const response = await apiClient.overview.work.$get({ query: { view: next, day: "true" } }, { init: { signal: abortSignal } });
       if (!response.ok) throw new Error(await readResponseError(response, t().workLoadFailed));
       return response.json();
     },
@@ -177,9 +182,9 @@ export default function SpacesOverview(props: Props) {
         ? formatDeadline(item.deadline, props.dateConfig)
         : undefined;
 
-  const activityDescription = (entry: ActivityItem) => {
+  const activityDescription = (entry: ActivityItem, slot?: string) => {
     const text = t();
-    const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
+    const title = slot ?? entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
     const params = { title, space: entry.space.name };
     const labels: Record<string, string> = {
       "space.created": text.activityCreatedSpace({ space: entry.space.name }),
@@ -224,14 +229,11 @@ export default function SpacesOverview(props: Props) {
       : new Intl.NumberFormat(locale(), { style: "unit", unit: "hour", unitDisplay: "short", maximumFractionDigits: 1 }).format(
           minutes / 60,
         );
-  /** Today's first entries across the reader's Spaces; "My work" brings them, the other views do not. */
-  const agenda = () => activeWork()?.agenda ?? work.data()?.agenda ?? props.initialWork.agenda ?? [];
-  const overdueCount = () => {
-    const today = deadlineDayKey(props.now, props.dateConfig);
-    const mine = view() === "mine" ? (activeWork()?.items ?? []) : props.initialWork.view === "mine" ? props.initialWork.items : [];
-    return mine.filter((item) => item.deadline && !item.startsAt && deadlineDayKey(item.deadline, props.dateConfig) < today).length;
-  };
-  const nextUp = () => agenda().find((item) => item.startsAt && Date.parse(item.startsAt) > now);
+  /** What counts today comes with every view from the server, so the first row and the agenda stand from the first paint. */
+  const day = () => work.data()?.day ?? props.initialWork.day;
+  const agenda = () => day()?.agenda ?? [];
+  const overdueCount = () => day()?.overdue ?? 0;
+  const nextUp = () => day()?.next ?? undefined;
   /** The first row says what counts today: the work for this person, what is overdue, and what comes next. */
   const statement = (): StatusFact[] => {
     const next = nextUp();
@@ -258,25 +260,22 @@ export default function SpacesOverview(props: Props) {
   /** What someone did, as one sentence: who, then the deed with the thing's mark and name, quiet place and time. */
   const activitySentence = (entry: ActivityItem) => {
     const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? "");
-    const sentence = activityDescription(entry);
-    const found = title ? sentence.indexOf(title) : -1;
-    // The thing's mark and name take the place of the quotes around its title.
-    const quoted = found > 0 && /[“„"«]/u.test(sentence[found - 1] ?? "") && /[”“"»]/u.test(sentence[found + title.length] ?? "");
-    const at = quoted ? found - 1 : found;
-    const end = quoted ? found + title.length + 1 : found + title.length;
+    // The message itself says where the title stands: it is written with a slot in the title's place, never searched
+    // for the title's words. The thing's mark and name take that place and the quotes around it.
+    const [before, after] = title ? activityDescription(entry, TITLE_SLOT).split(TITLE_SLOT) : [];
     const kind = entry.action.startsWith("event.") ? "calendar-event" : entry.action.startsWith("space.") ? SPACE_MARK_ICON : "checkbox";
     return (
       <>
         <Text weight="strong">{entry.actor.displayName}</Text>
         {" · "}
-        {at < 0 ? (
-          sentence
+        {before === undefined || after === undefined ? (
+          activityDescription(entry)
         ) : (
           <>
-            {sentence.slice(0, at)}
+            {before.replace(OPENING_QUOTE, "")}
             <Mark icon={kind} color={entry.space.color} />
             <Text weight="strong">{title}</Text>
-            {sentence.slice(end)}
+            {after.replace(CLOSING_QUOTE, "")}
           </>
         )}
         {entry.occurrenceCount > 1 ? ` ×${entry.occurrenceCount}` : ""}

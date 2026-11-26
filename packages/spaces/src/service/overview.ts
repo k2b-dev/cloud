@@ -8,11 +8,20 @@ import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
 import { spacesPublicResources } from "./public-resources";
 
-/** Both SSR and view navigation use the same permission-filtered reads and limits. */
-export async function loadOverviewWork(params: { userId: string; view: OverviewView; dateConfig: DateContext }): Promise<OverviewWork> {
+/**
+ * Both SSR and view navigation use the same permission-filtered reads and limits. `day` also reads what counts today
+ * (the agenda, the next entry, the overdue count) for the web overview's first row; the PWA does not ask for it.
+ */
+export async function loadOverviewWork(params: {
+  userId: string;
+  view: OverviewView;
+  dateConfig: DateContext;
+  day?: { now: Date };
+}): Promise<OverviewWork> {
+  // The agenda is the Today view's statement; the day adds it to the other views and asks for the next entry.
+  const dashboardView = params.day ? (params.view === "upcoming" ? undefined : "today") : params.view === "mine" ? "counts" : params.view;
   const [dashboard, mine, writable] = await Promise.all([
-    // "My work" reads today's first entries with its counts, for its agenda; the same statement as the Today view.
-    dashboardSnapshot({ ...params, view: params.view === "mine" ? "today" : params.view, todoLimit: 30 }),
+    dashboardSnapshot({ ...params, view: dashboardView, todoLimit: 30, nextAfter: params.day?.now }),
     params.view === "mine" ? listMyTasks({ userId: params.userId, limit: 100, dateConfig: params.dateConfig }) : Promise.resolve([]),
     // The same permission check as a change through the API, read once for every row.
     spacesService.space
@@ -37,7 +46,15 @@ export async function loadOverviewWork(params: { userId: string; view: OverviewV
     view: params.view,
     counts: { mine: dashboard.assignedToMeCount, today: dashboard.todayCount, upcoming: dashboard.upcomingCount },
     items: items.map(row),
-    ...(params.view === "mine" ? { agenda: dashboard.events.map(row) } : {}),
+    ...(params.day
+      ? {
+          day: {
+            agenda: dashboard.events.map(row),
+            next: dashboard.next ? row(dashboard.next) : null,
+            overdue: dashboard.assignedOverdueCount,
+          },
+        }
+      : {}),
   };
 }
 

@@ -18,8 +18,14 @@ const OverviewWorkItemSchema = z.object({
 export const OverviewWorkSchema = z.object({
   view: OverviewViewSchema,
   items: z.array(OverviewWorkItemSchema),
-  /** Today's first events and due items across the reader's Spaces, for the agenda of "My work"; not in other views. */
-  agenda: z.array(OverviewWorkItemSchema).optional(),
+  /** What counts today, for the first row and the agenda of the web overview; only when the caller asks for the day. */
+  day: z
+    .object({
+      agenda: z.array(OverviewWorkItemSchema).describe("Today's first events and due items across the reader's Spaces"),
+      next: OverviewWorkItemSchema.nullable().describe("The first entry of today that starts after now"),
+      overdue: z.number().describe("Open tasks assigned to the reader whose due day has passed"),
+    })
+    .optional(),
   counts: z.object({ mine: z.number(), today: z.number(), upcoming: z.number() }),
 });
 export type OverviewView = z.infer<typeof OverviewViewSchema>;

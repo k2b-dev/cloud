@@ -108,6 +108,8 @@ test.skipIf(isServer)("view invalidation refreshes overview work, counts and act
 
     const workRequest = requests.find(({ url }) => url.pathname.endsWith("/overview/work"));
     expect(workRequest?.url.searchParams.get("view")).toBe("mine");
+    // The web overview asks for the day with every view; the PWA, which shows no agenda, does not.
+    expect(workRequest?.url.searchParams.get("day")).toBe("true");
     workRequest?.resolve(Response.json(updatedWork));
     await Bun.sleep(30);
     expect(covered).toBe(false);
