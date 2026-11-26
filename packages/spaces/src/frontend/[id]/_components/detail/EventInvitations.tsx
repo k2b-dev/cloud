@@ -1,8 +1,26 @@
 import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { mutation, query } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Empty, Failed, Field, Input, Loading, Notice, Section, Select, useToast } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import {
+  Band,
+  Button,
+  Chip,
+  Dialog,
+  Empty,
+  Facts,
+  Failed,
+  Field,
+  Inline,
+  Input,
+  Loading,
+  Notice,
+  Row,
+  Section,
+  Select,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "@/api/client";
 import { spaceCommandMessages } from "../../../../commands";
@@ -47,6 +65,31 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
   const [mailboxId, setMailboxId] = createSignal<string | null>(null);
   const [senderIdentityId, setSenderIdentityId] = createSignal<string | null>(null);
   const [recipients, setRecipients] = createSignal("");
+  /** The addresses chosen so far, in order and once each; the field holds the one being typed. */
+  const addresses = createMemo(() => [
+    ...new Set(
+      recipients()
+        .split(/[\s,;]+/u)
+        .map((part) => part.trim())
+        .filter(Boolean),
+    ),
+  ]);
+  const [typing, setTyping] = createSignal("");
+  const commit = (value: string) => {
+    const added = value.split(/[\s,;]+/u).filter(Boolean);
+    if (added.length === 0) return;
+    resetIdempotency();
+    setRecipients([...addresses(), ...added].join(", "));
+    setTyping("");
+  };
+  const remove = (address: string) => {
+    resetIdempotency();
+    setRecipients(
+      addresses()
+        .filter((entry) => entry !== address)
+        .join(", "),
+    );
+  };
   const [validationError, setValidationError] = createSignal<string | null>(null);
   const [failure, setFailure] = createSignal<string | null>(null);
   let idempotencyKey = crypto.randomUUID();
@@ -121,7 +164,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
   const createInvitation = () => {
     if (create.loading()) return;
     setFailure(null);
-    const parsed = parseAttendees(recipients(), t);
+    const parsed = parseAttendees([recipients(), typing()].join(" "), t);
     if (!parsed.ok) {
       setValidationError(parsed.message);
       return;
@@ -189,7 +232,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
             when={value().mailboxes.length > 0}
             fallback={<Empty icon="mail-off" text={`${t.noMailSender}. ${t.noMailSenderDescription}`} />}
           >
-            <Field label={t.mailbox} name="mailbox" hint={t.deliveryDescription}>
+            <Field label={t.mailbox} name="mailbox">
               <Select
                 value={mailboxId() ?? undefined}
                 placeholder={t.noWritableMailbox}
@@ -197,7 +240,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
                 onChange={chooseMailbox}
               />
             </Field>
-            <Field label={t.from} name="sender" hint={t.senderRecipientsDescription}>
+            <Field label={t.from} name="sender">
               <Select
                 value={senderIdentityId() ?? undefined}
                 placeholder={t.noVerifiedIdentity}
@@ -215,15 +258,37 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
             </Field>
             <Field label={t.attendees} name="attendees" hint={t.attendeesDescription} error={validationError() ?? undefined}>
               <Input
-                multiline
-                value={recipients()}
-                placeholder="alex@example.com, sam@example.com"
+                value={typing()}
+                placeholder={addresses().length ? t.addAttendee : "alex@example.com, sam@example.com"}
                 onInput={(value) => {
-                  resetIdempotency();
-                  setRecipients(value);
+                  if (/[\s,;]$/u.test(value)) commit(value);
+                  else setTyping(value);
+                }}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commit(typing());
+                  }
+                  if (event.key === "Backspace" && !typing() && addresses().length) remove(addresses()[addresses().length - 1]!);
                 }}
               />
             </Field>
+            {/* k2b-ui gap: no field of addresses as chips, Inline wraps only in a Band inside a Dialog, and a Chip takes no name of its own ("Remove …"); the chips stand
+                under the input that adds to them. */}
+            <Show when={addresses().length > 0}>
+              <Band label={t.attendees}>
+                <Inline>
+                  <For each={addresses()}>
+                    {(address) => (
+                      <Chip icon="x" onClick={() => remove(address)}>
+                        {address}
+                      </Chip>
+                    )}
+                  </For>
+                </Inline>
+              </Band>
+            </Show>
           </Show>
         )}
       </Show>
@@ -254,6 +319,9 @@ export const openEventInvitation = async (
     <InvitationDialog spaceId={spaceId} itemId={itemId} title={title} method={method} close={() => close()} />
   ));
 };
+
+/** The attendees the section names one by one; the rest are counted. */
+const ATTENDEES_SHOWN = 5;
 
 /** Invitations of an event in its detail: prepare one, or a cancellation once it was sent, as a Mail draft. */
 export default function EventInvitations(props: { spaceId: string; itemId: string; title: string }) {
@@ -295,10 +363,28 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
       );
     }
   });
+  /** Where the event's invitation stands: colour, symbol and word. */
+  const deliveryState = (state: "preparing" | "prepared" | "drafted" | "failed" | undefined) =>
+    state === "drafted" ? (
+      <Chip status="ok" icon="mail">
+        {t.invitationDrafted}
+      </Chip>
+    ) : state === "failed" ? (
+      <Chip status="bad" icon="alert-circle">
+        {t.invitationFailedChip}
+      </Chip>
+    ) : state ? (
+      <Chip status="warn" icon="loader">
+        {t.invitationPreparing}
+      </Chip>
+    ) : (
+      <Text type="meta">{t.invitationNone}</Text>
+    );
   return (
     <Section
       icon="send"
       title={t.invitations}
+      count={context()?.attendees.length || undefined}
       actions={
         context()?.canCancel
           ? [
@@ -310,6 +396,31 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
     >
       <Show when={contextQuery.error()}>
         {(error) => <Failed text={`${t.invitationStatusUnavailable}: ${error().message}`} onRetry={() => void contextQuery.refresh()} />}
+      </Show>
+      <Show when={context()}>
+        {(value) => (
+          <>
+            <Facts
+              items={[
+                {
+                  label: t.status,
+                  value: deliveryState(value().lastDelivery?.state),
+                },
+              ]}
+            />
+            <For each={value().attendees.slice(0, ATTENDEES_SHOWN)}>
+              {(attendee) => (
+                <Row
+                  avatar={{ name: attendee.name ?? attendee.address }}
+                  lines={attendee.name ? [attendee.name, attendee.address] : [attendee.address]}
+                />
+              )}
+            </For>
+            <Show when={value().attendees.length > ATTENDEES_SHOWN}>
+              <Text type="meta">{t.moreDependencies({ count: value().attendees.length - ATTENDEES_SHOWN })}</Text>
+            </Show>
+          </>
+        )}
       </Show>
       <Show when={context()?.lastDelivery?.state === "failed"}>
         <Notice tone="bad" icon="alert-circle" title={t.mailDraftFailed}>

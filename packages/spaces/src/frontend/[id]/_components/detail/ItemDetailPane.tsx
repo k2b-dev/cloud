@@ -5,7 +5,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { announce, useLocale } from "@k2b/ui";
 import {
-  Band,
+  Avatar,
   Bar,
   Button,
   Canvas,
@@ -23,6 +23,7 @@ import {
   Menu,
   type MenuEntry,
   Pane,
+  type Person,
   Popover,
   Prose,
   Row,
@@ -591,6 +592,63 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
     `${isDateOnlyDeadline(deadline) ? formatDeadline(deadline, props.dateConfig) : dates.formatDateTime(deadline, props.dateConfig)} · ${
       isDateOnlyDeadline(deadline) ? daysAway(deadline, props.dateConfig, locale()) : dates.formatTimeSpan(deadline, props.dateConfig)
     }`;
+  /** An open task whose day (or time) has passed: its due date reads in the danger tone, with the word. */
+  const overdue = (deadline: string) =>
+    !isCompleted() &&
+    (isDateOnlyDeadline(deadline)
+      ? deadline < deadlineDayKey(dates.today(props.dateConfig).toISOString(), props.dateConfig)
+      : Date.parse(deadline) < Date.now());
+  const dueText = (deadline: string | null) =>
+    !deadline ? (
+      t.noDeadline
+    ) : overdue(deadline) ? (
+      <Text tone="bad" weight="medium">
+        {t.overdueSince({ when: due(deadline) })}
+      </Text>
+    ) : (
+      due(deadline)
+    );
+  /** A status in colour, symbol and word: done is a check, the first column not started, the others under way. */
+  const statusChip = () => {
+    const current = column();
+    if (!current) return "—";
+    const first = props.space.columns[0]?.id === current.id;
+    return (
+      <Chip tag color={current.color ?? undefined} icon={current.isDone ? "circle-check" : first ? "circle-dashed" : "progress"}>
+        {current.name}
+      </Chip>
+    );
+  };
+  /** Urgent and high stand out in their tone; medium and low are quiet words with the flag. */
+  const priorityChip = (priority: string | null) => {
+    const label = priorityLabel(priority);
+    if (!label) return t.noPriority;
+    return priority === "urgent" ? (
+      <Chip status="bad" icon="flag">
+        {label}
+      </Chip>
+    ) : priority === "high" ? (
+      <Chip status="warn" icon="flag">
+        {label}
+      </Chip>
+    ) : (
+      <Chip icon="flag">{label}</Chip>
+    );
+  };
+  const tagChips = () => (
+    <Inline>
+      <For each={tagsEdit.value()}>
+        {(id) => {
+          const tag = props.space.tags.find((entry) => entry.id === id);
+          return tag ? (
+            <Chip tag color={tag.color ?? undefined}>
+              {tag.name}
+            </Chip>
+          ) : null;
+        }}
+      </For>
+    </Inline>
+  );
   const recurrenceSummary = () =>
     summarizeRecurrence(item().recurrence, {
       startsAt: scheduleStart(),
@@ -608,7 +666,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
   const [estimateText, setEstimateText] = createSignal("");
 
   /** A property's value, and for editors the control that changes it in place. */
-  const editable = (text: string, control: () => JSXElement) => (canEditItem() ? control() : text);
+  const editable = (text: JSXElement, control: () => JSXElement) => (canEditItem() ? control() : text);
   const facts = (): Fact[] => {
     const schedule: Fact[] = isEvent()
       ? [
@@ -624,7 +682,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
             ? [
                 {
                   label: t.due,
-                  value: editable(deadlineEdit.value() ? due(deadlineEdit.value()!) : t.noDeadline, () => (
+                  value: editable(dueText(deadlineEdit.value()), () => (
                     // k2b-ui gap: no date-time picker in a fact; the day and an optional time are edited in a panel.
                     <Popover
                       variant="text"
@@ -676,7 +734,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                         </>
                       }
                     >
-                      {deadlineEdit.value() ? due(deadlineEdit.value()!) : t.noDeadline}
+                      {dueText(deadlineEdit.value())}
                     </Popover>
                   )),
                 },
@@ -687,28 +745,41 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
     const people = names.join(", ");
     // A button keeps its whole label on one line: the first person and "+n" for the rest, all of them in the picker.
     const peopleLabel = names.length > 1 ? `${names[0]} +${names.length - 1}` : people;
+    const faces: Person[] = names.map((name) => ({ name }));
+    // k2b-ui gap: no answer (RSVP) on an avatar; Spaces keeps no answers of participants yet either.
+    const stack = () => (faces.length > 0 ? <Avatar.Stack people={faces} max={4} label={people} /> : undefined);
     return [
-      ...(canEditItem() || people
+      // An event without participants shows no row for them; "Edit item" adds the first.
+      ...((canEditItem() && !isEvent()) || people
         ? [
             {
-              label: t.assignedPeople,
-              value: editable(people || "—", () => (
-                <Popover
-                  variant="text"
-                  title={t.assignedPeople}
-                  content={
-                    <Lookup
-                      label={t.searchPeople}
-                      value={(item().assignees ?? []).map((assignee) => assignee.id)}
-                      known={(item().assignees ?? []).map((assignee) => ({ value: assignee.id, label: assignee.displayName }))}
-                      load={loadPeople}
-                      onChange={(ids) => void updateAssignees(ids)}
-                    />
-                  }
-                >
-                  {peopleLabel || t.nobodyAssigned}
-                </Popover>
-              )),
+              label: isEvent() ? t.participants : t.assignedPeople,
+              value: editable(
+                <>
+                  {stack()}
+                  {people || "—"}
+                </>,
+                () => (
+                  <>
+                    {stack()}
+                    <Popover
+                      variant="text"
+                      title={t.assignedPeople}
+                      content={
+                        <Lookup
+                          label={t.searchPeople}
+                          value={(item().assignees ?? []).map((assignee) => assignee.id)}
+                          known={(item().assignees ?? []).map((assignee) => ({ value: assignee.id, label: assignee.displayName }))}
+                          load={loadPeople}
+                          onChange={(ids) => void updateAssignees(ids)}
+                        />
+                      }
+                    >
+                      {peopleLabel || t.nobodyAssigned}
+                    </Popover>
+                  </>
+                ),
+              ),
             },
           ]
         : []),
@@ -716,7 +787,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
       ...schedule,
       {
         label: t.status,
-        value: editable(column()?.name ?? "—", () => (
+        value: editable(statusChip(), () => (
           <Menu
             variant="text"
             items={[
@@ -728,15 +799,15 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
               },
             ]}
           >
-            {column()?.name ?? "—"}
+            {statusChip()}
           </Menu>
         )),
       },
-      ...(canEditItem() || tagNames()
+      ...(tagNames()
         ? [
             {
               label: t.tags,
-              value: editable(tagNames(), () => (
+              value: editable(tagChips(), () => (
                 <Menu
                   variant="text"
                   disabled={props.space.tags.length === 0}
@@ -749,17 +820,17 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                       ),
                   }))}
                 >
-                  {tagNames() || t.addTagShort}
+                  {tagChips()}
                 </Menu>
               )),
             },
           ]
         : []),
-      ...(canEditItem() || priorityEdit.value()
+      ...(!isEvent() && priorityEdit.value()
         ? [
             {
               label: t.priority,
-              value: editable(priorityLabel(priorityEdit.value()) ?? "", () => (
+              value: editable(priorityChip(priorityEdit.value()), () => (
                 <Menu
                   variant="text"
                   items={[
@@ -777,13 +848,13 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                     },
                   ]}
                 >
-                  {priorityLabel(priorityEdit.value()) ?? t.noPriority}
+                  {priorityChip(priorityEdit.value())}
                 </Menu>
               )),
             },
           ]
         : []),
-      ...(!isEvent() && (canEditItem() || estimateEdit.value())
+      ...(!isEvent() && estimateEdit.value()
         ? [
             {
               label: t.estimate,
@@ -891,7 +962,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
           start={<Text type="lead">{item().title}</Text>}
           end={
             <>
-              <Show when={canEditItem()}>
+              <Show when={canEditItem() && !isEvent()}>
                 <Button
                   icon={isCompleted() ? "arrow-back-up" : completionBlocked() ? "lock" : "circle-check"}
                   busy={completeMutation.loading()}
@@ -941,6 +1012,23 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
         actions={canEditItem() ? [{ label: t.editItem, icon: "pencil", onClick: () => void handleEdit() }] : undefined}
       >
         <Facts items={facts()} />
+        {/* The discussion starts with the reactions; a generated occurrence of a series has none of its own. */}
+        <Show when={!isGeneratedOccurrence() && (canEditItem() || (item().reactions?.length ?? 0) > 0)}>
+          {/* The reaction chips and their emoji picker draw themselves, as on the cards of the board. */}
+          <Canvas label={t.reactions}>
+            <ItemReactions
+              spaceId={spaceId}
+              itemId={item().id}
+              reactions={item().reactions}
+              canReact={canEditItem()}
+              picker={reactionPicker}
+              retryToast={retryToast}
+              density="default"
+              add="always"
+            />
+            {reactionPicker.popover()}
+          </Canvas>
+        </Show>
       </Section>
 
       <Show
@@ -1033,26 +1121,6 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
             <Prose markdown={description()} />
           </Section>
         )}
-      </Show>
-
-      {/* The discussion starts with the reactions; a generated occurrence of a series has none of its own. */}
-      <Show when={!isGeneratedOccurrence() && (canEditItem() || (item().reactions?.length ?? 0) > 0)}>
-        <Band>
-          {/* The reaction chips and their emoji picker draw themselves, as on the cards of the board. */}
-          <Canvas label={t.reactions}>
-            <ItemReactions
-              spaceId={spaceId}
-              itemId={item().id}
-              reactions={item().reactions}
-              canReact={canEditItem()}
-              picker={reactionPicker}
-              retryToast={retryToast}
-              density="default"
-              add="always"
-            />
-            {reactionPicker.popover()}
-          </Canvas>
-        </Band>
       </Show>
 
       <Show when={!isEvent() && (canEditItem() || props.detail.checklist.length > 0)}>

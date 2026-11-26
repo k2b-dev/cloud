@@ -573,17 +573,20 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("desktop: the filters and the count stand in the one row under the head, and month navigation leaves them in place", async () => {
+  test("desktop: the filters and the count stand in the calendar's own row under the head, and month navigation leaves them in place", async () => {
     const page = await open(desktop);
     try {
-      // The calendar is its own header and its body: no row between them, and the filter bar right above it.
+      // The calendar is its own header and its body, and the filter bar stands in that header (design review 26.11.):
+      // the page head has two rows, the views and then the days with Today, the filters, the count and the colour.
       const parts = await page.evaluate(() =>
         Array.from(document.querySelector(".k2b-content-calendar")!.children, (child) => child.className.split(" ")[0]),
       );
       expect(parts).toEqual(["k2b-calendar-header", "k2b-calendar-body"]);
+      expect(await page.locator('.k2b-calendar-header [data-k2-part="FilterBar"]').count()).toBe(1);
       const bar = await box(page, '[data-k2-part="FilterBar"]');
       const header = await box(page, ".k2b-calendar-header");
-      expect(Math.abs(header.y - (bar.y + bar.height))).toBeLessThanOrEqual(2);
+      expect(bar.y).toBeGreaterThanOrEqual(header.y);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(header.y + header.height);
       expect(bar.height).toBeLessThanOrEqual(56);
       expect(await filterBar(page).locator(".k2-fbar-results").textContent()).toBe("13 shown");
       // A filter stands in the bar as a statement; the bar keeps its one row.
@@ -608,15 +611,15 @@ describe(`Spaces month view in ${browserName}`, () => {
       );
       expect(Math.max(...middles) - Math.min(...middles)).toBeLessThanOrEqual(2);
       expect((await box(page, '[data-k2-part="FilterBar"]')).height).toBe(bar.height);
-      // The calendar's header keeps its title and Today in one row.
+      // The calendar's header keeps its title, Today and the filters in one row.
       const middle = async (selector: string) => {
         const found = await box(page, selector);
         return Math.round(found.y + found.height / 2);
       };
-      expect(Math.abs((await middle(".k2b-calendar-header__today")) - (await middle(".k2b-calendar-header__title")))).toBeLessThanOrEqual(
-        2,
-      );
-      expect(header.height).toBeLessThanOrEqual(56);
+      const title = await middle(".k2b-calendar-header__title");
+      expect(Math.abs((await middle(".k2b-calendar-header__today")) - title)).toBeLessThanOrEqual(2);
+      expect(Math.abs((await middle('[data-k2-part="FilterBar"] .k2-fbar-add button')) - title)).toBeLessThanOrEqual(2);
+      expect(header.height).toBeLessThanOrEqual(72);
 
       // Months with titles of other widths move nothing in the bar; only its count follows the shown days.
       for (const [label, month] of [
@@ -639,7 +642,7 @@ describe(`Spaces month view in ${browserName}`, () => {
     }
   }, 60_000);
 
-  test("desktop: at every width the filter bar keeps one row under the head, and neither it nor the calendar's header overflows", async () => {
+  test("desktop: at every width the filter bar keeps one row inside the calendar's header, and neither overflows", async () => {
     const page = await open(desktop);
     try {
       for (const width of [1200, 960, 800]) {
@@ -650,10 +653,10 @@ describe(`Spaces month view in ${browserName}`, () => {
         expect({
           width,
           oneRow: bar.height <= 56,
-          rightAbove: Math.abs(header.y - (bar.y + bar.height)) <= 2,
+          inside: bar.y >= header.y && bar.y + bar.height <= header.y + header.height,
           overflow: await overflowing(page),
           sideways: await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
-        }).toEqual({ width, oneRow: true, rightAbove: true, overflow: [], sideways: 0 });
+        }).toEqual({ width, oneRow: true, inside: true, overflow: [], sideways: 0 });
       }
     } finally {
       await page.context().close();

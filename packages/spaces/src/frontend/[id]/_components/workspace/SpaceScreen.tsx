@@ -3,11 +3,11 @@ import { registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { listenPopState } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Avatar, Bar, Input, Menu, type MenuEntry, Pane, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Input, Mark, Menu, type MenuEntry, Pane, Tabs, Text, useToast, Workspace } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { SpaceAssignableUser } from "@/contracts";
 import { spaceCommandMessages } from "../../../../commands";
-import SpacesNav, { useSpacesNav } from "../../../_components/spaces-nav";
+import SpacesNav, { SPACE_MARK_ICON, useSpacesNav } from "../../../_components/spaces-nav";
 import { createSpaceCommands } from "../../../space-commands";
 import { useSpaceMessages } from "../../messages";
 import ItemDetailPane from "../detail/ItemDetailPane";
@@ -234,20 +234,27 @@ export default function SpaceScreen(props: SpaceScreenProps) {
 
   return (
     <Workspace
-      sidebar={<SpacesNav nav={nav} />}
+      sidebar={<SpacesNav nav={nav} label={state.space.name} />}
       // Design pass (25.11.): a detail is useful or absent; nothing stands in its place while no item is open.
       head={
         <Bar
+          // Row 1 names the Space with its mark, then its views; on the phone the shell's bar names it as well.
+          // k2b-ui gap: a head title that gives way on the phone (as Path does) and Tabs that keep the open tab whole;
+          // at 1024 and 390 the open view can fold into "More" while the name takes room.
           start={
-            <Tabs
-              label={t.headViews}
-              items={VIEWS.map((entry) => ({
-                label: viewLabel(entry.id),
-                icon: entry.icon,
-                href: viewHref(entry.id),
-                current: entry.id === view,
-              }))}
-            />
+            <>
+              <Mark icon={SPACE_MARK_ICON} color={state.space.color} />
+              <Text weight="strong">{state.space.name}</Text>
+              <Tabs
+                label={t.headViews}
+                items={VIEWS.map((entry) => ({
+                  label: viewLabel(entry.id),
+                  icon: entry.icon,
+                  href: viewHref(entry.id),
+                  current: entry.id === view,
+                }))}
+              />
+            </>
           }
           end={
             <>
@@ -321,7 +328,6 @@ export default function SpaceScreen(props: SpaceScreenProps) {
             dateConfig={props.dateConfig}
             canWrite={state.canWrite}
             currentUserId={state.currentUserId}
-            onCreate={() => void create.createItem({ type: "task" })}
           />
         </Show>
         <Show when={view === "kanban"}>

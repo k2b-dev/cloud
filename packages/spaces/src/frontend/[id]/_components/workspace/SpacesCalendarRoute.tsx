@@ -237,43 +237,7 @@ export default function SpacesCalendarRoute(props: Props) {
   const colorLabel = (colorBy: CalendarColorBy) => ({ tag: t.tag, status: t.status, priority: t.priority, person: t.person })[colorBy];
 
   return (
-    <Pane
-      label={t.calendar}
-      // The one row under the head (rule 9): the filters, then the count and the colour choice at its end.
-      // k2b-ui gap: the bar has no loading mark yet; while days load, the calendar keeps what it shows. The colour
-      // choice leaves with the bar's end on the phone (the sheet knows only sort and group).
-      status={
-        <FilterBar
-          query={query()}
-          state={barState()}
-          base={base()}
-          onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
-          icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
-          results={t.shownCount({ count: shownCount() })}
-          end={
-            <Menu
-              variant="ghost"
-              items={[
-                {
-                  title: t.colorBy,
-                  choice: state().filter.colorBy,
-                  onChoose: (value) => {
-                    const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
-                    if (colorBy) controls()?.setColorBy(colorBy);
-                  },
-                  items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
-                    label: colorLabel(colorBy),
-                    value: colorBy,
-                  })),
-                },
-              ]}
-            >
-              {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
-            </Menu>
-          }
-        />
-      }
-    >
+    <Pane label={t.calendar}>
       <Show when={navigation.error()}>{(error) => <Failed text={error().message} onRetry={() => void navigation.refresh()} />}</Show>
       {/* The calendar draws its days, drags and resizes entries, creates in place and keeps its tray below the day. */}
       <Canvas label={t.calendar} height="fill">
@@ -307,6 +271,41 @@ export default function SpacesCalendarRoute(props: Props) {
               props.onCreateReady?.(next.choose);
             }}
             onShownCount={setShownCount}
+            // Row 2 under the head is the calendar's own: the days, Today and the views, then the filters, the count
+            // (12 px) and the colour choice, so the page head has two rows (rule 9, design review 26.11.).
+            // k2b-ui gap: FilterBar has no form for a host's toolbar; inside the calendar's header it keeps its own edge.
+            toolbarContent={
+              <FilterBar
+                query={query()}
+                state={barState()}
+                base={base()}
+                onChange={(next) => controls()?.setFilter(calendarFilterOf(next, state().filter.colorBy))}
+                icons={{ ctype: "category", cassigned: "user", cpriority: "flag", ccolumns: "layout-kanban", ctags: "tag" }}
+                // No entry in the days shown: the count says how to plan one; New event stays the one button for it.
+                results={shownCount() > 0 ? t.shownCount({ count: shownCount() }) : t.emptyCalendarHint}
+                end={
+                  <Menu
+                    variant="ghost"
+                    items={[
+                      {
+                        title: t.colorBy,
+                        choice: state().filter.colorBy,
+                        onChoose: (value) => {
+                          const colorBy = (["tag", "status", "priority", "person"] as const).find((entry) => entry === value);
+                          if (colorBy) controls()?.setColorBy(colorBy);
+                        },
+                        items: (["tag", "status", "priority", "person"] as const).map((colorBy) => ({
+                          label: colorLabel(colorBy),
+                          value: colorBy,
+                        })),
+                      },
+                    ]}
+                  >
+                    {`${t.colorBy}: ${colorLabel(state().filter.colorBy)}`}
+                  </Menu>
+                }
+              />
+            }
           />
         </div>
       </Canvas>

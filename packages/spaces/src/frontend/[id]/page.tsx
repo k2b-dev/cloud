@@ -65,6 +65,8 @@ export default ssr<AuthContext>(async (c) => {
       help={spacesPageHelp.workspace}
       fullWidth
       ui="v2"
+      // The phone bar names the open Space, not the app.
+      headTitle="page"
       title={state.title}
     >
       <SpaceScreen

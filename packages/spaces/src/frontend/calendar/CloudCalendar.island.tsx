@@ -298,6 +298,14 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     };
     return shownItems().filter((item) => itemInRange(item, span, props.dateConfig)).length;
   };
+  /** The statement of the row: what today holds in the chosen calendars; the days in view are a quiet count after it. */
+  const todayCount = () => {
+    const span = {
+      from: dates.parseCalendarDate(todayKey(), props.dateConfig).toISOString(),
+      to: dates.parseCalendarDate(shiftDateKey(todayKey(), 1), props.dateConfig).toISOString(),
+    };
+    return shownItems().filter((item) => itemInRange(item, span, props.dateConfig)).length;
+  };
   const loading = () => status()?.kind === "loading";
   const empty = (): "sources" | "selection" | "events" | null => {
     // Without any calendar the page says why: none exist yet, or the status line names the apps that failed.
@@ -351,9 +359,10 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   /** What the status row says beside the count: what still loads, which calendars show busy times only. */
   const statusFacts = () => {
     const current = status();
-    if (current?.kind === "loading") return [{ after: t.loading({ count: current.count, total: current.total }) }];
-    if (current?.kind === "busy") return [{ after: t.busyOnly({ names: current.names.join(", ") }) }];
-    return [];
+    const shown = { value: new Intl.NumberFormat(props.dateConfig?.locale).format(shownCount()), after: t.shownAfter };
+    if (current?.kind === "loading") return [shown, { after: t.loading({ count: current.count, total: current.total }) }];
+    if (current?.kind === "busy") return [shown, { after: t.busyOnly({ names: current.names.join(", ") }) }];
+    return [shown];
   };
   /** Apps that did not answer, or a range cut short: the sentence of the warning above the calendar. */
   const problem = (current: NonNullable<ReturnType<typeof status>>) =>
@@ -397,7 +406,16 @@ export default function CloudCalendar(props: CloudCalendarProps) {
         />
       }
     >
-      <Pane label={t.calendar} status={<StatusRow lead={t.shown({ count: shownCount() })} loading={loading()} facts={statusFacts()} />}>
+      <Pane
+        label={t.calendar}
+        status={
+          <StatusRow
+            lead={t.todayLead({ count: new Intl.NumberFormat(props.dateConfig?.locale).format(todayCount()) })}
+            loading={loading()}
+            facts={statusFacts()}
+          />
+        }
+      >
         <Show
           when={!catalogFailed()}
           fallback={<Failed text={`${t.catalogFailed} ${t.catalogFailedBody}`} onRetry={() => void retryCatalog()} />}

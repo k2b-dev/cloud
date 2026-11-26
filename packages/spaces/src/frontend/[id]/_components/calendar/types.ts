@@ -1,4 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
+import type { JSX } from "solid-js";
 import type { CalendarItem, SpaceColumn, SpaceItemTemplate, SpaceTag } from "@/contracts";
 import type { CreateMenuChoice } from "../shared/create-menu";
 import type { CalendarTray } from "../workspace/workspace-types";
@@ -16,6 +17,8 @@ export type DayWeather = {
 
 export type CalendarProps = {
   spaceId: string;
+  /** The page's controls in the calendar's own header row, right after the period title: its filters and count. */
+  toolbarContent?: JSX.Element;
   items: CalendarItem[];
   columns: SpaceColumn[];
   tags: SpaceTag[];

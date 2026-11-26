@@ -859,6 +859,7 @@ export default function Calendar(props: CalendarProps) {
             : undefined
         }
         selectionMenu={selectionMenu}
+        toolbarContent={props.toolbarContent}
         renderQuickCreate={
           props.canWrite
             ? (range, { create, close }) => (

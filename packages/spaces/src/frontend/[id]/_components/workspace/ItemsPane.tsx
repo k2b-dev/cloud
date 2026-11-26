@@ -25,8 +25,6 @@ type Props = {
   dateConfig?: DateContext;
   canWrite: boolean;
   currentUserId: string;
-  /** Starts a new task from the empty list; without it the empty list offers nothing. */
-  onCreate?: () => void;
 };
 
 const GROUPS = ["deadline", "column", "priority", "tag", "none"] as const satisfies readonly ItemGroupBy[];
@@ -160,11 +158,10 @@ export default function ItemsPane(props: Props) {
               action={{ label: t.clearFiltersButton, icon: "filter-off", onClick: () => change(base()) }}
             />
           ) : (
-            <Empty
-              icon="checkbox"
-              text={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription}
-              action={props.canWrite && props.onCreate ? { label: t.newTask, icon: "plus", onClick: props.onCreate } : undefined}
-            />
+            // The page's one "New task" (head, and the floating button on the phone) creates the first task; a second one
+            // here would say the same twice (design review 26.11.).
+            // k2b-ui gap: Empty stands at the text edge; an empty list with nothing else on the page wants it centred.
+            <Empty icon="checkbox" text={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription} />
           )
         }
       >

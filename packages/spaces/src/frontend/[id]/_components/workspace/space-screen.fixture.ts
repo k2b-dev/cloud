@@ -323,6 +323,8 @@ export const invitationContext = (state: SpaceFixtureState = "usual"): EventInvi
         ]
       : [
           { name: "Kim Example", address: "kim@example.com" },
+          { name: "Robin Example", address: "robin@example.com" },
+          { name: "Sam Example", address: "sam@example.org" },
           { name: null, address: "dispatch@forwarder.example.com" },
         ],
     canCancel: worst,
@@ -335,7 +337,14 @@ export const invitationContext = (state: SpaceFixtureState = "usual"): EventInvi
           errorMessage: "The mailbox Lagerlogistik Nord rejected the draft: quota exceeded (2.0 GB of 2.0 GB used)",
           updatedAt: "2026-10-15T06:40:00.000Z",
         }
-      : null,
+      : {
+          sequence: 1,
+          method: "request",
+          state: "drafted",
+          draftId: "Draft1",
+          errorMessage: null,
+          updatedAt: "2026-10-14T15:20:00.000Z",
+        },
   };
 };
 
