@@ -27,6 +27,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - Views of the same thing: "Offen", "Diese Woche", "Erledigt", or the areas of a record.
 - They stand in the head `Bar start` beside the actions, or as the `head` of a `Pane`.
 - A tab without room hides whole and joins the menu tab ("Weitere").
+- Tabs with `href` change the address and are a navigation. Tabs without any `href` switch a panel in place ("Vorschau | Code") and are the tabs pattern of assistive technology: give them `panel` and put the content in `Tabs.Panel`. The arrows, Home and End move between the tabs that show. A segmented control is never tabs; it chooses a value.
 
 ### Path
 
@@ -67,6 +68,12 @@ The app's places in the sidebar: groups with a heading and a deed, counts, dots,
 Views of one thing; a menu tab at the end holds the views without a tab of their own.
 
 <Props of="Tabs Tab" />
+
+### Tabs.Panel
+
+The content of tabs that switch in place; the open tab names it and controls it.
+
+<Props of="Tabs.Panel" />
 
 ### StatusRow
 

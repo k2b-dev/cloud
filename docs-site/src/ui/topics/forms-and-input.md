@@ -36,9 +36,17 @@ A new appointment, opened from the head's "Neuer Termin" as a `Pane detail`, so 
 
 ### Select
 
-- Many options, or options that come from data, such as customers.
+- Many options that the page has, such as the kinds of an order.
 - Takes little room; `placeholder` says what to pick.
 - An option that cannot be chosen now is `disabled`.
+
+### LookupSelect
+
+- Values that come from data the person searches, such as one customer of 412 or a person.
+- Loads while the person types; one value or `multiple`; an optional one can be cleared ("Auswahl entfernen").
+- Never a `Select` with a few of many entries, and never free text for a person.
+
+One choice marks its option with a tick at the end of the row in all three, as a menu does; several values have their box first.
 
 ## Parts
 
@@ -52,7 +60,7 @@ Names one control with a label, a hint or an error, and "optional" or a unit; `F
 
 ### Input
 
-A text field of one line or several (`multiline`), a number, an address or a search.
+A text field of one line or several (`multiline`), a number, an address or a search. A `number` has no spinner and reads and shows the locale's numbers ("1.500,5" in German); the app and the form get the plain number ("1500.5"), and `min` and `max` keep a form from sending a number outside them. A fixed set of sizes (an interval, "7 / 30 / 90 Tage") is a `Select`, not a number.
 
 <Props of="Input" />
 
@@ -61,6 +69,12 @@ A text field of one line or several (`multiline`), a number, an address or a sea
 One choice from many options, in a list that opens.
 
 <Props of="Select SelectOption" />
+
+### LookupSelect
+
+One value, or several, from values the app loads while the person types: closed it reads like a `Select`, open it searches over the matches (a sheet on a small touch screen). In a `Field` it takes the label, name, hint, error and `required`; the form gets each chosen code, nothing while disabled.
+
+<Props of="LookupSelect" />
 
 ### DateInput
 
@@ -82,7 +96,7 @@ One thing on or off; `switch` when it acts at once.
 
 ### Choice
 
-One choice from a few options, all visible.
+One choice from a few options, all visible; an option may carry a quiet `hint` and be `disabled` alone. Held by the page (`value` and `onChange`), it shows the page's value again when the page refuses a press or decides later.
 
 <Props of="Choice" />
 

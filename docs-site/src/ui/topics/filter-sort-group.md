@@ -25,10 +25,12 @@ Orders with two active filters: "Status ist Offen oder In Arbeit" and "Betrag ab
 
 - **Statements.** Each filter is a sentence in the app's tint: "Status ist Eingeliefert oder Fotografiert", "und", "Preis ab 500 €". More than three values read "A, B oder 2 weitere". Pressing the words opens the field's editor; the small × removes the filter, and the focus moves to the next statement.
 - **"+ Filter"** lists the fields, the common ones first. A field without a value is a dashed statement that applies once it has one. **"Zurücksetzen"** returns to the current view in one step.
-- **Sort and group** stand in words in the status row: "⇅ Fällig ↑" and "Nach Status", each a menu with one choice.
-- **On the phone** the bar is one line that scrolls sideways. Every tap opens the filter sheet: every field with its value, sort and group, and "Zurücksetzen" and "9 Aufträge zeigen" at the foot.
+- **Sort and group** stand in words in the status row: "⇅ Fällig · Älteste zuerst" and "Nach Status". The sort's menu has two choices, "Sortieren nach" (the fields) and "Reihenfolge" in words, never arrows: a sort option's `kind` gives them (`date` "Neueste zuerst", `number` "Höchster zuerst", `text` "A–Z"), or its own `labels` where those do not fit; without either the order reads only "Aufsteigend" and "Absteigend". Another field keeps the order shown when it offers it.
+- **One choice, one tick at the end.** Where one value is chosen (a preset, yes or no, the sort, a lookup with `multiple: false`), its tick stands at the end of the row, as in a menu and a `Select`. Several values have their box first.
+- **On the phone** the bar is one line that scrolls sideways. Every tap opens the filter sheet: every field with its value, sort and group, and "Zurücksetzen" and "9 Aufträge zeigen" at the foot. A step deeper (a field, a bound's calendar) goes back from the sheet's head, "‹ Preis", never from a line of its own.
 - **A period of its own.** A `dateRange` or `timeRange` editor lists its presets, then "Von …" and "Bis …" with their values. Each opens a `DatePicker` beside the editor, like a submenu (ArrowRight opens it, Escape closes only it; to the left where the right has no room). A picked day applies at once; a point in time adds hour and minute and applies with "Übernehmen". A day that does not fit ("Von" after "Bis", an hour the clocks skip) says why under the calendar, which stays open. On the phone the calendar is the sheet's next step.
-- **Values that load.** A `lookup` field opens `Lookup`: a search that waits 200 ms, aborts an older search, shows placeholder rows while it loads, and says "Erneut versuchen" when it fails. `Lookup` also works in a form.
+- **A number range** is built like a period: its presets as a list, then "Ab …" and "Bis …", each opening a small number entry beside the editor (on the phone the sheet's next step). The entry reads and shows the locale's numbers ("1.500" is one thousand five hundred in German), shows the unit, has no spinner, and applies with Enter or "Anwenden".
+- **Values that load.** A `lookup` field opens `Lookup`: a search that keeps the focus while the arrows move the highlight, waits 200 ms, aborts an older search, shows placeholder rows while it loads, and says "Erneut versuchen" when it fails, in the app's words for what its server answered when the field gives `failure`. Escape first empties the search, then closes. In a form, use `LookupSelect`.
 
 The field kinds: `choice` (a listbox with ticks, counts with `counts: true`), `lookup`, `numberRange` ("Preis ab 500 €"), `dateRange` and `timeRange` ("Eingang letzte 30 Tage", read in the `timeZone` you pass, "UTC" by default), `bool` and `text`.
 
@@ -68,7 +70,7 @@ The sort and the grouping in words, in `StatusRow filters`.
 
 ### Lookup
 
-Values that load while the person types, in a filter (the bar opens it) or in a form.
+Values that load while the person types, the panel the bar opens: one choice (`multiple={false}`) or several, `failure` for the reason a load failed. In a form, `LookupSelect` (see [Forms and input](/en/ui/v2/forms-and-input)).
 
 <Props of="Lookup" />
 

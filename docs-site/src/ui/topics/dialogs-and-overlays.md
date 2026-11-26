@@ -18,6 +18,7 @@ Everything above the page keeps these rules:
 - **Escape closes.** Escape closes a dialog, a menu and a popover, always, also a dialog with `dismissible={false}`. In `Dialog.confirm`, Escape answers no.
 - **The focus returns.** When it closes, the focus goes back to the button that opened it.
 - **Dismissible.** A press outside and a swipe down on the sheet close a dialog. With `dismissible={false}` they do not, so nothing is lost by a stray touch (a secret shown once); Escape, the close button and the buttons of the foot still close it. `Dialog.confirm` never closes on a press outside.
+- **A step deeper goes back from the head.** A sheet that goes a level deeper (a field of the filter sheet, a bound's calendar) gets `Dialog back`: "‹" before the title ("‹ Preis"), never a line of its own.
 - **No stacking surprises.** One dialog at a time, with its own one primary. Toasts stand above any dialog, at the bottom in the middle, at most three, the newest on top, and nothing on the page moves when one comes.
 
 ## Dialog or a page of its own?
