@@ -34,7 +34,7 @@ suiteFor(
     await migrate(db);
 
     await migrateWorkflowAi(db);
-    await db`DELETE FROM audit.events WHERE action = 'app.removed' AND target_id = ${retired}`;
+    expect<unknown>(await db`SELECT id FROM audit.events WHERE action = 'app.removed' AND target_id = ${retired}`).toEqual([]);
     // Legacy runs could outlive a missing definition before the scope foreign keys existed.
     await db`ALTER TABLE workflows.run DROP CONSTRAINT run_workflow_scope_fk,
       DROP CONSTRAINT run_workflow_version_id_workflow_id_fkey`.simple();
@@ -150,6 +150,13 @@ suiteFor(
     };
     await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id, policy)
       VALUES ('user', ${users[1]!}::uuid, 'mixed-workload', 'old.workload', 'mixed', ${JSON.stringify(mixedPolicy)}::text::jsonb)`;
+    await db`INSERT INTO auth.mandates(subject_kind, subject_user_id, owner_app_id, workload_type, workload_id,
+      policy, state, revision, revoked_at, revoke_reason)
+      VALUES ('user', ${users[1]!}::uuid, 'revoked-workload', 'old.workload', 'revoked',
+        ${JSON.stringify(mixedPolicy)}::text::jsonb, 'revoked', 7, ${instant}::timestamptz, 'historical revocation')`;
+    const revokedBefore = await db`SELECT * FROM auth.mandates WHERE owner_app_id = 'revoked-workload'`;
+    await db`UPDATE core.known_apps SET status_providers = ${JSON.stringify({ [retired]: { old: true }, [survivor]: { keep: true } })}::text::jsonb
+      WHERE id = ${survivor}`;
     const exclusivePolicy = {
       ...mixedPolicy,
       apps: [retired],
@@ -202,6 +209,10 @@ suiteFor(
     await migrate(db);
     await migrate(db);
     expect(await snapshot(survivor)).toEqual(before);
+    expect<unknown>(await db`SELECT * FROM auth.mandates WHERE owner_app_id = 'revoked-workload'`).toEqual(revokedBefore);
+    expect<unknown>(await db`SELECT status_providers FROM core.known_apps WHERE id = ${survivor}`).toEqual([
+      { status_providers: { [survivor]: { keep: true } } },
+    ]);
     for (const [table, rows] of Object.entries(await snapshot(retired))) {
       expect(rows).toEqual(retainedTables.has(table) ? retiredBefore[table] : []);
     }
@@ -257,7 +268,11 @@ suiteFor(
     expect(removal[0]?.metadata.counts).toMatchObject({
       "auth.service_accounts": 1,
       "auth.access": 2,
-      "auth.mandates": 4,
+      "auth.mandates": 1,
+      "auth.mandates.narrowed": 3,
+      "auth.rail_preferences.changed": 1,
+      "core.known_apps": 1,
+      "core.known_apps.status_providers": 1,
       "workflows.run": 1,
       "ai.workflow_scope_budget": 1,
       "ai.workflow_scope_admission": 1,
@@ -267,13 +282,15 @@ suiteFor(
       "platform.application_packages": 1,
     });
     const pauses = await db<
-      { target_id: string; metadata: { expectedRevision: number; removedAppId: string } }[]
+      { target_id: string; metadata: { expectedRevision: number; removedAppId: string; mandateOwnerAppId: string } }[]
     >`SELECT target_id, metadata
       FROM audit.events WHERE action = 'mandate.pause' ORDER BY target_id`;
     expect(pauses).toHaveLength(3);
     for (const pause of pauses) {
       expect(pause.metadata).toMatchObject({ expectedRevision: 1, removedAppId: retired });
-      expect((await db`SELECT state FROM auth.mandates WHERE id = ${pause.target_id}::uuid`)[0]?.state).toBe("paused");
+      const [mandate] = await db`SELECT state, owner_app_id FROM auth.mandates WHERE id = ${pause.target_id}::uuid`;
+      expect(mandate?.state).toBe("paused");
+      expect(pause.metadata.mandateOwnerAppId).toBe(mandate?.owner_app_id);
     }
 
     expect<unknown>(await db`SELECT policy, state FROM auth.mandates WHERE owner_app_id = 'exclusive-workload'`).toEqual([
