@@ -19,7 +19,7 @@ import { type Crumb, renderVenueShell } from "./venue-shell.browser-fixture";
 
 // The main paths of Venue on v2: find and create a venue, open a shift from the calendar, join it with the following
 // weeks, remove someone as an admin, Back and Forward over the selection, sign up from the dialog, leave one of my
-// shifts, renew the calendar link, plus the layout rules at 1440, 1024 and 390 px, the worst case and 1,000 venues.
+// shifts, renew the calendar link, plus the layout rules at 1920, 1440, 1024 and 390 px, the worst case and 1,000 venues.
 // The harness renders each page from its address; this test answers the APIs with invented data.
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type BrowserContext = Awaited<ReturnType<Browser["newContext"]>>;
@@ -141,6 +141,8 @@ type View = { width: number; height: number; touch: boolean };
 const desktop: View = { width: 1440, height: 900, touch: false };
 const tablet: View = { width: 1024, height: 768, touch: true };
 const phone: View = { width: 390, height: 844, touch: true };
+// large screens are a target of their own: the brief plans their room, the layout rules hold there too
+const wide: View = { width: 1920, height: 1080, touch: false };
 
 type Call = { method: string; path: string; body: unknown };
 const answer = async (route: Route, calls: Call[]) => {
@@ -492,7 +494,7 @@ describe("Venue on v2", () => {
     }
   }, 60_000);
 
-  test("every page keeps the layout rules at 1440, 1024 and 390 px", async () => {
+  test("every page keeps the layout rules at 1920, 1440, 1024 and 390 px", async () => {
     const addresses = [
       "/app/venue",
       schedule,
@@ -506,7 +508,7 @@ describe("Venue on v2", () => {
       "/app/venue/Cafe01/settings/danger",
     ];
     const found: string[] = [];
-    for (const view of [desktop, tablet, phone])
+    for (const view of [wide, desktop, tablet, phone])
       for (const address of addresses) {
         const { context, tab, errors } = await open(view, address);
         try {
