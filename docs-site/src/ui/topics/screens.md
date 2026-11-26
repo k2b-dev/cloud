@@ -26,7 +26,7 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="settings-page" height="720" default="Changed" />
 
-## Table with a status row
+## Table with key figures
 
 <Example recipe="table" height="640" default="Rows" />
 

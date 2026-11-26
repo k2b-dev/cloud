@@ -121,7 +121,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | folders or pages in levels | in the sidebar a `Nav` group with `tree` (`load`, `loadMore`); in the content `Table` with `rowKey` and `tree` | `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
-| the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
+| the one main statement of a list | `StatusRow` in `Pane status` | `states.tsx`, `list-detail.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
@@ -137,7 +137,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
-| 2–6 key numbers side by side | `Cells` with `Cells.Cell` (`trend` for a short history, `meter` for a limit; elsewhere `Spark`) | `record.tsx`, `home.tsx` |
+| 2–6 key numbers side by side, one strip | `Cells` with `Cells.Cell` (`trend` for a short history, `meter` for a limit; elsewhere `Spark`) | `table.tsx`, `record.tsx`, `home.tsx` |
 | a titled part of a page; parts side by side | `Section` (title, count, ≤ 2 actions, `more`); `Section.Columns` | `record.tsx`, `home.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
 | the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
@@ -146,9 +146,9 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| short values (domains), an image, a one-time code, a range, a colour | `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput` in a `Field` or `Setting` | `settings.tsx` |
+| short values (domains), an image, a one-time code, a range, a colour | `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput` in a `Field` or `Setting` | `settings.tsx` (all but `CodeInput`) |
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen"; not in a `Setting` yet) | – |
-| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | – |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |

@@ -68,7 +68,7 @@ export default function SourceForm(props: Props) {
   const conflict = props.conflict ?? true;
   return (
     <Workspace
-      primary={{ label: "Speichern", icon: "check", disabled: conflict || props.saving }}
+      // the form's footer holds its one primary, on the phone too; a floating "Speichern" would say it twice
       sidebar={
         <Nav
           title="Pulse"
@@ -100,15 +100,6 @@ export default function SourceForm(props: Props) {
               <Mark {...(values.kind === "Webhook" ? kind.webhook : kind.poll)} />
               <Path label="Ort" items={[{ label: "Quellen", href: "#quellen" }, { label: values.name || "Neue Quelle" }]} />
             </Inline>
-          }
-          end={
-            <>
-              <Button href="#">Abbrechen</Button>
-              {/* the one primary of the page: dimmed while the conflict lasts, turning while the save runs */}
-              <Button variant="primary" type="submit" disabled={conflict} busy={props.saving}>
-                Speichern
-              </Button>
-            </>
           }
         />
       }
@@ -159,6 +150,18 @@ export default function SourceForm(props: Props) {
                 ]}
               />
             </Section>
+            {/* the form ends with its deeds: cancel, then the page's one primary, dimmed while the conflict lasts and
+                turning while the save runs */}
+            <Bar
+              end={
+                <>
+                  <Button href="#">Abbrechen</Button>
+                  <Button variant="primary" type="submit" disabled={conflict} busy={props.saving}>
+                    Speichern
+                  </Button>
+                </>
+              }
+            />
           </Pane>
           {/* the side column only while it is full: what the source feeds, and who changed it */}
           <Pane side label="Was sie liefert" width={{ min: 280, default: 340 }}>

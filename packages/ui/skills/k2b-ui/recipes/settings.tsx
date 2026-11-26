@@ -1,17 +1,16 @@
 // Recipe: settings with more than text, as `Setting` rows: the name and a quiet hint on the left, the value beside them
 // in one column, so the page reads at a glance. A setting the operator fixed is a dimmed control with the reason in its
 // hint, and a changed one says what it was; the page saves as a whole.
-// Lists of values are tags, a logo an image, a colour a colour, a share a slider, a code from another device a code. A
-// side column answers the questions and shows who changed what. The values live in the app; the primitives only show them.
+// Lists of values are tags, a logo an image, a colour a colour, a share a slider. The head names the page and what it is
+// for; a side column shows who changed what. The values live in the app; the primitives only show them.
 import {
   Bar,
   Button,
   Chip,
-  CodeInput,
   ColorInput,
   Digest,
-  Disclosure,
   ImageInput,
+  Inline,
   Nav,
   Pane,
   Section,
@@ -69,13 +68,21 @@ export default function SignInPageSettings(props: Props) {
       }
       head={
         <Bar
-          // the page is the sidebar's open entry; the head says only what is unsaved
-          start={changes > 0 ? <Chip yours>{`${changes} Änderungen`}</Chip> : undefined}
+          // the page's title and in one line what it is for; then what is unsaved
+          start={
+            <Inline>
+              <Text type="lead">Anmeldeseite</Text>
+              <Text type="meta">Was Personen sehen, bevor sie sich anmelden</Text>
+              {changes > 0 && <Chip yours>{`${changes} Änderungen`}</Chip>}
+            </Inline>
+          }
           end={
             <>
               <Button href="#" disabled={changes === 0}>
                 Verwerfen
               </Button>
+              {/* k2b-ui gap: a footer Bar that stays at the pane's bottom while there are changes; until then the
+                  page's one primary stands in the head, where a long page keeps it in reach */}
               {/* the page's one primary while there is something to save; with nothing changed it waits, dimmed */}
               <Button
                 variant={changes > 0 && !props.locked ? "primary" : "secondary"}
@@ -125,14 +132,9 @@ export default function SignInPageSettings(props: Props) {
               <Slider value={0.3} min={0} max={0.8} step={0.05} format={{ style: "percent" }} disabled={props.locked} />
             </Setting>
           </Section>
-          <Section icon="devices" title="Gerät koppeln">
-            <Setting name="code" label="Code vom anderen Gerät" hint="Sechs Ziffern, sie gelten fünf Minuten.">
-              <CodeInput autocomplete="off" disabled={props.locked} />
-            </Setting>
-          </Section>
         </Pane>
-        {/* the side column only while it is full: who changed what, and the questions people ask here */}
-        <Pane side label="Hilfe und Verlauf" width={{ min: 280, default: 320 }}>
+        {/* the side column only while it is full: who changed what */}
+        <Pane side label="Verlauf" width={{ min: 280, default: 320 }}>
           <Section icon="history" title="Zuletzt geändert" more={{ label: "Protokoll", forward: true }}>
             <Digest
               label="Zuletzt geändert"
@@ -157,14 +159,6 @@ export default function SignInPageSettings(props: Props) {
                 },
               ]}
             />
-          </Section>
-          <Section icon="help" title="Fragen">
-            <Disclosure title="Was passiert mit laufenden Sitzungen?">
-              <Text type="body">Sie gelten bis zu ihrem Ende weiter. Eine kürzere Dauer greift bei der nächsten Anmeldung.</Text>
-            </Disclosure>
-            <Disclosure title="Wer darf diese Einstellungen ändern?">
-              <Text type="body">Personen mit der Rolle „Verwaltung“. Das Verfahren legt nur der Betreiber fest.</Text>
-            </Disclosure>
           </Section>
         </Pane>
       </Pane.Split>

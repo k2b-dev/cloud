@@ -1,8 +1,8 @@
-// Recipe: a table of things with a face. The status row says what matters today with a number and toned chips; each
-// row leads with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
+// Recipe: a table of things with a face. One strip of key figures says what matters today (`Cells`); each row leads
+// with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
 // Each row opens its invoice and, when it is overdue, has one deed; on the phone the table becomes two-line rows with the same mark.
-// Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
-import { Bar, Button, Chip, Failed, Input, Nav, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
+// Empty, loading and failed stand where the rows would stand (see `states` at the end).
+import { Bar, Button, Cells, Chip, Failed, Input, Nav, Pane, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
 export const app = { name: "Finanzen", color: "#15803d", icon: "coin-euro" };
@@ -151,24 +151,36 @@ export default function OpenInvoices(props: Props) {
       }
       primary={{ label: "Rechnung", icon: "plus" }}
     >
-      <Pane
-        label="Offene Rechnungen"
-        status={
-          <StatusRow
-            lead={props.failed ? "Nicht geladen" : props.loading ? "Wird geladen" : ready() ? "33.000,20 € offen" : "Alles bezahlt"}
-            filters={
-              ready() ? (
-                <>
-                  <Chip status="bad">3 überfällig · 4.538,40 €</Chip>
-                  <Chip yours icon="mail-forward">
-                    2 Mahnungen fällig
-                  </Chip>
-                </>
-              ) : undefined
-            }
-          />
-        }
-      >
+      <Pane label="Offene Rechnungen">
+        {/* the key figures as one strip above the table: what is open, what is late, what to send today; the count
+            of invoices stands once, in the tab. A failed load shows no figures, they are data too. */}
+        {!props.failed && (
+          <Cells>
+            <Cells.Cell
+              icon="file-invoice"
+              label="Offen"
+              value={ready() ? "33.000,20 €" : "0,00 €"}
+              meta={ready() ? "fällig bis 15. Dez." : "nichts offen"}
+              loading={props.loading}
+            />
+            <Cells.Cell
+              icon="alert-triangle"
+              color="#dc2626"
+              label="Überfällig"
+              value={ready() ? "4.538,40 €" : "0,00 €"}
+              meta={ready() ? "3 Rechnungen, älteste seit 12. Nov." : undefined}
+              loading={props.loading}
+            />
+            <Cells.Cell
+              icon="mail-forward"
+              label="Mahnungen fällig"
+              value={ready() ? "2" : "keine"}
+              meta={ready() ? "heute zu senden" : undefined}
+              href={ready() ? "#mahnungen" : undefined}
+              loading={props.loading}
+            />
+          </Cells>
+        )}
         {props.failed ? (
           <Failed text="Die Rechnungen konnten nicht geladen werden. Es wurde nichts geändert." onRetry={() => location.reload()} />
         ) : (

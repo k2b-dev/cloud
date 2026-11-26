@@ -95,13 +95,14 @@ charge, the latest events as rows with marks, and who changed it as
 ![form at 1440 px](../images/form-1440.png)
 ![form at 390 px](../images/form-390.png)
 
-A `Path` with the thing's mark in the head and "Abbrechen" with the one
-primary "Speichern" at its end (mirrored as `Workspace primary`), disabled
-while the conflict lasts; `Notice tone="warn"` for a conflict that blocks
-saving; `Section`s of `Field`s (`Field.Row` for fields side by side); a
-server error goes into the `error` of its field; `Choice` and `Check
-switch` for options; a `Pane side` with what the thing feeds (rows with
-marks and a state chip) and who changed it (`Digest activity`).
+A `Path` with the thing's mark in the head; `Notice tone="warn"` for a
+conflict that blocks saving; `Section`s of `Field`s (`Field.Row` for
+fields side by side); a server error goes into the `error` of its field;
+`Choice` and `Check switch` for options; the form ends with a `Bar` of
+"Abbrechen" and the one primary "Speichern", disabled while the conflict
+lasts (on the phone too, so no `Workspace primary` says it twice); a
+`Pane side` with what the thing feeds (rows with marks and a state chip)
+and who changed it (`Digest activity`).
 
 - Validation and server answers live in the app's state; the primitives
   only show `error`.
@@ -162,10 +163,11 @@ The sign-in page of an administration as `Setting` rows in `Section`s:
 a `Select` with `was` (the value before the unsaved change), a `Select`
 the operator fixed (`disabled`, the reason in the hint), allowed domains
 in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
-`ColorInput`, how dark the background is in a `Slider`, a pairing code in
-a `CodeInput`. The head says how many changes wait and holds "Verwerfen"
-and the one primary "Speichern"; a `Pane side` shows who changed what
-(`Digest activity`) and two `Disclosure`s with questions.
+`ColorInput`, how dark the background is in a `Slider`. The head names
+the page and in one line what it is for, says how many changes wait and
+holds "Verwerfen" and the one primary "Speichern" (k2b-ui gap: a footer
+that stays at the pane's bottom while there are changes); a `Pane side`
+shows who changed what (`Digest activity`).
 
 - A choice the person may not change is a dimmed control with the reason
   in its hint, not a missing one.
@@ -304,15 +306,16 @@ The head says "1 Änderung" and saves the page as a whole.
 
 - States: `saved` (nothing to save: the deeds are disabled).
 
-## table.tsx: a table with a status row
+## table.tsx: a table with key figures
 
 ![table at 1440 px](../images/table-1440.png)
 ![table at 390 px](../images/table-390.png)
 
-A `Nav` with the app's places and accounts; `StatusRow` with the lead
-("33.000,20 € offen") and toned chips at the end (overdue, reminders
-due); the count stands once, in the current tab; `Table` with widths, the invoice's `Mark` before its
-number (`Column mark`), the person in charge as `Avatar`,
+A `Nav` with the app's places and accounts; the key figures as one strip
+of `Cells` above the table (open, overdue, reminders due, each with one
+quiet line; the count stands once, in the current tab); `Table` with
+widths, the invoice's `Mark` before its number (`Column mark`), the person
+in charge as `Avatar`,
 a status `Chip`, an amount column `align: "end"`, a quiet icon button with
 its name only where the deed is due, `drop` on the columns that matter
 least, and `phone(row)` so the phone shows two-line rows instead of a cut
@@ -320,7 +323,7 @@ table. `open(row)` gives each row the address of its invoice (on the phone
 too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 `loading` would hold its place while the rows load.
 
-- The lead says the one thing; the rest are facts, which leave on the phone.
+- A failed load shows no figures: they are data too.
 - On the phone the rows keep the mark, and a state that needs a person
   stays as a chip in `marks`.
 - A deed per row is a `Button` in its own last column: `variant="text"`

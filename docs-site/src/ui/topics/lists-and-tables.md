@@ -8,7 +8,7 @@ Many things of one kind. Use a `List` when each entry reads as a line of text, a
 
 ## A table to compare
 
-Open invoices with a status row: the lead says how many, the figures follow, the filter sits at the end. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand, and nothing above them moves.
+Open invoices under one strip of key figures: what is open, what is late, which reminders are due today; the count stands once, in the tab. Each row opens its invoice and has one deed. Switch the state: empty, loading and failed stand where the rows would stand; a failed load shows no figures.
 
 <Example recipe="table" height="640" default="Rows" />
 
@@ -93,7 +93,7 @@ Reorder by dragging. Until it ships, use the nearest part and write `// k2b-ui g
 ### Do
 
 - Open an entry by `href`; add `onNavigate` to open it in place.
-- Give every wide table a `phone(row)`, and put the count and key figures in the `StatusRow`.
+- Give every wide table a `phone(row)`. Put its key figures in one strip of `Cells` above it, or its one statement in a `StatusRow`; say the count once.
 - Keep row text short (it is cut with "…"); mark numbers, amounts and times with `align: "end"` or `numeric`: they are never cut, and their column grows to the longest value.
 - Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
