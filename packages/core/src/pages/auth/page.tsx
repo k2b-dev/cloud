@@ -107,7 +107,7 @@ export default ssr(async (c) => {
   c.get("page").title = t.signIn;
   const title = confirmation?.reauthenticate ?? formTitle;
   const description = confirmation?.recent ?? formSubtitle;
-  // Where app sign-in is set up, the password and email forms offer it beside their own action.
+  // Where app sign-in is set up, the password and email forms offer it as a link among their own.
   const appAlternative =
     approvalEnabled && !useApproval && !token && !isAdminLogin && activeMethod && activeMethod !== "email"
       ? { href: credentialHref, label: t.useAppInstead }

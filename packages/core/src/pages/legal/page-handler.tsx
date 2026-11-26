@@ -47,7 +47,11 @@ export const makeLegalPage = (kind: LegalKind) =>
             <Prose markdown={trimmedContent} />
           </Band>
         ) : (
-          <Empty icon="file-off" text={t.legalNotConfigured({ title })} />
+          <Empty
+            icon="file-off"
+            text={t.legalNotConfigured({ title })}
+            action={kind === "imprint" ? undefined : { label: t.imprint, icon: "building", href: "/impressum" }}
+          />
         )}
       </VisitorPage>
     );

@@ -23,7 +23,7 @@ export const appApprovalMessages = i18n.define({
       savedConfiguration: "Status of saved settings",
       devices: "Paired devices",
       pair: "Pair a device",
-      identifier: "Email or username",
+      identifier: "Username or email",
       identifierPlaceholder: "e.g. eva or eva@example.org",
       signIn: "Sign in with app",
       accountMismatch:
@@ -149,7 +149,7 @@ export const appApprovalMessages = i18n.define({
       savedConfiguration: "Status der gespeicherten Einstellungen",
       devices: "Gekoppelte Geräte",
       pair: "Gerät koppeln",
-      identifier: "E-Mail oder Kürzel",
+      identifier: "Benutzername oder E-Mail-Adresse",
       identifierPlaceholder: "z. B. eva oder eva@example.org",
       signIn: "Mit App anmelden",
       accountMismatch:

@@ -51,18 +51,23 @@ const page = async (query = "", cookie = "") => {
     form: form?.[2],
     category: props && typeof props === "object" && "category" in props ? props.category : undefined,
     forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
-    /** The link to the other credential, which the form shows beside its own action: [target, label]. */
+    /** The link to the other credential: the app form's own way back, or the page's link among the other ways in. */
     alternative: (() => {
-      if (!props || typeof props !== "object") return undefined;
-      const link = "alternative" in props ? props.alternative : "fallback" in props ? props.fallback : undefined;
-      return link &&
-        typeof link === "object" &&
-        "href" in link &&
-        "label" in link &&
-        typeof link.href === "string" &&
-        typeof link.label === "string"
-        ? [link.href, link.label]
-        : undefined;
+      if (props && typeof props === "object" && ("fallback" in props || "alternative" in props)) {
+        const link = "fallback" in props ? props.fallback : props.alternative;
+        if (
+          link &&
+          typeof link === "object" &&
+          "href" in link &&
+          "label" in link &&
+          typeof link.href === "string" &&
+          typeof link.label === "string"
+        )
+          return [link.href, link.label];
+      }
+      const match =
+        /<a[^>]*href="([^"]*credential=[^"]*)"[^>]*>(?:<i[^>]*><\/i>)?(?:<!--[^>]*-->)*<span class="k2-btn-label">([^<]+)</.exec(html);
+      return match ? [match[1]!, match[2]!] : undefined;
     })(),
   };
 };

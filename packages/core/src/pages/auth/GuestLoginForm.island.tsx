@@ -18,7 +18,7 @@ export default function GuestLoginForm(props: {
   category?: "guest" | "login";
   /** A shared workstation: the page remembers neither the address nor the method. */
   forget?: boolean;
-  /** The other way to sign in to the same account ("Use the app instead"), beside the form's own action. */
+  /** The other way into the same account ("Use the app instead"): a link in the form, beside its other links. */
   alternative?: { href: string; label: string };
 }) {
   const locale = useLocale();
@@ -154,16 +154,10 @@ export default function GuestLoginForm(props: {
           <Text type="meta" muted>
             {props.allowSelfRegistration ? t().selfRegistrationHint : t().existingAccountHint}
           </Text>
+          <Show when={props.alternative}>{(link) => <Text href={link().href}>{link().label}</Text>}</Show>
         </Band>
         <Show when={emailMutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
         <FormActions
-          start={
-            props.alternative && (
-              <Button variant="ghost" icon="device-mobile" href={props.alternative.href}>
-                {props.alternative.label}
-              </Button>
-            )
-          }
           end={
             <Button variant="primary" type="submit" form={emailFormId} icon="send" busy={loading()}>
               {loading() ? t().sendingLoginLink : t().sendLoginLink}

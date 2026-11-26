@@ -33,6 +33,7 @@ const spies: Array<{ mockRestore(): void }> = [];
 /** The account types the page offers; the layout checks use a venue's, the flows every type. */
 let policy = DEFAULT_ACCOUNT_CATEGORY_POLICY;
 beforeEach(() => {
+  policy = DEFAULT_ACCOUNT_CATEGORY_POLICY;
   spies.push(
     spyOn(services.coreSettings, "get").mockImplementation(
       async (key) =>
@@ -272,7 +273,7 @@ const firstFrameAndLoad = async (view: View, query: string, locale: "en" | "de")
   }
 };
 
-/** The names keyboard focus reaches after the "use the app instead" link, which stands before the form's action. */
+/** The names keyboard focus reaches after the "use the app instead" link, the last link of the form. */
 const tabOrder = async (view: View, query: string, steps: number) => {
   const tab = await open(view, query);
   try {

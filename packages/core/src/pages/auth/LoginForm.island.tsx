@@ -2,7 +2,7 @@ import { apiClient } from "@k2b/cloud/clients/core";
 import { cookies } from "@k2b/stdlib/browser";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, Field, Inline, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { FormActions } from "./FormActions";
@@ -16,7 +16,7 @@ export default function LoginForm(props: {
   appName?: string;
   /** A shared workstation: the page remembers neither the username nor the method. */
   forget?: boolean;
-  /** The other way to sign in to the same account ("Use the app instead"), beside the form's own action. */
+  /** The other way into the same account ("Use the app instead"): a link in the form, beside its other links. */
   alternative?: { href: string; label: string };
 }) {
   const locale = useLocale();
@@ -99,22 +99,17 @@ export default function LoginForm(props: {
             type="password"
             value={password()}
             onInput={setPassword}
-            placeholder={t().freeIpaPassword}
             autocomplete="current-password"
             autofocus={!!props.defaultUsername}
           />
         </Field>
-        <Text href={resetPasswordHref()}>{t().resetPassword}</Text>
+        <Inline>
+          <Text href={resetPasswordHref()}>{t().resetPassword}</Text>
+          <Show when={props.alternative}>{(link) => <Text href={link().href}>{link().label}</Text>}</Show>
+        </Inline>
       </Band>
       <Show when={mutation.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       <FormActions
-        start={
-          props.alternative && (
-            <Button variant="ghost" icon="device-mobile" href={props.alternative.href}>
-              {props.alternative.label}
-            </Button>
-          )
-        }
         end={
           <Button variant="primary" type="submit" form={formId} icon="login-2" busy={mutation.loading()}>
             {mutation.loading() ? t().signingIn : t().signInWithFreeIpa}

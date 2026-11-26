@@ -15,7 +15,7 @@ export const corePageMessages = i18n.define({
       privacy: "Privacy Policy",
       imprint: "Imprint",
       legalNotConfigured: ({ title }: { title: string }) =>
-        `${title} has not been published yet. The operators of this Cloud can tell you more.`,
+        `The ${title} has not been published yet. The operators of this Cloud can tell you more; the imprint names them.`,
     },
     de: {
       pageNotFound: "Seite nicht gefunden",
@@ -29,7 +29,7 @@ export const corePageMessages = i18n.define({
       privacy: "Datenschutzerklärung",
       imprint: "Impressum",
       legalNotConfigured: ({ title }) =>
-        `Die Seite „${title}“ ist noch nicht veröffentlicht. Die Betreiber dieser Cloud geben dir Auskunft.`,
+        `Die Seite „${title}“ ist noch nicht veröffentlicht. Die Betreiber dieser Cloud geben dir Auskunft; das Impressum nennt sie.`,
     },
   },
 });
