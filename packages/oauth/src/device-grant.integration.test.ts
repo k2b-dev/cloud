@@ -361,10 +361,17 @@ suite("OAuth device authorization grant", () => {
     expect(confirm.client).toEqual({ name: "Cloud CLI", clientId: "cloud-cli" });
     expect(confirm.scopes).toEqual(["openid", "profile", "read", "offline_access"]);
 
-    expect(await decide(who, confirm.request, "approve")).toBe("/oauth/device?result=approved");
+    const approved = await decide(who, confirm.request, "approve");
+    expect(approved).toStartWith("/oauth/device?result=approved&request=");
+    // the connected page finds the client of this person's decision by its request; another person finds nothing
+    const decided = new URL(approved!, ISSUER).searchParams.get("request")!;
+    expect(await oauth.device.approvedClientId({ id: decided, userId: who.userId })).toBe("cloud-cli");
+    expect(await oauth.device.approvedClientId({ id: decided, userId: (await person()).userId })).toBeNull();
     const tokens = await poll(started.device_code);
     expect(tokens.status).toBe(200);
     expect(tokens.body.scope).toBe("openid profile read offline_access");
+    // a consumed authorization still names its client right after the decision
+    expect(await oauth.device.approvedClientId({ id: decided, userId: who.userId })).toBe("cloud-cli");
     expect(typeof tokens.body.refresh_token).toBe("string");
     expect(jose.decodeJwt(String(tokens.body.access_token))).toMatchObject({ sub: who.userId, client_id: "cloud-cli" });
     expect(jose.decodeJwt(String(tokens.body.id_token))).toMatchObject({ name: "Device Happy Path" });

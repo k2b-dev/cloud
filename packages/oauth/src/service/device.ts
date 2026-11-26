@@ -135,6 +135,22 @@ export const getPending = async (id: string): Promise<PendingDeviceAuthorization
   return row ? mapPending(row) : null;
 };
 
+/**
+ * The client of a device authorization this person approved within its lifetime, for the page that says what is now
+ * connected; anything else (another person's, a denied or an old one) names nothing.
+ */
+export const approvedClientId = async (params: { id: string; userId: string }): Promise<string | null> => {
+  const [row] = await sql<{ client_id: string }[]>`
+    SELECT client_id FROM oauth.device_authorizations
+    WHERE id = ${params.id}::uuid
+      AND user_id = ${params.userId}::uuid
+      AND status IN ('approved', 'consumed')
+      AND NOT app_approval
+      AND decided_at > now() - make_interval(secs => ${DEVICE_CODE_LIFETIME_SECONDS})
+  `;
+  return row?.client_id ?? null;
+};
+
 type AuditActor = { userId: string; uid: string; provider: string; roles: readonly string[] };
 
 /** Record the resource owner's decision exactly once, together with its audit entry. */

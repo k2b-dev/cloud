@@ -58,5 +58,8 @@ export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.i
     return refused(c, "sign_in_again");
   }
   if (!decided) return c.redirect("/oauth/device?result=expired", 303);
-  return c.redirect(`/oauth/device?result=${input.decision === "approve" ? "approved" : "denied"}`, 303);
+  // the connected page finds what was approved by this decision's request, never by a name in the address
+  if (input.decision === "approve")
+    return c.redirect(`/oauth/device?${new URLSearchParams({ result: "approved", request: pending.id })}`, 303);
+  return c.redirect("/oauth/device?result=denied", 303);
 };

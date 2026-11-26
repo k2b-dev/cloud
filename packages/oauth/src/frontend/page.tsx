@@ -8,7 +8,8 @@ import type { OAuthClient } from "../contracts";
 import { oauthService } from "../service";
 import OAuthScreen from "./_components/OAuthScreen.island";
 
-const PER_PAGE = 50;
+import { CLIENTS_PER_PAGE as PER_PAGE } from "./clients-page";
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**

@@ -219,7 +219,7 @@ suite("Lasting OAuth access requires confirmed browser sign-in", () => {
       ).toBe("1");
       await fresh(who.sid);
       const approved = await post("/oauth/device", who.cookie, { request: stale.request, decision: "approve" });
-      expect(approved.headers.get("location")).toBe("/oauth/device?result=approved");
+      expect(approved.headers.get("location")).toStartWith("/oauth/device?result=approved&request=");
       const [row] = await sql`SELECT status, confirmed_sid, confirmed_at FROM oauth.device_authorizations WHERE id = ${started.id}::uuid`;
       expect(row).toMatchObject({ status: "approved", confirmed_sid: who.sid, confirmed_at: expect.any(Date) });
     }));
