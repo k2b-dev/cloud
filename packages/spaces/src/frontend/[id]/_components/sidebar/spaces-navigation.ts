@@ -1,8 +1,5 @@
 import { markHintSeen } from "@k2b/cloud/browser/hints";
-import { importOnDemand } from "@k2b/cloud/browser/reload";
-import type { NavigationItem } from "@k2b/ui";
 import { createSignal, onCleanup, onMount } from "solid-js";
-import type { overviewMessages } from "../../../overview-messages";
 
 export type SidebarSpace = { id: string; name: string; color: string; description: string | null; openItemCount: number };
 export type SpacesSidebarCurrent = { kind: "overview" } | { kind: "calendar" } | { kind: "space"; id: string };
@@ -52,48 +49,6 @@ export const orderSidebarSpaces = (spaces: SidebarSpace[], pinnedSpaceIds: strin
     if (b === -1) return -1;
     return a - b;
   });
-
-export const createSpacesNavigationItems = (props: {
-  spaces: SidebarSpace[];
-  pinnedSpaceIds: string[];
-  current: SpacesSidebarCurrent;
-  canCreate: boolean;
-  myWorkLabel: string;
-  calendarLabel: string;
-  newSpaceLabel: string;
-}): NavigationItem[] => [
-  { id: "my-work", label: props.myWorkLabel, icon: "ti ti-checkbox", href: "/app/spaces", active: props.current.kind === "overview" },
-  {
-    id: "all-calendars",
-    label: props.calendarLabel,
-    icon: "ti ti-calendar",
-    href: "/app/spaces/calendar",
-    active: props.current.kind === "calendar",
-  },
-  ...orderSidebarSpaces(props.spaces, props.pinnedSpaceIds).map((space) => ({
-    id: space.id,
-    label: space.name,
-    color: space.color,
-    icon: props.pinnedSpaceIds.includes(space.id) ? "ti ti-flag" : "ti ti-circle-filled",
-    href: `/app/spaces/${space.id}`,
-    active: props.current.kind === "space" && props.current.id === space.id,
-  })),
-  ...(props.canCreate ? [{ id: "new-space", label: props.newSpaceLabel, icon: "ti ti-plus", action: "new-space" }] : []),
-];
-
-export function createNewSpace(t: ReturnType<typeof overviewMessages.resolve>["t"]) {
-  const [pending, setPending] = createSignal(false);
-  return async () => {
-    if (pending()) return;
-    setPending(true);
-    try {
-      const dialog = await importOnDemand(() => import("../../../create-space-dialog"));
-      if (dialog) await dialog.createSpaceCreation(t)();
-    } finally {
-      setPending(false);
-    }
-  };
-}
 
 /** Phone navigation lives in the Cloud shell, outside the sidebar island. */
 export const listenSpacesNavigationHints = (document: Document, spaces: SidebarSpace[]) => {
