@@ -50,7 +50,7 @@ export function Fixture() {
             <Text>Zwölf Nachrichten.</Text>
           </Pane>
           <Show when={reader()}>
-            <Pane label="Leser" detail>
+            <Pane label="Leser" detail back={{ label: "Liste", href: "#" }}>
               <Text>Die geöffnete Nachricht.</Text>
             </Pane>
           </Show>

@@ -92,6 +92,20 @@ type SelectorNode = selectorParser.Node;
  * inside only what holds both (`.k2-sh > .k2-stile + h3`). The arguments of a pseudo-class are selectors of their own:
  * they start where the pseudo-class stands and leak nothing after it.
  */
+/** A rule of the host contract: under a host that holds the page's search, its marked search button, nothing else. */
+const hostButton = (selector: { nodes: readonly SelectorNode[] }) => {
+  const nodes = selector.nodes.filter((node) => node.type !== "comment");
+  const first = nodes[0];
+  const last = nodes.filter((node) => node.type !== "pseudo" || !node.value.startsWith("::")).at(-1);
+  return (
+    first?.type === "attribute" &&
+    first.attribute === "data-k2-host-search" &&
+    last?.type === "attribute" &&
+    last.attribute === "data-k2-host-search-button" &&
+    nodes.filter((node) => node.type === "combinator").length === 1
+  );
+};
+
 const namespaceProblems = (selectorText: string): string[] => {
   const problems: string[] = [];
   const check = (nodes: readonly SelectorNode[], start: boolean): { scoped: boolean } => {
@@ -123,6 +137,8 @@ const namespaceProblems = (selectorText: string): string[] => {
   };
   selectorParser((selectors) => {
     selectors.each((selector) => {
+      // the one way out of the namespace: the mark v2 draws on a host's search button (`data-k2-host-search`, v2.css)
+      if (hostButton(selector)) return;
       if (!check(selector.nodes, false).scoped) problems.push(`${selector.toString().trim()} is not below .k2-ui`);
     });
   }).processSync(selectorText);
@@ -135,6 +151,10 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
   expect(namespaceProblems(".k2-ui :where(.k2-table td, .k2-prose ul)")).toEqual([]);
   expect(namespaceProblems(".k2-ui .k2-table + p")).toEqual(["p in .k2-ui .k2-table + p"]);
   expect(namespaceProblems(".k2-ui :not(.k2-x) p")).toEqual(["p in .k2-ui :not(.k2-x) p"]);
+  // the host contract: only its search button, under the host
+  expect(namespaceProblems("[data-k2-host-search]:has(.k2-ui .k2-input) [data-k2-host-search-button]::after")).toEqual([]);
+  expect(namespaceProblems("[data-k2-host-search] .k2-btn")).toEqual(["[data-k2-host-search] .k2-btn is not below .k2-ui"]);
+  expect(namespaceProblems("[data-k2-host-search] button")).not.toEqual([]);
 });
 
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open

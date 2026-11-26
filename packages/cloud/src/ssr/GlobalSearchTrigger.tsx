@@ -1,4 +1,6 @@
 import { IconButton, Kbd, useLocale } from "@k2b/ui";
+import { focusPageSearch } from "@k2b/ui/v2/host";
+import { onMount } from "solid-js";
 import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { createBusyAction } from "./busy-action";
@@ -45,10 +47,18 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     );
   }
 
+  // On the phone the header's search stands for the search of a v2 page's head, where there is one (one search place).
   return (
     <IconButton
+      // on a v2 page the shell hosts the page's search: the button carries its mark there (v2.css), set in the browser so
+      // the server's HTML of every other page stays as it is
+      ref={(button: HTMLButtonElement) => {
+        onMount(() => button.toggleAttribute("data-k2-host-search-button", button.closest("[data-k2-host-search]") !== null));
+      }}
       class={props.class}
-      onClick={open}
+      onClick={() => {
+        if (!focusPageSearch()) open();
+      }}
       aria-busy={action.busy() ? "true" : undefined}
       label={t().openGlobalSearch}
       title={t().searchShortcut}

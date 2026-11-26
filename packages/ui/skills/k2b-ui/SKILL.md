@@ -102,6 +102,12 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- On the phone a screen has one search place and no empty head row. A host
+  whose bar holds a search (Cloud's shell) sets `data-k2-host-search` and
+  calls `focusPageSearch()` from its search button: the head's search gives
+  way to it, and a head with nothing else to show takes no room. A detail
+  `Pane` always has `back`: on the phone it is a page of its own with its way
+  back and its title, never the list's views.
 
 ## What to use for what
 
