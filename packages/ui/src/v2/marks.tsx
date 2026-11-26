@@ -189,7 +189,8 @@ export type MarkProps = {
 /**
  * What a thing looks like: its symbol on a tint of its colour, or its picture, in one square place. Every row, tile
  * and sidebar entry that stands for a thing leads with it (rule: each thing carries its mark). The place sets the
- * size: 20 px in the sidebar and in a sentence, 32 px leading a row or a table's cell (a row of one line is then 44 px),
+ * size: 20 px in the sidebar and in a sentence, 32 px leading a row or a table's cell (a row of one line is then 44 px;
+ * on the phone 40 px in a row of 56),
  * 36 px on a tile.
  */
 export const Mark = (props: MarkProps) => {
