@@ -55,7 +55,7 @@ const withPage = async (
     touch = false,
     timezoneId,
     lang = "de",
-  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: "de" | "en-US" } = {},
+  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: "de" | "en-US" | "en-GB" } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch, timezoneId });
   page.setDefaultTimeout(2000);
@@ -336,6 +336,94 @@ test("an empty segment says so in the locale's words", async () => {
     },
   );
 });
+// ── Delta review of #4224 (5510c42): each test failed before its fix ───────────────────────────────────────────
+
+/** Fails at once instead of waiting forever when the page no longer answers (a loop in its main thread). */
+const answers = (page: Page) =>
+  Promise.race([
+    page.evaluate(() => true),
+    new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), 1500);
+    }),
+  ]);
+
+test("an empty segment in English stays “Empty”, and the page goes on answering", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const minute = page.getByTestId("moment").locator('.k2-time [data-type="minute"]');
+      await minute.focus();
+      await page.keyboard.press("Backspace");
+      await page.keyboard.press("Backspace");
+      expect(await answers(page)).toBe(true);
+      expect(await minute.getAttribute("aria-valuetext")).toBe("Empty");
+    },
+    { lang: "en-US" },
+  );
+});
+
+test("a 24-hour English locale names its own example and reads a pasted day period", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const moment = page.getByTestId("moment");
+      const time = moment.locator(".k2-time");
+      await paste(time.locator('[data-type="hour"]'), "abends");
+      expect(await moment.getByRole("alert").textContent()).toBe("Not a time. Write it like 14:30.");
+      await paste(time.locator('[data-type="hour"]'), "2:30 PM");
+      expect(await time.locator('[data-type="dayPeriod"]').count()).toBe(0);
+      expect([await time.locator('[data-type="hour"]').inputValue(), await time.locator('[data-type="minute"]').inputValue()]).toEqual([
+        "14",
+        "30",
+      ]);
+    },
+    { lang: "en-GB" },
+  );
+});
+
+test("the mark of an unreadable paste goes with the next time, also the same time, and with typing", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const moment = page.getByTestId("moment");
+      const hour = moment.getByRole("spinbutton", { name: "Stunde" });
+      // an empty clipboard changes nothing and says nothing
+      await paste(hour, "");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+      await paste(hour, "abends");
+      await moment.getByRole("alert").waitFor();
+      // the time it already holds
+      await paste(hour, "09:00");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+      expect(await moment.locator(".k2-time").getAttribute("data-invalid")).toBeNull();
+      await paste(hour, "abends");
+      await moment.getByRole("alert").waitFor();
+      await hour.focus();
+      await page.keyboard.type("09");
+      expect(await moment.getByRole("alert").count()).toBe(0);
+    },
+  );
+});
+
+test("Enter with Ctrl, Cmd or Alt applies nothing, as core takes nothing then", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      // a new day is chosen, so a pick would show: with a modifier Enter gives nothing
+      const picker = page.getByTestId("switch");
+      await picker.locator('[data-value="2026-11-26"]').click();
+      const minute = picker.getByRole("spinbutton", { name: "Minute" });
+      await minute.focus();
+      for (const chord of ["Control+Enter", "Meta+Enter", "Alt+Enter"]) await page.keyboard.press(chord);
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:00");
+    },
+  );
+});
+
 // ── DateInput ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("DateInput: a typed date applies on Enter, text that is no date marks the field, and the form sends the date key", async () => {

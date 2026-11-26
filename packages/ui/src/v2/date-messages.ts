@@ -15,7 +15,7 @@ const dateMessages = i18n.define({
       openCalendar: "Open calendar",
       unreadable: "Not a date. Type it as on the calendar, such as 24.11.2026.",
       empty: "Empty",
-      timeUnreadable: "Not a time. Write it like 2:30 PM.",
+      timeUnreadable: ({ example }: { example: string }) => `Not a time. Write it like ${example}.`,
     },
     de: {
       calendar: "Kalender",
@@ -27,7 +27,7 @@ const dateMessages = i18n.define({
       openCalendar: "Kalender öffnen",
       unreadable: "Kein Datum. Schreib es wie im Kalender, etwa 24.11.2026.",
       empty: "leer",
-      timeUnreadable: "Keine Uhrzeit. Schreib sie wie 14:30.",
+      timeUnreadable: ({ example }: { example: string }) => `Keine Uhrzeit. Schreib sie wie ${example}.`,
     },
   },
 });

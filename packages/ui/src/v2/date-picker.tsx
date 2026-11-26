@@ -3,6 +3,7 @@ import { dateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCalendar } from "./behavior/calendar";
 import { type TimeSegment, useTimeInput } from "./behavior/time-input";
+import { hourCycleOf, timeExample } from "./behavior/time-text";
 import { Button } from "./button";
 import { useDateMessages } from "./date-messages";
 import { Icon } from "./marks";
@@ -36,12 +37,6 @@ export type DatePickerProps = {
 
 const monthOf = (key: string) => key.slice(0, 7);
 
-/** The clock of a locale: 24 hours in German, twelve with AM and PM in American English (the browser's never counts). */
-const hourCycleOf = (locale: string): 12 | 24 => {
-  const cycle = new Intl.DateTimeFormat(locale, { hour: "numeric" }).resolvedOptions().hourCycle;
-  return cycle === "h11" || cycle === "h12" ? 12 : 24;
-};
-
 /**
  * Core's time input in one clock: hour and minute as spinbuttons in the locale's clock (24 hours in German), never the
  * browser's time field. Typing, the arrows, Backspace and the segment keys are core's; the adapter reads a pasted time.
@@ -55,6 +50,8 @@ const TimeField = (props: {
   emptyText: string;
   invalid: boolean;
   onUnreadable: () => void;
+  /** A paste was read or a segment typed in: the mark of an unreadable paste goes. */
+  onRead: () => void;
   onEnter: () => void;
 }) => {
   const time = useTimeInput(() => ({
@@ -64,6 +61,7 @@ const TimeField = (props: {
     hourCycle: props.hourCycle,
     emptyText: props.emptyText,
     onUnreadable: props.onUnreadable,
+    onRead: props.onRead,
   }));
   return (
     <time.Root
@@ -72,11 +70,14 @@ const TimeField = (props: {
       aria-labelledby={props.labelledBy}
       // Enter applies what the segments hold once core has taken what was typed: a native listener on the group runs
       // after core's on the segment (also in a panel that stops keys) and before the form around it would be sent.
+      // With Ctrl, Cmd or Alt core takes nothing, so nothing applies; Shift+Enter is Enter.
       on:keydown={(event: KeyboardEvent) => {
-        if (event.key !== "Enter" || event.isComposing) return;
+        if (event.key !== "Enter" || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
         event.preventDefault();
         props.onEnter();
       }}
+      // what is typed into a segment comes as `beforeinput`, which core takes over (no `input` follows)
+      on:beforeinput={() => props.onRead()}
     >
       {(state: { segments?: TimeSegment[] }) => (
         <For each={(state.segments ?? []).map((segment) => segment.key)}>
@@ -231,6 +232,7 @@ export const DatePicker = (props: DatePickerProps) => {
                 emptyText={t().empty}
                 invalid={clock() === null || unreadableTime()}
                 onUnreadable={() => setUnreadableTime(true)}
+                onRead={() => setUnreadableTime(false)}
                 onEnter={apply}
               />
             )}
@@ -239,7 +241,7 @@ export const DatePicker = (props: DatePickerProps) => {
       </Show>
       <Show when={props.time && unreadableTime()}>
         <p class="k2-dpick-error" role="alert">
-          {t().timeUnreadable}
+          {t().timeUnreadable({ example: timeExample(locale()) })}
         </p>
       </Show>
       <Show when={props.error}>
