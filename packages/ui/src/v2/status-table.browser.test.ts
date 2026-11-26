@@ -643,6 +643,68 @@ test('the selection bar gives the focus of an action that goes into the menu to 
   );
 });
 
+// The "…" that has just come takes its own room: the bar measures once more at once, so already the first frame after a
+// selection shows the "…" right after the last action in sight and no action that wrapped away without being in the
+// menu (a first measurement without the "…" drew it up to 123 px too far right for one frame at 640 or 731 px).
+test('the selection bar\'s first frame: the "…" right after the last action, no action lost, at 640 to 1017 px', async () => {
+  await withPage(
+    async (page) => {
+      const columns = [640, 731];
+      for (let column = 652; column <= 1017; column += 19) columns.push(column);
+      const wrong: { column: number; gap: number | null; lost: string[] }[] = [];
+      for (const column of columns) {
+        await page.evaluate(() => window.__k2Selection?.(false));
+        await setColumn(page, column);
+        // settled: the first frame after the selection is the subject
+        const first = await page.evaluate(
+          () =>
+            new Promise<{ gap: number | null; lost: string[] }>((done) => {
+              window.__k2Selection?.();
+              requestAnimationFrame(() => {
+                const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+                const box = row.getBoundingClientRect();
+                const actions = [...row.querySelectorAll<HTMLElement>(".k2-status-action")];
+                const inSight = (action: HTMLElement) => {
+                  const rect = action.getBoundingClientRect();
+                  return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
+                };
+                const seen = actions.filter((action) => !action.hasAttribute("data-overflow") && inSight(action));
+                const lost = actions
+                  .filter((action) => !action.hasAttribute("data-overflow") && !inSight(action))
+                  .map((action) => action.textContent?.trim() ?? "");
+                const more = row.querySelector(".k2-status-more");
+                const last = seen.at(-1) ?? row.querySelector(".k2-status-lead")!;
+                done({ gap: more ? more.getBoundingClientRect().left - last.getBoundingClientRect().right : null, lost });
+              });
+            }),
+        );
+        if (first.lost.length > 0 || (first.gap !== null && Math.abs(first.gap - 8) > 0.5)) wrong.push({ column, ...first });
+      }
+      expect(wrong).toEqual([]);
+    },
+    { width: 1440, column: 1024 },
+  );
+}, 30_000);
+
+// The "…" that held the focus goes when every action has room again: the focus goes to the last action, not to the page.
+test('the selection bar gives the focus of a "…" that goes to the last action', async () => {
+  await withPage(
+    async (page) => {
+      await page.evaluate(() => window.__k2Selection?.());
+      await settled(page);
+      const row = page.locator('[data-k2-part="StatusRow"]');
+      await row.getByRole("button", { name: "Weitere Aktionen" }).focus();
+      await settled(page);
+      expect((await page.evaluate(selectionBar)).focused).toBe("Weitere Aktionen");
+      await setColumn(page, 1200);
+      const found = await page.evaluate(selectionBar);
+      expect(await expectBar(page, found)).toEqual([]);
+      expect(found.focused).toBe("In den Papierkorb");
+    },
+    { width: 1440, column: 1024 },
+  );
+});
+
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
   await withPage(

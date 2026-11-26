@@ -2951,7 +2951,7 @@
   margin-inline-end: -8px;
 }
 /* with every action in the menu, the "…" stands where the first would */
-.k2-ui .k2-status-line:not(:has(> .k2-status-action:not([data-overflow]))) {
+.k2-ui .k2-status-line[data-none] {
   margin-inline-end: -8px;
 }
 .k2-ui .k2-status-action,

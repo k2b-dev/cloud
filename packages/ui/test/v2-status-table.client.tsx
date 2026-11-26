@@ -34,8 +34,8 @@ declare global {
      * `marks={false}`, as `missing() > 0 && <Chip …/>` does while nothing is missing.
      */
     __k2Marks?: (state?: "shown" | "none") => void;
-    /** Twelve entries selected, with seven actions: the bar of what can be done with them, as Files draws it. */
-    __k2Selection?: () => void;
+    /** Twelve entries selected, with seven actions: the bar of what can be done with them, as Files draws it; `false` ends the selection. */
+    __k2Selection?: (on?: boolean) => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -109,7 +109,7 @@ window.__k2MailFact = () => {
 const [chips, setChips] = createSignal<"shown" | "none" | undefined>();
 window.__k2Marks = (state = "shown") => setChips(state);
 const [selecting, setSelecting] = createSignal(false);
-window.__k2Selection = () => setSelecting(true);
+window.__k2Selection = (on = true) => setSelecting(on);
 /** Seven deeds for the selected entries, as Files offers them; the last one destroys. */
 const selectionActions = [
   { label: "Herunterladen", icon: "download" },

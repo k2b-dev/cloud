@@ -300,7 +300,8 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * How many items of a line have room, from its start (`Infinity` while all have room); the items after them hide whole
  * and go into a menu after the line (the tabs of a head, the actions of a selection bar). Measured in the browser from
  * the items' own widths, so one width gives one result however it was reached; the server sends every item. When the
- * item that holds the focus hides, the focus goes to the menu, so it never falls back to the page.
+ * item that holds the focus hides, the focus goes to the menu, and when the menu that holds it goes, to the last item,
+ * so it never falls back to the page.
  */
 const createLineFit = (parts: {
   /** The line; its element children are the items, in order, each as wide as it needs, hidden ones too. */
@@ -315,7 +316,12 @@ const createLineFit = (parts: {
     const line = parts.line();
     const around = line?.parentElement;
     if (!line || !around) return;
-    const measure = () => {
+    const focusIn = (element: HTMLElement | undefined) => {
+      const target = element?.matches("button, a[href]") ? element : element?.querySelector<HTMLElement>("button, a[href]");
+      target?.focus();
+    };
+    let alive = true;
+    const measure = (again: boolean) => {
       const items = [...line.children].filter((child): child is HTMLElement => child instanceof HTMLElement);
       const gap = Number.parseFloat(getComputedStyle(line).columnGap) || 0;
       const { room, menu } = parts.room();
@@ -328,11 +334,24 @@ const createLineFit = (parts: {
       const next = used <= room + 0.01 ? Number.POSITIVE_INFINITY : ends.filter((end) => end + menu <= room + 0.01).length;
       const focused = document.activeElement;
       const hides = focused !== null && items.slice(next).some((item) => item.contains(focused));
+      const menuBefore = parts.menu();
+      const inMenu = focused !== null && menuBefore?.contains(focused) === true;
       setFit(next);
-      if (!hides) return;
-      const menuOf = parts.menu();
-      const button = menuOf?.matches("button, a[href]") ? menuOf : menuOf?.querySelector<HTMLElement>("button, a[href]");
-      button?.focus();
+      // What the new count draws is in the page once the running update ends (the first measurement runs inside the
+      // mount, where Solid draws it afterwards), so the rest runs in a microtask, still before the frame is drawn.
+      queueMicrotask(() => {
+        if (!alive) return;
+        const menuNow = parts.menu();
+        // A menu that has just come takes its own room, which this measurement could not know yet: measure once more
+        // at once, so the first frame never shows an item that wrapped away and is not in the menu.
+        if (again && !menuBefore && menuNow) {
+          measure(false);
+          return;
+        }
+        if (hides) focusIn(menuNow);
+        // the menu that held the focus has gone, as every item has room again: the focus goes to the last item
+        else if (inMenu && focused && !focused.isConnected) focusIn(items.at(-1));
+      });
     };
     // What the measurement changes (the menu comes, its count grows from "+8" to "+12") can change the room again. So
     // it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a resize
@@ -342,10 +361,10 @@ const createLineFit = (parts: {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        measure();
+        measure(true);
       });
     };
-    measure();
+    measure(true);
     const sizes = new ResizeObserver(later);
     const watchAll = () => {
       for (const element of [line, around, ...line.children, ...around.children]) sizes.observe(element);
@@ -358,6 +377,7 @@ const createLineFit = (parts: {
     changes.observe(line, { childList: true });
     changes.observe(around, { childList: true });
     onCleanup(() => {
+      alive = false;
       cancelAnimationFrame(frame);
       sizes.disconnect();
       changes.disconnect();
@@ -559,7 +579,7 @@ const SelectionActions = (props: { actions: readonly Action[] }) => {
   const hidden = () => props.actions.slice(fit());
   return (
     <div class="k2-status-actions" ref={room}>
-      <div class="k2-status-line" ref={line}>
+      <div class="k2-status-line" ref={line} data-none={fit() === 0 ? "" : undefined}>
         <Index each={props.actions}>
           {(action, index) => (
             <span class="k2-status-action" data-overflow={index >= fit() ? "" : undefined}>
