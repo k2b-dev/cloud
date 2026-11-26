@@ -2470,11 +2470,17 @@
 .k2-ui .k2-slider-thumb:has(:focus-visible) {
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
-/* the press area of the thumb reaches the control's height (44 px on the phone through the control) */
+/* the thumb's own press area; a press anywhere on the control sets the thumb there */
 .k2-ui .k2-slider-thumb::after {
   content: "";
   position: absolute;
   inset: -10px;
+}
+/* on the phone the slider is 44 px high, so its press area takes a finger */
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-slider {
+    height: 44px;
+  }
 }
 .k2-ui .k2-slider-value {
   min-width: 40px;

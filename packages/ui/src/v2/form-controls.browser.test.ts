@@ -150,6 +150,36 @@ for (const width of [1440, 390])
     }, width);
   });
 
+for (const width of [1440, 390])
+  test(`slider at ${width} px: a unit reads after the number and is heard with it; on the phone the thumb takes a finger (44 px)`, async () => {
+    await withPage(async (page) => {
+      const corners = field(page, "Ecken");
+      const thumb = corners.getByRole("slider", { name: "Ecken" });
+      expect(await corners.locator(".k2-slider-value").textContent()).toBe("12 px");
+      expect(await thumb.getAttribute("aria-valuetext")).toBe("12 px");
+      await thumb.focus();
+      await page.keyboard.press("ArrowRight");
+      await page.waitForFunction(() => document.querySelectorAll(".k2-slider-value")[0]?.textContent === "13 px");
+      expect(await thumb.getAttribute("aria-valuetext")).toBe("13 px");
+      // the press area is the control (a press anywhere on it sets the thumb there): 36 px high, 44 px on the phone,
+      // where a finger takes it; points around the thumb reach the control
+      const out = width < 768 ? 21 : 17;
+      const area = await corners.locator(".k2-slider-control").evaluate((control, reach) => {
+        const thumb = control.querySelector(".k2-slider-thumb")!.getBoundingClientRect();
+        const x = thumb.left + thumb.width / 2;
+        const y = thumb.top + thumb.height / 2;
+        return {
+          height: Math.round(control.getBoundingClientRect().height),
+          reached: [
+            [x, y - reach],
+            [x, y + reach],
+          ].every(([px, py]) => control.contains(document.elementFromPoint(px!, py!))),
+        };
+      }, out);
+      expect(area).toEqual({ height: width < 768 ? 44 : 36, reached: true });
+    }, width);
+  });
+
 test("select: a locked select takes no focus and opens nothing; a dimmed option is skipped", async () => {
   await withPage(async (page) => {
     const locked = field(page, "Verfahren").locator("[data-select]");

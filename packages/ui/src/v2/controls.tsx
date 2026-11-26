@@ -761,6 +761,8 @@ export type SliderProps = {
   step?: number;
   /** How the number reads at the end and for assistive technology, such as `{ style: "percent" }` or a unit. */
   format?: Intl.NumberFormatOptions;
+  /** A unit the number format has no word for, such as `px`: it reads after the number, also for assistive technology. */
+  unit?: string;
   /** The name the number is sent under in a form; the field's name by default. */
   name?: string;
   /** A name when the slider stands without a Field. */
@@ -778,6 +780,7 @@ export const Slider = (props: SliderProps) => {
   const field = useField();
   const locale = useLocale();
   const initial = props.value ?? props.min ?? 0;
+  const withUnit = (text: string) => (props.unit && text ? `${text} ${props.unit}` : text);
   const range = useRange(() => ({
     ...(props.onChange ? { value: props.value ?? props.min ?? 0 } : { defaultValue: props.value ?? props.min ?? 0 }),
     onValueChange: (next: number) => props.onChange?.(next),
@@ -807,6 +810,7 @@ export const Slider = (props: SliderProps) => {
         <range.Thumb
           class="k2-slider-thumb"
           input={{
+            valueText: (attrs: Record<string, unknown>) => withUnit(String(attrs["aria-valuetext"] ?? attrs["aria-valuenow"] ?? "")),
             get "aria-describedby"() {
               return field?.described;
             },
@@ -821,7 +825,7 @@ export const Slider = (props: SliderProps) => {
           }}
         />
       </range.Control>
-      <range.Value class="k2-slider-value">{(state: { text?: string }) => state.text ?? ""}</range.Value>
+      <range.Value class="k2-slider-value">{(state: { text?: string }) => withUnit(state.text ?? "")}</range.Value>
       <range.Input />
     </range.Root>
   );
