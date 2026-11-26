@@ -1,11 +1,11 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Field, Input, Notice, Select } from "@k2b/ui/v2";
+import { Button, ColorInput, Dialog, Field, Input, Notice, Select } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { setLastSpaceId, writeSpaceSettings } from "../[id]/_components/settings/SpaceSettingsStore";
 import { createSpaceRequest, type SpaceStarter, spaceStarters, starterView } from "../create-space-dialog";
 import { overviewMessages } from "../overview-messages";
-import { spaceColorOptions } from "./space-colors";
+import { SPACE_SWATCHES } from "./space-colors";
 
 /**
  * "New space" on v2: a starter, the name, a description and the colour. It stays open until the server answers; a
@@ -100,8 +100,7 @@ export default function CreateSpaceDialog(props: { open: boolean; onClose: () =>
         <Input multiline value={description()} placeholder={starter().description} disabled={busy()} onInput={setDescription} />
       </Field>
       <Field label={t().color} name="color" hint={t().colorDescription}>
-        {/* k2b-ui gap: v2 has no colour input; the Space picks from the named palette (its own colour stays an option). */}
-        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+        <ColorInput value={color()} onChange={setColor} swatches={SPACE_SWATCHES} />
       </Field>
       <Show when={error()}>
         {(message) => (

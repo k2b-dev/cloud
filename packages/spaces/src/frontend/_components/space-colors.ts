@@ -14,6 +14,9 @@ export const SPACE_COLORS = [
   ["gray", "#6b7280"],
 ] as const;
 
+/** The palette as swatches of a colour picker: a Space shows its colour, and any other colour stays possible. */
+export const SPACE_SWATCHES: readonly string[] = SPACE_COLORS.map(([, hex]) => hex);
+
 const colorMessages = i18n.define({
   baseLocale: "en",
   messages: {

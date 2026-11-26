@@ -1,7 +1,6 @@
-import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Field, Input, Select } from "@k2b/ui/v2";
+import { Button, ColorInput, Dialog, Field, Input } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
-import { spaceColorOptions } from "../../../_components/space-colors";
+import { SPACE_SWATCHES } from "../../../_components/space-colors";
 import { useSpaceMessages } from "../../messages";
 
 /**
@@ -19,7 +18,6 @@ export function NameColorDialog(props: {
   onClose: () => void;
 }) {
   const m = useSpaceMessages();
-  const locale = useLocale();
   const [name, setName] = createSignal(props.initialName ?? "");
   const [color, setColor] = createSignal(props.initialColor ?? "#6b7280");
   const [missing, setMissing] = createSignal(false);
@@ -55,8 +53,7 @@ export function NameColorDialog(props: {
         />
       </Field>
       <Field label={m.color} name="color">
-        {/* k2b-ui gap: v2 has no colour input; the named palette, with the current colour as its own entry. */}
-        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+        <ColorInput value={color()} onChange={setColor} swatches={SPACE_SWATCHES} />
       </Field>
     </Dialog>
   );

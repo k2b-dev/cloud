@@ -1,11 +1,26 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Choice, confirm, Facts, Field, Input, Notice, Section, Select, Setting, Text, useToast } from "@k2b/ui/v2";
+import {
+  Bar,
+  Button,
+  Choice,
+  ColorInput,
+  confirm,
+  Facts,
+  Field,
+  Input,
+  Notice,
+  Section,
+  Select,
+  Setting,
+  Text,
+  useToast,
+} from "@k2b/ui/v2";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceDetail } from "@/contracts";
-import { spaceColorOptions } from "../../../_components/space-colors";
+import { SPACE_SWATCHES, spaceColorOptions } from "../../../_components/space-colors";
 import { useSpaceMessages } from "../../messages";
 import {
   type EventsDaysAhead,
@@ -50,7 +65,7 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
     void save.mutate({ name: name().trim(), description: description(), color: color() });
   };
   return (
-    <Section icon="id" title={m.identity} summary={m.identityDescription}>
+    <Section title={m.identity} summary={m.identityDescription}>
       {/* Settings, not a form letter (rule 10): name and hint on the left, the value in its column beside them, and a
           change says what it was until it is saved. */}
       <Setting
@@ -81,8 +96,7 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
             : undefined
         }
       >
-        {/* k2b-ui gap: v2 has no colour input; the Space picks from the named palette (its own colour stays an option). */}
-        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+        <ColorInput value={color()} onChange={setColor} swatches={SPACE_SWATCHES} />
       </Setting>
       <Show when={save.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       {/* k2b-ui gap: a Bar that ends a Section draws its line on the Section's end line (two lines at one edge); Section
@@ -129,7 +143,7 @@ export function DefaultsSection(props: { spaceId: string; initialSettings: Space
   };
   return (
     <>
-      <Section icon="layout-sidebar" title={m.thisSpace} summary={m.localSettingsDescription}>
+      <Section title={m.thisSpace} summary={m.localSettingsDescription}>
         <Field label={m.defaultView} name="default-view" hint={m.defaultViewDescription}>
           <Select
             value={view()}
@@ -144,7 +158,7 @@ export function DefaultsSection(props: { spaceId: string; initialSettings: Space
           />
         </Field>
       </Section>
-      <Section icon="layout-dashboard" title={m.homeWidgets} summary={m.homeWidgetsDescription}>
+      <Section title={m.homeWidgets} summary={m.homeWidgetsDescription}>
         <Field label={m.eventRange} name="event-range" hint={m.eventRangeDescription}>
           <Choice
             name="event-range"
@@ -208,7 +222,6 @@ export function CalendarSection(props: { spaceId: string; icalToken: string | nu
   return (
     <>
       <Section
-        icon="calendar-share"
         title={m.calendarFeed}
         summary={m.calendarFeedDescription}
         actions={
@@ -221,7 +234,7 @@ export function CalendarSection(props: { spaceId: string; icalToken: string | nu
           {(url) => <Facts items={[{ label: m.icalAddress, value: url(), mono: true, copy: url() }]} />}
         </Show>
       </Section>
-      <Section icon="apps" title={m.calendarApps} summary={m.calendarAppsDescription}>
+      <Section title={m.calendarApps} summary={m.calendarAppsDescription}>
         <Facts
           items={[
             { label: "Thunderbird", value: m.thunderbirdInstructions },

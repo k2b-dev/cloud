@@ -1,10 +1,9 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { useLocale } from "@k2b/ui";
-import { Button, confirm, Dialog, Empty, Failed, Field, Menu, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
+import { Button, ColorInput, confirm, Dialog, Empty, Failed, Field, Menu, Notice, Row, Section, Select, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceWormhole, SpaceWormholeDestination } from "@/contracts";
-import { spaceColorOptions } from "../../../_components/space-colors";
+import { SPACE_SWATCHES } from "../../../_components/space-colors";
 import { useSpaceMessages } from "../../messages";
 import { subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { readErrorMessage } from "./utils";
@@ -19,7 +18,6 @@ function WormholeForm(props: {
   onSave: (value: FormValue) => void;
 }) {
   const m = useSpaceMessages();
-  const locale = useLocale();
   const initialTarget = props.initial?.target;
   const [targetSpaceId, setTargetSpaceId] = createSignal(initialTarget?.spaceId ?? props.destinations[0]?.spaceId ?? "");
   const [targetColumnId, setTargetColumnId] = createSignal(initialTarget?.columnId ?? "");
@@ -71,8 +69,7 @@ function WormholeForm(props: {
         />
       </Field>
       <Field label={m.color} name="wormhole-color" hint={m.wormholeColorDescription}>
-        {/* k2b-ui gap: v2 has no colour input; the named palette, with the current colour as its own entry. */}
-        <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
+        <ColorInput value={color()} onChange={setColor} swatches={SPACE_SWATCHES} />
       </Field>
     </Dialog>
   );
@@ -223,7 +220,6 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
   const editable = () => editingId() === null && !destinationsQuery.loading() && destinations().length > 0;
   return (
     <Section
-      icon="arrow-bounce"
       title={m.destinations}
       summary={m.destinationsDescription}
       count={wormholes().length}
