@@ -46,6 +46,28 @@ describe("describeV2", () => {
     expect(text).toContain('StatusRow "12 Notizbücher" [bad "1 ohne Zugriff"] · 3 geteilt');
   });
 
+  test("a status row draws no chip group and no end for marks and filters that hold nothing", async () => {
+    const { StatusRow } = await import("./index");
+    for (const empty of [false, null, [false, null], undefined]) {
+      const html = renderToString(() =>
+        createComponent(StatusRow, {
+          lead: "12 Notizbücher",
+          get marks() {
+            return empty;
+          },
+          get filters() {
+            return empty;
+          },
+        }),
+      );
+      expect({ empty, marks: html.includes("k2-status-marks"), end: html.includes("k2-bar-end") }).toEqual({
+        empty,
+        marks: false,
+        end: false,
+      });
+    }
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');

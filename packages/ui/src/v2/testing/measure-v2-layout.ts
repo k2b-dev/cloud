@@ -626,10 +626,14 @@ function measureInPage(options: InPage): DomResult {
         clip.right = Math.min(clip.right, edges.right);
       }
       // A box moved on purpose may stand out by as much as it was moved, never more: its own shift sideways, a negative
-      // margin, a negative (hanging) indent.
+      // margin, a negative (hanging) indent, or a relative place moved by `left`, `right` or `inset`.
       const shift = own.transform === "none" ? 0 : Math.abs(new DOMMatrixReadOnly(own.transform).m41);
+      // a relatively placed box moved by `left`, `right` or `inset` counts as moved by that much
+      const offset =
+        own.position === "relative" ? Math.abs(Number.parseFloat(own.left) || 0) + Math.abs(Number.parseFloat(own.right) || 0) : 0;
       const allowance =
         shift +
+        offset +
         Math.max(0, -Number.parseFloat(own.marginLeft)) +
         Math.max(0, -Number.parseFloat(own.marginRight)) +
         Math.max(0, -Number.parseFloat(own.textIndent));

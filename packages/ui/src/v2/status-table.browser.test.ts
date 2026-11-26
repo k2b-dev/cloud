@@ -453,6 +453,38 @@ test("rows from 480 to 320 px: the chips give way one by one, whole, and the lea
   expect(new Set(counts).size).toBeGreaterThan(1);
 }, 60_000);
 
+// `marks={missing() > 0 && <Chip …/>}` passes `false` while nothing is missing: the row is then the row without chips,
+// no empty group, the same lead and figures, so nothing moves when the exception comes or goes (Opus review of #4259).
+test("a row of 1024 px with marks={false} is the row without marks: no empty group, the same lead and figures", async () => {
+  const measure = async (state?: "none") =>
+    withPage(
+      async (page) => {
+        await page.evaluate((marks) => {
+          window.__k2LongLead?.();
+          window.__k2ThreeFacts?.();
+          if (marks) window.__k2Marks?.(marks);
+        }, state);
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const width = (selector: string) => Math.round((row.querySelector(selector)?.getBoundingClientRect().width ?? -1) * 10) / 10;
+          return {
+            group: row.querySelector(".k2-status-marks") !== null,
+            lead: width(".k2-status-lead"),
+            facts: width(".k2-status-facts"),
+          };
+        });
+        results.push(found);
+      },
+      { column: 1024 },
+    );
+  const results: { group: boolean; lead: number; facts: number }[] = [];
+  await measure();
+  await measure("none");
+  expect(results[1]).toEqual(results[0]!);
+  expect(results[1]!.group).toBe(false);
+});
+
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
   await withPage(

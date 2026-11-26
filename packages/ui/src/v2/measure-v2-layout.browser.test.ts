@@ -728,6 +728,7 @@ describe("measureV2Layout", () => {
             '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="moved" style="display:inline-block; transform:translateX(-24px)">Verschoben</span></div>',
             '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="pulled" style="display:inline-block; margin-left:-8px">Eingerückt</span></div>',
             '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="indent" style="text-indent:-12px">Hängend</div></div>',
+            '<div class="row" style="width:240px"><span class="k2-t-row" data-probe="placed" style="display:inline-block; position:relative; left:-16px">Versetzt</span></div>',
           ].join(""),
         ),
       );

@@ -1,4 +1,5 @@
 import {
+  type ChildrenReturn,
   createComputed,
   createMemo,
   createSignal,
@@ -443,7 +444,8 @@ export type StatusRowProps = {
   /**
    * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
    * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
-   * The whole statement stays as a hint on hover.
+   * The whole statement stays as a hint on hover, always, also where it is not cut: one plain `title`, the same in the
+   * server's markup, with nothing measured in the browser.
    */
   lead: string;
   /**
@@ -465,7 +467,9 @@ export type StatusRowProps = {
    * Tinted chips that belong to the statement, such as an exception: `<Chip status="bad">1 ohne Zugriff</Chip>`
    * (rule 2). They stand after the lead, keep their width while the lead is cut with "…", stay on the phone, and give
    * way whole, the later ones first, only where about a word of the lead would no longer fit beside them. A chip that
-   * must never leave belongs in `lead` itself.
+   * must never leave belongs in `lead` itself. Chips only, no buttons or links: a chip that gave way is out of sight
+   * but still in the page, so a control there would still take the focus. `cond && <Chip …/>` is fine: a place that
+   * holds only `false`, `null` or `undefined` draws nothing.
    */
   marks?: JSX.Element;
   /** A box at the start that selects all entries. */
@@ -482,6 +486,13 @@ export type StatusRowProps = {
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
+
+/**
+ * Whether resolved children hold anything to draw: `cond && <Chip/>` passes `false` while the condition is off, and a
+ * place holding only `false`, `null` or `undefined` must draw no group, so nothing moves when it comes or goes.
+ */
+const holdsContent = (resolved: ChildrenReturn) =>
+  resolved.toArray().some((child) => child != null && typeof child !== "boolean" && child !== "");
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
 export const StatusRow = (props: StatusRowProps) => {
@@ -511,7 +522,7 @@ export const StatusRow = (props: StatusRowProps) => {
                   </Show>
                 </span>
               </Show>
-              <Show when={marks() !== undefined}>
+              <Show when={holdsContent(marks)}>
                 <span class="k2-status-marks">{marks()}</span>
               </Show>
               <Show when={props.facts?.length}>
@@ -531,7 +542,7 @@ export const StatusRow = (props: StatusRowProps) => {
                 </span>
               </Show>
             </div>
-            <Show when={filters() !== undefined}>
+            <Show when={holdsContent(filters)}>
               <div class="k2-bar-end">{filters()}</div>
             </Show>
           </>

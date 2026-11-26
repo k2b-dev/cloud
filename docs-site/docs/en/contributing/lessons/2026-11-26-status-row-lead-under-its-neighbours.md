@@ -18,5 +18,6 @@
   are tested red and green in `measure-v2-layout.browser.test.ts`. `status-table.browser.test.ts`
   opens an entry beside the list at 1440 and 1024 px, measures a long lead beside three figures and the filters at
   rows of 1440, 1024, 700, 560 and 390 px (the lead is cut first; at 700 px it keeps 40 % and the later figures fold,
-  at 560 px 60 %), and
-  Mail's row at 432 and 520 px, where its one long figure takes all the rest.
+  at 560 px 60 %), Mail's row at 432 and 520 px, where its one long figure takes all the rest, and a row with
+  `marks={false}`, which must equal the row without marks (no empty group that would move the lead when an exception
+  comes or goes; `describe.test.ts` checks the same for `filters`).

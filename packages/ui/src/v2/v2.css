@@ -3025,7 +3025,7 @@
 .k2-ui .k2-status-marks::before {
   content: "";
   height: 24px;
-  margin-right: -4px;
+  margin-inline-end: -4px;
 }
 /* a narrow row (below 600 px, where the controls fold): the lead keeps 60 % where both are long, about a word beside two
    folded controls */

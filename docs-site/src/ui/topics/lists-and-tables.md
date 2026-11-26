@@ -59,7 +59,9 @@ Columns of like things: fixed widths, cut text, dropped columns and two-line row
 Above the rows: the one statement, key figures and filters; a selection bar while rows are selected. An exception
 belongs to the statement as a tinted chip in `marks`, such as `<Chip status="bad">1 ohne Zugriff</Chip>`; it stays on
 the phone. In a narrow row the lead is cut and the figures fold first; the chips give way last, whole, where about a
-word of the lead would no longer fit. A chip that must never leave belongs in the lead itself.
+word of the lead would no longer fit. A chip that must never leave belongs in the lead itself. Put only chips there, no
+buttons: a chip that gave way is out of sight but still in the page. `missing() > 0 && <Chip …/>` is fine; `false`
+draws nothing, so nothing moves when the exception comes or goes.
 
 <Props of="StatusRow" />
 

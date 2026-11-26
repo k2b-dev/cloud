@@ -300,7 +300,13 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           const inSight = (chip: Element) => {
             if (!options.layout || !group) return true;
             const box = chip.getBoundingClientRect();
-            return box.width > 0 && box.top >= group.top - 0.5 && box.bottom <= group.bottom + 0.5 && box.right <= group.right + 0.5;
+            return (
+              box.width > 0 &&
+              box.top >= group.top - 0.5 &&
+              box.bottom <= group.bottom + 0.5 &&
+              box.left >= group.left - 0.5 &&
+              box.right <= group.right + 0.5
+            );
           };
           const marks = [...element.querySelectorAll(".k2-status-marks .k2-chip")]
             .filter(inSight)
