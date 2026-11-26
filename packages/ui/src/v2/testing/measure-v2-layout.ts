@@ -709,32 +709,44 @@ async function gripPixelsInPage(input: { png: string; scale: number; left: numbe
     return Array.from({ length: canvas.width }, (_, x) => [data[x * 4]!, data[x * 4 + 1]!, data[x * 4 + 2]!]);
   };
   const differs = (a: number[], b: number[]) => Math.abs(a[0]! - b[0]!) + Math.abs(a[1]! - b[1]!) + Math.abs(a[2]! - b[2]!) > 12;
-  // The run of pixels between two columns that differ from the background on both sides (the columns left and right
-  // of a line may have different fills), in device pixels.
-  const run = (pixels: number[][], from: number, to: number) => {
+  type Run = { first: number; last: number };
+  // The pixels between `from` and `to` that differ from the background on both sides (the columns left and right of a
+  // line may have different fills), in device pixels: as one run from the first to the last, and as runs of one colour.
+  const scan = (pixels: number[][], from: number, to: number, within = { from, to }) => {
     const before = pixels[from]!;
     const after = pixels[to]!;
-    let first = -1;
-    let last = -1;
-    for (let x = from; x <= to; x++)
-      if (differs(pixels[x]!, before) && differs(pixels[x]!, after)) {
-        if (first < 0) first = x;
-        last = x;
-      }
-    return first < 0 ? null : { first, last };
+    let span: Run | null = null;
+    const runs: Run[] = [];
+    for (let x = within.from; x <= within.to; x++) {
+      const pixel = pixels[x]!;
+      if (!differs(pixel, before) || !differs(pixel, after)) continue;
+      span = span ? { first: span.first, last: x } : { first: x, last: x };
+      const open = runs.at(-1);
+      if (open && open.last === x - 1 && !differs(pixels[x - 1]!, pixel)) open.last = x;
+      else runs.push({ first: x, last: x });
+    }
+    return { span, runs };
   };
   const s = input.scale;
-  // Only inside the grip and 3 px around it, so text beside it never counts.
+  const centre = (r: Run) => (r.first + r.last + 1) / 2;
+  // The line is looked for 3 px around the grip; what stands beside it there (the cut content of a table wider than its
+  // column) is not the line: the line is the run of one colour nearest the grip's middle.
   const from = Math.round((input.left - 3) * s);
   const to = Math.round((input.left + input.width + 3) * s) - 1;
+  const middle = (input.left + input.width / 2) * s;
+  const lineAt = (y: number) =>
+    scan(row(y * s + s / 2), from, to).runs.sort((a, b) => Math.abs(centre(a) - middle) - Math.abs(centre(b) - middle))[0] ?? null;
   // The line 3 px above the pill, and the pill 3 px below its top edge, above its first dots. A horizontal line or a
   // band edge can cross the column right there, so the line is also looked for further up and below the pill.
   const line = [input.top - 3, input.top - 5, input.top + input.height + 3, input.top + input.height + 5]
-    .map((y) => run(row(y * s + s / 2), from, to))
+    .map(lineAt)
     .find((found) => found !== null);
-  const pill = run(row((input.top + 3) * s + s / 2), from, to);
+  // The pill only inside the grip, its edge pixels included: content cut at the line beside it is not the pill.
+  const pill = scan(row((input.top + 3) * s + s / 2), from, to, {
+    from: Math.floor(input.left * s),
+    to: Math.ceil((input.left + input.width) * s) - 1,
+  }).span;
   if (!line || !pill) return null;
-  const centre = (r: { first: number; last: number }) => (r.first + r.last + 1) / 2;
   return { offset: (centre(pill) - centre(line)) / s, lineWidth: (line.last - line.first + 1) / s };
 }
 
