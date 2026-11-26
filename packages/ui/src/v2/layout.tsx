@@ -685,7 +685,10 @@ export type CellProps = {
   loading?: boolean;
 };
 
-/** Two to four equal cells side by side with a line between them; one under the other on the phone. */
+/**
+ * Two to four equal cells side by side with a line between them; in a narrow pane (the phone) two in a row, and a last
+ * one alone takes the whole row.
+ */
 export const Cells = (props: {
   /** Two to four `Cells.Cell`. */
   children: JSX.Element;
