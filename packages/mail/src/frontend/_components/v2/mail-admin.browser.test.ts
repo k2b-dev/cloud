@@ -9,10 +9,16 @@ import {
   keptPerDay,
   keptRecord,
   keptRows,
+  keptWorstRecord,
   keptWorstRows,
 } from "../../../../test/fixtures/mail-admin-kept";
-import { mailboxesProps } from "../../../../test/fixtures/mail-admin-mailboxes";
-import { securityProps } from "../../../../test/fixtures/mail-admin-security";
+import {
+  mailboxesEmptyProps,
+  mailboxesHugeProps,
+  mailboxesProps,
+  mailboxesWorstProps,
+} from "../../../../test/fixtures/mail-admin-mailboxes";
+import { securityProps, securityWorstProps } from "../../../../test/fixtures/mail-admin-security";
 import type { KeptHarnessOptions } from "./mail-admin.browser-harness";
 
 // Cloud administration › Mail › Kept on v2: the list selects and downloads, searches and pages through addresses, and
@@ -287,7 +293,7 @@ describe("Admin › Mail › Kept on v2", () => {
       // a page holds at most 50 rows (the service's page), whatever the total
       const full = await open(context, list({ rows: keptRows(50), total: 12_840 }));
       try {
-        await full.getByText("12840 aufbewahrte Unterhaltungen").filter({ visible: true }).first().waitFor();
+        await full.getByText("12.840 aufbewahrte Unterhaltungen").filter({ visible: true }).first().waitFor();
         expect(await overflow(full)).toBeLessThanOrEqual(0);
         expect(await full.evaluate(() => document.querySelectorAll("#root *").length)).toBeLessThan(context === phone ? 4_000 : 6_000);
         expect(full.errors).toEqual([]);
@@ -642,4 +648,35 @@ describe("Admin › Mail › Security on v2", () => {
       await rules.context().close();
     }
   }, 60_000);
+});
+
+describe("Admin › Mail at its limits (break-ui)", () => {
+  // The worst data each page meets (the fixtures name the limits they come from): the page never scrolls sideways,
+  // nothing throws, and the long values stay readable where they stand.
+  const states: [string, KeptHarnessOptions, string][] = [
+    ["mailboxes at their limits", { locale: "de", mailboxes: mailboxesWorstProps() }, "客户服务 · 售后支持"],
+    ["500 mailboxes, a full page", { locale: "de", mailboxes: mailboxesHugeProps() }, "50 von 500 Postfächern"],
+    ["no mailbox", { locale: "de", mailboxes: mailboxesEmptyProps() }, "0 von 0 Postfächern"],
+    ["security reports at their limits", { locale: "de", security: securityWorstProps("reports") }, "j@x.de"],
+    ["security rules at their limits", { locale: "de", security: securityWorstProps("rules") }, "Aktive Regeln"],
+    ["protected identities at their limits", { locale: "de", security: securityWorstProps("identities") }, "Ö"],
+    [
+      "a kept record at its limits",
+      { locale: "de", record: { nav: keptAdminNav(), record: keptWorstRecord(), dateConfig: keptDateConfig } },
+      "王秀英",
+    ],
+  ];
+  for (const [name, options, text] of states)
+    test(name, async () => {
+      for (const context of [desktop, phone]) {
+        const page = await open(context, options);
+        try {
+          await page.getByText(text, { exact: true }).filter({ visible: true }).first().waitFor();
+          expect(await overflow(page)).toBeLessThanOrEqual(0);
+          expect(page.errors).toEqual([]);
+        } finally {
+          await page.context().close();
+        }
+      }
+    }, 60_000);
 });

@@ -306,3 +306,91 @@ export const keptRecord = (): { conversation: KeptConversation; history: KeepHis
     },
   ],
 });
+
+/**
+ * The worst case of one kept record (break-ui): the longest subject people write, a sender with a 64-character local
+ * part, forty recipients, an unbroken link in the text, a 2 GB attachment with a long name, a Chinese and an Arabic
+ * message, a reason at the 500-character limit, and the full history page of 50 entries.
+ */
+export const keptWorstRecord = (): { conversation: KeptConversation; history: KeepHistoryEntry[]; messageCount: number } => {
+  const base = keptRecord();
+  const longAddress = "bartholomew.fitzgerald-oberhauser.rechtsabteilung.sued-west.2026@northwind-industries-holdings.example.org";
+  const many = Array.from({ length: 40 }, (_, index) => ({
+    name: index % 3 ? null : `Empfänger ${index + 1}`,
+    address: `person.${index + 1}@werkstatt.example.org`,
+  }));
+  return {
+    conversation: {
+      ...base.conversation,
+      mailbox: { id: "Box001", name: "Rechtsabteilung und Vertragsmanagement Süd-West (Nachlässe, Mietrecht, Gewährleistung)" },
+      subject:
+        "AW: AW: WG: Nachtrag Nr. 17 zum Generalunternehmervertrag Bauvorhaben Oberhauser-Wettstein-Straße 1234a, Hinterhaus, Gewerk Elektro – Mängelanzeige, Fristsetzung und Vorbehalt der Ersatzvornahme",
+      keep: { keptAt: base.conversation.keep.keptAt, keptBy: { kind: "user", displayName: "Aleksandra Wiśniewska-Kowalczyk" } },
+      messages: [
+        message({
+          subject: "AW: Nachtrag Nr. 17",
+          date: "2026-11-25T16:12:00.000Z",
+          from: [{ name: null, address: longAddress }],
+          to: many,
+          cc: [],
+          bcc: [],
+          replyTo: [{ name: "Ö", address: "o@x.example.org" }],
+          messageId: `<${"a1b2c3d4".repeat(12)}@mail.northwind-industries-holdings.example.org>`,
+          text: `Siehe https://portal.northwind-industries-holdings.example.org/vertraege/2026/GU-4711/nachtraege/17/maengelanzeige?token=${"x9Y2".repeat(30)} 👩‍👩‍👧‍👦\n\nMit freundlichen Grüßen`,
+          html: null,
+          attachments: [
+            file(
+              `Mängelanzeige_Nachtrag-17_Oberhauser-Wettstein-Straße_1234a_Hinterhaus_Elektro_${"final_".repeat(6)}v12.pdf`,
+              "application/pdf",
+              2_147_483_647,
+            ),
+            file("x", "application/octet-stream", 0),
+          ],
+        }),
+        message({
+          subject: "关于合同续签的通知",
+          date: "2026-11-24T08:00:00.000Z",
+          from: [{ name: "王秀英", address: "wang.xiuying@example.org" }],
+          to: [{ name: "ليلى عبد الرحمن", address: "layla@example.org" }],
+          cc: [],
+          bcc: [],
+          replyTo: [],
+          messageId: null,
+          text: "关于合同续签的通知。请在月底前确认。",
+          html: null,
+          attachments: [],
+          delivery: { state: "needs_attention" },
+        }),
+        message({
+          subject: null,
+          date: "2026-11-23T08:00:00.000Z",
+          from: [],
+          to: [],
+          cc: [],
+          bcc: [],
+          replyTo: [],
+          messageId: null,
+          text: null,
+          html: null,
+          attachments: [],
+        }),
+      ],
+    },
+    messageCount: 12_847,
+    history: Array.from(
+      { length: 50 },
+      (_, index): KeepHistoryEntry => ({
+        action: [
+          "mail.conversation.keep.view",
+          "mail.conversation.keep.export",
+          "mail.conversation.keep.release",
+          "mail.integration.unknown",
+        ][index % 4]!,
+        outcome: index % 4 === 2 ? "denied" : "allowed",
+        at: new Date(Date.parse("2026-11-26T09:00:00.000Z") - index * 3_600_000).toISOString(),
+        actor: { label: index % 5 === 0 ? "Aleksandra Wiśniewska-Kowalczyk" : index % 5 === 1 ? "J" : "Tobias Rehm" },
+        reason: index === 2 ? "Begründung ".repeat(45).slice(0, 500) : null,
+      }),
+    ),
+  };
+};

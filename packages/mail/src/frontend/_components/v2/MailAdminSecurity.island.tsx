@@ -292,12 +292,12 @@ export default function MailAdminSecurity(props: MailAdminSecurityProps) {
                 : undefined
             }
           />
-          <Cells.Cell icon="ban" label={t().blockingRules} value={number(props.figures.blocking)} meta={t().exactMatches} />
+          {/* three figures keep their words beside the trend down to 1024 px: the two kinds of rule share one */}
           <Cells.Cell
-            icon="circle-check"
-            label={t().trustedSenders}
-            value={number(props.figures.trusted)}
-            meta={t().authenticationRequired}
+            icon="shield"
+            label={t().activeRules}
+            value={number(props.figures.blocking + props.figures.trusted)}
+            meta={t().rulesSplit({ blocking: number(props.figures.blocking), trusted: number(props.figures.trusted) })}
           />
           <Cells.Cell
             icon="user-shield"

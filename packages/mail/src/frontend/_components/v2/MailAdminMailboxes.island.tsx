@@ -155,7 +155,7 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
             lead={
               props.figures.mailboxes === null
                 ? t().adminMailboxes
-                : t().mailboxCount({ count: props.rows.length, total: props.figures.mailboxes })
+                : t().mailboxesShown({ shown: number(props.rows.length), total: number(props.figures.mailboxes) })
             }
           />
         }
@@ -234,6 +234,7 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
               title: t().adminMailboxes,
               width: { min: 180, default: 240 },
               cell: (row) => (
+                // k2b-ui gap: a Mark in an Inline gives way to a long name beside it (the recipes' pattern); reported
                 <Inline>
                   <Mark icon="inbox" color={MAIL_COLOR} />
                   <Text>{row.name}</Text>
@@ -315,9 +316,14 @@ export default function MailAdminMailboxes(props: MailAdminMailboxesProps) {
                   mark={{ icon: "address-book", color: "#2563eb" }}
                   lines={[
                     directoryApp(view()),
-                    usesContactDirectoryDefaults(view().config) ? directoryText().defaults : directoryText().custom,
+                    <>
+                      {usesContactDirectoryDefaults(view().config) ? directoryText().defaults : directoryText().custom}
+                      <Show when={directoryNeedsAttention(view())}>
+                        {" · "}
+                        <Text tone="warn">{directoryText().needsAttention}</Text>
+                      </Show>
+                    </>,
                   ]}
-                  marks={directoryNeedsAttention(view()) ? <Chip status="warn">{directoryText().needsAttention}</Chip> : undefined}
                   action={{ label: directoryText().configure, icon: "adjustments", onClick: () => void configureDirectory() }}
                 />
               </List>

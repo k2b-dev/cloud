@@ -125,3 +125,57 @@ export const securityProps = (view: SecurityView = "reports", overrides: Partial
   reportsPerDay: Array.from({ length: 30 }, (_, index) => [0, 0, 1, 0, 2, 0, 0, 1, 4, 0][index % 10] ?? 0),
   ...overrides,
 });
+
+/** Security at its limits (break-ui): a 320-character value, a 500-character note, 12 findings, 20 domains, huge counts. */
+export const securityWorstProps = (view: SecurityView = "reports"): MailAdminSecurityProps => {
+  const base = securityProps(view);
+  const longDomain = `${"rechnungsabteilung-zahlungsverkehr-".repeat(6)}northwind-industries-holdings.example.org`;
+  const longAddress = `bartholomew.fitzgerald-oberhauser.rechtsabteilung.sued-west@${longDomain}`.slice(0, 320);
+  const reports = base.reports;
+  const rules = base.rules;
+  return {
+    ...base,
+    figures: { open: 12_847, blocking: 1_284, trusted: 0, identities: 1 },
+    reports:
+      "rows" in reports
+        ? {
+            total: 12_847,
+            rows: [
+              {
+                ...reports.rows[0]!,
+                report: { ...reports.rows[0]!.report, senderAddress: longAddress, reportCount: 9_999 },
+                findings: Array.from({ length: 12 }, (_, index) => `Befund ${index + 1}: Absender nicht bestätigt`).join(" · "),
+              },
+              {
+                ...reports.rows[1]!,
+                report: { ...reports.rows[1]!.report, senderAddress: "j@x.de" },
+                findings: "关于合同续签的通知 · 👩‍👩‍👧‍👦",
+              },
+              ...reports.rows.slice(2),
+            ],
+          }
+        : reports,
+    rules:
+      "rows" in rules
+        ? {
+            total: 1_284,
+            rows: [
+              { ...rules.rows[0]!, policy: { ...rules.rows[0]!.policy, value: longDomain, note: "Begründung ".repeat(45).slice(0, 500) } },
+              ...rules.rows.slice(1),
+            ],
+          }
+        : rules,
+    identities: {
+      total: 2,
+      rows: [
+        {
+          ...securityIdentities[0]!,
+          name: "Aleksandra Wiśniewska-Kowalczyk, Geschäftsführung Northwind Industries Holdings (Süd-West) und Vorsitzende des Aufsichtsrats",
+          allowedDomains: Array.from({ length: 20 }, (_, index) => `niederlassung-${index + 1}.northwind-industries-holdings.example.org`),
+        },
+        { ...securityIdentities[1]!, name: "Ö", allowedDomains: [longDomain] },
+      ],
+    },
+    trustedAuthservIds: null,
+  };
+};

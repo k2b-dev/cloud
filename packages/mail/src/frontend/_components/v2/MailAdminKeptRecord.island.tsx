@@ -5,7 +5,6 @@ import { dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
 import {
-  Avatar,
   Bar,
   Button,
   Canvas,
@@ -19,7 +18,6 @@ import {
   Field,
   Group,
   Icon,
-  Inline,
   Input,
   List,
   Mark,
@@ -176,10 +174,9 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
         <Bar
           start={
             <Show when={props.record} fallback={<Text type="lead">{t().tabKept}</Text>}>
-              <Inline>
-                <Mark {...keptMark(false)} />
-                <Text type="lead">{subject()}</Text>
-              </Inline>
+              {/* mark and subject straight in the head: the subject gives way with "…", the actions keep their room */}
+              <Mark {...keptMark(false)} />
+              <Text type="lead">{subject()}</Text>
             </Show>
           }
           end={
@@ -335,12 +332,8 @@ export default function MailAdminKeptRecord(props: MailAdminKeptRecordProps) {
                         { label: t().mailboxLabel, value: conversation().mailbox.name },
                         {
                           label: t().columnKeptBy,
-                          value: (
-                            <Inline>
-                              <Avatar name={conversation().keep.keptBy.displayName} decorative />
-                              <Text>{conversation().keep.keptBy.displayName}</Text>
-                            </Inline>
-                          ),
+                          // the name wraps like every fact; its face stands in the history beside it
+                          value: conversation().keep.keptBy.displayName,
                         },
                         {
                           label: t().columnKeptSince,

@@ -152,7 +152,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               icon="lock"
               color={keptMark(false).color}
               label={t().keptFigure}
-              value={t().count({ count: props.total ?? 0 })}
+              value={t().keptTotal({ count: props.total ?? 0, shown: new Intl.NumberFormat(locale()).format(props.total ?? 0) })}
               meta={
                 props.perDay
                   ? t().newInWindow({ count: props.perDay.reduce((sum, day) => sum + day, 0), days: props.perDay.length })
