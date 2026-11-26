@@ -2,15 +2,16 @@ import { openAccessDialog } from "@k2b/cloud/access/ui";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Chip, confirm, Input, Menu, type NavProps, Pane, StatusRow, Table, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Cells, Chip, confirm, Input, Menu, type NavProps, Pane, Table, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../[id]/messages";
 import { adminMessages } from "../admin-messages";
+import { SPACE_MARK_ICON } from "./spaces-nav";
 import { readResponseError } from "../lib/response";
 
-export type AdminSpaceRow = { id: string; name: string; description: string | null; permissionCount: number };
+export type AdminSpaceRow = { id: string; name: string; description: string | null; color: string; permissionCount: number };
 
 export type AdminSpacesProps = {
   nav: NavProps;
@@ -119,34 +120,58 @@ export default function AdminSpaces(props: AdminSpacesProps) {
         />
       }
     >
-      <Pane
-        label={t().spaces}
-        scrollKey="spaces-admin"
-        status={
-          <StatusRow
-            lead={t().shown({ shown: props.rows.length, total: props.total })}
-            facts={[
-              { value: number(props.orphaned), after: t().orphaned },
-              { value: number(props.accessEntries), after: props.search ? t().accessEntriesInSearch : t().accessEntries },
-            ]}
+      <Pane label={t().spaces} scrollKey="spaces-admin">
+        {/* The one hero (identity B): how many Spaces there are, and the exception that needs the admin – Spaces nobody
+            can open – in red; when every Space is reachable it says so in plain words. Spaces keeps no history of
+            access or of new Spaces per day, so the figure has no trend (data gap).
+            k2b-ui gap (DP, hero band): the study's band sets the figure in --t-figure 600 30/34 in the owner's ink and
+            the exceptions as one line "● 2 without access" under it; Cells set the value in 600 18/24. */}
+        <Cells>
+          <Cells.Cell
+            icon={SPACE_MARK_ICON}
+            label={t().spaces}
+            value={number(props.total)}
+            meta={
+              props.search
+                ? t().shown({ shown: props.rows.length, total: props.total })
+                : `${number(props.accessEntries)} ${t().accessEntries}`
+            }
           />
-        }
-      >
+          <Cells.Cell
+            icon="lock-off"
+            label={t().nobodyCanOpen}
+            value={
+              props.orphaned > 0 ? (
+                <Chip status="bad">{t().spaceCount({ count: number(props.orphaned), one: props.orphaned === 1 })}</Chip>
+              ) : (
+                t().allReachable
+              )
+            }
+          />
+        </Cells>
         <Table
           label={t().spaces}
           rows={props.rows}
           rowKey={(space) => space.id}
           empty={{ icon: "layout-kanban", text: props.search ? t().noMatch({ query: props.search }) : t().noneFound }}
           phone={(space) => ({
-            lines: [space.name, space.description ?? t().noDescription],
+            mark: { icon: SPACE_MARK_ICON, color: space.color },
+            lines: [space.name, t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })],
             marks: space.permissionCount === 0 ? <Chip status="bad">{t().noAccess}</Chip> : undefined,
           })}
           columns={[
-            { title: t().space, width: { min: 180, default: 260 }, cell: (space) => space.name },
+            {
+              title: t().space,
+              width: { min: 180, default: 260 },
+              // Every Space carries its sign in its colour, as in the Spaces sidebar.
+              mark: (space) => ({ icon: SPACE_MARK_ICON, color: space.color }),
+              cell: (space) => space.name,
+            },
             {
               title: t().description,
               width: { min: 200, default: 420 },
-              cell: (space) => space.description ?? t().noDescription,
+              // A Space without a description leaves the cell empty rather than repeating a grey filler.
+              cell: (space) => space.description ?? "",
               drop: true,
             },
             {
@@ -154,9 +179,9 @@ export default function AdminSpaces(props: AdminSpacesProps) {
               width: { min: 140, default: 170 },
               cell: (space) =>
                 space.permissionCount === 0 ? (
-                  <Chip status="bad">{t().accessCount({ count: 0 })}</Chip>
+                  <Chip status="bad">{t().accessCount({ count: 0, shown: number(0) })}</Chip>
                 ) : (
-                  t().accessCount({ count: space.permissionCount })
+                  t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })
                 ),
             },
             {

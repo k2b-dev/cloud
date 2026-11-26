@@ -31,6 +31,7 @@ export default ssr<AuthContext>(async (c) => {
           id: space.id,
           name: space.name,
           description: space.description,
+          color: space.color,
           permissionCount: space.permissionCount,
         }))}
         search={search}

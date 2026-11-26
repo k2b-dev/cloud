@@ -1,7 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Choice, confirm, Facts, Field, Input, Notice, Section, Select, Text, useToast } from "@k2b/ui/v2";
+import { Bar, Button, Choice, confirm, Facts, Field, Input, Notice, Section, Select, Setting, Text, useToast } from "@k2b/ui/v2";
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceDetail } from "@/contracts";
@@ -51,7 +51,15 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
   };
   return (
     <Section icon="id" title={m.identity} summary={m.identityDescription}>
-      <Field label={m.name} name="space-name" hint={m.spaceNameDescription} error={!name().trim() ? m.nameRequired : undefined} required>
+      {/* Settings, not a form letter (rule 10): name and hint on the left, the value in its column beside them, and a
+          change says what it was until it is saved. */}
+      <Setting
+        label={m.name}
+        name="space-name"
+        hint={m.spaceNameDescription}
+        error={!name().trim() ? m.nameRequired : undefined}
+        was={name() !== base().name ? base().name : undefined}
+      >
         <Input
           value={name()}
           placeholder={m.spaceNamePlaceholder}
@@ -60,14 +68,22 @@ export function GeneralSection(props: { space: SpaceDetail; onDirtyChange: (dirt
             if (event.key === "Enter" && !event.isComposing) submit();
           }}
         />
-      </Field>
-      <Field label={m.description} name="space-description" optional={m.optional}>
+      </Setting>
+      <Setting label={m.description} name="space-description" hint={m.optional}>
         <Input multiline value={description()} onInput={setDescription} />
-      </Field>
-      <Field label={m.color} name="space-color">
+      </Setting>
+      <Setting
+        label={m.color}
+        name="space-color"
+        was={
+          color() !== base().color
+            ? spaceColorOptions(locale(), base().color).find((option) => option.value === base().color)?.label
+            : undefined
+        }
+      >
         {/* k2b-ui gap: v2 has no colour input; the Space picks from the named palette (its own colour stays an option). */}
         <Select value={color()} options={spaceColorOptions(locale(), color())} onChange={setColor} />
-      </Field>
+      </Setting>
       <Show when={save.error()}>{(error) => <Notice tone="bad">{error().message}</Notice>}</Show>
       {/* k2b-ui gap: a Bar that ends a Section draws its line on the Section's end line (two lines at one edge); Section
           has no foot place for the buttons of its form. */}
