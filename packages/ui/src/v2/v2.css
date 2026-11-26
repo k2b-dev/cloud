@@ -530,6 +530,7 @@
   min-width: 400px;
 }
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
+/* one primitive: Pane.Split puts a seam after every pane */
 .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
   width: calc(var(--k2-pane-w) - 1px);
 }
@@ -730,7 +731,7 @@
   align-content: start;
   align-items: center;
 }
-.k2-ui .k2-cell + .k2-cell {
+.k2-ui .k2-cell ~ .k2-cell {
   border-left: var(--k2-hairline);
 }
 .k2-ui .k2-cell > .k2-icon:first-child {
@@ -847,6 +848,7 @@
   font-size: 14px;
 }
 /* the 20 px tile stands on the symbol axis; the title after it keeps the one text edge of 44 px */
+/* one primitive: the symbol and the title of a Section head */
 .k2-ui .k2-sh > .k2-stile + h3 {
   margin-left: -4px;
 }
@@ -893,7 +895,7 @@
 .k2-ui .k2-group > * {
   flex: none;
 }
-.k2-ui .k2-group + .k2-group {
+.k2-ui .k2-group ~ .k2-group {
   margin-top: 12px;
 }
 .k2-ui .k2-sec > .k2-group:last-child {
@@ -2049,6 +2051,7 @@
   opacity: 0;
   cursor: default;
 }
+/* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
 .k2-ui .k2-mark-input:focus-visible + .k2-switch {
@@ -2153,7 +2156,7 @@
   height: var(--k2-h-control-small);
 }
 /* a form in a section: 12 px between its rows of fields and choices, as in a dialog */
-.k2-ui .k2-sec > :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) + :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) {
+.k2-ui .k2-sec > :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) ~ :is(.k2-frow, .k2-field, .k2-choices, .k2-choice) {
   margin-top: 12px;
 }
 /* Field: label 20, control 36, hint or error; a field row shares one grid (K5) */
@@ -2569,6 +2572,7 @@
   color: var(--k2-text);
   font-weight: 600;
 }
+/* one primitive: the facts of a StatusRow */
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
 }
@@ -3260,6 +3264,7 @@
     width: auto;
     height: 1px;
   }
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane,
   .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
     flex: none;
@@ -3270,6 +3275,7 @@
     overflow: visible;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > [data-detail-empty],
   .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
     display: none;
@@ -3315,6 +3321,7 @@
     overflow-wrap: anywhere;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
@@ -3322,6 +3329,7 @@
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
   /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
     --k2-table-end: 0;
   }
@@ -3505,6 +3513,7 @@
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
   }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  /* one primitive: the large and the phone form of a Table */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;
   }
@@ -3520,7 +3529,7 @@
   .k2-ui .k2-cells {
     grid-auto-flow: row;
   }
-  .k2-ui .k2-cell + .k2-cell {
+  .k2-ui .k2-cell ~ .k2-cell {
     border-left: 0;
     border-top: var(--k2-hairline);
   }

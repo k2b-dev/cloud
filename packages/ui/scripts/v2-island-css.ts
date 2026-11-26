@@ -8,18 +8,21 @@ import selectorParser, { type Node, type Selector } from "postcss-selector-parse
 //
 // Model (islands never nest, so one path through the tree crosses at most one wrapper):
 // - `A > B`   also matches `A > W > B`;
-// - `A + B`   also matches A last in a wrapper before B, B first in a wrapper after A, or both;
-// - `A ~ B`   the same, without first and last;
+// - `A ~ B`   also matches A in a wrapper before B, B in a wrapper after A, or both; it passes any number of empty
+//   wrappers (islands that render nothing);
+// - `A + B`   the same, with A last and B first in its wrapper; it does not pass an empty wrapper, so it is only for
+//   two parts of one primitive, which no island stands between: a rule with `+` is marked
+//   `/* one primitive: … */`, and a relation between primitives (`.k2-group ~ .k2-group`) uses `~`;
 // - `:first-child`, `:last-child`, `:only-child` of an element in a wrapper also need the wrapper in that place;
-// - an empty wrapper (an island that renders nothing) does not count: structural pseudo-classes skip any number of
-//   them, `+` steps over one;
+// - `:first-child`, `:last-child` and `:only-child` skip any number of empty wrappers;
 // - `:has(> …)`, `:has(+ …)` and `:has(~ …)` look through a wrapper, and an anchor in a wrapper looks past it;
 // - a compound without a class, id, attribute or tag (`*`, `:not(.x)`) never matches the wrapper itself;
-// - a sibling chain keeps every adjacency: an element in a wrapper between two siblings is first and last in it.
+// - a run of compounds holds at most one sibling relation.
 // Every added part sits in `:where()`, so specificity, and with it the cascade, stays exactly as written; without a
 // wrapper on the page every rule matches exactly what it matched before. A form this cannot make transparent
 // (`:nth-*`, `:*-of-type`, `:empty`, a sibling relation inside `:has()` after its first step, also inside `:is()`,
-// a `:has()` before a sibling relation, an escaped pseudo-class) fails the build;
+// a `:has()` before a sibling relation, two sibling relations in a row, an unmarked `+`, an escaped pseudo-class)
+// fails the build;
 // `:nth-*` is allowed on placeholders (`.k2-skel`), which never sit in an island.
 
 const WRAPPER = ":where(solid-island,solid-client)";
@@ -36,12 +39,13 @@ const STRUCTURAL = new Set(Object.keys(PLACE));
 const LOGICAL = new Set([":is", ":where", ":not", ":matches", ":-webkit-any", ":-moz-any"]);
 const PSEUDO_ELEMENTS = new Set([":before", ":after", ":first-line", ":first-letter"]);
 
-type Context = { inHas: boolean; placeholder: boolean; rule: string };
+/** `internal`: the comment before the rule begins `one primitive:`, so its `+` relates two parts of one primitive. */
+type Context = { inHas: boolean; placeholder: boolean; internal: boolean; rule: string };
 type Compound = { body: string; pseudoElement: string; hasHas: boolean };
 type Relation = ">" | "+" | "~";
 type Variant = "direct" | "wrapped" | "left" | "both";
-/** How one relation crosses wrappers; `gap`: `+` steps over one empty wrapper. */
-type Step = { variant: Variant; gap?: boolean };
+/** How one relation crosses wrappers. */
+type Step = { variant: Variant };
 
 const fail = (context: Context, reason: string): never => {
   throw new Error(`v2.css: ${reason} cannot see through an island wrapper in \`${context.rule}\``);
@@ -134,6 +138,8 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
   // Relation i stands before compounds[i + offset] (with a lead, relation 0 starts at the anchor of `:has()`).
   const all: Relation[] = lead ? [lead, ...relations] : relations;
   const offset = lead ? 0 : 1;
+  // Two sibling relations in a row would need the middle compound in or out of a wrapper on both sides at once.
+  if (relations.filter((relation) => relation !== ">").length > 1) fail(context, "two sibling relations in a row");
   const choices = all.map((relation, index): Step[] => {
     if (relation === ">") return [{ variant: "direct" }, { variant: "wrapped" }];
     // Inside `:has()` only its lead may be a sibling relation; the anchor's side is handled by the `:has()` itself.
@@ -141,9 +147,14 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
     const left = compounds[index + offset - 1];
     // The left side in a wrapper needs `:has()` around it, and `:has()` does not nest.
     if (left?.hasHas && !context.inHas) fail(context, ":has() before a sibling relation");
+    if (relation === "+" && !context.internal)
+      fail(
+        context,
+        "`+` between primitives (an empty island between them breaks it: use `~`, or mark two parts of one primitive `/* one primitive: … */`)",
+      );
     const variants: Variant[] = left && !context.inHas ? ["direct", "wrapped", "left", "both"] : ["direct", "wrapped"];
     // `+` also steps over one empty wrapper.
-    return variants.flatMap((variant) => (relation === "+" ? [{ variant }, { variant, gap: true }] : [{ variant }]));
+    return variants.map((variant) => ({ variant }));
   });
   const combos: Step[][] = [[]];
   for (const options of choices) combos.splice(0, combos.length, ...combos.flatMap((combo) => options.map((option) => [...combo, option])));
@@ -163,9 +174,7 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
   const kept = combos.filter((combo) => {
     let wrappers = combo.reduce((sum, step) => sum + (step.variant === "direct" ? 0 : step.variant === "both" ? 2 : 1), 0);
     for (let k = 0; k < compounds.length; k++) {
-      const { before, after, entered, leaves } = place(combo, k);
-      // Siblings inside one wrapper have no wrapper between them, empty or not.
-      if (entered && !leaves && after === "+" && combo[k - offset + 1]?.gap) return false;
+      const { before, entered, leaves } = place(combo, k);
       if (!leaves || !before) continue;
       // Under `>` the wrapper takes the element's place (`P > W:has(> B)`), so `>` itself stays direct.
       if (before === ">" && entered) return false;
@@ -182,8 +191,7 @@ const run = (compounds: Compound[], relations: Relation[], context: Context, lea
       const { before, after, entered, leaves } = place(combo, k);
       const step = combo[k - offset];
       if (before && step) {
-        const relation = before === "+" && step.gap ? `+${EMPTY}+` : before;
-        chain += entered && !leaves ? `${relation === ">" ? ">" : relation}${WRAPPER}>` : relation;
+        chain += entered && !leaves ? `${before}${WRAPPER}>` : before;
       }
       const first = before === "+" && entered ? ":where(:first-child)" : "";
       const last = after === "+" && leaves ? ":where(:last-child)" : "";
@@ -238,11 +246,13 @@ export const transparentIslands = (css: string): string => {
   const root = postcss.parse(css);
   root.walkRules((rule) => {
     if (rule.parent?.type === "atrule" && /keyframes$/i.test((rule.parent as postcss.AtRule).name)) return;
+    const marker = rule.prev();
+    const internal = marker?.type === "comment" && /^one primitive:\s*\S/.test(marker.text);
     const selectors = selectorParser().astSync(rule.selector);
     rule.selector = selectors.nodes
       .map((selector) => {
         const text = String(selector).trim();
-        return complex(selector, { inHas: false, placeholder: text.includes(".k2-skel"), rule: text });
+        return complex(selector, { inHas: false, placeholder: text.includes(".k2-skel"), internal, rule: text });
       })
       .join(",\n");
   });
