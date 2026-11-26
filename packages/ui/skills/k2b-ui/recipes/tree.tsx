@@ -237,7 +237,7 @@ export default function FilesTree() {
               cell: (entry: Entry) => entry.name,
               // each entry leads with the mark of its kind
               mark: (entry: Entry) => type[entry.kind],
-              width: { min: 200, default: 280 },
+              width: { min: 200, default: 260 },
             },
             {
               title: "Von",
@@ -257,7 +257,7 @@ export default function FilesTree() {
                     <Text>{sharing[entry.shared].label}</Text>
                   </Inline>
                 ),
-              width: { min: 110, default: 130 },
+              width: { min: 130, default: 150 },
               drop: true,
             },
             { title: "Geändert", cell: (entry: Entry) => entry.changed, width: { min: 90, default: 110 }, drop: true },

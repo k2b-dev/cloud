@@ -132,7 +132,7 @@ export default function SignInPageSettings(props: Props) {
           </Section>
         </Pane>
         {/* the side column only while it is full: who changed what, and the questions people ask here */}
-        <Pane side label="Hilfe und Verlauf" width={{ min: 280, default: 340 }}>
+        <Pane side label="Hilfe und Verlauf" width={{ min: 280, default: 320 }}>
           <Section icon="history" title="Zuletzt geändert" more={{ label: "Protokoll", forward: true }}>
             <Digest
               label="Zuletzt geändert"

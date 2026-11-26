@@ -305,7 +305,7 @@ export default function Folder(props: Props) {
                 actions: [
                   { label: "Teilen", icon: "share" },
                   { label: "Verschieben", icon: "folder-symlink" },
-                  { label: "Als ZIP laden", icon: "download" },
+                  { label: "Laden", icon: "download" },
                   { label: "Löschen", icon: "trash" },
                 ],
                 clear: { label: "Auswahl aufheben", onClick: () => setSelected([]) },
