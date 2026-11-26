@@ -9,7 +9,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { isServer } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
@@ -212,6 +212,20 @@ export type InputProps = {
   spellcheck?: boolean;
   /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
   autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
+  /**
+   * A search that reaches the server also without JavaScript (only with `type="search"` and `name`): the field is
+   * its own GET form, and Enter loads `action` with `params` (the rest of the address, such as a list's filters) and
+   * the text under `name`. Where JavaScript runs, `onSearch` takes Enter instead and the page searches in place. The
+   * field keeps its place and look, also in a head and folded on the phone.
+   */
+  send?: {
+    /** The page the search loads, such as `/app/accounts/groups`. */
+    action: string;
+    /** The rest of the address that the search keeps, as name and value; the field's own name is left out. */
+    params?: Iterable<readonly [string, string]>;
+    /** Searches in place with the text, where JavaScript runs; without it the page loads. */
+    onSearch?: (text: string) => void;
+  };
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -255,8 +269,25 @@ export const Input = (props: InputProps) => {
     spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
     autocapitalize: props.autocapitalize,
   });
+  // a search sent to the server is its own GET form, with the same class and marks, so every rule of a head holds
+  const send = () => (props.type === "search" ? props.send : undefined);
+  let typed: HTMLInputElement | undefined;
+  const kept = () => {
+    const own = props.name ?? field?.name;
+    return [...(send()?.params ?? [])].filter(([name]) => name !== own);
+  };
   return (
-    <span
+    <Dynamic
+      component={send() ? "form" : "span"}
+      method={send() ? "get" : undefined}
+      action={send()?.action}
+      role={send() ? "search" : undefined}
+      onSubmit={(event: SubmitEvent) => {
+        const search = send()?.onSearch;
+        if (!search) return;
+        event.preventDefault();
+        search(typed?.value ?? "");
+      }}
       class="k2-input"
       data-k2-part="Input"
       data-invalid={field?.invalid ? "" : undefined}
@@ -265,12 +296,16 @@ export const Input = (props: InputProps) => {
       data-search={props.type === "search" ? "" : undefined}
     >
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
+      <For each={kept()}>{([name, value]) => <input type="hidden" name={name} value={value} />}</For>
       <Show
         when={props.multiline}
         fallback={
           <input
             {...shared()}
-            ref={(element) => forwardRef(props.ref, element)}
+            ref={(element) => {
+              typed = element;
+              forwardRef(props.ref, element);
+            }}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
@@ -297,7 +332,7 @@ export const Input = (props: InputProps) => {
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>
       </Show>
-    </span>
+    </Dynamic>
   );
 };
 
