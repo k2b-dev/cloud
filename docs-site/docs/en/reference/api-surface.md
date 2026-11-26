@@ -625,7 +625,7 @@ exports behind it are `Preview`. Their guides say so at the top.
 | `installable` option and `AppInstallable` from `@k2b/cloud` | Supported | Give one application its own standalone installation | [App-PWA](/en/docs/frontend/app-pwa) |
 | `pwa` option of `defineApp()` from `@k2b/cloud` | Preview | Add the application's pages to the Cloud app | [Define an application](/en/docs/build/define-app#add-pages-to-the-cloud-app) |
 | `/pwa/<app-id>` part routes | Preview | Paths that `defineApp()` derives for a part; every other `/pwa` path is reserved | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#paths) |
-| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#pwalayout) |
+| `PwaLayout` and `PwaLayoutProps` from `@k2b/cloud/ssr` | Preview, server-only | Frame every page of a part; `ui="v2"` for a page built with `@k2b/ui/v2` | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#pwalayout) |
 | `ssr.pwaAccess` of the defined application | Preview, server-only | Handle a part request without an app session | [Pages in the Cloud app](/en/docs/frontend/mobile-app-pages#serve-pages) |
 | `visiblePwaParts` and `VisiblePwaPart` from `@k2b/cloud/ssr` | Preview, platform-owned | The parts the Cloud app lists on Start | — |
 | `PWA_*` constants, `isPwaPartId`, `isPwaShellAvailable`, pairing-link helpers and `Pwa*` schemas from `@k2b/cloud/contracts` | Preview, platform-owned | Paths, limits, pairing and device contracts of the Cloud app | [App sessions](/en/docs/identity/authentication#app-sessions-preview) |

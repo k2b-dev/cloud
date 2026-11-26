@@ -12,6 +12,7 @@ const canonicalSharedStylesheetImports: readonly string[] = [
   // Shared with the v2-only entry (v2-page.css), so a v2 page looks the same under both sheets.
   "v2-app-ink.css",
   "minimal-layout.css",
+  "pwa-layout.css",
   "tokens.css",
   "utilities-buttons.css",
   "utilities-layout.css",

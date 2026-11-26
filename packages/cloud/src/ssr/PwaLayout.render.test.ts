@@ -106,8 +106,12 @@ const page = ssr<AuthContext>(
     createComponent(PwaLayout, {
       c,
       title: c.req.query("title") ?? "Items",
-      back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items" } : undefined,
+      back: c.req.query("back") ? { href: "/pwa/inventory", label: "Items", withSidebar: c.req.query("back") !== "phone" } : undefined,
+      sidebarTitle: c.req.query("sidebarTitle"),
       actions: "[[actions]]",
+      ui: c.req.query("ui") === "v2" ? "v2" : undefined,
+      bare: c.req.query("bare") !== undefined,
+      screen: c.req.query("screen") !== undefined,
       get children() {
         return createComponent(LocaleEcho, {});
       },
@@ -401,4 +405,174 @@ describe("PwaLayout", () => {
   });
 
   test("catalog is complete", () => expect(pwaMessages.check()).toEqual([]));
+});
+
+// `ui="v2"`: the same page, its access and its redirects, in a v2 frame that loads Core's v2.css alone and no v1 shell.
+describe("PwaLayout ui v2", () => {
+  const v2Tabs = (document: Document) =>
+    [...document.querySelectorAll<HTMLAnchorElement>(".pwa-v2-tabs a")].map((link) => ({
+      href: link.getAttribute("href"),
+      label: link.querySelector(".pwa-v2-tab-label")?.textContent,
+      current: link.getAttribute("aria-current") === "page",
+      badge: (islandProps(link.ownerDocument, "PwaNavigationV2.island.tsx") as { tabs: { href: string; badge?: string }[] }).tabs.find(
+        (tab) => tab.href === link.getAttribute("href"),
+      )?.badge,
+    }));
+  const v1Shell = /k2b-mobile-shell|k2b-tab-bar|k2b-button|k2b-placeholder|PwaRuntime\.island|PwaPartCount\.island/;
+
+  test("keeps the access and the launch bounce of every app page", async () => {
+    const response = await server.request("/pwa/inventory/42?ui=v2");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe(`/pwa/_auth/session/launch?to=${encodeURIComponent("/pwa/inventory/42?ui=v2")}`);
+    signIn("web");
+    const web = await server.request("/pwa/inventory?ui=v2", { headers: { Cookie: "session_token=test-session" } });
+    expect(web.headers.get("location")).toStartWith("/pwa/_auth/session/launch?to=");
+  });
+
+  test("is a v2 page with Core's v2.css alone, its head, and no v1 shell", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const routes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+    try {
+      const { response, html, document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
+      expect(response.status).toBe(200);
+      expect(document.title).toBe("Shelf");
+      const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map(
+        (link) => link.getAttribute("href") ?? "",
+      );
+      expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(true);
+      expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(false);
+      expect(document.body.classList.contains("k2-ui")).toBe(true);
+      // The document is the v2 frame, not a MobileShell.
+      expect(document.documentElement.hasAttribute("data-pwa-v2")).toBe(true);
+      expect(html).not.toMatch(v1Shell);
+      const frame = document.querySelector(".k2-ui.pwa-v2");
+      expect(frame?.getAttribute("data-ui")).toBe("v2");
+      // Without `bare` the frame holds the page in a Workspace with the head and one Pane.
+      const head = frame?.querySelector('[data-k2-part="Workspace"] [data-slot="head"]');
+      expect(head?.querySelector(".pwa-v2-title")?.textContent).toBe("Shelf");
+      expect(head?.querySelector('.pwa-v2-back a[href="/pwa/inventory"]')?.getAttribute("aria-label")).toBe("Items");
+      expect(head?.querySelector(".k2-bar-end")?.textContent).toBe("[[actions]]");
+      expect(frame?.querySelector('main [data-k2-part="Pane"]')?.textContent).toContain("[[locale:en]]");
+      expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
+        "no-referrer",
+        "frame-ancestors 'none'",
+      ]);
+    } finally {
+      routes.mockRestore();
+    }
+  });
+
+  test("beside an older Core it keeps global.css, with the same frame", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const routes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css"]);
+    try {
+      const { document } = await render("/pwa/inventory?ui=v2");
+      const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map(
+        (link) => link.getAttribute("href") ?? "",
+      );
+      expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(true);
+      expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(false);
+      expect(document.querySelector(".k2-ui.pwa-v2")).not.toBeNull();
+    } finally {
+      routes.mockRestore();
+    }
+  });
+
+  test("offers Start and the first three parts as tabs, a count only for a badge, and every part in the sidebar", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("zeta", "Zeta"),
+      part("inventory", "Inventory"),
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", summary: "/pwa/beta/summary" } }),
+    ];
+    const { document } = await render("/pwa/inventory/42?ui=v2");
+    expect(document.querySelector(".pwa-v2")?.hasAttribute("data-tabs")).toBe(true);
+    expect(document.querySelector(".pwa-v2-tabs")?.getAttribute("aria-label")).toBe("App");
+    expect(v2Tabs(document)).toEqual([
+      { href: "/pwa/", label: "Start", current: false, badge: undefined },
+      { href: "/pwa/alpha", label: "Alpha", current: false, badge: "/pwa/alpha/unread" },
+      { href: "/pwa/beta", label: "Beta", current: false, badge: undefined },
+      { href: "/pwa/inventory", label: "Inventory", current: true, badge: undefined },
+    ]);
+    expect(document.querySelector('.pwa-v2-tabs a[href="/pwa/"]')?.getAttribute("title")).toBe("Example Cloud");
+    const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown>;
+    expect({ ...navigation, tabs: undefined } as Record<string, unknown>).toEqual({
+      title: "Example Cloud",
+      start: { id: "start", label: "Start", icon: "home", href: "/pwa/", current: false },
+      appsLabel: "Apps",
+      parts: [
+        { id: "alpha", label: "Alpha", icon: "alpha", href: "/pwa/alpha", current: false, badge: "/pwa/alpha/unread" },
+        { id: "beta", label: "Beta", icon: "beta", href: "/pwa/beta", current: false, summary: "/pwa/beta/summary" },
+        { id: "inventory", label: "Inventory", icon: "inventory", href: "/pwa/inventory", current: true },
+        { id: "zeta", label: "Zeta", icon: "zeta", href: "/pwa/zeta", current: false },
+      ],
+      settings: { id: "settings", label: "Settings", icon: "settings", href: "/pwa/settings", current: false },
+      tabsLabel: "App",
+      tabs: undefined,
+      endpoints: ["/pwa/alpha/unread", "/pwa/beta/summary"],
+    });
+    // The sidebar's entries are links in the server's page, before the counts arrive.
+    expect(document.querySelector('.pwa-v2-nav nav a[href="/pwa/inventory"]')?.getAttribute("aria-current")).toBe("page");
+  });
+
+  test("a bare page brings its own workspace; a screen page has no tab bar", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const bare = (await render("/pwa/inventory?ui=v2&bare")).document;
+    expect(bare.querySelector(".pwa-v2-main")?.textContent).toBe("[[locale:en]]");
+    expect(bare.querySelector('[data-k2-part="Workspace"]')).toBeNull();
+    const screen = (await render("/pwa/inventory?ui=v2&bare&screen")).document.querySelector(".pwa-v2");
+    expect(screen?.hasAttribute("data-screen")).toBe(true);
+    expect(screen?.hasAttribute("data-tabs")).toBe(false);
+  });
+
+  test("names the sidebar's page on wide screens and hides a back link the sidebar already leads to", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const { document } = await render("/pwa/inventory/42?ui=v2&title=Shelf&sidebarTitle=Inventory&back=phone");
+    expect(document.querySelector(".pwa-v2-title .pwa-v2-phone-only")?.textContent).toBe("Shelf");
+    expect(document.querySelector(".pwa-v2-title .pwa-v2-wide-only")?.textContent).toBe("Inventory");
+    expect(document.querySelector(".pwa-v2-back")?.getAttribute("data-with-sidebar")).toBe("hide");
+  });
+
+  test("without a person: no sidebar, no tabs, no keepalive and no timezone reload; builds reach the runtime", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory")];
+    const own = spyOn(builds, "pwaBuild").mockReturnValue("rendered-build");
+    const registered = spyOn(watcher, "registeredPwaBuilds").mockReturnValue({ core: "core-rendered" });
+    try {
+      const signedIn = (await render("/pwa/inventory?ui=v2")).document;
+      expect(islandProps(signedIn, "PwaRuntimeV2.island.tsx")).toMatchObject({
+        keepalive: true,
+        accountId: user.id,
+        cloud: "Example Cloud",
+        builds: { inventory: "rendered-build", core: "core-rendered" },
+        rememberAddress: { cookie: "pwa_last_address" },
+      });
+      tokenSpy.mockReturnValue(null);
+      const open = (await render("/pwa/open?ui=v2")).document;
+      expect(open.querySelector(".pwa-v2")?.hasAttribute("data-sidebar")).toBe(false);
+      expect(open.querySelector(".pwa-v2-nav")).toBeNull();
+      expect(open.querySelector(".pwa-v2-tabs")).toBeNull();
+      expect(islandProps(open, "PwaRuntimeV2.island.tsx")).toMatchObject({ keepalive: false });
+      expect(islandProps(open, "TimezoneCookie.island.tsx")).toMatchObject({ reload: false });
+    } finally {
+      own.mockRestore();
+      registered.mockRestore();
+    }
+  });
+
+  test("renders in the request locale", async () => {
+    signIn("app");
+    apps = [shell, part("inventory", "Inventory", { presentation: { baseLocale: "en", translations: { de: { name: "Lager" } } } })];
+    const { document } = await render("/pwa/inventory?ui=v2", { Cookie: "pwa_session=test-session; cloud.locale=de" });
+    expect(document.documentElement.getAttribute("lang")).toBe("de");
+    expect(document.querySelector("main")?.textContent).toContain("[[locale:de]]");
+    expect(v2Tabs(document).map((tab) => tab.label)).toEqual(["Start", "Lager"]);
+    expect((islandProps(document, "PwaNavigationV2.island.tsx") as { settings: { label: string } }).settings.label).toBe("Einstellungen");
+  });
 });

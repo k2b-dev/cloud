@@ -1,10 +1,11 @@
 /* Core's v2.css: the one shared stylesheet of a page built only with @k2b/ui/v2 and without the Cloud shell
-   (`MinimalLayout ui="v2"`, a visitor page, a form, a kiosk screen). It holds v2 and Cloud's v2 additions, without
+   (`MinimalLayout ui="v2"`, a visitor page, a form, a kiosk screen; `PwaLayout ui="v2"`, a page of the Cloud app). It holds v2 and Cloud's v2 additions, without
    v1, Tailwind and the shell, so such a page loads a fraction of global.css. Every rule here also reaches global.css
    through the same files, so a v2 page looks the same under both. */
 @import "@k2b/ui/v2.css";
 @import "./v2-app-ink.css";
 @import "./minimal-layout.css";
+@import "./pwa-layout.css";
 
 /* v2.css brings no reset of its own. The body of such a page is a v2 scope (`pageScopeClass`): no margin, the theme's
    surface and colour scheme from the v2 tokens; the browser paints the body's background over the whole canvas, so a

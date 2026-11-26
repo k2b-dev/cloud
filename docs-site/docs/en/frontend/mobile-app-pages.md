@@ -189,6 +189,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | `actions` | At most two icon buttons at the end of the header |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
 | `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
+| `ui` | `"v2"` (provisional) for a page built with `@k2b/ui/v2`; see [The v2 frame](#the-v2-frame) |
 | `children` | The page content, in the app's only scroll area |
 
 It renders the app's document head, a
@@ -225,6 +226,41 @@ returns to the page where the tab was tapped. A repeat tap does not start the
 load over. The header shows Start with the installation's name and a part
 with its `name`, so title the part's first page with the application's name,
 as Spaces does. Otherwise the title changes when the page arrives.
+
+### The v2 frame
+
+Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the part's page is built
+with `@k2b/ui/v2`. The props, the access with `ssr.pwaAccess`, the launch
+bounce, the headers, the remembered address, and the browser behavior stay the
+same. The page then loads Core's `/public/v2.css` in place of `global.css`, as
+[`MinimalLayout ui="v2"`](/en/docs/frontend/layout-and-navigation) does, and
+no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
+
+- Below 48 rem the page fills the window: its head at the top below the
+  status bar and the notch, and a tab bar with Start and the first three parts
+  at the bottom, above the home indicator. A badge's count stands on its tab.
+  With `screen`, the tab bar steps aside and the page keeps clear of the home
+  indicator itself.
+- From 48 rem a v2 `Nav` with Start, every part with its count, and Settings
+  at its foot stands beside the page.
+- Without `bare`, the frame puts the content in a `Workspace` whose head holds
+  `back`, the title (`sidebarTitle` from 48 rem), and `actions`, with one
+  scrolling `Pane`. Write the content from v2 bands, sections, and rows.
+- With `bare`, the page's island returns its own `Workspace` without a
+  sidebar, with its panes and heads. Only the panes scroll; the document
+  never does.
+- Offline, Chrome signed in to another account, and a new version show as v2
+  notices that float above the tab bar until their state ends; a new version
+  offers **Reload**. They float, so nothing on the page moves.
+
+```tsx
+<PwaLayout c={c} ui="v2" title={t(c).title} bare>
+  <InventoryWorkspace items={items} />
+</PwaLayout>
+```
+
+Beside an older Core that does not serve `/public/v2.css`, the page keeps
+`global.css`, which holds the same rules, so it looks the same.
 
 ### iPad and monitor
 
