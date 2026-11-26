@@ -83,9 +83,10 @@ test("the clients render on v2 with their figures, one open beside the list, and
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    // the list counts its clients; while a client is open its own notice says what it needs, not a second one above the list
-    expect(text).toContain("2 Clients");
-    expect(text).not.toContain("bis zur Konfiguration gesperrt");
+    // the first row says what matters with its number; the list's count is a quiet fact beside it
+    expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt 2 Clients");
+    // the groups stand as words; only the client without one carries a chip
+    expect(text).toContain("Grafana Dashboards Ops");
     expect(text).toContain("Uptime Kuma");
     expect(text).toContain("Ohne Gruppen");
     // the open client names its verify address with this Cloud's public address

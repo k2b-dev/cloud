@@ -22,16 +22,27 @@ export const ProxyAuthFixture = (props: { search: string; data?: ProxyAuthFixtur
     groups: client.allowedGroups.map((group) => ({ id: group.id, label: groupDisplayName(group.name, "de") })),
     created: new Date(client.createdAt).toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" }),
   }));
+  // the search as the page matches it: a name, an ID, a description or a group
+  const search = new URLSearchParams(props.search).get("search") ?? "";
+  const shown = search
+    ? clients.filter((client) =>
+        [client.name, client.clientId, client.description ?? "", ...client.groups.map((group) => group.label)].some((value) =>
+          value.toLowerCase().includes(search.toLowerCase()),
+        ),
+      )
+    : clients;
   return (
     <LocaleProvider locale="de">
       <ProxyAuthScreen
         nav={props.nav ?? harnessNav}
         baseUrl="https://cloud.example.test"
-        clients={clients}
+        clients={shown}
         open={new URLSearchParams(props.search).get("client")}
         tab={new URLSearchParams(props.search).get("tab") === "setup" ? "setup" : "clients"}
+        search={search}
         figures={{
           withoutGroups: clients.filter((client) => client.groups.length === 0).length,
+          total: clients.length,
         }}
       />
     </LocaleProvider>

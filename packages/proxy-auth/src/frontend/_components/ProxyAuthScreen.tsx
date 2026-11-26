@@ -10,6 +10,7 @@ import {
   Empty,
   Facts,
   Field,
+  Icon,
   Input,
   Lookup,
   Menu,
@@ -49,7 +50,9 @@ export type ProxyAuthScreenProps = {
   tab: "clients" | "setup";
   /** The client open beside the list (`client=<id>`); null when none is, or it is gone. */
   open: string | null;
-  figures: { withoutGroups: number };
+  figures: { withoutGroups: number; total: number };
+  /** The search of the list (`search=`), matched on the server; empty for none. */
+  search: string;
 };
 
 type Draft = { name: string; description: string; groups: string[] };
@@ -67,7 +70,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const number = (value: number) => value.toLocaleString(locale());
   const verifyUrl = (clientId: string) => `${props.baseUrl}/proxy-auth/verify/${clientId}`;
   const opened = () => props.clients.find((client) => client.id === props.open) ?? null;
-  const blockedClients = () => props.clients.filter((client) => client.groups.length === 0);
+  /** A client's sign in the colour of its state: it lets its groups through, or nobody until it has one. */
+  const ClientName = (mark: { client: ClientRow }) => (
+    <>
+      <Icon name={mark.client.groups.length === 0 ? "lock" : "shield-check"} tone={mark.client.groups.length === 0 ? "warn" : "ok"} />{" "}
+      {mark.client.name}
+    </>
+  );
   const known = (): LookupItem[] =>
     props.clients.flatMap((client) => client.groups).map((group) => ({ value: group.id, label: group.label }));
 
@@ -221,22 +230,23 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       <Pane
         label={t().appName}
         scrollKey="proxy-auth-clients"
-        status={<StatusRow lead={rows().length === 0 ? t().emptyLead : t().clientCount({ count: rows().length })} />}
-      >
-        {/* what needs a deed stands with its colour and sign; while a client is open, its own notice says it */}
-        <Show when={props.figures.withoutGroups > 0 && !props.open}>
-          <Notice
-            tone="warn"
-            icon="lock"
-            actions={
-              blockedClients().length === 1
-                ? [{ label: t().openClient, href: `${LIST}?client=${encodeURIComponent(blockedClients()[0]!.id)}` }]
-                : undefined
+        // the first row says what matters with its number; the list's count and the search are quiet facts
+        status={
+          <StatusRow
+            lead={
+              rows().length === 0 && !props.search
+                ? t().emptyLead
+                : props.figures.withoutGroups > 0
+                  ? t().blockedLead({ count: props.figures.withoutGroups })
+                  : t().allGatedLead({ count: props.figures.total })
             }
-          >
-            {t().blockedLead({ count: props.figures.withoutGroups })}
-          </Notice>
-        </Show>
+            facts={[
+              ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
+              ...(rows().length > 0 ? [{ value: t().clientCount({ count: rows().length }) }] : []),
+            ]}
+          />
+        }
+      >
         <Table
           label={t().clients}
           rows={rows()}
@@ -244,10 +254,14 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           sticky
           current={props.open ?? undefined}
           open={(client) => ({ href: `${LIST}?client=${encodeURIComponent(client.id)}` })}
-          // "Neuer Client" stands in the head (on the phone it floats): the empty state does not repeat it
-          empty={{ icon: "shield-half", text: t().empty }}
+          // the empty state holds its way on; a search that finds nothing says so and how to see all again
+          empty={
+            props.search
+              ? { icon: "search-off", text: t().noMatch({ query: props.search }), action: { label: t().resetSearch, href: LIST } }
+              : { icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
+          }
           phone={(client) => ({
-            lines: [client.name, client.description || client.clientId],
+            lines: [<ClientName client={client} />, client.description || client.clientId],
             time: client.created,
             marks: client.groups.length === 0 ? <Chip status="warn">{t().noGroups}</Chip> : undefined,
           })}
@@ -255,12 +269,14 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             {
               title: t().client,
               width: { min: 200, default: 320 },
-              cell: (client) => (client.description ? { lines: [client.name, client.description] } : client.name),
+              cell: (client) =>
+                client.description ? { lines: [<ClientName client={client} />, client.description] } : <ClientName client={client} />,
             },
             {
               title: t().allowedGroups,
               width: { min: 160, default: 280 },
-              cell: (client) => <>{groupChips(client, true)}</>,
+              // the groups as words; only a client without one carries a chip, the exception
+              cell: (client) => (client.groups.length === 0 ? blocked() : client.groups.map((group) => group.label).join(", ")),
               drop: true,
             },
             { title: t().created, width: { min: 110, default: 140 }, cell: (client) => client.created, drop: true },
@@ -336,10 +352,26 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             />
           }
           end={
-            <Show when={props.tab === "clients" && !props.open}>
-              <Button variant="primary" icon="plus" onClick={() => start("new")}>
-                {t().newClient}
-              </Button>
+            <Show when={props.tab === "clients"}>
+              <Input
+                type="search"
+                icon="search"
+                label={t().searchLabel}
+                placeholder={t().searchPlaceholder}
+                value={props.search}
+                onKeyDown={(event) => {
+                  if (event.isComposing) return;
+                  const input = event.currentTarget as HTMLInputElement;
+                  const text = input.value.trim();
+                  if (event.key === "Enter") location.assign(text ? `${LIST}?${new URLSearchParams({ search: text })}` : LIST);
+                  if (event.key === "Escape" && input.value) location.assign(LIST);
+                }}
+              />
+              <Show when={!props.open}>
+                <Button variant="primary" icon="plus" onClick={() => start("new")}>
+                  {t().newClient}
+                </Button>
+              </Show>
             </Show>
           }
         />
@@ -356,7 +388,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         foot={
           <>
             <Button onClick={() => setEditing(null)}>{t().cancel}</Button>
-            <Button icon="check" busy={busy()} onClick={() => void save()}>
+            <Button variant="primary" icon="check" busy={busy()} onClick={() => void save()}>
               {editing() === "new" ? t().create : t().save}
             </Button>
           </>
@@ -395,7 +427,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         dismissible={false}
         foot={<Button onClick={() => location.reload()}>{t().close}</Button>}
       >
-        <Text>{t().copyLater}</Text>
+        <Text>
+          <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().copyLater}
+        </Text>
         <Facts items={[{ label: t().verifyUrl, value: verifyUrl(created() ?? ""), mono: true, copy: verifyUrl(created() ?? "") }]} />
       </Dialog>
     </AdminWorkspace>
