@@ -237,15 +237,11 @@ div.ui-topic__part,
 .ui-example__tools[data-idle] {
   visibility: hidden;
 }
-/* The switches keep their own width, as on the chart pages; v1 draws a segmented control full width. */
+/* The switches are as wide as their segments (#4165); where the bar is narrower they scroll instead of shrinking. */
 .k2b-ui.ui-example .ui-example__bar .k2b-segmented-control {
   flex: none;
-  width: auto;
-  max-width: 100%;
   overflow-x: auto;
 }
-/* v1 shares a full-width control equally (`flex: 1`); here each segment is as wide as its words with the normal
-   inner padding, so a long state name such as "Mitglieder" never touches the edge of the group */
 .k2b-ui.ui-example .ui-example__bar .k2b-segmented-control__option {
   flex: none;
 }
