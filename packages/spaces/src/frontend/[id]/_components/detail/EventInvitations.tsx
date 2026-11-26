@@ -1,24 +1,12 @@
 import { openCommand, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
 import { mutation, query } from "@k2b/stdlib/solid";
-import {
-  Button,
-  DetailPanel,
-  dialogCore,
-  NoticeCard,
-  PanelDialog,
-  Placeholder,
-  panelDialogOptions,
-  prompts,
-  Section,
-  Select,
-  TextInput,
-  toast,
-  useLocale,
-} from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
+import { Button, Dialog, Empty, Failed, Field, Input, Loading, Notice, Section, Select, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { z } from "zod";
 import { apiClient } from "@/api/client";
 import { spaceCommandMessages } from "../../../../commands";
+import { openDialog } from "../../../lib/open-dialog";
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
 
@@ -48,13 +36,19 @@ const parseAttendees = (value: string, t: ReturnType<typeof useSpaceMessages>) =
     : { ok: true as const, attendees: [...addresses].map((address) => ({ name: null, address })) };
 };
 
+/**
+ * Prepares an invitation or a cancellation as a Mail draft: the mailbox, the sender and the attendees. Nothing is sent
+ * here; the draft opens in Mail in a new tab. A failure stays in the dialog with the input.
+ */
 function InvitationDialog(props: { spaceId: string; itemId: string; title: string; method: "request" | "cancel"; close: () => void }) {
   const locale = useLocale();
   const t = useSpaceMessages();
+  const toast = useToast();
   const [mailboxId, setMailboxId] = createSignal<string | null>(null);
   const [senderIdentityId, setSenderIdentityId] = createSignal<string | null>(null);
   const [recipients, setRecipients] = createSignal("");
   const [validationError, setValidationError] = createSignal<string | null>(null);
+  const [failure, setFailure] = createSignal<string | null>(null);
   let idempotencyKey = crypto.randomUUID();
   const resetIdempotency = () => {
     idempotencyKey = crypto.randomUUID();
@@ -79,7 +73,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
 
   const selectedMailbox = createMemo(() => context()?.mailboxes.find((mailbox) => mailbox.id === mailboxId()) ?? null);
 
-  const chooseMailbox = (nextMailboxId: string | null) => {
+  const chooseMailbox = (nextMailboxId: string) => {
     resetIdempotency();
     setMailboxId(nextMailboxId);
     const mailbox = context()?.mailboxes.find((candidate) => candidate.id === nextMailboxId);
@@ -114,7 +108,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
         if (!response.ok) throw new Error(await readResponseError(response, t.invitationDraftFailed));
         const result = await response.json();
         intent.mailTab.location.replace(new URL(result.href, window.location.origin).href);
-        toast.success(props.method === "cancel" ? t.cancellationOpened : t.invitationOpened);
+        toast(props.method === "cancel" ? t.cancellationOpened : t.invitationOpened, { status: "ok" });
         props.close();
       } catch (error) {
         intent.mailTab.close();
@@ -122,12 +116,11 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
       }
     },
     onError: (error) =>
-      prompts.error(error.message, {
-        title: props.method === "cancel" ? t.prepareCancellationFailed : t.prepareInvitationFailed,
-      }),
+      setFailure(`${props.method === "cancel" ? t.prepareCancellationFailed : t.prepareInvitationFailed}: ${error.message}`),
   });
   const createInvitation = () => {
     if (create.loading()) return;
+    setFailure(null);
     const parsed = parseAttendees(recipients(), t);
     if (!parsed.ok) {
       setValidationError(parsed.message);
@@ -142,7 +135,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
     setValidationError(null);
     const mailTab = window.open("about:blank", "_blank");
     if (!mailTab) {
-      void prompts.error(t.mailTabFailed);
+      setFailure(t.mailTabFailed);
       return;
     }
     mailTab.opener = null;
@@ -161,111 +154,87 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
   });
 
   return (
-    <PanelDialog>
-      <PanelDialog.Header
-        title={props.method === "cancel" ? t.prepareCancellation : t.prepareInvitation}
-        subtitle={`${props.title} · ${t.senderRecipientsDescription}`}
-        icon={props.method === "cancel" ? "ti ti-calendar-cancel" : "ti ti-calendar-share"}
-        close={props.close}
-      />
-      <PanelDialog.Body>
-        <NoticeCard
-          tone="info"
-          title={t.reviewBeforeSending}
-          detail={props.method === "cancel" ? t.cancellationReview : t.invitationReview}
-        />
-        <Show
-          when={context()}
-          fallback={
-            <Placeholder
-              state={contextQuery.error() ? "error" : "loading"}
-              variant="compact"
-              title={contextQuery.error() ? t.mailSendersUnavailable : t.loadingMailSenders}
-              description={contextQuery.error()?.message}
-              action={
-                contextQuery.error() ? (
-                  <Button variant="secondary" size="sm" type="button" onClick={() => void contextQuery.refresh()}>
-                    {t.retry}
-                  </Button>
-                ) : undefined
-              }
-            />
-          }
-        >
-          {(value) => (
-            <PanelDialog.Section title={t.delivery} subtitle={t.deliveryDescription} icon="ti ti-mail-forward">
-              <Show when={value().mailboxes.length === 0}>
-                <Placeholder
-                  state="empty"
-                  variant="compact"
-                  icon="ti ti-mail-off"
-                  title={t.noMailSender}
-                  description={t.noMailSenderDescription}
-                />
-              </Show>
+    <Dialog
+      title={props.method === "cancel" ? t.prepareCancellation : t.prepareInvitation}
+      open
+      onOpenChange={(open) => !open && props.close()}
+      foot={
+        <>
+          <Button onClick={props.close}>{t.cancel}</Button>
+          <Button
+            variant="primary"
+            icon="mail-plus"
+            busy={create.loading()}
+            disabled={contextQuery.loading() || !context() || !mailboxId() || !senderIdentityId()}
+            onClick={createInvitation}
+          >
+            {t.continueInMail}
+          </Button>
+        </>
+      }
+    >
+      <Notice tone="note" icon="info-circle" title={t.reviewBeforeSending}>
+        {`${props.title} · ${props.method === "cancel" ? t.cancellationReview : t.invitationReview}`}
+      </Notice>
+      <Show
+        when={context()}
+        fallback={
+          <Show when={contextQuery.error()} fallback={<Loading rows={3} lines={1} />}>
+            {(error) => <Failed text={`${t.mailSendersUnavailable}: ${error().message}`} onRetry={() => void contextQuery.refresh()} />}
+          </Show>
+        }
+      >
+        {(value) => (
+          <Show
+            when={value().mailboxes.length > 0}
+            fallback={<Empty icon="mail-off" text={`${t.noMailSender}. ${t.noMailSenderDescription}`} />}
+          >
+            <Field label={t.mailbox} name="mailbox" hint={t.deliveryDescription}>
               <Select
-                label={t.mailbox}
-                value={() => mailboxId() ?? null}
-                onValueChange={chooseMailbox}
-                options={value().mailboxes.map((mailbox) => ({
-                  value: mailbox.id,
-                  label: mailbox.name,
-                  icon: "ti ti-mail",
-                }))}
+                value={mailboxId() ?? undefined}
                 placeholder={t.noWritableMailbox}
-                disabled={value().mailboxes.length === 0}
+                options={value().mailboxes.map((mailbox) => ({ value: mailbox.id, label: mailbox.name }))}
+                onChange={chooseMailbox}
               />
+            </Field>
+            <Field label={t.from} name="sender" hint={t.senderRecipientsDescription}>
               <Select
-                label={t.from}
-                value={() => senderIdentityId() ?? null}
-                onValueChange={(value) => {
+                value={senderIdentityId() ?? undefined}
+                placeholder={t.noVerifiedIdentity}
+                options={(selectedMailbox()?.identities ?? []).map((identity) => ({
+                  value: identity.id,
+                  label: identity.from.name
+                    ? `${identity.label} · ${identity.from.name} <${identity.from.address}>`
+                    : `${identity.label} · ${identity.from.address}`,
+                }))}
+                onChange={(value) => {
                   resetIdempotency();
                   setSenderIdentityId(value);
                 }}
-                options={(selectedMailbox()?.identities ?? []).map((identity) => ({
-                  value: identity.id,
-                  label: identity.label,
-                  description: identity.from.name ? `${identity.from.name} <${identity.from.address}>` : identity.from.address,
-                  icon: identity.isDefault ? "ti ti-star" : "ti ti-at",
-                }))}
-                placeholder={t.noVerifiedIdentity}
-                disabled={!selectedMailbox()}
               />
-              <TextInput
-                label={t.attendees}
-                description={t.attendeesDescription}
-                icon="ti ti-users"
+            </Field>
+            <Field label={t.attendees} name="attendees" hint={t.attendeesDescription} error={validationError() ?? undefined}>
+              <Input
                 multiline
-                lines={3}
-                value={recipients}
-                onValueChange={(value) => {
+                value={recipients()}
+                placeholder="alex@example.com, sam@example.com"
+                onInput={(value) => {
                   resetIdempotency();
                   setRecipients(value);
                 }}
-                error={() => validationError() ?? undefined}
-                placeholder="alex@example.com, sam@example.com"
               />
-            </PanelDialog.Section>
-          )}
-        </Show>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <Button type="button" variant="secondary" onClick={props.close}>
-          {t.cancel}
-        </Button>
-        <Button
-          type="button"
-          variant={props.method === "cancel" ? "danger" : "primary"}
-          loading={create.loading()}
-          loadingLabel={props.method === "cancel" ? t.preparingCancellation : t.preparingInvitation}
-          disabled={contextQuery.loading() || !context() || !mailboxId() || !senderIdentityId()}
-          onClick={createInvitation}
-        >
-          <i class="ti ti-mail-plus" aria-hidden="true" />
-          {t.continueInMail}
-        </Button>
-      </PanelDialog.Footer>
-    </PanelDialog>
+            </Field>
+          </Show>
+        )}
+      </Show>
+      <Show when={failure()}>
+        {(message) => (
+          <Notice tone="bad" icon="alert-circle">
+            {message()}
+          </Notice>
+        )}
+      </Show>
+    </Dialog>
   );
 }
 
@@ -281,29 +250,30 @@ export const openEventInvitation = async (
   if (signal?.aborted) return;
   if (!context.mailboxes.length || (method === "cancel" && !context.canCancel))
     throw new Error(spaceCommandMessages.resolve([locale]).t.invitationUnavailable);
-  await dialogCore.open<void>(
-    (close) => <InvitationDialog spaceId={spaceId} itemId={itemId} title={title} method={method} close={() => close()} />,
-    panelDialogOptions,
-  );
+  await openDialog<void>(locale, (close) => (
+    <InvitationDialog spaceId={spaceId} itemId={itemId} title={title} method={method} close={() => close()} />
+  ));
 };
 
+/** Invitations of an event in its detail: prepare one, or a cancellation once it was sent, as a Mail draft. */
 export default function EventInvitations(props: { spaceId: string; itemId: string; title: string }) {
   const locale = useLocale();
   const t = useSpaceMessages();
+  const toast = useToast();
   const contextQuery = query.create<string, InvitationContext>({
     source: () => `${props.spaceId}:${props.itemId}`,
     load: async (_source, { abortSignal }) => loadContext(props.spaceId, props.itemId, abortSignal, locale()),
   });
   const context = contextQuery.data;
   const reconcile = () => {
-    void contextQuery.invalidate().catch(() => prompts.error(t.invitationStatusRefreshFailed));
+    void contextQuery.invalidate().catch(() => toast(t.invitationStatusRefreshFailed, { status: "bad", retry: reconcile }));
   };
   const openInvitation = async (method: "request" | "cancel", itemId = props.itemId) => {
     try {
       await openCommand("spaces.event.invite", { itemId, method });
       if (itemId === props.itemId) reconcile();
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : t.invitationDraftFailed);
+      toast(error instanceof Error ? error.message : t.invitationDraftFailed, { status: "bad" });
     }
   };
   createEffect(() => {
@@ -326,48 +296,26 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
     }
   });
   return (
-    <Section title={t.invitations} icon="ti ti-send">
+    <Section
+      icon="send"
+      title={t.invitations}
+      actions={
+        context()?.canCancel
+          ? [
+              { label: t.prepareInvitation, icon: "calendar-share", onClick: () => void openInvitation("request") },
+              { label: t.prepareCancellation, icon: "calendar-cancel", onClick: () => void openInvitation("cancel") },
+            ]
+          : [{ label: t.prepareInvitation, icon: "calendar-share", onClick: () => void openInvitation("request") }]
+      }
+    >
       <Show when={contextQuery.error()}>
-        {(error) => (
-          <Placeholder
-            state="error"
-            variant="compact"
-            align="left"
-            class="mb-2"
-            title={t.invitationStatusUnavailable}
-            description={error().message}
-            action={
-              <Button type="button" variant="secondary" size="xs" onClick={() => void contextQuery.refresh()}>
-                {t.retry}
-              </Button>
-            }
-          />
-        )}
+        {(error) => <Failed text={`${t.invitationStatusUnavailable}: ${error().message}`} onRetry={() => void contextQuery.refresh()} />}
       </Show>
       <Show when={context()?.lastDelivery?.state === "failed"}>
-        <NoticeCard
-          tone="danger"
-          class="mb-2"
-          title={t.mailDraftFailed}
-          detail={t.retryInvitation({ detail: context()?.lastDelivery?.errorMessage ?? t.latestMailDraftFailed })}
-        />
+        <Notice tone="bad" icon="alert-circle" title={t.mailDraftFailed}>
+          {t.retryInvitation({ detail: context()?.lastDelivery?.errorMessage ?? t.latestMailDraftFailed })}
+        </Notice>
       </Show>
-      <div class="flex flex-col gap-1">
-        <DetailPanel.Action
-          type="button"
-          leading={<i class="ti ti-calendar-share" aria-hidden="true" />}
-          title={t.prepareInvitation}
-          onClick={() => openInvitation("request")}
-        />
-        <Show when={context()?.canCancel}>
-          <DetailPanel.Action
-            type="button"
-            leading={<i class="ti ti-calendar-cancel" aria-hidden="true" />}
-            title={t.prepareCancellation}
-            onClick={() => openInvitation("cancel")}
-          />
-        </Show>
-      </div>
     </Section>
   );
 }
