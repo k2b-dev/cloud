@@ -29,7 +29,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
-const { Chip, Digest, Facts, Notice, Pane, Progress, Row, Section, StatusRow, Text } = await import("@k2b/ui/v2");
+const { Chip, Digest, Facts, Icon, Notice, Pane, Progress, Row, Section, StatusRow, Text } = await import("@k2b/ui/v2");
 
 const { ssr } = defineApp({
   id: "inventory",
@@ -61,10 +61,11 @@ const user: User = {
   manages: [],
   managesGroupIds: [],
 };
-const part = (id: string, name: string, icon: string, pwa: { badge?: boolean; summary?: boolean } = {}): RuntimeAppMeta => ({
+const part = (id: string, name: string, icon: string, color: `#${string}`, pwa: { badge?: boolean; summary?: boolean } = {}): RuntimeAppMeta => ({
   id,
   name,
   icon: `ti ti-${icon}`,
+  appearance: { accent: color, iconColor: color },
   description: "",
   routes: [`/pwa/${id}`],
   pwa: {
@@ -75,11 +76,11 @@ const part = (id: string, name: string, icon: string, pwa: { badge?: boolean; su
 });
 const apps: RuntimeAppMeta[] = [
   { id: "pwa", name: "Cloud app", icon: "ti ti-device-mobile", description: "", routes: ["/pwa"] },
-  part("chat", "Chat", "messages", { badge: true }),
-  part("mail", "Mail", "mail", { badge: true }),
-  part("spaces", "Spaces", "layout-kanban", { summary: true }),
-  part("files", "Dateien", "folder"),
-  part("notebooks", "Notizbücher", "notebook"),
+  part("chat", "Chat", "messages", "#0e7490", { badge: true }),
+  part("mail", "Mail", "mail", "#2563eb", { badge: true }),
+  part("spaces", "Spaces", "layout-kanban", "#b45309", { summary: true }),
+  part("files", "Dateien", "folder", "#a16207"),
+  part("notebooks", "Notizbücher", "notebook", "#7c3aed"),
 ];
 const counts: Record<string, number> = { "/pwa/chat/unread": 3, "/pwa/mail/unread": 12, "/pwa/spaces/summary": 5 };
 
@@ -121,7 +122,7 @@ const forYou = () =>
       avatar: { name: "Kasse Lindenhof", color: "#2563eb" },
       lines: ["Kasse: Abrechnung November", "Bitte bis Freitag die Belege der Werkstatt freigeben."],
       time: "10:12",
-      end: createComponent(Chip, { status: "warn", icon: "clock", children: "Fr fällig" }),
+      end: createComponent(Chip, { status: "warn", icon: "clock", children: "bis Fr" }),
       href: "/pwa/mail",
     }),
     row({
@@ -139,7 +140,7 @@ const forYou = () =>
   ]);
 
 const today = () => [
-  section({ icon: "calendar", color: "#15803d", title: "Heute", count: 3 }, () => [
+  section({ icon: "calendar", color: "#15803d", title: "Termine heute", count: 3 }, () => [
     row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Teamrunde Programm", "10:00–10:45 · Saal 2"], time: "10:00" }),
     row({ avatar: { name: "Ali Demir", color: "#b45309" }, lines: ["Offene Holzwerkstatt", "14:00–17:00 · Werkraum"], time: "14:00" }),
     row({
@@ -225,13 +226,12 @@ const settingsMain = () => [
       action: { label: "Abmelden", icon: "logout" },
     }),
   ]),
-  // the account and everything beyond this device live in Cloud's own settings: one clear way there
-  section({ icon: "user", color: "#be185d", title: "Konto" }, () => [
-    row({ avatar: { name: "Mia Muster", color: "#be185d" }, lines: ["Mia Muster", "mia.muster@example.org"] }),
+  // the account, the other devices and everything beyond this device live in Cloud's own settings: one clear way there
+  section({ icon: "cloud", color: "#be185d", title: "Lindenhof Cloud" }, () => [
     row({
-      icon: "settings",
-      color: "#be185d",
-      lines: ["Alle Einstellungen", "Konto, Sicherheit und Mitteilungen in Lindenhof Cloud"],
+      avatar: { name: "Mia Muster", color: "#be185d" },
+      lines: ["Alle Einstellungen", "Konto, Sicherheit und weitere Geräte von Mia Muster"],
+      end: createComponent(Icon, { name: "external-link" }),
       href: "/me",
     }),
   ]),
@@ -276,7 +276,7 @@ const settingsMain = () => [
     }),
     row({
       icon: "folder",
-      color: "#b45309",
+      color: "#a16207",
       lines: ["Dateien", "Freigaben an dich"],
       end: createComponent(Text, { muted: true, children: "Aus" }),
     }),
@@ -284,10 +284,6 @@ const settingsMain = () => [
 ];
 
 const settingsSide = () => [
-  section({ icon: "devices", color: "#64748b", title: "Weitere Geräte", count: 2 }, () => [
-    row({ icon: "device-ipad", color: "#64748b", lines: ["iPad Küche", "Zuletzt vor 3 Tagen"] }),
-    row({ icon: "device-laptop", color: "#64748b", lines: ["Laptop Büro", "Zuletzt gestern"] }),
-  ]),
   section({ icon: "database", color: "#15803d", title: "Auf diesem Gerät" }, () => [
     row({
       icon: "database",
@@ -299,7 +295,6 @@ const settingsSide = () => [
       icon: "pencil",
       color: "#15803d",
       lines: ["Entwürfe", "2 ungesendete Nachrichten"],
-      end: createComponent(Text, { muted: true, children: "2" }),
     }),
   ]),
   section({ icon: "lifebuoy", color: "#0e7490", title: "Hilfe und Rechtliches" }, () => [
@@ -331,7 +326,7 @@ const settings = () =>
         }),
         createComponent(Pane, {
           side: true,
-          label: "Geräte und Daten",
+          label: "Daten und Hilfe",
           width: { fixed: 320 },
           get children() {
             return settingsSide();
