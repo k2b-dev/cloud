@@ -39,6 +39,8 @@ The sign-in settings of an app: a field that goes back to its default through th
 - A few options (two to four), all visible at once.
 - The person compares them before choosing, such as who does the work.
 - Inside a `Field` the field's label is its question.
+- People to choose show their face: give an option a `person`; the option is still named by its words.
+- With `multiple` several options can be chosen, as boxes; the form sends one entry for each.
 
 ### Select
 

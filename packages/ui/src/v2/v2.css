@@ -2064,6 +2064,12 @@
   padding-block: 4px;
   min-width: 0;
 }
+/* the face of a person leads the words of their option: 20 px on the 20 px line of the words */
+.k2-ui .k2-choice > .k2-av {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
 .k2-ui .k2-choice > .k2-choice-text {
   min-width: 0;
   overflow-wrap: anywhere;
