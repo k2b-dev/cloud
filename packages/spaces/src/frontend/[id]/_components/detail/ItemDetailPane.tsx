@@ -812,8 +812,9 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
           </Menu>
         )),
       },
-      // Editors see the empty rows as places to set them in place; readers see only what is set.
-      ...(canEditItem() || tagNames()
+      // Editors see the empty rows as places to set them in place; readers see only what is set. A Space without tags
+      // has nothing to add, so its empty Tags row stays away for editors too.
+      ...((canEditItem() && props.space.tags.length > 0) || tagNames()
         ? [
             {
               label: t.tags,

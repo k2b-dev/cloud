@@ -21,6 +21,7 @@ export const OverviewWorkSchema = z.object({
   /** What counts today, for the first row and the agenda of the web overview; only when the caller asks for the day. */
   day: z
     .object({
+      at: z.string().describe("The moment the day was read (ISO); how long until the next entry counts from it"),
       agenda: z.array(OverviewWorkItemSchema).describe("Today's first events and due items across the reader's Spaces"),
       next: OverviewWorkItemSchema.nullable().describe("The first entry of today that starts after now"),
       overdue: z.number().describe("Open tasks assigned to the reader whose due day has passed"),

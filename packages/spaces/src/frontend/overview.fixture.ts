@@ -51,6 +51,7 @@ export const overviewWork: OverviewWork = {
     }),
   ],
   day: {
+    at: "2026-10-15T07:00:00.000Z",
     agenda: [
       task({ shortId: "Cal001", title: "Stand-up at ramp 1", startsAt: "2026-10-15T09:15:00+02:00", endsAt: "2026-10-15T09:30:00+02:00" }),
       task({
@@ -124,6 +125,7 @@ export const overviewWorstWork: OverviewWork = {
   view: "mine",
   counts: { mine: 98_765, today: 5, upcoming: 1_234_567 },
   day: {
+    at: "2026-10-15T07:00:00.000Z",
     agenda: [
       task({
         shortId: "Cal101",

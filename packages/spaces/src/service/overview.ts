@@ -49,6 +49,7 @@ export async function loadOverviewWork(params: {
     ...(params.day
       ? {
           day: {
+            at: params.day.now.toISOString(),
             agenda: dashboard.events.map(row),
             next: dashboard.next ? row(dashboard.next) : null,
             overdue: dashboard.assignedOverdueCount,

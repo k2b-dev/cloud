@@ -28,7 +28,7 @@ const textOf = (html: string) => {
   return plain;
 };
 
-type Extra = { itemTitle?: string; initialView?: "mine" | "today"; day?: OverviewWork["day"] };
+type Extra = { itemTitle?: string; activitySpace?: string; initialView?: "mine" | "today"; day?: OverviewWork["day"] };
 const render = (initialActivityError: string | null = null, locale = "en", extra: Extra = {}) =>
   renderToString(() =>
     createComponent(LocaleProvider, {
@@ -77,7 +77,7 @@ const render = (initialActivityError: string | null = null, locale = "en", extra
             items: [
               {
                 id: "1",
-                space: { id: "Space1", name: "Launch", color: "#3b82f6" },
+                space: { id: "Space1", name: extra.activitySpace ?? "Launch", color: "#3b82f6" },
                 item: { id: "Item01", title: extra.itemTitle ?? "Ship overview" },
                 actor: { kind: "user", id: "00000000-0000-4000-8000-000000000001", displayName: "Sofie", avatarHash: null },
                 action: "task.completed",
@@ -146,6 +146,11 @@ describe("Spaces overview", () => {
     expect(textOf(render(null, "de", { itemTitle: "erledigt" }))).toContain("Sofie · erledigt in Launch erledigt");
   });
 
+  test("keeps the whole sentence when a Space's name contains the sign that marks the title's place", () => {
+    // A Space name is free input; with the slot sign in it the sentence would split in three and lose its end.
+    expect(textOf(render(null, "en", { activitySpace: "AB" }))).toContain("Sofie · Completed “Ship overview” in AB");
+  });
+
   test("reads what counts today from the server in every view: overdue and the next entry", () => {
     const next = {
       shortId: "Event9",
@@ -161,9 +166,16 @@ describe("Spaces overview", () => {
       canWrite: true,
     };
     // Opened on Today, whose rows hold no assigned task: the overdue count still comes from the day.
-    const text = textOf(render(null, "en", { initialView: "today", day: { agenda: [], next, overdue: 2 } }));
+    const text = textOf(
+      render(null, "en", { initialView: "today", day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next, overdue: 2 } }),
+    );
     expect(text).toContain("1 for you · 2 overdue");
     expect(text).toContain("Late review");
     expect(text).toContain("in 3 hr");
+    // A day read later (after a view switch) counts from its own moment, not from when the page loaded.
+    const later = textOf(
+      render(null, "en", { initialView: "today", day: { at: "2026-08-20T14:30:00.000Z", agenda: [], next, overdue: 2 } }),
+    );
+    expect(later).toContain("in 30 min");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
-import type { SpaceItem } from "@/contracts";
+import type { SpaceItem, SpaceTag } from "@/contracts";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
 import { installV2Globals } from "./v2-dom";
 
@@ -43,7 +43,7 @@ const _flush = async () => {
 
 const mount = async (
   dom: DomTestHarness,
-  overrides: { canWrite?: boolean; activeBlockerCount?: number; item?: Partial<SpaceItem> } = {},
+  overrides: { canWrite?: boolean; activeBlockerCount?: number; item?: Partial<SpaceItem>; tags?: SpaceTag[] } = {},
 ) => {
   const { DetailPaneFixture } = await import("./detail-pane");
   const blocker = (index: number) => ({
@@ -63,7 +63,13 @@ const mount = async (
     blocks: [],
   };
   return render(
-    () => createComponent(DetailPaneFixture, { detail: () => detail, canWrite: overrides.canWrite ?? true, currentUserId: userId }),
+    () =>
+      createComponent(DetailPaneFixture, {
+        detail: () => detail,
+        canWrite: overrides.canWrite ?? true,
+        currentUserId: userId,
+        tags: overrides.tags,
+      }),
     dom.root,
   );
 };
@@ -117,10 +123,22 @@ describe("Spaces detail planning rows", () => {
     const empty = { priority: null, tags: [], estimatedDurationMinutes: null };
     const editor = createDomTestHarness();
     editor.root.className = "k2b-ui";
-    const disposeEditor = await mount(editor, { item: empty });
+    const disposeEditor = await mount(editor, {
+      item: empty,
+      tags: [{ id: "Tag001", spaceId: item.spaceId, name: "Ops", color: "#ef4444" }],
+    });
     expect(labels(editor)).toEqual(expect.arrayContaining(["Tags", "Priority", "Estimate"]));
     disposeEditor();
     editor.cleanup();
+
+    // A Space without tags has none to add: the editor sees no Tags row, not an "Add" that does nothing.
+    const untagged = createDomTestHarness();
+    untagged.root.className = "k2b-ui";
+    const disposeUntagged = await mount(untagged, { item: empty, tags: [] });
+    expect(labels(untagged)).not.toContain("Tags");
+    expect(labels(untagged)).toEqual(expect.arrayContaining(["Priority", "Estimate"]));
+    disposeUntagged();
+    untagged.cleanup();
 
     const reader = createDomTestHarness();
     reader.root.className = "k2b-ui";

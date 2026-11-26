@@ -221,7 +221,6 @@ export default function SpacesOverview(props: Props) {
     return labels[entry.action] ?? text.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
   };
   const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
-  const now = Date.parse(props.now);
   /** "15 min", "2 h": how long until something starts, in the reader's words. */
   const duration = (minutes: number) =>
     minutes < 60
@@ -237,13 +236,16 @@ export default function SpacesOverview(props: Props) {
   /** The first row says what counts today: the work for this person, what is overdue, and what comes next. */
   const statement = (): StatusFact[] => {
     const next = nextUp();
+    // "in 15 min" counts from the moment the day was read: the page's time for the SSR day, the answer's for a later one.
     return [
       ...(next?.startsAt
         ? [
             {
               before: t().nextUp,
               value: `${next.title} ${dates.formatTime(next.startsAt, props.dateConfig)}`,
-              after: t().inTime({ duration: duration(Math.round((Date.parse(next.startsAt) - now) / 60_000)) }),
+              after: t().inTime({
+                duration: duration(Math.round((Date.parse(next.startsAt) - Date.parse(day()?.at ?? props.now)) / 60_000)),
+              }),
             },
           ]
         : []),
@@ -262,7 +264,9 @@ export default function SpacesOverview(props: Props) {
     const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? "");
     // The message itself says where the title stands: it is written with a slot in the title's place, never searched
     // for the title's words. The thing's mark and name take that place and the quotes around it.
-    const [before, after] = title ? activityDescription(entry, TITLE_SLOT).split(TITLE_SLOT) : [];
+    // A Space or person may carry the slot sign in a name they chose; then anything but two parts reads as plain text.
+    const parts = title ? activityDescription(entry, TITLE_SLOT).split(TITLE_SLOT) : [];
+    const [before, after] = parts.length === 2 ? parts : [];
     const kind = entry.action.startsWith("event.") ? "calendar-event" : entry.action.startsWith("space.") ? SPACE_MARK_ICON : "checkbox";
     return (
       <>

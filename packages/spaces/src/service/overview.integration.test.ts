@@ -77,7 +77,7 @@ testFor("database")("selected overview views preserve counts, filters and access
       const selected = await loadOverviewWork({ ...params, view, day: { now: new Date() } });
       expect(selected.items.some((item) => item.spaceName.endsWith("overview fixture"))).toBe(false);
       // A revoked grant takes the day with it: no agenda, nothing next, nothing overdue.
-      expect(selected.day).toEqual({ agenda: [], next: null, overdue: 0 });
+      expect(selected.day).toEqual({ at: expect.any(String), agenda: [], next: null, overdue: 0 });
     }
   } finally {
     for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
@@ -120,6 +120,7 @@ testFor("database")("the day finds the next entry behind five earlier ones, only
     expect(work.day?.agenda.map((item) => item.title)).toEqual([1, 2, 3, 4, 5].map((hour) => `Next fixture ${hour}h`));
     // The private Space's 13:00 comes earlier, but the reader may not see it.
     expect(work.day?.next?.title).toBe("Next fixture 15h");
+    expect(work.day?.at).toBe(at(12));
     expect(work.day?.next?.startsAt && Date.parse(work.day.next.startsAt)).toBe(Date.parse(at(15)));
   } finally {
     for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
