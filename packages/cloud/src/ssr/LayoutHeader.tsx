@@ -5,6 +5,8 @@ import { platformMessages } from "./platform-messages";
 
 type LayoutHeaderProps = {
   authenticated: boolean;
+  /** The page is built with `@k2b/ui/v2`: the search button opens the search of its head when it has one. */
+  pageSearch?: boolean;
   panelOpen?: boolean;
   title?: string;
   launchpad: boolean;
@@ -47,6 +49,8 @@ export default function LayoutHeader(props: LayoutHeaderProps) {
         slot="header"
         panelOpen={props.panelOpen}
         authenticated={props.authenticated}
+        // only a v2 page sends it, so the island's props of every other page stay as they were
+        {...(props.pageSearch ? { pageSearch: true } : {})}
         title={props.title}
         launchpad={props.launchpad}
         breadcrumbs={props.breadcrumbs}
