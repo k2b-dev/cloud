@@ -48,7 +48,10 @@ export const logDurationFormatter = (locale: string) => {
     new Intl.NumberFormat(locale, { style: "unit", unit: name, unitDisplay: "short", maximumFractionDigits: digits });
   const ms = unit("millisecond");
   const seconds = unit("second", 1);
-  const whole = Object.fromEntries(UNITS.map((entry) => [entry.unit, unit(entry.unit)])) as Record<(typeof UNITS)[number]["unit"], Intl.NumberFormat>;
+  const whole = Object.fromEntries(UNITS.map((entry) => [entry.unit, unit(entry.unit)])) as Record<
+    (typeof UNITS)[number]["unit"],
+    Intl.NumberFormat
+  >;
   return (value: number): string | null => {
     if (!Number.isFinite(value) || value < 0) return null;
     if (Math.round(value) < 1000) return ms.format(Math.round(value));

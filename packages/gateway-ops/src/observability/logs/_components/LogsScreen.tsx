@@ -357,7 +357,11 @@ export default function LogsScreen(props: LogsScreenProps) {
               />
               <StatusRow
                 lead={
-                  !data() ? t().unavailable : total() === 0 ? t().noEntriesLead : t().entriesOf({ count: number(rows().length), total: number(total()) })
+                  !data()
+                    ? t().unavailable
+                    : total() === 0
+                      ? t().noEntriesLead
+                      : t().entriesOf({ count: number(rows().length), total: number(total()) })
                 }
                 loading={refreshing()}
                 facts={[
