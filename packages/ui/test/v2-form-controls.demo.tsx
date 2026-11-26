@@ -103,6 +103,9 @@ export function Demo() {
               }}
             />
           </Field>
+          <Field name="radius" label="Ecken">
+            <Slider value={12} min={0} max={40} unit="px" />
+          </Field>
           <Field name="dim" label="Abdunkeln">
             <Slider value={dim()} onChange={setDim} onCommit={(value) => did(`dim:${value}`)} min={0} max={100} step={10} />
           </Field>

@@ -85,13 +85,13 @@ One image with its preview, a button to choose or change it and one to remove it
 
 ### Slider
 
-A number on a range, such as an opacity or a zoom, with the number as it reads at the end; `onCommit` saves when a drag ends.
+A number on a range, such as an opacity or a zoom, with the number as it reads at the end, followed by its `unit` (such as `px`); `onCommit` saves when a drag ends. On a phone the slider is 44 px high, so a finger takes it.
 
 <Props of="Slider" />
 
 ### ColorInput
 
-A colour: its swatch and code, a surface of saturation and brightness, a hue slider and the given swatches.
+A colour: its swatch and code in one line, and the given swatches. The swatch opens a panel with a surface of saturation and brightness and a hue slider.
 
 <Props of="ColorInput" />
 
