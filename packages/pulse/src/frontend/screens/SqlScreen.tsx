@@ -223,7 +223,9 @@ export default function SqlScreen(props: SqlScreenProps) {
         }
       >
         {/* k2b-ui gap: no code editor in v2; the Autocomplete editor keeps its behaviour and draws inside a canvas. */}
-        <Canvas label="SQL" height={232}>
+        {/* the editor is as tall as its query plus one free line (4 to 18 lines of 20 px), so a short query leaves no
+            empty box and a long one scrolls inside */}
+        <Canvas label="SQL" height={Math.min(18, Math.max(4, c.sql().split("\n").length + 1)) * 20 + 24}>
           <AutocompleteEditor
             aria-label="SQL"
             value={c.sql}
