@@ -275,6 +275,9 @@ export default function Layout(props: LayoutProps) {
       .filter(Boolean)
       .join(";") || undefined;
   const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
+  // One phone head for every v2 page: a v2 admin page below the overview names itself and leads back to the overview,
+  // in place of Admin and its menu (the rail and the apps menu still reach the rest).
+  const up = props.ui === "v2" && /^\/admin\/./.test(pathname) ? { title: t.admin, href: "/admin" } : undefined;
   const helpIds = new Set(registeredHelp?.documents.map((topic) => topic.id));
   const viewHelp = [...new Set(props.help)]
     .filter((id) => helpIds.has(id) && id.length <= PANEL_HELP_ID_MAX_LENGTH)
@@ -478,7 +481,8 @@ export default function Layout(props: LayoutProps) {
               <LayoutHeader
                 panelOpen={panel ? panelState.open : undefined}
                 authenticated={showRail}
-                title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
+                title={props.headTitle === "page" || up ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
+                up={up}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
                 loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}

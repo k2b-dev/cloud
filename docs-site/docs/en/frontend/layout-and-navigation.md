@@ -25,7 +25,9 @@ panels, so they can identify the current person just as on a regular page.
 
 The phone header names the current app. A page that an app hosts for someone
 else, such as a Code page, passes `headTitle="page"`. The header then shows the
-page's own title, or the Cloud's name when the page has none.
+page's own title, or the Cloud's name when the page has none. On the phone, a v2
+admin page below the overview (`AdminLayout ui="v2"`, a path under `/admin/`)
+shows "‹ Admin" and its own title, like every other v2 screen.
 
 Application authors put objects in the sidebar and views of the open object
 in `AppWorkspace.Head` as `ViewTabs` links with `?view=`. Filter chips and
