@@ -8,7 +8,8 @@
  * - **type:** every run of text is set in a type role: 12, 13, 14 or 18 px on a 16, 20 or 24 px line, in 400, 500 or
  *   600. Reading text (`prose`) may also use 16 px and a 22 px line.
  * - **grip:** the pill of every grip is centred on its 1 px line within ±0.25 CSS px, measured in the DOM and again
- *   in the screenshot at the page's device pixel ratio, inside the grip only.
+ *   in the screenshot at the page's device pixel ratio, inside the grip only. A grip shows only on demand (under the
+ *   pointer, on focus, while dragged), so the measurement shows every grip while it measures and hides them again.
  *
  * A line is any way to draw one: a border side, a `box-shadow` without blur (offset or spread), a box of at most
  * 1.5 px, and the same on `::before` and `::after`, also under a `display: contents` parent whose own box has no
@@ -762,66 +763,77 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     hairline: hairline.width,
     tolerance: gripTolerance,
   };
-  const dom = await page.evaluate(measureInPage, limits);
-  const scale = await page.evaluate(() => window.devicePixelRatio);
-  const margin = 6;
-  const grips: V2GripMeasure[] = [];
-  const grip = [...dom.grip];
-  for (const measure of dom.grips) {
-    if (!measure.line) continue;
-    const { left, top, width, height } = measure.rect;
-    // A clip on whole CSS pixels, so the engine never resamples the picture.
-    const x = Math.floor(left - margin);
-    const y = Math.floor(top - margin);
-    const png = await page.screenshot({
-      clip: { x, y, width: Math.ceil(width + 2 * margin) + 1, height: Math.ceil(height + 2 * margin) + 1 },
-      scale: "device",
-      animations: "disabled",
-      caret: "hide",
-    });
-    const pixels = await page.evaluate(gripPixelsInPage, {
-      png: png.toString("base64"),
-      scale,
-      left: left - x,
-      top: top - y,
-      width,
-      height,
-    });
-    grips.push({ grip: measure.grip, dom: measure.dom, pixels: pixels?.offset ?? null, lineWidth: pixels?.lineWidth ?? null });
-    if (!pixels) grip.push(`grip ${measure.grip}: pill or line not found in the screenshot at DPR ${scale}`);
-    else {
-      if (Math.abs(pixels.offset) > gripTolerance)
-        grip.push(`grip ${measure.grip}: pill centre ${pixels.offset} px off its line in the screenshot at DPR ${scale}`);
-      if (Math.abs(pixels.lineWidth - hairline.width) > 0.01)
-        grip.push(`grip ${measure.grip}: its line is ${pixels.lineWidth} px wide in the screenshot at DPR ${scale}`);
+  // Grips show only on demand; every grip shows for the measurement, as under the pointer.
+  await page.evaluate((selector) => {
+    const style = document.createElement("style");
+    style.id = "k2-measure-grips";
+    style.textContent = `${selector} { opacity: 1 !important; }`;
+    document.head.append(style);
+  }, limits.grips);
+  try {
+    const dom = await page.evaluate(measureInPage, limits);
+    const scale = await page.evaluate(() => window.devicePixelRatio);
+    const margin = 6;
+    const grips: V2GripMeasure[] = [];
+    const grip = [...dom.grip];
+    for (const measure of dom.grips) {
+      if (!measure.line) continue;
+      const { left, top, width, height } = measure.rect;
+      // A clip on whole CSS pixels, so the engine never resamples the picture.
+      const x = Math.floor(left - margin);
+      const y = Math.floor(top - margin);
+      const png = await page.screenshot({
+        clip: { x, y, width: Math.ceil(width + 2 * margin) + 1, height: Math.ceil(height + 2 * margin) + 1 },
+        scale: "device",
+        animations: "disabled",
+        caret: "hide",
+      });
+      const pixels = await page.evaluate(gripPixelsInPage, {
+        png: png.toString("base64"),
+        scale,
+        left: left - x,
+        top: top - y,
+        width,
+        height,
+      });
+      grips.push({ grip: measure.grip, dom: measure.dom, pixels: pixels?.offset ?? null, lineWidth: pixels?.lineWidth ?? null });
+      if (!pixels) grip.push(`grip ${measure.grip}: pill or line not found in the screenshot at DPR ${scale}`);
+      else {
+        if (Math.abs(pixels.offset) > gripTolerance)
+          grip.push(`grip ${measure.grip}: pill centre ${pixels.offset} px off its line in the screenshot at DPR ${scale}`);
+        if (Math.abs(pixels.lineWidth - hairline.width) > 0.01)
+          grip.push(`grip ${measure.grip}: its line is ${pixels.lineWidth} px wide in the screenshot at DPR ${scale}`);
+      }
     }
+    // The DOM measurement and the screenshots are separate round trips; a grip that moved in between was not measured.
+    if (dom.grips.length) {
+      const now = await page.evaluate(
+        ({ root, grips: selector }) =>
+          Array.from(document.querySelector(root)?.querySelectorAll(selector) ?? [])
+            .filter((element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
+            .map((element) => element.getBoundingClientRect())
+            .filter((r) => r.width > 0 && r.height > 0)
+            .map((r) => [r.left, r.top, r.width, r.height]),
+        { root: limits.root, grips: limits.grips },
+      );
+      const then = dom.grips.map(({ rect }) => [rect.left, rect.top, rect.width, rect.height]);
+      if (JSON.stringify(now) !== JSON.stringify(then))
+        grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
+    }
+    const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
+    return {
+      edge: dom.edge,
+      double: dom.double,
+      inside: dom.inside,
+      cut: dom.cut,
+      type: dom.type,
+      grip,
+      grips,
+      pseudo: dom.pseudo,
+      measured: dom.measured,
+      problems,
+    };
+  } finally {
+    await page.evaluate(() => document.getElementById("k2-measure-grips")?.remove());
   }
-  // The DOM measurement and the screenshots are separate round trips; a grip that moved in between was not measured.
-  if (dom.grips.length) {
-    const now = await page.evaluate(
-      ({ root, grips: selector }) =>
-        Array.from(document.querySelector(root)?.querySelectorAll(selector) ?? [])
-          .filter((element) => element.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
-          .map((element) => element.getBoundingClientRect())
-          .filter((r) => r.width > 0 && r.height > 0)
-          .map((r) => [r.left, r.top, r.width, r.height]),
-      { root: limits.root, grips: limits.grips },
-    );
-    const then = dom.grips.map(({ rect }) => [rect.left, rect.top, rect.width, rect.height]);
-    if (JSON.stringify(now) !== JSON.stringify(then))
-      grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
-  }
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
-  return {
-    edge: dom.edge,
-    double: dom.double,
-    inside: dom.inside,
-    cut: dom.cut,
-    type: dom.type,
-    grip,
-    grips,
-    pseudo: dom.pseudo,
-    measured: dom.measured,
-    problems,
-  };
 }

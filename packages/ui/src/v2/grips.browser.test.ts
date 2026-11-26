@@ -339,6 +339,95 @@ test("a drag ends when the grip loses the pointer capture", async () => {
   });
 });
 
+// Grips show only on demand (design review 26.11.: grips at rest made every table head and divider busy). Only their
+// opacity changes, so nothing moves; a hidden grip still takes the pointer.
+const shown = (page: Page) =>
+  page.evaluate(
+    (selectors) =>
+      Object.fromEntries(Object.entries(selectors).map(([name, s]) => [name, getComputedStyle(document.querySelector(s)!).opacity])),
+    grips,
+  );
+const boxes = (page: Page) =>
+  page.evaluate(
+    (selectors) =>
+      [...Object.values(selectors), ".k2-ws-side", ".k2-table th:nth-child(1)"].map((s) => {
+        const r = document.querySelector(s)!.getBoundingClientRect();
+        return [r.left, r.top, r.width, r.height];
+      }),
+    grips,
+  );
+
+test("1440: grips rest hidden and show under the pointer along their line and in the head, on keyboard focus and while dragged, without moving anything", async () => {
+  await withPage(async (page) => {
+    const rest = await boxes(page);
+    expect(await shown(page)).toEqual({ side: "0", list: "0", info: "0", subject: "0" });
+    // the line of the sidebar, well below its pill
+    const side = await page.locator(grips.side).boundingBox();
+    if (!side) throw new Error("no sidebar grip");
+    await page.mouse.move(side.x + side.width / 2, side.y + 200);
+    await settled(page);
+    expect(await shown(page)).toEqual({ side: "1", list: "0", info: "0", subject: "0" });
+    // the head of the table, on a column's words
+    const head = await page.locator(".k2-table th:nth-child(3)").boundingBox();
+    if (!head) throw new Error("no head");
+    await page.mouse.move(head.x + head.width / 2, head.y + head.height / 2);
+    await settled(page);
+    expect(await shown(page)).toEqual({ side: "0", list: "0", info: "0", subject: "1" });
+    expect(await boxes(page)).toEqual(rest);
+    // away from every line: hidden again; then the keyboard reaches the first grip
+    await page.mouse.move(5, 795);
+    await settled(page);
+    expect(await shown(page)).toEqual({ side: "0", list: "0", info: "0", subject: "0" });
+    for (
+      let step = 0;
+      step < 10 && (await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))) !== "Breite der Ordner";
+      step++
+    )
+      await page.keyboard.press("Tab");
+    await settled(page);
+    expect(await shown(page)).toEqual({ side: "1", list: "0", info: "0", subject: "0" });
+    // a hidden grip takes the pointer: a press on the list's line drags it, and it shows while it is dragged
+    await page.locator(grips.list).evaluate((grip) => grip.blur());
+    await drag(page, grips.list, 20);
+    expect(await page.locator(`${grips.list}[data-dragging]`).count()).toBe(1);
+    expect((await shown(page)).list).toBe("1");
+    await page.mouse.up();
+    await widths(page, { list: 380 });
+    await page.mouse.move(5, 795);
+    await page.locator(grips.list).evaluate((grip) => grip.blur());
+    await settled(page);
+    expect((await shown(page)).list).toBe("0");
+  });
+});
+
+// Without hover (a touch screen) the seam grips stay, and a table's grips show while its head is pressed or holds
+// the focus.
+test("touch: seam grips stay; table grips show while the head holds the focus", async () => {
+  await withPage(
+    async (page) => {
+      // the page sees a touch screen: no hover
+      expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
+      expect(await shown(page)).toEqual({ side: "1", list: "1", info: "1", subject: "0" });
+      await page.locator(grips.subject).focus();
+      await settled(page);
+      expect((await shown(page)).subject).toBe("1");
+    },
+    { touch: true },
+  );
+});
+
+test("390: no grip shows on the phone", async () => {
+  await withPage(async (page) => {
+    await page.setViewportSize({ width: 390, height: 800 });
+    await settled(page);
+    const seen = await page.evaluate(
+      () => [...document.querySelectorAll(".k2-grip, .k2-cgrip")].filter((grip) => grip.checkVisibility({ opacityProperty: true })).length,
+    );
+    expect(seen).toBe(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  });
+});
+
 test("every grip is a named separator in the tab order and the page passes axe", async () => {
   await withPage(async (page) => {
     for (const grip of Object.values(grips)) {
