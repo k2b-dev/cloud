@@ -485,9 +485,98 @@ test("a row of 1024 px with marks={false} is the row without marks: no empty gro
   expect(results[1]!.group).toBe(false);
 });
 
-// The bar of what can be done with the selected entries (W1b, Files): seven actions need about 1290 px, more than
-// Files' 1117 px list beside its sidebar. The actions that do not fit go whole into a "…" menu from the end; the count
-// is never cut, no action is cut, the way out stays, and every action stays reachable, in its order.
+// The bar of what can be done with the selected entries (W1b, Files): seven actions need more room than Files' 1117 px
+// list beside its sidebar in Chromium's fonts. The actions that do not fit go whole into a "…" menu from the end; the
+// count is never cut, no action is cut, the "…" stands right after the last action in sight, the way out stays at the
+// end of the bar, and every action stays reachable, in its order.
+const allActions = ["Herunterladen", "Teilen", "Verschieben", "Kopieren", "Umbenennen", "Als Favorit markieren", "In den Papierkorb"];
+
+/** Sets the column (the width of the rows) without the window, as `withPage` does, and waits for the bar to settle. */
+const setColumn = async (page: Page, column: number) => {
+  await page.evaluate((wanted) => {
+    const root = document.getElementById("root")!;
+    const pane = document.querySelector(".k2-pane")!;
+    root.style.width = `${root.getBoundingClientRect().width + wanted - pane.getBoundingClientRect().width}px`;
+  }, column);
+  await settled(page);
+};
+
+/**
+ * The selection bar: the count, each action (in sight or not, whole, inside the row), the "…" and the way out, and the
+ * room of the actions beside what they need on one line. Self-contained (Playwright sends its source).
+ */
+const selectionBar = () => {
+  const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+  const box = row.getBoundingClientRect();
+  const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
+  const count = row.querySelector<HTMLElement>(".k2-status-lead")!;
+  const buttons = [...row.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].filter(
+    (button) => !button.closest("[data-k2-part=Menu]"),
+  );
+  const named = (button: HTMLElement) => button.textContent?.trim() || button.getAttribute("aria-label") || "";
+  const seen = (button: HTMLElement) => {
+    const rect = button.getBoundingClientRect();
+    if (getComputedStyle(button).visibility === "hidden" || rect.width === 0) return false;
+    // in sight: on the bar's one line
+    return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
+  };
+  const more = buttons.find((button) => button.getAttribute("aria-haspopup") === "menu");
+  const clear = buttons.find((button) => named(button) === "Auswahl aufheben");
+  const actions = buttons.filter((button) => button !== more && button !== clear);
+  const lastSeen = actions.filter(seen).at(-1);
+  const room = row.querySelector(".k2-status-actions")!.getBoundingClientRect().width;
+  const line = row.querySelector(".k2-status-line")!;
+  const gap = Number.parseFloat(getComputedStyle(line).columnGap);
+  const items = [...line.children].map((item) => item.getBoundingClientRect().width);
+  return {
+    count: {
+      whole: count.scrollWidth <= count.clientWidth + 0.5,
+      text: count.textContent?.trim(),
+      font: `${getComputedStyle(count).fontWeight} ${getComputedStyle(count).fontSize}`,
+    },
+    actions: actions.map((button) => ({
+      name: named(button),
+      seen: seen(button),
+      whole: button.scrollWidth <= button.clientWidth + 0.5,
+      inside: button.getBoundingClientRect().right <= inner + 0.5,
+    })),
+    // the gap from the last action in sight to the "…" (or to the count, with every action in the menu)
+    moreAfter: more ? more.getBoundingClientRect().left - (lastSeen ?? count).getBoundingClientRect().right : undefined,
+    clear: clear && {
+      seen: seen(clear),
+      whole: clear.scrollWidth <= clear.clientWidth + 0.5,
+      endGap: inner - clear.getBoundingClientRect().right,
+    },
+    // what all the actions need on one line beyond their room (negative: room to spare)
+    over: items.reduce((sum, width) => sum + width, 0) + gap * (items.length - 1) - room,
+    focused: document.activeElement instanceof HTMLElement ? named(document.activeElement) : "",
+  };
+};
+type SelectionBar = ReturnType<typeof selectionBar>;
+
+/** Every action in sight is whole and inside, they are the first ones, the rest are in the "…" in their order. */
+const expectBar = async (page: Page, found: SelectionBar) => {
+  expect({ whole: found.count.whole, text: found.count.text }).toEqual({ whole: true, text: "12 ausgewählt" });
+  // the way out stays, whole, at the end of the bar
+  expect(found.clear).toEqual({ seen: true, whole: true, endGap: found.clear?.endGap ?? 0 });
+  expect(Math.abs(found.clear?.endGap ?? 99)).toBeLessThanOrEqual(0.5);
+  for (const action of found.actions.filter((action) => action.seen)) expect(action).toEqual({ ...action, whole: true, inside: true });
+  const inSight = found.actions.filter((action) => action.seen).map((action) => action.name);
+  expect(inSight).toEqual(allActions.slice(0, inSight.length));
+  const rest = allActions.slice(inSight.length);
+  if (rest.length === 0) expect(found.moreAfter).toBeUndefined();
+  else {
+    // the "…" stands right after the last action in sight, one gap of 8 px
+    expect(Math.abs((found.moreAfter ?? 99) - 8)).toBeLessThanOrEqual(0.5);
+    await page.locator('[data-k2-part="StatusRow"]').getByRole("button", { name: "Weitere Aktionen" }).click();
+    const items = await page.getByRole("menuitem").allTextContents();
+    expect(items.map((item) => item.trim())).toEqual(rest);
+    await page.keyboard.press("Escape");
+    await settled(page);
+  }
+  return rest;
+};
+
 for (const [width, column] of [
   [1440, 1117],
   [1440, 1024],
@@ -498,56 +587,61 @@ for (const [width, column] of [
       async (page) => {
         await page.evaluate(() => window.__k2Selection?.());
         await settled(page);
-        const found = await page.evaluate(() => {
-          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
-          const box = row.getBoundingClientRect();
-          const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
-          const count = row.querySelector<HTMLElement>(".k2-status-lead")!;
-          const actions = [...row.querySelectorAll<HTMLElement>(".k2-bar-start .k2-btn")].filter(
-            (button) => !button.closest("[data-k2-part=Menu]") && button.getAttribute("aria-haspopup") !== "menu",
-          );
-          const seen = (button: HTMLElement) => {
-            const rect = button.getBoundingClientRect();
-            if (getComputedStyle(button).visibility === "hidden" || rect.width === 0) return false;
-            // in sight: not wrapped below the bar's one line
-            return rect.top >= box.top - 0.5 && rect.bottom <= box.bottom + 0.5;
-          };
-          return {
-            count: { whole: count.scrollWidth <= count.clientWidth + 0.5, text: count.textContent?.trim() },
-            buttons: actions.map((button) => ({
-              name: button.textContent?.trim() || button.getAttribute("aria-label") || "",
-              seen: seen(button),
-              whole: button.scrollWidth <= button.clientWidth + 0.5,
-              inside: button.getBoundingClientRect().right <= inner + 0.5,
-            })),
-          };
-        });
-        expect(found.count).toEqual({ whole: true, text: "12 ausgewählt" });
-        const all = ["Herunterladen", "Teilen", "Verschieben", "Kopieren", "Umbenennen", "Als Favorit markieren", "In den Papierkorb"];
-        const actions = found.buttons.filter((button) => all.includes(button.name));
-        const clear = found.buttons.find((button) => button.name === "Auswahl aufheben");
-        // the way out stays, whole, inside the row
-        expect(clear).toEqual({ name: "Auswahl aufheben", seen: true, whole: true, inside: true });
-        // every action in sight is whole and inside; the ones in sight are the first ones
-        for (const action of actions.filter((action) => action.seen)) expect(action).toEqual({ ...action, whole: true, inside: true });
-        const inSight = actions.filter((action) => action.seen).map((action) => action.name);
-        expect(inSight).toEqual(all.slice(0, inSight.length));
-        // the rest is in the "…" menu, in its order
-        const rest = all.slice(inSight.length);
-        const row = page.locator('[data-k2-part="StatusRow"]');
-        if (rest.length === 0) expect(await row.getByRole("button", { name: "Weitere Aktionen" }).count()).toBe(0);
-        else {
-          await row.getByRole("button", { name: "Weitere Aktionen" }).click();
-          const items = await page.getByRole("menuitem").allTextContents();
-          expect(items.map((item) => item.trim())).toEqual(rest);
-        }
-        // at 1024 px and below, seven actions do not fit beside the count and the way out in the test browsers: some go
-        // into the menu (at 1117 px that depends on the font's widths, so there only the rules above hold)
-        if (column <= 1024) expect(rest.length).toBeGreaterThan(0);
+        const found = await page.evaluate(selectionBar);
+        // the count reads in the body's size, strong: 14 px, 600
+        expect(found.count.font).toBe("600 14px");
+        const rest = await expectBar(page, found);
+        // the actions are in the menu exactly when they need more than their room
+        expect(rest.length > 0).toBe(found.over > 0.01);
       },
       { width, column },
     );
   });
+
+// Whatever the fonts: from the actions' widths measured in the browser, the column a pixel wider than the seven need
+// shows all seven and no "…"; a pixel narrower puts the last one into the "…"; back at the wider one all seven stand
+// again, as on a fresh load (the same width gives the same bar however it was reached).
+test("the selection bar a pixel beyond what its seven actions need: all seven; a pixel short: the last in the menu; back: all seven", async () => {
+  await withPage(
+    async (page) => {
+      await page.evaluate(() => window.__k2Selection?.());
+      await settled(page);
+      const wide = await page.evaluate(selectionBar);
+      expect(wide.over).toBeLessThan(0);
+      // the column at which the seven fill their room exactly (the room grows with the column, pixel by pixel)
+      const need = 1200 + wide.over;
+      const beyond = Math.ceil(need) + 1;
+      const short = Math.floor(need) - 1;
+      await setColumn(page, beyond);
+      expect(await expectBar(page, await page.evaluate(selectionBar))).toEqual([]);
+      await setColumn(page, short);
+      expect(await expectBar(page, await page.evaluate(selectionBar))).toEqual(["In den Papierkorb"]);
+      await setColumn(page, beyond);
+      expect(await expectBar(page, await page.evaluate(selectionBar))).toEqual([]);
+    },
+    { width: 1440, column: 1200 },
+  );
+});
+
+// An action that holds the focus and goes into the menu hands the focus to the "…", so it never falls to the page.
+test('the selection bar gives the focus of an action that goes into the menu to the "…"', async () => {
+  await withPage(
+    async (page) => {
+      await page.evaluate(() => window.__k2Selection?.());
+      await settled(page);
+      const row = page.locator('[data-k2-part="StatusRow"]');
+      await row.getByRole("button", { name: "Umbenennen" }).focus();
+      await settled(page);
+      expect((await page.evaluate(selectionBar)).focused).toBe("Umbenennen");
+      await setColumn(page, 700);
+      const found = await page.evaluate(selectionBar);
+      expect(found.actions.find((action) => action.name === "Umbenennen")?.seen).toBe(false);
+      expect(found.focused).toBe("Weitere Aktionen");
+      await expectBar(page, found);
+    },
+    { width: 1440, column: 1024 },
+  );
+});
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {

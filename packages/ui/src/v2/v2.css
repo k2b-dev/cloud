@@ -2916,14 +2916,26 @@
 .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-btn[data-variant="text"] > .k2-icon {
   display: none;
 }
-/* The count never shrinks; the actions stand on one line that hides what wraps, and the ones without room go whole into
-   the "…" after them (measured in the browser, as the tabs of a head). The empty first item lets even the first action
-   go whole. An action that went into the menu is out of sight and out of the Tab key's way. */
+/* The count never shrinks and reads in the body's size, strong. The actions take the room up to the way out, so the way
+   out always stands at the end of the bar; they stand on one line that hides what wraps, and the ones without room go
+   whole into the "…" right after the last one in sight (measured in the browser, as the tabs of a head). An action in
+   the menu leaves the line but keeps its width to be measured again; it is out of sight and out of the Tab key's way.
+   The empty first item lets even the first action wrap whole before the script runs. */
 .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-lead {
   flex: none;
   max-width: none;
+  font: var(--k2-t-body);
+  font-weight: 600;
 }
 .k2-ui .k2-bar[data-selecting] > .k2-bar-start > .k2-status-actions {
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  gap: 8px;
+  min-width: 0;
+}
+.k2-ui .k2-status-line {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2933,15 +2945,25 @@
   height: var(--k2-h-control-small);
   overflow: hidden;
 }
-.k2-ui .k2-status-actions::before {
+.k2-ui .k2-status-line::before {
   content: "";
   height: var(--k2-h-control-small);
   margin-inline-end: -8px;
 }
-.k2-ui .k2-status-action {
+/* with every action in the menu, the "…" stands where the first would */
+.k2-ui .k2-status-line:not(:has(> .k2-status-action:not([data-overflow]))) {
+  margin-inline-end: -8px;
+}
+.k2-ui .k2-status-action,
+.k2-ui .k2-status-more {
   display: flex;
+  flex: none;
+  white-space: nowrap;
 }
 .k2-ui .k2-status-action[data-overflow] {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-start: 0;
   visibility: hidden;
 }
 @container k2-status (max-width: 599px) {

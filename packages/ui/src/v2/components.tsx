@@ -297,6 +297,76 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
 };
 
 /**
+ * How many items of a line have room, from its start (`Infinity` while all have room); the items after them hide whole
+ * and go into a menu after the line (the tabs of a head, the actions of a selection bar). Measured in the browser from
+ * the items' own widths, so one width gives one result however it was reached; the server sends every item. When the
+ * item that holds the focus hides, the focus goes to the menu, so it never falls back to the page.
+ */
+const createLineFit = (parts: {
+  /** The line; its element children are the items, in order, each as wide as it needs, hidden ones too. */
+  line: () => HTMLElement | undefined;
+  /** The room of the items while no menu has to stand beside them, and what the menu takes of it when it must. */
+  room: () => { room: number; menu: number };
+  /** The menu the hidden items go into, while it stands. */
+  menu: () => HTMLElement | undefined;
+}) => {
+  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
+  onMount(() => {
+    const line = parts.line();
+    const around = line?.parentElement;
+    if (!line || !around) return;
+    const measure = () => {
+      const items = [...line.children].filter((child): child is HTMLElement => child instanceof HTMLElement);
+      const gap = Number.parseFloat(getComputedStyle(line).columnGap) || 0;
+      const { room, menu } = parts.room();
+      let used = 0;
+      const ends = items.map((item, index) => {
+        used += item.getBoundingClientRect().width + (index > 0 ? gap : 0);
+        return used;
+      });
+      // never more generous than the browser, which wraps an item that is over by any part of a pixel
+      const next = used <= room + 0.01 ? Number.POSITIVE_INFINITY : ends.filter((end) => end + menu <= room + 0.01).length;
+      const focused = document.activeElement;
+      const hides = focused !== null && items.slice(next).some((item) => item.contains(focused));
+      setFit(next);
+      if (!hides) return;
+      const menuOf = parts.menu();
+      const button = menuOf?.matches("button, a[href]") ? menuOf : menuOf?.querySelector<HTMLElement>("button, a[href]");
+      button?.focus();
+    };
+    // What the measurement changes (the menu comes, its count grows from "+8" to "+12") can change the room again. So
+    // it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a resize
+    // loop); the next frame measures what it changed. An item, the line, the room around it and the menu all count.
+    let frame = 0;
+    const later = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        measure();
+      });
+    };
+    measure();
+    const sizes = new ResizeObserver(later);
+    const watchAll = () => {
+      for (const element of [line, around, ...line.children, ...around.children]) sizes.observe(element);
+    };
+    const changes = new MutationObserver(() => {
+      watchAll();
+      later();
+    });
+    watchAll();
+    changes.observe(line, { childList: true });
+    changes.observe(around, { childList: true });
+    onCleanup(() => {
+      cancelAnimationFrame(frame);
+      sizes.disconnect();
+      changes.disconnect();
+    });
+  });
+  return fit;
+};
+
+/**
  * The views of a head or of an object. In the start of a head bar they share it with the actions and give way to
  * them; as the head of a pane they are a bar of their own, 44 px. The open tab stands on the line of its bar. Each
  * tab is a link or a button the Tab key reaches; a tab with `menu` is the button of a menu of further views and
@@ -310,51 +380,26 @@ export const Tabs = (props: TabsProps) => {
   const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
-  // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
-  // Measured in the browser; the server sends every tab, and the stylesheet already hides what wraps.
-  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
+  // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows (the
+  // stylesheet already hides what wraps before the script runs). A tab with a menu always stands beside the line; the
+  // menu "More" stands only while tabs hide, so its own room counts only then.
+  let nav: HTMLElement | undefined;
   let row: HTMLDivElement | undefined;
-  onMount(() => {
-    if (!row) return;
-    const measure = () => {
-      const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
-      const first = tabs[0]?.offsetTop ?? 0;
-      const index = tabs.findIndex((tab) => tab.offsetTop > first + 1);
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
-    };
-    // What the measurement changes (the count of the menu tab, "+8" to "+12") can change the room of the tabs again.
-    // So it runs in the next frame, once per frame, never inside the observer's own turn (WebKit reports that as a
-    // resize loop); the next frame measures what it changed.
-    let frame = 0;
-    const later = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    measure();
-    const sizes = new ResizeObserver(later);
-    sizes.observe(row);
-    const watchAll = () => {
-      for (const child of row?.children ?? []) sizes.observe(child);
-    };
-    const parts = new MutationObserver(() => {
-      watchAll();
-      later();
-    });
-    watchAll();
-    parts.observe(row, { childList: true });
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      sizes.disconnect();
-      parts.disconnect();
-    });
+  const menuTab = () => [...(nav?.querySelectorAll<HTMLElement>(":scope > .k2-tab[data-menu]") ?? [])].at(-1);
+  const fit = createLineFit({
+    line: () => row,
+    room: () => {
+      const line = row?.getBoundingClientRect().width ?? 0;
+      const more = withMenu().length === 0 ? menuTab() : undefined;
+      const takes = more && nav ? more.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(nav).columnGap) || 0) : 0;
+      return { room: line + takes, menu: takes };
+    },
+    menu: menuTab,
   });
   const hidden = () => plain().slice(fit());
   const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
-    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
+    <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label} ref={nav}>
       <div class="k2-tabs" ref={row}>
         <Index each={plain()}>
           {(tab, index) => (
@@ -483,51 +528,38 @@ export type StatusRowProps = {
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
    * actions, and the way out. The count is never cut; actions without room go whole into a "…" menu from the end, in
-   * their order (in a column below 600 px they first keep only their symbols, below 400 px the way out its ×).
+   * their order (in a column below 600 px they first keep only their symbols, below 400 px the way out its ×). The "…"
+   * stands right after the last action in sight, the way out always at the end of the bar. Known: the server sends
+   * every action and no "…" (the browser measures, as for tabs), so a bar drawn on the server hides what has no room
+   * and gets its "…" after the page loads; a selection is made in the browser, where the bar comes whole.
    */
   selection?: { count: string; actions: readonly Action[]; clear: Action };
 };
 
 /**
- * The actions of a selection bar, as the tabs of a head give way: they stand on one line that hides what wraps, and the
- * ones without room go whole into a "…" menu from the end, in their order, so none is cut and every one stays
- * reachable. In a narrow column they keep only their symbols first (the stylesheet), so more stay in the bar. Measured
- * in the browser; the server sends every action, and the stylesheet already hides what wraps.
+ * The actions of a selection bar, as the tabs of a head give way: the ones without room go whole into a "…" menu from
+ * the end, in their order, so none is cut and every one stays reachable. The "…" stands right after the last action
+ * in sight; the actions take the room up to the way out, which so always stands at the end of the bar. In a narrow
+ * column they keep only their symbols first (the stylesheet), so more stay in the bar. Measured in the browser; the
+ * server sends every action on one line that hides what wraps.
  */
 const SelectionActions = (props: { actions: readonly Action[] }) => {
-  const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
-  let row: HTMLDivElement | undefined;
-  onMount(() => {
-    if (!row) return;
-    const measure = () => {
-      const buttons = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
-      // an action that wrapped below the row's one line has no room (even the first may wrap, after the empty item)
-      const top = row?.getBoundingClientRect().top ?? 0;
-      const index = buttons.findIndex((button) => button.getBoundingClientRect().top > top + 1);
-      setFit(index < 0 ? Number.POSITIVE_INFINITY : index);
-    };
-    // as the tabs: once per frame, never inside the observer's own turn (WebKit reports that as a resize loop)
-    let frame = 0;
-    const later = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        measure();
-      });
-    };
-    measure();
-    const sizes = new ResizeObserver(later);
-    sizes.observe(row);
-    for (const child of row.children) sizes.observe(child);
-    onCleanup(() => {
-      cancelAnimationFrame(frame);
-      sizes.disconnect();
-    });
+  let room: HTMLDivElement | undefined;
+  let line: HTMLDivElement | undefined;
+  const menu = () => room?.querySelector<HTMLElement>(":scope > .k2-status-more") ?? undefined;
+  const fit = createLineFit({
+    line: () => line,
+    room: () => {
+      const more = menu();
+      const takes = more && room ? more.getBoundingClientRect().width + (Number.parseFloat(getComputedStyle(room).columnGap) || 0) : 0;
+      return { room: room?.getBoundingClientRect().width ?? 0, menu: takes };
+    },
+    menu,
   });
   const hidden = () => props.actions.slice(fit());
   return (
-    <>
-      <div class="k2-status-actions" ref={row}>
+    <div class="k2-status-actions" ref={room}>
+      <div class="k2-status-line" ref={line}>
         <Index each={props.actions}>
           {(action, index) => (
             <span class="k2-status-action" data-overflow={index >= fit() ? "" : undefined}>
@@ -537,18 +569,20 @@ const SelectionActions = (props: { actions: readonly Action[] }) => {
         </Index>
       </div>
       <Show when={hidden().length > 0}>
-        <Menu
-          items={hidden().map((action) => ({
-            label: action.label,
-            icon: action.icon,
-            href: action.href,
-            onNavigate: action.onNavigate,
-            onClick: action.onClick,
-            disabled: action.disabled,
-          }))}
-        />
+        <span class="k2-status-more">
+          <Menu
+            items={hidden().map((action) => ({
+              label: action.label,
+              icon: action.icon,
+              href: action.href,
+              onNavigate: action.onNavigate,
+              onClick: action.onClick,
+              disabled: action.disabled,
+            }))}
+          />
+        </span>
       </Show>
-    </>
+    </div>
   );
 };
 
