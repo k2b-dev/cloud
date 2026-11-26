@@ -16,6 +16,8 @@ export type SegmentedControlProps<T extends string = string> = {
   ariaLabel?: string;
   label?: string;
   size?: "sm" | "md";
+  /** Fill the available width and give every option the same share. Without it the control is as wide as its options. */
+  stretch?: boolean;
   class?: string;
 };
 
@@ -59,6 +61,7 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
     <div
       class={`k2b-segmented-control ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
+      data-stretch={props.stretch ? "" : undefined}
       role="radiogroup"
       aria-label={props.ariaLabel ?? props.label ?? messages().options}
       aria-orientation="horizontal"

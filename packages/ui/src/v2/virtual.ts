@@ -9,7 +9,9 @@ import { indexAtOffset, prefixOffsets } from "../content/virtual-sizes";
  * uses (`virtual-sizes.ts`), measured once a row was shown and kept under its key.
  *
  * - **Server and first render:** the first rows that fill a tall screen (`SERVER_ROWS`), the rest as padding; the
- *   browser's first render is the same, then the window follows the column's scroll. Nothing moves on hydration.
+ *   browser's first render is the same, then the window follows the column's scroll. Nothing moves on hydration. A
+ *   list of at most `SERVER_ROWS` entries (group heads count) has no window: it stays whole, as the server sent it,
+ *   also where it stands far below the view.
  * - **Focus:** the row that holds the focus stays in the page while it scrolls out of the window, parked right beside
  *   it out of view, so the focus never falls to the page.
  */
@@ -195,7 +197,8 @@ export const createVirtualWindow = <T>(options: {
       const top = scrolledIn();
       const height = scroller ? scroller.clientHeight : window.innerHeight;
       const count = keys.length;
-      if (count === 0) return setRange({ start: 0, end: 0 });
+      // a list the server sent whole stays whole: the live page is what it sent, wherever the list stands
+      if (count <= SERVER_ROWS) return setRange({ start: 0, end: count });
       anchor = (scroller ? scroller.scrollTop : window.scrollY) > 0 && top > 0 ? readAnchor() : null;
       const start = indexAtOffset(offsets, count, Math.max(0, top - OVERSCAN));
       const end = Math.min(count, indexAtOffset(offsets, count, Math.max(0, top + height + OVERSCAN)) + 1);
