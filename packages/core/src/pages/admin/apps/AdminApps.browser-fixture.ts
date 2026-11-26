@@ -19,6 +19,7 @@ import {
   fixtureRejection,
   fixtureReplacementKey,
 } from "./AdminApps.fixture-data";
+import type { AppInput } from "./model";
 
 /** States the captures and tests switch with `?state=`, next to the page's own `app`, `view`, `window` and `moved`. */
 export type AdminAppsFixtureState =
@@ -41,7 +42,10 @@ export type AdminAppsFixtureState =
   | "domains-empty"
   | "domains-error"
   | "domains-partial"
-  | "revoke-fail";
+  | "revoke-fail"
+  // break-ui: realistic worst-case values in the first rows, and an installation with very many apps
+  | "worst"
+  | "many";
 
 const rejectionFor = (state: AdminAppsFixtureState, id: string) =>
   fixtureRejection(id, state === "start-disabled" ? "disabled" : "revoked");
@@ -160,7 +164,34 @@ export async function adminAppsBrowserFixture(options: { port?: number } = {}) {
             ? { ...app, keys: { ...app.keys, active: 1 } }
             : app,
       );
-    const apps = sortApps(inputs.map(deriveApp), locale);
+    const worst = (app: AppInput): AppInput =>
+      app.id === "chat"
+        ? {
+            ...app,
+            name: "Zeiterfassung und Abwesenheitsplanung Werkstatt Nord-Ost",
+            routes: [
+              "/zeiterfassung-und-abwesenheitsplanung",
+              "/api/zeiterfassung-und-abwesenheitsplanung/v2/export/csv",
+              "/public/zeiterfassung",
+            ],
+            numbers: [{ ...app.numbers[0]!, traffic: { requests: 12_345_678, errors: 98_765, avgMs: 12_840 } }],
+          }
+        : app.id === "files"
+          ? { ...app, name: "Ö", accent: null, release: null, instances: null }
+          : app.id === "grids"
+            ? { ...app, name: "📊 Kennzahlen 2027 – Vertrieb & Controlling" }
+            : app.id === "lager"
+              ? { ...app, name: "Λογιστήριο" }
+              : app;
+    // the realistic upper bound of deployed services; the list is not virtualized (k2b-ui gap, lane MW)
+    const many = Array.from({ length: 150 }, (_, index) => ({
+      ...fixtureApps()[index % 3]!,
+      id: `app-${String(index + 1).padStart(4, "0")}`,
+      name: `Werkstatt-App ${index + 1}`,
+      routes: [`/app-${index + 1}`],
+    }));
+    const listed = state === "worst" ? inputs.map(worst) : state === "many" ? [...inputs, ...many] : inputs;
+    const apps = sortApps(listed.map(deriveApp), locale);
     const entry = apps.find((app) => app.id === query.app);
     const details = entry && state !== "core-fail" && entry.coreKnows && !entry.neverStarted ? fixtureDetails(entry.id, entry.name) : null;
     const keys = entry ? keysFor(state, entry.id) : [];

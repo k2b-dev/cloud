@@ -82,7 +82,7 @@ export const appsPageMessages = i18n.define({
         [requests, `${rate} errors`, ms].filter(Boolean).join(" · "),
       noMeasurements: "No measurements",
       unavailable: "Not available",
-      errorsValue: ({ count }: N) => (count === 0 ? "None in 24 h" : `${count} in 24 h`),
+      errorsValue: ({ count, shown }: N & { shown: string }) => (count === 0 ? "None in 24 h" : `${shown} in 24 h`),
       accessValue: ({ people, groups }: { people: number; groups: number }) =>
         [
           i18n.plural(people, "en", { one: "1 person", other: `${people} people` }),
@@ -342,7 +342,7 @@ export const appsPageMessages = i18n.define({
         [requests, `${rate} Fehler`, ms].filter(Boolean).join(" · "),
       noMeasurements: "Keine Messdaten",
       unavailable: "Nicht verfügbar",
-      errorsValue: ({ count }: N) => (count === 0 ? "Keine in 24 h" : `${count} in 24 h`),
+      errorsValue: ({ count, shown }: N & { shown: string }) => (count === 0 ? "Keine in 24 h" : `${shown} in 24 h`),
       accessValue: ({ people, groups }: { people: number; groups: number }) =>
         [people === 1 ? "1 Person" : `${people} Personen`, groups ? (groups === 1 ? "1 Gruppe" : `${groups} Gruppen`) : ""]
           .filter(Boolean)

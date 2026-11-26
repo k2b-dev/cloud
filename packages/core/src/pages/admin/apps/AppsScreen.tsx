@@ -108,7 +108,8 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
   return (
     <AdminWorkspace
       nav={props.nav}
-      detail={520}
+      // with no app at all there is nothing to open: no empty half beside the empty list (identity rule 5)
+      detail={apps().length ? 520 : undefined}
       detailEmpty={{ icon: "apps", text: t().noneOpen }}
       head={
         <Bar
@@ -160,7 +161,11 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
           status={
             // k2b-ui gap: the hero band (one figure in the owner colour with its real trend) comes with DP; there is no
             // series of app states over time yet, so the statement stands without a trend
-            <StatusRow lead={props.data.list.state === "ok" ? t().summary({ total: apps().length, ...countStatuses(apps()) }) : t().apps} />
+            apps().length ? (
+              <StatusRow
+                lead={props.data.list.state === "ok" ? t().summary({ total: apps().length, ...countStatuses(apps()) }) : t().apps}
+              />
+            ) : undefined
           }
         >
           <Show when={query().moved}>
@@ -195,6 +200,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                       : { icon: "filter-off", text: t().noMatch, action: { label: t().showAllApps, href: appsHref({ app: query().app }) } }
                   }
                   phone={(entry) => ({
+                    mark: { icon: markIcon(entry.icon), color: entry.accent ?? undefined },
                     lines: [entry.name, `${statusLabel(t(), entry.status)} · ${entry.hints[0] ? problemLine(entry) : routesLine(entry)}`],
                   })}
                   columns={[
