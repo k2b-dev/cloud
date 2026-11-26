@@ -1,0 +1,6 @@
+### A small island inside a v2 container lost the container's layout
+
+- **What happened:** On the UI v2 migration, application lanes made each page one big screen island. A small island for one button, field or row, placed inside a v2 container, lost the spacing, edges and lines of its place, and `describeV2` reported its wrapper as a plain element that no primitive owns.
+- **Root cause:** `@k2b/ssr` renders every island in a `<solid-island>` element (a client in a `<solid-client>`) of `display: contents`. Boxes ignore that element, but CSS selectors do not: `.k2-bar-end > .k2-btn`, `:last-child` and `+` in `v2.css` saw the wrapper as the child or sibling, and the outline walked the DOM in the same way.
+- **Error class:** A layout wrapper that is invisible to boxes is still visible to child, sibling and structural selectors, and to code that walks children.
+- **Guard:** The build of `@k2b/ui` ships every relation of `v2.css` also through one wrapper (`packages/ui/scripts/v2-island-css.ts`), and fails on a selector form it cannot make transparent. `describeV2` skips wrappers. `packages/ui/src/v2/islands.browser.test.ts` renders every k2b-ui recipe at 1440 and 390 px with its controls, its blocks and its rows each in an island of its own, and checks the same boxes, drawn style, outline and layout measurement as without islands.

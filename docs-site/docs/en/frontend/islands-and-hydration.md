@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-19
+updated: 2026-11-25
 ---
 
 # Islands
@@ -50,6 +50,17 @@ This has two consequences:
   browser's clock during the first render. Pass the server's value as a prop,
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
+
+Each island renders inside a `<solid-island>` element, and each client
+component inside a `<solid-client>` element, with `display: contents`. Boxes
+ignore the wrapper, but CSS selectors do not: `.list > .row`, `:last-child`,
+and `+` see the wrapper as the child or the sibling. `@k2b/ui/v2.css` ships
+each such rule also through one wrapper, so a v2 primitive in an island keeps
+the layout of its place, and `describeV2` outlines it as if there were no
+island. An island that renders nothing changes no layout either:
+`:first-child`, `:last-child` and `:only-child` skip empty wrappers, and `+`
+steps over one. Your own CSS must allow for the wrapper in the same way, or select by
+descendant.
 
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same

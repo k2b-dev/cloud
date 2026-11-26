@@ -154,6 +154,31 @@ describe("describeV2", () => {
     expect(text).toContain('- Failed "Verbindung unterbrochen." stands in a bar: Failed replaces the data that did not load');
   });
 
+  test("looks through island wrappers: an island around a part changes nothing in the outline", () => {
+    const selectors = [
+      '[data-k2-part="Button"], [data-k2-part="Input"], [data-k2-part="Check"], [data-k2-part="Tabs"], [data-k2-part="Field"]',
+      '[data-k2-part="Bar"], [data-k2-part="Section"], [data-k2-part="Group"], [data-k2-part="List"], [data-k2-part="Notice"]',
+      '[data-k2-part="Row"], [data-k2-part="Cells.Cell"]',
+    ];
+    for (const name of Object.keys(fixtures) as (keyof typeof fixtures)[]) {
+      const markup = renderToString(() => createComponent(fixtures[name], {}));
+      const expected = outline(markup);
+      for (const selector of selectors) {
+        const window = new Window();
+        windows.push(window);
+        const document = window.document;
+        document.body.innerHTML = `<div class="k2-ui">${markup}</div>`;
+        const picked = [...document.querySelectorAll(selector)].filter((element) => !element.parentElement?.closest(selector));
+        picked.forEach((element, index) => {
+          const island = document.createElement(index % 2 ? "solid-client" : "solid-island");
+          element.replaceWith(island);
+          island.append(element);
+        });
+        expect(describeV2(document.body.firstElementChild as unknown as Element), `${name}: ${selector}`).toBe(expected);
+      }
+    }
+  });
+
   test("says so when nothing on the page is v2", () => {
     expect(outline("<p>Hallo</p>")).toContain("no v2 part found");
   });

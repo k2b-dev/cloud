@@ -3,7 +3,12 @@
 
    Everything stays below the v2 root `.k2-ui`, in its own namespace: classes start with `k2-`, custom properties
    with `--k2-`. A page can load this sheet beside the v1 sheet (`.k2b-ui`, `--k2b-*`) without either touching the
-   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own. */
+   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own.
+
+   Write relations as usual (`>`, `+`, `~`, `:first-child`, `:last-child`, `:has(> …)`): the build ships every one
+   also through an island wrapper of @k2b/ssr (scripts/v2-island-css.ts), so a primitive keeps its layout inside a
+   small island. A form that cannot do that (`:nth-*`, `:*-of-type`, `:empty`) fails the build; only placeholders
+   (`.k2-skel`) may use `:nth-*`. */
 
 .k2-ui {
   /* neutral scale */
