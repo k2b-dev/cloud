@@ -1,4 +1,4 @@
-import { afterAll, afterEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
 import { session } from "../services/session";
+import * as badges from "./app-badges";
 import { pwaMessages } from "./pwa-messages";
 import type { RuntimeContext } from "./runtime";
 
@@ -24,6 +25,7 @@ registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { defineApp } = await import("../_internal/define-app");
 const { default: PwaLayout } = await import("./PwaLayout");
+const { bareDrops } = await import("./PwaLayoutV2");
 const { useLocale } = await import("@k2b/ui");
 const { ssr } = defineApp({
   id: "inventory",
@@ -409,6 +411,12 @@ describe("PwaLayout", () => {
 
 // `ui="v2"`: the same page, its access and its redirects, in a v2 frame that loads Core's v2.css alone and no v1 shell.
 describe("PwaLayout ui v2", () => {
+  // The registered Core serves v2.css unless a test says otherwise.
+  let coreRoutes: ReturnType<typeof spyOn<typeof watcher, "registeredCoreRoutes">>;
+  beforeEach(() => {
+    coreRoutes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+  });
+  afterEach(() => coreRoutes.mockRestore());
   const v2Tabs = (document: Document) =>
     [...document.querySelectorAll<HTMLAnchorElement>(".pwa-v2-tabs a")].map((link) => ({
       href: link.getAttribute("href"),
@@ -432,52 +440,71 @@ describe("PwaLayout ui v2", () => {
   test("is a v2 page with Core's v2.css alone, its head, and no v1 shell", async () => {
     signIn("app");
     apps = [shell, part("inventory", "Inventory")];
-    const routes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
-    try {
-      const { response, html, document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
-      expect(response.status).toBe(200);
-      expect(document.title).toBe("Shelf");
-      const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map(
-        (link) => link.getAttribute("href") ?? "",
-      );
-      expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(true);
-      expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(false);
-      expect(document.body.classList.contains("k2-ui")).toBe(true);
-      // The document is the v2 frame, not a MobileShell.
-      expect(document.documentElement.hasAttribute("data-pwa-v2")).toBe(true);
-      expect(html).not.toMatch(v1Shell);
-      const frame = document.querySelector(".k2-ui.pwa-v2");
-      expect(frame?.getAttribute("data-ui")).toBe("v2");
-      // Without `bare` the frame holds the page in a Workspace with the head and one Pane.
-      const head = frame?.querySelector('[data-k2-part="Workspace"] [data-slot="head"]');
-      expect(head?.querySelector(".pwa-v2-title")?.textContent).toBe("Shelf");
-      expect(head?.querySelector('.pwa-v2-back a[href="/pwa/inventory"]')?.getAttribute("aria-label")).toBe("Items");
-      // Kept on the phone, where a v2 head's end would otherwise give way to a shell bar the app does not have.
-      expect(head?.querySelector(".k2-bar-end > .pwa-v2-actions[data-keep]")?.textContent).toBe("[[actions]]");
-      expect(frame?.querySelector('main [data-k2-part="Pane"]')?.textContent).toContain("[[locale:en]]");
-      expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
-        "no-referrer",
-        "frame-ancestors 'none'",
-      ]);
-    } finally {
-      routes.mockRestore();
-    }
+    const { response, html, document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
+    expect(response.status).toBe(200);
+    expect(document.title).toBe("Shelf");
+    const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.getAttribute("href") ?? "");
+    expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(true);
+    expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(false);
+    expect(document.body.classList.contains("k2-ui")).toBe(true);
+    // The document is the v2 frame, not a MobileShell.
+    expect(document.documentElement.hasAttribute("data-pwa-v2")).toBe(true);
+    expect(html).not.toMatch(v1Shell);
+    const frame = document.querySelector(".k2-ui.pwa-v2");
+    expect(frame?.getAttribute("data-ui")).toBe("v2");
+    // Without `bare` the frame holds the page in a Workspace with the head and one Pane.
+    const head = frame?.querySelector('[data-k2-part="Workspace"] [data-slot="head"]');
+    expect(head?.querySelector(".pwa-v2-title")?.textContent).toBe("Shelf");
+    expect(head?.querySelector('.pwa-v2-back a[href="/pwa/inventory"]')?.getAttribute("aria-label")).toBe("Items");
+    // Kept on the phone, where a v2 head's end would otherwise give way to a shell bar the app does not have.
+    expect(head?.querySelector(".k2-bar-end > .pwa-v2-actions[data-keep]")?.textContent).toBe("[[actions]]");
+    expect(frame?.querySelector('main [data-k2-part="Pane"]')?.textContent).toContain("[[locale:en]]");
+    expect([response.headers.get("referrer-policy"), response.headers.get("content-security-policy")]).toEqual([
+      "no-referrer",
+      "frame-ancestors 'none'",
+    ]);
   });
 
-  test("beside an older Core it keeps global.css, with the same frame", async () => {
+  test("beside an older Core, whose sheets have no v2 frame, the page keeps global.css and shows in the v1 frame", async () => {
     signIn("app");
     apps = [shell, part("inventory", "Inventory")];
-    const routes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css"]);
+    coreRoutes.mockReturnValue(["/public/global.css"]);
+    const { document } = await render("/pwa/inventory?ui=v2&title=Shelf&back=1");
+    const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map((link) => link.getAttribute("href") ?? "");
+    expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(true);
+    expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(false);
+    // Such a Core's sheets know the v1 frame only: none of the v2 frame's classes, and the document is a MobileShell.
+    expect(document.body.innerHTML).not.toContain("pwa-v2");
+    expect(document.documentElement.hasAttribute("data-k2b-mobile-shell")).toBe(true);
+    expect(document.querySelector("h1.k2b-mobile-shell__title")?.textContent).toBe("Shelf");
+    expect(document.querySelector('.k2b-mobile-shell__header a.k2b-mobile-shell__back[href="/pwa/inventory"]')).not.toBeNull();
+    expect(tabs(document).map((tab) => tab.label)).toEqual(["Start", "Inventory"]);
+    // The page's own v2 content stands in a v2 scope, in the app's v2 inks.
+    expect(document.querySelector(".k2b-mobile-shell .k2-ui[data-ui='v2']")?.textContent).toBe("[[locale:en]]");
+    expect(document.body.classList.contains("k2-ui")).toBe(false);
+  });
+
+  test("a badge on its tab says how many are unread; a tab has no tooltip", async () => {
+    signIn("app");
+    apps = [
+      shell,
+      part("alpha", "Alpha", { pwa: { href: "/pwa/alpha", badge: "/pwa/alpha/unread" } }),
+      part("beta", "Beta", { pwa: { href: "/pwa/beta", badge: "/pwa/beta/unread" } }),
+    ];
+    const counts = spyOn(badges, "appBadgeCount").mockImplementation((input) =>
+      input.endpoint === "/pwa/alpha/unread" ? 3 : input.endpoint === "/pwa/beta/unread" ? 120 : 0,
+    );
     try {
-      const { document } = await render("/pwa/inventory?ui=v2");
-      const sheets = [...document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]')].map(
-        (link) => link.getAttribute("href") ?? "",
-      );
-      expect(sheets.some((href) => href.startsWith("/public/global.css"))).toBe(true);
-      expect(sheets.some((href) => href.startsWith("/public/v2.css"))).toBe(false);
-      expect(document.querySelector(".k2-ui.pwa-v2")).not.toBeNull();
+      const { document } = await render("/pwa/?ui=v2", { "Accept-Language": "de" });
+      const tab = (href: string) => document.querySelector(`.pwa-v2-tabs a[href="${href}"]`)!;
+      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-count")?.textContent).toBe("3");
+      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-count")?.getAttribute("aria-hidden")).toBe("true");
+      expect(tab("/pwa/alpha").querySelector(".pwa-v2-tab-phrase")?.textContent).toBe("3 ungelesen");
+      expect(tab("/pwa/beta").querySelector(".pwa-v2-tab-count")?.textContent).toBe("99+");
+      expect(tab("/pwa/beta").querySelector(".pwa-v2-tab-phrase")?.textContent).toBe("Mehr als 99 ungelesen");
+      expect([...document.querySelectorAll(".pwa-v2-tabs a")].some((link) => link.hasAttribute("title"))).toBe(false);
     } finally {
-      routes.mockRestore();
+      counts.mockRestore();
     }
   });
 
@@ -499,7 +526,6 @@ describe("PwaLayout ui v2", () => {
       { href: "/pwa/beta", label: "Beta", current: false, badge: undefined },
       { href: "/pwa/inventory", label: "Inventory", current: true, badge: undefined },
     ]);
-    expect(document.querySelector('.pwa-v2-tabs a[href="/pwa/"]')?.getAttribute("title")).toBe("Example Cloud");
     const navigation = islandProps(document, "PwaNavigationV2.island.tsx") as Record<string, unknown>;
     expect({ ...navigation, tabs: undefined } as Record<string, unknown>).toEqual({
       title: "Example Cloud",
@@ -527,8 +553,9 @@ describe("PwaLayout ui v2", () => {
     expect(bare.querySelector(".pwa-v2-main")?.textContent).toBe("[[locale:en]]");
     expect(bare.querySelector('[data-k2-part="Workspace"]')).toBeNull();
     const screen = (await render("/pwa/inventory?ui=v2&bare&screen")).document.querySelector(".pwa-v2");
+    // The tabs stay in the page and step aside (the stylesheet), so `setPwaScreen` can bring them back in place.
     expect(screen?.hasAttribute("data-screen")).toBe(true);
-    expect(screen?.hasAttribute("data-tabs")).toBe(false);
+    expect(screen?.hasAttribute("data-tabs")).toBe(true);
   });
 
   test("names the sidebar's page on wide screens and hides a back link the sidebar already leads to", async () => {
@@ -565,6 +592,15 @@ describe("PwaLayout ui v2", () => {
       own.mockRestore();
       registered.mockRestore();
     }
+  });
+
+  test("names what a bare page's frame does not show, for the warning in development", () => {
+    expect(bareDrops({})).toEqual([]);
+    expect(bareDrops({ back: { href: "/pwa/inventory", label: "Items" }, actions: "[[actions]]", sidebarTitle: "Items" })).toEqual([
+      "back",
+      "actions",
+      "sidebarTitle",
+    ]);
   });
 
   test("renders in the request locale", async () => {

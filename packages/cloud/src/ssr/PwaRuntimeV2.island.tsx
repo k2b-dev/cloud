@@ -6,8 +6,10 @@ import { type PwaRuntimeProps, startPwaRuntime, THEME_PREFERENCE_EVENT } from ".
 
 /**
  * The browser side of a v2 mobile app page (`PwaLayout ui="v2"`): the runtime of every app page, and what it finds
- * as v2 notices that float above the tab bar and stay until their state ends: offline, Chrome signed in to another
- * account, a new version with "Reload". They float, so nothing on the page moves when one comes or goes.
+ * as v2 notices that float above the tab bar and stay until their state ends or the person hides them: offline,
+ * Chrome signed in to another account, a new version with "Reload". They float, so nothing on the page moves when
+ * one comes or goes; "Hide" gives the place above the tab bar back. A hidden offline notice comes again the next
+ * time the phone goes offline.
  */
 export default function PwaRuntimeV2(props: PwaRuntimeProps) {
   const locale = useLocale();
@@ -40,13 +42,26 @@ export default function PwaRuntimeV2(props: PwaRuntimeProps) {
     // `status` and `retry` only), so the runtime's states are floating `Notice`s of the frame.
     <div class="pwa-v2-notices" aria-live="polite">
       <Show when={offline()}>
-        <Notice tone="warn" icon="wifi-off">
+        <Notice tone="warn" icon="wifi-off" actions={[{ label: t().hide, onClick: () => setOffline(false) }]}>
           {t().offline}
         </Notice>
       </Show>
-      <Show when={otherAccount()}>{(name) => <Notice tone="warn">{t().otherAccount({ cloud: props.cloud, name: name() })}</Notice>}</Show>
+      <Show when={otherAccount()}>
+        {(name) => (
+          <Notice tone="warn" actions={[{ label: t().hide, onClick: () => setOtherAccount(undefined) }]}>
+            {t().otherAccount({ cloud: props.cloud, name: name() })}
+          </Notice>
+        )}
+      </Show>
       <Show when={newVersion()}>
-        <Notice tone="note" icon="refresh" actions={[{ label: t().reload, icon: "refresh", onClick: () => location.reload() }]}>
+        <Notice
+          tone="note"
+          icon="refresh"
+          actions={[
+            { label: t().reload, icon: "refresh", onClick: () => location.reload() },
+            { label: t().hide, onClick: () => setNewVersion(false) },
+          ]}
+        >
           {t().newVersion({ cloud: props.cloud })}
         </Notice>
       </Show>

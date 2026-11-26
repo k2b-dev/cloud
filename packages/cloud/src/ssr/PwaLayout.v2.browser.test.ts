@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import tailwind from "bun-plugin-tailwind";
 import { Hono } from "hono";
-import type { Browser } from "playwright";
+import type { Browser, Page } from "playwright";
 import { createComponent } from "solid-js";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
@@ -75,7 +75,7 @@ const apps: RuntimeAppMeta[] = [
   part("files", "Files", "folder"),
 ];
 
-const spies = [
+const spies: { mockRestore(): void }[] = [
   stubRailSnapshot(),
   spyOn(session, "getToken").mockReturnValue("test-session"),
   spyOn(session, "authenticateRequest").mockResolvedValue({
@@ -83,9 +83,10 @@ const spies = [
     data: { userId: user.id, sid: "test", authEpoch: 0, kind: "app", expiresAt: "2099-01-01T00:00:00Z" },
   }),
   spyOn(announcements.active, "forState").mockResolvedValue({ banners: [], announcements: [], latestAnnouncementVersion: 0 }),
-  // The registered Core serves v2.css; the global.css cases below build the older Core's sheet instead.
-  spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]),
 ];
+// What the registered Core serves; each page sets it (see `open`).
+const coreRoutes = spyOn(watcher, "registeredCoreRoutes").mockReturnValue(["/public/global.css", "/public/v2.css"]);
+spies.push(coreRoutes);
 
 /** Invented shelves, more than a phone screen holds, so the pane scrolls and the document does not. */
 const shelves = Array.from({ length: 24 }, (_, index) => ({
@@ -149,19 +150,40 @@ const server = new Hono<AuthContext>()
   .get("/pwa/inventory/screen", auth.requireRole("user", ssr.pwaAccess), ...pageOf("screen"));
 
 const origin = "https://cloud.example.test";
-/** The insets of a phone with a notch and a home indicator; env() is 0 in a desktop engine. */
-const insets = { top: 47, right: 0, bottom: 34, left: 0 };
-const withInsets = (css: string) =>
-  css.replace(/env\(\s*safe-area-inset-(top|right|bottom|left)\s*\)/g, (_, side: keyof typeof insets) => `${insets[side]}px`);
+type Insets = { top: number; right: number; bottom: number; left: number };
+/** The insets of a phone upright with a notch and a home indicator; env() is 0 in a desktop engine. */
+const insets: Insets = { top: 47, right: 0, bottom: 34, left: 0 };
+/** The same phone on its side: the notch at one side, the home indicator below. */
+const landscape: Insets = { top: 0, right: 47, bottom: 21, left: 47 };
+const withInsets = (css: string, sides: Insets) =>
+  css.replace(/env\(\s*safe-area-inset-(top|right|bottom|left)\s*\)/g, (_, side: keyof Insets) => `${sides[side]}px`);
 
 let browser: Browser;
-const sheets: Record<"v2.css" | "global.css", string> = { "v2.css": "", "global.css": "" };
+// `older global.css` is the sheet of a Core from before the v2 frame: global.css without the frame's rules.
+const sheets: Record<"v2.css" | "older global.css", string> = { "v2.css": "", "older global.css": "" };
+/**
+ * Core's global.css as a Core from before the v2 frame built it: the same sheet without the frame's file. Built from a
+ * copy beside global.css (its imports are relative), which is removed at once.
+ */
+const buildOlderGlobal = async () => {
+  const styles = resolve(import.meta.dir, "../styles");
+  const copy = join(styles, `.older-core-${process.pid}.css`);
+  const source = readFileSync(join(styles, "global.css"), "utf8");
+  if (!source.includes('@import "./pwa-layout.css";')) throw new Error("global.css no longer imports the v2 frame.");
+  writeFileSync(copy, source.replace('@import "./pwa-layout.css";', ""));
+  try {
+    return await Bun.build({ entrypoints: [copy], plugins: [tailwind] });
+  } finally {
+    rmSync(copy, { force: true });
+  }
+};
 beforeAll(async () => {
   const v2 = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
-  const global = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
-  for (const build of [v2, global]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
-  sheets["v2.css"] = withInsets(await v2.outputs[0]!.text());
-  sheets["global.css"] = withInsets(await global.outputs[0]!.text());
+  const older = await buildOlderGlobal();
+  for (const build of [v2, older]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
+  sheets["v2.css"] = await v2.outputs[0]!.text();
+  sheets["older global.css"] = await older.outputs[0]!.text();
+  if (sheets["older global.css"].includes("pwa-v2")) throw new Error("The older sheet still holds the v2 frame.");
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
@@ -169,7 +191,15 @@ afterAll(async () => {
   for (const spy of spies) spy.mockRestore();
 });
 
-const open = async (path: string, width: number, sheet: keyof typeof sheets, theme: "light" | "dark" = "light") => {
+const open = async (
+  path: string,
+  width: number,
+  sheet: keyof typeof sheets,
+  options: { theme?: "light" | "dark"; height?: number; sides?: Insets } = {},
+) => {
+  const theme = options.theme ?? "light";
+  // A Core from before the v2 frame declares global.css only; the page then takes the v1 frame.
+  coreRoutes.mockReturnValue(sheet === "v2.css" ? ["/public/global.css", "/public/v2.css"] : ["/public/global.css"]);
   const response = await server.request(`${origin}${path}`, { headers: { Cookie: `pwa_session=test-session; theme=${theme}` } });
   expect(response.status).toBe(200);
   const document = await response.text();
@@ -177,14 +207,15 @@ const open = async (path: string, width: number, sheet: keyof typeof sheets, the
   const page = await browser.newPage({
     // The server's page alone (its islands' scripts are not served): the frame must stand without them.
     colorScheme: theme,
-    viewport: { width, height: phone ? 844 : 900 },
+    viewport: { width, height: options.height ?? (phone ? 844 : 900) },
     ...(phone ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}),
   });
+  const css = withInsets(sheets[sheet], options.sides ?? (phone ? insets : { top: 0, right: 0, bottom: insets.bottom, left: 0 }));
   await page.route(`${origin}/**`, (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === path) return route.fulfill({ contentType: "text/html", body: document });
-    // The page links v2.css; beside an older Core the same link is answered with global.css.
-    if (url.pathname === "/public/v2.css") return route.fulfill({ contentType: "text/css", body: sheets[sheet] });
+    if (url.pathname === `/public/${sheet === "v2.css" ? "v2.css" : "global.css"}`)
+      return route.fulfill({ contentType: "text/css", body: css });
     return route.fulfill({ status: 204 });
   });
   await page.goto(`${origin}${path}`);
@@ -193,85 +224,151 @@ const open = async (path: string, width: number, sheet: keyof typeof sheets, the
 };
 
 describe("PwaLayout ui v2 in a browser", () => {
-  for (const sheet of ["v2.css", "global.css"] as const)
-    for (const variant of ["framed", "bare"] as const)
-      for (const width of [390, 1024, 1440])
-        test(`${sheet}: ${variant} page at ${width} px: clean, inside the window, clear of the safe areas`, async () => {
-          const page = await open(variant === "framed" ? "/pwa/inventory" : "/pwa/inventory/bare", width, sheet);
-          try {
-            const outline = await describeV2Page(page, ".pwa-v2-main");
-            expect(outline.includes("Problems (") ? outline : "").toBe("");
-            const layout = await measureV2Layout(page, { root: ".pwa-v2-main [data-k2-workspace]" });
-            expect(layout.problems).toEqual([]);
-            const result = await page.evaluate(() => {
-              const box = (selector: string) => {
-                const element = document.querySelector(selector);
-                if (!element || element.getClientRects().length === 0) return undefined;
-                const { top, right, bottom, left, width, height } = element.getBoundingClientRect();
-                return { top, right, bottom, left, width, height };
-              };
-              const pane = document.querySelector<HTMLElement>(".pwa-v2-main .k2-scroll")!;
-              return {
-                frame: box(".pwa-v2"),
-                main: box(".pwa-v2-main"),
-                nav: box(".pwa-v2-nav"),
-                tabs: box(".pwa-v2-tabs"),
-                actions: box(".pwa-v2-actions a"),
-                // a slot shows its contents only; the bar is the head's box
-                head: box(".pwa-v2-main .k2-bar"),
-                scrollWidth: document.documentElement.scrollWidth,
-                documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
-                paneScrolls: pane.scrollHeight > pane.clientHeight,
-                tabsPadding: getComputedStyle(document.querySelector(".pwa-v2-tabs")!).paddingBottom,
-              };
-            });
-            expect(result.scrollWidth).toBeLessThanOrEqual(width);
-            expect(result.documentScrolls).toBe(false);
-            expect(result.paneScrolls).toBe(true);
-            // The page's actions stay in the frame's head at every width; a bare page has its own head.
-            if (variant === "framed") expect(result.actions?.width).toBeGreaterThan(0);
-            expect(Math.round(result.frame!.height)).toBe(width < 768 ? 844 : 900);
-            // The page's head starts below the status bar and the notch.
-            expect(result.head!.top).toBeGreaterThanOrEqual(insets.top);
-            if (width < 768) {
-              // Phone: the page fills the width; the tab bar ends at the window's edge and holds the home indicator.
-              expect(result.nav).toBeUndefined();
-              expect(result.main).toMatchObject({ left: 0, width });
-              expect(Math.round(result.tabs!.bottom)).toBe(844);
-              expect(result.tabsPadding).toBe(`${insets.bottom}px`);
-              // its line, its 56 px row, the home indicator
-              expect(result.tabs!.height).toBe(1 + 56 + insets.bottom);
-              expect(result.main!.bottom).toBeLessThanOrEqual(result.tabs!.top + 0.5);
-            } else {
-              // Wide: the sidebar beside the page, no tab bar; the page keeps clear of the bottom inset.
-              expect(result.tabs).toBeUndefined();
-              expect(result.nav).toMatchObject({ left: 0, width: 248 });
-              expect(result.main!.left).toBeGreaterThanOrEqual(248);
-              expect(result.main!.bottom).toBeLessThanOrEqual(900 - insets.bottom + 0.5);
-            }
-          } finally {
-            await page.close();
+  for (const variant of ["framed", "bare"] as const)
+    for (const width of [390, 1024, 1440])
+      test(`${variant} page at ${width} px: clean, inside the window, clear of the safe areas`, async () => {
+        const page = await open(variant === "framed" ? "/pwa/inventory" : "/pwa/inventory/bare", width, "v2.css");
+        try {
+          const outline = await describeV2Page(page, ".pwa-v2-main");
+          expect(outline.includes("Problems (") ? outline : "").toBe("");
+          const layout = await measureV2Layout(page, { root: ".pwa-v2-main [data-k2-workspace]" });
+          expect(layout.problems).toEqual([]);
+          const result = await page.evaluate(() => {
+            const box = (selector: string) => {
+              const element = document.querySelector(selector);
+              if (!element || element.getClientRects().length === 0) return undefined;
+              const { top, right, bottom, left, width, height } = element.getBoundingClientRect();
+              return { top, right, bottom, left, width, height };
+            };
+            const pane = document.querySelector<HTMLElement>(".pwa-v2-main .k2-scroll")!;
+            return {
+              frame: box(".pwa-v2"),
+              main: box(".pwa-v2-main"),
+              nav: box(".pwa-v2-nav"),
+              tabs: box(".pwa-v2-tabs"),
+              actions: box(".pwa-v2-actions a"),
+              // a slot shows its contents only; the bar is the head's box
+              head: box(".pwa-v2-main .k2-bar"),
+              scrollWidth: document.documentElement.scrollWidth,
+              documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
+              paneScrolls: pane.scrollHeight > pane.clientHeight,
+              tabsPadding: getComputedStyle(document.querySelector(".pwa-v2-tabs")!).paddingBottom,
+            };
+          });
+          expect(result.scrollWidth).toBeLessThanOrEqual(width);
+          expect(result.documentScrolls).toBe(false);
+          expect(result.paneScrolls).toBe(true);
+          // The page's actions stay in the frame's head at every width; a bare page has its own head.
+          if (variant === "framed") expect(result.actions?.width).toBeGreaterThan(0);
+          expect(Math.round(result.frame!.height)).toBe(width < 768 ? 844 : 900);
+          // The page's head starts below the status bar and the notch.
+          expect(result.head!.top).toBeGreaterThanOrEqual(width < 768 ? insets.top : 0);
+          if (width < 768) {
+            // Phone: the page fills the width; the tab bar ends at the window's edge and holds the home indicator.
+            expect(result.nav).toBeUndefined();
+            expect(result.main).toMatchObject({ left: 0, width });
+            expect(Math.round(result.tabs!.bottom)).toBe(844);
+            expect(result.tabsPadding).toBe(`${insets.bottom}px`);
+            // its line, its 56 px row, the home indicator
+            expect(result.tabs!.height).toBe(1 + 56 + insets.bottom);
+            expect(result.main!.bottom).toBeLessThanOrEqual(result.tabs!.top + 0.5);
+          } else {
+            // Wide: the sidebar beside the page, no tab bar; the page keeps clear of the bottom inset.
+            expect(result.tabs).toBeUndefined();
+            expect(result.nav).toMatchObject({ left: 0, width: 248 });
+            expect(result.main!.left).toBeGreaterThanOrEqual(248);
+            expect(result.main!.bottom).toBeLessThanOrEqual(900 - insets.bottom + 0.5);
           }
-        }, 60_000);
+        } finally {
+          await page.close();
+        }
+      }, 60_000);
 
-  test("a screen page has no tab bar and keeps clear of the home indicator", async () => {
-    const page = await open("/pwa/inventory/screen", 390, "v2.css");
+  test("on its side, the phone keeps the page and the tab bar clear of the notch and the home indicator", async () => {
+    const page = await open("/pwa/inventory", 667, "v2.css", { height: 375, sides: landscape });
     try {
-      const result = await page.evaluate(() => ({
-        tabs: document.querySelector(".pwa-v2-tabs")?.getClientRects().length ?? 0,
-        main: document.querySelector(".pwa-v2-main")!.getBoundingClientRect().bottom,
-        back: document.querySelector(".pwa-v2-back a")?.getAttribute("aria-label"),
-      }));
-      expect(result.tabs).toBe(0);
-      expect(Math.round(result.main)).toBe(844 - insets.bottom);
+      const result = await page.evaluate(() => {
+        const box = (selector: string) => document.querySelector(selector)!.getBoundingClientRect().toJSON() as DOMRect;
+        return {
+          main: box(".pwa-v2-main"),
+          tabs: box(".pwa-v2-tabs"),
+          scrollWidth: document.documentElement.scrollWidth,
+          documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
+        };
+      });
+      expect(result.scrollWidth).toBeLessThanOrEqual(667);
+      expect(result.documentScrolls).toBe(false);
+      for (const place of [result.main, result.tabs]) {
+        expect(place.left).toBeGreaterThanOrEqual(landscape.left);
+        expect(place.right).toBeLessThanOrEqual(667 - landscape.right);
+      }
+      expect(Math.round(result.tabs.bottom)).toBe(375);
+      expect(result.tabs.height).toBe(1 + 56 + landscape.bottom);
     } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  for (const width of [390, 1440])
+    test(`beside a Core from before the v2 frame, the page shows in the v1 frame at ${width} px, inside the window`, async () => {
+      const page = await open("/pwa/inventory", width, "older global.css");
+      try {
+        const result = await page.evaluate(() => {
+          const box = (selector: string) => {
+            const element = document.querySelector(selector);
+            return element && element.getClientRects().length > 0 ? (element.getBoundingClientRect().toJSON() as DOMRect) : undefined;
+          };
+          const content = document.querySelector<HTMLElement>(".k2b-mobile-shell__body")!;
+          return {
+            v2Frame: document.querySelector(".pwa-v2") !== null,
+            content: box(".k2b-mobile-shell .k2-ui[data-ui='v2']"),
+            rows: document.querySelectorAll(".k2b-mobile-shell .k2-ui [data-k2-part='Row']").length,
+            tabs: box(".k2b-tab-bar"),
+            scrollWidth: document.documentElement.scrollWidth,
+            documentScrolls: document.scrollingElement!.scrollHeight > innerHeight,
+            contentScrolls: content.scrollHeight > content.clientHeight,
+          };
+        });
+        expect(result.v2Frame).toBe(false);
+        expect(result.rows).toBe(24);
+        expect(result.content!.width).toBeGreaterThan(200);
+        expect(result.scrollWidth).toBeLessThanOrEqual(width);
+        expect(result.documentScrolls).toBe(false);
+        expect(result.contentScrolls).toBe(true);
+        if (width < 768) expect(Math.round(result.tabs!.bottom)).toBe(844);
+        else expect(result.tabs).toBeUndefined();
+        const outline = await describeV2Page(page, ".k2b-mobile-shell .k2-ui[data-ui='v2']");
+        expect(outline.includes("Problems (") ? outline : "").toBe("");
+      } finally {
+        await page.close();
+      }
+    }, 60_000);
+
+  test("a screen page has no tab bar and keeps clear of the home indicator, also when it becomes one in place", async () => {
+    const measure = (page: Page) =>
+      page.evaluate(() => ({
+        tabs: document.querySelector(".pwa-v2-tabs")?.getClientRects().length ?? 0,
+        main: Math.round(document.querySelector(".pwa-v2-main")!.getBoundingClientRect().bottom),
+      }));
+    const screen = await open("/pwa/inventory/screen", 390, "v2.css");
+    const page = await open("/pwa/inventory", 390, "v2.css");
+    try {
+      expect(await measure(screen)).toEqual({ tabs: 0, main: 844 - insets.bottom });
+      expect((await measure(page)).tabs).toBe(1);
+      // what `setPwaScreen` does in place, and back
+      await page.evaluate(() => document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", true));
+      expect(await measure(page)).toEqual({ tabs: 0, main: 844 - insets.bottom });
+      await page.evaluate(() => document.querySelector(".pwa-v2")!.toggleAttribute("data-screen", false));
+      expect((await measure(page)).tabs).toBe(1);
+    } finally {
+      await screen.close();
       await page.close();
     }
   }, 60_000);
 
   for (const theme of ["light", "dark"] as const)
     test(`gives the status bar the frame's canvas (${theme})`, async () => {
-      const page = await open("/pwa/inventory", 390, "v2.css", theme);
+      const page = await open("/pwa/inventory", 390, "v2.css", { theme });
       try {
         const result = await page.evaluate(() => {
           const swatch = document.createElement("i");

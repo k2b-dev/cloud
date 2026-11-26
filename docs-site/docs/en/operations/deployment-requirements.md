@@ -135,6 +135,10 @@ Core in the registry, which does not declare `/public/v2.css`, keeps linking
 `global.css`; that sheet holds the same v2 rules, so its visitor pages stay
 styled. Nothing else changes: no environment variable, no external service.
 
+Pages of the Cloud app built with `PwaLayout ui="v2"` link `/public/v2.css` the
+same way. Beside an older Core they keep `global.css` and show in the v1 frame,
+because that sheet has no rules for the v2 frame.
+
 ## App-paid capabilities
 
 Upgrade Core before deploying callers that use `appCaller()` or providers that

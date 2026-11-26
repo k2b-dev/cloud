@@ -27,7 +27,7 @@ html[data-pwa-v2] body {
 }
 
 /* The tab bar takes the bottom safe area into its own height, on its own surface. */
-.pwa-v2[data-tabs] {
+.pwa-v2[data-tabs]:not([data-screen]) {
   padding-bottom: 0;
 }
 
@@ -52,7 +52,8 @@ html[data-pwa-v2] body {
   background: var(--k2-surface);
 }
 
-.pwa-v2:not([data-tabs]) .pwa-v2-tabs {
+/* A page that is a screen of its own (`screen`, or `setPwaScreen` in place) has no tab bar. */
+.pwa-v2:is(:not([data-tabs]), [data-screen]) .pwa-v2-tabs {
   display: none;
 }
 
@@ -114,6 +115,16 @@ html[data-pwa-v2] body {
   text-align: center;
 }
 
+/* The words of a tab's figure, for its accessible name only. */
+.pwa-v2-tab-phrase {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The head: back, the title, and the page's actions. */
 .pwa-v2-title {
   display: flex;
@@ -152,7 +163,7 @@ html[data-pwa-v2] body {
   pointer-events: none;
 }
 
-.pwa-v2[data-tabs] .pwa-v2-notices {
+.pwa-v2[data-tabs]:not([data-screen]) .pwa-v2-notices {
   bottom: calc(env(safe-area-inset-bottom) + var(--pwa-v2-tabs-h) + 12px);
 }
 
@@ -167,7 +178,7 @@ html[data-pwa-v2] body {
 @media (min-width: 48rem) {
   /* No tab bar takes the bottom inset here; the frame keeps clear of it. */
   .pwa-v2,
-  .pwa-v2[data-tabs] {
+  .pwa-v2[data-tabs]:not([data-screen]) {
     padding-bottom: env(safe-area-inset-bottom);
   }
 
@@ -211,7 +222,7 @@ html[data-pwa-v2] body {
   }
 
   .pwa-v2 .pwa-v2-notices,
-  .pwa-v2[data-tabs] .pwa-v2-notices {
+  .pwa-v2[data-tabs]:not([data-screen]) .pwa-v2-notices {
     /* inside the page's card, clear of its edge */
     right: max(24px, calc(env(safe-area-inset-right) + 24px));
     left: auto;

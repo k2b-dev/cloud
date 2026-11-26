@@ -1,5 +1,7 @@
 import { LocaleProvider, MobileShell, TabBar, type TabBarItem } from "@k2b/ui";
 import type { JSX } from "solid-js";
+import { servedStylesheets } from "../_internal/page-stylesheets";
+import { registeredCoreRoutes } from "../_internal/runtime-watcher";
 import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
 import type { LayoutContext } from "./layout-context";
 import PwaLayoutV2 from "./PwaLayoutV2";
@@ -29,17 +31,22 @@ export type PwaLayoutProps = {
   bare?: boolean;
   /**
    * The page opens as a screen of its own below 48rem, such as one chat with its composer at the bottom edge: the tab
-   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`.
+   * bar steps aside. A part that changes this in place calls `MobileShell.setScreen` from `@k2b/ui`, on v2
+   * `setPwaScreen` from `@k2b/cloud/browser/pwa-screen`.
    */
   screen?: boolean;
   /**
    * The page is built with `@k2b/ui/v2` (provisional): the frame is v2 too, and the page loads Core's v2.css alone.
-   * A `Workspace` with the head and, from 48rem, the parts as its `Nav`; below 48rem a tab bar of Start and the first
-   * parts. The page's content is one or more `Pane`s; with `bare` they bring their own heads.
+   * Without `bare` the frame holds the content in a `Workspace` with the head and one `Pane`; with `bare` the page
+   * returns its own `Workspace`. Beside a Core without v2.css the page keeps the v1 frame, its content in a v2 scope.
    */
   ui?: "v2";
   children: JSX.Element;
 };
+
+/** A bare v2 page in the v1 frame fills the shell's area, as its `Workspace` expects; inline, since the frame's
+ * stylesheet is the older Core's. */
+const FILL = "display:flex;flex:1 1 auto;flex-direction:column;min-width:0;min-height:0";
 
 /**
  * The frame of every page in the installable mobile app (preview): the app's document head, a phone shell with a
@@ -48,12 +55,25 @@ export type PwaLayoutProps = {
  * `ssr.pwaAccess`.
  */
 export default function PwaLayout(props: PwaLayoutProps) {
-  if (props.ui === "v2") return <PwaLayoutV2 {...props} />;
+  // A Core from before the v2 frame serves no v2.css, and its global.css holds no rules for that frame: beside it the
+  // page keeps the v1 frame, with its own v2 content in a v2 scope.
+  const v2 = props.ui === "v2";
+  if (v2 && servedStylesheets("v2", registeredCoreRoutes()) === "v2") return <PwaLayoutV2 {...props} />;
   const { c } = props;
   const { locale, t, user, cloud, page, parts, path, builds, countRoutes, tabs, currentTab, settingsHref, currentPart } = pwaFrame(
     c,
     props.title,
   );
+  if (v2) page.appUi = "v2";
+  // Read inside the LocaleProvider below: the page's content takes the request's locale from it.
+  const content = () =>
+    v2 ? (
+      <div class="k2-ui" data-ui="v2" style={props.bare ? FILL : undefined}>
+        {props.children}
+      </div>
+    ) : (
+      props.children
+    );
   const badge = (part: (typeof parts)[number]) =>
     part.pwa.badge ? <PwaPartCount endpoint={part.pwa.badge} endpoints={countRoutes} attention /> : undefined;
   // Start is titled with the installation's name; a part's first page carries the part's name.
@@ -104,7 +124,7 @@ export default function PwaLayout(props: PwaLayoutProps) {
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}
         sidebar={user ? sidebar : undefined}
       >
-        {props.children}
+        {content()}
       </MobileShell>
       <PwaRuntime
         keepalive={!!user}

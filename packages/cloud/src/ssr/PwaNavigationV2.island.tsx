@@ -1,6 +1,8 @@
+import { useLocale } from "@k2b/ui";
 import { Icon, Nav } from "@k2b/ui/v2";
 import { For, onCleanup, onMount, Show } from "solid-js";
 import { appBadgeCount, watchAppBadges } from "./app-badges";
+import { pwaMessages } from "./pwa-messages";
 
 /** One place of the Cloud app, as the server knows it. */
 export type PwaNavEntry = {
@@ -14,8 +16,6 @@ export type PwaNavEntry = {
   badge?: string;
   /** The part's `pwa.summary` route: a count that stays quiet in the sidebar; shown only without a badge. */
   summary?: string;
-  /** The tab's title while its page loads, where it differs from the label (Start: the installation). */
-  title?: string;
 };
 
 export type PwaNavigationV2Props = {
@@ -42,8 +42,15 @@ const shown = (count: number) => (count > 99 ? "99+" : count > 0 ? String(count)
  * island for both, for the counts the browser reads; its two parts take their places in the frame's grid.
  */
 export default function PwaNavigationV2(props: PwaNavigationV2Props) {
+  const locale = useLocale();
+  const t = () => pwaMessages.resolve([locale()]).t;
   onMount(() => onCleanup(watchAppBadges(props.endpoints)));
   const count = (route: string | undefined) => shown(appBadgeCount({ endpoint: route }));
+  // The figure is a mark; the tab's name says it in words, no more than the "99+" it shows.
+  const phrase = (route: string | undefined) => {
+    const value = appBadgeCount({ endpoint: route });
+    return value > 99 ? t().unreadMany : t().unread({ count: value });
+  };
   const item = (entry: PwaNavEntry) => ({
     label: entry.label,
     icon: entry.icon,
@@ -70,11 +77,20 @@ export default function PwaNavigationV2(props: PwaNavigationV2Props) {
         <nav class="pwa-v2-tabs" aria-label={props.tabsLabel}>
           <For each={props.tabs}>
             {(tab) => (
-              <a class="pwa-v2-tab" href={tab.href} title={tab.title} aria-current={tab.current ? "page" : undefined}>
+              <a class="pwa-v2-tab" href={tab.href} aria-current={tab.current ? "page" : undefined}>
                 <Icon name={tab.icon} />
                 <span class="pwa-v2-tab-label">{tab.label}</span>
-                {/* after the label, so the tab reads "Chat 3"; it stands at the icon's top end */}
-                <Show when={count(tab.badge)}>{(figure) => <span class="pwa-v2-tab-count">{figure()}</span>}</Show>
+                {/* a badge calls for attention: a round figure at the icon's top end, and its words for the tab's name */}
+                <Show when={count(tab.badge)}>
+                  {(figure) => (
+                    <>
+                      <span class="pwa-v2-tab-count" aria-hidden="true">
+                        {figure()}
+                      </span>
+                      <span class="pwa-v2-tab-phrase">{phrase(tab.badge)}</span>
+                    </>
+                  )}
+                </Show>
               </a>
             )}
           </For>

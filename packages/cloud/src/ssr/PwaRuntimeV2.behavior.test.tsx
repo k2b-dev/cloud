@@ -93,6 +93,14 @@ else {
       expect(page.dom.document.querySelector("[data-k2b-toast]")).toBeNull();
       page.dom.window.dispatchEvent(new page.dom.window.Event("online"));
       await waitFor(() => page.notices().length === 0, "notice gone");
+      // Hidden, it stays away until the phone goes offline again.
+      page.dom.window.dispatchEvent(new page.dom.window.Event("offline"));
+      await waitFor(() => page.notices().length === 1, "offline again");
+      [...page.notices()[0]!.querySelectorAll("button")].find((button) => button.textContent?.includes("Hide"))!.click();
+      await waitFor(() => page.notices().length === 0, "offline notice hidden");
+      page.dom.window.dispatchEvent(new page.dom.window.Event("online"));
+      page.dom.window.dispatchEvent(new page.dom.window.Event("offline"));
+      await waitFor(() => page.notices().length === 1, "offline once more");
     } finally {
       page.dispose();
       restore();
@@ -114,6 +122,13 @@ else {
       expect(page.state.reloads).toBe(0);
       [...update!.querySelectorAll("button")].find((button) => button.textContent?.includes("Reload"))!.click();
       expect(page.state.reloads).toBe(1);
+      // A notice that stays never holds the place above the tab bar: each one can be hidden.
+      const hide = (notice: HTMLElement) => [...notice.querySelectorAll("button")].find((button) => button.textContent?.includes("Hide"))!;
+      hide(account!).click();
+      await waitFor(() => page.notices().length === 1, "account notice hidden");
+      expect(page.notices()[0]!.textContent).toContain("New version of Example Cloud");
+      hide(page.notices()[0]!).click();
+      await waitFor(() => page.notices().length === 0, "update notice hidden");
     } finally {
       page.dispose();
       restore();

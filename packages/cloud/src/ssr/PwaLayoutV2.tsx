@@ -1,12 +1,19 @@
 import { LocaleProvider } from "@k2b/ui";
 import { Bar, Button, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { Show } from "solid-js";
+import { env } from "../config/env";
 import { PWA_COOKIES, PWA_LIMITS, PWA_SCOPE } from "../contracts/pwa";
 import type { PwaLayoutProps } from "./PwaLayout";
 import PwaNavigationV2, { type PwaNavEntry } from "./PwaNavigationV2.island";
 import PwaRuntimeV2 from "./PwaRuntimeV2.island";
 import { pwaFrame } from "./pwa-frame";
 import TimezoneCookie from "./TimezoneCookie.island";
+
+/** The props of the frame's head that a bare page leaves out. */
+export const bareDrops = (props: Pick<PwaLayoutProps, "back" | "actions" | "sidebarTitle">): string[] =>
+  [props.back && "back", props.actions !== undefined && "actions", props.sidebarTitle !== undefined && "sidebarTitle"].filter(
+    (name): name is string => typeof name === "string",
+  );
 
 /** A Tabler icon name from a part's icon class (`ti ti-mail`). */
 const iconName = (icon: string) => icon.replace(/^ti\s+ti-/, "");
@@ -26,6 +33,10 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
   );
   // Its app colours sit on the body; it links Core's v2.css alone, without v1 and the shell (see `pageStylesheetLinks`).
   Object.assign(page, { appUi: "v2", stylesheets: "v2" });
+  // A bare page brings its own head: what the frame's head would show is not shown, which an author should learn at once.
+  const dropped = props.bare ? bareDrops(props) : [];
+  if (dropped.length > 0 && env.IS_DEVELOPMENT)
+    console.warn(`PwaLayout ui="v2" bare "${props.title}": ${dropped.join(", ")} not shown; a bare page puts them in its own head.`);
   const navigation = !!user && parts.length > 0;
   const entry = (part: (typeof parts)[number]): PwaNavEntry => ({
     id: part.id,
@@ -36,10 +47,9 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
     ...(part.pwa.badge ? { badge: part.pwa.badge } : {}),
     ...(part.pwa.summary ? { summary: part.pwa.summary } : {}),
   });
-  // Start is titled with the installation's name on its tab; the sidebar names the installation itself.
   const tabItems: PwaNavEntry[] = navigation
     ? [
-        { id: "start", label: t.start, title: cloud, icon: "home", href: PWA_SCOPE, current: !currentTab },
+        { id: "start", label: t.start, icon: "home", href: PWA_SCOPE, current: !currentTab },
         ...tabs.map((part) => ({ ...entry(part), current: part === currentTab })),
       ]
     : [];
@@ -86,7 +96,7 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
       <div
         class="k2-ui pwa-v2"
         data-ui="v2"
-        data-tabs={navigation && !props.screen ? "" : undefined}
+        data-tabs={navigation ? "" : undefined}
         data-screen={props.screen ? "" : undefined}
         data-sidebar={user ? "" : undefined}
       >

@@ -238,9 +238,11 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 
 - Below 48 rem the page fills the window: its head at the top below the
   status bar and the notch, and a tab bar with Start and the first three parts
-  at the bottom, above the home indicator. A badge's count stands on its tab.
-  With `screen`, the tab bar steps aside and the page keeps clear of the home
-  indicator itself.
+  at the bottom, above the home indicator. A badge's count stands on its tab,
+  and the tab's name says it in words, such as "Chat, 3 unread". With
+  `screen`, the tab bar steps aside and the page keeps clear of the home
+  indicator itself; a part that opens or leaves such a screen in place calls
+  `setPwaScreen(element, screen)` from `@k2b/cloud/browser/pwa-screen`.
 - From 48 rem a v2 `Nav` with Start, every part with its count, and Settings
   at its foot stands beside the page.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
@@ -249,10 +251,13 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   scrolling `Pane`. Write the content from v2 bands, sections, and rows.
 - With `bare`, the page's island returns its own `Workspace` without a
   sidebar, with its panes and heads. Only the panes scroll; the document
-  never does.
+  never does. The frame then shows no `back`, `actions`, or `sidebarTitle`;
+  in development the server warns when a bare page passes them.
 - Offline, Chrome signed in to another account, and a new version show as v2
   notices that float above the tab bar until their state ends; a new version
-  offers **Reload**. They float, so nothing on the page moves.
+  offers **Reload**. They float, so nothing on the page moves. Each offers
+  **Hide**, which gives the place above the tab bar back; a hidden offline
+  notice comes again the next time the device goes offline.
 
 ```tsx
 <PwaLayout c={c} ui="v2" title={t(c).title} bare>
@@ -260,8 +265,12 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
 </PwaLayout>
 ```
 
-Beside an older Core that does not serve `/public/v2.css`, the page keeps
-`global.css`, which holds the same rules, so it looks the same.
+A Core from before the v2 frame serves no `/public/v2.css`, and its
+`global.css` has no rules for that frame. Beside such a Core the page keeps
+`global.css` and the v1 frame, with its own v2 content in a v2 scope, so it
+stays usable during a rolling update. Upgrade Core before the parts, as for
+every shared stylesheet; see
+[Upgrade Core before v2 visitor pages](/en/docs/operations/deployment-requirements#upgrade-core-before-v2-visitor-pages).
 
 ### iPad and monitor
 
