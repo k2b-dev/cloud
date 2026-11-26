@@ -443,6 +443,7 @@
   --k2-ws-collapse: inline-flex;
   --k2-ws-drawer: 1;
 }
+/* one primitive: the Workspace puts the sidebar's seam after the sidebar */
 .k2-ui .k2-ws[data-collapsed] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) {
   display: none;
 }
