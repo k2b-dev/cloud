@@ -427,7 +427,10 @@ test("a chosen document converts to Markdown, and a refused one says why at the 
       await choose();
       // one head row: the converted document is the last step of the path, no status row under the head
       // (on the phone the path gives way to the shell's bar, so it is only attached there)
-      await page.locator('[data-k2-part="Path"]').getByText("angebot-1047.docx").waitFor({ state: width > 768 ? "visible" : "attached" });
+      await page
+        .locator('[data-k2-part="Path"]')
+        .getByText("angebot-1047.docx")
+        .waitFor({ state: width > 768 ? "visible" : "attached" });
       expect(await page.locator('[data-k2-part="StatusRow"]').count()).toBe(0);
       expect(await page.getByRole("group", { name: "Reines Markdown, extrahiert aus angebot-1047.docx" }).textContent()).toContain(
         "# Angebot 1047",

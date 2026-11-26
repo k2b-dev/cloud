@@ -17,7 +17,9 @@ describe("document tool messages", () => {
     expect(de.conversionBusy).toBe("Der Dokumentkonverter ist ausgelastet. Versuche es gleich erneut.");
     expect(de.cancel).toBe("Abbrechen");
     expect(de.convertingFile({ filename: "bericht.pdf" })).toBe("bericht.pdf wird konvertiert…");
-    expect(de.resultMeta({ format: "DOCX", input: "2 KB", output: "48 B" })).toBe("DOCX · Eingabe: 2 KB · Markdown: 48 B");
+    expect(de.resultMeta({ filename: "bericht.docx", format: "DOCX", input: "2 KB", output: "48 B" })).toBe(
+      "bericht.docx · DOCX · Eingabe: 2 KB · Markdown: 48 B",
+    );
 
     const pdfDe = markdownPdfMessages.resolve(["de"]).t;
     expect(pdfDe.rendererBusy).toBe("Der PDF-Renderer ist ausgelastet. Versuche es gleich erneut.");

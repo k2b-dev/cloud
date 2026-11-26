@@ -21,8 +21,6 @@ export const documentMarkdownMessages = i18n.define({
       unexpectedResult: "The server returned an unexpected result.",
       convertingDocument: "Converting document…",
       dropTitle: "Drop a document or choose a file",
-      dropSubtitle: "PDF, Word, PowerPoint, spreadsheets, RTF, EPUB, or CSV",
-      dropHint: "Maximum document size: 20 MB",
       dropAriaLabel: "Choose a document to convert to Markdown",
       dropToConvert: "Drop to convert the document to Markdown",
       busyDropTitle: ({ filename }: { filename: string }) => `${filename} was not converted`,
@@ -33,8 +31,7 @@ export const documentMarkdownMessages = i18n.define({
           ? "1 more document was not converted. Drop or choose one document at a time."
           : `${count} more documents were not converted. Drop or choose one document at a time.`,
       hide: "Hide",
-      serverNotice:
-        "The document is sent to this Cloud server for conversion. Neither the upload nor the Markdown result is stored by this tool.",
+      statusLabel: "Status",
       convertingFile: ({ filename }: { filename: string }) => `Converting ${filename}…`,
       cancel: "Cancel",
       conversionFailedTitle: "Conversion failed",
@@ -48,8 +45,11 @@ export const documentMarkdownMessages = i18n.define({
       chooseDocument: "Choose document",
       copied: "Copied",
       copyFailed: "Not copied",
-      resultMeta: ({ format, input, output }: { format: string; input: string; output: string }) =>
-        `${format} · ${input} input · ${output} Markdown`,
+      resultMeta: ({ filename, format, input, output }: { filename: string; format: string; input: string; output: string }) =>
+        `${filename} · ${format} · ${input} input · ${output} Markdown`,
+      converted: ({ filename }: { filename: string }) => `${filename} converted`,
+      aboutDocuments:
+        "PDF, Word, PowerPoint, spreadsheets, RTF, EPUB, or CSV · Maximum document size: 20 MB. The document is sent to this Cloud server for conversion. Neither the upload nor the Markdown result is stored.",
     },
     de: {
       extractionFailed: "Das Dokument konnte nicht ausgelesen werden.",
@@ -64,8 +64,6 @@ export const documentMarkdownMessages = i18n.define({
       unexpectedResult: "Der Server hat ein unerwartetes Ergebnis zurückgegeben.",
       convertingDocument: "Dokument wird konvertiert…",
       dropTitle: "Dokument hier ablegen oder Datei auswählen",
-      dropSubtitle: "PDF, Word, PowerPoint, Tabellen, RTF, EPUB oder CSV",
-      dropHint: "Maximale Dokumentgröße: 20 MB",
       dropAriaLabel: "Dokument für die Konvertierung zu Markdown auswählen",
       dropToConvert: "Ablegen, um das Dokument in Markdown umzuwandeln",
       busyDropTitle: ({ filename }) => `${filename} wurde nicht umgewandelt`,
@@ -76,8 +74,7 @@ export const documentMarkdownMessages = i18n.define({
           ? "Ein weiteres Dokument wurde nicht umgewandelt. Lege oder wähle immer nur ein Dokument."
           : `${count} weitere Dokumente wurden nicht umgewandelt. Lege oder wähle immer nur ein Dokument.`,
       hide: "Ausblenden",
-      serverNotice:
-        "Das Dokument wird zur Konvertierung an diesen Cloud-Server gesendet. Das Werkzeug speichert weder den Upload noch das Markdown-Ergebnis.",
+      statusLabel: "Status",
       convertingFile: ({ filename }) => `${filename} wird konvertiert…`,
       cancel: "Abbrechen",
       conversionFailedTitle: "Konvertierung fehlgeschlagen",
@@ -91,7 +88,10 @@ export const documentMarkdownMessages = i18n.define({
       chooseDocument: "Dokument wählen",
       copied: "Kopiert",
       copyFailed: "Nicht kopiert",
-      resultMeta: ({ format, input, output }) => `${format} · Eingabe: ${input} · Markdown: ${output}`,
+      resultMeta: ({ filename, format, input, output }) => `${filename} · ${format} · Eingabe: ${input} · Markdown: ${output}`,
+      converted: ({ filename }) => `${filename} umgewandelt`,
+      aboutDocuments:
+        "PDF, Word, PowerPoint, Tabellen, RTF, EPUB oder CSV · Maximale Dokumentgröße: 20 MB. Das Dokument wird zur Konvertierung an diesen Cloud-Server gesendet. Das Werkzeug speichert weder den Upload noch das Markdown-Ergebnis.",
     },
   },
 });
