@@ -1,6 +1,6 @@
 import { IconButton, Kbd, useLocale } from "@k2b/ui";
-import { focusPageSearch } from "@k2b/ui/v2/host";
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
+import { openPageSearch, returnPageSearchFocus } from "../browser/page-search";
 import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { createBusyAction } from "./busy-action";
@@ -10,6 +10,8 @@ import { useShellData } from "./shell-data";
 
 type GlobalSearchTriggerProps = {
   variant: "header" | "rail";
+  /** A v2 page: the phone bar's button opens the search of the page's head when it shows one, else the global search. */
+  page?: boolean;
   class?: string;
 };
 
@@ -47,21 +49,28 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     );
   }
 
-  // On the phone the header's search stands for the search of a v2 page's head, where there is one (one search place).
+  // on a v2 page, Escape in the head's search brings the focus back to this button; the app menu (the phone's sheet)
+  // opens the global search through this button's deed
+  let button: HTMLButtonElement | undefined;
+  onMount(() => {
+    if (props.page) onCleanup(returnPageSearchFocus(() => button));
+    window.cloud ??= {};
+    window.cloud.openGlobalSearch = open;
+    onCleanup(() => {
+      if (window.cloud?.openGlobalSearch === open) delete window.cloud.openGlobalSearch;
+    });
+  });
   return (
     <IconButton
-      // on a v2 page the shell hosts the page's search: the button carries its mark there (v2.css), set in the browser so
-      // the server's HTML of every other page stays as it is
-      ref={(button: HTMLButtonElement) => {
-        onMount(() => button.toggleAttribute("data-k2-host-search-button", button.closest("[data-k2-host-search]") !== null));
-      }}
+      ref={button}
       class={props.class}
       onClick={() => {
-        if (!focusPageSearch()) open();
+        if (props.page && openPageSearch()) return;
+        open();
       }}
       aria-busy={action.busy() ? "true" : undefined}
-      label={t().openGlobalSearch}
-      title={t().searchShortcut}
+      label={props.page ? t().search : t().openGlobalSearch}
+      title={props.page ? undefined : t().searchShortcut}
     >
       <i class={`${action.busy() ? "ti ti-loader-2 animate-spin" : "ti ti-search"} text-base`} />
     </IconButton>

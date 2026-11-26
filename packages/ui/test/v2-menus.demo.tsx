@@ -136,6 +136,13 @@ export function Demo() {
               >
                 Antwort
               </Menu>
+              {/* a panel behind a button without words: it stays in the head on the phone, as the "…" does */}
+              <Popover
+                icon="eye"
+                label="Vorschau"
+                title="Vorschau"
+                content={<Check name="images" label="Bilder zeigen" checked={urgent()} onChange={setUrgent} />}
+              />
               <Menu label="Weitere Aktionen" items={head()} />
             </>
           }

@@ -586,6 +586,125 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // fixed widths without grips (W2, Notebooks admin): a narrow number and a deed column, the text columns take the rest
+  tableFixed: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { name: "Werkstatt", owner: "Mira Solberg", pages: "1.284" },
+            { name: "Kundenakten Nord", owner: "Felix Thal", pages: "36" },
+            { name: "Rezepte", owner: "Jule Amsel", pages: "4" },
+          ]}
+          columns={[
+            { title: "Notizbuch", cell: (row) => row.name },
+            { title: "Besitzer", cell: (row) => row.owner },
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
+            {
+              title: "Aktion",
+              width: { fixed: 56 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.name}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // number, text and deeds (Notebooks admin #4264): the description takes the room, the deed keeps its narrow width
+  tableFixedText: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { pages: "1.284", name: "Werkstatt", place: "Küche Lindqvist, Obergeschoss links neben dem Lager" },
+            { pages: "36", name: "Kundenakten Nord", place: "Büro" },
+            { pages: "4", name: "Rezepte", place: "Küche Lindqvist, Erdgeschoss" },
+            { pages: "212", name: "Lieferanten", place: "Archiv, Regal 3" },
+            { pages: "18", name: "Messen", place: "Halle 2" },
+          ]}
+          columns={[
+            { title: "Seiten", width: { fixed: 100 }, align: "end", cell: (row) => row.pages },
+            { title: "Name", cell: (row) => row.name },
+            { title: "Ort", cell: (row) => row.place },
+            {
+              title: "Aktionen",
+              width: { fixed: 72 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für Notizbuch ${row.pages}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a small table with groups and rows of two lines (public page, PS #4227): a group head is one quiet line
+  tableGroups: () =>
+    shell(
+      <Pane label="Programm">
+        <Table
+          label="Programm"
+          rowKey={(row) => row.key}
+          group={(row) => ({
+            key: row.day,
+            // one head a word, one a chip: both stand at the same height
+            head: () => (row.day.startsWith("Sonntag") ? <Chip status="warn">{row.day}</Chip> : <Text weight="strong">{row.day}</Text>),
+            meta: row.count,
+          })}
+          rows={[
+            { key: "a", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Werkstattführung", host: "Mira Solberg", time: "10:00" },
+            { key: "b", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Lackierwerk", host: "Felix Thal", time: "14:00" },
+            { key: "c", day: "Sonntag, 29. Nov.", count: "1 Führung", title: "Holzlager", host: "Jule Amsel", time: "11:00" },
+          ]}
+          columns={[
+            { title: "Führung", width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.title, row.host] }) },
+            { title: "Zeit", width: { fixed: 80 }, numeric: true, cell: (row) => row.time },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a short and a long text column beside a fixed deed (delta review of #4209): together they fill the row exactly
+  tableShortLong: () =>
+    shell(
+      <Pane label="Rollen">
+        <Table
+          label="Rollen"
+          rows={[
+            { role: "Gast", text: "Darf lesen und kommentieren, aber nichts ändern oder freigeben; sieht keine Preise und Kunden" },
+            { role: "Admin", text: "Darf alles, auch Rollen vergeben und Daten exportieren" },
+            { role: "Leser", text: "Liest" },
+            { role: "Team", text: "Arbeitet mit, darf Einträge anlegen, ändern und verschieben" },
+          ]}
+          columns={[
+            { title: "Rolle", cell: (row) => row.role },
+            { title: "Beschreibung", cell: (row) => row.text },
+            {
+              title: "Aktionen",
+              width: { fixed: 72 },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.role}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // an open entry whose form ends at the bottom of a phone, under the floating main action (W3, Spaces #4197)
+  detailForm: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Aufgaben">
+          <List label="Aufgaben">
+            <Row icon="checkbox" lines={["Angebot prüfen"]} current />
+          </List>
+        </Pane>
+        <Pane detail back={{ label: "Aufgaben", href: "#aufgaben" }} label="Aufgabe">
+          <Section title="Angaben">
+            {Array.from({ length: 14 }, (_, index) => (
+              <Field label={`Feld ${index + 1}`}>
+                <Input value={`Wert ${index + 1}`} />
+              </Field>
+            ))}
+          </Section>
+        </Pane>
+      </Pane.Split>,
+    ),
   // a last column of digits only at exactly the width the table reckons as its least (delta review r4): digits are the
   // widest signs, and a fallback font draws them wider than Plex
   tableDigits: () =>

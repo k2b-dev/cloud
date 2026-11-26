@@ -8,7 +8,7 @@ import { renderToString } from "solid-js/web";
 import { launchBrowser, settled } from "../../test/browser";
 import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { personColor } from "../surfaces/person-color";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { gripTolerance, hairline, heights, textEdge, typeRoles } from "./tokens";
 
 // Every v2 primitive measured in a real engine, in the place where the approved mockup puts it: the layout rules of
@@ -481,6 +481,144 @@ describe("v2 primitives keep the numbers of the mockup", () => {
       },
       TEST_TIMEOUT,
     );
+
+  // A fixed width without a grip (W2, Notebooks admin): the number and the deed column keep their width, the text
+  // columns share the rest of the row, and no head carries a grip.
+  for (const width of [1440, 1024])
+    test(
+      `${width} px: a column of fixed width keeps it without a grip, and the text columns take the rest`,
+      async () => {
+        const page = await open("tableFixed", { width });
+        try {
+          const found = await page.evaluate(() => {
+            const scroller = document.querySelector(".k2-table-scroll")!.getBoundingClientRect();
+            const heads = [...document.querySelectorAll(".k2-table th")].map((head) => head.getBoundingClientRect());
+            return {
+              grips: document.querySelectorAll(".k2-table .k2-cgrip").length,
+              widths: heads.map((head) => Math.round(head.width)),
+              fill: Math.abs(heads.at(-1)!.right - scroller.right),
+            };
+          });
+          expect(found.grips).toBe(0);
+          expect(found.widths.slice(2)).toEqual([100, 56]);
+          // the text columns share the rest by the length of their text: the longer notebook names get more
+          expect(found.widths[0]!).toBeGreaterThan(found.widths[1]!);
+          expect(found.fill).toBeLessThanOrEqual(1);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // Notebooks admin #4264: an action column at the end took an equal share (316 px for a "…") and cut the description;
+  // Files #4206: of two text columns the second cut "Küche Lind…" with room to spare. The text columns fill the rest
+  // together, each in the measure of its text, and cut only when no room is left.
+  for (const width of [1440, 1024])
+    test(
+      `${width} px: number, two texts and a deed column at the end: the texts fill the rest by their length, nothing is cut`,
+      async () => {
+        const page = await open("tableFixedText", { width });
+        try {
+          const found = await page.evaluate(() => {
+            const scroller = document.querySelector(".k2-table-scroll")!.getBoundingClientRect();
+            const heads = [...document.querySelectorAll(".k2-table th")].map((head) => head.getBoundingClientRect());
+            return { widths: heads.map((head) => Math.round(head.width)), fill: Math.abs(heads.at(-1)!.right - scroller.right) };
+          });
+          const widths = found.widths;
+          expect([widths[0], widths[3]]).toEqual([100, 72]);
+          // the place, with the longer text, gets more room than the name; together they fill the row
+          expect(widths[2]!).toBeGreaterThan(widths[1]!);
+          expect(found.fill).toBeLessThanOrEqual(1);
+          const cut = await page.$$eval(".k2-table td .k2-cell-line", (lines) =>
+            lines.filter((line) => line.scrollWidth > line.clientWidth).map((line) => line.textContent),
+          );
+          expect(cut).toEqual([]);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // A group head of a small table is one quiet line at text height, its words on its middle, no room left below them
+  // (public page, PS #4227: a tall head with empty room under it beside rows of two lines)
+  test(
+    "1440 px: a group head of a table with rows of two lines is one line at text height, without room below its words",
+    async () => {
+      const page = await open("tableGroups");
+      try {
+        const heads = await page.$$eval(".k2-table tr[data-group] > td", (cells) =>
+          cells.map((cell) => {
+            const box = cell.getBoundingClientRect();
+            const words = cell.querySelector(".k2-group-row")!.getBoundingClientRect();
+            return { height: Math.round(box.height), below: Math.round(box.bottom - words.bottom), above: Math.round(words.top - box.top) };
+          }),
+        );
+        expect(heads.length).toBe(2);
+        for (const head of heads) {
+          // a head with a word and a head with a chip stand at the same height, the height of the column heads
+          expect(head.height).toBe(36);
+          expect(Math.abs(head.below - head.above)).toBeLessThanOrEqual(2);
+        }
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Delta review of #4209: a short text column raised to its 96 px minimum must not push the row past its place
+  for (const width of [640, 1024])
+    test(
+      `${width} px: a short and a long text column fill the row exactly, the table does not scroll`,
+      async () => {
+        const page = await open("tableShortLong", { width });
+        try {
+          const found = await page.evaluate(() => {
+            const scroller = document.querySelector<HTMLElement>(".k2-table-scroll")!;
+            const heads = [...document.querySelectorAll(".k2-table th")].map((head) => Math.round(head.getBoundingClientRect().width));
+            return { overflow: scroller.scrollWidth - scroller.clientWidth, heads };
+          });
+          expect(found.overflow).toBeLessThanOrEqual(0);
+          expect(found.heads[0]!).toBeGreaterThanOrEqual(96);
+          expect(found.heads[1]!).toBeGreaterThan(found.heads[0]!);
+          expect(found.heads[2]!).toBe(72);
+        } finally {
+          await page.close();
+        }
+      },
+      TEST_TIMEOUT,
+    );
+
+  // The floating main action never covers the last row or field of a pane (W3, Spaces #4197): scrolled to its end, an
+  // open entry's last field stands above the button, and describeV2 finds nothing it covers.
+  test(
+    "390 px: the last field of an open entry stands above the floating main action once its pane is scrolled to the end",
+    async () => {
+      const page = await open("detailForm", { width: 390 });
+      try {
+        await page.evaluate(() => {
+          for (const element of document.querySelectorAll<HTMLElement>("*"))
+            if (element.scrollHeight > element.clientHeight + 1) element.scrollTop = element.scrollHeight;
+          document.scrollingElement?.scrollTo(0, document.scrollingElement.scrollHeight);
+        });
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
+          const inputs = [...document.querySelectorAll(".k2-pane[data-detail] input")];
+          const last = inputs.at(-1)!.getBoundingClientRect();
+          return { fabShown: fab.width > 0, lastBottom: last.bottom, fabTop: fab.top };
+        });
+        expect(found.fabShown).toBe(true);
+        expect(found.lastBottom).toBeLessThanOrEqual(found.fabTop);
+        expect(await describeV2Page(page, "body")).not.toContain("floating main action");
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
 
   test(
     "a last column of digits keeps every figure in sight at exactly the width the table reckons as its least",

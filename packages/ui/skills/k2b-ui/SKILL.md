@@ -105,10 +105,11 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 - A screen is a component that returns one `Workspace`.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
-- On the phone a screen has one search place: a host whose bar holds one
-  sets `data-k2-host-search` and calls `focusPageSearch()` from it. A detail
-  `Pane` always has `back`: on the phone it is a page with its way back and
-  title, never the list's views.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
+- On the phone one search place: a host whose bar holds the page's search
+  marks the v2 scope with `data-k2-host-search`. A detail `Pane` always has
+  `back`: on the phone a page with its way back and title, not the list's views.
 
 ## What to use for what
 
@@ -157,7 +158,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only; a connection that retries says so in the `StatusRow`, a fault a person must fix is a `Notice` naming the deed | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
@@ -216,13 +217,11 @@ with highlighting, a full image or video viewer, an assistant answer card.
 
 Cheapest first; stop at the first step that finds something, fix, repeat.
 
-1. **Types** reject wrong props (a `Button` with only an icon and no
-   `label`, a `Chip` with two kinds).
+1. **Types** reject wrong props (an icon `Button` without a `label`).
 2. **The rule `v2-app-layout-css`** (`bun run check` in the Cloud monorepo)
    reports `class`, `style`, spreads and stylesheets outside `Canvas`.
 3. **The outline** from `describeV2` lists every part with its text and
-   count, and ends with `Problems` when something is off. About 30 lines,
-   no picture.
+   count, and ends with `Problems` when something is off; no picture.
 4. **The layout measurement** (`measureV2Layout`) checks edges, double
    lines, type roles and grips at 1440 and 390 px.
 5. **A screenshot** only when the outline leaves a doubt.

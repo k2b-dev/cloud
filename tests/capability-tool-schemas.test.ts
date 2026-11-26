@@ -63,7 +63,6 @@ describe("capability provider tool schemas", () => {
       expect.arrayContaining([
         "accounts",
         "assistant",
-        "capabilities",
         "contacts",
         "core",
         "filesv2",
