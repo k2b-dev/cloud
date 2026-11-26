@@ -5,6 +5,7 @@ import {
   ColorInput,
   Disclosure,
   Field,
+  FileInput,
   Group,
   ImageInput,
   Pane,
@@ -128,6 +129,12 @@ export function Demo() {
             </Field>
             <Field name="level" label="Stufe" hint="Wie stark abgedunkelt wird.">
               <Slider value={30} step={10} />
+            </Field>
+            <Field name="docs" label="Unterlagen" required>
+              <FileInput accept=".pdf,.docx" multiple maxSize={1024} />
+            </Field>
+            <Field name="source" label="Dokument">
+              <FileInput accept=".pdf,.docx,.md" maxSize={2048} />
             </Field>
             <Field name="zoom" label="Zoom">
               <Slider value={zoom()} onChange={setZoom} step={10} />

@@ -72,6 +72,8 @@ export {
   type DateInputProps,
   Field,
   type FieldProps,
+  FileInput,
+  type FileInputProps,
   ImageInput,
   type ImageInputProps,
   Input,

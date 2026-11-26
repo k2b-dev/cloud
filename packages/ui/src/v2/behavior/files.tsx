@@ -5,7 +5,7 @@
  */
 import { collapsible } from "@ui-sdk/core/collapsible";
 import { fileInput } from "@ui-sdk/core/file-input";
-import { type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { type PartProps, part, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 
 export type FilePickOptions = {
   /** Called with the files a person picked, dropped or pasted that pass `accept`. */
@@ -51,6 +51,56 @@ export function useFilePick(options: () => FilePickOptions): FilePickParts {
     Trigger: slotComponent(handle, "trigger", "button"),
     Input: slotComponent(handle, "input", "input"),
     Dropzone: slotComponent(handle, "dropzone", "div"),
+  };
+}
+
+export type FilesOptions = {
+  value?: File[];
+  defaultValue?: File[];
+  /** Called with all files after a pick, a drop, a paste, a removal or a form's reset. */
+  onValueChange?: (files: File[]) => void;
+  /** Called with each file that was ruled out and why: `file-type`, `file-too-large`, `too-many-files`. */
+  onReject?: (rejected: { file: File; reasons: string[] }[]) => void;
+  announcement?: (change: { added: File[]; removed: File[]; rejected: readonly { file: File; reasons: string[] }[] }) => string | null;
+  accept?: string;
+  multiple?: boolean;
+  maxSize?: number;
+  disabled?: boolean;
+  required?: boolean;
+  name?: string;
+};
+
+export type FilesParts = FilePickParts & {
+  /** The chosen files, a list with one tab stop: arrows move, Backspace and Delete remove. */
+  List: SlotComponent;
+  /** One chosen file: pass it as `file` and a stable `value`. */
+  Item: (props: PartProps & { file: File; value: string }) => ReturnType<SlotComponent>;
+  /** Removes its file: pass the same `file` and `value` as its item. */
+  ItemRemove: (props: PartProps & { file: File; value: string }) => ReturnType<SlotComponent>;
+};
+
+/** Files a form sends: core holds them in its file input, which is sent, required and reset with the form. */
+export function useFiles(options: () => FilesOptions): FilesParts {
+  const handle = usePrimitive(fileInput, () => {
+    const { onValueChange, onReject, ...rest } = options();
+    return {
+      ...rest,
+      onValueChange: (files: File[]) => onValueChange?.(files),
+      onReject: (rejected: { file: File; reasons: string[] }[]) => onReject?.(rejected),
+    };
+  });
+  const keyedPart = (slot: "item" | "item-remove", tag: string) => (props: PartProps & { file: File; value: string }) => {
+    const { file, value, ...element } = props;
+    return part(handle, slot, () => ({ file, value }), element, tag);
+  };
+  return {
+    Root: slotComponent(handle, "root", "div"),
+    Trigger: slotComponent(handle, "trigger", "button"),
+    Input: slotComponent(handle, "input", "input"),
+    Dropzone: slotComponent(handle, "dropzone", "div"),
+    List: slotComponent(handle, "list", "div"),
+    Item: keyedPart("item", "div"),
+    ItemRemove: keyedPart("item-remove", "button"),
   };
 }
 

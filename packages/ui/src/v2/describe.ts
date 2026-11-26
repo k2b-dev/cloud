@@ -185,6 +185,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const swatches = element.querySelectorAll(".k2-color-preset").length;
       return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
+    if (name === "FileInput") {
+      const names = [...element.querySelectorAll(".k2-files-name")].map((file) => clip(file.textContent ?? "", 30));
+      return `FileInput${names.length ? `: ${names.join(", ")}` : " empty"}${element.querySelector(".k2-files-refused") ? " refused" : ""}`;
+    }
     if (name === "ImageInput") {
       const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
       return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;

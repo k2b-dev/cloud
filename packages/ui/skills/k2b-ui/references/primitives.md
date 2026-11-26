@@ -299,6 +299,13 @@ lines instead of cutting a thing.
   server addresses): `value`, `onChange`, `suggestions` (values to pick
   while typing; any other text is taken on Enter), `placeholder`,
   `disabled`. Backspace in the empty field takes the last chip back.
+- `FileInput`: files to send: `value`, `onChange`, `accept`, `multiple`,
+  `maxSize` (bytes; a larger file is refused with a sentence at the
+  field), `disabled`. The field is the drop zone (it shows when files are
+  over it) with a button for the device's dialog; chosen files are rows
+  with type, size and a remove button (arrows move, Delete removes). The
+  form sends the files under the name, `required` holds the form, a reset
+  empties it.
 - `ImageInput`: one image: `value` (its address), `onChange` (the new
   address, or `null` when removed), `transform` (file to address; by
   default a square picture as a data URL; upload and return a URL for

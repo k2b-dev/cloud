@@ -24,6 +24,12 @@ The sign-in settings of an app: a field that goes back to its default through th
 
 <Example recipe="settings" height="760" />
 
+## Files to send
+
+A tool that turns a document into Markdown: the field is where the document is dropped or chosen, the chosen file stands under it with its type and size, and a file of another type or too large is refused with a sentence at the field. Switch the state to see the field before a file is chosen.
+
+<Example recipe="upload" height="640" />
+
 ## Errors, conflicts and saving
 
 - **At the field:** a server error or "Pflichtfeld." goes into the `error` of its field. It replaces the hint and marks the control.
@@ -73,6 +79,12 @@ One choice from many options, in a list that opens.
 Several short values, such as domains or server addresses, as chips in one field; Enter adds the typed text, `suggestions` offer values to pick.
 
 <Props of="TagsInput" />
+
+### FileInput
+
+Files to send, such as a document to convert or attachments: the field is the drop zone, the chosen files are rows with type, size and a remove button.
+
+<Props of="FileInput" />
 
 ### ImageInput
 

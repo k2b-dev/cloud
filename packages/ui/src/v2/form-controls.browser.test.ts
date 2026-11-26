@@ -228,7 +228,7 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
     let form = await sent(page);
     expect(entriesOf(form.entries, "hosts")).toEqual(["mx1.example"]);
     expect(entriesOf(form.entries, "locked")).toEqual([]);
-    expect(files(form.entries)).toEqual([]);
+    expect(files(form.entries.filter((entry) => entry.name === "banner"))).toEqual([]);
     // the image is required and still empty: the form is not valid
     expect(entriesOf(form.entries, "banner")).toEqual([""]);
     expect(form.valid).toBe(false);
@@ -238,8 +238,7 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
     await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
     form = await sent(page);
     expect(entriesOf(form.entries, "banner")).toEqual(["data:text/plain,b"]);
-    expect(files(form.entries)).toEqual([]);
-    expect(form.valid).toBe(true);
+    expect(files(form.entries.filter((entry) => entry.name === "banner"))).toEqual([]);
     // the picker said nothing in English
     expect(await page.evaluate(() => document.body.innerText)).not.toMatch(/accepted|rejected/i);
   });
@@ -288,10 +287,15 @@ test("image: while a picked image is still being read, the required field keeps 
       .locator('input[type="file"]')
       .setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
     await page.waitForFunction(() => document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
-    expect((await sent(page)).valid).toBe(false);
+    // the image's own check (the form holds other required fields too)
+    const imageValid = () =>
+      field(page, "Banner")
+        .locator('input[type="file"]')
+        .evaluate((input) => (input instanceof HTMLInputElement ? input.checkValidity() : false));
+    expect(await imageValid()).toBe(false);
     await page.evaluate(() => Reflect.get(window, "__k2Open")?.());
     await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
-    expect((await sent(page)).valid).toBe(true);
+    expect(await imageValid()).toBe(true);
   });
 });
 
@@ -310,6 +314,75 @@ test("image: a second image picked while the first is still read wins; the first
     await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
     await page.waitForFunction(() => !document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
     expect(entriesOf((await sent(page)).entries, "banner")).toEqual(["data:text/plain,b"]);
+  });
+});
+
+test("files: chosen files are listed with type and size, sent with the form, required, removed by button or key, put back on reset", async () => {
+  await withPage(async (page) => {
+    const docs = field(page, "Unterlagen");
+    expect((await sent(page)).valid).toBe(false);
+    await docs.locator('input[type="file"]').setInputFiles([
+      { name: "angebot.pdf", mimeType: "application/pdf", buffer: Buffer.from("pdf") },
+      {
+        name: "brief.docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        buffer: Buffer.from("doc"),
+      },
+    ]);
+    const rows = docs.getByRole("listitem");
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 2);
+    expect(await rows.locator(".k2-files-name").allTextContents()).toEqual(["angebot.pdf", "brief.docx"]);
+    expect(await rows.locator(".k2-files-size").allTextContents()).toEqual(["3 B", "3 B"]);
+    expect(await rows.locator(".k2-icon").evaluateAll((icons) => icons.map((icon) => icon.getAttribute("data-name")))).toEqual([
+      "file-type-pdf",
+      "x",
+      "file-type-doc",
+      "x",
+    ]);
+    expect(entriesOf((await sent(page)).entries, "docs")).toEqual(["file:angebot.pdf", "file:brief.docx"]);
+    // a press on the remove button, then Delete on the focused row
+    await docs.getByRole("button", { name: "angebot.pdf entfernen" }).click();
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 1);
+    await rows.first().focus();
+    await page.keyboard.press("Delete");
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 0);
+    // picked again, then the form's reset empties the field
+    await docs.locator('input[type="file"]').setInputFiles({ name: "c.pdf", mimeType: "application/pdf", buffer: Buffer.from("c") });
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 1);
+    await reset(page);
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-row").length === 0);
+    expect(entriesOf((await sent(page)).entries, "docs").filter((value) => value !== "file:")).toEqual([]);
+  });
+});
+
+test("files: a file of the wrong type or too large is refused with a sentence at the field", async () => {
+  await withPage(async (page) => {
+    const source = field(page, "Dokument");
+    const input = source.locator('input[type="file"]');
+    await input.setInputFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
+    expect(await source.getByRole("alert").textContent()).toBe("setup.exe hat keinen Dateityp, den dieses Feld nimmt.");
+    await input.setInputFiles({ name: "gross.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(4096) });
+    expect(await source.getByRole("alert").textContent()).toBe("gross.pdf ist größer als 2 KB.");
+    await input.setInputFiles({ name: "notiz.md", mimeType: "text/markdown", buffer: Buffer.from("# x") });
+    await source.getByRole("alert").waitFor({ state: "detached" });
+    expect(await source.locator(".k2-files-name").allTextContents()).toEqual(["notiz.md"]);
+  });
+});
+
+test("files: the field is where files are dropped; it shows while files are over it", async () => {
+  await withPage(async (page) => {
+    const zone = field(page, "Dokument").locator(".k2-files-drop");
+    const transfer = await page.evaluateHandle(() => {
+      const data = new DataTransfer();
+      data.items.add(new File(["# Titel"], "bericht.md", { type: "text/markdown" }));
+      return data;
+    });
+    await zone.dispatchEvent("dragenter", { dataTransfer: transfer });
+    await zone.dispatchEvent("dragover", { dataTransfer: transfer });
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-drop[data-dragging]").length === 1);
+    await zone.dispatchEvent("drop", { dataTransfer: transfer });
+    await field(page, "Dokument").locator(".k2-files-name").filter({ hasText: "bericht.md" }).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll("#sent .k2-files-drop[data-dragging]").length === 0);
   });
 });
 

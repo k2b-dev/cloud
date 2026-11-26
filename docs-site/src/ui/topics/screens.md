@@ -38,6 +38,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="settings" height="760" />
 
+## Files to send
+
+<Example recipe="upload" height="640" />
+
 ## Deeds and menus
 
 <Example recipe="actions" height="560" default="List" />

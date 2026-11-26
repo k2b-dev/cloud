@@ -13,6 +13,7 @@ import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/rec
 import * as settings from "../../../../packages/ui/skills/k2b-ui/recipes/settings";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
 import * as table from "../../../../packages/ui/skills/k2b-ui/recipes/table";
+import * as upload from "../../../../packages/ui/skills/k2b-ui/recipes/upload";
 
 /**
  * One state a recipe offers beside its default screen, such as `empty`, `loading` or `failed`.
@@ -56,6 +57,7 @@ export const recipes = {
   settings,
   states,
   table,
+  upload,
 } satisfies Record<string, RecipeModule>;
 
 export type RecipeName = keyof typeof recipes;

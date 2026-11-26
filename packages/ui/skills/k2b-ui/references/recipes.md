@@ -217,6 +217,21 @@ answers with a toast with `status` `ok` or `bad`.
 - The open state of the dialog lives in the screen (`open`,
   `onOpenChange`).
 
+## upload.tsx: files to send
+
+![upload at 1440 px](../images/upload-1440.png)
+![upload at 390 px](../images/upload-390.png)
+
+A tool in its frame (`Nav` of tools, head, `StatusRow`): a `Section` with a
+`Field` holding a `FileInput` (`accept`, `maxSize`) and the one primary
+"Umwandeln" in its `Bar`, disabled until a file is chosen; under it the
+last conversions as `Row`s with the type of each file, its size and pages,
+the time and a state `Chip`.
+
+- The field is the drop zone; never let the whole page take dropped files.
+- A refused file says why in one sentence at the field.
+- States: `empty`.
+
 ## states.tsx: the states of a list
 
 ![states at 1440 px](../images/states-1440.png)

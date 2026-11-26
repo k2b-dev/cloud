@@ -2529,6 +2529,89 @@
 .k2-ui .k2-color[data-disabled] :is(.k2-color-area, .k2-color-hue, .k2-color-swatches) {
   opacity: 0.5;
 }
+/* files: the field is where files are dropped (a quiet dashed edge that turns blue while files are over it), the
+   chosen ones stand under it as rows of 40 px with their type, name, size and a remove button */
+.k2-ui .k2-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.k2-ui .k2-files-drop {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 56px;
+  padding: 10px 12px;
+  border: 1px dashed var(--k2-line-control);
+  border-radius: var(--k2-r-control);
+  background: var(--k2-surface);
+  font: var(--k2-t-row);
+  color: var(--k2-muted);
+}
+.k2-ui .k2-files-drop > .k2-icon {
+  color: var(--k2-subtle);
+  font-size: 16px;
+}
+.k2-ui .k2-files-drop[data-dragging] {
+  border-style: solid;
+  border-color: var(--k2-blue);
+  background: color-mix(in srgb, var(--k2-blue) 6%, var(--k2-surface));
+  box-shadow: 0 0 0 3px var(--k2-blue-ring);
+}
+.k2-ui .k2-files-drop[data-drag-reject] {
+  border-color: var(--k2-bad);
+  box-shadow: none;
+}
+.k2-ui .k2-files-drop[data-invalid] {
+  border-color: var(--k2-bad);
+}
+.k2-ui .k2-files[data-disabled] .k2-files-drop {
+  background: var(--k2-n100);
+  border-color: var(--k2-line);
+}
+.k2-ui .k2-files-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.k2-ui .k2-files-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--k2-h-row);
+  padding: 0 4px 0 12px;
+  border-radius: var(--k2-r-control);
+  font: var(--k2-t-row);
+  color: var(--k2-text);
+  outline: none;
+}
+.k2-ui .k2-files-row:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-files-row > .k2-icon {
+  flex: none;
+  color: var(--k2-muted);
+  font-size: 16px;
+}
+.k2-ui .k2-files-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-files-size {
+  flex: none;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-files-refused {
+  font: var(--k2-t-meta);
+  color: var(--k2-bad);
+}
 /* something that opens in place: a 44 px row with the title and a chevron, the content under it on the text edge */
 .k2-ui .k2-disc {
   display: flex;

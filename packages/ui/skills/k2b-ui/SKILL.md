@@ -87,6 +87,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| files to send (a document, attachments) | `FileInput` in a `Field` | `upload.tsx` |
 | a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
 | a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
@@ -166,7 +167,7 @@ a `Notice` that names the deed.
   `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
-  `CodeInput`, `Slider`, `ColorInput`.
+  `FileInput`, `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

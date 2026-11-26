@@ -14,7 +14,7 @@ import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
-import { useFilePick } from "./behavior/files";
+import { useFilePick, useFiles } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
 import { type ChoiceItem, useCombobox, useSelect } from "./behavior/select";
@@ -708,6 +708,150 @@ export const ImageInput = (props: ImageInputProps) => {
         <span class="k2-image-failed" role="alert">
           {t().imageFailed}
         </span>
+      </Show>
+    </pick.Root>
+  );
+};
+
+export type FileInputProps = {
+  /** The chosen files. With `onChange` the caller holds them; without, the field keeps them (and a form's reset empties it). */
+  value?: readonly File[];
+  /** Called with all chosen files after a pick, a drop, a paste or a removal. */
+  onChange?: (files: File[]) => void;
+  /** The file types to take, like the `accept` attribute: `.pdf,.docx` or `image/*`. */
+  accept?: string;
+  /** Takes several files; one by default (a new one replaces it). */
+  multiple?: boolean;
+  /** The largest file in bytes; a larger one is refused with a sentence at the field. */
+  maxSize?: number;
+  /** The name the files are sent under in a form; the field's name by default. */
+  name?: string;
+  /** A name when the field stands without a Field. */
+  label?: string;
+  /** No file can be added or removed now: dimmed, the chosen files still listed. */
+  disabled?: boolean;
+};
+
+/** A type mark for a file: its kind from the extension or the media type. */
+const fileIcon = (file: File) => {
+  const name = file.name.toLowerCase();
+  if (file.type.startsWith("image/")) return "photo";
+  if (name.endsWith(".pdf")) return "file-type-pdf";
+  if (/\.(docx?|odt|rtf)$/.test(name)) return "file-type-doc";
+  if (/\.(xlsx?|ods|csv)$/.test(name)) return "file-type-xls";
+  if (/\.(pptx?|odp)$/.test(name)) return "file-type-ppt";
+  if (/\.(zip|gz|tar|7z)$/.test(name)) return "file-zip";
+  if (/\.(md|txt|html?)$/.test(name)) return "file-text";
+  return "file";
+};
+
+/** A size as people read it, in the page's language: "820 B", "12,4 KB", "3,1 MB". */
+const fileSize = (bytes: number, locale: string) => {
+  const units = ["B", "KB", "MB", "GB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: unit === 0 ? 0 : 1 }).format(value)} ${units[unit]}`;
+};
+
+/** One key per chosen file, the same while it stays chosen. */
+const fileKey = (file: File) => `${file.name}:${file.size}:${file.lastModified}`;
+
+/**
+ * Files to send, such as a document to convert or attachments: the field itself is where files are dropped (it shows
+ * when files are over it), with a button that opens the device's dialog; the chosen files stand under it as rows with
+ * their type, size and a remove button (arrows move between them, Delete removes). A file of the wrong type or size is
+ * refused with a sentence at the field. The behaviour layer on the ui-sdk core sends the files with the form, makes the
+ * field required and puts it back on a form's reset.
+ */
+export const FileInput = (props: FileInputProps) => {
+  const field = useField();
+  field?.group();
+  const t = useControlMessages();
+  const locale = useLocale();
+  const [own, setOwn] = createSignal<File[]>([...(props.value ?? [])]);
+  const files = () => (props.onChange ? [...(props.value ?? [])] : own());
+  const [refused, setRefused] = createSignal<string>();
+  const sentence = (rejected: { file: File; reasons: string[] }) =>
+    rejected.reasons.includes("too-many-files")
+      ? t().tooManyFiles
+      : rejected.reasons.includes("file-too-large")
+        ? t().fileTooLarge({ name: rejected.file.name, max: fileSize(props.maxSize ?? 0, locale()) })
+        : t().fileType({ name: rejected.file.name });
+  const pick = useFiles(() => ({
+    ...(props.onChange ? { value: [...(props.value ?? [])] } : { defaultValue: [...(props.value ?? [])] }),
+    onValueChange: (next: File[]) => {
+      setOwn(next);
+      setRefused(undefined);
+      props.onChange?.(next);
+    },
+    onReject: (rejected) => setRefused(rejected[0] ? sentence(rejected[0]) : undefined),
+    announcement: (change) =>
+      change.rejected[0]
+        ? sentence(change.rejected[0])
+        : change.added.length
+          ? t().filesChosen({ count: change.added.length })
+          : change.removed[0]
+            ? t().fileRemoved({ name: change.removed[0].name })
+            : null,
+    accept: props.accept,
+    multiple: props.multiple ?? false,
+    maxSize: props.maxSize,
+    disabled: props.disabled,
+    required: field?.required,
+    name: props.name ?? field?.name,
+  }));
+  return (
+    <pick.Root
+      class="k2-files"
+      data-k2-part="FileInput"
+      data-disabled={props.disabled ? "" : undefined}
+      role={field ? undefined : "group"}
+      aria-label={field ? undefined : props.label}
+    >
+      <pick.Dropzone class="k2-files-drop" data-invalid={field?.invalid || refused() ? "" : undefined}>
+        <Icon name="upload" />
+        <span class="k2-files-hint">{props.multiple ? t().dropFiles : t().dropFile}</span>
+        <span class="k2-files-end">
+          <pick.Trigger class="k2-btn" data-k2-part="Button" aria-describedby={field?.described}>
+            <span class="k2-btn-label">{props.multiple ? t().chooseFiles : t().chooseFile}</span>
+          </pick.Trigger>
+        </span>
+      </pick.Dropzone>
+      <pick.Input />
+      <Show when={files().length}>
+        <pick.List class="k2-files-list" aria-label={field ? undefined : props.label}>
+          <For each={files()}>
+            {(file) => (
+              <pick.Item class="k2-files-row" file={file} value={fileKey(file)}>
+                <Icon name={fileIcon(file)} />
+                <span class="k2-files-name">{file.name}</span>
+                <span class="k2-files-size">{fileSize(file.size, locale())}</span>
+                <pick.ItemRemove
+                  class="k2-btn"
+                  data-variant="ghost"
+                  data-icon-only=""
+                  file={file}
+                  value={fileKey(file)}
+                  aria-label={t().removeValue({ label: file.name })}
+                  title={t().removeValue({ label: file.name })}
+                >
+                  <Icon name="x" />
+                </pick.ItemRemove>
+              </pick.Item>
+            )}
+          </For>
+        </pick.List>
+      </Show>
+      <Show when={refused()}>
+        {(text) => (
+          <span class="k2-files-refused" role="alert">
+            {text()}
+          </span>
+        )}
       </Show>
     </pick.Root>
   );
