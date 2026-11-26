@@ -242,6 +242,19 @@ describe("the runs list on v2", () => {
       const url = new URL(tab.url());
       expect([url.searchParams.get("tab"), url.searchParams.get("page")]).toEqual(["minutes", null]);
       expect(calls.some((call) => new URLSearchParams(call).get("q") === "Postfach")).toBe(true);
+
+      // Back restores page 2 as it was: the address keeps it, the list loads it, and no history entry is rewritten
+      const before = calls.length;
+      await tab.goBack();
+      await tab.waitForURL((address) => !address.search.includes("q="));
+      await tab.waitForFunction(() => window.document.body.innerText.includes("Seite 2 von 3"));
+      expect(new URL(tab.url()).searchParams.get("page")).toBe("2");
+      for (let waited = 0; calls.length === before && waited < 5000; waited += 50) await new Promise((done) => setTimeout(done, 50));
+      expect(calls.slice(before).map((call) => new URLSearchParams(call).get("page"))).toContain("2");
+      await tab.goForward();
+      await tab.waitForURL(/q=Postfach/);
+      await tab.goBack();
+      await tab.waitForURL(/page=2/);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

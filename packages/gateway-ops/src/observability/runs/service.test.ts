@@ -3,7 +3,7 @@ import { notifications, trace } from "@k2b/cloud/services";
 import * as workflowStore from "@k2b/cloud/workflows/store";
 import { syncOpsService } from "../sync/runtime";
 import { parseRunsAddress, runsQuery } from "./query";
-import { listRuns, readJobTimeline, readRunFigures, readSuccessMinutes, workflowFilterNames } from "./service";
+import { listRuns, readJobTimeline, readRunFigures, readSuccessMinutes, searchWorkflowDefinitions, workflowFilterNames } from "./service";
 
 const definition = "5b1e9a00-0000-4000-8000-000000000001";
 const parent = "5b1e9a00-0000-4000-8000-000000000002";
@@ -35,7 +35,7 @@ test("one workflow definition and one parent run reach the workflow store; the o
   expect(runs).toHaveBeenCalledTimes(1);
   expect(runs.mock.calls[0]![0]).toEqual({
     appId: "mail",
-    state: "failed",
+    states: ["failed", "needs_attention"],
     workflowId: definition,
     parentRunId: parent,
     since: new Date("2026-11-25T08:00:00.000Z"),
@@ -151,4 +151,19 @@ test("the job lanes read one bounded page of traces in the window; per minute ke
 
   await readSuccessMinutes(parseRunsAddress(query, new URLSearchParams("kind=delivery&status=failed&q=sync&page=2")).state, 2, 100);
   expect(minutes.mock.calls[0]).toEqual([{ page: 2, perPage: 100, offset: 100 }, { filter: { window: "24h", search: "sync" } }]);
+});
+
+test("waiting workflow runs include queued ones; the definition search asks the store by name before its limit", async () => {
+  const runs = spyOn(workflowStore, "listWorkflowRuns").mockResolvedValue([]);
+  const families = spyOn(workflowStore, "listWorkflowFamilies").mockResolvedValue([
+    { workflowId: definition, workflowName: "Rechnung ablegen", appId: "mail" } as never,
+  ]);
+  spies.push(runs, families);
+  const { state } = parseRunsAddress(runsQuery("de"), new URLSearchParams("status=waiting"));
+  await listRuns(state, ["workflow"], { page: 1, perPage: 100, preview: 20, credentials: {} as never, now });
+  expect(runs.mock.calls[0]![0]).toMatchObject({ states: ["queued", "waiting"] });
+
+  const items = await searchWorkflowDefinitions("  Rechnung ", { appId: "mail", since: now, limit: 20 });
+  expect(families.mock.calls[0]![0]).toEqual({ appId: "mail", search: "Rechnung", since: now, limit: 20 });
+  expect(items).toEqual([{ value: definition, label: "Rechnung ablegen", meta: "mail" }]);
 });

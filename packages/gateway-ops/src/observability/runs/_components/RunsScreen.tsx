@@ -24,7 +24,7 @@ import {
   Text,
 } from "@k2b/ui/v2";
 import type { LookupItem } from "@k2b/ui/v2/list-query";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import { type KeyCell, KeyCells } from "../../_components/KeyCells";
 import RunNow from "../../sync/_components/RunNow";
@@ -33,6 +33,7 @@ import type { RunsApi } from "../api";
 import { runsMessages } from "../messages";
 import {
   kindsOf,
+  parseRunsAddress,
   RUNS_PAGE_MAX,
   RUNS_PATH,
   RUNS_PER_PAGE,
@@ -151,6 +152,8 @@ export default function RunsScreen(props: RunsScreenProps) {
     setLoading(true);
     try {
       const params = Object.fromEntries(query().serialize(next)) as Record<string, string>;
+      // the page the list shows: 1 after a new filter, the address's own after a history step
+      if (page() > 1) params.page = String(page());
       if (props.tab === "minutes") {
         const response = await client.minutes.$get({ query: params }, { init: { signal: current.signal } });
         if (!response.ok) throw new Error(response.statusText);
@@ -175,8 +178,30 @@ export default function RunsScreen(props: RunsScreenProps) {
   };
 
   /** A new state from the bar, the search or the order: the list starts at its first page again. */
+  /** The page of the address after a history step (back or forward), read before the bar reports the step. */
+  let restoring: number | undefined;
+  onMount(() => {
+    // capture: this runs before the bar's own listener reports the step through `change`
+    const step = () => {
+      restoring = parseRunsAddress(query(), new URLSearchParams(location.search)).page;
+    };
+    addEventListener("popstate", step, { capture: true });
+    onCleanup(() => removeEventListener("popstate", step, { capture: true }));
+  });
+
+  /**
+   * A new state from the bar, the search or the order starts the list at its first page. A history step restores the
+   * address as it was, its page included, and writes no history.
+   */
   const change = (next: RunsState) => {
     setState(next);
+    const restored = restoring;
+    restoring = undefined;
+    if (restored !== undefined) {
+      setPage(restored);
+      void load(next);
+      return;
+    }
     setPage(1);
     if (!isServer) {
       const params = new URLSearchParams(location.search);

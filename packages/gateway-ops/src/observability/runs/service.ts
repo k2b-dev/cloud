@@ -92,12 +92,13 @@ const jobs = async (state: RunsState, paging: Paging): Promise<RunsPart> => {
 
 // ── Workflow runs ────────────────────────────────────────────────────────────────────────────────────────────────
 
-const WORKFLOW_STATE: Record<RunStatus, WorkflowRunState> = {
-  failed: "failed",
-  running: "running",
-  waiting: "waiting",
-  succeeded: "succeeded",
-  canceled: "canceled",
+/** Every workflow state each status stands for, as `workflowStatus` maps them back; the store filters them before paging. */
+export const WORKFLOW_STATES: Record<RunStatus, readonly WorkflowRunState[]> = {
+  failed: ["failed", "needs_attention"],
+  running: ["running"],
+  waiting: ["queued", "waiting"],
+  succeeded: ["succeeded"],
+  canceled: ["canceled"],
 };
 
 /** A workflow run's error is JSON: its message when it has one, else its text. */
@@ -134,7 +135,7 @@ const workflows = async (state: RunsState, paging: Paging, now: Date): Promise<R
   // The store counts nothing: one more row than shown says whether more follow.
   const runs: WorkflowRunSummary[] = await listWorkflowRuns({
     ...(state.filters.app ? { appId: state.filters.app } : {}),
-    ...(status ? { state: WORKFLOW_STATE[status] } : {}),
+    ...(status ? { states: WORKFLOW_STATES[status] } : {}),
     ...(state.filters.workflow ? { workflowId: state.filters.workflow } : {}),
     ...(state.filters.parent ? { parentRunId: state.filters.parent } : {}),
     since: sinceOf(state, now),
@@ -438,10 +439,12 @@ export const searchWorkflowDefinitions = async (
   text: string,
   options: { appId?: string; since: Date; limit: number },
 ): Promise<LookupItem[]> => {
-  const needle = text.trim().toLowerCase();
-  const families = await listWorkflowFamilies({ ...(options.appId ? { appId: options.appId } : {}), since: options.since });
-  return families
-    .filter((family) => !needle || family.workflowName.toLowerCase().includes(needle))
-    .slice(0, options.limit)
-    .map((family) => ({ value: family.workflowId, label: family.workflowName, meta: family.appId }));
+  // the store searches the names before its limit, so a match is never cut off by unrelated definitions
+  const families = await listWorkflowFamilies({
+    ...(options.appId ? { appId: options.appId } : {}),
+    ...(text.trim() ? { search: text.trim() } : {}),
+    since: options.since,
+    limit: options.limit,
+  });
+  return families.map((family) => ({ value: family.workflowId, label: family.workflowName, meta: family.appId }));
 };

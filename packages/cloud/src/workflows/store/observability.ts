@@ -13,6 +13,7 @@
  */
 import type { SQL } from "bun";
 import { sql } from "../../runtime/clients";
+import { escapeLikePattern, toPgTextArray } from "../../services/postgres";
 import type { WorkflowInvocationMode, WorkflowJsonValue, WorkflowRunState } from "../contracts";
 import type { WorkflowEffectBudget } from "./budget";
 
@@ -47,6 +48,8 @@ export type WorkflowRunFilter = {
   /** Restrict the list to the direct children of one fan-out parent. */
   parentRunId?: string;
   state?: WorkflowRunState;
+  /** Any of these states, such as every state that needs someone (`failed`, `needs_attention`); with `state`, both apply. */
+  states?: readonly WorkflowRunState[];
   mode?: WorkflowInvocationMode;
   /** Children are noise in a list view until you are looking at their parent. */
   includeChildren?: boolean;
@@ -113,6 +116,11 @@ const RUN_FROM = `
   LEFT JOIN workflows.event AS e ON e.id = r.event_id
 `;
 
+/** The state set of a filter as a Postgres text array, or null when it names none. */
+const states = (filter: Pick<WorkflowRunFilter, "states">) => (filter.states?.length ? toPgTextArray([...filter.states]) : null);
+/** A name search as a case-insensitive contains pattern, or null. */
+const search = (filter: { search?: string }) => (filter.search?.trim() ? `%${escapeLikePattern(filter.search.trim())}%` : null);
+
 export const listWorkflowRuns = async (filter: WorkflowRunFilter = {}, options: { db?: SQL } = {}): Promise<WorkflowRunSummary[]> => {
   const db = options.db ?? sql;
   const rows = await db<RunRow[]>`
@@ -122,6 +130,7 @@ export const listWorkflowRuns = async (filter: WorkflowRunFilter = {}, options: 
       AND (${filter.workflowId ?? null}::uuid IS NULL OR r.workflow_id = ${filter.workflowId ?? null}::uuid)
       AND (${filter.parentRunId ?? null}::uuid IS NULL OR r.parent_run_id = ${filter.parentRunId ?? null}::uuid)
       AND (${filter.state ?? null}::text IS NULL OR r.state = ${filter.state ?? null})
+      AND (${states(filter)}::text[] IS NULL OR r.state = ANY(${states(filter)}::text[]))
       AND (${filter.mode ?? null}::text IS NULL OR r.mode = ${filter.mode ?? null})
       AND (${filter.parentRunId !== undefined || filter.includeChildren === true} OR r.parent_run_id IS NULL)
       AND (${filter.since ?? null}::timestamptz IS NULL OR r.created_at >= ${filter.since ?? null}::timestamptz)
@@ -150,7 +159,13 @@ export type WorkflowFamilySummary = {
   oldestQueuedAt: Date | null;
 };
 
-export type WorkflowFamilyFilter = Pick<WorkflowRunFilter, "appId" | "workflowId" | "state" | "mode" | "since" | "limit" | "offset">;
+export type WorkflowFamilyFilter = Pick<
+  WorkflowRunFilter,
+  "appId" | "workflowId" | "state" | "states" | "mode" | "since" | "limit" | "offset"
+> & {
+  /** Definitions whose name contains this text, ignoring case; applied before `limit`. */
+  search?: string;
+};
 
 type WorkflowFamilyRow = {
   workflow_id: string;
@@ -195,6 +210,8 @@ export const listWorkflowFamilies = async (
       WHERE (${filter.appId ?? null}::text IS NULL OR r.app_id = ${filter.appId ?? null})
         AND (${filter.workflowId ?? null}::uuid IS NULL OR r.workflow_id = ${filter.workflowId ?? null}::uuid)
         AND (${filter.state ?? null}::text IS NULL OR r.state = ${filter.state ?? null})
+        AND (${states(filter)}::text[] IS NULL OR r.state = ANY(${states(filter)}::text[]))
+        AND (${search(filter)}::text IS NULL OR w.name ILIKE ${search(filter)})
         AND (${filter.mode ?? null}::text IS NULL OR r.mode = ${filter.mode ?? null})
         AND r.parent_run_id IS NULL
         AND (${filter.since ?? null}::timestamptz IS NULL OR r.created_at >= ${filter.since ?? null}::timestamptz)
