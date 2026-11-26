@@ -337,8 +337,18 @@ lines instead of cutting a thing.
   opening from there as it does as a tab; without a menu tab a tab "Mehr"
   holds them. Known: while tabs hide, a gap of less than one tab may stand
   before the menu tab. The open tab never hides: without room it stands
-  after the tabs that fit, cut with "…" (whole on hover), and is not named
-  in the menu again (leave it out of your `menu` entries too).
+  after the tabs that fit, cut with "…" (whole on hover), alone if it must
+  (only below 24 px, a symbol and "…", it is the ticked entry of the menu,
+  whose tab is then the open one), and is not named
+  in the menu again (leave it out of your `menu` entries too). A default
+  that depends on the device (the list on the phone, the graph on the
+  desktop, while the address names no view) is `current: "phone"` on one tab
+  and `current: "desktop"` on another: the stylesheet marks the right one
+  from the server's first paint, nothing switches on load. Never read the
+  width yourself to choose a tab. Once a person chose a view, pass `true`
+  for it and `false` for the others, never a device value (or two tabs look
+  open). Known: until the page mounts, assistive technology hears no tab as
+  open (`aria-current` needs the width); the look is right from the start.
 - `StatusRow`: `lead` (the one statement, "7 ungelesen"), `loading` (results
   refresh in place: `true` turns a quiet mark after the lead; pass `false`
   while idle so its 16 px stay reserved and nothing moves; leave it out where

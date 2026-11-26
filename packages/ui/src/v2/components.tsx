@@ -24,6 +24,7 @@ import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
+import { textEdge } from "./tokens";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -235,8 +236,15 @@ export type Tab = {
   onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
-  /** The view shown now. */
-  current?: boolean;
+  /**
+   * The view shown now. `"phone"` or `"desktop"` makes it the view shown on that kind of device only, for a default
+   * that depends on the device (the list on the phone, the graph on the desktop) while the address names none: the
+   * stylesheet marks it from the server's first paint, before the page knows its width, so nothing switches on load.
+   * Device values are only for that default: once a person chose a view, pass `true` for it and `false` for every
+   * other tab, or two tabs look open. Known: until the page mounts, assistive technology hears no tab as the open one
+   * (`aria-current` needs the width); the look is right from the first paint.
+   */
+  current?: boolean | "phone" | "desktop";
   /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
    * `onNavigate`, or `onClick`). It is the menu's button and has no address of its own. Its `count` counts these
@@ -263,15 +271,28 @@ const TabFace = (props: { tab: Tab }) => (
   </>
 );
 
+/**
+ * Whether a tab is the view shown on this device. `wide` is unknown (undefined) on the server and until the page
+ * mounts, so a tab of one device is none there; the stylesheet paints it (`data-current-on`).
+ */
+const shownOn = (tab: Tab, wide: boolean | undefined) =>
+  tab.current === true || (wide !== undefined && tab.current === (wide ? "desktop" : "phone"));
+
+/** The width from which v2 lays a page out for the desktop, the one width of v2.css (`textEdge.phoneBelow`). */
+const DESKTOP = `(min-width: ${textEdge.phoneBelow}px)`;
+
+/** The least room of an open tab that stands cut: a symbol or one letter, and "…". */
+const OPEN_TAB_FLOOR = 24;
+
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, shown: boolean): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
   meta: tab.count === undefined ? undefined : String(tab.count),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
-  checked: tab.current ? true : undefined,
+  checked: shown ? true : undefined,
 });
 
 /**
@@ -292,7 +313,8 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  * stands at the end. A tab is never cut: one that has no room hides whole and is an entry of that menu (without a
  * menu tab a tab "More" opens them), opened from there as its tab opens it, and the menu tab itself always stays whole.
  * Only the open tab never hides (break-ui 25.11.): when it has no room, it takes the place after the tabs that fit,
- * cut with "…" (its whole name on hover), and the tabs between join the menu.
+ * cut with "…" (its whole name on hover), alone if it must, and the tabs between join the menu. Where not even a
+ * symbol and "…" fit (24 px), it is the ticked entry of that menu, whose tab is then the open one.
  * Known: while tabs hide, a gap of less than one tab may stand before the menu tab (closing it would move the menu tab
  * after the page loads).
  */
@@ -305,8 +327,17 @@ export const Tabs = (props: TabsProps) => {
   const [fit, setFit] = createSignal(Number.POSITIVE_INFINITY);
   // The open tab, when it would hide: it stands after the tabs that fit, at most this wide.
   const [kept, setKept] = createSignal<{ index: number; room: number }>();
+  // Whether the page is laid out for the desktop: unknown on the server and until the mount (see `shownOn`).
+  const [wide, setWide] = createSignal<boolean>();
+  const shown = (tab: Tab) => shownOn(tab, wide());
+  const deviceOf = (tab: Tab) => (typeof tab.current === "string" ? tab.current : undefined);
   let row: HTMLDivElement | undefined;
   onMount(() => {
+    const desktop = matchMedia(DESKTOP);
+    const follow = () => setWide(desktop.matches);
+    follow();
+    desktop.addEventListener("change", follow);
+    onCleanup(() => desktop.removeEventListener("change", follow));
     if (!row) return;
     const measure = () => {
       const tabs = [...(row?.children ?? [])].filter((child): child is HTMLElement => child instanceof HTMLElement);
@@ -322,7 +353,7 @@ export const Tabs = (props: TabsProps) => {
       // the first tab always stands in the line (a wrapping line holds at least one), as the server sent it
       let fits = 1;
       while (fits < tabs.length && until(fits + 1) <= room + 0.5) fits += 1;
-      const open = plain().findIndex((tab) => tab.current);
+      const open = plain().findIndex((tab) => shownOn(tab, desktop.matches));
       if (open < 0 || open < fits) {
         setKept(undefined);
         setFit(fits >= tabs.length ? Number.POSITIVE_INFINITY : fits);
@@ -332,9 +363,12 @@ export const Tabs = (props: TabsProps) => {
       const least = Math.min(widths[open]!, 96);
       let before = Math.min(fits, open);
       while (before > 0 && until(before) + gap + least > room + 0.5) before -= 1;
-      const left = Math.floor(room - until(before) - (before > 0 ? gap : 0));
-      // without room even for a short name the open tab hides like the others (a cut to nothing says nothing)
-      if (left < least) {
+      // the open tab never hides (Spaces, Notebooks 26.11.): without room even for a short name it stands alone, cut
+      // to the room the line has, and the others fold ...
+      const left = Math.max(0, Math.floor(room - until(before) - (before > 0 ? gap : 0)));
+      // ... down to the room of a symbol and "…": below that a cut says nothing, and it is the ticked entry of the menu,
+      // whose tab is then the open one
+      if (left < OPEN_TAB_FLOOR) {
         setKept(undefined);
         setFit(fits);
         return;
@@ -366,7 +400,7 @@ export const Tabs = (props: TabsProps) => {
     watchAll();
     parts.observe(row, { childList: true });
     // Another tab becoming the open one changes no size: the place of the open tab is measured again for it.
-    createEffect(on(() => plain().findIndex((tab) => tab.current), later, { defer: true }));
+    createEffect(on(() => plain().findIndex(shown), later, { defer: true }));
     onCleanup(() => {
       cancelAnimationFrame(frame);
       sizes.disconnect();
@@ -375,7 +409,7 @@ export const Tabs = (props: TabsProps) => {
   });
   const isKept = (index: number) => kept()?.index === index;
   const hidden = () => plain().filter((_, index) => index >= fit() && !isKept(index));
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, shown(tab)));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -388,7 +422,8 @@ export const Tabs = (props: TabsProps) => {
               href={tab().href}
               onNavigate={tab().href !== undefined ? tab().onNavigate : undefined}
               onClick={() => tab().onClick?.()}
-              aria-current={tab().current ? "page" : undefined}
+              aria-current={shown(tab()) ? "page" : undefined}
+              data-current-on={deviceOf(tab())}
               data-overflow={index >= fit() && !isKept(index) ? "" : undefined}
               data-kept={isKept(index) ? "" : undefined}
               title={isKept(index) ? tab().label : undefined}
@@ -405,14 +440,15 @@ export const Tabs = (props: TabsProps) => {
             items={
               index === withMenu().length - 1 && more().length > 0 ? [...more(), "separator", ...(tab().menu ?? [])] : (tab().menu ?? [])
             }
-            current={tab().current}
+            current={shown(tab())}
+            currentOn={deviceOf(tab())}
           >
             <TabFace tab={index === withMenu().length - 1 ? { ...tab(), count: countWith(tab().count, more().length) } : tab()} />
           </MenuTab>
         )}
       </Index>
       <Show when={withMenu().length === 0 && more().length > 0}>
-        <MenuTab items={more()} current={hidden().some((tab) => tab.current)}>
+        <MenuTab items={more()} current={hidden().some(shown)}>
           <TabFace tab={{ label: t().more, count: `+${more().length}` }} />
         </MenuTab>
       </Show>

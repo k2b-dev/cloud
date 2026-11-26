@@ -2596,6 +2596,26 @@
 .k2-ui .k2-tab[aria-current] > .k2-icon {
   color: var(--k2-app-text);
 }
+/* A tab that is the open one on one kind of device only (`current: "phone"` or `"desktop"`): the server cannot know
+   the width, so the stylesheet marks it from the first paint; the mount only tells assistive technology. */
+@media (min-width: 768px) {
+  .k2-ui .k2-tab[data-current-on="desktop"] {
+    color: var(--k2-text);
+    border-bottom-color: var(--k2-app, var(--k2-blue));
+  }
+  .k2-ui .k2-tab[data-current-on="desktop"] > .k2-icon {
+    color: var(--k2-app-text);
+  }
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-tab[data-current-on="phone"] {
+    color: var(--k2-text);
+    border-bottom-color: var(--k2-app, var(--k2-blue));
+  }
+  .k2-ui .k2-tab[data-current-on="phone"] > .k2-icon {
+    color: var(--k2-app-text);
+  }
+}
 .k2-ui .k2-tab:focus-visible {
   outline: none;
   box-shadow: inset 0 -2px 0 var(--k2-blue);
@@ -3523,7 +3543,7 @@
     background: var(--k2-surface);
   }
   /* the mark of the current view stands on the head's own line, below the cover: it gives way, the line stays one */
-  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab[aria-current] {
+  .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-end > .k2-input[data-search]:focus-within) .k2-tab:is([aria-current], [data-current-on="phone"]) {
     border-bottom-color: transparent;
   }
   .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:focus-within {

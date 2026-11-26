@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Cut, Input, List, Menu, Notice, Pane, Row, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Chip, Cut, Input, List, Menu, Nav, Notice, Pane, Row, Table, Tabs, Workspace } from "../src/v2";
 
 // Worst-case states of v2 primitives that change after the page is live (break-ui 25.11., review of #4210): a note that
 // grows, a tab that becomes the open one, words cut in the middle in a narrow box, an amount among a row's marks.
@@ -42,7 +42,101 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-if (scenario === "rows")
+// `<body data-case="tabsfive">`: a space with five views, the last one open, in the head beside a deed (Spaces), and a
+// pane with five views whose open one depends on the device, the late ones (Notebooks)
+const fiveViews = ["Übersicht", "Kalender", "Aufgaben", "Dateien und Ordner", "Einstellungen des Raums"];
+if (scenario === "tabsfive")
+  render(
+    () => (
+      <Workspace
+        sidebar={
+          <Nav title="Räume" icon="layout-grid" groups={[{ items: [{ label: "Werkstatt", icon: "folder", href: "#w", current: true }] }]} />
+        }
+        head={
+          <Bar
+            start={
+              <Tabs label="Raum" items={fiveViews.map((label, index) => ({ label, current: index === 4, onClick: () => undefined }))} />
+            }
+            end={
+              <>
+                <Input type="search" icon="search" label="Suchen" placeholder="Im Raum suchen" />
+                <Button>Teilen</Button>
+                <Button variant="primary">Neuer Termin</Button>
+              </>
+            }
+          />
+        }
+      >
+        <Pane
+          label="Spalte"
+          width={{ min: 320, default: 360 }}
+          head={
+            <Tabs
+              label="Notizbuch"
+              items={fiveViews.map((label, index) => ({
+                label,
+                current: index === 4 ? "phone" : index === 3 ? "desktop" : false,
+                onClick: () => undefined,
+              }))}
+            />
+          }
+        >
+          <Row lines={["Inhalt"]} />
+        </Pane>
+        <Pane label="Detail">
+          <Row lines={["Detail"]} />
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+// `<body data-case="tabsfold">`: tabs whose open tab depends on the device, with too little room: in a box of 300 px the
+// phone's tab is the last of six (it stays, as the open tab does), in a box of 150 px it stands alone, cut, and
+// in a box of 90 px, too small for a symbol and "…", it is the ticked entry of the menu
+else if (scenario === "tabsfold")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <div style={{ width: "300px" }}>
+            <Tabs
+              label="Viele"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Dokumente", onClick: () => undefined },
+                { label: "Aufgaben", onClick: () => undefined },
+                { label: "Kontakte", onClick: () => undefined },
+                { label: "Notizen", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+          <div style={{ width: "150px" }}>
+            <Tabs
+              label="Eng"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Notizen der Woche", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+          <div style={{ width: "90px" }}>
+            <Tabs
+              label="Winzig"
+              items={[
+                { label: "Übersicht", current: "desktop", onClick: () => undefined },
+                { label: "Verlauf", onClick: () => undefined },
+                { label: "Notizen der Woche", current: "phone", onClick: () => undefined },
+              ]}
+            />
+          </div>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "rows")
   render(
     () => (
       <Workspace>

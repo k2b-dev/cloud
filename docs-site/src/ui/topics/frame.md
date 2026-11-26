@@ -27,6 +27,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - Views of the same thing: "Offen", "Diese Woche", "Erledigt", or the areas of a record.
 - They stand in the head `Bar start` beside the actions, or as the `head` of a `Pane`.
 - A tab without room hides whole and joins the menu tab ("Weitere").
+- A default view per device is `current: "phone"` and `current: "desktop"`: the right tab is open from the first paint. Once a person chose a view, pass `true` and `false`, never a device value.
 
 ### Path
 
