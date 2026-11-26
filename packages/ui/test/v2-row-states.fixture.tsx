@@ -12,7 +12,6 @@ import {
   Input,
   List,
   Menu,
-  Notice,
   Pane,
   Path,
   Row,
@@ -332,29 +331,6 @@ export const StructureScreen = () => (
         </Section>
       </Section.Columns>
       <Bar end={<Button variant="primary">Speichern</Button>} />
-    </Pane>
-  </Workspace>
-);
-
-// Groups in their two places: inside a Section (the section's line is enough, so a group draws no frame there) and
-// directly in a pane under a notice (framed, apart from the notice's line).
-const delivery = (id: string, text: string) => (
-  <Group icon="package" title={id} count={6} state={<Chip status="warn">Wartet auf Abholung</Chip>}>
-    <Text>{text}</Text>
-  </Group>
-);
-export const GroupsScreen = () => (
-  <Workspace>
-    <Pane label="Einlieferungen">
-      <Section title="Einlieferungen" count={2}>
-        {delivery("EL-2611-00009", "10 Artikel sind ausgelaufen.")}
-        {delivery("EL-2610-00031", "2 Artikel warten auf Abholung bis 12. Dez.")}
-      </Section>
-      <Notice tone="warn" title="Zwei Einlieferungen ohne Abteilung">
-        Sie stehen hier, bis eine Abteilung sie übernimmt.
-      </Notice>
-      {delivery("EL-2609-00017", "Ohne Abteilung seit 3. Nov.")}
-      {delivery("EL-2609-00018", "Ohne Abteilung seit 4. Nov.")}
     </Pane>
   </Workspace>
 );

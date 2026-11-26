@@ -1257,19 +1257,8 @@
 .k2-ui .k2-group + .k2-group {
   margin-top: 12px;
 }
-/* outside a section a group keeps its frame, apart from a line above it (a notice, a bar): never a double line */
-.k2-ui .k2-scroll > .k2-group {
-  margin-block: 12px;
-}
-/* inside a section the section's line is enough: a group draws no frame, stands on the section's edges as its rows
-   do, and one line parts it from the group before (rule 9: lines separate groups). No box in a box. */
-.k2-ui .k2-sec > .k2-group {
-  --k2-edge: inherit;
-  margin: 0;
-  border: 0;
-}
-.k2-ui .k2-sec > .k2-group + .k2-group {
-  border-top: var(--k2-hairline);
+.k2-ui .k2-sec > .k2-group:last-child {
+  margin-bottom: 12px;
 }
 .k2-ui .k2-gh {
   display: grid;

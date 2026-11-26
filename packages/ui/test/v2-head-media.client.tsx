@@ -7,7 +7,6 @@ import {
   CanvasFillScreen,
   CellsScreen,
   DeepPathScreen,
-  GroupsScreen,
   LongAddressScreen,
   RowStatesScreen,
   StructureScreen,
@@ -35,7 +34,6 @@ declare global {
       | "long"
       | "areas"
       | "structure"
-      | "groups"
       | "split-list-canvas";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
@@ -53,8 +51,6 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
-      ) : which === "groups" ? (
-        <GroupsScreen />
       ) : which === "structure" ? (
         <StructureScreen />
       ) : which === "areas" ? (
