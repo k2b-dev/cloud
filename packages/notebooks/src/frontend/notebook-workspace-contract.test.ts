@@ -20,11 +20,9 @@ describe("Notebooks workspace contract", () => {
   test("keeps notebook settings modal-only and opens without an access preflight", async () => {
     const pageSource = await Bun.file(resolve(import.meta.dir, "[id]/page.tsx")).text();
     const pageDataSource = await Bun.file(resolve(import.meta.dir, "[id]/page-data.ts")).text();
-    const sidebarSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookSidebar.island.tsx")).text();
-    const openSettings = sidebarSource.slice(
-      sidebarSource.indexOf("const openSettings ="),
-      sidebarSource.indexOf("const navigationHidden ="),
-    );
+    const sidebarSource = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/notebook-sidebar-state.ts")).text();
+    const openSettings = sidebarSource.slice(sidebarSource.indexOf("const openSettings ="), sidebarSource.indexOf("const chooseNewNote ="));
+    expect(openSettings.length).toBeGreaterThan(0);
 
     expect(pageSource).not.toContain("NotebookSettingsPanel.island");
     expect(pageDataSource).not.toContain("isSettingsMode");
