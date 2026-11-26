@@ -232,7 +232,8 @@ export const RailPicture = (props: NonNullable<V2Screen["rail"]>) => (
 export const V2ScreenPage = (props: { name: V2ScreenName; search?: string }) => {
   const screen: V2Screen = v2Screens[props.name];
   return (
-    <div class="k2-ui ui-v2-screen" style={screen.app ? { "--k2-app": screen.app } : undefined}>
+    // the phone bar is the host's, as Cloud's shell is: the head's search and a detail's way back belong to it there
+    <div class="k2-ui ui-v2-screen" data-k2-host-search="" style={screen.app ? { "--k2-app": screen.app } : undefined}>
       <PhoneBar {...screen.phone} />
       <Show when={screen.rail}>{(rail) => <RailPicture {...rail()} />}</Show>
       {/* the demo data is German, so the library's own words are too; islands read it from <html lang> (see server.tsx) */}
