@@ -1758,13 +1758,22 @@
 .k2-ui .k2-table[data-grid] td .k2-mark {
   vertical-align: middle;
 }
-/* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
+/* the phone form of a large table: rows of two lines, group heads as text as in the table; the table itself leaves */
 .k2-ui .k2-table-phone {
   display: none;
 }
-.k2-ui .k2-table-phone .k2-bar {
-  background: var(--k2-n50);
+.k2-ui .k2-table-phone-group {
+  display: flex;
+  align-items: flex-end;
   height: var(--k2-h-columns);
+  padding: 0 var(--k2-edge) 4px;
+}
+.k2-ui .k2-table-phone-group > .k2-group-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
 .k2-ui .k2-table-phone .k2-row[data-avatar] {

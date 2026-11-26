@@ -888,13 +888,17 @@ export const Table = <T,>(props: TableProps<T>) => {
                 <For each={items()}>
                   {(item) =>
                     "group" in item ? (
-                      <div class="k2-bar" role="presentation">
-                        <div class="k2-bar-start">
+                      // the same head as in the table: text in 600 with its count, no band and no line under it
+                      <div class="k2-table-phone-group" role="presentation">
+                        <span class="k2-group-row">
                           {item.group.head()}
-                          <Show when={item.group.count ?? item.group.meta}>
-                            <span class="k2-t-meta">{item.group.count ?? item.group.meta}</span>
+                          <Show when={item.group.count}>
+                            <span class="k2-group-row-count">{item.group.count}</span>
                           </Show>
-                        </div>
+                          <Show when={item.group.meta}>
+                            <span class="k2-group-row-meta">{item.group.meta}</span>
+                          </Show>
+                        </span>
                       </div>
                     ) : (
                       (() => {

@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
 
 let browser: Browser;
 let client: string;
@@ -192,6 +192,38 @@ test("the open file shows a large preview 4:3 from edge to edge, and the list le
     // the owner leads its cell as a person
     expect(await page.locator(".k2-table td .k2-cell-lead > .k2-av").count()).toBeGreaterThan(5);
   });
+});
+
+test("on the phone a group head is the same text with its count, not a band (review #4226)", async () => {
+  // the folder on the phone, and the list beside an open file at 1024 px, where the list takes its rows of two lines
+  for (const [which, width] of [
+    ["closed", 390],
+    ["list", 1024],
+  ] as const)
+    await withPage(
+      which,
+      async (page) => {
+        const found = await page.evaluate(() =>
+          [...document.querySelectorAll(".k2-table-phone-group")].map((head) => {
+            const style = getComputedStyle(head);
+            const row = head.querySelector(".k2-group-row")!;
+            return {
+              text: row.textContent,
+              band: style.backgroundColor,
+              line: style.borderBottomWidth,
+              weight: getComputedStyle(row).fontWeight,
+              height: Math.round(head.getBoundingClientRect().height),
+            };
+          }),
+        );
+        expect(found).toEqual([
+          { text: "Ordner2", band: "rgba(0, 0, 0, 0)", line: "0px", weight: "600", height: 36 },
+          { text: "Dateien11", band: "rgba(0, 0, 0, 0)", line: "0px", weight: "600", height: 36 },
+        ]);
+        expect(await page.locator(".k2-table-phone .k2-bar").count()).toBe(0);
+      },
+      width,
+    );
 });
 
 test("a group head is text with its count, not a band, and no line stands under the last row", async () => {

@@ -10,7 +10,7 @@ import { CanvasFillScreen, CellsScreen, RowStatesScreen } from "./v2-row-states.
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
+    __k2Case?: "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -32,7 +32,11 @@ render(
       ) : which === "cells" ? (
         <CellsScreen />
       ) : (
-        <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
+        <Folder
+          closed={which === "closed"}
+          grid={which !== "list" && which !== "closed"}
+          selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined}
+        />
       )}
     </LocaleProvider>
   ),
