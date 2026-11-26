@@ -11,6 +11,10 @@ export type TemplateSummary = { id: string; name: string; description: string; i
 /** Where a new notebook starts: blank (with the welcome note), or from a template, the given one or the first. */
 export type NewNotebookSource = { kind: "blank" } | { kind: "template"; templateId?: string };
 
+/** What the server keeps of a name and a description (CreateNotebookSchema, InstantiateTemplateSchema in api). */
+const NAME_MAX = 100;
+const DESCRIPTION_MAX = 500;
+
 /** The server's own words for a refused request, else the fixed sentence. */
 const reasonOf = async (response: Pick<Response, "json">, fallback: string) => {
   const body: unknown = await response.json().catch(() => null);
@@ -56,6 +60,16 @@ export default function NewNotebookDialog(props: {
     if (fromTemplate() && !chosen) return;
     if (!fromTemplate() && !name().trim()) {
       setFailed(t().nameRequired);
+      return;
+    }
+    // the server keeps at most 100 characters of a name and 500 of a description (api/index.ts); say so here instead
+    // of a refusal. k2b-ui gap: the v2 Input takes no maxLength.
+    if (name().trim().length > NAME_MAX) {
+      setFailed(t().nameTooLong({ max: NAME_MAX }));
+      return;
+    }
+    if (!fromTemplate() && description().trim().length > DESCRIPTION_MAX) {
+      setFailed(t().descriptionTooLong({ max: DESCRIPTION_MAX }));
       return;
     }
     const fallback = chosen ? t().createFromTemplateFailed : t().createFailed;

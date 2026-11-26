@@ -163,6 +163,24 @@ test("the blank row makes a notebook after asking its name, and opens it", async
   }
 }, 60_000);
 
+test("a name or description longer than the server keeps says so in the dialog and sends nothing", async () => {
+  const page = await open();
+  try {
+    await row(page, "Leeres Notizbuch").click();
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
+    await dialog.getByRole("textbox", { name: "Name" }).fill("Ü".repeat(101));
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByText("Der Name darf höchstens 100 Zeichen haben.").waitFor();
+    await dialog.getByRole("textbox", { name: "Name" }).fill("Inventur 2027");
+    await dialog.getByRole("textbox", { name: "Beschreibung" }).fill("a".repeat(501));
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByText("Die Beschreibung darf höchstens 500 Zeichen haben.").waitFor();
+    expect(created).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
 test("a template's row opens the dialog on that template, which keeps its name when none is given", async () => {
   const page = await open();
   try {
