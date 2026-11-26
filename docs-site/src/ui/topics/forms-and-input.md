@@ -30,6 +30,12 @@ A tool that turns a document into Markdown: the field is where the document is d
 
 <Example recipe="upload" height="640" />
 
+## A settings page
+
+Sign-in of an administration: the state first as key numbers with colour, symbol and word, then the settings by topic. A setting with a value per kind is a table; every other setting is a `Setting` row, with its name and hint on the left and its value in a column beside them, so the values stand in one line and read at a glance. The page saves as a whole: a changed setting says what it was. Switch the state: nothing changed yet.
+
+<Example recipe="settings-page" height="720" default="Changed" />
+
 ## Errors, conflicts and saving
 
 - **At the field:** a server error or "Pflichtfeld." goes into the `error` of its field. It replaces the hint and marks the control.
@@ -61,6 +67,12 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 Names one control with a label, a hint or an error, and "optional" or a unit, or one deed at the end of its label line (`action`, such as "Auf Standard zurücksetzen"); `Field.Row` puts fields side by side.
 
 <Props of="Field Field.Row" />
+
+### Setting
+
+One setting of a settings page: name and hint on the left, the control in a column of 300 px beside them, "geändert · vorher …" under it; one column on the phone.
+
+<Props of="Setting" />
 
 ### Input
 
