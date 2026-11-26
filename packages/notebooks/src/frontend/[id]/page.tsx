@@ -6,9 +6,10 @@ import { ssr } from "../../config";
 import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
-import BookGraphSurface from "./_components/book/BookGraphSurface";
 import BookSurface from "./_components/book/BookSurface";
-import GraphWorkspace from "./_components/graph/GraphWorkspace.island";
+import BookGraphWorkspace from "./_components/graph/BookGraphWorkspace.island";
+import NotebookGraphWorkspace from "./_components/graph/NotebookGraphWorkspace.island";
+import { parseGraphViewState } from "./_components/graph/view-state";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import NoteWorkspace from "./_components/NoteWorkspace.island";
 import RememberNotebook from "./_components/RememberNotebook.island";
@@ -27,37 +28,47 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.kind === "redirect") return c.redirect(data.href);
 
-  if (data.isGraphMode && data.graph && data.graphView && data.graphShell === "book") {
-    const graph = data.graph;
-    const graphView = data.graphView;
+  if (data.isGraphMode && data.graphShell === "book") {
     c.get("page").title = data.selectedNote?.title ?? data.notebook.name;
     return () => (
-      <Layout context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }} c={c} fullPage fullWidth title={data.notebook.name}>
+      <Layout
+        context={{ scope: { type: "notebooks.notebook", id: data.notebook.id } }}
+        c={c}
+        fullPage
+        fullWidth
+        ui="v2"
+        title={data.notebook.name}
+      >
         <RememberNotebook notebookId={data.notebook.id} />
-        <BookGraphSurface
-          userId={data.ctx.userId}
+        {/* Like Book and the workspace, the page follows live changes, and a revoked grant or an ended session reloads it. */}
+        <WorkspaceEventBridge notebookId={data.notebook.id} appUrl={data.appUrl} initialCursor={data.ctx.workspaceCursor} />
+        <BookGraphWorkspace
+          navigator={{
+            userId: data.ctx.userId,
+            notebookId: data.notebook.id,
+            notebookName: data.notebook.name,
+            notebookIcon: data.notebook.icon,
+            selectedNoteId: data.selectedNote?.id ?? null,
+            navigation: data.bookNavigation,
+            tags: data.ctx.tags,
+            currentHref: data.selectedNote
+              ? buildNoteUrl(data.notebook.id, data.selectedNote.id, "book")
+              : `/app/notebooks/${data.notebook.id}?mode=book`,
+            canWrite: data.canWrite,
+            locked: !!data.selectedNote?.lockedAt,
+            navigationHidden: data.ctx.navigationHidden,
+            current: "graph",
+            graphBack: data.graphBack,
+          }}
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
-          notebookIcon={data.notebook.icon}
           selectedNoteId={data.selectedNote?.id ?? null}
-          navigation={data.bookNavigation}
-          tags={data.ctx.tags}
-          currentHref={
-            data.selectedNote
-              ? buildNoteUrl(data.notebook.id, data.selectedNote.id, "book")
-              : `/app/notebooks/${data.notebook.id}?mode=book`
-          }
-          canWrite={data.canWrite}
-          locked={!!data.selectedNote?.lockedAt}
-          navigationHidden={data.ctx.navigationHidden}
-          graph={graph}
-          graphView={graphView}
+          graph={data.graph ?? null}
+          from="book"
+          backHref={data.graphBack}
+          view={data.graphView ?? parseGraphViewState(new URLSearchParams())}
           now={data.now}
           timeZone={data.dateConfig.timeZone ?? "UTC"}
-          backHref={data.graphBack}
-          graphBack={data.graphBack}
-          appUrl={data.appUrl}
-          cursor={data.ctx.workspaceCursor}
         />
       </Layout>
     );
@@ -290,21 +301,20 @@ export default ssr<AuthContext>(async (c) => {
       <NotebookCommands notebookId={notebook.id} notebookName={notebook.name} canWrite={canWrite} ownsSearchNavigation />
       {/* Live changes reach the page through one workspace socket; the graph edits no note. */}
       <WorkspaceEventBridge notebookId={notebook.id} appUrl={appUrl} initialCursor={ctx.workspaceCursor} initialNoteId={null} />
-      {graph && data.graphView ? (
-        <GraphWorkspace
-          ctx={ctx}
-          notebookId={notebook.id}
-          notebookName={notebook.name}
-          selectedNoteId={selectedNoteId}
-          graph={graph}
-          from={ctx.presentationMode}
-          backHref={data.graphBack}
-          graphBack={data.graphBack}
-          view={data.graphView}
-          now={data.now}
-          timeZone={data.dateConfig.timeZone ?? "UTC"}
-        />
-      ) : null}
+      {/* without a graph, the frame says so and keeps the way back */}
+      <NotebookGraphWorkspace
+        ctx={ctx}
+        notebookId={notebook.id}
+        notebookName={notebook.name}
+        selectedNoteId={selectedNoteId}
+        graph={graph ?? null}
+        from={ctx.presentationMode}
+        backHref={data.graphBack}
+        graphBack={data.graphBack}
+        view={data.graphView ?? parseGraphViewState(new URLSearchParams())}
+        now={data.now}
+        timeZone={data.dateConfig.timeZone ?? "UTC"}
+      />
     </Layout>
   );
 });

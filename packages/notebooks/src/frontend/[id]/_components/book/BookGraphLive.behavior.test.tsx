@@ -47,7 +47,7 @@ describe("Book graph live updates", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: BookGraphLive } = await import("./BookGraphLive.island.tsx");
+    const { default: BookGraphLive } = await import("./BookGraphLive");
     const dispose = render(() => createComponent(BookGraphLive, { notebookId: "book01", bookHref }), dom.root);
     return {
       requests,

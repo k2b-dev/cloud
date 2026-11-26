@@ -1,13 +1,11 @@
-import { AppWorkspace } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
-import BookGraphLive from "../book/BookGraphLive.island";
-import BookNavigator, { type BookNavigatorProps } from "../book/BookNavigator.island";
+import type { BookNavigatorProps } from "../book/BookNavigatorBody";
+import BookGraphWorkspace from "./BookGraphWorkspace.island";
 import { bigGraph } from "./graph.fixtures";
 import { layoutNetwork } from "./layout-net";
 import { buildGraphModel } from "./model";
-import NotebookGraph from "./NotebookGraph.island";
 import type { GraphViewState } from "./view-state";
 
 type InitialFrame = {
@@ -38,31 +36,20 @@ declare global {
   }
 }
 
-/** The graph beside the Book navigation with its live notice, as BookGraphSurface shows it to readers. */
+/** The graph beside the Book navigation with its live notice, as the page shows it to readers (v2). */
 export function NotebookGraphFixture(props: NotebookGraphFixtureProps) {
-  return (
-    <div class="notebook-book-shell">
-      <AppWorkspace mobileSurface="flush" class="notebook-book-workspace" head={false}>
-        {createComponent(BookNavigator, props.navigator)}
-        <AppWorkspace.Content>
-          <AppWorkspace.Main scroll={false} class="relative">
-            {createComponent(BookGraphLive, { notebookId: props.navigator.notebookId, bookHref: props.navigator.currentHref })}
-            {createComponent(NotebookGraph, {
-              notebookId: props.navigator.notebookId,
-              notebookName: props.navigator.notebookName,
-              selectedNoteId: props.navigator.selectedNoteId,
-              graph: props.graph,
-              from: props.from,
-              backHref: props.navigator.graphBack,
-              view: props.view,
-              now: props.now,
-              timeZone: props.timeZone,
-            })}
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
-    </div>
-  );
+  return createComponent(BookGraphWorkspace, {
+    navigator: props.navigator,
+    notebookId: props.navigator.notebookId,
+    notebookName: props.navigator.notebookName,
+    selectedNoteId: props.navigator.selectedNoteId,
+    graph: props.graph,
+    from: props.from,
+    backHref: props.navigator.graphBack,
+    view: props.view,
+    now: props.now,
+    timeZone: props.timeZone,
+  });
 }
 
 if (typeof document !== "undefined" && document.getElementById("graph-props")) {
@@ -71,14 +58,17 @@ if (typeof document !== "undefined" && document.getElementById("graph-props")) {
   const frame = (): InitialFrame => {
     const visible = (element: Element) => element.getClientRects().length > 0;
     return {
-      checked: [...root.querySelectorAll('[aria-label="Display"] [aria-checked="true"]')].find(visible)?.textContent ?? null,
+      checked: [...root.querySelectorAll('[aria-label="Display"] [aria-current="page"]')].find(visible)?.textContent ?? null,
       timelineRows: [...root.querySelectorAll("[data-row]")].map((row) => row.getAttribute("data-row")),
       timelineGroups: [...root.querySelectorAll(".notebook-graph__timeline-group")].map((group) => group.textContent),
-      depth: [...root.querySelectorAll(".notebook-graph__depth")].some(visible),
-      boxes: [".notebook-graph__head", ".notebook-graph__filters", ".notebook-graph__body"].map((selector) => {
-        const box = root.querySelector(selector)?.getBoundingClientRect();
-        return box ? [box.x, box.y, box.width, box.height].map(Math.round) : null;
-      }),
+      depth: [...root.querySelectorAll('input[name="graph-depth"]')].some(visible),
+      // the workspace head, the pane head (displays, filters, zoom) and the drawing
+      boxes: ['[data-k2-workspace] [data-k2-part="Bar"]', '[data-k2-part="Pane"] [data-k2-part="Bar"]', ".notebook-graph__body"].map(
+        (selector) => {
+          const box = root.querySelector(selector)?.getBoundingClientRect();
+          return box ? [box.x, box.y, box.width, box.height].map(Math.round) : null;
+        },
+      ),
     };
   };
   const serverFrame = frame();

@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { type JSX, Show } from "solid-js";
 import CircleDisplay from "./CircleDisplay";
 import type { GraphProps, GraphView } from "./graph-controller";
 import { graphDisplayLabel } from "./graph-displays";
@@ -12,7 +12,14 @@ import { DEFAULT_GRAPH_DISPLAY, PHONE_GRAPH_DISPLAY } from "./view-state";
  * `.notebook-graph`). Before the browser knows the width, both device defaults render and the stylesheet shows one,
  * so the server's picture and the first client picture are the same.
  */
-export default function GraphDisplays(props: { graph: GraphProps; view: GraphView }) {
+export default function GraphDisplays(props: {
+  graph: GraphProps;
+  view: GraphView;
+  /** What stands over the drawing without moving it, such as Book's live-update notice. */
+  overlay?: JSX.Element;
+  /** Hands the focus to the way out that replaces Umgebung when a new centre has no visible links. */
+  focusEmpty: () => void;
+}) {
   const g = () => props.view;
   const t = () => g().t();
   const common = () => ({
@@ -41,10 +48,27 @@ export default function GraphDisplays(props: { graph: GraphProps; view: GraphVie
       onNetwork={() => g().leaveEmpty({ display: "network" })}
       onResetFilters={g().resetFilters}
       noteHref={g().noteHref}
+      focusEmpty={props.focusEmpty}
     />
   );
   return (
     <div class="notebook-graph" data-display={g().display() ?? undefined}>
+      {props.overlay}
+      {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
+      <Show when={props.graph.graph.scope}>
+        {(scope) => (
+          <p class="notebook-graph__scope" role="note">
+            <i class="ti ti-zoom-in-area" aria-hidden="true" />
+            <span>
+              {t().graphScope({
+                shown: g().model.notes.length,
+                total: scope().total,
+                title: g().model.byId.get(scope().around)?.title || t().untitled,
+              })}
+            </span>
+          </p>
+        )}
+      </Show>
       <div class="notebook-graph__body">
         <Show
           when={g().display() !== "timeline"}

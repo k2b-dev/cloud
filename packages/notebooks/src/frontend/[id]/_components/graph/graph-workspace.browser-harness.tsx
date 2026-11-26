@@ -2,8 +2,8 @@ import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import type { NoteGraph } from "../../../../service/links";
 import { notesContext, sampleNotes } from "../../notes/notes-list.fixture";
-import GraphWorkspace from "./GraphWorkspace";
 import { bigGraph, crossAreaGraph, FIXTURE_NOW, HANDBOOK_IDS, handbookGraph, unlinkedGraph } from "./graph.fixtures";
+import NotebookGraphWorkspace from "./NotebookGraphWorkspace.island";
 import { parseGraphViewState } from "./view-state";
 
 /** The fixture notebooks by id: the 49-note handbook, 300 notes, notes without links, no notes, and two areas. */
@@ -30,7 +30,7 @@ const mount = () => {
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <GraphWorkspace
+        <NotebookGraphWorkspace
           ctx={ctx}
           notebookId={match[1]!}
           notebookName={notebook.name}

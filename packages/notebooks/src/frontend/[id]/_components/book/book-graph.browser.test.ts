@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import tailwind from "bun-plugin-tailwind";
@@ -66,7 +67,9 @@ beforeAll(async () => {
       return build.outputs[0]!.text();
     }),
   );
-  const css = ["@layer properties, theme, base, components, utilities;", ...outputs].join("\n");
+  // the shipped page-head order and cascade: Cloud, the app, then v2
+  const v2Css = await Bun.file(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css"))).text();
+  const css = ["@layer properties, theme, base, components, utilities;", ...outputs, v2Css].join("\n");
   server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -98,7 +101,7 @@ beforeAll(async () => {
       };
       const html = renderToString(() => createComponent(BookGraphFixture, props));
       return new Response(
-        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" style="height:100dvh;display:flex;flex-direction:column">${html}</div><script id="book-props" type="application/json">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/harness.js"></script></body></html>`,
+        `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head><body class="k2b-ui" style="margin:0"><div id="root" class="k2-ui" style="height:100dvh;display:flex;flex-direction:column">${html}</div><script id="book-props" type="application/json">${JSON.stringify(props).replace(/</g, "\\u003c")}</script><script src="/harness.js"></script></body></html>`,
         { headers: { "content-type": "text/html; charset=utf-8" } },
       );
     },
