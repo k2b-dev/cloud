@@ -2,7 +2,24 @@
 // server), the filters stand as statements in a `FilterBar` above the `StatusRow`, the sort and the grouping in words in
 // its `filters`. The address holds the whole state: the server reads it with `parse`, filters its own data, and renders
 // this page; the bar writes the address and calls `onChange`, and the app loads its rows again.
-import { Bar, Button, Chip, FilterBar, Input, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Chip,
+  FilterBar,
+  Inline,
+  Input,
+  ListOrder,
+  Mark,
+  Nav,
+  Pane,
+  StatusRow,
+  Table,
+  Tabs,
+  Text,
+  Workspace,
+} from "@k2b/ui/v2";
 import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal } from "solid-js";
 
@@ -50,15 +67,141 @@ export const orderQuery = defineListQuery({
   group: { status: { label: "Status" } },
 });
 
-type Order = { number: string; title: string; customer: string; status: (typeof STATUS)[number]["value"]; due: string; amount: number };
+// The app this screen belongs to: its colour tints the page and marks it in the host's rail.
+export const app = { color: "#c2410c", icon: "tool" };
+
+// One mark per kind of order, the same in every list, card and sentence of the app.
+const kind = {
+  kitchen: { icon: "tools-kitchen-2", color: "#c2410c" },
+  cabinet: { icon: "door", color: "#7c3aed" },
+  repair: { icon: "hammer", color: "#0e7490" },
+  shelf: { icon: "books", color: "#15803d" },
+};
+const people = {
+  felix: { name: "Felix Thal" },
+  jonas: { name: "Jonas Kern" },
+  mira: { name: "Mira Solberg" },
+  sami: { name: "Sami Yilmaz" },
+};
+
+type Order = {
+  number: string;
+  title: string;
+  kind: keyof typeof kind;
+  customer: string;
+  status: (typeof STATUS)[number]["value"];
+  team: { name: string }[];
+  due: string;
+  late?: boolean;
+  amount: number;
+};
 
 // What the server found for the address below (it filtered and sorted with the same declaration).
 const orders: Order[] = [
-  { number: "A-1042", title: "Einbauschrank Flur", customer: "Familie Oswald", status: "open", due: "28.11.2026", amount: 1280 },
-  { number: "A-1047", title: "Küchenfront Eiche", customer: "Architekturbüro Winter", status: "work", due: "02.12.2026", amount: 3420 },
-  { number: "A-1051", title: "Regal Archiv", customer: "Stadtwerke Auental", status: "open", due: "05.12.2026", amount: 760 },
+  {
+    number: "A-1038",
+    title: "Küche Lindqvist",
+    kind: "kitchen",
+    customer: "Praxis Dr. Lindqvist",
+    status: "work",
+    team: [people.felix, people.jonas],
+    due: "26.11.2026",
+    late: true,
+    amount: 8640,
+  },
+  {
+    number: "A-1042",
+    title: "Einbauschrank Flur",
+    kind: "cabinet",
+    customer: "Familie Oswald",
+    status: "open",
+    team: [people.mira],
+    due: "28.11.2026",
+    amount: 1280,
+  },
+  {
+    number: "A-1044",
+    title: "Treppe Winter",
+    kind: "repair",
+    customer: "Architekturbüro Winter",
+    status: "work",
+    team: [people.sami, people.felix],
+    due: "29.11.2026",
+    amount: 2150,
+  },
+  {
+    number: "A-1047",
+    title: "Küchenfront Eiche",
+    kind: "kitchen",
+    customer: "Architekturbüro Winter",
+    status: "work",
+    team: [people.felix, people.mira, people.jonas],
+    due: "02.12.2026",
+    amount: 3420,
+  },
+  {
+    number: "A-1049",
+    title: "Empfangstresen",
+    kind: "cabinet",
+    customer: "Hotel Seeblick",
+    status: "open",
+    team: [people.jonas],
+    due: "03.12.2026",
+    amount: 5900,
+  },
+  {
+    number: "A-1051",
+    title: "Regal Archiv",
+    kind: "shelf",
+    customer: "Stadtwerke Auental",
+    status: "open",
+    team: [people.sami],
+    due: "05.12.2026",
+    amount: 760,
+  },
+  {
+    number: "A-1052",
+    title: "Bad Oswald",
+    kind: "repair",
+    customer: "Familie Oswald",
+    status: "work",
+    team: [people.mira, people.sami],
+    due: "08.12.2026",
+    amount: 4310,
+  },
+  {
+    number: "A-1055",
+    title: "Weinregal Keller",
+    kind: "shelf",
+    customer: "Weingut Hartwig",
+    status: "open",
+    team: [people.felix],
+    due: "10.12.2026",
+    amount: 2480,
+  },
+  {
+    number: "A-1056",
+    title: "Garderobe Praxis",
+    kind: "cabinet",
+    customer: "Physio Kern",
+    status: "open",
+    team: [people.jonas, people.mira],
+    due: "12.12.2026",
+    amount: 1640,
+  },
+  {
+    number: "A-1058",
+    title: "Küche Gemeindehaus",
+    kind: "kitchen",
+    customer: "Gemeinde Ohlsbach",
+    status: "open",
+    team: [people.felix, people.sami],
+    due: "15.12.2026",
+    amount: 11200,
+  },
 ];
 
+const tone = { open: "warn", work: "ok", done: "ok" } as const;
 const label = (status: Order["status"]) => STATUS.find((option) => option.value === status)?.label ?? status;
 // amounts with cents and a real minus sign; a sum of floats is rounded to the cent by the format
 const money = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
@@ -89,6 +232,30 @@ export default function FilteredOrders(props: Props) {
   };
   return (
     <Workspace
+      sidebar={
+        <Nav
+          title="Werkstatt"
+          icon="tool"
+          groups={[
+            {
+              items: [
+                { label: "Heute", icon: "sun", href: "#heute" },
+                { label: "Aufträge", icon: "clipboard-list", count: 34, current: true },
+                { label: "Termine", icon: "calendar", count: 9, href: "#termine" },
+                { label: "Material", icon: "package", href: "#material", dot: "warn" },
+              ],
+            },
+            {
+              label: "Teams",
+              items: [
+                { label: "Montage", icon: "truck", color: "#0e7490", href: "#montage" },
+                { label: "Schreinerei", icon: "hammer", color: "#c2410c", href: "#schreinerei" },
+                { label: "Büro", icon: "briefcase", color: "#7c3aed", href: "#buero" },
+              ],
+            },
+          ]}
+        />
+      }
       head={
         <Bar
           start={
@@ -134,9 +301,10 @@ export default function FilteredOrders(props: Props) {
               names={{ customer: props.customers ?? CUSTOMERS }}
               results={countOrders(rows().length)}
             />
+            {/* k2b-ui gap: the count and the order belong at the end of the filter row (two head rows, rule 9) */}
             <StatusRow
-              lead={props.loading ? "Wird geladen" : `${rows().length} von 34 Aufträgen`}
-              facts={props.loading ? [] : [{ before: "Summe", value: euro(rows().reduce((sum, order) => sum + order.amount, 0)) }]}
+              lead={props.loading ? "Wird geladen" : `${euro(rows().reduce((sum, order) => sum + order.amount, 0))} in Arbeit und offen`}
+              facts={props.loading ? [] : [{ value: rows().length, after: "von 34 Aufträgen" }]}
               filters={<ListOrder query={orderQuery} state={state()} onChange={setState} />}
             />
           </>
@@ -151,26 +319,43 @@ export default function FilteredOrders(props: Props) {
             state().group === "status"
               ? (row) => ({
                   key: row.status,
-                  head: () => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip>,
+                  head: () => <Chip status={tone[row.status]}>{label(row.status)}</Chip>,
                   count: countOrders(shown().filter((other) => other.status === row.status).length),
                 })
               : undefined
           }
-          loading={props.loading && { rows: 3 }}
+          loading={props.loading && { rows: 8 }}
           open={(row) => ({ href: `#${row.number}` })}
           empty={{ icon: "filter-off", text: "Kein Auftrag passt zu diesen Filtern." }}
-          phone={(row) => ({ lines: [row.title, `${row.number} · ${row.customer} · fällig ${row.due}`], time: euro(row.amount) })}
+          phone={(row) => ({
+            mark: kind[row.kind],
+            lines: [row.title, `${row.number} · ${row.customer} · fällig ${row.due}`],
+            time: euro(row.amount),
+            marks: row.late ? <Chip status="bad">Verzug</Chip> : undefined,
+          })}
+          // the widths fit beside the sidebar from 1024 px on; below that the table becomes `phone` rows
           columns={[
-            { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true },
-            { title: "Auftrag", width: { min: 160, default: 220 }, cell: (row) => row.title },
-            { title: "Kunde", width: { min: 140, default: 200 }, cell: (row) => row.customer, drop: true },
+            {
+              title: "Auftrag",
+              width: { min: 170, default: 190 },
+              // the order's mark leads its name; `Inline` keeps the one gap between them
+              cell: (row) => (
+                <Inline>
+                  <Mark {...kind[row.kind]} />
+                  <Text>{row.title}</Text>
+                </Inline>
+              ),
+            },
+            { title: "Kunde", width: { min: 140, default: 160 }, cell: (row) => row.customer, drop: true },
             {
               title: "Status",
-              width: { min: 100, default: 120 },
-              cell: (row) => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip>,
+              width: { min: 100, default: 110 },
+              cell: (row) => (row.late ? <Chip status="bad">Verzug</Chip> : <Chip status={tone[row.status]}>{label(row.status)}</Chip>),
             },
-            { title: "Fällig", width: { min: 90, default: 110 }, numeric: true, cell: (row) => row.due, drop: true },
-            { title: "Betrag", width: { min: 90, default: 110 }, align: "end", cell: (row) => euro(row.amount) },
+            // the team as faces: one picture with every name
+            { title: "Team", width: { min: 80, default: 90 }, drop: true, cell: (row) => <Avatar.Stack people={row.team} /> },
+            { title: "Fällig", width: { min: 90, default: 100 }, numeric: true, cell: (row) => row.due, drop: true },
+            { title: "Betrag", width: { min: 80, default: 90 }, align: "end", cell: (row) => euro(row.amount) },
           ]}
         />
       </Pane>
@@ -206,16 +391,20 @@ const worstOrders: Order[] = [
     number: "A-1042-NACHLASS-SONNENHALDE",
     title: "Einbauschrank Flur Dachgeschoss links neben der Treppe, Eiche massiv, mit Schiebetüren",
     customer: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG",
+    kind: "cabinet",
     status: "open",
+    team: [people.felix, people.mira, people.jonas, people.sami],
     due: "31.12.2026",
     amount: 12345678.9,
   },
-  { number: "A-1", title: "J", customer: "Jo", status: "work", due: "01.01.2027", amount: 0.1 + 0.2 },
+  { number: "A-1", title: "J", customer: "Jo", kind: "repair", status: "work", team: [people.mira], due: "01.01.2027", amount: 0.1 + 0.2 },
   {
     number: "A-1051",
     title: "Benachrichtigungseinstellungen",
     customer: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+    kind: "cabinet",
     status: "done",
+    team: [people.felix, people.mira, people.jonas, people.sami],
     due: "05.12.2026",
     amount: -42.5,
   },
@@ -223,15 +412,28 @@ const worstOrders: Order[] = [
     number: "A-1052",
     title: "<script>alert(1)</script> &amp; **fett**",
     customer: "王秀英",
+    kind: "cabinet",
     status: "open",
+    team: [people.felix, people.mira, people.jonas, people.sami],
     due: "06.12.2026",
     amount: 1284,
   },
-  { number: "A-1053", title: "Regal Archiv", customer: "Đặng Thị Ngọc Hân", status: "work", due: "07.12.2026", amount: 1000000 },
+  {
+    number: "A-1053",
+    title: "Regal Archiv",
+    customer: "Đặng Thị Ngọc Hân",
+    kind: "shelf",
+    status: "work",
+    team: [],
+    due: "07.12.2026",
+    amount: 1000000,
+  },
 ];
 const hugeOrders: Order[] = Array.from({ length: 1000 }, (_, index) => ({
   number: `A-${10000 + index}`,
   title: `Auftrag ${index + 1} · ${orders[index % 3]!.title}`,
+  kind: orders[index % 3]!.kind,
+  team: orders[index % 3]!.team,
   customer: orders[index % 3]!.customer,
   status: STATUS[index % 3]!.value,
   due: "05.12.2026",

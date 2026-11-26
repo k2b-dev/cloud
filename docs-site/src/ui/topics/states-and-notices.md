@@ -10,7 +10,7 @@ What a place shows when its data is not simply there: nothing yet, nothing behin
 
 Incoming goods of a workshop. Switch the state: "Empty" and "Filtered" are two different sentences with their own way out, "Loading" holds the place of the four rows that usually come, and "Failed" offers "Erneut versuchen" in the place of the rows. "Problem" is a scale that does not answer, something a person must fix, while the list stays. "Reconnecting" is a live connection that retries on its own: it says so in the status row, without a button.
 
-<Example recipe="states" height="440" default="Rows" />
+<Example recipe="states" height="640" default="Rows" />
 
 Every state keeps these rules:
 

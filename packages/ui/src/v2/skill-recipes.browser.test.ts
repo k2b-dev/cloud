@@ -14,6 +14,8 @@ import { describeV2Page, measureV2Layout } from "./testing";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-recipes-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
+// after the plugin, so the frame compiles for Solid's server like the recipes
+const { ScreenFrame } = await import("./screen-frame");
 
 const recipesDir = resolve(import.meta.dir, "../../skills/k2b-ui/recipes");
 const recipes = readdirSync(recipesDir)
@@ -28,15 +30,21 @@ for (const name of recipes) {
   const screen = (await import(resolve(recipesDir, name))) as {
     default: Parameters<typeof createComponent>[0];
     states?: Record<string, RecipeState>;
+    app?: { color: string; icon: string };
   };
-  markup.set(
-    name,
-    renderToString(() => createComponent(screen.default, {})),
-  );
-  for (const [state, value] of Object.entries(screen.states ?? {})) {
-    const render = typeof value === "function" ? value : value.render;
-    markup.set(`${name} · ${state}`, renderToString(render));
-  }
+  // each screen in the frame of a host, as its picture and Fibel show it
+  const framed = (view: Parameters<typeof createComponent>[0]) =>
+    renderToString(() =>
+      createComponent(ScreenFrame, {
+        app: screen.app,
+        get children() {
+          return createComponent(view, {});
+        },
+      }),
+    );
+  markup.set(name, framed(screen.default));
+  for (const [state, value] of Object.entries(screen.states ?? {}))
+    markup.set(`${name} · ${state}`, framed(typeof value === "function" ? value : value.render));
 }
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
@@ -63,7 +71,7 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
             `<!doctype html><html lang="de"><head><style>${css}</style><style>${testCss}</style></head>` +
               `<body class="k2-ui"><div class="frame">${markup.get(name)}</div></body></html>`,
           );
-          const outline = await describeV2Page(page, ".frame");
+          const outline = await describeV2Page(page, ".k2-sf-card");
           expect(outline).not.toContain("Problems");
           const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
           expect(layout.problems).toEqual([]);
