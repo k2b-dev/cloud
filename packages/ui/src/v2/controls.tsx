@@ -163,7 +163,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
   );
   const part = frame.setting ? "Setting" : "Field";
   const setting = frame.setting ? "" : undefined;
-  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it
+  // the deed stands beside the name, never in it: a button inside a <label> would be pressed with it. It comes where
+  // it stands, so Tab follows the eye: in a field before the control (on the label's line), in a setting after the
+  // value (the grid places both)
   const deed = (
     <Show when={props.action}>
       {(action) => (
@@ -198,8 +200,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
@@ -216,8 +219,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
@@ -233,8 +237,9 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
+      {frame.setting ? undefined : deed}
       {content}
-      {deed}
+      {frame.setting ? deed : undefined}
       {was}
       {messageLine}
     </div>
