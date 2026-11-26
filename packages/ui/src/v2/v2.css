@@ -3678,15 +3678,30 @@
     padding: 4px 0 0;
     flex-wrap: wrap;
   }
-  /* a section's deed with a symbol keeps only the symbol in sight; its words stay its name for assistive technology,
-     and a deed without a symbol keeps its words (W2 26.11.) */
-  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon) > .k2-btn-label {
+  /* a section's deed with a symbol before its words keeps only the symbol in sight; its words stay its name for
+     assistive technology. A deed without a symbol, or with one after its words (it leads on, ›), keeps its words
+     (W2 26.11.). */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn > .k2-icon:first-child ~ .k2-btn-label {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
     white-space: nowrap;
+  }
+  /* a finger hits 44 px of such a deed, around its symbol; nothing in the layout moves */
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child ~ .k2-btn-label) {
+    position: relative;
+    overflow: visible;
+  }
+  .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn:has(> .k2-icon:first-child ~ .k2-btn-label)::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
   }
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);

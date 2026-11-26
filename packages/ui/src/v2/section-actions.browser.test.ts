@@ -5,7 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-section-actions.client";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // W2 (26.11.): on the phone a section's deeds keep only their symbol, and the rule hid their words with
@@ -46,21 +46,36 @@ const withPage = async (width: number, run: (page: Page) => Promise<void>, which
 for (const width of [390, 1440])
   test(`a section's deeds keep their names at ${width} px; one without a symbol keeps its words`, async () => {
     await withPage(width, async (page) => {
-      for (const name of ["Neuer Vorgang", "Alle ansehen"]) {
+      for (const name of ["Neuer Vorgang", "Alle ansehen", "Alle Notizen"]) {
         const deed = page.getByRole("button", { name, exact: true });
         expect(await deed.isVisible()).toBe(true);
       }
       const shown = await page.evaluate(() =>
         Array.from(document.querySelectorAll(".k2-sh .k2-btn")).map((button) => {
           const words = button.querySelector(".k2-btn-label")!.getBoundingClientRect();
-          return { name: button.textContent?.trim(), words: words.width > 1 && words.height > 1 };
+          // what a finger hits: the deed with what it reaches beyond its box
+          const hit = button.getBoundingClientRect();
+          const reach = getComputedStyle(button, "::after");
+          const target =
+            reach.content === "none" ? hit : { width: Number.parseFloat(reach.width), height: Number.parseFloat(reach.height) };
+          return {
+            name: button.textContent?.trim(),
+            words: words.width > 1 && words.height > 1,
+            target: Math.min(Math.round(Math.max(hit.width, target.width)), Math.round(Math.max(hit.height, target.height))),
+          };
         }),
       );
-      // on the phone the deed with a symbol shows only the symbol; the one without keeps its words
-      expect(shown).toEqual([
+      // on the phone the deed with a symbol before its words shows only the symbol, and a finger hits 44 px of it; a
+      // deed without a symbol, and one whose sign follows its words (it leads on), keep their words
+      expect(shown.map(({ name, words }) => ({ name, words }))).toEqual([
         { name: "Neuer Vorgang", words: width >= 768 },
         { name: "Alle ansehen", words: true },
+        { name: "Alle Notizen", words: true },
       ]);
+      if (width < 768) expect(shown[0]!.target).toBeGreaterThanOrEqual(44);
+      // words kept as a name are no cut label
+      expect(await describeV2Page(page, "#root")).not.toContain("Problems (");
+      expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });
 
@@ -82,3 +97,17 @@ for (const width of [390, 1440])
       "status-tabs",
     );
   });
+
+// Review of #4287: words clipped on purpose are no finding, but a label a person sees cut still is one.
+test("a section deed whose words have no room at 390 px is still reported as cut", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      // the deed is held narrower than its words, as a box that gives it too little room would
+      await page.addStyleTag({ content: ".k2-sh .k2-btn { max-width: 80px; }" });
+      await settled(page);
+      expect(await describeV2Page(page, "#root")).toContain("cuts its label");
+    },
+    "cut",
+  );
+});

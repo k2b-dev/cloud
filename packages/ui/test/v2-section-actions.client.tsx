@@ -12,8 +12,30 @@ declare global {
 
 const root = document.getElementById("root");
 if (!root) throw new Error("section actions: #root is missing");
+// `<body data-case="cut">`: a deed whose words have no room (the test narrows it): a cut that a person sees
+if (document.body.dataset.case === "cut")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Akte">
+          <Section
+            title="Vorgänge"
+            actions={[
+              {
+                label: "Alle offenen Vorgänge ansehen",
+                onClick: () => undefined,
+              },
+            ]}
+          >
+            <Text>Drei Vorgänge sind offen.</Text>
+          </Section>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
 // `<body data-case="status-tabs">`: an open user in Core's admin (S2), its areas as tabs in the detail's status slot
-if (document.body.dataset.case === "status-tabs")
+else if (document.body.dataset.case === "status-tabs")
   render(
     () => (
       <Workspace>
@@ -56,6 +78,10 @@ else
             ]}
           >
             <Text>Drei Vorgänge sind offen.</Text>
+          </Section>
+          {/* a deed that leads on: its sign stands after its words, so it keeps its words on the phone */}
+          <Section title="Notizen" actions={[{ label: "Alle Notizen", forward: true, onClick: () => undefined }]}>
+            <Text>Zwei Notizen.</Text>
           </Section>
         </Pane>
       </Workspace>
