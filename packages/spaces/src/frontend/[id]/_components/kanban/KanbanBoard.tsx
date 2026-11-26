@@ -330,10 +330,13 @@ export default function KanbanBoard(props: Props) {
     const transition = doc.startViewTransition(() => {
       update();
     });
-    // A newer transition skips this one, and its promises then reject with an AbortError nobody waits for; the update
-    // still ran. Without these catches the page reports an unhandled rejection.
-    void transition?.ready?.catch(() => {});
-    void transition?.finished?.catch(() => {});
+    // A newer transition skips this one (AbortError), or a hidden page cannot animate (InvalidStateError): then only the
+    // animation is lost, `ready` rejects, and the update still runs. Any other error, such as a failing update, stays
+    // loud; `finished` rejects only then and is left alone.
+    void transition?.ready?.catch((error: unknown) => {
+      if (error instanceof DOMException && (error.name === "AbortError" || error.name === "InvalidStateError")) return;
+      throw error;
+    });
   };
   const boardScrollKey = () => `spaces-kanban-board-${props.spaceId}`;
   const rememberBoardScroll = () => {
