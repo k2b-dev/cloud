@@ -23,7 +23,7 @@ import { filesPageScope } from "./page-scope";
 import { FAVORITES_PREVIEW } from "./StorageOverview";
 import { searchRequest } from "./search-state";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
+import { activityUrl, filesUrl, parseActivityFilters, screenViewOf, showsOverview } from "./urls";
 import Workspace from "./Workspace.island";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
@@ -130,6 +130,9 @@ export default ssr<AuthContext>(async (c) => {
       ]);
     } else if (view === "shares") initial.shares = await filesService.listShares(requestCall(c));
     else if (view === "favorites") initial.marks = await filesService.favorites(requestCall(c));
+    // The trash shows its first page in the first picture; a failed read lets the view say so with Try again.
+    else if (trashView && selected?.status === "existing")
+      initial.trash = await filesService.trash(requestCall(c), { baseId: selected.id }).catch(() => null);
     else if (overview)
       // Favorites stand above the storage locations, so the first frame holds them and nothing below moves.
       initial.favoritesPreview = await filesService
@@ -201,7 +204,7 @@ export default ssr<AuthContext>(async (c) => {
   const scope = filesPageScope(initial) ?? undefined;
   return () => (
     <Show
-      when={folderView && !showsOverview(source.searchParams, initial.bases.items.length) && !initial.moved}
+      when={screenViewOf(source.searchParams, initial.bases.items.length) !== null && !initial.moved}
       fallback={
         <Layout context={{ scope }} c={c} title={title} fullWidth fullPage>
           <Workspace initial={initial} preferences={preferences} timeZone={timeZone} retentionDays={retentionDays} />

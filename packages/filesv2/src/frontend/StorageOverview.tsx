@@ -19,7 +19,7 @@ import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
 import { activityDays } from "./ActivityView";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { favoritePlace } from "./FavoritesPage";
+import { favoritePlace } from "./favorite-place";
 import { DirectoryStatus, IssueMessage } from "./feedback";
 import { type HistoryEnvironment, historyRows } from "./history-actions";
 import { loadActivity, loadFavorites, loadRecent } from "./history-api";

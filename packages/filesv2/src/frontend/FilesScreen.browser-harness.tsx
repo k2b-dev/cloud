@@ -7,10 +7,12 @@ import {
   FIXTURE_TIME_ZONE,
   type FixtureCase,
   fixtureDirectory,
+  fixtureFavorites,
   fixtureListing,
   fixturePage,
   fixtureSearch,
   fixtureSnapshot,
+  fixtureTrash,
 } from "./files-screen.fixture";
 import { browseOf, folderQueries, readFolderAddress, searchOf } from "./folder-query";
 
@@ -36,6 +38,13 @@ const file = params.get("file");
 const snapshot = fixtureSnapshot(`${location.pathname}${location.search}`, directory);
 const detail = file ? directory.items.find((item) => item.path === file) : undefined;
 if (detail) snapshot.detail = { base: snapshot.directory!.base, entry: detail, favorite: false };
+// The trash and the favorites are views of their own: the server reads their first page instead of a folder.
+const view = params.get("view");
+if (view === "trash" || view === "favorites") {
+  snapshot.directory = null;
+  if (view === "trash") snapshot.trash = fixtureTrash;
+  else snapshot.marks = fixtureFavorites;
+}
 
 render(
   () => (

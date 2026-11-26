@@ -45,6 +45,7 @@ import { directoryContext, directoryPageCount, directoryPages } from "./director
 import EntryDetail from "./EntryDetail";
 import { entryIcon } from "./entry-icon";
 import { historyExecutionHref } from "./execution-url";
+import FavoritesPane from "./FavoritesPane";
 import { issueText } from "./feedback";
 import { createFilesUploads } from "./files-uploads";
 import { createFolderActions, type FolderOperation } from "./folder-actions";
@@ -65,8 +66,9 @@ import { placeDescriber } from "./history-requests";
 import { useFilesMessages } from "./messages";
 import { openShareDialog } from "./ShareDialog";
 import { searchRequest } from "./search-state";
+import TrashPane from "./TrashPane";
 import { snapshotTitle } from "./trail";
-import { activityUrl, editorUrl, filesUrl } from "./urls";
+import { activityUrl, editorUrl, filesUrl, screenViewOf } from "./urls";
 import { createWorkspaceState, type DirectoryView, type WorkspaceSnapshot } from "./workspace-state";
 
 /** Listings are read again while the tab is visible; Filegate has no change feed yet. */
@@ -127,6 +129,18 @@ export default function FilesScreen(props: {
         ? bases.items.find((base) => base.id === requested)
         : (bases.items.find((base) => base.status === "existing") ?? bases.items[0]);
       if (requested && !selected) throw new Error(t().missingDescription);
+      const base = { source, bases, selectedId: selected?.id ?? null, directory: null, errorCode: null, now: new Date().toISOString() };
+      const view = screenViewOf(params, bases.items.length);
+      if (view === "favorites") {
+        const response = await apiClient.favorites.$get({}, { init: { signal } });
+        if (!response.ok) throw await apiError(response);
+        return { ...base, marks: await response.json() };
+      }
+      if (view === "trash") {
+        if (selected?.status !== "existing") return base;
+        const response = await apiClient.bases[":baseId"].trash.$get({ param: { baseId: selected.id }, query: {} }, { init: { signal } });
+        return { ...base, trash: response.ok ? await response.json() : null };
+      }
       let directory: DirectoryView | null = null;
       if (selected?.status === "existing") {
         const address = readFolderAddress(queries(), params, preference(selected.id));
@@ -194,6 +208,8 @@ export default function FilesScreen(props: {
   const search = createMemo(() => searchOf(address(), params()));
   const searching = () => search() !== null;
   const openPath = () => params().get("file");
+  // The view in place; an address of another view never stays here, so a folder is the fallback.
+  const screen = () => screenViewOf(params(), snapshot().bases.items.length) ?? "folder";
   const hasOverview = () => snapshot().bases.items.length > 1;
   const canCreate = () => directory()?.actions?.create !== false && selected()?.status === "existing";
   const label = (base: NonNullable<ReturnType<typeof selected>>) => baseLabel(base, b(), locale());
@@ -233,7 +249,8 @@ export default function FilesScreen(props: {
   const [cursorNotice, setCursorNotice] = createSignal(params().get("refreshed") === "true");
   const invalidCursor = (error: string | undefined) => !!error && /cursor/i.test(error);
   /** A Files address this screen shows in place: a folder or a search, never one of the other views. */
-  const ownsAddress = (url: URL) => url.pathname === "/app/filesv2" && !url.searchParams.has("view");
+  const ownsAddress = (url: URL) =>
+    url.pathname === "/app/filesv2" && screenViewOf(url.searchParams, snapshot().bases.items.length) !== null;
   const go = async (target: string, replace = false) => {
     setCursorNotice(false);
     await workspace.navigate(target, () => commitHistory(target, { replace, scroll: "manual" }));
@@ -676,7 +693,7 @@ export default function FilesScreen(props: {
       items: [
         ...(hasOverview() ? [{ label: b().allStorage, icon: "layout-grid", href: filesUrl() }] : []),
         { label: b().activity, icon: "history", href: activityUrl({ actor: "me" }) },
-        { label: b().favorites, icon: "star", href: viewHref(null, "favorites") },
+        { label: b().favorites, icon: "star", href: viewHref(null, "favorites"), onNavigate, current: screen() === "favorites" },
         { label: b().shares, icon: "world-share", href: viewHref(snapshot().selectedId, "shares") },
       ],
     },
@@ -689,30 +706,39 @@ export default function FilesScreen(props: {
           icon: base.kind === "users" ? "home" : "users",
           href: filesUrl(base.id),
           onNavigate,
-          current: open && !folder() && !searching(),
+          current: open && screen() === "folder" && !folder() && !searching(),
           ...(base.area === "cloud"
             ? { menu: [{ label: b().activityOfStorage, icon: "history", href: activityUrl({ baseId: base.id }) }] }
             : {}),
         };
         // k2b-ui gap: Nav has no tree (lane Y2: Nav tree, lazy with paging). The open storage folds out the folders
         // down to this one; other branches open from the listing until then.
-        const chain = open
-          ? ancestors(folder()).map((path) => ({
-              label: path.split("/").at(-1) ?? path,
-              icon: "folder",
-              href: folderHref(path),
-              onNavigate,
-              nested: true,
-              current: path === folder() && !searching(),
-            }))
-          : [];
+        const chain =
+          open && screen() === "folder"
+            ? ancestors(folder()).map((path) => ({
+                label: path.split("/").at(-1) ?? path,
+                icon: "folder",
+                href: folderHref(path),
+                onNavigate,
+                nested: true,
+                current: path === folder() && !searching(),
+              }))
+            : [];
         return [item, ...chain];
       }),
     },
   ]);
   const navFoot = (): NavItem[] => [
     ...(snapshot().selectedId && selected()?.status === "existing"
-      ? [{ label: b().trashTitle, icon: "trash", href: viewHref(snapshot().selectedId, "trash") }]
+      ? [
+          {
+            label: b().trashTitle,
+            icon: "trash",
+            href: viewHref(snapshot().selectedId, "trash"),
+            onNavigate,
+            current: screen() === "trash",
+          },
+        ]
       : []),
     {
       label: b().sidebarSearch,
@@ -722,6 +748,13 @@ export default function FilesScreen(props: {
   ];
   const pathItems = () => {
     const base = selected();
+    if (screen() === "favorites") return [{ label: b().favorites }];
+    if (screen() === "trash")
+      return [
+        ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
+        ...(base ? [{ label: label(base), href: folderHref("") }] : []),
+        { label: b().trashTitle },
+      ];
     return [
       ...(hasOverview() ? [{ label: b().allStorage, href: filesUrl() }] : []),
       ...(base ? [{ label: label(base), href: folder() || searching() ? folderHref("") : undefined }] : []),
@@ -741,14 +774,14 @@ export default function FilesScreen(props: {
       <Workspace
         sidebarLabel={b().v2SidebarWidth}
         sidebar={<Nav title={t().files} icon="folders" groups={navGroups()} foot={navFoot()} />}
-        detail
-        detailEmpty={{ icon: "file", text: b().v2NothingOpen }}
-        primary={uploadAction()}
+        detail={screen() === "folder" ? true : undefined}
+        detailEmpty={screen() === "folder" ? { icon: "file", text: b().v2NothingOpen } : undefined}
+        primary={screen() === "folder" ? uploadAction() : undefined}
         head={
           <Bar
             start={<Path label={b().v2Where} items={pathItems()} />}
             end={
-              <>
+              <Show when={screen() === "folder"}>
                 <Input
                   type="search"
                   icon="search"
@@ -771,117 +804,139 @@ export default function FilesScreen(props: {
                     {b().upload}
                   </Button>
                 </Show>
-              </>
+              </Show>
             }
           />
         }
       >
-        <Pane.Split>
-          <Pane
-            label={t().files}
-            width={{ min: 440, default: 640 }}
-            scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
-            status={
-              <Show when={directory()}>
-                <Show when={folderState()}>
-                  {(state) => (
-                    <FilterBar
-                      query={queries().folder}
-                      state={state()}
-                      onChange={changeFolder}
-                      icons={FILTER_ICONS}
-                      timeZone={timeZone()}
-                      results={lead()}
-                    />
-                  )}
+        <Show when={screen() === "favorites"}>
+          <FavoritesPane
+            initial={snapshot().marks ?? null}
+            bases={snapshot().bases.items.map((base) => ({ id: base.id, label: label(base) }))}
+            now={snapshot().now ?? props.initial.now ?? new Date().toISOString()}
+            timeZone={timeZone()}
+            onNavigate={onNavigate}
+          />
+        </Show>
+        <Show when={screen() === "trash" ? selected() : undefined} keyed>
+          {(base) => (
+            <TrashPane
+              base={base}
+              initial={snapshot().trash ?? null}
+              timeZone={timeZone()}
+              onRestored={(path) => void go(filesUrl(base.id, parentPath(path), null, path))}
+              onNavigate={onNavigate}
+            />
+          )}
+        </Show>
+        <Show when={screen() === "folder"}>
+          <Pane.Split>
+            <Pane
+              label={t().files}
+              width={{ min: 440, default: 640 }}
+              scrollKey={`filesv2:${snapshot().selectedId ?? ""}:${folder()}`}
+              status={
+                <Show when={directory()}>
+                  <Show when={folderState()}>
+                    {(state) => (
+                      <FilterBar
+                        query={queries().folder}
+                        state={state()}
+                        onChange={changeFolder}
+                        icons={FILTER_ICONS}
+                        timeZone={timeZone()}
+                        results={lead()}
+                      />
+                    )}
+                  </Show>
+                  <Show when={searchListState()}>
+                    {(state) => (
+                      <FilterBar
+                        query={queries().search}
+                        state={state()}
+                        onChange={changeSearch}
+                        icons={FILTER_ICONS}
+                        timeZone={timeZone()}
+                        results={lead()}
+                      />
+                    )}
+                  </Show>
+                  <StatusRow
+                    lead={lead()}
+                    loading={workspace.pending()}
+                    select={
+                      entries().length
+                        ? {
+                            label: b().selectAll,
+                            checked: chosen().length === 0 ? false : chosenEntries().length === entries().length ? true : "mixed",
+                            onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
+                          }
+                        : undefined
+                    }
+                    selection={
+                      chosenEntries().length
+                        ? {
+                            count: [
+                              b().selectedActions(chosenEntries().length),
+                              chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · "),
+                            actions: selectionActions(),
+                            clear: { label: b().clear, onClick: () => setChosen([]) },
+                          }
+                        : undefined
+                    }
+                    filters={
+                      <>
+                        <Show when={folderState()}>
+                          {(state) => <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />}
+                        </Show>
+                        <Show when={searchListState()}>
+                          {(state) => <ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
+                        </Show>
+                        <Show when={!searching()}>
+                          <Menu icon={grid() ? "layout-grid" : "list"} label={b().view} items={viewMenu()} />
+                        </Show>
+                      </>
+                    }
+                  />
                 </Show>
-                <Show when={searchListState()}>
-                  {(state) => (
-                    <FilterBar
-                      query={queries().search}
-                      state={state()}
-                      onChange={changeSearch}
-                      icons={FILTER_ICONS}
-                      timeZone={timeZone()}
-                      results={lead()}
-                    />
-                  )}
-                </Show>
-                <StatusRow
-                  lead={lead()}
-                  loading={workspace.pending()}
-                  select={
-                    entries().length
-                      ? {
-                          label: b().selectAll,
-                          checked: chosen().length === 0 ? false : chosenEntries().length === entries().length ? true : "mixed",
-                          onChange: (checked) => setChosen(checked ? entries().map((entry) => entry.path) : []),
-                        }
-                      : undefined
-                  }
-                  selection={
-                    chosenEntries().length
-                      ? {
-                          count: [
-                            b().selectedActions(chosenEntries().length),
-                            chosenBytes() ? formatFileViewSize(chosenBytes(), locale()) : "",
-                          ]
-                            .filter(Boolean)
-                            .join(" · "),
-                          actions: selectionActions(),
-                          clear: { label: b().clear, onClick: () => setChosen([]) },
-                        }
-                      : undefined
-                  }
-                  filters={
-                    <>
-                      <Show when={folderState()}>
-                        {(state) => <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />}
-                      </Show>
-                      <Show when={searchListState()}>
-                        {(state) => <ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
-                      </Show>
-                      <Show when={!searching()}>
-                        <Menu icon={grid() ? "layout-grid" : "list"} label={b().view} items={viewMenu()} />
-                      </Show>
-                    </>
-                  }
-                />
+              }
+            >
+              <Show when={cursorNotice()}>
+                <Notice tone="note" actions={[{ label: b().v2Hide, onClick: () => setCursorNotice(false) }]}>
+                  {b().cursorReset}
+                </Notice>
               </Show>
-            }
-          >
-            <Show when={cursorNotice()}>
-              <Notice tone="note" actions={[{ label: b().v2Hide, onClick: () => setCursorNotice(false) }]}>
-                {b().cursorReset}
-              </Notice>
+              {snapshot().bases.issues.map((issue) => (
+                <Notice tone="warn" title={t()[issue.area]}>
+                  {issueText(t(), issue.code)}
+                </Notice>
+              ))}
+              <FolderBody />
+            </Pane>
+            <Show when={directory() && selected() && openPath() ? openPath() : undefined} keyed>
+              {(path) => (
+                <EntryDetail
+                  base={selected()!}
+                  path={path}
+                  listed={entries().find((entry) => entry.path === path)}
+                  initial={snapshot().detail ?? props.initial.detail}
+                  history={history()}
+                  actions={actions}
+                  closeHref={withFile(null)}
+                  folderName={searching() ? b().v2SearchResults : folderName(folder())}
+                  onNavigate={onNavigate}
+                  onEdit={edit}
+                  onShare={share}
+                  onShareInbox={shareInbox}
+                  onChanged={refresh}
+                />
+              )}
             </Show>
-            {snapshot().bases.issues.map((issue) => (
-              <Notice tone="warn" title={t()[issue.area]}>
-                {issueText(t(), issue.code)}
-              </Notice>
-            ))}
-            <FolderBody />
-          </Pane>
-          <Show when={directory() && selected() && openPath() ? openPath() : undefined} keyed>
-            {(path) => (
-              <EntryDetail
-                base={selected()!}
-                path={path}
-                listed={entries().find((entry) => entry.path === path)}
-                initial={snapshot().detail ?? props.initial.detail}
-                history={history()}
-                actions={actions}
-                closeHref={withFile(null)}
-                folderName={searching() ? b().v2SearchResults : folderName(folder())}
-                onNavigate={onNavigate}
-                onEdit={edit}
-                onShare={share}
-                onShareInbox={shareInbox}
-                onChanged={refresh}
-              />
-            )}
-          </Show>
-        </Pane.Split>
+          </Pane.Split>
+        </Show>
       </Workspace>
     </>
   );

@@ -1,4 +1,4 @@
-import type { BaseSummary, FileEntry } from "../contracts";
+import type { BaseSummary, FileEntry, MarkedEntry } from "../contracts";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 // Invented folders for the v2 folder screen's browser test and design review: a fixed "now", no real people or files.
@@ -110,3 +110,33 @@ export const fixtureSnapshot = (source: string, directory: DirectoryView): Works
   errorCode: null,
   now: FIXTURE_NOW,
 });
+
+/** The trash of the sample storage: one entry from a known place, one whose place and time Filegate lost. */
+export const fixtureTrash = {
+  entries: [
+    {
+      id: "t-1",
+      name: "Alter Entwurf.pdf",
+      original: "Angebote/Alter Entwurf.pdf",
+      directory: false,
+      deletedAt: hoursAgo(3),
+      state: "trashed" as const,
+    },
+    { id: "t-2", name: "Fotos 2025", original: null, directory: true, deletedAt: null, state: "trashed" as const },
+  ],
+  next: null,
+};
+
+/** Favorites across the sample storage, as the API answers them. */
+export const fixtureFavorites: MarkedEntry[] = [
+  {
+    base: { id: fixtureBase.id, name: fixtureBase.name, kind: fixtureBase.kind, area: fixtureBase.area },
+    entry: plain[5]!,
+    markedAt: hoursAgo(2),
+  },
+  {
+    base: { id: fixtureBase.id, name: fixtureBase.name, kind: fixtureBase.kind, area: fixtureBase.area },
+    entry: plain[0]!,
+    markedAt: hoursAgo(9),
+  },
+];

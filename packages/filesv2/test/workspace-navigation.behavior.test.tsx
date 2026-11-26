@@ -261,22 +261,21 @@ describe("Filesv2 progressive navigation", () => {
     expect(dom.root.querySelectorAll(".k2b-link-card")).toHaveLength(2);
   });
 
-  test("the favorites page loads, opens, removes at once and brings a favorite back when removing fails", async () => {
+  test("the favorites pane loads, links each favorite, removes at once and brings a favorite back when removing fails", async () => {
     const dom = createDomTestHarness();
-    const { default: FavoritesPage } = await import("../src/frontend/FavoritesPage");
+    const { default: FavoritesPane } = await import("../src/frontend/FavoritesPane");
     const { LocaleProvider } = modules!.ui;
-    const opened: string[] = [];
     const dispose = render(
       () =>
         createComponent(LocaleProvider, {
           locale: "de",
           get children() {
-            return createComponent(FavoritesPage, {
+            return createComponent(FavoritesPane, {
               initial: null,
               bases: [{ id: "home", label: "Persönlich" }],
               timeZone: "Europe/Berlin",
               now: "2026-10-20T12:30:00.000Z",
-              onOpen: (entry) => opened.push(entry.entry.path),
+              onNavigate: () => {},
             });
           },
         }),
@@ -288,7 +287,8 @@ describe("Filesv2 progressive navigation", () => {
     };
     await flush();
     expect(apiRequests.map((request) => request.kind)).toEqual(["favorites"]);
-    expect(dom.root.querySelectorAll(".filesv2-favorites__skeleton-row")).toHaveLength(6);
+    // The table holds the place of six two-line rows while the list loads.
+    expect(dom.root.querySelectorAll('[data-k2-part="Table"] tbody tr')).toHaveLength(6);
     const make = (path: string) => ({
       base: { id: "home", name: "Home", kind: "users", area: "cloud" },
       entry: { path, name: path.split("/").at(-1), directory: false, size: 1, modified: "2026-10-20T10:00:00.000Z" },
@@ -297,12 +297,12 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[0]!.resolve(Response.json([make("Planung/Budget.xlsx"), make("Notizen.md")]));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    expect(dom.root.textContent).toContain("Persönlich / Planung · heute, 12:00");
-    [...dom.root.querySelectorAll<HTMLElement>(".k2b-file-grid__row")]
-      .find((row) => row.textContent?.includes("Budget.xlsx"))!
-      .querySelector<HTMLButtonElement>(".k2b-file-grid__open")!
-      .click();
-    expect(opened).toEqual(["Planung/Budget.xlsx"]);
+    expect(dom.root.textContent).toContain("Persönlich / Planung");
+    expect(dom.root.textContent).toContain("heute, 12:00");
+    // A file opens beside its folder's listing, by a real link.
+    expect(dom.root.querySelector("a.k2-row-open")?.getAttribute("href")).toBe(
+      "/app/filesv2?base=home&path=Planung&file=Planung%2FBudget.xlsx",
+    );
     const star = () => [...dom.root.querySelectorAll<HTMLButtonElement>('button[aria-label="Aus Favoriten entfernen"]')];
     star()[0]!.click();
     await flush();
@@ -313,11 +313,14 @@ describe("Filesv2 progressive navigation", () => {
     apiRequests[1]!.resolve(Response.json({ code: "unavailable", message: "Storage unavailable" }, { status: 503 }));
     await flush();
     expect(dom.root.textContent).toContain("Budget.xlsx");
-    for (const button of star()) button.click();
-    await flush();
+    // The rows are made anew when one leaves, so each star is found again before its press.
+    while (star().length) {
+      star()[0]!.click();
+      await flush();
+    }
     for (const request of apiRequests.slice(2)) request.resolve(Response.json({ favorite: false }));
     await flush();
-    expect(dom.root.textContent).toContain("Noch keine Favoriten");
+    expect(dom.root.textContent).toContain("Markiere Dateien oder Ordner in ihren Details mit dem Stern.");
   });
 
   test("a shares deep link remains account-scoped after its requested group disappears", async () => {

@@ -9,7 +9,7 @@ import { AppWorkspace, ButtonLink, createNavigation, Dropdown, InlineGuidance, M
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import { apiClient } from "../api/client";
-import { ErrorSchema, type FileEntry, type MarkedEntry } from "../contracts";
+import { ErrorSchema, type FileEntry } from "../contracts";
 import ActivityView from "./ActivityView";
 import { createActivityVersionLoader } from "./activity-versions";
 import { baseLabel } from "./base-label";
@@ -17,7 +17,6 @@ import { useBrowserMessages } from "./browser-messages";
 import type { ViewPreference } from "./browser-preferences";
 import Editor from "./Editor";
 import { historyExecutionHref } from "./execution-url";
-import FavoritesPage from "./FavoritesPage";
 import { IssueMessage } from "./feedback";
 import { RECENT_MOVED_HINT } from "./hints";
 import { type HistoryActions, type HistoryEnvironment, type HistoryTarget, isCurrent } from "./history-actions";
@@ -41,9 +40,8 @@ import { useFilesMessages } from "./messages";
 import { filesPageScope } from "./page-scope";
 import SharesOverview from "./SharesOverview";
 import StorageOverview from "./StorageOverview";
-import TrashView from "./TrashView";
 import { snapshotTitle } from "./trail";
-import { activityUrl, filesUrl, parseActivityFilters, showsOverview } from "./urls";
+import { activityUrl, filesUrl, parseActivityFilters, screenViewOf, showsOverview } from "./urls";
 import { createWorkspaceState, type MovedSnapshot, type WorkspaceSnapshot } from "./workspace-state";
 
 const ancestors = (path: string) => {
@@ -134,12 +132,10 @@ export default function Workspace(props: {
   });
   const overview = () => showsOverview(new URL(snapshot().source, "https://files.invalid").searchParams, snapshot().bases.items.length);
   const hasOverview = () => snapshot().bases.items.length > 1;
-  /** A folder or a search is the v2 screen of its own page; these views reach it by loading it. */
+  /** A folder, a search, the trash and the favorites are the v2 screen of their own page; these views reach it by loading it. */
   const folderAddress = (target: string) => {
     const url = new URL(target, "https://files.invalid");
-    return (
-      url.pathname === "/app/filesv2" && !url.searchParams.has("view") && !showsOverview(url.searchParams, snapshot().bases.items.length)
-    );
+    return url.pathname === "/app/filesv2" && screenViewOf(url.searchParams, snapshot().bases.items.length) !== null;
   };
   // Every load returns fresh base objects; the sidebar tree only re-renders when a base really changed.
   const bases = createMemo<WorkspaceSnapshot["bases"]["items"]>((previous = []) => {
@@ -444,12 +440,6 @@ export default function Workspace(props: {
     }
   };
   onMount(() => ensureLoaded(expanded()));
-  const openMarked = (item: MarkedEntry) =>
-    void go(
-      item.entry.directory
-        ? filesUrl(item.base.id, item.entry.path)
-        : filesUrl(item.base.id, item.entry.path.split("/").slice(0, -1).join("/"), null, item.entry.path),
-    );
   // The tree row being navigated to shows a spinner until the workspace has moved there.
   const [navigating, setNavigating] = createSignal<string | null>(null);
   const withSpinner = async (id: string, run: () => Promise<void>) => {
@@ -757,128 +747,104 @@ export default function Workspace(props: {
               }
             >
               <Show
-                when={currentView() !== "favorites"}
+                when={currentView() !== "shares"}
                 fallback={
-                  <FavoritesPage
-                    initial={snapshot().marks ?? null}
-                    bases={snapshot().bases.items.map((base) => ({ id: base.id, label: baseLabel(base, b(), locale()) }))}
-                    timeZone={props.timeZone ?? "UTC"}
-                    now={snapshot().now ?? new Date().toISOString()}
-                    onOpen={openMarked}
+                  <SharesOverview
+                    shares={snapshot().shares ?? { items: [], next: null }}
+                    baseId={snapshot().selectedId}
+                    onNavigate={onNavigate}
                   />
                 }
               >
                 <Show
-                  when={currentView() !== "shares"}
+                  when={!overview() || !!problem()}
                   fallback={
-                    <SharesOverview
-                      shares={snapshot().shares ?? { items: [], next: null }}
-                      baseId={snapshot().selectedId}
+                    <StorageOverview
+                      bases={snapshot().bases.items}
+                      issues={snapshot().bases.issues}
+                      favorites={snapshot().favoritesPreview}
+                      env={historyEnv()}
                       onNavigate={onNavigate}
                     />
                   }
                 >
-                  <Show
-                    when={!(currentView() === "trash" && selected()?.status === "existing")}
-                    fallback={
-                      <TrashView
-                        base={selected()!}
-                        onNavigate={onNavigate}
-                        onRestored={(path) => void go(filesUrl(selected()!.id, path.split("/").slice(0, -1).join("/"), null, path))}
-                      />
-                    }
-                  >
+                  <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
                     <Show
-                      when={!overview() || !!problem()}
-                      fallback={
-                        <StorageOverview
-                          bases={snapshot().bases.items}
-                          issues={snapshot().bases.issues}
-                          favorites={snapshot().favoritesPreview}
-                          env={historyEnv()}
-                          onNavigate={onNavigate}
-                        />
-                      }
+                      when={!workspace.pending()}
+                      fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
                     >
-                      <AppWorkspace.Main class="flex min-h-0 flex-col gap-3 p-[var(--ui-space-shell)]" aria-busy={workspace.pending()}>
+                      <Show
+                        when={!problem()}
+                        fallback={centered(() => (
+                          <Placeholder
+                            state="error"
+                            variant="panel"
+                            title={t().loadFailed}
+                            description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
+                            action={retry()}
+                          />
+                        ))}
+                      >
                         <Show
-                          when={!workspace.pending()}
-                          fallback={centered(() => <Placeholder state="loading" variant="panel" description={t().loadingFiles} />)}
-                        >
-                          <Show
-                            when={!problem()}
-                            fallback={centered(() => (
-                              <Placeholder
-                                state="error"
-                                variant="panel"
-                                title={t().loadFailed}
-                                description={workspace.failure()?.message ?? <IssueMessage code={snapshot().errorCode} />}
-                                action={retry()}
-                              />
-                            ))}
-                          >
+                          when={snapshot().moved}
+                          keyed
+                          fallback={
                             <Show
-                              when={snapshot().moved}
-                              keyed
-                              fallback={
+                              when={selected()}
+                              fallback={centered(() => (
+                                <Placeholder
+                                  variant="panel"
+                                  icon="ti ti-folder-off"
+                                  title={t().noStorage}
+                                  description={
+                                    <div class="flex flex-col gap-2">
+                                      <p>{t().noStorageDescription}</p>
+                                      <For each={snapshot().bases.issues}>
+                                        {(issue) => (
+                                          <p>
+                                            <strong>{t()[issue.area]}: </strong>
+                                            <IssueMessage code={issue.code} />
+                                          </p>
+                                        )}
+                                      </For>
+                                    </div>
+                                  }
+                                  action={retry()}
+                                />
+                              ))}
+                            >
+                              {(base) => (
                                 <Show
-                                  when={selected()}
+                                  when={base().status === "existing"}
                                   fallback={centered(() => (
                                     <Placeholder
                                       variant="panel"
+                                      state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
                                       icon="ti ti-folder-off"
-                                      title={t().noStorage}
-                                      description={
-                                        <div class="flex flex-col gap-2">
-                                          <p>{t().noStorageDescription}</p>
-                                          <For each={snapshot().bases.issues}>
-                                            {(issue) => (
-                                              <p>
-                                                <strong>{t()[issue.area]}: </strong>
-                                                <IssueMessage code={issue.code} />
-                                              </p>
-                                            )}
-                                          </For>
-                                        </div>
-                                      }
+                                      title={t()[base().status]}
+                                      description={<IssueMessage code={base().reason ?? base().status} />}
                                       action={retry()}
                                     />
                                   ))}
                                 >
-                                  {(base) => (
-                                    <Show
-                                      when={base().status === "existing"}
-                                      fallback={centered(() => (
-                                        <Placeholder
-                                          variant="panel"
-                                          state={base().status === "conflict" || base().status === "unknown" ? "error" : "empty"}
-                                          icon="ti ti-folder-off"
-                                          title={t()[base().status]}
-                                          description={<IssueMessage code={base().reason ?? base().status} />}
-                                          action={retry()}
-                                        />
-                                      ))}
-                                    >
-                                      <For each={snapshot().bases.issues}>
-                                        {(issue) => (
-                                          <InlineGuidance tone="info">
-                                            <strong>{t()[issue.area]}: </strong>
-                                            <IssueMessage code={issue.code} />
-                                          </InlineGuidance>
-                                        )}
-                                      </For>
-                                    </Show>
-                                  )}
+                                  <For each={snapshot().bases.issues}>
+                                    {(issue) => (
+                                      <InlineGuidance tone="info">
+                                        <strong>{t()[issue.area]}: </strong>
+                                        <IssueMessage code={issue.code} />
+                                      </InlineGuidance>
+                                    )}
+                                  </For>
                                 </Show>
-                              }
-                            >
-                              {(moved) => <MovedHere moved={moved} />}
+                              )}
                             </Show>
-                          </Show>
+                          }
+                        >
+                          {(moved) => <MovedHere moved={moved} />}
                         </Show>
-                      </AppWorkspace.Main>
+                      </Show>
                     </Show>
-                  </Show>
+                  </AppWorkspace.Main>
                 </Show>
               </Show>
             </Show>

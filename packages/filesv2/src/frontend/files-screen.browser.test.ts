@@ -6,7 +6,16 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import "../../../ui/test/solid-ssr-preload";
-import { FIXTURE_NOW, type FixtureCase, fixtureBase, fixtureListing, fixturePage, fixtureSearch } from "./files-screen.fixture";
+import {
+  FIXTURE_NOW,
+  type FixtureCase,
+  fixtureBase,
+  fixtureFavorites,
+  fixtureListing,
+  fixturePage,
+  fixtureSearch,
+  fixtureTrash,
+} from "./files-screen.fixture";
 
 // A person works in a folder of Files on v2: opens folders and files in place, sorts, searches, chooses entries and
 // renames, moves and trashes them, on a desktop and on a phone. The test stands in for the server: the page and the
@@ -151,6 +160,8 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
         ? route.fulfill({ json: { base: fixtureBase, entry: found, favorite: false } })
         : route.fulfill({ status: 404, json: { code: "not_found", message: "Nicht gefunden" } });
     }
+    if (url.pathname === `${api}/bases/demo/trash`) return route.fulfill({ json: fixtureTrash });
+    if (url.pathname === `${api}/favorites`) return route.fulfill({ json: fixtureFavorites });
     if (url.pathname === `${api}/activity`) return route.fulfill({ json: emptyHistory });
     if (url.pathname === `${api}/shares`) return route.fulfill({ json: { items: [], next: null } });
     if (url.pathname.startsWith(`${api}/bases/demo/preview`)) return route.fulfill({ status: 404, body: "" });
@@ -322,6 +333,45 @@ describe("a folder of Files on v2", () => {
       await context.close();
     }
   });
+
+  test("the trash and the favorites open in place from the sidebar, and a favorite opens its file beside its folder", async () => {
+    const { context, tab, errors, seen } = await open(wide, "/app/filesv2?base=demo");
+    try {
+      await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Papierkorb" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "trash");
+      await tab.getByText("Alter Entwurf.pdf").first().waitFor();
+      expect(await tab.locator("[data-k2-part=Table]").innerText()).toContain("Ursprünglicher Speicherort unbekannt");
+      await shoot(tab, "09-trash-1440");
+      await expectClean(tab);
+
+      await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Favoriten" }).click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("view") === "favorites");
+      await tab.getByText("Budget 2027.xlsx").first().waitFor();
+      await shoot(tab, "10-favorites-1440");
+      await expectClean(tab);
+
+      await tab.getByRole("link", { name: "Budget 2027.xlsx" }).first().click();
+      await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Budget 2027.xlsx");
+      await tab.getByText("Eigenschaften", { exact: true }).waitFor();
+      // Every step stayed on the first page load.
+      expect(seen.pages).toHaveLength(1);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  for (const address of ["/app/filesv2?base=demo&view=trash", "/app/filesv2?view=favorites"])
+    test(`${address} fits the phone`, async () => {
+      const { context, tab, errors } = await open(phone, address);
+      try {
+        await shoot(tab, `11-${address.includes("trash") ? "trash" : "favorites"}-390`);
+        await expectClean(tab);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    });
 
   for (const view of [wide, narrow, phone])
     test(`worst-case names, sizes and scripts keep the layout whole at ${view.name}px`, async () => {
