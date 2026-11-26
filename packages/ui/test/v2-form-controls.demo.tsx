@@ -140,6 +140,9 @@ export function Demo() {
             <Field name="to" label="An">
               <TagsInput type="email" value={["anna.berg@werkstatt.example"]} />
             </Field>
+            <Field name="cc" label="Kopie">
+              <TagsInput type="email" max={3} />
+            </Field>
             <Field name="locked" label="Gesperrte Server">
               <TagsInput value={["mx9.example"]} disabled />
             </Field>

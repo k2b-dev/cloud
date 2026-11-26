@@ -7,6 +7,11 @@ const controlMessages = i18n.define({
   messages: {
     en: {
       removeValue: ({ label }: { label: string }) => `Remove ${label}`,
+      notAnAddress: ({ text }: { text: string }) => `“${text}” is not an e-mail address.`,
+      tooManyAddresses: ({ max, left }: { max: number; left: number }) =>
+        `This field takes ${max} addresses at most; ${left === 1 ? "1 was" : `${left} were`} not added.`,
+      addressesAdded: ({ count }: { count: number }) => (count === 1 ? "1 address added." : `${count} addresses added.`),
+      addressesRemoved: ({ count }: { count: number }) => (count === 1 ? "1 address removed." : `${count} addresses removed.`),
       chooseImage: "Choose image",
       changeImage: "Change image",
       removeImage: "Remove image",
@@ -24,6 +29,11 @@ const controlMessages = i18n.define({
     },
     de: {
       removeValue: ({ label }: { label: string }) => `${label} entfernen`,
+      notAnAddress: ({ text }: { text: string }) => `„${text}“ ist keine E-Mail-Adresse.`,
+      tooManyAddresses: ({ max, left }: { max: number; left: number }) =>
+        `Dieses Feld nimmt höchstens ${max} Adressen; ${left === 1 ? "1 wurde" : `${left} wurden`} nicht übernommen.`,
+      addressesAdded: ({ count }: { count: number }) => (count === 1 ? "1 Adresse hinzugefügt." : `${count} Adressen hinzugefügt.`),
+      addressesRemoved: ({ count }: { count: number }) => (count === 1 ? "1 Adresse entfernt." : `${count} Adressen entfernt.`),
       chooseImage: "Bild wählen",
       changeImage: "Bild ändern",
       removeImage: "Bild entfernen",

@@ -247,7 +247,15 @@ test("a form sends the tags one entry each, nothing of a locked list, the image'
   });
 });
 
-test("addresses: Enter, a comma or a paste turn addresses into chips, also several and with a name; a wrong one stays to be fixed", async () => {
+/** Pastes text into a field's input, where its selection stands, as a person's paste does. */
+const paste = (input: ReturnType<Page["locator"]>, text: string) =>
+  input.evaluate((element, pasted) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", pasted);
+    element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, text);
+
+test("addresses: Enter, a comma or a paste turn addresses into chips, with quoted names too; a wrong one stays, with its reason", async () => {
   await withPage(async (page) => {
     const to = field(page, "An");
     const input = to.getByRole("combobox");
@@ -259,35 +267,70 @@ test("addresses: Enter, a comma or a paste turn addresses into chips, also sever
     await to.locator(".k2-chip").nth(1).waitFor();
     expect(await chips()).toEqual(["anna.berg@werkstatt.example", "jonas@werkstatt.example"]);
     expect(await input.inputValue()).toBe("");
-    // a paste of several, one with a name and one wrong: the right ones become chips, the wrong one stays in the field
-    await input.evaluate((element) => {
-      const data = new DataTransfer();
-      data.setData("text/plain", "Mia Lindqvist <mia@lindqvist.example>; buero@werkstatt.example\nkein-at-zeichen");
-      element.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-    });
-    await page.waitForFunction(() => [...document.querySelectorAll(".k2-chip")].some((chip) => chip.textContent?.includes("buero@")));
+    // a name being typed is no address yet: its comma stays as typed
+    await input.pressSequentially("Mia Lindqvist,");
+    expect(await input.inputValue()).toBe("Mia Lindqvist,");
+    await input.fill("");
+    // a paste: quoted names with a comma, a name with a comma before its <…>, the same address in other letters, and a
+    // wrong one, which stays with its own separators and a sentence that keeps the form from being sent
+    await paste(
+      input,
+      '"Lindqvist, Mia" <mia@lindqvist.example>; Berg, Paul <paul@werkstatt.example>\nANNA.BERG@werkstatt.example, kein-at-zeichen',
+    );
+    await to.locator(".k2-chip").nth(3).waitFor();
     expect(await chips()).toEqual([
       "anna.berg@werkstatt.example",
       "jonas@werkstatt.example",
-      "Mia Lindqvist <mia@lindqvist.example>",
-      "buero@werkstatt.example",
+      '"Lindqvist, Mia" <mia@lindqvist.example>',
+      "Berg, Paul <paul@werkstatt.example>",
     ]);
     expect(await input.inputValue()).toBe("kein-at-zeichen");
     expect(await input.getAttribute("aria-invalid")).toBe("true");
-    // each chip is sent, and taken away with its named button or with Backspace in the empty field
-    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(4);
-    await to.getByRole("button", { name: "jonas@werkstatt.example entfernen" }).click();
-    await input.fill("");
+    const reason = "„kein-at-zeichen“ ist keine E-Mail-Adresse.";
+    expect(await to.locator(".k2-field-message[data-error]").textContent()).toBe(reason);
+    expect(await input.evaluate((element) => (element as HTMLInputElement).validationMessage)).toBe(reason);
+    expect((await sent(page)).valid).toBe(false);
+    expect(await to.getByRole("status").textContent()).toBe("2 Adressen hinzugefügt.");
+    // fixing it: the sentence goes while the text is edited
+    await input.press("End");
     await input.press("Backspace");
-    await page.waitForFunction(() => !document.querySelector('.k2-chip-x[aria-label="buero@werkstatt.example entfernen"]'));
-    expect(entriesOf((await sent(page)).entries, "to")).toEqual(["anna.berg@werkstatt.example", "Mia Lindqvist <mia@lindqvist.example>"]);
+    expect(await to.locator(".k2-field-message").count()).toBe(0);
+    expect(await input.getAttribute("aria-invalid")).toBeNull();
+    // a paste over a selection replaces it
+    await input.fill("Hallo");
+    await input.evaluate((element) => (element as HTMLInputElement).setSelectionRange(0, 5));
+    await paste(input, "kai@werkstatt.example, lea@werkstatt.example");
+    await to.locator(".k2-chip").nth(5).waitFor();
+    expect(await input.inputValue()).toBe("");
+    // each chip is sent, and taken away with its named button or with Backspace in the empty field
+    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(6);
+    await to.getByRole("button", { name: "jonas@werkstatt.example entfernen" }).click();
+    await input.press("Backspace");
+    await page.waitForFunction(() => !document.querySelector('.k2-chip-x[aria-label="lea@werkstatt.example entfernen"]'));
+    expect(entriesOf((await sent(page)).entries, "to")).toHaveLength(4);
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll('[role="status"]')].some((status) => status.textContent === "1 Adresse entfernt."),
+    );
     // the form's reset puts the first address back
     await reset(page);
     await page.waitForFunction(() => document.querySelectorAll('input[type="hidden"][name="to"]').length === 1);
   });
 });
 
-test("chip: its remove button is named for what it removes and takes it away, also from the keyboard", async () => {
+test("addresses: a field takes no more than it may; more are named in a sentence", async () => {
+  await withPage(async (page) => {
+    const cc = field(page, "Kopie");
+    const input = cc.getByRole("combobox");
+    await paste(input, "a@werkstatt.example, b@werkstatt.example, c@werkstatt.example, d@werkstatt.example, e@werkstatt.example");
+    await cc.locator(".k2-chip").nth(2).waitFor();
+    expect(await cc.locator(".k2-chip").count()).toBe(3);
+    expect(await cc.locator(".k2-field-message").textContent()).toBe("Dieses Feld nimmt höchstens 3 Adressen; 2 wurden nicht übernommen.");
+    // not a refusal of a text: the form may be sent
+    expect(await cc.locator(".k2-field-message[data-error]").count()).toBe(0);
+  });
+});
+
+test("chip: its remove button is named for what it removes and takes it away, also from the keyboard, and the focus goes on", async () => {
   await withPage(async (page) => {
     const remove = page.getByRole("button", { name: "Anna Berg entfernen" });
     expect(await remove.count()).toBe(1);
@@ -295,7 +338,7 @@ test("chip: its remove button is named for what it removes and takes it away, al
     await page.keyboard.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("unassign:Anna Berg"));
     expect(await page.getByRole("button", { name: "Anna Berg entfernen" }).count()).toBe(0);
-    expect(await page.getByRole("button", { name: "Jonas Wolf entfernen" }).count()).toBe(1);
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Jonas Wolf entfernen");
   });
 });
 

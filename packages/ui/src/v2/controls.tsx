@@ -15,6 +15,7 @@ import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
+import { addressKey, scanAddresses } from "./addresses";
 import { useCode } from "./behavior/code";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
@@ -514,24 +515,14 @@ export type TagsInputProps = {
   disabled?: boolean;
   /**
    * `email`: e-mail addresses, as the To of a message. A comma, a semicolon or a new line ends an address too, a
-   * paste of several becomes several chips (`Name <address>` as well), and a text that is no address stays in the
-   * field, marked, to be fixed. The phone shows its keyboard for addresses.
+   * paste of several becomes several chips (`Name <address>` and `"Berg, Anna" <address>` as well), and a text that is
+   * no address stays in the field with a sentence why, and keeps the form from being sent. A value is the address in
+   * the form it was given (`Name <address>`); the same address twice, in any case, is one chip. The phone shows its
+   * keyboard for addresses.
    */
   type?: "email";
-};
-
-/** The addresses in a text: `a@b.example` or `Name <a@b.example>`, split at commas, semicolons, new lines and spaces. */
-const splitAddresses = (text: string) => {
-  const parts = text.match(/[^,;\n<>]*<[^<>]*>|[^\s,;<>]+/g) ?? [];
-  const valid: string[] = [];
-  const rest: string[] = [];
-  for (const raw of parts) {
-    const part = raw.trim();
-    if (!part) continue;
-    const address = part.match(/<([^<>]*)>$/)?.[1] ?? part;
-    (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(address.trim()) ? valid : rest).push(part);
-  }
-  return { valid, rest: rest.join(", ") };
+  /** How many values the field takes; more are not added, and a sentence says so. With `email` 200 (one To of Mail). */
+  max?: number;
 };
 
 /**
@@ -547,23 +538,59 @@ export const TagsInput = (props: TagsInputProps) => {
   const email = () => props.type === "email";
   // the text being typed; with `email` it is held here, so a separator or a paste can turn it into chips
   const [query, setQuery] = createSignal("");
-  const [rejected, setRejected] = createSignal(false);
+  // what the field says under its chips (no address, too many), and what assistive technology hears of a change
+  const [notice, setNotice] = createSignal<{ text: string; rejected: boolean }>();
+  const [heard, setHeard] = createSignal("");
+  const rejected = () => notice()?.rejected === true;
+  const noticeId = createUniqueId();
+  const max = () => props.max ?? (email() ? 200 : Number.POSITIVE_INFINITY);
+  const keyOf = (value: string) => (email() ? addressKey(value) : value);
   const commit = (next: string[]) => {
-    const clean = [...new Set(next.map((value) => value.trim()).filter(Boolean))];
+    const seen = new Set<string>();
+    const clean = next
+      .map((value) => value.trim())
+      .filter((value) => {
+        const key = keyOf(value);
+        if (!value || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    if (email() && clean.length < values().length) setHeard(t().addressesRemoved({ count: values().length - clean.length }));
     setOwn(clean);
     props.onChange?.(clean);
   };
-  // the addresses in a text become chips; what is no address stays in the field, marked
-  const take = (text: string) => {
-    const { valid, rest } = splitAddresses(text);
-    if (valid.length) commit([...values(), ...valid]);
+  // The addresses in a text become chips, up to `max`; what is no address stays in the field, with a sentence why,
+  // and keeps the form from being sent. A text with no address in it is left as it is typed.
+  const take = (text: string, commitAttempt: boolean) => {
+    const { found, rest } = scanAddresses(text);
+    if (!found.length && !commitAttempt) {
+      setQuery(text);
+      setNotice(undefined);
+      return;
+    }
+    const have = new Set(values().map(keyOf));
+    const fresh = found.filter((value) => !have.has(keyOf(value)) && have.add(keyOf(value)));
+    const room = Math.max(0, max() - values().length);
+    const added = fresh.slice(0, room);
+    if (added.length) {
+      commit([...values(), ...added]);
+      setHeard(t().addressesAdded({ count: added.length }));
+    }
     setQuery(rest);
-    setRejected(rest.length > 0);
+    if (rest) setNotice({ text: t().notAnAddress({ text: rest }), rejected: true });
+    else if (fresh.length > added.length)
+      setNotice({ text: t().tooManyAddresses({ max: max(), left: fresh.length - added.length }), rejected: false });
+    else setNotice(undefined);
   };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
   // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
   let input: HTMLInputElement | undefined;
   field?.named(() => input?.focus());
+  // a refused text keeps the form from being sent, with the field's own sentence as the reason
+  createRenderEffect(() => {
+    const reason = rejected() ? (notice()?.text ?? "") : "";
+    input?.setCustomValidity(reason);
+  });
   // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
   // Addresses are held here, so their field puts them back itself.
   const initial = [...(props.value ?? [])];
@@ -572,7 +599,7 @@ export const TagsInput = (props: TagsInputProps) => {
     if (!email() || props.onChange || !(event.target instanceof HTMLFormElement) || !chips || !event.target.contains(chips)) return;
     setOwn(initial);
     setQuery("");
-    setRejected(false);
+    setNotice(undefined);
   };
   onMount(() => {
     document.addEventListener("reset", onReset);
@@ -584,13 +611,24 @@ export const TagsInput = (props: TagsInputProps) => {
     allowCustomValue: true,
     // addresses are held here (a paste adds several at once); other values may be held by core, so a reset is its own
     ...(props.onChange || email() ? { value: values() } : { defaultValue: initial }),
-    ...(email() ? { query: query(), onQueryChange: (next: string) => (/[,;\n]/.test(next) ? take(next) : setQuery(next)) } : {}),
+    // typing: a separator turns the addresses before it into chips; anything else is typed on, and the sentence of a
+    // refused text goes while it is fixed
+    ...(email()
+      ? {
+          query: query(),
+          onQueryChange: (next: string) => {
+            if (/[,;\n]/.test(next)) return take(next, false);
+            setQuery(next);
+            if (rejected()) setNotice(undefined);
+          },
+        }
+      : {}),
     onValueChange: (next: string[]) => {
       if (!email()) return commit(next);
       // Enter commits the typed text: as addresses, the rest stays in the field
       const added = next.filter((value) => !values().includes(value));
       if (next.length < values().length || !added.length) return commit(next);
-      take(added.join(", "));
+      take(added.join(", "), true);
     },
     disabled: props.disabled,
     required: field?.required,
@@ -627,17 +665,34 @@ export const TagsInput = (props: TagsInputProps) => {
           aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
           aria-invalid={field?.invalid || rejected() ? "true" : undefined}
-          aria-describedby={field?.described}
+          aria-describedby={[field?.described, notice() ? noticeId : undefined].filter(Boolean).join(" ") || undefined}
           inputMode={email() ? "email" : undefined}
           autocomplete={email() ? "email" : undefined}
           onPaste={(event: ClipboardEvent) => {
             const text = event.clipboardData?.getData("text/plain") ?? "";
-            if (!email() || !/[,;\s]/.test(text.trim())) return;
+            if (!email() || !/[,;\s]/.test(text.trim()) || !input) return;
             event.preventDefault();
-            take(`${query()} ${text}`);
+            // the pasted text stands where the selection was, as a plain paste would put it
+            const typed = input.value;
+            const from = input.selectionStart ?? typed.length;
+            const to = input.selectionEnd ?? from;
+            take(typed.slice(0, from) + text + typed.slice(to), true);
           }}
         />
       </combo.Chips>
+      {/* why a text was not taken, under the chips; a refused text keeps the form from being sent */}
+      <Show when={notice()}>
+        {(said) => (
+          <span class="k2-field-message" id={noticeId} data-error={said().rejected ? "" : undefined}>
+            {said().text}
+          </span>
+        )}
+      </Show>
+      <Show when={email()}>
+        <span class="k2-hidden-text" role="status">
+          {heard()}
+        </span>
+      </Show>
       {/* core's form input validates and resets the field; the values are sent one entry each under the name */}
       <combo.FormInput />
       <Show when={props.name ?? field?.name}>
