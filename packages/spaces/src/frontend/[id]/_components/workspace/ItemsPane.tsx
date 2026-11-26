@@ -151,7 +151,6 @@ export default function ItemsPane(props: Props) {
         />
       }
     >
-      <SpacePulse pulse={props.pulse} color={props.space.color} />
       {/* A failed load stands once, red, at the head of the rows; rows of another address leave instead of passing for its result. */}
       <Show when={view.error()}>
         {(error) => (
@@ -160,6 +159,8 @@ export default function ItemsPane(props: Props) {
           </Notice>
         )}
       </Show>
+      {/* The Space's pulse follows the problem: a failure is the first thing to read under the filter row. */}
+      <SpacePulse pulse={props.pulse} color={props.space.color} />
       <Show when={!view.failedElsewhere()}>
         <Show
           when={!empty()}
