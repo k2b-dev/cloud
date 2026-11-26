@@ -6,7 +6,7 @@
 
 Use `Format` components wherever a value is displayed rather than edited: statistics, tables, timestamps, file sizes, and durations. They render semantic, unstyled elements, so the surrounding surface owns all styling.
 
-Use `LocaleProvider` once near the SSR root to set the render locale. Use `useLocale()` in application components that need the effective locale for their own `Intl` calls.
+Use `LocaleProvider` once near the SSR root to set the render locale. Use `useLocale()` in application components that need the effective locale for their own `Intl` calls. A v2 island imports `useLocale` from `@k2b/ui/v2`, so it carries no v1 code for it.
 
 Keep locale and timezone separate: the provider carries only the locale; date and time components take an explicit `timeZone` prop where it matters.
 
