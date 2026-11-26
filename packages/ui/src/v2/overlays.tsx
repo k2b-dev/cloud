@@ -17,8 +17,8 @@ export type DialogProps = {
   open: boolean;
   /** Called with `false` when Escape, the close button, a press outside or a swipe closes the dialog. */
   onOpenChange: (open: boolean) => void;
-  /** The buttons at the foot, the main one last. */
-  foot: JSX.Element;
+  /** The buttons at the foot, the main one last; a dialog that only shows places to go, such as "More", has none. */
+  foot?: JSX.Element;
   /** Fields, a notice, text: the content scrolls when it is higher than the dialog. */
   children: JSX.Element;
   /**
@@ -147,11 +147,13 @@ export const Dialog = (props: DialogProps) => {
       <div class="k2-dialog-body" ref={watch} onScroll={(event) => measure(event.currentTarget)}>
         {props.children}
       </div>
-      <div class="k2-slot" data-slot="foot" ref={foot}>
-        <div class="k2-bar">
-          <div class="k2-bar-end">{props.foot}</div>
+      <Show when={props.foot !== undefined}>
+        <div class="k2-slot" data-slot="foot" ref={foot}>
+          <div class="k2-bar">
+            <div class="k2-bar-end">{props.foot}</div>
+          </div>
         </div>
-      </div>
+      </Show>
     </dialog.Popup>
   );
 };

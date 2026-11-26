@@ -98,6 +98,8 @@ const uiMessages = i18n.define({
       sidebar: "Sidebar",
       showSidebar: "Show sidebar",
       nothingSelected: "Nothing selected",
+      unread: ({ count }: { count: number }) => `${count} unread`,
+      unreadMany: "More than 99 unread",
       yes: "Yes",
     },
     de: {
@@ -193,6 +195,8 @@ const uiMessages = i18n.define({
       sidebar: "Seitenleiste",
       showSidebar: "Seitenleiste zeigen",
       nothingSelected: "Nichts ausgewählt",
+      unread: ({ count }) => `${count} ungelesen`,
+      unreadMany: "Mehr als 99 ungelesen",
       yes: "Ja",
     },
   },

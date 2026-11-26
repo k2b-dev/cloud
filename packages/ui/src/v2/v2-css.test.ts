@@ -140,7 +140,17 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
 // colour of its app, and the platform may set its readable ink. v2.css may read them, never define them.
-const foreignVariables = new Set(["--anchor-width", "--available-height", "--keyboard-inset", "--k2-app", "--k2-app-ink"]);
+// Set from outside the sheet: by core, by the platform (the app colour), or by script on the document (`TabBar` and
+// `NoticeStack` measure themselves, so the parts beside them keep their room).
+const foreignVariables = new Set([
+  "--anchor-width",
+  "--available-height",
+  "--keyboard-inset",
+  "--k2-app",
+  "--k2-app-ink",
+  "--k2-tabbar-h",
+  "--k2-notice-stack",
+]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];

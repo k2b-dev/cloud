@@ -10,6 +10,7 @@
  *   enforce this.
  */
 
+export { NoticeStack, type NoticeStackProps, TabBar, type TabBarItem, type TabBarProps } from "./app-frame";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {

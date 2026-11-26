@@ -17,6 +17,7 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
+import { Unread } from "./app-frame";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
@@ -34,8 +35,13 @@ import { createVirtualWindow, SERVER_ROWS } from "./virtual";
 type NavEntryBase = {
   /** The words of the entry. */
   label: string;
-  /** A count at the end, such as unread mails. */
+  /** A quiet count at the end, such as the open tasks. */
   count?: number | string;
+  /**
+   * A count that calls for attention, such as unread messages: a filled figure in the app's colour after the quiet
+   * count, "99+" above 99, read out as "3 unread". Nothing at 0.
+   */
+  unread?: number;
   /** The open one. */
   current?: boolean;
   /** One level in, such as the folders of a mailbox. */
@@ -95,6 +101,11 @@ export type NavProps = {
   title: string;
   /** A Tabler icon beside the app's name. */
   icon: string;
+  /**
+   * The address of the brand's logo, such as an installation's own: it stands in the place of the icon, 20 px high,
+   * and the name beside it still names the sidebar.
+   */
+  logo?: string;
   /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
@@ -111,6 +122,7 @@ const NavEnd = (props: { item: NavItem }) => (
     <Show when={props.item.count !== undefined}>
       <span class="k2-ni-count">{props.item.count}</span>
     </Show>
+    <Unread count={props.item.unread} />
   </>
 );
 
@@ -264,7 +276,9 @@ export const Nav = (props: NavProps) => {
   return (
     <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
       <div class="k2-nav-title">
-        <Icon name={props.icon} />
+        <Show when={props.logo} fallback={<Icon name={props.icon} />}>
+          {(logo) => <img class="k2-nav-logo" src={logo()} alt="" />}
+        </Show>
         {props.title}
       </div>
       <div class="k2-nav-scroll" ref={scroll}>
@@ -641,8 +655,11 @@ export const StatusRow = (props: StatusRowProps) => {
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type NoticeProps = {
-  /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
-  tone: "note" | "ai" | "bad" | "warn";
+  /**
+   * What it is: a note of a person, a summary by AI, something wrong, something waiting, or `info`, a plain fact of
+   * the app itself (a new version is ready).
+   */
+  tone: "note" | "ai" | "bad" | "warn" | "info";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
   icon?: string;
   /** A short title; the text then runs under it across the full width. */
@@ -655,7 +672,7 @@ export type NoticeProps = {
   children: JSX.Element;
 };
 
-const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
+const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle", info: "info-circle" } as const;
 
 /** The tones whose long text shows its first lines and "Show more" (the stylesheet: a summary 4, a note 8). */
 const clampedTones: ReadonlySet<NoticeProps["tone"]> = new Set(["ai", "note"]);
