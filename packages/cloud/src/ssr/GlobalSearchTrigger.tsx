@@ -1,4 +1,5 @@
 import { IconButton, Kbd, useLocale } from "@k2b/ui";
+import { focusPageSearch } from "@k2b/ui/v2";
 import { importOnDemand } from "../browser/reload";
 import { openGlobalSearch } from "../browser/search";
 import { createBusyAction } from "./busy-action";
@@ -45,10 +46,13 @@ export default function GlobalSearchTrigger(props: GlobalSearchTriggerProps) {
     );
   }
 
+  // On the phone the header's search stands for the search of a v2 page's head, where there is one (one search place).
   return (
     <IconButton
       class={props.class}
-      onClick={open}
+      onClick={() => {
+        if (!focusPageSearch()) open();
+      }}
       aria-busy={action.busy() ? "true" : undefined}
       label={t().openGlobalSearch}
       title={t().searchShortcut}

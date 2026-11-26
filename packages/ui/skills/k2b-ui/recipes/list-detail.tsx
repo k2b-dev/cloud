@@ -97,6 +97,8 @@ function SourceDetail(props: { source: Source }) {
     <Pane
       detail
       label={open.name}
+      // on the phone the source is a page of its own: its one bar is the way back to the list
+      back={{ label: "Quellen", href: "#" }}
       head={
         <Bar
           start={<Text type="lead">{open.name}</Text>}

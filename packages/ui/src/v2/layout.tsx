@@ -329,7 +329,7 @@ type SplitEntry = { readonly width?: Width; readonly label?: string; element?: H
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 
-export type PaneProps = {
+type PaneBase = {
   /** The head of this column: a `Bar` (56 px; 52 px for a reader beside a list) or `Tabs`. */
   head?: JSX.Element;
   /**
@@ -341,21 +341,6 @@ export type PaneProps = {
   width?: Width;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
-  /**
-   * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something is
-   * open), it is the page and the list gives way; render it only while something is open. What is open belongs in
-   * the address, so reload, back and forward show the same. A detail that closes in place hands the focus back to
-   * what opened it, such as the row.
-   */
-  detail?: boolean;
-  /**
-   * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it an
-   * `href`: the address of the list without the open entry. While it is there, the head of the workspace gives way on
-   * the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may show in its
-   * own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head action without
-   * it, the × gives way on the phone, so the detail has one way back there.
-   */
-  back?: Action;
   /** The side column of a record (the info column): quieter sections. */
   side?: boolean;
   /**
@@ -366,6 +351,32 @@ export type PaneProps = {
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
+
+/**
+ * A column, or the detail of a list. A detail always has its way back: on the phone it is a page of its own, whose
+ * one bar is the way back and its title, never the views of the list (design review 26.11.).
+ */
+export type PaneProps = PaneBase &
+  (
+    | {
+        /**
+         * The detail of a list (a reader): beside the list on a wide screen. On the phone, while it is there (something
+         * is open), it is the page and the list gives way; render it only while something is open. What is open belongs
+         * in the address, so reload, back and forward show the same. A detail that closes in place hands the focus back
+         * to what opened it, such as the row.
+         */
+        detail: true;
+        /**
+         * The way back to the list on the phone, where the detail is a page of its own, such as "Posteingang". Give it
+         * an `href`: the address of the list without the open entry. While it is there, the head of the workspace gives
+         * way on the phone, so the way back is the one bar above the detail; it is the part `Back`, which a shell may
+         * show in its own bar instead. With `back`, the close × of the detail's head needs no `keep`: like every head
+         * action without it, the × gives way on the phone, so the detail has one way back there.
+         */
+        back: Action;
+      }
+    | { detail?: false; back?: Action }
+  );
 
 /** A column that scrolls. It has no padding and no gutter, so every band in it reaches both edges. */
 export const Pane = (props: PaneProps) => {
