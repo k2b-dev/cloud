@@ -14,7 +14,6 @@ export {
 // Re-export from stdlib for backward compatibility
 // Prefer importing directly from @k2b/stdlib
 export { dates, dates as calendar, encoding, fileIcons, gradients } from "@k2b/stdlib";
-export { principalLabel } from "../access/principal-label";
 export {
   ACCOUNT_ACTION_NOTICE_SAMPLE,
   type AccountActionNoticeInput,
@@ -66,6 +65,7 @@ export type { MockCover, MockCoverIcon, MockCoverOptions, MockCoverTheme } from 
 export { createMockCover, createMockCoverSvg, parseDataUrl } from "./mock-cover";
 export * from "./network-address";
 export { type PreviewSourceKind, type PreviewVariant, previewSourceKind } from "./previews";
+export { principalLabel } from "./principal-label";
 export * from "./redirect";
 export type { LiquidTemplateErrorReason, LiquidTemplateFilter, LiquidTemplateOptions } from "./template-rendering";
 export {
