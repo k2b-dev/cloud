@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path" | "split-canvas";
 
 let browser: Browser;
 let client: string;
@@ -31,10 +31,15 @@ const withPage = async (which: Case, run: (page: Page) => Promise<void>, width =
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
+  // a real address, so a sort or filter chosen in the bar can write it
+  await page.route("http://head-media.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
+    }),
+  );
   try {
-    await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
-    );
+    await page.goto("http://head-media.test/dateien");
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await page.waitForFunction(() =>
@@ -56,6 +61,39 @@ const rect = (page: Page, selector: string) =>
       const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height };
     });
+
+test("on the phone how the list shows stays in reach: sort, grouping and display in one menu 'Ansicht'", async () => {
+  await withPage(
+    "closed",
+    async (page) => {
+      const button = page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
+      expect(await button.isVisible()).toBe(true);
+      // at the end of the bar, inside the window
+      const box = (await button.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      await button.click();
+      await settled(page);
+      const menu = page.getByRole("menu");
+      for (const title of ["Sortierung", "Darstellung"]) expect(await menu.getByText(title, { exact: true }).count()).toBe(1);
+      expect(await menu.getByRole("menuitemradio", { name: "Raster" }).count()).toBe(1);
+      // a sort chosen here writes the list's address, as the sort of the desktop does
+      await menu
+        .getByRole("menuitemradio", { name: /Geändert/ })
+        .first()
+        .click();
+      await settled(page);
+      expect(await page.evaluate(() => new URL(location.href).searchParams.get("sort"))).toMatch(/^changed\./);
+    },
+    390,
+  );
+});
+
+test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
+  await withPage("list", async (page) => {
+    expect(await page.locator(".k2-fbar-view").isVisible()).toBe(false);
+    expect(await page.locator(".k2-fbar-display").getByRole("button", { name: /Liste/ }).isVisible()).toBe(true);
+  });
+});
 
 test("the head has two full-width rows above list and detail: path and deeds, then the filter bar", async () => {
   await withPage("list", async (page) => {
@@ -106,6 +144,7 @@ test("media tiles: picture 4:3, a box that shows on hover and on every tile whil
     });
     expect(shape).toEqual({ wide: true, ratio: 1.33, box: "0" });
     await tile.hover();
+    await settled(page);
     expect(await tile.locator(".k2-tile-check").evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     // the box is named by the tile's title and selects it
     await page.getByRole("checkbox", { name: "Ansicht Front Eiche.jpg" }).check();
@@ -460,23 +499,98 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
     );
 });
 
-test("a drawing that is the whole pane has its final height from the first render, and keeps it", async () => {
-  for (const width of [1440, 390])
+for (const which of ["canvas", "split-canvas"] as const)
+  test(`a drawing that is the whole pane has its final height from the first render, and keeps it (${which})`, async () => {
+    for (const width of [1440, 390])
+      await withPage(
+        which,
+        async (page) => {
+          const found = await page.evaluate(() => {
+            const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
+            const scroll = document.querySelector(".k2-canvas[data-fill]")!.parentElement!.getBoundingClientRect();
+            return {
+              first: window.__k2FirstCanvas,
+              now: canvas.height,
+              bottom: Math.round(scroll.bottom - canvas.bottom),
+              window: Math.round(innerHeight - canvas.bottom),
+            };
+          });
+          expect(found.first).toBe(found.now);
+          expect(found.now).toBeGreaterThan(240);
+          // it reaches the bottom of its pane, and the pane the bottom of the window (inside the page's 8 px and the
+          // workspace's 1 px edge): also in a split on the phone, where the panes stand one under the other
+          expect(found.bottom).toBe(0);
+          expect(found.window).toBeLessThanOrEqual(9);
+        },
+        width,
+      );
+  });
+
+for (const width of [1440, 1024])
+  test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
     await withPage(
-      "canvas",
+      "path",
       async (page) => {
-        const found = await page.evaluate(() => {
-          const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
-          const scroll = document.querySelector(".k2-canvas[data-fill]")!.parentElement!.getBoundingClientRect();
-          return { first: window.__k2FirstCanvas, now: canvas.height, bottom: Math.round(scroll.bottom - canvas.bottom) };
-        });
-        expect(found.first).toBe(found.now);
-        expect(found.now).toBeGreaterThan(240);
-        // it reaches the bottom of its pane: nothing is left under it
-        expect(found.bottom).toBe(0);
+        const path = page.locator(".k2-path");
+        // the first place, the menu, the place before the page and the page: one line in the head
+        expect(await path.locator(".k2-path-step, b").allTextContents()).toEqual([
+          "Werkstatt",
+          "Abnahme mit der Kundin am Werktisch",
+          "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
+        ]);
+        const lines = await path
+          .locator(".k2-path-step, b")
+          .evaluateAll((steps) => steps.map((step) => [Math.round(step.getBoundingClientRect().top), step.getClientRects().length]));
+        expect(new Set(lines.map(([top]) => top)).size).toBe(1);
+        expect(lines.every(([, boxes]) => boxes === 1)).toBe(true);
+        const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start");
+        const end = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-end");
+        expect(start.right).toBeLessThanOrEqual(end.left);
+        // the first place stays whole; the page keeps its whole name for those who hover or listen
+        const first = await path
+          .locator(".k2-path-step")
+          .first()
+          .evaluate((step) => step.scrollWidth <= step.clientWidth);
+        expect(first).toBe(true);
+        const current = path.locator("b[aria-current='page']");
+        expect(await current.getAttribute("title")).toBe("Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht");
+        // the places between, in their order, as links in the menu
+        await path.getByRole("button", { name: "Übergeordnete Ebenen" }).click();
+        await settled(page);
+        const entries = page.getByRole("menu").getByRole("menuitem");
+        expect(await entries.allTextContents()).toEqual([
+          "Projekte",
+          "2026",
+          "Kunden",
+          "Lindqvist",
+          "Küche",
+          "Entwürfe",
+          "Fronten",
+          "Eiche geölt",
+          "Muster",
+        ]);
+        expect(await entries.first().getAttribute("href")).toBe("#level-1");
+        await page.keyboard.press("Escape");
+        await settled(page);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
       },
       width,
     );
+  });
+
+test("on the phone a deep path gives way to the shell's bar, and the head keeps only its search", async () => {
+  await withPage(
+    "path",
+    async (page) => {
+      expect(await page.locator(".k2-path").isVisible()).toBe(false);
+      expect(await page.getByRole("searchbox", { name: "In diesem Ordner" }).isVisible()).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
 });
 
 for (const which of ["list", "grid", "selecting", "settings"] as const)

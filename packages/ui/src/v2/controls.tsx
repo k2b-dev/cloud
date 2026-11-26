@@ -168,6 +168,7 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       data-k2-part={part}
       data-setting={setting}
       data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
       role="group"
       aria-labelledby={label}
     >
@@ -180,7 +181,13 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       {messageLine}
     </div>
   ) : named ? (
-    <div class="k2-field" data-k2-part={part} data-setting={setting} data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
@@ -191,7 +198,13 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       {messageLine}
     </div>
   ) : (
-    <div class="k2-field" data-k2-part={part} data-setting={setting} data-action={props.action ? "" : undefined}>
+    <div
+      class="k2-field"
+      data-k2-part={part}
+      data-setting={setting}
+      data-action={props.action ? "" : undefined}
+      data-was={props.was ? "" : undefined}
+    >
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>

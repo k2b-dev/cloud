@@ -145,7 +145,9 @@ inside the `Canvas`: with a `height` it keeps that height, so nothing
 moves. `height="fill"`: the drawing is the whole pane (an editor, a frame
 of another page). Directly in its `Pane`, it takes the height left under
 head and status by layout alone, from the first render (never measure it
-in a script); below 240 px the pane scrolls.
+in a script); below 240 px the pane scrolls. In a `Pane.Split` on the
+phone, where the panes stand one under the other, its pane takes the
+height that is left, so the drawing still fills it.
 
 ## Structure
 
@@ -450,6 +452,11 @@ lines instead of cutting a thing.
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the
   head itself is hidden unless it holds a search, which stays as its symbol.
+  From five places on, the places between the first and the last two fold
+  into a menu "…" in their order, the same on the server and in the browser.
+  Where room runs out, the place before the page shortens with "…" first,
+  then the page; their whole names show on hover. The deeds at the end keep
+  their words before the path does.
 - `Steps`: `label`, `items: { label, meta?, state: "done" | "now" | "next"
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
@@ -476,7 +483,13 @@ lines instead of cutting a thing.
   [list queries](list-queries.md). `end` (the `ListOrder` and a choice of
   display such as list or grid) makes the bar the one status row of its
   list (52 px) with `results` in quiet words before it: the page head then
-  has two rows, path and deeds, then this bar. While entries are selected a
+  has two rows, path and deeds, then this bar. `display` (`MenuSection`s,
+  such as "Darstellung" with list and grid, or a colour choice) puts each
+  section as a menu of its own in the end on the desktop; on the phone,
+  where the end has no room, sort, grouping and these sections fold into
+  one menu "Ansicht" at the end of the bar. Give every choice that changes
+  how the list shows to `display`, never to `end` alone, so the phone keeps
+  it. While entries are selected a
   `StatusRow selection` takes its place at the same height; on the phone the
   selection's actions float at the bottom, symbol over word.
 - `ListOrder`: `query`, `state`, `onChange`; the sort and the grouping in

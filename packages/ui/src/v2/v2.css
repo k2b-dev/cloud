@@ -1052,7 +1052,10 @@
   background: var(--k2-surface);
   opacity: 0;
 }
-.k2-ui .k2-tile:is(:hover, :focus-within, [data-selected]) .k2-tile-check,
+/* `:focus-visible` on the tile, never `:focus-within`: a `:focus-within` rule makes WebKit check the ancestors of every
+   focus change on the page (a table of 10 000 rows took 600 ms per key). The box itself shows while it has the focus. */
+.k2-ui .k2-tiles > .k2-tile:is(:hover, :focus-visible, [data-selected]) > .k2-tile-media > .k2-tile-check,
+.k2-ui .k2-tile-check:has(> .k2-mark > .k2-mark-input:focus-visible),
 .k2-ui .k2-tiles[data-selecting] .k2-tile-check {
   opacity: 1;
 }
@@ -2426,13 +2429,17 @@
 .k2-ui .k2-avs > .k2-av {
   box-shadow: 0 0 0 2px var(--k2-surface);
 }
+/* each face lies over the one before only as far as its initials stay whole: 4 px of 24, 2 px of 20 */
 .k2-ui .k2-avs > .k2-av + .k2-av {
-  margin-left: -6px;
+  margin-left: -4px;
 }
 .k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av {
   width: 20px;
   height: 20px;
   font-size: 9px;
+}
+.k2-ui :is(.k2-tile, .k2-cell, .k2-row, .k2-table) .k2-avs > .k2-av + .k2-av {
+  margin-left: -2px;
 }
 /* A stack shows as many faces as its width holds whole, beside a count of up to three signs; the count that stands
    belongs to the faces that stand, so it is always right and never cut. */
@@ -2451,7 +2458,7 @@
 .k2-ui .k2-avs[data-k="5"] > .k2-avs-rest[data-visible="5"] {
   display: inline;
 }
-@container k2-avs (max-width: 125.98px) {
+@container k2-avs (max-width: 133.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 5) {
     display: none;
   }
@@ -2462,7 +2469,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 107.98px) {
+@container k2-avs (max-width: 113.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 4) {
     display: none;
   }
@@ -2473,7 +2480,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 89.98px) {
+@container k2-avs (max-width: 93.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 3) {
     display: none;
   }
@@ -2484,7 +2491,7 @@
     display: inline;
   }
 }
-@container k2-avs (max-width: 71.98px) {
+@container k2-avs (max-width: 73.98px) {
   .k2-ui .k2-avs > .k2-av:nth-of-type(n + 2) {
     display: none;
   }
@@ -2913,7 +2920,7 @@
   grid-row: 1 / span 2;
   min-width: 0;
 }
-.k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+.k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
   grid-row: 1;
 }
 .k2-ui .k2-field[data-setting] > .k2-field-was {
@@ -2965,7 +2972,7 @@
     grid-template-areas: "label action" "message message" "control control" "was was";
   }
   .k2-ui .k2-field[data-setting] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action),
-  .k2-ui .k2-field[data-setting]:has(> .k2-field-was) > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
+  .k2-ui .k2-field[data-setting][data-was] > :not(.k2-field-label, .k2-field-message, .k2-field-was, .k2-field-action) {
     grid-row: auto;
   }
 }
@@ -3375,9 +3382,35 @@
 .k2-ui .k2-path > b {
   font-weight: 600;
 }
+.k2-ui .k2-path > .k2-icon,
+.k2-ui .k2-path > .k2-btn {
+  flex: none;
+}
 .k2-ui .k2-path > .k2-icon {
   font-size: 14px;
   color: var(--k2-n400);
+}
+/* where the room runs out, the place before the page shortens first, then the page; the first place stays whole */
+.k2-ui .k2-bar-start > .k2-path {
+  flex: 0 1 auto;
+}
+/* a path gives way before the deeds at the end: they keep their words while the path can still shorten */
+.k2-ui .k2-bar-start:has(> .k2-path) {
+  flex-shrink: 1000;
+}
+.k2-ui .k2-path > .k2-path-step,
+.k2-ui .k2-path > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+.k2-ui .k2-path > .k2-path-step[data-near] {
+  flex: 0 1000 auto;
+  min-width: 48px;
+}
+.k2-ui .k2-path > b {
+  flex-shrink: 1;
+  min-width: 48px;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {
@@ -4230,6 +4263,16 @@
   .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
     overflow-y: auto;
   }
+  /* a pane whose drawing is the whole pane (a board, a calendar) is the page too: it takes the height that is left, so
+     the drawing fills it as it does beside other panes (W3 #4197) */
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
+    overflow-y: auto;
+  }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
   }
@@ -4749,7 +4792,8 @@
 }
 /* the filter button and the sort and group of the line are the phone's; from 768 px they live in the status row */
 .k2-ui .k2-fbar > .k2-btn,
-.k2-ui .k2-fbar-order {
+.k2-ui .k2-fbar-order,
+.k2-ui .k2-fbar-view {
   display: none;
 }
 .k2-ui .k2-fbar-n {
@@ -5300,6 +5344,16 @@
     gap: 8px;
     flex: none;
     padding-right: 24px;
+  }
+  /* the one menu of how the list shows stays at the end of the strip, also while the statements scroll under it */
+  .k2-ui .k2-fbar-view {
+    display: inline-flex;
+    flex: none;
+    position: sticky;
+    right: 0;
+    margin-left: auto;
+    padding-left: 8px;
+    background: var(--k2-surface);
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;

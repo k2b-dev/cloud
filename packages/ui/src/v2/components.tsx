@@ -513,34 +513,60 @@ export const Tabs = (props: TabsProps) => {
 /**
  * Where a page stands, in the start of its head instead of tabs: the places before it quiet, the page itself in 600.
  * On the phone the path gives way to the phone bar of the shell, which names the page; its head stays only for a search.
+ *
+ * A deep path folds by its length, the same on the server and in the browser, so nothing moves: from five places on,
+ * the first and the last two stand, and the places between go into a menu "…" in their order. Where the room runs
+ * out, the place before the page shortens with "…" first, then the page itself; their whole names stay in the page
+ * and show on hover.
  */
 export type PathProps = { items: readonly { label: string; href?: string }[]; label: string };
 
-export const Path = (props: PathProps) => (
-  <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
-    <For each={props.items}>
-      {(item, index) => (
-        <>
-          <Show when={index() > 0}>
-            <Icon name="chevron-right" />
-          </Show>
-          <Show
-            when={index() === props.items.length - 1}
-            fallback={
-              <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
-                <a class="k2-path-step" href={item.href}>
-                  {item.label}
-                </a>
-              </Show>
-            }
-          >
-            <b aria-current="page">{item.label}</b>
-          </Show>
-        </>
-      )}
-    </For>
-  </nav>
-);
+type PathItem = PathProps["items"][number];
+
+/** How many places a path shows before the places between its first and its last two fold into a menu. */
+const PATH_SHOWN = 4;
+
+export const Path = (props: PathProps) => {
+  const t = useOverlayMessages();
+  const folded = () => (props.items.length > PATH_SHOWN ? props.items.slice(1, -2) : []);
+  const step = (item: PathItem, last: boolean, near: boolean) =>
+    last ? (
+      <b aria-current="page" title={item.label}>
+        {item.label}
+      </b>
+    ) : item.href !== undefined ? (
+      <a class="k2-path-step" href={item.href} data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+        {item.label}
+      </a>
+    ) : (
+      <span class="k2-path-step" data-near={near ? "" : undefined} title={near ? item.label : undefined}>
+        {item.label}
+      </span>
+    );
+  const shown = () => (folded().length ? [props.items[0]!, ...props.items.slice(-2)] : props.items);
+  return (
+    <nav class="k2-path" data-k2-part="Path" aria-label={props.label}>
+      <For each={shown()}>
+        {(item, index) => (
+          <>
+            <Show when={index() > 0}>
+              <Icon name="chevron-right" />
+            </Show>
+            <Show when={index() === 1 && folded().length}>
+              <Menu
+                icon="dots"
+                label={t().levelsAbove}
+                items={folded().map((place) => ({ label: place.label, href: place.href, disabled: place.href === undefined }))}
+              />
+              <Icon name="chevron-right" />
+            </Show>
+            {step(item, index() === shown().length - 1, index() === shown().length - 2 && index() > 0)}
+          </>
+        )}
+      </For>
+    </nav>
+  );
+};
 
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 

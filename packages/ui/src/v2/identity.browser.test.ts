@@ -155,8 +155,20 @@ test("people stack with a ring and '+n' for the rest, as one picture with every 
     expect(await stack.locator(".k2-avs-rest:visible").textContent()).toBe("+2");
     expect(await stack.locator(".k2-av[aria-hidden='true']").count()).toBe(3);
     const lefts = await stack.locator(".k2-av").evaluateAll((avatars) => avatars.map((avatar) => avatar.getBoundingClientRect().left));
-    // each avatar lies 6 px over the one before it (20 px wide on a card)
-    expect(lefts.slice(1).map((left, index) => Math.round(left - lefts[index]!))).toEqual([14, 14]);
+    // each avatar lies 2 px over the one before it (20 px wide on a card)
+    expect(lefts.slice(1).map((left, index) => Math.round(left - lefts[index]!))).toEqual([18, 18]);
+    // and its ring never reaches the initials of the one before: every letter stays whole (review: "LI", "AI")
+    const cut = await stack.locator(".k2-av").evaluateAll(
+      (avatars) =>
+        avatars.slice(0, -1).filter((avatar, index) => {
+          const range = document.createRange();
+          range.selectNodeContents(avatar.firstChild!);
+          const letters = range.getBoundingClientRect();
+          const next = avatars[index + 1]!.getBoundingClientRect();
+          return letters.right > next.left - 2;
+        }).length,
+    );
+    expect(cut).toBe(0);
   });
 });
 

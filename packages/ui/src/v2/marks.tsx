@@ -134,9 +134,9 @@ Avatar.Stack = (props: AvatarStackProps) => {
     shown()
       .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
       .filter((count) => count.rest > 0);
-  // The stack's room when nothing is narrow: its faces (24 px, each over the one before by 6 px) and a count of up to
+  // The stack's room when nothing is narrow: its faces (24 px, each over the one before by 4 px) and a count of up to
   // three signs, the measure the stylesheet hides faces by; one face alone needs no room for a count.
-  const room = () => (shown().length === 1 ? 24 + (props.people.length > 1 ? 30 : 0) : 54 + 18 * (shown().length - 1));
+  const room = () => (shown().length === 1 ? 24 + (props.people.length > 1 ? 30 : 0) : 54 + 20 * (shown().length - 1));
   return (
     <span
       class="k2-avs"
