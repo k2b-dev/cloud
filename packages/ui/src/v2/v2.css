@@ -1470,12 +1470,12 @@
 .k2-ui .k2-table[data-grid] td .k2-mark {
   vertical-align: middle;
 }
-/* the phone form of a large table: rows of two lines, a group head as plain words with its count (spacing groups,
-   no tinted band); the table itself leaves */
+/* the phone form of a large table: rows of two lines, groups as tinted bars; the table itself leaves */
 .k2-ui .k2-table-phone {
   display: none;
 }
 .k2-ui .k2-table-phone .k2-bar {
+  background: var(--k2-n50);
   height: var(--k2-h-columns);
 }
 /* a person leads a row of the phone form as a small mark, like in the cell */
@@ -1867,6 +1867,12 @@
   height: 100%;
   width: var(--k2-p);
   background: var(--k2-ok);
+}
+.k2-ui .k2-progress[data-status="warn"] .k2-progress-track > i {
+  background: var(--k2-warn-dot);
+}
+.k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
+  background: var(--k2-bad-dot);
 }
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */

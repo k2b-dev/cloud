@@ -254,23 +254,28 @@ venue's programme, a public form, a share). In Cloud it stands in
 `MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its
 initials on its colour) and the one task as the primary with `keep` and short
 words, so on a phone the brand and the task share one row and nothing floats
-over a row; the status row as one statement with toned chips ("1 fast voll",
-"1 ausgebucht"), never the figures a column repeats. The programme is one
-`Table` grouped by day: the event with when and where, its type as a
-`Chip tag` in its colour, its host as `Avatar` (every event has one, so every
+over a row; the status row names what asks to act as toned chips ("1 fast
+voll", "1 ausgebucht"), and only on a quiet day the day's count, never the
+figures a group head or a column repeats. The programme is one
+`Table` grouped by day: the event with when, where and its type (the title
+keeps the room at 1024), its host as `Avatar` (every event has one, so every
 phone row leads with a mark and the text edge never jumps), the seats taken
 as `Progress` (a value with a limit gets a meter), and the seats: a `Chip`
 with colour, sign and word only for the exceptions (booked out, almost full),
 quiet words for the rest. A page to read has no grips: its columns and its
-side column keep a `fixed` width. On the phone each event is a row of two lines
-with its seats, and a day is a plain group head. A `Pane side` holds the
-visit: free places as a meter, the way in as `Facts`, the rooms with their
-load, and access as a `Notice`. `states` exports kiosk (the same page on a
-wall screen: no task, what runs now first, what comes next in the side
-column, "aktualisiert sich jede Minute" in the head), empty and failed.
+side column keep a width `{ fixed }`. On the phone each event is a row of two
+lines with its seats. A `Pane side` holds the visit and only what the table
+does not say: free places today as one meter, the way in as `Facts`, and
+access as a `Section` of its own (good news is no notice). The status row
+names its day ("Heute"), so its chips count the rows they stand for. Each date
+is said once. `states` exports kiosk (the same page on a wall screen: no task,
+what runs now first, "aktualisiert sich jede Minute" in the head), empty and
+failed.
 
 - A visitor page has no rail and no sidebar: the brand stands in the head.
 - A kiosk refreshes itself and says so in words, never with a button.
+- A long title wraps (`wrap`) before it is cut, and a range of numbers in it
+  (1920–1960) stays on one line.
 - Gaps: the brand mark (`Mark`) and a larger kiosk type come with the
   identity primitives; a phone row of a table may still wrap a long title; a
   longer brand name or task still gives the phone head a second row.

@@ -21,7 +21,7 @@ import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
-import type { Action, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -325,7 +325,7 @@ export const Workspace = (props: WorkspaceProps) => {
 
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
-type SplitEntry = { readonly width?: Width; readonly label?: string; element?: HTMLElement };
+type SplitEntry = { readonly width?: ColumnWidth; readonly label?: string; element?: HTMLElement };
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 
@@ -337,8 +337,8 @@ export type PaneProps = {
    * the state of an open entry, such as "3 Nachrichten · Wartet auf Antwort · Tag" above a reader.
    */
   status?: JSX.Element;
-  /** A column that can be dragged wider: its minimum and default width (`fixed`: its width, no grip). Only inside `Pane.Split`. */
-  width?: Width;
+  /** A column that can be dragged wider: its minimum and default width; `{ fixed }`: one width, no grip. Only inside `Pane.Split`. */
+  width?: ColumnWidth;
   /** The name of the column and of its grip, such as "List". */
   label?: string;
   /**
@@ -381,7 +381,8 @@ export const Pane = (props: PaneProps) => {
   // a column at the top of a workspace tells it what it needs; panes inside this one are not its columns
   useContext(ColumnsContext)?.register({
     get need() {
-      return props.width?.min ?? flexibleMin;
+      // a fixed column needs its one width; one that can be dragged, its minimum
+      return props.width === undefined ? flexibleMin : draggable(props.width) ? props.width.min : columnPx(props.width);
     },
     get detail() {
       return props.detail === true;
@@ -418,8 +419,8 @@ export const Pane = (props: PaneProps) => {
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
       style={custom({
-        "--k2-pane-w": props.width ? `${props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        "--k2-pane-w": props.width ? `${columnPx(props.width)}px` : undefined,
+        "--k2-pane-min": props.width ? `${draggable(props.width) ? props.width.min : columnPx(props.width)}px` : undefined,
       })}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
@@ -494,7 +495,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
     const right = entryOf(index + 1) ?? (props.empty && index === panes().length - 1 ? {} : undefined);
     if (!right) return undefined;
     const moving = right.width ? right : left?.width ? left : undefined;
-    return moving?.width && !moving.width.fixed ? { label: moving.label ?? "Column", width: moving.width } : undefined;
+    return moving && draggable(moving.width) ? { label: moving.label ?? "Column", width: moving.width } : undefined;
   };
   return (
     <div class="k2-split" data-k2-part="Pane.Split">
