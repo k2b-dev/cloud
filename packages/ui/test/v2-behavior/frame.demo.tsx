@@ -32,6 +32,8 @@ export function Demo() {
           </Pane>
           <Pane label="Leser">
             <Text type="body">Inhalt</Text>
+            {/* where a person types: Mod+Alt+S there is a letter, not the shortcut */}
+            <input aria-label="Notiz" />
           </Pane>
         </Pane.Split>
       </Workspace>

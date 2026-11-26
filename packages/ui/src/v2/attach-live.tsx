@@ -38,16 +38,25 @@ const Parts = (props: {
   if (toggle) onCleanup(drawer.bindTrigger(toggle));
   props.drawer((next) => setOpen(next(open())));
 
-  // The drawer holds the sidebar's own nodes while it is open (the column is hidden then) and gives them back when it
-  // closes: islands in it stay alive, and its scroll position and open folds stay as they were.
+  // The drawer holds the sidebar's one stable box while it is open (the column is hidden then) and gives it back when it
+  // closes: what Solid renders in it keeps rendering there, islands in it stay alive, and its scroll position and open
+  // folds stay as they were. A sidebar that leaves the page while the drawer is open (its Workspace renders none) closes
+  // the drawer and goes with it.
+  const body = aside?.querySelector<HTMLElement>(":scope > .k2-ws-side-body") ?? undefined;
   let panel: HTMLElement | undefined;
   let refocus = false;
   const fill = (popup: HTMLElement) => {
     panel = popup;
-    if (!aside) return;
-    popup.append(...aside.childNodes);
+    if (!aside || !body) return;
+    popup.append(body);
+    const gone = new MutationObserver(() => {
+      if (!aside.isConnected) setOpen(false);
+    });
+    gone.observe(element, { childList: true });
     onCleanup(() => {
-      aside.append(...popup.childNodes);
+      gone.disconnect();
+      if (!aside.isConnected) return;
+      aside.append(body);
       // the drawer closed because the window grew: the focus it held goes to the column's current entry
       if (!refocus) return;
       refocus = false;
@@ -105,9 +114,14 @@ export const mountLive = (element: HTMLElement, host: HTMLElement): Live => {
   return {
     toggleDrawer: () => setDrawer((was) => !was),
     openDrawer: () => setDrawer(() => true),
-    ask: (options) => Promise.resolve(Reflect.apply(Reflect.get(host, confirmKey), undefined, [options])).then(Boolean),
+    // a question or a toast after `stop` finds no dialog or toaster: it is not asked (false) and not shown
+    ask: (options) => {
+      const ask: unknown = Reflect.get(host, confirmKey);
+      return typeof ask === "function" ? Promise.resolve(Reflect.apply(ask, undefined, [options])).then(Boolean) : Promise.resolve(false);
+    },
     show: (message, options, id) => {
-      if (region) Reflect.apply(Reflect.get(region, toasterKey), undefined, [message, options, id]);
+      const show: unknown = region ? Reflect.get(region, toasterKey) : undefined;
+      if (typeof show === "function") Reflect.apply(show, undefined, [message, options, id]);
     },
     stop,
   };

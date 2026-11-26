@@ -381,6 +381,10 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* the sidebar's one stable box, which the drawer holds while it is open; it draws nothing of its own */
+.k2-ui .k2-ws-side-body {
+  display: contents;
+}
 .k2-ui .k2-ws-main {
   flex: 1;
   min-width: 0;

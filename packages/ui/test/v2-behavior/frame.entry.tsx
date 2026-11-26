@@ -8,12 +8,14 @@ declare global {
     __collapsed: boolean[];
     __toast: (message: string) => void;
     __confirm: () => Promise<boolean>;
+    /** Stops the attached workspaces, as a page swap does. */
+    __detach: () => void;
   }
 }
 
 // The frame entry of a page whose Workspace the server rendered: nothing renders again, it only attaches.
 window.__collapsed = [];
-attachWorkspaces({ onSidebarCollapsedChange: (collapsed) => window.__collapsed.push(collapsed) });
+window.__detach = attachWorkspaces({ onSidebarCollapsedChange: (collapsed) => window.__collapsed.push(collapsed) });
 createRoot(() => {
   const toast = useToast();
   window.__toast = (message) => void toast(message);

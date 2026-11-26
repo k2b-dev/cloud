@@ -115,6 +115,10 @@ const own = <E extends Element>(element: HTMLElement, selector: string): E[] =>
 
 let toastCount = 0;
 
+/** Where a person types: a shortcut there would take a letter from the text. */
+const editable = (target: EventTarget | null) =>
+  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+
 /**
  * Brings one Workspace the server rendered alive (see the top of this module); returns the function that stops it.
  * Attaching it again does nothing. A Workspace inside an island calls it itself when it mounts.
@@ -143,40 +147,109 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
   const toggle = head?.querySelector<HTMLElement>(":scope > .k2-ws-toggle");
   const collapse = head?.querySelector<HTMLElement>(":scope > .k2-ws-collapse");
   const aside = element.querySelector<HTMLElement>(":scope > .k2-ws-side");
-  // a press before the drawer has loaded opens it once it is there
-  const first = () => void load().then((parts) => parts.openDrawer());
+  const t = resolveUiMessages();
+
+  // The live parts load once; a load that fails is tried again by the next use, and a use that was waiting for it
+  // says so at the bottom of the page with "Retry", which runs it again. Nothing waits in silence.
   let live: Promise<Live> | undefined;
   let stopped = false;
   const load = () => {
-    live ??= import("./attach-live").then(({ mountLive }) => {
-      const parts = mountLive(element, host);
-      // from here on the drawer's own trigger answers the button
-      toggle?.removeEventListener("click", first);
-      if (stopped) parts.stop();
-      else stops.push(parts.stop);
-      return parts;
-    });
+    live ??= import("./attach-live").then(
+      ({ mountLive }) => {
+        if (stopped) throw new Error("detached");
+        const parts = mountLive(element, host);
+        // from here on the drawer's own trigger answers the button
+        toggle?.removeEventListener("click", first);
+        stops.push(parts.stop);
+        return parts;
+      },
+      (error: unknown) => {
+        live = undefined;
+        throw error;
+      },
+    );
     return live;
   };
+  let failure: HTMLElement | undefined;
+  const failed = (retry: () => void) => {
+    failure?.remove();
+    // the shape of a toast, without the toaster that did not load
+    const notice = document.createElement("section");
+    notice.className = "k2-toasts";
+    notice.dataset.k2Part = "Toast";
+    notice.dataset.k2WsFailed = "";
+    notice.setAttribute("role", "alert");
+    const list = notice.appendChild(document.createElement("ol"));
+    const item = list.appendChild(document.createElement("li"));
+    item.className = "k2-toast";
+    item.dataset.type = "error";
+    const text = item.appendChild(document.createElement("span"));
+    text.className = "k2-toast-text";
+    text.textContent = t.controlsFailed;
+    const button = item.appendChild(document.createElement("button"));
+    button.type = "button";
+    button.className = "k2-btn";
+    button.dataset.variant = "text";
+    const label = button.appendChild(document.createElement("span"));
+    label.className = "k2-btn-label";
+    label.textContent = t.retry;
+    button.addEventListener("click", () => {
+      notice.remove();
+      if (failure === notice) failure = undefined;
+      retry();
+    });
+    host.append(notice);
+    failure = notice;
+  };
+  // Questions still waiting when the workspace goes (a navigation during the load) are answered "no".
+  const waiting = new Set<(answer: boolean) => void>();
+  /** Runs `use` with the live parts, once they are there; until the workspace goes, a failed load offers a retry. */
+  const withLive = <T,>(use: (parts: Live) => T | Promise<T>): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const attempt = () => {
+        if (stopped) return reject(new Error("detached"));
+        load().then(
+          (parts) => resolve(use(parts)),
+          () => {
+            if (stopped) reject(new Error("detached"));
+            else failed(attempt);
+          },
+        );
+      };
+      attempt();
+    });
+
+  // a press before the drawer has loaded opens it once it is there
+  const first = () => void withLive((parts) => parts.openDrawer()).catch(() => {});
   Reflect.set(host, toasterKey, (message: string, toastOptions?: ToastOptions) => {
     const id = `k2-toast-${Date.now().toString(36)}-${++toastCount}`;
-    void load().then((parts) => parts.show(message, toastOptions, id));
+    void withLive((parts) => parts.show(message, toastOptions, id)).catch(() => {});
     return id;
   });
   // `Dialog.confirm` asks the first workspace of the page that answers
-  Reflect.set(element, confirmKey, (question: ConfirmOptions) => load().then((parts) => parts.ask(question)));
+  Reflect.set(
+    element,
+    confirmKey,
+    (question: ConfirmOptions) =>
+      new Promise<boolean>((resolve) => {
+        waiting.add(resolve);
+        withLive((parts) => parts.ask(question))
+          .then(resolve, () => resolve(false))
+          .finally(() => waiting.delete(resolve));
+      }),
+  );
 
   if (toggle) {
     toggle.addEventListener("click", first);
     stops.push(() => toggle.removeEventListener("click", first));
-    listen(toggle, "pointerenter", () => void load());
-    listen(toggle, "focus", () => void load());
+    const prefetch = () => void load().catch(() => {});
+    listen(toggle, "pointerenter", prefetch);
+    listen(toggle, "focus", prefetch);
   }
 
   // The collapse of the sidebar on a wide screen: its button, Mod+Alt+S, and the state kept by the caller.
   if (collapse && aside) {
     // the button speaks the language of the page, as the server rendered it
-    const t = resolveUiMessages();
     const set = (collapsed: boolean) => {
       element.toggleAttribute("data-collapsed", collapsed);
       collapse.setAttribute("aria-expanded", String(!collapsed));
@@ -188,8 +261,10 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
     listen(document, "keydown", (event) => {
       if (!(event instanceof KeyboardEvent)) return;
       if (event.defaultPrevented || !event.altKey || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.code !== "KeyS") return;
+      // AltGr (Ctrl+Alt on Windows) writes letters such as "ś"; typing and composing text is never a shortcut
+      if (event.getModifierState("AltGraph") || event.isComposing || editable(event.target)) return;
       // in a narrow window the sidebar is a drawer, and the same keys open and close it
-      if (toggle && toggle.getClientRects().length > 0) void load().then((parts) => parts.toggleDrawer());
+      if (toggle && toggle.getClientRects().length > 0) void withLive((parts) => parts.toggleDrawer()).catch(() => {});
       else if (collapse.getClientRects().length > 0) set(!element.hasAttribute("data-collapsed"));
       else return;
       event.preventDefault();
@@ -204,6 +279,8 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
 
   return () => {
     stopped = true;
+    for (const answer of waiting) answer(false);
+    waiting.clear();
     for (const stop of stops.splice(0).reverse()) stop();
     host.remove();
     Reflect.deleteProperty(element, confirmKey);

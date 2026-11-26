@@ -2,25 +2,98 @@
 // collapse of its sidebar, the toaster, `Dialog.confirm`, its grips and the folds of its Nav alive, and nothing moves
 // when it attaches. Runs in Chromium and in WebKit.
 import { afterAll, beforeAll, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { basename, join, resolve } from "node:path";
 import type { Browser, Page } from "playwright";
+import { transform } from "../../../ssr/src/transform";
 import { transparentIslands } from "../../scripts/v2-island-css";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import type {} from "../../test/v2-behavior/frame.entry";
+import type {} from "../../test/v2-behavior/frame-live.entry";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 
 let browser: Browser;
 let bundle: string;
+let live: string;
 let markup: string;
 const css = `${transparentIslands(readFileSync(resolve(import.meta.dir, "v2.css"), "utf8"))}\n[hidden]{display:none}`;
 beforeAll(async () => {
-  [bundle, markup] = await Promise.all([demoBundle("frame"), serverMarkup("frame")]);
+  [bundle, live, markup, split] = await Promise.all([demoBundle("frame"), demoBundle("frame-live"), serverMarkup("frame"), splitBuild()]);
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
   await browser?.close();
+  rmSync(split.directory, { recursive: true, force: true });
 });
+
+/** The frame entry as a page loads it: modules with the live parts in a chunk of their own, which a test can hold back. */
+type Split = { directory: string; entry: string; liveChunk: string };
+let split: Split;
+const splitBuild = async (): Promise<Split> => {
+  const directory = mkdtempSync(join(tmpdir(), "k2-v2-frame-split-"));
+  const entry = resolve(import.meta.dir, "../../test/v2-behavior/frame.entry.tsx");
+  const result = await Bun.build({
+    entrypoints: [entry],
+    outdir: directory,
+    target: "browser",
+    conditions: ["browser"],
+    splitting: true,
+    metafile: true,
+    naming: { entry: "[name].js", chunk: "chunk-[hash].js" },
+    plugins: [
+      {
+        name: "frame-split-solid",
+        setup(build) {
+          build.onResolve({ filter: /^solid-js(?:\/(?:web|store))?$/ }, (args) => {
+            const module = args.path === "solid-js" ? "solid" : args.path.slice("solid-js/".length);
+            return { path: Bun.resolveSync(`${args.path}/dist/${module}.js`, import.meta.dir) };
+          });
+          build.onLoad({ filter: /\.tsx$/ }, async ({ path }) => ({
+            contents: await transform(await Bun.file(path).text(), path, "dom"),
+            loader: "js",
+          }));
+        },
+      },
+    ],
+  });
+  if (!result.success || !result.metafile) throw new AggregateError(result.logs, "split frame build failed");
+  const liveChunk = Object.entries(result.metafile.outputs).find(([, output]) =>
+    Object.keys(output.inputs).some((input) => input.endsWith("attach-live.tsx")),
+  )?.[0];
+  if (!liveChunk) throw new Error("the live parts have no chunk of their own");
+  return { directory, entry: "frame.entry.js", liveChunk: basename(liveChunk) };
+};
+
+/** The server's page with the split frame entry from https://k2.test/; `live` answers the live parts' chunk. */
+const withSplitPage = async (
+  live: (fulfil: () => Promise<void>, abort: () => Promise<void>) => Promise<void>,
+  run: (page: Page) => Promise<void>,
+) => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+  page.setDefaultTimeout(4000);
+  const errors = pageErrors(page);
+  try {
+    await page.route("https://k2.test/**", async (route) => {
+      const name = new URL(route.request().url()).pathname.slice(1);
+      const file = () => route.fulfill({ contentType: "text/javascript", body: readFileSync(join(split.directory, name), "utf8") });
+      if (name === "")
+        return route.fulfill({
+          contentType: "text/html",
+          body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body>${markup}<script type="module" src="/${split.entry}"></script></body></html>`,
+        });
+      if (name === split.liveChunk) return live(file, () => route.abort());
+      return file();
+    });
+    await page.goto("https://k2.test/");
+    await page.waitForFunction(() => window.__mounted === true);
+    await settled(page);
+    await run(page);
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+};
 
 /** The boxes of every part of the page, to compare before and after the frame attached (without its live parts). */
 const boxes = (page: Page) =>
@@ -126,5 +199,110 @@ test("the grip of a line stands in the middle of the line in sight", async () =>
     await page.waitForFunction(() =>
       [...document.querySelectorAll<HTMLElement>("[data-k2-grip]")].every((grip) => grip.style.getPropertyValue("--k2-grip-top") !== ""),
     );
+  });
+});
+
+test("a live part that fails to load says so with Retry, and Retry loads it and does what was asked", async () => {
+  let tries = 0;
+  await withSplitPage(
+    (fulfil, abort) => (++tries === 1 ? abort() : fulfil()),
+    async (page) => {
+      await page.evaluate(() => window.__toast("Gespeichert"));
+      const failure = page.getByRole("alert").filter({ hasText: "Dieser Teil der Seite konnte nicht geladen werden." });
+      await failure.waitFor();
+      await failure.getByRole("button", { name: "Erneut versuchen" }).click();
+      await page.locator('[data-k2-toaster] [data-slot="toast"]').getByText("Gespeichert").waitFor();
+      expect(await failure.count()).toBe(0);
+      // the drawer loads from the chunk that is there now
+      await page.locator(".k2-ws-toggle").click();
+      await page.locator(".k2-drawer").waitFor();
+      expect(tries).toBe(2);
+    },
+  );
+});
+
+test("a question still waiting for the live parts when the workspace goes is answered no, without an error", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await withSplitPage(
+    async (fulfil) => {
+      await held;
+      await fulfil();
+    },
+    async (page) => {
+      await page.evaluate(() => {
+        Reflect.set(window, "__answer", window.__confirm());
+      });
+      await page.evaluate(() => window.__detach());
+      release();
+      expect(await page.evaluate(() => Reflect.get(window, "__answer"))).toBe(false);
+      await page.waitForTimeout(100); // settled: the late chunk runs after the answer; an error from it would show here
+      expect(await page.locator(".k2-dialog").count()).toBe(0);
+    },
+  );
+});
+
+test("the sidebar in the open drawer stays reactive, and a sidebar that goes and comes back has a working drawer", async () => {
+  const page = await browser.newPage({ viewport: { width: 900, height: 800 } });
+  page.setDefaultTimeout(2000);
+  const errors = pageErrors(page);
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root"></div></body></html>`,
+    );
+    await page.addScriptTag({ content: live });
+    await page.waitForFunction(() => window.__mounted === true);
+    await settled(page);
+    const drawer = page.locator(".k2-drawer");
+    const more = drawer.getByRole("navigation", { name: "Mehr" });
+    await page.locator(".k2-ws-toggle").click();
+    await more.waitFor();
+    // what the Workspace stops rendering leaves the open drawer, and what it renders again comes into it
+    await page.evaluate(() => window.__more(false));
+    await more.waitFor({ state: "detached" });
+    await page.evaluate(() => window.__more(true));
+    await more.waitFor();
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "detached" });
+    expect(await page.locator(".k2-ws-side nav").count()).toBe(2);
+    // the whole sidebar goes while the drawer is open: the drawer closes with it
+    await page.locator(".k2-ws-toggle").click();
+    await more.waitFor();
+    await page.evaluate(() => window.__sidebar(false));
+    await drawer.waitFor({ state: "detached" });
+    expect(await page.locator("nav").count()).toBe(0);
+    // and when it comes back, its new button opens a drawer with it
+    await page.evaluate(() => window.__sidebar(true));
+    await page.locator(".k2-ws-toggle").click();
+    await drawer.getByRole("navigation", { name: "Auftrag" }).waitFor();
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
+});
+
+test("Mod+Alt+S is no shortcut while typing: not in a field, not with AltGr, not while composing", async () => {
+  await withPage(1440, async (page) => {
+    await page.getByRole("textbox", { name: "Notiz" }).focus();
+    await page.keyboard.press("Control+Alt+KeyS");
+    await page.evaluate(() => {
+      const press = (init: KeyboardEventInit) =>
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { code: "KeyS", ctrlKey: true, altKey: true, bubbles: true, cancelable: true, ...init }),
+        );
+      // AltGr+S writes "ś" on a Polish keyboard; a composition is text on its way
+      press({ key: "ś", modifierAltGraph: true });
+      press({ key: "s", isComposing: true });
+    });
+    expect(await page.evaluate(() => window.__collapsed)).toEqual([]);
+    expect(await page.locator(".k2-ws").getAttribute("data-collapsed")).toBeNull();
+    // outside a field, the keys still work
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await page.keyboard.press("Control+Alt+KeyS");
+    expect(await page.evaluate(() => window.__collapsed)).toEqual([true]);
   });
 });

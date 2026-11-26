@@ -1,9 +1,12 @@
 import {
   createContext,
+  createEffect,
+  createMemo,
   createSignal,
   createUniqueId,
   For,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -181,9 +184,15 @@ export const Workspace = (props: WorkspaceProps) => {
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-collapse: none; --k2-ws-drawer: 1; } } }`;
   let element: HTMLDivElement | undefined;
-  // in an island the Workspace is alive itself; on the server's page the frame entry attaches it
+  // In an island the Workspace is alive itself; on the server's page the frame entry attaches it. A sidebar that comes
+  // or goes renders its column and its drawer's button anew, so the workspace attaches again to the new ones.
+  const hasSidebar = createMemo(() => Boolean(sidebar()));
   onMount(() => {
-    if (element) onCleanup(attachWorkspace(element));
+    createEffect(
+      on(hasSidebar, () => {
+        if (element) onCleanup(attachWorkspace(element));
+      }),
+    );
   });
   return (
     <div
@@ -202,7 +211,8 @@ export const Workspace = (props: WorkspaceProps) => {
     >
       <Show when={sidebar()}>
         <aside id={`${id}-side`} class="k2-ws-side" data-k2-column="">
-          {sidebar()}
+          {/* one stable box (no box of its own) around the sidebar: the drawer holds it, with what Solid renders in it */}
+          <div class="k2-ws-side-body">{sidebar()}</div>
         </aside>
         <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
       </Show>
