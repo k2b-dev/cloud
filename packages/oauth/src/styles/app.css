@@ -19,3 +19,31 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+
+/* New connections per day across the width of the open client (`DayBars` in a Canvas): 64 px of bars, the first day,
+   the middle and today under them in a quiet line. A drawing reads no v2 token. */
+/* the chart keeps the text edge of its section: 20 px, on the phone 16 px (the Canvas itself runs edge to edge) */
+.oauth-day-bars {
+  margin: 0;
+  padding-inline: 20px;
+  /* a wide detail keeps the study's chart size (about 520 px) instead of stretching the bars */
+  max-width: 600px;
+}
+@media not all and (min-width: 768px) {
+  .oauth-day-bars {
+    padding-inline: 16px;
+  }
+}
+.oauth-day-bars > svg {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+.oauth-day-bars-axis {
+  display: flex;
+  justify-content: space-between;
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 16px;
+  opacity: 0.6;
+}

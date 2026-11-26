@@ -6,6 +6,7 @@ import {
   Band,
   Bar,
   Button,
+  Canvas,
   Cells,
   Check,
   Chip,
@@ -41,6 +42,7 @@ import type { ClientConnections, ConnectedPerson, ConnectionFigures } from "../.
 import { CLIENTS_PER_PAGE } from "../clients-page";
 import { oauthMessages } from "../messages";
 import { clientEditorUpdate, clientEditorValues, type ProfileChoice, profileChoice, profilesForChoice } from "./client-editor";
+import { DayBars } from "./DayBars";
 import { clientMark, GROUP_MARK } from "./kind-marks";
 
 /** One client as the list shows it: the stored client and its date in the person's words. */
@@ -190,7 +192,11 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     if (Math.abs(hours) < 24) return short.format(hours, "hour");
     const days = Math.round(hours / 24);
     if (Math.abs(days) < 7) return short.format(days, "day");
-    return formatDate(iso, { locale: locale() });
+    return shortDate(iso);
+  };
+  const dayAxis = (days: number): [string, string, string] => {
+    const day = (back: number) => shortDate(new Date(Date.now() - back * 24 * 60 * 60 * 1000).toISOString());
+    return [day(days - 1), day(Math.floor((days - 1) / 2)), t().today];
   };
   const NAME_IN_LINE = 32;
   const inLine = (name: string) => {
@@ -236,11 +242,10 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       .filter(Boolean)
       .join(" · ");
   const connected = () => new Set((props.connectedPeople?.people ?? []).map((person) => person.userId));
-  /** A client nobody may use: the one state of a row in red, as dot and word. */
-  const nobodyChip = (client: OAuthClient) =>
-    profileChoice(client.allowedProfiles) === "none" && client.accessMode !== "specific" ? (
-      <Chip status="bad">{t().profileNobody}</Chip>
-    ) : undefined;
+  /** A client no profile may use: said plainly, it is a choice, not a failure. */
+  const nobodyMay = (client: OAuthClient) => profileChoice(client.allowedProfiles) === "none" && client.accessMode !== "specific";
+  /** A client unused for 30 days: a warn dot with its words, no pill. */
+  const unusedMark = (words: string) => <Text tone="warn">{`● ${words}`}</Text>;
 
   // ── Directory: people and groups for "only these" ─────────────────────────────────────────────────────────────
   const loadPrincipals = async (text: string, context: { signal: AbortSignal; limit: number }) => {
@@ -469,19 +474,20 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         <Cells.Cell icon="calendar" label={t().created} value={client.created} meta={kindLine(client)} />
       </Cells>
       <Show when={!client.serviceAccountId}>
-        <Section icon="chart-bar" title={t().newPerDay} count={t().last30Days}>
+        <Section title={t().newPerDay} count={t().last30Days}>
           <Show when={connectionsOf(client).perDay.some((count) => count > 0)} fallback={<Text muted>{t().noConnectionsIn30Days}</Text>}>
-            <Inline>
-              <Spark
+            <Canvas label={t().newPerDay}>
+              <DayBars
                 values={connectionsOf(client).perDay}
-                label={trendWords(client.name, connectionsOf(client).perDay)}
                 color={props.accent}
+                axis={dayAxis(connectionsOf(client).perDay.length)}
+                label={trendWords(client.name, connectionsOf(client).perDay)}
               />
-            </Inline>
+            </Canvas>
           </Show>
         </Section>
       </Show>
-      <Section icon="users" title={t().access}>
+      <Section title={t().access}>
         <Facts items={[{ label: t().whoMay, value: client.accessMode === "specific" ? t().chosenWords : profileLabel(client) }]} />
         <Show when={client.accessMode === "specific"}>
           <For each={client.accessUsers}>
@@ -501,7 +507,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         </Show>
       </Section>
       <Show when={!client.serviceAccountId}>
-        <Section icon="plug-connected" title={t().connected} count={number(props.connectedPeople?.total ?? 0)}>
+        <Section title={t().connected} count={number(props.connectedPeople?.total ?? 0)}>
           <Show when={(props.connectedPeople?.people.length ?? 0) > 0} fallback={<Text muted>{t().nobodyConnectedYet}</Text>}>
             <For each={props.connectedPeople?.people ?? []}>
               {(person) => (
@@ -521,7 +527,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           </Show>
         </Section>
       </Show>
-      <Section icon="code" title={t().technique}>
+      <Section title={t().technique}>
         <Facts
           items={[
             {
@@ -545,6 +551,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 }))),
             ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
             ...(client.isPublic ? [{ label: t().deviceGrant, value: client.allowDeviceGrant ? t().allowed : t().off }] : []),
+            // k2b-ui gap: B shows each scope as a small mark; an Inline of chips in a fact cuts them instead of wrapping
             { label: t().scopes, value: client.scopes.join(" "), mono: true },
           ]}
         />
@@ -634,37 +641,31 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         }
         phone={(client) => ({
           lines: [client.name, secondLine(client)],
-          // two lines, always: a chip only for what needs a look, the line beside it says the rest
-          marks: nobodyChip(client) ?? (unused(client) ? <Chip status="warn">{t().unusedShort}</Chip> : undefined),
+          // two lines, always, with the client's mark; a dot only for what needs a look
+          mark: markOf(client),
+          marks: unused(client) ? unusedMark(t().unusedShort) : undefined,
         })}
         columns={[
+          // the name in its weight; a small neutral badge right after it only where the client is not the usual.
+          // The name gives way first, so the badge always stands whole.
           {
             title: t().client,
-            width: { min: 160, default: 200 },
             mark: (client) => markOf(client),
-            cell: (client) => <Text weight="strong">{client.name}</Text>,
+            cell: (client) => (
+              <Inline>
+                <Text weight="strong">{badge(client) && !props.open ? inLine(client.name) : client.name}</Text>
+                {/* beside an open client the list is narrow; the open one says its kind in its head */}
+                <Show when={!props.open && badge(client)}>{(word) => <Chip>{word()}</Chip>}</Show>
+              </Inline>
+            ),
           },
-          // the kind as a word; a neutral badge only where a client is not the usual, so a long name never cuts it.
-          // Beside an open client its head says the kind, and the table keeps who is connected and when it was used.
-          ...(props.open
-            ? []
-            : [
-                {
-                  title: t().type,
-                  width: { min: 130, default: 140 },
-                  cell: (client: ClientRow) => {
-                    const word = badge(client);
-                    return word ? <Chip>{word}</Chip> : kindLine(client);
-                  },
-                },
-              ]),
           {
             title: t().connected,
-            width: { min: 110, default: 120 },
+            width: { fixed: 120 },
             cell: (client: ClientRow) => {
               const c = connectionsOf(client);
               if (client.serviceAccountId) return t().serviceAccount;
-              if (nobodyChip(client)) return nobodyChip(client);
+              if (nobodyMay(client)) return t().nobodyMay;
               if (c.active === 0) return t().nobodyConnected;
               const faces = c.people.slice(0, 2);
               return (
@@ -680,7 +681,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           // the one column of data over time stays, also beside an open client
           {
             title: t().last30Days,
-            width: { min: 100, default: 110 },
+            width: { fixed: 110 },
             cell: (client: ClientRow) => {
               const c = connectionsOf(client);
               if (client.serviceAccountId) return "–";
@@ -694,9 +695,9 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           },
           {
             title: t().lastUsed,
-            width: { min: 110, default: 130 },
+            width: { fixed: 120 },
             cell: (client: ClientRow) =>
-              unused(client) ? <Chip status="warn">{lastUse(client) === "–" ? t().neverUsed : lastUse(client)}</Chip> : lastUse(client),
+              unused(client) ? unusedMark(lastUse(client) === "–" ? t().neverUsed : lastUse(client)) : lastUse(client),
             drop: true,
           },
         ]}
@@ -764,7 +765,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       nav={props.nav}
       // the table takes the whole width until a client opens beside it
       detail={props.tab === "clients" && props.open ? 500 : undefined}
-      // the main action on the list, floating at the bottom right on the phone; never over an open client
+      // the main action on the list, floating at the bottom right on the phone (k2b-ui gap: Workspace keeps it over an open detail)
       primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
       head={
         <Bar
