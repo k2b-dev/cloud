@@ -100,6 +100,8 @@
   --k2-w-detail: 380px;
   --k2-w-list: 432px;
   --k2-w-info: 360px;
+  /* the reading measure: how wide a line of text runs before the eye loses it (Prose, a section with `measure`) */
+  --k2-measure: 720px;
 
   /* radii by role: marks, controls and overlays, the app card; structure stays square */
   --k2-r-mark: 4px;
@@ -830,6 +832,11 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+/* a section with `measure` keeps its head, its sentence and its rows to the reading measure, as Prose: in a wide pane
+   a short list stays together; the section itself, and so its line, still reaches the edges of its column */
+.k2-ui .k2-sec[data-measure] > * {
+  max-width: calc(var(--k2-measure) + 2 * var(--k2-edge));
 }
 .k2-ui .k2-sec > * {
   flex: none;
@@ -1670,7 +1677,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: calc(720px + 2 * var(--k2-edge));
+  max-width: calc(var(--k2-measure) + 2 * var(--k2-edge));
   overflow-wrap: anywhere;
 }
 /* the gap of 8 px is the only space between blocks of reading text */
