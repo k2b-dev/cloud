@@ -233,7 +233,8 @@ inline. Emphasis is a weight, never a size.
 ### Prose
 
 Reading text (14/22, measure 720): `markdown` (rendered safely: no images,
-safe links only) or children.
+safe links only) or children. Code is mono: inline on a light fill, a fenced
+block on its own surface that keeps its lines and scrolls sideways.
 
 ### Inline
 

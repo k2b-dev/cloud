@@ -288,6 +288,36 @@ test("facts are pairs of term and value, Markdown in prose runs nothing", async 
   });
 });
 
+test("code in prose is mono; a block keeps its lines on a surface of its own and scrolls sideways on the phone", async () => {
+  await withPage(async (page) => {
+    const code = await page.evaluate(() => {
+      const prose = document.querySelector('[data-k2-part="Prose"]')!;
+      const block = prose.querySelector("pre")!;
+      const look = getComputedStyle(block);
+      return {
+        inline: getComputedStyle(prose.querySelector(":not(pre) > code")!).fontFamily,
+        block: getComputedStyle(block.querySelector("code")!).fontFamily,
+        surface: look.backgroundColor,
+        edge: look.borderTopWidth,
+        overflow: look.overflowX,
+        scrolls: block.scrollWidth > block.clientWidth,
+        lines: Math.round(
+          block.querySelector("code")!.getBoundingClientRect().height /
+            Number.parseFloat(getComputedStyle(block.querySelector("code")!).lineHeight),
+        ),
+        within: block.getBoundingClientRect().right <= document.documentElement.clientWidth,
+      };
+    });
+    expect(code.inline).toContain("monospace");
+    expect(code.block).toContain("monospace");
+    expect(code.surface).not.toBe("rgba(0, 0, 0, 0)");
+    expect(code.edge).toBe("1px");
+    expect(code.overflow).toBe("auto");
+    // one line of JSON stays one line: wider than the phone, it scrolls inside its block and never widens the page
+    expect(code).toMatchObject({ scrolls: true, lines: 1, within: true });
+  }, 390);
+});
+
 for (const width of [1440, 390]) {
   test(`layout at ${width}: no layout rule broken; a row of two lines with marks stays two lines; a button keeps its width`, async () => {
     await withPage(async (page) => {

@@ -38,7 +38,7 @@ Words in one of the four type roles (meta, row, body, lead); emphasis is a weigh
 
 ### Prose
 
-Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images.
+Reading text, 14/22 with a measure of 720 px; Markdown is rendered safely, without raw HTML or images. Code is set in the mono face: inline code on a light fill, a fenced block on its own quiet surface that keeps its lines and scrolls sideways instead of wrapping.
 
 <Props of="Prose" />
 

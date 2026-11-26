@@ -12,6 +12,12 @@ und ein Foto.
 - Schmuck geht am selben Tag in den Tresor.
 - Was wir nicht verkaufen können, holt die Einlieferin binnen 14 Tagen ab.
 
+Die Waage meldet jedes Gewicht mit der \`Einliefernummer\`. Ein Eintrag sieht so aus:
+
+\`\`\`json
+{ "einliefernummer": "E-2026-0417", "gewicht_kg": 18.4, "waage": "Hof 2" }
+\`\`\`
+
 Fragen zur Annahme beantwortet [die Annahme](mailto:annahme@example.de).`;
 
 type Props = { text?: string; loading?: boolean; failed?: boolean };

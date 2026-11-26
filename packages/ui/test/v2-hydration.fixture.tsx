@@ -164,7 +164,7 @@ export function Fixture() {
           />
           <Prose
             markdown={
-              'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))\n\n![Pixel](https://example.com/pixel.png) [Datei](ftp://example.com/a) [Seite](https://example.com) [Post](mailto:post@example.com)'
+              'Guten Tag,\n\n<script>window.__k2Bad = 1</script> <img src=x onerror="window.__k2Bad = 2"> [Link](javascript:alert(1))\n\n![Pixel](https://example.com/pixel.png) [Datei](ftp://example.com/a) [Seite](https://example.com) [Post](mailto:post@example.com)\n\nDer Schlüssel `wf_7Q2K` gilt für die Waage. Ein Eintrag:\n\n```json\n{ "einliefernummer": "E-2026-0417", "gewicht_kg": 18.4, "waage": "Hof 2", "notiz": "eine Zeile, die breiter ist als ein Telefon" }\n```'
             }
           />
           <Table
