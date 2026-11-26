@@ -3202,6 +3202,32 @@
   display: grid;
   grid-template-columns: repeat(7, var(--k2-h-dense));
 }
+/* `view="weeks"`: six weeks from the week of today as ONE grid of seven columns. Core's month grids and their weeks
+   lay out as their days (display: contents), so a week over the end of a month stays one row; each day names its
+   column. Six rows always, so moving the weeks never changes the height. */
+.k2-ui .k2-cal-weeks {
+  display: grid;
+  grid-template-columns: repeat(7, var(--k2-h-dense));
+  grid-auto-rows: var(--k2-h-dense);
+  justify-content: center;
+}
+.k2-ui .k2-cal-weeks > .k2-cal-flow,
+.k2-ui .k2-cal-weeks .k2-cal-flow {
+  display: contents;
+}
+.k2-ui .k2-cal-weeks .k2-cal-wd {
+  height: 24px;
+  align-self: end;
+}
+/* the first day of a month shows the month's short name in place of its number ("Dez"; screen readers hear the full
+   date), in the meta role, so a new month is seen where it starts */
+.k2-ui .k2-cal-day[data-month-start] {
+  font: var(--k2-t-meta);
+  font-weight: 600;
+}
+.k2-ui .k2-cal-day[data-month-start]:not([data-selected], [data-disabled]) {
+  color: var(--k2-blue-ink);
+}
 .k2-ui .k2-cal-wd {
   height: 24px;
   display: flex;

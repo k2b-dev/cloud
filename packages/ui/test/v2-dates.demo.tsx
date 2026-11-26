@@ -21,6 +21,8 @@ export function Demo() {
   // a picker whose language changes while it is open: German (24 hours) and American English (AM/PM)
   const [lang, setLang] = createSignal<"de" | "en-US">("de");
   const [switched, setSwitched] = createSignal("2026-11-24T09:00");
+  // a moment ahead: six weeks from the week of today (the tests stand on 25 November 2026)
+  const [ahead, setAhead] = createSignal("");
   return (
     <Band>
       <div style={{ display: "flex", gap: "40px", "align-items": "flex-start", padding: "24px" }}>
@@ -63,12 +65,16 @@ export function Demo() {
         </section>
       </div>
       {/* values on a day before `min`, as an app may still hold them: shown, never picked again */}
-      <div style={{ display: "flex", gap: "40px", "align-items": "flex-start", padding: "24px" }}>
+      <div style={{ display: "flex", "flex-wrap": "wrap", gap: "40px", "align-items": "flex-start", padding: "24px" }}>
         <section data-testid="locked-moment">
           <DatePicker time value="2026-11-02T09:00" label="Gesperrter Zeitpunkt" min="2026-11-03" onPick={record} />
         </section>
         <section data-testid="locked-day">
           <DatePicker value="2026-11-02" label="Gesperrter Tag" min="2026-11-03" onPick={record} />
+        </section>
+        <section data-testid="weeks">
+          <DatePicker view="weeks" min="2026-11-25" value={ahead() || undefined} label="Später" onPick={setAhead} />
+          <output data-testid="weeks-value">{ahead()}</output>
         </section>
         <section data-testid="switch">
           {/* inside a form: Enter in the time applies the picker and never sends the form */}

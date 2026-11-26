@@ -446,6 +446,99 @@ test("Shift+Enter is Enter: it takes what was typed, inside a form too, and send
   );
 });
 
+// ── view="weeks": six weeks ahead ───────────────────────────────────────────────────────────────────────────────
+
+/** The days the six weeks show, in order, with the row and column they stand in. */
+const shownDays = (page: Page) =>
+  page.getByTestId("weeks").evaluate((section) => {
+    const cells = [...section.querySelectorAll<HTMLElement>(".k2-cal-weeks [data-value]")];
+    const tops = [...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().top)))].sort((a, b) => a - b);
+    const lefts = [...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().left)))].sort((a, b) => a - b);
+    return cells.map((cell) => ({
+      date: cell.dataset.value ?? "",
+      row: tops.indexOf(Math.round(cell.getBoundingClientRect().top)),
+      column: lefts.indexOf(Math.round(cell.getBoundingClientRect().left)),
+      text: cell.textContent ?? "",
+    }));
+  });
+
+for (const width of [1440, 390])
+  test(`${width} px: late in a month the weeks start with this week and go on into the next months, one row per week`, async () => {
+    await withPage(
+      () => dates,
+      "/dates",
+      async (page) => {
+        const weeks = page.getByTestId("weeks");
+        const days = await shownDays(page);
+        // Wednesday 25 November 2026: the week from Monday 23 November, six weeks to Sunday 3 January
+        expect(days.length).toBe(42);
+        expect(days[0]?.date).toBe("2026-11-23");
+        expect(days.at(-1)?.date).toBe("2027-01-03");
+        expect(new Set(days.map((day) => day.row)).size).toBe(6);
+        expect(new Set(days.map((day) => day.column)).size).toBe(7);
+        // a week over the end of a month is one row: Monday 30 November and Tuesday 1 December side by side
+        const monday = days.find((day) => day.date === "2026-11-30");
+        const first = days.find((day) => day.date === "2026-12-01");
+        expect(first?.row).toBe(monday?.row);
+        expect(first?.column).toBe(1);
+        // where a month starts, its name stands; screen readers hear the whole date
+        expect(first?.text).toBe("Dez");
+        expect(days.find((day) => day.date === "2027-01-01")?.text).toBe("Jan");
+        expect(await weeks.locator('[data-value="2026-12-01"]').getAttribute("aria-label")).toContain("1. Dezember 2026");
+        expect(await weeks.locator(".k2-cal-t").textContent()).toBe("November 2026 – Januar 2027");
+        // days before `min` in this week are there but cannot be picked; screen readers hear the months as grids
+        expect(await weeks.locator('[data-value="2026-11-24"]').getAttribute("aria-disabled")).toBe("true");
+        expect(await weeks.getByRole("grid").count()).toBe(3);
+        // the picker fits the window
+        const picker = await box(page, '[data-testid="weeks"] .k2-dpick');
+        expect(picker.x + picker.width).toBeLessThanOrEqual(width);
+      },
+      { width },
+    );
+  });
+
+test("the keys move the six weeks by whole weeks, never their height; the buttons by six weeks, not before `min`", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const weeks = page.getByTestId("weeks");
+      const height = (await box(page, '[data-testid="weeks"] .k2-cal-weeks')).height;
+      // the first day the six weeks show, by the order of the days (no geometry)
+      const first = () => weeks.locator(".k2-cal-weeks [data-value]").first().getAttribute("data-value");
+      await weeks.locator('[data-value="2026-11-25"]').focus();
+      // a month ahead is still in the six weeks: nothing moves
+      await page.keyboard.press("PageDown");
+      expect(await focusedDay(page)).toBe("2026-12-25");
+      expect(await first()).toBe("2026-11-23");
+      // another month ahead lies behind them: they move until its week is the last
+      await page.keyboard.press("PageDown");
+      expect(await focusedDay(page)).toBe("2027-01-25");
+      expect(await first()).toBe("2026-12-21");
+      await page.keyboard.press("ArrowDown");
+      expect(await focusedDay(page)).toBe("2027-02-01");
+      expect(await first()).toBe("2026-12-28");
+      // back up: the first week follows the focus
+      await page.keyboard.press("PageUp");
+      await page.keyboard.press("PageUp");
+      expect(await focusedDay(page)).toBe("2026-12-01");
+      expect(await first()).toBe("2026-11-30");
+      await settled(page);
+      expect((await box(page, '[data-testid="weeks"] .k2-cal-weeks')).height).toBe(height);
+      // Enter picks the focused day
+      await page.keyboard.press("Enter");
+      expect(await page.getByTestId("weeks-value").textContent()).toBe("2026-12-01");
+      // the buttons: six weeks on, and back, never before the week of `min`
+      await weeks.getByRole("button", { name: "Sechs Wochen weiter" }).click();
+      expect(await first()).toBe("2027-01-11");
+      await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).click();
+      await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).click();
+      expect(await first()).toBe("2026-11-23");
+      expect(await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).isDisabled()).toBe(true);
+    },
+  );
+});
+
 // ── DateInput ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("DateInput: a typed date applies on Enter, text that is no date marks the field, and the form sends the date key", async () => {
