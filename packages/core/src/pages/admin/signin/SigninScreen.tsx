@@ -89,7 +89,6 @@ function SigninFrame(
     actions?: JSX.Element;
     status?: JSX.Element;
     side?: AreaFrameProps["side"];
-    saves?: boolean;
     children: JSX.Element;
   },
 ) {
@@ -105,7 +104,6 @@ function SigninFrame(
       actions={props.actions}
       status={props.status}
       side={props.side}
-      saves={props.saves}
     >
       {props.children}
     </AreaFrame>
@@ -137,7 +135,6 @@ export function SigninFormScreen(props: SigninFormScreenProps) {
       documentationHref={props.documentationHref}
       actions={props.section === "freeipa" ? <TestFreeIpa onFailure={setFailure} /> : undefined}
       side={recentSide(props.recent)}
-      saves
     >
       <Show when={failure()}>
         {(reason) => (

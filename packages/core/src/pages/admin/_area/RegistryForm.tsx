@@ -1,7 +1,7 @@
 import { coreClient } from "@k2b/cloud/clients/core";
-import { createSettingsDraft, SaveRejected, saveFailure } from "@k2b/cloud/ssr/settings-draft";
+import { createSettingsDraft, SaveRejected, saveFailure, settingsSaveControls } from "@k2b/cloud/ssr/settings-draft";
 import { readSettingsError, useLocale } from "@k2b/ui";
-import { Check, Notice, Section, Setting } from "@k2b/ui/v2";
+import { Bar, Button, Check, Chip, Notice, Section, Setting } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { localizeSettingField } from "../settings/_components/setting-copy";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
@@ -31,6 +31,35 @@ const preview = (entry: SettingFieldDef, value: unknown, t: AreaFormMessages): s
 // Secrets come redacted; an empty draft keeps the stored secret.
 const initialValues = (entries: SettingFieldDef[]): Values =>
   Object.fromEntries(entries.map((entry) => [entry.key, entry.kind === "secret" ? "" : entry.value]));
+
+/**
+ * The count of unsaved changes, Discard and Save of the page's settings form: "saved" (off) until the form registers,
+ * on the server too, so both renders show the same buttons and nothing moves when the form arrives.
+ */
+const FormSave = () => {
+  const locale = useLocale();
+  const f = () => areaFormMessages.resolve([locale()]).t;
+  const state = () => settingsSaveControls()?.state ?? "saved";
+  const changes = () => settingsSaveControls()?.changes ?? 0;
+  return (
+    <>
+      <Show when={changes() > 0}>
+        <Chip yours>{f().changes({ count: changes() })}</Chip>
+      </Show>
+      <Button disabled={state() === "saved" || state() === "saving"} onClick={() => settingsSaveControls()?.discard()}>
+        {f().discard}
+      </Button>
+      <Button
+        variant="primary"
+        busy={state() === "saving"}
+        disabled={state() === "saved" || state() === "invalid" || state() === "unknown"}
+        onClick={() => settingsSaveControls()?.save()}
+      >
+        {f().save}
+      </Button>
+    </>
+  );
+};
 
 /**
  * The registry settings of one admin section on v2, grouped and ordered by hand, inside the screen's pane. It saves
@@ -328,6 +357,8 @@ export default function RegistryForm(props: {
           </Section>
         )}
       </For>
+      {/* the footer of a settings form (look rule f): the count of unsaved changes, Discard and Save */}
+      <Bar end={<FormSave />} />
     </>
   );
 }

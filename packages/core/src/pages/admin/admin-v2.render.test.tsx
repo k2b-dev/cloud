@@ -114,7 +114,7 @@ describe("v2 admin screens on the server", () => {
     expect(text).toContain("Grundeinstellungen");
     expect(text).toContain("Name und Zeichen");
     expect(body.querySelector('input[value="Beispiel Cloud"]')).not.toBeNull();
-    // Save stands in the head from the server's first picture, off until the form has changes
+    // Save stands in the form's footer from the server's first picture, off until the form has changes
     expect(text).toContain("Speichern");
     expect(text).toContain("Auf Standard zurücksetzen");
     expect(text).toContain("mail.old_relay_host");

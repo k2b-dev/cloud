@@ -19,7 +19,7 @@ const goto = async (path: string, width = 1440) => {
 };
 const button = (name: string) => page.getByRole("button", { name, exact: true }).filter({ visible: true });
 const nameField = () => page.getByRole("textbox", { name: /^Name( |$)/ });
-const head = () => page.locator('main [data-k2-part="Bar"]').filter({ has: page.getByRole("button", { name: "Save", exact: true }) });
+const footer = () => page.locator('main [data-k2-part="Bar"]').filter({ has: page.getByRole("button", { name: "Save", exact: true }) });
 
 beforeAll(async () => {
   fixture = await baseAreaBrowserFixture();
@@ -52,11 +52,11 @@ test("the sections stand under their entry in the admin bar, and the page keeps 
   expect(errors).toEqual([]);
 }, 60_000);
 
-test("general settings save with Save in the head, which counts the changes, and continue from the stored versions", async () => {
+test("general settings save with the footer's Save, which counts the changes, and continue from the stored versions", async () => {
   await goto("/admin/base");
   expect(await button("Save").isDisabled()).toBe(true);
   await nameField().fill("Neue Cloud");
-  expect(await head().innerText()).toContain("1 change");
+  expect(await footer().innerText()).toContain("1 change");
   const request = page.waitForRequest((candidate) => candidate.method() === "PUT");
   await button("Save").click();
   expect((await request).postDataJSON()).toEqual({
@@ -65,7 +65,7 @@ test("general settings save with Save in the head, which counts the changes, and
     replaceUnreadable: [],
     expectedUpdatedAt: { "app.name": "2026-10-27T08:00:00.000Z" },
   });
-  await head().getByText("1 change").waitFor({ state: "detached" });
+  await footer().getByText("1 change").waitFor({ state: "detached" });
   expect(await button("Save").isDisabled()).toBe(true);
   // A second save sends the version the server stored after the first one.
   await nameField().fill("Neue Cloud 2");

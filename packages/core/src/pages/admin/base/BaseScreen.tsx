@@ -58,7 +58,7 @@ const TestPdf = (props: { onFailure: (reason: string | null) => void }) => {
 };
 
 /** The frame of every section of the Base settings area: the admin bar with the sections, the path, the guide link. */
-export function BaseFrame(props: Frame & { side?: AreaFrameProps["side"]; saves?: boolean; children: JSX.Element }) {
+export function BaseFrame(props: Frame & { side?: AreaFrameProps["side"]; children: JSX.Element }) {
   const locale = useLocale();
   const t = () => baseAreaMessages.resolve([locale()]).t;
   const n = () => adminToasts.resolve([locale()]).t;
@@ -72,7 +72,6 @@ export function BaseFrame(props: Frame & { side?: AreaFrameProps["side"]; saves?
       documentationHref={props.documentationHref}
       actions={props.section === "pdf" ? <TestPdf onFailure={setFailure} /> : undefined}
       side={props.side}
-      saves={props.saves}
     >
       <Show when={failure()}>
         {(reason) => (
@@ -99,7 +98,7 @@ export type BaseScreenProps = Frame & {
 /** A registry section of the Base settings area on v2; General adds the cache and the settings no app declares. */
 export default function BaseScreen(props: BaseScreenProps) {
   return (
-    <BaseFrame nav={props.nav} section={props.section} documentationHref={props.documentationHref} side={recentSide(props.recent)} saves>
+    <BaseFrame nav={props.nav} section={props.section} documentationHref={props.documentationHref} side={recentSide(props.recent)}>
       <RegistryForm groups={props.groups} sections={props.sections} entries={props.entries} />
       <Show when={props.legacy}>
         {(legacy) => (
