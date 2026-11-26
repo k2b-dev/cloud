@@ -10,7 +10,7 @@ type GrantablePermission = Exclude<PermissionLevel, "none">;
 type Expiry = "30" | "90" | "365" | "never" | "date";
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** A day the person typed ("27.11.2026" or "2026-11-27") as the end of that day in their zone; null when unreadable. */
+/** A day from the date field ("2026-11-27", or "27.11.2026" as typed) as the end of that day in the person's zone; null when unreadable or past. */
 export const expiryFromDay = (text: string): string | null => {
   const value = text.trim();
   const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
@@ -248,7 +248,6 @@ function CreateKeyDialog(props: {
         />
       </Field>
       <Show when={expiry() === "date"}>
-        {/* k2b-ui gap (DatePicker is on main; switch after merging main): DateInput gives the typed text, without a picker yet; the day is read here. */}
         <Field name="day" label={t().expires} error={tried() && dayInvalid() ? t().expiryDayInvalid : undefined}>
           <DateInput value={day()} onInput={setDay} placeholder={t().dayPlaceholder} />
         </Field>

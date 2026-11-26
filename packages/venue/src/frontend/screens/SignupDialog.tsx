@@ -180,7 +180,7 @@ function SignupForm(props: { dashboard: VenueDashboard; userId: string; close: (
                 </Notice>
               )}
             </Show>
-            {/* k2b-ui gap (lane K time input; DatePicker is on main): no date and time range picker in v2; the v1 picker keeps its behaviour in a canvas. */}
+            {/* k2b-ui gap (lane K): v2 has DatePicker with a time (#4224) only as a calendar panel, no field for a span of day and time with durations; the v1 picker keeps its behaviour in a canvas. */}
             <Canvas label={t().time}>
               <DateRangePicker
                 label={t().time}
@@ -227,8 +227,7 @@ function SignupForm(props: { dashboard: VenueDashboard; userId: string; close: (
                       <For each={day.slots}>
                         {(slot) => (
                           <Row
-                            icon="calendar-event"
-                            color={venue().accentColor}
+                            mark={{ icon: "calendar-event", color: venue().accentColor }}
                             lines={[
                               slot.template.title,
                               `${formatVenueSpan(slot.startsAt, slot.endsAt, venue().timezone, locale())} · ${slotStaffingLabel(slot, t())}`,

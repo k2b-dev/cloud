@@ -6,6 +6,7 @@ import {
   Dialog,
   Empty,
   Field,
+  Icon,
   Input,
   List,
   Menu,
@@ -79,7 +80,6 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
     <Workspace
       head={
         <Bar
-          start={<Text type="body">{t().appName}</Text>}
           end={
             <>
               <Show when={props.venues.length > 0}>
@@ -110,14 +110,9 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
       <Pane
         label={t().yourVenues}
         scrollKey="venue-overview"
+        // a count says nothing to act on; only a search says how much it found
         status={
-          <StatusRow
-            lead={
-              query().trim()
-                ? words().matchesCount({ count: shown().length, total: props.venues.length })
-                : words().venuesCount({ count: props.venues.length })
-            }
-          />
+          query().trim() ? <StatusRow lead={words().matchesCount({ count: shown().length, total: props.venues.length })} /> : undefined
         }
       >
         <Show
@@ -134,7 +129,7 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
                   <For each={props.templates}>
                     {(template) => (
                       <Row
-                        icon={iconName(template.icon)}
+                        mark={{ icon: iconName(template.icon) }}
                         lines={[template.name, template.description]}
                         action={{ label: t().create, icon: "plus", onClick: () => setCreating({ template }) }}
                       />
@@ -154,11 +149,17 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
               <For each={shown().slice(0, visible())}>
                 {(venue) => (
                   <Row
-                    icon={iconName(venue.icon)}
-                    color={venue.accentColor}
+                    mark={{ icon: iconName(venue.icon), color: venue.accentColor }}
                     lines={[venue.name, venue.description || signup(venue.signupMode)]}
                     meta={role(venue.permission)}
-                    end={venue.publicEnabled ? <Chip status="ok">{t().publicPageActive}</Chip> : <Chip>{t().publicPageHidden}</Chip>}
+                    // only a public page is worth a word: most venues are internal, and a chip in every row says nothing
+                    end={
+                      venue.publicEnabled ? (
+                        <Text tone="ok" weight="medium">
+                          <Icon name="world" /> {t().publicPageActive}
+                        </Text>
+                      ) : undefined
+                    }
                     href={`/app/venue/${venue.id}`}
                   />
                 )}

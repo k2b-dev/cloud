@@ -8,7 +8,6 @@ export const screenMessages = i18n.define({
   messages: {
     en: {
       allVenues: "All venues",
-      venuesCount: ({ count }: { count: number }) => `${count} ${i18n.plural(count, "en", { one: "venue", other: "venues" })}`,
       matchesCount: ({ count, total }: { count: number; total: number }) => `${count} of ${total}`,
       venueColumn: "Venue",
       roleColumn: "Your role",
@@ -36,6 +35,10 @@ export const screenMessages = i18n.define({
       backToSchedule: "Schedule",
       required: "Required.",
       optional: "optional",
+      on: "On",
+      averageLead: ({ rating }: { rating: string }) => `${rating} on average`,
+      noRatingsYet: "No ratings yet",
+      off: "Off",
       advanced: "Address",
       sectionsCount: ({ count }: { count: number }) => `${count} ${i18n.plural(count, "en", { one: "section", other: "sections" })}`,
       moveUp: "Move up",
@@ -49,7 +52,6 @@ export const screenMessages = i18n.define({
     },
     de: {
       allVenues: "Alle Standorte",
-      venuesCount: ({ count }) => `${count} ${i18n.plural(count, "de", { one: "Standort", other: "Standorte" })}`,
       matchesCount: ({ count, total }) => `${count} von ${total}`,
       venueColumn: "Standort",
       roleColumn: "Deine Rolle",
@@ -77,6 +79,10 @@ export const screenMessages = i18n.define({
       backToSchedule: "Dienstplan",
       required: "Pflichtfeld.",
       optional: "optional",
+      on: "An",
+      averageLead: ({ rating }) => `Im Schnitt ${rating}`,
+      noRatingsYet: "Noch keine Bewertungen",
+      off: "Aus",
       advanced: "Adresse",
       sectionsCount: ({ count }) => `${count} ${i18n.plural(count, "de", { one: "Abschnitt", other: "Abschnitte" })}`,
       moveUp: "Nach oben",

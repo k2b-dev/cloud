@@ -5,12 +5,10 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { dates } from "@k2b/stdlib";
 import { ColorInput, DEFAULT_ICON_OPTIONS, dialogCore, ImageInput, panelDialogOptions, useLocale } from "@k2b/ui";
 import {
-  Band,
   Bar,
   Button,
   Canvas,
   Check,
-  Choice,
   Dialog,
   Empty,
   Field,
@@ -24,6 +22,7 @@ import {
   Row,
   Section,
   Select,
+  Setting,
   Tabs,
   Text,
   useToast,
@@ -125,7 +124,7 @@ export default function VenueSettingsScreen(props: VenueSettingsProps) {
       if (!owner.signal.aborted) toast(error instanceof Error ? error.message : String(error), { status: "bad" });
     }
   };
-  // k2b-ui gap (lane K time input, follow-up to #4159): v2 has no time input yet; the opening, exception and shift dialogs keep their v1 time pickers.
+  // k2b-ui gap (lane K): v2 has no field for a time of day (the time input of #4224 lives inside DatePicker only); the opening, exception and shift dialogs keep their v1 time pickers.
   const openSaving = async (
     render: (close: (saved: boolean) => void, guard: (handler: () => void) => void) => JSX.Element,
     success: () => string,
@@ -158,22 +157,10 @@ export default function VenueSettingsScreen(props: VenueSettingsProps) {
       <V2WorkspaceNavigation label={venue().name} groups={nav().groups} foot={nav().foot} />
       <Workspace
         sidebar={<Nav title={t().appName} icon={iconName(venue().icon)} groups={nav().groups} foot={nav().foot} />}
-        head={
-          <Bar
-            start={
-              <Path
-                label={t().venueSettings}
-                items={[{ label: venue().name, href: venueViewHref(venue().id, "shifts") }, { label: t().venueSettings }]}
-              />
-            }
-          />
-        }
+        // The sidebar shows the venue and its settings as the open entry; the head holds the areas of the settings.
+        head={<Bar start={<Tabs label={words.words().settingsTabs} items={tabs()} />} />}
       >
-        <Pane
-          label={`${t().venueSettings} · ${venue().name}`}
-          head={<Tabs label={words.words().settingsTabs} items={tabs()} />}
-          scrollKey={`venue-settings-${props.tab}`}
-        >
+        <Pane label={`${t().venueSettings} · ${venue().name}`} scrollKey={`venue-settings-${props.tab}`}>
           <Show when={readFailed()}>
             <Notice
               tone="bad"
@@ -241,6 +228,21 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
   const nameError = () => (draft().name.trim() ? undefined : t().nameRequired);
   const slugError = () => venueSlugError(draft().slug, t()) ?? (slugTaken() ? t().slugTaken : undefined);
   const zones = createMemo(() => timeZones(props.venue.timezone));
+  // What a setting was before an unsaved change, so the page shows what saving changes.
+  const was = <K extends keyof Draft>(key: K, show: (value: Draft[K]) => string) =>
+    draft()[key] === saved()[key] ? undefined : show(saved()[key]) || "—";
+  const onOff = (value: boolean) => (value ? words().on : words().off);
+  const iconLabel = (value: string) => DEFAULT_ICON_OPTIONS.find((option) => option.value === value)?.label ?? value;
+  const openModes = () => [
+    { value: "regular", label: t().regular },
+    { value: "staffed", label: t().staffedMode },
+    { value: "combined", label: t().both },
+  ];
+  const signupModes = () => [
+    { value: "templates", label: t().signupModeShifts },
+    { value: "free", label: t().freeTime },
+    { value: "both", label: t().both },
+  ];
   const save = async () => {
     if (props.blocked || saving() || nameError() || slugError()) return;
     setSaving(true);
@@ -263,77 +265,82 @@ function GeneralForm(props: { venue: Venue; blocked: boolean; onSaved: (success:
   return (
     <>
       <Section icon="id" title={t().identity} summary={t().identityDescription}>
-        <Band>
-          <Field name="name" label={t().name} hint={t().nameDescription} required error={nameError()}>
-            <Input value={draft().name} onInput={(value) => set("name", value)} />
-          </Field>
-          <Field name="slug" label={t().slug} hint={t().slugDescription} error={slugError()}>
-            <Input value={draft().slug} onInput={(value) => set("slug", value.trim().toLowerCase())} />
-          </Field>
-          <Field name="description" label={t().description} hint={t().publicDescriptionDescription} optional={words().optional}>
-            <Input multiline value={draft().description} onInput={(value) => set("description", value)} />
-          </Field>
-        </Band>
+        <Setting name="name" label={t().name} hint={t().nameDescription} error={nameError()} was={was("name", (value) => value)}>
+          <Input value={draft().name} onInput={(value) => set("name", value)} />
+        </Setting>
+        <Setting name="slug" label={t().slug} hint={t().slugDescription} error={slugError()} was={was("slug", (value) => value)}>
+          <Input value={draft().slug} onInput={(value) => set("slug", value.trim().toLowerCase())} />
+        </Setting>
+        <Setting
+          name="description"
+          label={t().description}
+          hint={t().publicDescriptionDescription}
+          was={was("description", (value) => value)}
+        >
+          <Input multiline value={draft().description} onInput={(value) => set("description", value)} />
+        </Setting>
       </Section>
       <Section icon="calendar-time" title={t().scheduleRules} summary={t().scheduleRulesDescription}>
-        <Band>
-          <Field name="openMode" label={t().publicOpeningLogic} hint={t().publicOpeningLogicDescription}>
-            <Choice
-              name="openMode"
-              options={[
-                { value: "regular", label: t().regular },
-                { value: "staffed", label: t().staffedMode },
-                { value: "combined", label: t().both },
-              ]}
-              value={draft().openMode}
-              onChange={(value) => set("openMode", value === "regular" || value === "staffed" ? value : "combined")}
-            />
-          </Field>
-          <Field name="signupMode" label={t().signupMode} hint={t().signupModeDescription}>
-            <Choice
-              name="signupMode"
-              options={[
-                { value: "templates", label: t().signupModeShifts },
-                { value: "free", label: t().freeTime },
-                { value: "both", label: t().both },
-              ]}
-              value={draft().signupMode}
-              onChange={(value) => set("signupMode", value === "templates" || value === "free" ? value : "both")}
-            />
-          </Field>
-          <Field name="timezone" label={t().timezone} hint={t().timezoneDescription}>
-            <Select options={zones()} value={draft().timezone} onChange={(value) => set("timezone", value)} />
-          </Field>
-        </Band>
+        <Setting
+          name="openMode"
+          label={t().publicOpeningLogic}
+          hint={t().publicOpeningLogicDescription}
+          was={was("openMode", (value) => openModes().find((mode) => mode.value === value)?.label ?? value)}
+        >
+          <Select
+            options={openModes()}
+            value={draft().openMode}
+            onChange={(value) => set("openMode", value === "regular" || value === "staffed" ? value : "combined")}
+          />
+        </Setting>
+        <Setting
+          name="signupMode"
+          label={t().signupMode}
+          hint={t().signupModeDescription}
+          was={was("signupMode", (value) => signupModes().find((mode) => mode.value === value)?.label ?? value)}
+        >
+          <Select
+            options={signupModes()}
+            value={draft().signupMode}
+            onChange={(value) => set("signupMode", value === "templates" || value === "free" ? value : "both")}
+          />
+        </Setting>
+        <Setting name="timezone" label={t().timezone} hint={t().timezoneDescription} was={was("timezone", (value) => value)}>
+          <Select options={zones()} value={draft().timezone} onChange={(value) => set("timezone", value)} />
+        </Setting>
       </Section>
       <Section icon="world" title={t().publicPage} summary={t().publicPageSettingDescription}>
-        <Band>
-          <Check switch label={t().publicPageOn} checked={draft().publicEnabled} onChange={(value) => set("publicEnabled", value)} />
-          <Text type="meta" muted>
-            {t().publicPageOnDescription}
-          </Text>
+        <Setting name="publicEnabled" label={t().publicPageOn} hint={t().publicPageOnDescription} was={was("publicEnabled", onOff)}>
           <Check
             switch
-            label={t().feedbackActivated}
+            label={onOff(draft().publicEnabled)}
+            checked={draft().publicEnabled}
+            onChange={(value) => set("publicEnabled", value)}
+          />
+        </Setting>
+        <Setting
+          name="feedbackEnabled"
+          label={t().feedbackActivated}
+          hint={t().feedbackActivatedDescription}
+          was={was("feedbackEnabled", onOff)}
+        >
+          <Check
+            switch
+            label={onOff(draft().feedbackEnabled)}
             checked={draft().feedbackEnabled}
             onChange={(value) => set("feedbackEnabled", value)}
           />
-          <Text type="meta" muted>
-            {t().feedbackActivatedDescription}
-          </Text>
-        </Band>
+        </Setting>
       </Section>
       <Section icon="palette" title={t().publicBranding} summary={t().publicBrandingDescription}>
-        <Band>
-          {/* k2b-ui gap: no icon picker in v2; a selection of the curated icons by name. */}
-          <Field name="icon" label={t().icon} hint={t().iconDescription}>
-            <Select
-              options={DEFAULT_ICON_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
-              value={draft().icon}
-              onChange={(value) => set("icon", value)}
-            />
-          </Field>
-        </Band>
+        {/* k2b-ui gap: no icon picker in v2; a selection of the curated icons by name. */}
+        <Setting name="icon" label={t().icon} hint={t().iconDescription} was={was("icon", iconLabel)}>
+          <Select
+            options={DEFAULT_ICON_OPTIONS.map((option) => ({ value: option.value, label: option.label }))}
+            value={draft().icon}
+            onChange={(value) => set("icon", value)}
+          />
+        </Setting>
         {/* k2b-ui gap (#4191): no colour or image input in v2; the v1 inputs keep their behaviour in a canvas. */}
         <Canvas label={t().publicBranding}>
           <ColorInput
@@ -644,8 +651,7 @@ function ScheduleArea(props: {
   };
   const shiftRow = (shift: ShiftTemplate) => (
     <Row
-      icon={shift.active ? "calendar-event" : "player-pause"}
-      color={shift.active ? venue().accentColor : undefined}
+      mark={{ icon: shift.active ? "calendar-event" : "player-pause", color: shift.active ? venue().accentColor : undefined }}
       lines={[
         shift.title,
         [

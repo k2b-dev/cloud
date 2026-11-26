@@ -243,12 +243,13 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
   const nav = () => venueNav({ t, words }, dashboard(), view(), () => setLinking(true));
   const signup = { label: t().signUp, icon: "user-plus", onClick: () => setSigningUp(true) };
   const head = (end?: JSX.Element) => (
+    // The venue's name heads its group in the sidebar, so the head holds only the view's deeds.
     <Bar
-      start={<Text type="body">{venue().name}</Text>}
       end={
         <>
           {end}
-          <Show when={canWrite(venue())}>
+          {/* signing up belongs to the shifts; feedback, the public page and the settings have deeds of their own */}
+          <Show when={canWrite(venue()) && (view() === "shifts" || view() === "my-shifts")}>
             <Button variant="primary" icon="user-plus" onClick={signup.onClick}>
               {signup.label}
             </Button>
@@ -265,14 +266,21 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
         sidebar={<Nav title={t().appName} icon={iconName(venue().icon)} groups={nav().groups} foot={nav().foot} />}
         sidebarLabel={words().views}
         detail={selection() ? 380 : undefined}
-        primary={canWrite(venue()) ? signup : undefined}
+        primary={canWrite(venue()) && (view() === "shifts" || view() === "my-shifts") ? signup : undefined}
         head={head(
           view() === "my-shifts" ? (
             <Button icon="calendar-share" onClick={() => setSubscribing(true)}>
               {t().subscribeCalendar}
             </Button>
           ) : view() === "feedback" ? (
-            <FeedbackSearch {...props} />
+            <>
+              <FeedbackSearch {...props} />
+              <Show when={venue().feedbackEnabled}>
+                <Button icon="external-link" href={`/app/venue/public/${venue().id}/feedback`}>
+                  {t().feedbackPage}
+                </Button>
+              </Show>
+            </>
           ) : undefined,
         )}
       >
@@ -280,7 +288,8 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
           <Pane.Split>
             <Pane
               label={t().schedule}
-              width={{ min: 520, default: 1000 }}
+              // beside an open shift the calendar keeps a width of its own; alone it has the whole page
+              width={selection() ? { min: 520, default: 1000 } : undefined}
               scrollKey={`venue-schedule-${venue().id}`}
               status={
                 <StatusRow
@@ -419,8 +428,7 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
                 <For each={dashboard().myUpcomingShifts}>
                   {(shift) => (
                     <Row
-                      icon={shift.templateId ? "calendar-event" : "clock-plus"}
-                      color={venue().accentColor}
+                      mark={{ icon: shift.templateId ? "calendar-event" : "clock-plus", color: venue().accentColor }}
                       lines={
                         shift.note
                           ? [assignmentTitle(shift), formatVenueSpan(shift.startsAt, shift.endsAt, venue().timezone, locale()), shift.note]
@@ -597,30 +605,15 @@ function FeedbackPane(props: VenueWorkspaceProps & { refreshing: boolean }) {
             })}
           />
           <StatusRow
-            lead={t().feedbackDescription({ count: days() })}
+            // the filter says the period; the first row says what came out of it
+            lead={average() === null ? words().noRatingsYet : words().averageLead({ rating: formatFeedbackRating(average()!, locale()) })}
             loading={props.refreshing}
             filters={<ListOrder query={query()} state={state()} onChange={() => undefined} />}
           />
         </>
       }
     >
-      <Show when={venue().feedbackEnabled}>
-        <Bar
-          end={
-            <Button variant="text" icon="external-link" href={`/app/venue/public/${venue().id}/feedback`}>
-              {t().feedbackPage}
-            </Button>
-          }
-        />
-      </Show>
       <Cells>
-        <Cells.Cell
-          icon="star"
-          color="#d97706"
-          label={t().averageRating}
-          value={average() === null ? "–" : formatFeedbackRating(average()!, locale())}
-          meta={t().inLastDays({ count: days() })}
-        />
         <Cells.Cell
           icon="message-star"
           color="#2563eb"

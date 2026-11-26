@@ -19,7 +19,7 @@ import {
   Text,
   useToast,
 } from "@k2b/ui/v2";
-import { createEffect, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import {
   type PublicSection,

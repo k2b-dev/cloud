@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { evening, FIXTURE_NOW, fixtureDashboard, fixtureSettings, lunch, SHIFT_DAY } from "./fixtures";
+import { renderVenueShell } from "./venue-shell.browser-fixture";
 
 // The main paths of Venue on v2: find and create a venue, open a shift from the calendar, join it with the following
 // weeks, remove someone as an admin, Back and Forward over the selection, sign up from the dialog, leave one of my
@@ -55,7 +56,10 @@ let browser: Browser;
 let css: string;
 let harness: string;
 let icons: { css: string; font: string };
+// Pictures show the screen inside the real Cloud shell; the tests without pictures keep the bare page.
+let shell: Awaited<ReturnType<typeof renderVenueShell>> | undefined;
 beforeAll(async () => {
+  if (shots) shell = await renderVenueShell();
   harness = await buildHarness();
   const iconCssUrl = import.meta.resolve("@k2b/ui/icons/tabler.css");
   const iconCss = await Bun.file(fileURLToPath(iconCssUrl)).text();
@@ -74,14 +78,25 @@ beforeAll(async () => {
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
+  shell?.restore();
   await browser?.close();
 });
 
-const page = (variant: string, permission: string) =>
-  `<!doctype html><html lang="de" class="light" data-variant="${variant}" data-permission="${permission}"><head><meta charset="utf-8">` +
-  `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="${origin}/tabler-icons.css">` +
-  `<style>${css}</style><style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
-  `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
+const head = () =>
+  `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style>`;
+const page = async (variant: string, permission: string, address: string) => {
+  if (shell)
+    return (await shell.page(address))
+      .replace("<html", `<html data-variant="${variant}" data-permission="${permission}"`)
+      .replace("</head>", `${head()}</head>`)
+      .replace("</body>", '<script src="/harness.js"></script></body>');
+  return (
+    `<!doctype html><html lang="de" class="light" data-variant="${variant}" data-permission="${permission}"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width, initial-scale=1">${head()}` +
+    `<style>html,body{height:100%;margin:0}#root{position:fixed;inset:0;display:flex}</style></head>` +
+    `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`
+  );
+};
 
 /** Pins only Date in the page, flowing from the fixture instant; timers and frames stay real. */
 const pinPageClock = (at: number) => {
@@ -145,10 +160,14 @@ const open = async (view: View, address: string, options: { variant?: string; pe
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
+    if (url.pathname === "/branding/logo") return route.fulfill({ path: resolve(ui, "../cloud/public/logo.svg") });
+    if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
     if (url.pathname.startsWith("/api/")) return answer(route, calls);
+    // the shell's own assets (its scripts and sheets) are not part of these pictures
+    if (/\.[a-z0-9]+$/.test(url.pathname)) return route.fulfill({ status: 404, body: "" });
     return route.fulfill({
       contentType: "text/html; charset=utf-8",
-      body: page(options.variant ?? "normal", options.permission ?? "admin"),
+      body: await page(options.variant ?? "normal", options.permission ?? "admin", `${url.pathname}${url.search}`),
     });
   });
   await tab.goto(`${origin}${address}`);
@@ -173,7 +192,7 @@ describe("Venue on v2", () => {
       await shoot(tab, "venues-1440");
       await tab.getByRole("searchbox", { name: "Standorte durchsuchen" }).fill("keller");
       await tab.waitForFunction(() => location.search === "?q=keller");
-      expect(await tab.getByText("1 von 3").isVisible()).toBe(true);
+      expect(await tab.getByText("1 von 7").isVisible()).toBe(true);
       await tab.getByRole("button", { name: "Neuer Standort" }).first().click();
       await tab.getByRole("menuitem", { name: /Leerer Standort/ }).click();
       const dialog = tab.getByRole("dialog");
@@ -196,7 +215,7 @@ describe("Venue on v2", () => {
       expect(shiftInUrl(tab)).toBe(lunchId);
       expect(await detail(tab).innerText()).toContain("Sam Beispiel");
       await shoot(tab, "shift-open-1440");
-      expect((await measureV2Layout(tab)).problems).toEqual([]);
+      expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       await tab.goBack();
       await tab.waitForFunction(() => !location.search.includes("shift="));
       await detail(tab).waitFor({ state: "detached" });
@@ -251,7 +270,7 @@ describe("Venue on v2", () => {
     try {
       await shoot(tab, "shift-open-390");
       expect(await tab.getByRole("link", { name: "Dienstplan" }).first().isVisible()).toBe(true);
-      expect((await measureV2Layout(tab)).problems).toEqual([]);
+      expect((await measureV2Layout(tab, { root: "#root" })).problems).toEqual([]);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -435,7 +454,7 @@ describe("Venue on v2", () => {
         try {
           const name = `${address.replace(/^\/app\/venue\/?/, "").replace(/[^a-z0-9]+/gi, "-") || "venues"}-${view.width}`;
           await shoot(tab, name);
-          for (const problem of (await measureV2Layout(tab)).problems) found.push(`${name}: ${problem}`);
+          for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           found.push(...errors.map((error) => `${name}: ${error}`));
         } finally {
           await context.close();
@@ -452,7 +471,7 @@ describe("Venue on v2", () => {
         try {
           const name = `worst-${address.replace(/[^a-z0-9]+/gi, "-")}-${view.width}`;
           await shoot(tab, name);
-          for (const problem of (await measureV2Layout(tab)).problems) found.push(`${name}: ${problem}`);
+          for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           if (await tab.evaluate(() => document.documentElement.scrollWidth > window.innerWidth))
             found.push(`${name}: the page scrolls sideways`);
           found.push(...errors.map((error) => `${name}: ${error}`));
