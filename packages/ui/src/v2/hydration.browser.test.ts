@@ -9,7 +9,7 @@ import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-hydration.client";
 import type {} from "../../test/v2-hydration-twice";
 import { measureV2Layout } from "./testing";
-import { hairline, heights, textEdge } from "./tokens";
+import { heights, textEdge } from "./tokens";
 
 // The primitives rendered on the server and hydrated in the browser, as a page with islands that hydrate would: the
 // development build of Solid throws on a node the server did not send, so a mismatch fails here. The fixture
@@ -265,10 +265,10 @@ for (const width of [1440, 390]) {
       expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).problems).toEqual([]);
       const row = page.locator('.k2-row:has-text("Zwei Zeilen")');
       const rowBox = (await row.boundingBox())!;
-      // 52 and its line, as the mockup draws a row of two lines: the marks open no third line. (On the phone the panes
-      // stand one under the other and the last row of a pane gives its line to the seam below it.)
+      // 52, as the mockup draws a row of two lines: the marks open no third line. It is the last row of its list, so no
+      // line stands under it (look rule 4), on the desktop and on the phone.
       const line = await row.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderBottomWidth));
-      expect(line).toBe(width < textEdge.phoneBelow ? 0 : hairline.width);
+      expect(line).toBe(0);
       expect(rowBox.height).toBe(heights.row2 + line);
       // a row of three lines without marks: its third line runs to the end of the row and ends there in "…"
       const third = await page.locator('.k2-row:has-text("Spedition Falk")').evaluate((element) => {
