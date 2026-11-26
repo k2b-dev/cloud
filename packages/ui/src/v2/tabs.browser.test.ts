@@ -68,6 +68,14 @@ test("tabs in place are the WAI-ARIA tabs: selected, controlling the panel the o
     const controls = await list.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("aria-controls")));
     expect(controls).toEqual([await panel.getAttribute("id"), null, null]);
     expect(await panel.textContent()).toBe("Die Vorschau");
+    // what the panel shows stands on the text edge, as in any other place
+    const edge = await page.evaluate(() => {
+      const text = document.querySelector<HTMLElement>('[role="tabpanel"] > .k2-text')!;
+      const words = text.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(text).paddingLeft);
+      const tab = document.querySelector('[role="tab"]')!.getBoundingClientRect().left;
+      return Math.abs(words - tab);
+    });
+    expect(edge).toBeLessThanOrEqual(1);
     // one tab stop: the open tab
     expect(await list.getByRole("tab").evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("tabindex")))).toEqual(["0", "-1", "-1"]);
     // the same look as a tab of the address: its words and its line in the app's colour
