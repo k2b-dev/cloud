@@ -573,6 +573,10 @@ test("phone: a range editor follows a reset, so a new end never brings back the 
       const field = page.locator(".k2-fsheet .k2-nentry input");
       expect(await field.inputValue()).toBe("");
       await field.fill("3000");
+      // The step mounts once (a MutationObserver probe under 6x CPU throttling saw the number entry added once and
+      // removed only after it applied). What moves is the sheet: a step of another height springs it, and a tap while it
+      // stands off the bottom lands on the backdrop and closes it (see behavior/overlays). Tap once it stands.
+      await steady(page, '[role="dialog"]');
       await page.getByRole("button", { name: "Anwenden" }).tap();
       await page.waitForFunction(() => new URL(location.href).searchParams.get("price") === "..3000");
       await page.getByRole("dialog", { name: "Preis" }).waitFor();
