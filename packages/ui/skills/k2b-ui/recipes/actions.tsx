@@ -1,5 +1,6 @@
 // Recipe: where deeds stand. The head holds the views, a hint, a filter menu with ticks, a view menu and the one main action;
-// each row has its deeds behind its own "…" and on a right-click or a long press, plus a star that is pressed or not.
+// each row has its deeds behind its own "…" and on a right-click or a long press (a shortcut as keycaps), plus a star
+// that is pressed or not and says so in the row's status.
 // An offer the address names opens beside the list with its own deeds in its head; "Senden" turns while it sends, and a deed that cannot be
 // taken now is disabled in a notice that says why. Deleting an offer answers with a toast and "Rückgängig".
 import {
@@ -47,7 +48,12 @@ export default function OfferActions(props: Props) {
   const [mine, setMine] = createSignal(true);
   const [expiring, setExpiring] = createSignal(false);
   const open = () => list().find((offer) => offer.id === props.open);
-  const star = (offer: Offer) => setList(list().map((each) => (each.id === offer.id ? { ...each, starred: !each.starred } : each)));
+  // what just happened to a row, heard politely in its status ("Gemerkt")
+  const [said, setSaid] = createSignal<Record<string, string>>({});
+  const star = (offer: Offer) => {
+    setList(list().map((each) => (each.id === offer.id ? { ...each, starred: !each.starred } : each)));
+    setSaid({ ...said(), [offer.id]: offer.starred ? "Nicht mehr gemerkt" : "Gemerkt" });
+  };
   const remove = (offer: Offer) => {
     const before = list();
     setList(before.filter((each) => each.id !== offer.id));
@@ -56,7 +62,7 @@ export default function OfferActions(props: Props) {
   // The same deeds behind the row's "…" and on its right-click: one list, given to both.
   const deeds = (offer: Offer): MenuEntry[] => [
     { label: "Öffnen", icon: "external-link", href: `#${offer.id}` },
-    { label: "Duplizieren", icon: "copy", meta: "⌘ D" },
+    { label: "Duplizieren", icon: "copy", keys: "mod+d" },
     { label: "Verschieben nach", icon: "folder", items: [{ label: "Werkstatt" }, { label: "Montage" }, { label: "Archiv" }] },
     { label: "Löschen", icon: "trash", danger: true, onClick: () => remove(offer) },
   ];
@@ -155,6 +161,7 @@ export default function OfferActions(props: Props) {
                     icon="file-invoice"
                     lines={[offer.title, offer.customer]}
                     meta={offer.amount}
+                    status={said()[offer.id] ?? ""}
                     current={offer.id === open()?.id}
                     href={`#${offer.id}`}
                     end={

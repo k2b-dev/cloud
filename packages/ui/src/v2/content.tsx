@@ -11,7 +11,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, isServer } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
 import { ActionButton, CopyButton } from "./button";
@@ -311,6 +311,12 @@ export type RowProps = {
   onNavigate?: OnNavigate;
   /** … or calls this. */
   onOpen?: () => void;
+  /**
+   * A short state that changes while the row stands, such as "Link kopiert" or "Wird gesendet …": quiet words after
+   * the title, heard politely when they change (a status). Pass `""` while there is nothing to say, so the place that
+   * is heard is already there when the words come.
+   */
+  status?: string;
 };
 
 /**
@@ -345,8 +351,42 @@ export const Row = (props: RowProps) => {
   const end = resolveChildren(() => props.end);
   const marks = resolveChildren(() => props.marks);
   const title = createUniqueId();
+  let row: HTMLDivElement | undefined;
+  // When the row's own action leaves while it has the focus ("Zurückziehen" withdraws the invitation it stands on),
+  // the focus stays in the row: on its next button, else on what opens it, else on its box, else on the row itself;
+  // never the page. A deed that moved the focus elsewhere on purpose keeps it there.
+  const keepFocus = () => {
+    if (isServer || !row) return;
+    const end = row.querySelector(".k2-row-end");
+    if (!end?.contains(document.activeElement)) return;
+    queueMicrotask(() => {
+      if (!row?.isConnected) return;
+      const now = document.activeElement;
+      if (now && now !== document.body) return;
+      const candidates = [
+        ...row.querySelectorAll<HTMLElement>(".k2-row-end :is(button, a[href]):not(:disabled)"),
+        ...row.querySelectorAll<HTMLElement>(":scope > .k2-row-open"),
+        ...row.querySelectorAll<HTMLElement>(".k2-mark-input:not(:disabled)"),
+      ];
+      // only what can be seen takes the focus (a box of some size, visible, not hidden or inert); a focus that does not
+      // take moves on to the next place
+      const reachable = (next: HTMLElement) => {
+        if (!next.isConnected || next.closest("[hidden], [inert]")) return false;
+        const box = next.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 && getComputedStyle(next).visibility === "visible";
+      };
+      for (const next of candidates) {
+        if (!reachable(next)) continue;
+        next.focus();
+        if (document.activeElement === next) return;
+      }
+      row.tabIndex = -1;
+      row.focus();
+    });
+  };
   return (
     <div
+      ref={row}
       class="k2-row"
       data-k2-part="Row"
       role={inList ? "listitem" : undefined}
@@ -415,6 +455,11 @@ export const Row = (props: RowProps) => {
         <Show when={meta() !== undefined}>
           <span class="k2-row-meta">{meta()}</span>
         </Show>
+        <Show when={props.status !== undefined}>
+          <span class="k2-row-status" role="status">
+            {props.status}
+          </span>
+        </Show>
       </span>
       <Show when={lines() > 1}>
         <span class="k2-row-l2">{text()[1]}</span>
@@ -427,7 +472,12 @@ export const Row = (props: RowProps) => {
       </Show>
       <Show when={end() !== undefined || props.action}>
         <span class="k2-row-end">
-          <Show when={props.action}>{(action) => <ActionButton action={action()} />}</Show>
+          <Show when={props.action}>
+            {(action) => {
+              onCleanup(keepFocus);
+              return <ActionButton action={action()} />;
+            }}
+          </Show>
           {end()}
         </span>
       </Show>

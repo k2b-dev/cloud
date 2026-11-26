@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
+import { Kbd } from "./kbd";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
@@ -25,8 +26,10 @@ export type MenuItem = {
   danger?: boolean;
   /** The entry cannot be chosen now: dimmed, and focus passes over it. */
   disabled?: boolean;
-  /** A quiet hint at the end, such as the key that does the same ("⌘ D"). */
+  /** A quiet hint at the end, such as the place an entry leads to. */
   meta?: string;
+  /** The shortcut that does the same, as keycaps at the end: `mod+d` shows ⌘ D on a Mac and Strg + D elsewhere. */
+  keys?: string;
   /** An entry that toggles: `onClick` flips it. */
   checked?: boolean;
   /** A submenu, opened to the side. */
@@ -243,6 +246,7 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
     </Show>
     <span class="k2-mi-label">{props.item.label}</span>
     <Show when={props.item.meta}>{(meta) => <span class="k2-mi-meta">{meta()}</span>}</Show>
+    <Show when={props.item.keys}>{(keys) => <Kbd keys={keys()} />}</Show>
     {props.end}
   </>
 );
