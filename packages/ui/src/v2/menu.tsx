@@ -1,4 +1,18 @@
-import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
+import {
+  type Accessor,
+  createContext,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  onCleanup,
+  onMount,
+  children as resolveChildren,
+  Show,
+  untrack,
+  useContext,
+} from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -327,7 +341,21 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
  * head or a section; with words it is a framed button with a chevron. Keys, typeahead, focus and placement come from
  * the behaviour layer; the menu lines up with the end of a button on the right and the start of one on the left.
  */
+/** The deeds a phone head folds away (see `Bar`): the head's own "…" takes them in after its entries. */
+export const HeadFoldContext = createContext<Accessor<readonly MenuEntry[]>>();
+
 const MenuRoot = (props: MenuProps) => {
+  const folded = useContext(HeadFoldContext);
+  // on the phone, where the head folds them, the "…" of a head also holds the deeds that kept their words
+  const [phone, setPhone] = createSignal(false);
+  onMount(() => {
+    if (!folded || typeof matchMedia === "undefined") return;
+    const wide = matchMedia("(min-width: 768px)");
+    const follow = () => setPhone(!wide.matches);
+    follow();
+    wide.addEventListener("change", follow);
+    onCleanup(() => wide.removeEventListener("change", follow));
+  });
   const t = useOverlayMessages();
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
@@ -359,7 +387,10 @@ const MenuRoot = (props: MenuProps) => {
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+        <Entries
+          level={level}
+          entries={folded && iconOnly() && phone() && folded().length > 0 ? [...props.items, "separator", ...folded()] : props.items}
+        />
       </level.Popup>
     </>
   );

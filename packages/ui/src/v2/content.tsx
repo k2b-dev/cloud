@@ -392,10 +392,11 @@ export const Row = (props: RowProps) => {
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
-  // a row of three lines cuts each line with "…": a line of words says all of them on hover
+  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover
   const cut = (index: number) => {
     const line = text()[index];
-    return lines() === 3 && typeof line === "string" && line.trim() ? line : undefined;
+    const cuts = lines() === 3 || (lines() === 2 && index === 1);
+    return cuts && typeof line === "string" && line.trim() ? line : undefined;
   };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);

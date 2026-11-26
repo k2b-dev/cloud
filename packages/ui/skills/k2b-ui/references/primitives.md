@@ -38,7 +38,7 @@ The working surface of an app: one per screen.
   a head with `Tabs` the open view never gives way: buttons with words that
   `keep` fold into the head's own "…" (each runs as its button would), and
   the open tab keeps its whole name. A column with a `width` fills the
-  screen; its minimum is the desktop's.
+  screen; its minimum counts only on the desktop.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape.
@@ -154,6 +154,9 @@ inside it.
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
+  The second line of two or three is one line, cut with "…" before what
+  stands beside it (an address or JSON without a break never runs under the
+  marks or a deed); a cut line of words says all of it on hover.
 - lead: `icon` + `color`, or `avatar`, or a dot when `unread`.
 - `meta` (quiet note after the title, a count), `time` (top right). Title
   and `meta` share the first line in equal parts, and each takes only what
@@ -166,7 +169,10 @@ inside it.
   this order: a tag chip is cut to about 12 letters first, then lone `Icon`s
   leave (they stand last), then the marks at the end. So pass them in the
   order of their weight: words of a state (as `Text`, never loose text),
-  then the tag, then the person, then symbols.
+  then the tag, then the person, then symbols. Marks are things to see,
+  never to press: a mark that leaves is out of view but still in the page,
+  so a button or link there would be reached by Tab unseen. Put a deed in
+  `action` or `end`.
 - A line of three is cut with "…" and says its words on hover. An address
   or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
   the middle, so the domain or extension stays readable.
