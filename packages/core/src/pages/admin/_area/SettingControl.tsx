@@ -1,7 +1,9 @@
+import { useLocale } from "@k2b/ui";
 import { Check, Input, Select } from "@k2b/ui/v2";
 import { type JSX, Match, Switch } from "solid-js";
 import type { SettingFieldDef } from "../settings/_components/setting-field";
 import { FieldInput } from "../settings/_components/setting-inputs";
+import { areaFormMessages } from "./messages";
 
 export type SettingControlProps = {
   entry: SettingFieldDef;
@@ -28,6 +30,8 @@ const parts = (value: string) =>
  */
 export default function SettingControl(props: SettingControlProps): JSX.Element {
   const kind = () => props.entry.kind;
+  const locale = useLocale();
+  const t = () => areaFormMessages.resolve([locale()]).t;
   return (
     <Switch
       fallback={
@@ -41,7 +45,14 @@ export default function SettingControl(props: SettingControlProps): JSX.Element 
       }
     >
       <Match when={kind() === "boolean"}>
-        <Check switch label={props.entry.label} checked={props.value === true} disabled={props.locked} onChange={props.onChange} />
+        {/* the setting's name stands left already; the switch says its state, as the settings recipe has it */}
+        <Check
+          switch
+          label={props.value === true ? t().on : t().off}
+          checked={props.value === true}
+          disabled={props.locked}
+          onChange={props.onChange}
+        />
       </Match>
       <Match when={kind() === "number"}>
         <Input

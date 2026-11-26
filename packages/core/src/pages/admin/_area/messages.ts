@@ -41,6 +41,8 @@ export const areaFormMessages = i18n.define({
       invalid: ({ count }: { count: number }) =>
         i18n.plural(count, "en", { one: "1 field needs a fix", other: `${count} fields need a fix` }),
       discard: "Discard",
+      on: "On",
+      off: "Off",
       recentChanges: "Recently changed",
       changes: ({ count }: { count: number }) => (count === 1 ? "1 change" : `${count} changes`),
       save: "Save",
@@ -82,6 +84,8 @@ export const areaFormMessages = i18n.define({
       invalid: ({ count }) =>
         i18n.plural(count, "de", { one: "1 Feld braucht eine Korrektur", other: `${count} Felder brauchen eine Korrektur` }),
       discard: "Verwerfen",
+      on: "An",
+      off: "Aus",
       recentChanges: "Zuletzt geändert",
       changes: ({ count }) => (count === 1 ? "1 Änderung" : `${count} Änderungen`),
       save: "Speichern",
