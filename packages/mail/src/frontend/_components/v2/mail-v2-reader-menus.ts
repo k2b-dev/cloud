@@ -76,6 +76,11 @@ export function createMailV2ReaderMenus(props: {
    * times are those of that moment (a menu opened after 17:00 no longer offers today). A time that has passed since is
    * not sent, and one picked after another conversation opened is dropped: it was offered for the one before.
    */
+  /** Where the calendar starts without a time set: tomorrow's 8:00, an offered time every day has. */
+  const suggestedStart = (times: ReturnType<typeof mailV2LaterTimes>) => {
+    const tomorrow = times.find((time) => time.kind === "tomorrow")?.at;
+    return tomorrow ? { suggested: tomorrow } : {};
+  };
   const timeItems = (label: string, current: string | null, choose: (at: string) => void): MenuEntry[] => {
     const conversationId = data().selectedConversationId;
     const pick = (at: string) => {
@@ -102,7 +107,7 @@ export function createMailV2ReaderMenus(props: {
             timeZone: mailV2TimeZone(props.dateConfig),
             current,
             // without a time set, the calendar starts at tomorrow's 8:00, the offered time every day has
-            suggested: times.find((time) => time.kind === "tomorrow")?.at ?? times[0]?.at ?? new Date().toISOString(),
+            ...suggestedStart(times),
             pastError: v2Text().laterPast,
             onPick: (at) => {
               close();

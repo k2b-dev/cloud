@@ -12,15 +12,15 @@ export const MailV2TimePicker = (props: {
   timeZone: string;
   /** The time set now, as an instant. */
   current: string | null;
-  /** Where the calendar starts without a time set now: an offered time, as an instant. */
-  suggested: string;
+  /** Where the calendar starts without a time set now: an offered time, as an instant; without one it starts empty. */
+  suggested?: string;
   pastError: string;
   onPick: (at: string) => void;
 }) => {
   const [error, setError] = createSignal<string>();
   const today = dates.instantToZonedInput(new Date(Date.now()), props.timeZone).slice(0, 10);
   const start = props.current && Date.parse(props.current) > Date.now() ? props.current : props.suggested;
-  const value = dates.instantToZonedInput(start, props.timeZone);
+  const value = start ? dates.instantToZonedInput(start, props.timeZone) : undefined;
   return (
     <DatePicker
       time
@@ -28,7 +28,7 @@ export const MailV2TimePicker = (props: {
       timeZone={props.timeZone}
       min={today}
       defaultTime="08:00"
-      value={value}
+      {...(value ? { value } : {})}
       {...(error() ? { error: error() } : {})}
       autoFocus
       onPick={(wall) => {
