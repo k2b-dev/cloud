@@ -123,7 +123,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                       `${base.description ? `${base.description} · ` : ""}${words().retentionDays({ days: base.rawRetentionDays })}`,
                     ]}
                     meta={words().membersMeta({ count: base.memberCount })}
-                    end={storeState(base.store, store()).status === "ok" ? undefined : <StoreChip store={base.store} t={store()} />}
+                    states={storeState(base.store, store()).status === "ok" ? undefined : <StoreChip store={base.store} t={store()} />}
                     href={baseHref(base)}
                   />
                 )}
