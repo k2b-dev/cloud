@@ -547,6 +547,17 @@ test("a setting stands with its value beside its name, and an unsaved change say
       };
     });
     expect(deed).toEqual({ name: "Auf Standard zurücksetzen", between: true, top: true });
+    // the keys follow the eye: the name's deed comes first, then the value it stands before (WCAG 2.4.3)
+    await page.locator("[data-k2-part='Setting'][data-action] .k2-field-action button").focus();
+    await page.keyboard.press("Tab");
+    const inValue = () =>
+      page.evaluate(() => {
+        const setting = document.querySelector("[data-k2-part='Setting'][data-action]")!;
+        return !!document.activeElement && setting.contains(document.activeElement) && !document.activeElement.closest(".k2-field-action");
+      });
+    expect(await inValue()).toBe(true);
+    await page.keyboard.press("Shift+Tab");
+    expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Auf Standard zurücksetzen");
   });
   await withPage(
     "settings",
