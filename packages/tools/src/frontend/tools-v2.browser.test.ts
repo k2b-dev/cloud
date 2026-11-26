@@ -497,3 +497,39 @@ test("the photo editor's own picture tiles show where the keyboard is", async ()
     await page.close();
   }
 }, 30_000);
+
+test("the photo editor has one head row: the open photo is the last step of the path, its facts stand in the inspector", async () => {
+  for (const width of [1440, 1024]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      await page.goto(`${server.url.href}?screen=image-open`);
+      await page.locator('[data-k2-part="Workspace"]').waitFor();
+      // no second full-width row under the head
+      expect({ width, rows: await page.locator('[data-k2-part="StatusRow"]').count() }).toEqual({ width, rows: 0 });
+      expect(await page.locator('[data-k2-part="Path"]').textContent()).toContain("IMG_20261121_0912_Espresso.jpg");
+      const inspector = page.getByRole("region", { name: "Bildwerkzeuge" });
+      expect(await inspector.textContent()).toContain("Bild 1 von 4");
+    } finally {
+      await page.close();
+    }
+  }
+}, 30_000);
+
+test("the photo editor's panels say each word once", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${server.url.href}?screen=image-open`);
+    const inspector = page.getByRole("region", { name: "Bildwerkzeuge" });
+    await inspector.waitFor();
+    for (const tab of ["Bearbeiten", "Markieren"]) {
+      await page.getByRole("button", { name: tab, exact: true }).click();
+      // the visible words of headings and buttons in the panel; icon buttons have their own names
+      const words = await inspector.evaluate((panel) =>
+        [...panel.querySelectorAll("h3, button")].map((element) => element.textContent?.trim() ?? "").filter(Boolean),
+      );
+      expect({ tab, duplicates: words.filter((word, index) => words.indexOf(word) !== index) }).toEqual({ tab, duplicates: [] });
+    }
+  } finally {
+    await page.close();
+  }
+}, 30_000);

@@ -67,7 +67,7 @@ describe("Image Processor crop drag", () => {
     const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image], initialCropActive: true }), dom.root);
     try {
       // The mount builds the preview; let it settle while the document still exists.
-      while (dom.root.querySelector(".ti-loader-2")) await new Promise((resolve) => setTimeout(resolve, 0));
+      while (dom.root.querySelector("[data-stage-busy]")) await new Promise((resolve) => setTimeout(resolve, 0));
       const handle = dom.root.querySelector<HTMLElement>('[data-crop-handle="nw"]');
       if (!handle) throw new Error(dom.root.innerHTML);
       const userSelect = () => document.documentElement.style.getPropertyValue("user-select");
@@ -96,10 +96,10 @@ describe("Image Processor crop drag", () => {
     const { ImageProcessorView } = await import("./ImageProcessor.island.tsx");
     const second: ImageEntry = { ...image, id: "image-2", name: "receipt.png" };
     const dispose = render(() => createComponent(ImageProcessorView, { initialImages: [image, second] }), dom.root);
-    // the status row above the stage names the open photo
-    const title = () => dom.root.querySelector('[data-k2-part="StatusRow"] .k2-status-lead')?.textContent;
+    // the last step of the head's path names the open photo
+    const title = () => dom.root.querySelector('[data-k2-part="Path"] [aria-current="page"]')?.textContent;
     try {
-      while (dom.root.querySelector(".ti-loader-2")) await settle();
+      while (dom.root.querySelector("[data-stage-busy]")) await settle();
       expect(title()).toBe("invoice.png");
       const more = dom.root.querySelector<HTMLButtonElement>('button[aria-label="More image actions"]');
       if (!more) throw new Error("The head has no more menu");
@@ -114,7 +114,7 @@ describe("Image Processor crop drag", () => {
       await waitFor(() => title() === "receipt.png");
       // Let the preview of the next image finish building while the document still exists.
       await settle();
-      while (dom.root.querySelector(".ti-loader-2")) await settle();
+      while (dom.root.querySelector("[data-stage-busy]")) await settle();
     } finally {
       dispose();
       dom.cleanup();
@@ -139,7 +139,7 @@ describe("Image Processor crop drag", () => {
         .click();
       await settle();
       expect(notices().some((each) => each.textContent?.includes("broken.png"))).toBe(false);
-      await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
+      await waitFor(() => !dom.root.querySelector("[data-stage-busy]"));
     } finally {
       dispose();
       for (const mock of mocks) mock.mockRestore();
@@ -164,7 +164,7 @@ describe("Image Processor crop drag", () => {
       cancel!.click();
       drop(dom.root, [new File([], "fresh.png", { type: "image/png" })]);
       expect(dom.root.querySelector('[data-k2-part="Notice"]')).toBeNull();
-      await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
+      await waitFor(() => !dom.root.querySelector("[data-stage-busy]"));
     } finally {
       dispose();
       for (const mock of mocks) mock.mockRestore();
@@ -230,7 +230,7 @@ describe("Image Processor crop drag", () => {
       preview.resolve(image.thumbUrl);
       await waitFor(() => started.length === 4);
       gates[3]!.resolve({ width: 1200, height: 800 });
-      await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
+      await waitFor(() => !dom.root.querySelector("[data-stage-busy]"));
       expect(
         Array.from(dom.root.querySelectorAll<HTMLButtonElement>('nav[aria-label="Images"] button[aria-label^="Open"]')).map(
           (button) => button.title,
@@ -239,7 +239,7 @@ describe("Image Processor crop drag", () => {
       drop(dom.root, [files[4]!]);
       expect(notice()).toBeNull();
       gates[4]!.resolve({ width: 1200, height: 800 });
-      await waitFor(() => !dom.root.querySelector(".ti-loader-2"));
+      await waitFor(() => !dom.root.querySelector("[data-stage-busy]"));
       expect(started).toEqual(files.map((file) => file.name));
     } finally {
       dispose();
