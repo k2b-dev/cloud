@@ -61,6 +61,15 @@ export default function BookHead(props: BookHeadProps) {
     return book().lastChanged({ name: last.displayName, when: dates.formatDateTimeRelative(updatedAt, { base, locale: locale() }) });
   };
 
+  // Who changed the note last, with their face, and when (rule: people are visible); the words are cut first.
+  // k2b-ui gap: Avatar.Stack in a narrow Bar paints its "+n" over the words after it (DP), so the head shows the one
+  // face of the last change instead of the authors' stack.
+  const changedBy = () => (
+    <>
+      <Show when={editor()}>{(one) => <Avatar {...person(one())} decorative />}</Show>
+      <Show when={lastChanged()}>{(line) => <Text type="meta">{line()}</Text>}</Show>
+    </>
+  );
   return (
     <Bar
       start={
@@ -80,15 +89,15 @@ export default function BookHead(props: BookHeadProps) {
               ]}
             />
           </Show>
-          {/* who changed the note last, with their face, and when (rule: people are visible); cut first when the head is
-              narrow. k2b-ui gap: Avatar.Stack in a narrow Bar paints its "+n" over the words after it (DP), so the head
-              shows the one face of the last change instead of the authors' stack. */}
-          <Show when={editor()}>{(one) => <Avatar {...person(one())} decorative />}</Show>
-          <Show when={lastChanged()}>{(line) => <Text type="meta">{line()}</Text>}</Show>
+          {/* a reader's head has room for who changed the note last, also on the phone */}
+          <Show when={!shown().canWrite}>{changedBy()}</Show>
         </>
       }
       end={
         <>
+          {/* a writer's head leads with the views, so who changed the note last stands at the end, where the phone lets
+              it give way to them */}
+          <Show when={shown().canWrite}>{changedBy()}</Show>
           <NoteViewMenu
             mode="read"
             fullWidth={props.fullWidth}
