@@ -1057,10 +1057,16 @@
     opacity: 1;
   }
 }
-/* a name that does not fit ends in "…"; its whole name shows on hover */
+/* a name that does not fit ends in "…", on the words themselves (the link that holds them); its whole name shows on
+   hover. The link's stretched press area belongs to the tile, so the link's own clip leaves it whole. */
 .k2-ui .k2-tiles[data-variant="media"] .k2-tile-title {
   padding: 0 2px;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-tiles[data-variant="media"] .k2-tile-title > .k2-row-open {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
 }

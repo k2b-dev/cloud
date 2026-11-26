@@ -228,12 +228,16 @@ test("a media tile's name that does not fit ends in '…' and keeps its whole na
       "grid",
       async (page) => {
         const titles = await page.evaluate(() =>
-          [...document.querySelectorAll<HTMLElement>(".k2-tiles[data-variant='media'] .k2-tile-title")].map((title) => ({
-            name: title.textContent ?? "",
-            cut: title.scrollWidth > title.clientWidth + 1,
-            ellipsis: getComputedStyle(title).textOverflow,
-            hover: title.getAttribute("title"),
-          })),
+          [...document.querySelectorAll<HTMLElement>(".k2-tiles[data-variant='media'] .k2-tile-title")].map((title) => {
+            // the element that holds the words is the one that cuts them, so the "…" stands on the words themselves
+            const words = title.querySelector<HTMLElement>(":scope > .k2-row-open") ?? title;
+            return {
+              name: title.textContent ?? "",
+              cut: words.scrollWidth > words.clientWidth + 1,
+              ellipsis: getComputedStyle(words).textOverflow,
+              hover: title.getAttribute("title"),
+            };
+          }),
         );
         // the recipe's long names do not fit a tile of the phone or of the desktop
         expect(titles.some((title) => title.cut)).toBe(true);
