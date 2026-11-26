@@ -9,7 +9,9 @@ import HomePage from "./home/HomePage";
 import { siteTheme } from "./site-config";
 import { html, config as ssrConfig } from "./ssr";
 import { linkedChartSnapshot, parseGroupRequest } from "./ui/chart-group-data";
-import { type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
+import RecipeScreen from "./ui/topics/RecipeScreen.island";
+import { isRecipeName, recipeLocale, resolveRecipeState } from "./ui/topics/recipes";
+import { DEMO_LOCALE, type V2ScreenName, V2ScreenPage, v2Screens } from "./ui/v2/V2DemoPage";
 import WorkspaceHostDemo from "./ui/WorkspaceHostDemo.island";
 import WorkspaceLevelsDemo from "./ui/WorkspaceLevelsDemo.island";
 
@@ -125,7 +127,8 @@ app.get("/en/ui/demo/workspace-host", (c) =>
 // The v2 demo screens on pages of their own, framed like the Cloud shell; the Fibel pages /en/ui/v2/<name> embed them.
 app.get("/en/ui/v2/screen/:name", (c) => {
   const name = c.req.param("name");
-  if (!(name in v2Screens)) return c.notFound();
+  // only the screens themselves: a name every object has (`toString`, `__proto__`) is none
+  if (!Object.hasOwn(v2Screens, name)) return c.notFound();
   const screen = v2Screens[name as V2ScreenName];
   return html(() => <V2ScreenPage name={name as V2ScreenName} search={new URL(c.req.url).search} />, {
     title: `${screen.title} — UI v2`,
@@ -133,6 +136,22 @@ app.get("/en/ui/v2/screen/:name", (c) => {
     path: `/en/ui/v2/screen/${name}`,
     theme: themeFromRequest(c.req.raw),
     styles: ["/assets/generated/cloud-ui.css"],
+    lang: DEMO_LOCALE,
+  });
+});
+// A recipe of the skill k2b-ui on a page of its own, live; Fibel's Example frames it. `?state=` picks one of its states.
+app.get("/en/ui/v2/recipe/:name", (c) => {
+  const name = c.req.param("name");
+  const state = c.req.query("state") || undefined;
+  if (!isRecipeName(name) || !resolveRecipeState(name, state)) return c.notFound();
+  return html(() => <RecipeScreen name={name} state={state} />, {
+    title: `Recipe ${name}${state ? ` · ${state}` : ""} — UI v2`,
+    description: `The recipe ${name} of the skill k2b-ui, built with @k2b/ui/v2.`,
+    path: `/en/ui/v2/recipe/${name}`,
+    theme: themeFromRequest(c.req.raw),
+    styles: ["/assets/generated/cloud-ui.css"],
+    // the library's own words (and imperative UI such as toasts) follow the language of the recipe's sample text
+    lang: recipeLocale(name),
   });
 });
 app.mount("/", fibelApp.fetch, { replaceRequest: false });

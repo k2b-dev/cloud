@@ -10,6 +10,7 @@ export {
   AdminAreaSaveStatusHead,
 } from "./AdminArea";
 export { default as AdminLayout } from "./AdminLayout";
+export { type AdminNavigationSection, adminNavigation } from "./admin-navigation-v2";
 export {
   hasDedicatedRuntimeRoute,
   type PanelProvider,

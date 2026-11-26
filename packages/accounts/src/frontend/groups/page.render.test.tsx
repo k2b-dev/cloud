@@ -84,7 +84,7 @@ const withGroups = async (total: number, run: (app: Hono<AuthContext & { Variabl
 
 test("a group opened from a paged, filtered list carries the list state only as list context", async () => {
   await withGroups(150, async (app) => {
-    const response = await app.request("/app/accounts/groups?search=fin&page=2&scope=managed", { headers: { "Accept-Language": "en" } });
+    const response = await app.request("/app/accounts/groups?q=fin&page=2&scope=managed", { headers: { "Accept-Language": "en" } });
     const html = await response.text();
     expect(response.status).toBe(200);
     // The Relations tab is a view of all groups, not a group detail.
@@ -104,9 +104,9 @@ test("a group opened from a paged, filtered list carries the list state only as 
 
 test("a list page past the end opens the last page with the same filters", async () => {
   await withGroups(150, async (app) => {
-    const response = await app.request("/app/accounts/groups?search=fin&page=5&scope=managed");
+    const response = await app.request("/app/accounts/groups?scope=managed&q=fin&page=5");
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe("/app/accounts/groups?search=fin&page=2&scope=managed");
+    expect(response.headers.get("location")).toBe("/app/accounts/groups?scope=managed&q=fin&page=2");
   });
   await withGroups(0, async (app) => {
     const response = await app.request("/app/accounts/groups?page=3");
@@ -115,9 +115,17 @@ test("a list page past the end opens the last page with the same filters", async
   });
 });
 
+test("an address from before v2 opens the same list in the v2 address, every parameter kept", async () => {
+  await withGroups(150, async (app) => {
+    const response = await app.request("/app/accounts/groups?search=fin&page=2&scope=managed&provider=ipa");
+    expect(response.status).toBe(302);
+    expect(response.headers.get("location")).toBe("/app/accounts/groups?scope=managed&provider=ipa&q=fin&page=2");
+  });
+});
+
 test("the requests badge shows the counted open requests", async () => {
   await withGroups(1, async (app) => {
     const html = await (await app.request("/app/accounts/groups", { headers: { "Accept-Language": "en" } })).text();
-    expect(html).toMatch(/href="\/app\/accounts\/requests"[\s\S]{0,600}?<span class="text-xs text-dimmed">3<\/span>/);
+    expect(html).toMatch(/href="\/app\/accounts\/requests"[\s\S]{0,400}?<span class="k2-ni-count">3<\/span>/);
   });
 });

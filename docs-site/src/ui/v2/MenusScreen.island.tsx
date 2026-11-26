@@ -1,8 +1,8 @@
-import { Bar, Button, Check, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, List, Menu, type MenuEntry, Nav, Pane, Popover, Row, Section, Tabs, useToast, Workspace } from "@k2b/ui/v2";
 import { createSignal, For } from "solid-js";
 
 // Menu, Popover and Toast of @k2b/ui/v2 on a list of orders in Grids: "Neu" opens a menu with a submenu of templates,
-// the view menu holds a choice of order and settings that toggle, each under its heading, the tab "Weitere" opens the views that have no tab of their own, the filter is a panel, the refresh button has a hint. Every row has its deeds
+// the view menu holds a choice of order and settings that toggle, each under its heading, the tab "Weitere" opens the views that have no tab of their own, the filter is a menu of two toggles, which stays on the phone, the refresh button has a hint. Every row has its deeds
 // on a right-click or a long press and behind its own "…"; deleting one answers with a toast and "Rückgängig".
 
 type Order = { id: string; title: string; customer: string };
@@ -104,18 +104,16 @@ export default function MenusScreen() {
               <Popover tip="Neu laden">
                 <Button variant="ghost" icon="refresh" label="Aktualisieren" />
               </Popover>
-              <Popover
+              {/* a filter the phone needs is a Menu with ticks: a Popover in the head leaves on the phone */}
+              <Menu
                 icon="filter"
-                title="Filter"
-                content={
-                  <>
-                    <Check name="mine" label="Nur meine" checked={mine()} onChange={setMine} />
-                    <Check name="urgent" label="Nur eilige" checked={urgent()} onChange={setUrgent} />
-                  </>
-                }
+                items={[
+                  { label: "Nur meine", checked: mine(), onClick: () => setMine(!mine()) },
+                  { label: "Nur eilige", checked: urgent(), onClick: () => setUrgent(!urgent()) },
+                ]}
               >
                 Filter
-              </Popover>
+              </Menu>
               <Menu label="Ansicht" icon="adjustments-horizontal" items={settings()} />
               <Menu
                 variant="primary"
