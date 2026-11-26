@@ -95,7 +95,7 @@ export const openShellPage = async (
   const tab = await context.newPage();
   const errors = pageErrors(tab);
   await tab.goto(`${SHELL_ORIGIN}${page.path}`);
-  if (page.extra) await tab.waitForSelector("body[data-ready]");
+  if (page.extra) await tab.waitForSelector("body[data-ready]", { state: "attached" });
   await tab.evaluate(() => window.document.fonts.ready);
   await settled(tab);
   return { context, tab, errors };

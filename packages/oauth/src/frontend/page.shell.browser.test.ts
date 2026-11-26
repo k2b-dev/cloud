@@ -135,7 +135,7 @@ let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
   assets = await loadShellAssets(
-    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css") }, import.meta.dir),
+    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../styles/app.css"), v2Page: true }, import.meta.dir),
   );
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });

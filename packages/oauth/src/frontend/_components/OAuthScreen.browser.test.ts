@@ -54,7 +54,7 @@ beforeAll(async () => {
   harness = await buildHarness();
   // the shell's own stylesheets, Plex fonts and icons, as the page loads them
   assets = await loadShellAssets(
-    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../../styles/app.css") }, import.meta.dir),
+    await cloudShellSheets({ id: "oauth", css: resolve(import.meta.dir, "../../styles/app.css"), v2Page: true }, import.meta.dir),
   );
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
