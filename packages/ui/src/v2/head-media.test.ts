@@ -14,7 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Preview } = await import("./marks");
 const { Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
-const { Input, Setting } = await import("./controls");
+const { Choice, Input, Select, Setting } = await import("./controls");
 const { checkSettingMessages } = await import("./setting-messages");
 const { LocaleProvider } = await import("../intl/locale");
 
@@ -116,4 +116,18 @@ test("a deep path folds on the server already: first place, the menu, the last t
   expect(markup).toMatch(/<b aria-current="page" title="Q1" data-short=""/);
   // up to four places nothing folds
   expect(html(Path, { label: "Ort", items: items.slice(-4) })).not.toContain("Übergeordnete Ebenen");
+});
+
+test("a setting with a deed shows it once, whatever control it names (merge guard: #4191 and #4226 once kept two)", () => {
+  const action = { label: "Auf Standard zurücksetzen", icon: "arrow-back-up" };
+  const controls = [
+    createComponent(Input, { type: "number", value: "8" }),
+    createComponent(Select, { options: ["8 Std.", "12 Std."], value: "8 Std." }),
+    createComponent(Choice, { name: "bleiben", options: ["Aus", "An"], value: "An" }),
+  ];
+  for (const children of controls) {
+    const markup = html(Setting, { label: "Angemeldet bleiben", action, children });
+    expect(markup.split("k2-field-action").length - 1).toBe(1);
+    expect(markup.split("Auf Standard zurücksetzen").length - 1).toBe(1);
+  }
 });
