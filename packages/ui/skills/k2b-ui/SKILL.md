@@ -68,6 +68,11 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
+| a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
+| an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
+| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
+| several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
+| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -151,6 +156,29 @@ that failed to load once would stand. A connection that retries on its own
 says so in the `StatusRow` without a button; something a person must fix is
 a `Notice` that names the deed.
 
+## How a screen looks: dense, clear, with faces
+
+The target (design pass 26.11.): dense, clear, space-efficient, tailored
+and appealing. Dense is not busy: show more, never the same thing twice.
+
+1. **Each thing carries its mark.** Every row, card and sidebar entry for a
+   thing leads with its `Mark` (colour and symbol, or thumbnail) or a
+   person's `Avatar`; without its own colour it takes its kind's, never grey.
+2. **The first line says what counts today.** `StatusRow` lead or `Cells`:
+   a statement with a number, chips with a tone for what lets one act. A
+   count such as "6 Einträge" is never the biggest text.
+3. **A state is colour, symbol and word.** A value with a limit gets a bar,
+   a short history a `Spark`.
+4. **Space structures, lines separate groups.** Group heads are text;
+   no box inside a card.
+5. **No empty half.** A detail only while something is open, a side column
+   only when it is full.
+6. **People stand beside what they did:** avatars, stacks, `Digest
+   activity` with the thing's mark.
+7. **Four type sizes** (12, 13, 14, 18), set by the primitives.
+8. **Sample data is dense and real**: colours, people, states; never
+   "Tabelle 1".
+
 ## Primitives in one line each
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
@@ -158,8 +186,8 @@ a `Notice` that names the deed.
   (`tone`), `Cells`, `Tiles`, `Canvas`.
 - **Structure:** `Section`, `Group`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
-  body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
-  `Steps`.
+  body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
+  `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
   `DateInput`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
