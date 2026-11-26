@@ -5,14 +5,10 @@ import { assistantApi } from "../../api/client";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import type { AssistantLiveHub } from "../assistant-live";
 import { assistantConversationHref } from "../assistant-navigation";
-import { lazyAction } from "../lazy-action";
 import { assistantMessages } from "../messages";
+import { openAssistantAllChatsDialog, openAssistantConversationEditor } from "../rare-dialogs";
 import { assistantCopyFor } from "../ui-copy";
 import { assistantV2Messages } from "./assistant-v2-messages";
-
-// The rare dialogs load when someone opens them; the chat's first frame does not need them.
-const editor = lazyAction(() => import("../AssistantConversationEditor"));
-const allChats = lazyAction(() => import("../AssistantAllChatsDialog"));
 
 export type AssistantChatDeedsOptions = {
   basePath: string;
@@ -41,13 +37,11 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
 
   const edit = async (conversation: AiConversation) => {
     const blocker = options.archiveBlocker(conversation);
-    const result = await editor(options.locale(), (module) =>
-      module.openAssistantConversationEditor(latest(conversation), {
-        archiveDisabled: blocker !== null,
-        queuedMessageCount: () => options.queuedMessageCount(conversation),
-        archiveDisabledReason: blocker === "waiting" ? t().decideBeforeArchive : blocker === "running" ? t().stopBeforeArchive : undefined,
-      }),
-    );
+    const result = await openAssistantConversationEditor(latest(conversation), {
+      archiveDisabled: blocker !== null,
+      queuedMessageCount: () => options.queuedMessageCount(conversation),
+      archiveDisabledReason: blocker === "waiting" ? t().decideBeforeArchive : blocker === "running" ? t().stopBeforeArchive : undefined,
+    });
     if (!result) return;
     if (result.action === "save") options.onUpdated(result.conversation);
     else options.onArchived(result.conversation);
@@ -70,17 +64,15 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
   };
 
   const openAll = () =>
-    void allChats(options.locale(), (module) =>
-      module.openAssistantAllChatsDialog(
-        async (conversation) => {
-          if (conversation.id === options.activeConversationId()) return "unchanged";
-          return (await options.openConversation(conversation.id)) ? "opened" : "stale";
-        },
-        options.live,
-        options.projects,
-        "all",
-        options.basePath,
-      ),
+    void openAssistantAllChatsDialog(
+      async (conversation) => {
+        if (conversation.id === options.activeConversationId()) return "unchanged";
+        return (await options.openConversation(conversation.id)) ? "opened" : "stale";
+      },
+      options.live,
+      options.projects,
+      "all",
+      options.basePath,
     ).catch(() => navigateTo(assistantConversationHref(options.basePath, options.activeConversationId())));
 
   return { edit, archive, openAll };

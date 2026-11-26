@@ -231,7 +231,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
         body:
           `<!doctype html><html lang="de" class="light"><head><meta charset="utf-8">` +
           `<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/harness.css"></head>` +
-          `<body class="k2b-ui" style="margin:0;${colors}"><div id="root"></div>` +
+          `<body class="k2b-ui app-accent-scope" data-k2b-primary="ai" style="margin:0;${colors}"><div id="root"></div>` +
           `<script>window.harness = ${JSON.stringify(harness).replace(/</g, "\\u003c")};</script>` +
           `<script type="module" src="/harness.js"></script></body></html>`,
       });
@@ -518,4 +518,24 @@ describe("Assistant on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  test("measure: elements on the first picture, usual and 1,000 chats", async () => {
+    for (const state of ["usual", "huge"] as const) {
+      const started = performance.now();
+      const { context, page, errors } = await open(wide, "/app/assistant", { state });
+      try {
+        const ready = Math.round(performance.now() - started);
+        const counts = await page.evaluate(() => ({
+          all: document.querySelectorAll("*").length,
+          nav: document.querySelectorAll('[data-k2-part="Nav"] *').length,
+          loading: document.querySelectorAll('[data-k2-part="Loading"]').length,
+        }));
+        console.log(`measure ${state}: ready ${ready} ms, elements ${counts.all}, in the sidebar ${counts.nav}, loading ${counts.loading}`);
+        expect(counts.loading).toBe(0);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 90_000);
 });

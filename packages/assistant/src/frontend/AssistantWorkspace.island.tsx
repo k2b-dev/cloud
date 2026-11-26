@@ -117,7 +117,6 @@ import { openAssistantCloudReference, resolveAssistantCloudResource } from "./As
 import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
 import AssistantPanelContext from "./AssistantPanelContext";
 import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
-import { openAssistantPrefsModal } from "./AssistantPrefsModals";
 import AssistantProjectView from "./AssistantProjectView";
 import type { AssistantQueueEntry } from "./AssistantQueue";
 import type { AssistantQueueHost } from "./AssistantQueueConnected";
@@ -198,6 +197,7 @@ import { assistantMessages } from "./messages";
 import { createAssistantNextMessage } from "./next-message";
 import { placeMessages } from "./place-messages";
 import { quotaText } from "./quota-messages";
+import { openAssistantPrefsModal } from "./rare-dialogs";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import AssistantFrameV2 from "./v2/AssistantFrameV2";

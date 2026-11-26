@@ -6,7 +6,6 @@ import { type MenuEntry, type NavGroup, type NavItem, type OnNavigate, type Stat
 import { type Accessor, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { assistantApi } from "../../api/client";
 import { assistantCommandMessages } from "../../commands";
-import { openAssistantPrefsModal } from "../AssistantPrefsModals";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import { assistantConversationHref, assistantProjectHref } from "../assistant-navigation";
 import { conversationPlace } from "../assistant-place";
@@ -14,6 +13,7 @@ import { assistantProjectSearchOptions, assistantProjectsSearchOptions, assistan
 import { type ConversationAgeGroup, groupConversationsByAge, isConversationBusy } from "../conversation-view";
 import { assistantMessages } from "../messages";
 import { placeMessages } from "../place-messages";
+import { openAssistantPrefsModal } from "../rare-dialogs";
 import { useAssistantText } from "../ui-copy";
 import { assistantV2Messages } from "./assistant-v2-messages";
 

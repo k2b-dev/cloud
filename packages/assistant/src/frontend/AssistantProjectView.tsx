@@ -41,12 +41,12 @@ import {
   openAssistantMarkdown,
   saveAssistantContextFile,
 } from "./AssistantContextContent";
-import { openAssistantConversationEditor } from "./AssistantConversationEditor";
 import { AssistantProjectSkills } from "./AssistantProjectSkills";
 import { type AssistantLiveInvalidation, matchesAssistantInvalidation, useAssistantLive } from "./assistant-live";
 import { assistantConversationHref } from "./assistant-navigation";
 import { assistantProjectSearchOptions } from "./assistant-search";
 import { lazyAction } from "./lazy-action";
+import { openAssistantConversationEditor } from "./rare-dialogs";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 
 type Props = {
