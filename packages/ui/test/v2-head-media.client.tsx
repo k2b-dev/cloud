@@ -27,6 +27,7 @@ declare global {
       | "states"
       | "canvas"
       | "cells"
+      | "cells-narrow"
       | "path"
       | "split-canvas"
       | "long"
@@ -59,8 +60,8 @@ render(
         <DeepPathScreen />
       ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" ? (
         <CanvasFillScreen split={which !== "canvas"} list={which === "split-list-canvas"} />
-      ) : which === "cells" ? (
-        <CellsScreen />
+      ) : which === "cells" || which === "cells-narrow" ? (
+        <CellsScreen narrow={which === "cells-narrow"} />
       ) : (
         <Folder
           closed={which === "closed"}

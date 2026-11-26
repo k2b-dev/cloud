@@ -5,7 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-head-media.client";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 
 // The second part of the design pass (26.11.), in the browser on the recipes that use it: a page head of two rows
 // (path and deeds, then the filter bar with count, order and display), a selection that takes the bar's place at the
@@ -25,6 +25,7 @@ type Case =
   | "states"
   | "canvas"
   | "cells"
+  | "cells-narrow"
   | "path"
   | "split-canvas"
   | "long"
@@ -598,6 +599,32 @@ test("the states of an entry stand whole under its lines and wrap; rows without 
     );
 });
 
+test("key numbers in a pane of about 600 px beside a side column stay whole: four stand two by two, three narrow ones take 14 px (review r5)", async () => {
+  await withPage("cells-narrow", async (page) => {
+    const found = await page.evaluate(() => ({
+      pane: Math.round(document.querySelector(".k2-cells")!.closest(".k2-pane")!.getBoundingClientRect().width),
+      cut: [...document.querySelectorAll<HTMLElement>(".k2-cell-value")]
+        .filter((value) => value.scrollWidth > value.clientWidth + 1)
+        .map((value) => value.textContent),
+      rows: [...document.querySelectorAll<HTMLElement>(".k2-cells")].map(
+        (cells) => new Set([...cells.children].map((cell) => Math.round(cell.getBoundingClientRect().top))).size,
+      ),
+      sizes: [...document.querySelectorAll<HTMLElement>(".k2-cells")].map((cells) => [
+        Math.round(cells.querySelector(".k2-cell")!.getBoundingClientRect().width),
+        getComputedStyle(cells.querySelector(".k2-cell-value")!).fontSize,
+      ]),
+    }));
+    expect(found.pane).toBeGreaterThan(560);
+    expect(found.pane).toBeLessThan(640);
+    expect(found.cut).toEqual([]);
+    // four cells stand two by two and keep the statement's 18 px; three of about 200 px take 14 px
+    const [four, three] = found.sizes;
+    expect(four![1]).toBe("18px");
+    expect(three![1]).toBe("14px");
+    expect(found.rows).toEqual([2, 1]);
+  });
+});
+
 test("key numbers stand two by two on the phone, a third alone across; big numbers and long labels stay whole", async () => {
   for (const width of [390, 1440])
     await withPage(
@@ -800,9 +827,19 @@ test("a home of sections: side by side where both get 360 px, a group head as te
           return {
             side: sections.length === 2 && Math.round(sections[0]!.top) === Math.round(sections[1]!.top),
             head: getComputedStyle(document.querySelector(".k2-gh")!).backgroundColor,
-            time:
-              Math.round(box(plain!.querySelector(":scope > .k2-row-time")!).top) ===
-              Math.round(box(plain!.querySelector(".k2-row-l1")!).top),
+            // the time stands on the line of the sentence: their first letters share one baseline (the bottoms of their
+            // text boxes, within the difference of 13 and 12 px type)
+            time: (() => {
+              const bottom = (element: Element) => {
+                const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+                const first = walker.nextNode()!;
+                const text = document.createRange();
+                text.setStart(first, 0);
+                text.setEnd(first, 1);
+                return text.getBoundingClientRect().bottom;
+              };
+              return Math.abs(bottom(plain!.querySelector(".k2-row-l1")!) - bottom(plain!.querySelector(":scope > .k2-row-time")!)) <= 1;
+            })(),
             under: placed!.querySelector(":scope > .k2-row-l2")?.textContent,
             foot: getComputedStyle(foot).borderBottomWidth,
           };
@@ -837,6 +874,22 @@ test("on the phone an open detail is the page: the list's filters and its floati
     );
 });
 
+test("describe reports a hidden primary action on the desktop even while a detail with its way back is open (review r5)", async () => {
+  // the head's main action hidden at this width: on the desktop the list and the detail both show, so nothing excuses it
+  await withPage("list", async (page) => {
+    await page.addStyleTag({ content: "[data-slot='head'] .k2-btn[data-variant='primary'] { display: none !important; }" });
+    expect(await describeV2Page(page, "[data-k2-workspace]")).toContain("the primary action is hidden at this width");
+  });
+  // on the phone the open detail is the page: the list's floating main action gives way to the detail's deeds
+  await withPage(
+    "list",
+    async (page) => {
+      expect(await describeV2Page(page, "[data-k2-workspace]")).not.toContain("the primary action is hidden at this width");
+    },
+    390,
+  );
+});
+
 test("a setting's name and hint stand together beside the middle of its value, what it was under the value", async () => {
   await withPage("settings", async (page) => {
     const found = await page.evaluate(() =>
@@ -849,12 +902,15 @@ test("a setting's name and hint stand together beside the middle of its value, w
         const words = (label.top + (hint ?? label).bottom) / 2;
         return {
           name: setting.querySelector(".k2-field-label")!.textContent,
+          // the hint follows its name right under it, as one block
+          joined: hint ? Math.abs(hint.top - label.bottom) <= 2 : true,
           middle: Math.abs(words - (control.top + control.bottom) / 2) <= 2,
           was: was ? was.top >= control.bottom : true,
         };
       }),
     );
-    expect(found.filter((setting) => !setting.middle || !setting.was)).toEqual([]);
+    expect(found.filter((setting) => !setting.joined || !setting.middle || !setting.was)).toEqual([]);
+    expect(found.length).toBeGreaterThan(3);
   });
 });
 

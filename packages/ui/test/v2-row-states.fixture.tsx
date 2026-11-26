@@ -67,8 +67,9 @@ export const RowStatesScreen = () => (
 
 // Key numbers in their worst case (lane C, gateway-ops #4205): long labels, big numbers, an amount chip, a trend, and
 // four cells beside three.
-export const CellsScreen = () => (
-  <Workspace>
+// `narrow`: the same cells in a pane of about 600 px beside a wide side column, on the desktop (review r5).
+export const CellsScreen = (props: { narrow?: boolean }) => {
+  const cells = () => (
     <Pane label="Übersicht">
       <Cells>
         <Cells.Cell
@@ -99,8 +100,22 @@ export const CellsScreen = () => (
         <Cells.Cell icon="clock" label="Letzte Sicherung" value={<Chip status="ok">heute 03:00</Chip>} meta="nächste 03:00" />
       </Cells>
     </Pane>
-  </Workspace>
-);
+  );
+  return (
+    <Workspace>
+      {props.narrow ? (
+        <Pane.Split>
+          {cells()}
+          <Pane label="Notizen" width={{ min: 320, default: 820 }}>
+            <Text>Notizen zur Übersicht</Text>
+          </Pane>
+        </Pane.Split>
+      ) : (
+        cells()
+      )}
+    </Workspace>
+  );
+};
 
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
 // `list`: a long list stands in the split too, one under the other on the phone; it must not squeeze the drawing.

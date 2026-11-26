@@ -628,7 +628,7 @@
   flex: none;
 }
 /* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
-.k2-ui .k2-scroll > .k2-bar:last-child {
+.k2-ui .k2-scroll > .k2-bar[data-k2-part="Bar"]:last-child {
   border-bottom: 0;
 }
 .k2-ui .k2-bar-start,
@@ -729,6 +729,8 @@
   min-width: 0;
 }
 .k2-ui .k2-cell {
+  /* a cell measures itself: its value's type follows its own width, wherever the cells stand */
+  container: k2-cell / inline-size;
   padding: 12px var(--k2-edge);
   min-width: 0;
   display: grid;
@@ -739,6 +741,49 @@
 }
 .k2-ui .k2-cell + .k2-cell {
   border-left: var(--k2-hairline);
+}
+/* A cell under 220 px (half a phone, four cells in a pane of 600 px) leaves no room for a big number in 18 px
+   ("12.345.678"): its value takes the cell's whole width under the label, stands in 14 px, still in 600, and breaks
+   between its words (a chip too) instead of being cut. */
+@container k2-cell (max-width: 219.98px) {
+  .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
+    grid-column: 1 / -1;
+  }
+  .k2-ui .k2-cell > .k2-cell-value {
+    font: var(--k2-t-body);
+    font-weight: 600;
+    white-space: normal;
+  }
+  .k2-ui .k2-cell > .k2-cell-value > .k2-chip {
+    height: auto;
+    min-height: 24px;
+    max-width: 100%;
+    white-space: normal;
+  }
+  /* the history of the value goes under it where the number takes the line */
+  .k2-ui .k2-cell > .k2-cell-value:has(> .k2-spark) {
+    flex-wrap: wrap;
+  }
+}
+/* Four key numbers or more stand two by two where a row of them would give each less than 220 px (a pane under
+   880 px: beside a side column, a detail, a tablet), so a big number keeps its 18 px; the phone does so for every count. */
+@container k2-pane (max-width: 879.98px) {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell + .k2-cell {
+    border-left: 0;
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(even) {
+    border-left: var(--k2-hairline);
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(n + 3) {
+    border-top: var(--k2-hairline);
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell:nth-child(odd):last-child {
+    grid-column: 1 / -1;
+  }
 }
 .k2-ui .k2-cell > .k2-icon:first-child {
   color: var(--k2-c, var(--k2-subtle));
@@ -3484,6 +3529,10 @@
 .k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l1 {
   display: block;
 }
+/* without a place the time stands on the sentence's first line, on its baseline */
+.k2-ui .k2-digest > .k2-row[data-activity] > :is(.k2-row-l1, .k2-row-time) {
+  align-self: baseline;
+}
 .k2-ui .k2-digest > .k2-row[data-activity] > .k2-row-l2 {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
@@ -4078,9 +4127,10 @@
     display: none;
   }
   /* the filters and counts of the list above the split belong to the list: they leave with it while a detail is the
-     page, and so does the floating main action of the list (the detail has its own deeds) */
+     page, with its way back or without, and so does the floating main action of the list (the detail has its own
+     deeds) */
   .k2-ui .k2-pane:has(> .k2-scroll > .k2-split > .k2-pane[data-detail]) > [data-slot="status"],
-  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail] > [data-k2-part="Back"]) .k2-fab {
+  .k2-ui .k2-ws:has(.k2-split > .k2-pane[data-detail]) .k2-fab {
     display: none;
   }
   .k2-ui .k2-pane-back {
@@ -4378,8 +4428,8 @@
   .k2-ui .k2-cell > :is(.k2-cell-value, .k2-cell-meta) {
     grid-column: 1 / -1;
   }
-  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; in half a phone a
-     statement of 18 px leaves no room for a big number ("12.345.678"), so it stands in 14 px, still in 600 */
+  /* a value longer than its half cell breaks between its words, a chip too, instead of being cut; all values of the
+     block stand in 14 px, also the one that spans the row alone, so the block keeps one size */
   .k2-ui .k2-cell > .k2-cell-value {
     white-space: normal;
     font: var(--k2-t-body);

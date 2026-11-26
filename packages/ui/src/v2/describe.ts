@@ -520,7 +520,11 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   if (
     options.layout &&
     !root.querySelector(".k2-bar[data-selecting]") &&
-    !root.querySelector(".k2-split > .k2-pane[data-detail] > [data-k2-part='Back']") &&
+    // a detail is the page where it shows and the list beside it does not (the phone); on the desktop both show
+    ![...root.querySelectorAll(".k2-split > .k2-pane[data-detail]")].some(
+      (detail) =>
+        !hidden(detail) && [...detail.parentElement!.children].some((pane) => pane !== detail && pane.matches(".k2-pane") && hidden(pane)),
+    ) &&
     !bySurface.get(root)!.length &&
     allPrimaries.some((button) => surfaceOf(button) === root && !button.classList.contains("k2-fab"))
   )
