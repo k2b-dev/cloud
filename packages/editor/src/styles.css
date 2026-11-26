@@ -24,9 +24,25 @@
   padding: 0;
   border-radius: var(--k2-r-control);
 }
-.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button .ti {
+/* one icon size for every control of the bar, a labelled control of the host included */
+.k2-ui [data-k2b-editor-toolbar] .ti {
   font-size: 16px;
   line-height: 1;
+}
+/* the row of actions scrolls sideways; its box grows by the room of the focus ring on every side, its place stays */
+.k2-ui [data-k2b-editor-toolbar] [role="toolbar"] {
+  margin: -4px;
+  padding: 4px;
+  scroll-padding-inline: 4px;
+}
+/* a neutral tint under the pointer, the tint of selection for a format that is on (as MarkdownEditor in v2) */
+.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button:hover:not(:disabled, [aria-disabled="true"], [aria-pressed="true"]) {
+  color: var(--k2-text);
+  background: var(--k2-n100);
+}
+.k2-ui [data-k2b-editor-toolbar] .k2b-icon-button[aria-pressed="true"] {
+  color: var(--k2-blue-ink);
+  background: var(--k2-blue-tint);
 }
 .k2-ui [data-k2b-editor-toolbar] .k2b-icon-button:focus-visible {
   outline: none;

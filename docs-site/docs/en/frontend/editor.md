@@ -129,6 +129,10 @@ Put the editor in a `Canvas` and use `variant="embedded"` on
 `MarkdownEditor`, so it draws no frame beside the lines of the pane. Give the
 text column of `<Editor>` the edge with `padding-inline: var(--k2-edge)`.
 
+This needs the v2 stylesheet of `@k2b/ui` (`@k2b/ui/v2.css`), which Cloud's
+stylesheet loads. Inside `.k2-ui` the toolbar's height, padding and button size
+come from v2, so a host's classes on the toolbar cannot change them.
+
 The bubble menu, the slash menu, and the toolbar's menus still open with the
 v1 look, because they open outside the v2 scope.
 

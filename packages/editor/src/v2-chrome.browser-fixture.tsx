@@ -1,4 +1,4 @@
-import { LocaleProvider, MarkdownEditor } from "@k2b/ui";
+import { Button, LocaleProvider, MarkdownEditor } from "@k2b/ui";
 import { Bar, Canvas, Pane, Text, Workspace } from "@k2b/ui/v2";
 import { render } from "solid-js/web";
 import { createEditor, Editor, markdownActions, Toolbar } from "./index";
@@ -16,6 +16,8 @@ Familie Oswald, Lindenweg 4
 - **Lieferung** in KW 51`;
 
 const root = document.getElementById("root");
+// `data-shell` on the root: the page is the content of a Cloud shell, which is the v2 scope; the editors fill it
+const inShell = root?.hasAttribute("data-shell") ?? false;
 if (root)
   render(() => {
     const editor = createEditor();
@@ -23,7 +25,10 @@ if (root)
     return (
       <LocaleProvider locale="de">
         {/* `?v1` renders the same page without the v2 scope: the editors as a v1 page shows them */}
-        <div class={location.search.includes("v1") ? undefined : "k2-ui"} style={{ position: "fixed", inset: "0", display: "flex" }}>
+        <div
+          class={inShell || location.search.includes("v1") ? undefined : "k2-ui"}
+          style={inShell ? { display: "flex", flex: "1", "min-height": "0" } : { position: "fixed", inset: "0", display: "flex" }}
+        >
           <Workspace head={<Bar start={<Text type="body">Angebot Einbauschrank Flur.md</Text>} />}>
             <Pane.Split>
               <Pane label="Datei" width={{ min: 320, default: 640 }}>
@@ -50,6 +55,13 @@ if (root)
                         { items: [actions.bulletList, actions.numberedList, actions.quote] },
                         { items: [actions.link, actions.table] },
                       ]}
+                      end={
+                        // a labelled control of the host, as Notebooks puts its comments there
+                        <Button size="xs" variant="ghost" aria-label="2 Kommentare">
+                          <i class="ti ti-message-circle" aria-hidden="true" />
+                          <span>2</span>
+                        </Button>
+                      }
                     />
                     {/* the host sets the text on the v2 edge, as a note column does */}
                     <div style={{ padding: "0 var(--k2-edge)", flex: "1", "min-height": "0" }}>

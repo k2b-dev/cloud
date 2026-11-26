@@ -90,7 +90,9 @@ const chrome = (page: Page, which: "ui" | "shared") =>
     if (!host || !canvas || !bar) throw new Error(`no toolbar for ${kind}`);
     const edge = canvas.getBoundingClientRect().left;
     const box = bar.getBoundingClientRect();
-    const buttons = [...bar.querySelectorAll("button")].filter((button) => button.getClientRects().length > 0);
+    const buttons = [...bar.querySelectorAll("button")].filter(
+      (button) => button.getClientRects().length > 0 && !button.matches(".k2b-button:not(.k2b-icon-button)"),
+    );
     return {
       bar: { height: Math.round(box.height), left: Math.round(box.left - edge) },
       buttons: buttons.map((button) => {
@@ -116,7 +118,8 @@ for (const width of [1440, 390])
         await page.screenshot({ path: resolve(pictures, `editor-chrome-${width}.png`) });
       }
       for (const kind of ["ui", "shared"] as const) {
-        if (width < 768 && kind === "ui") continue; // on the phone the split shows the first pane only
+        // on the phone the split stacks its panes: the second one is below the window
+        if (width < 768 && kind === "shared") continue;
         const found = await chrome(page, kind);
         expect({ kind, height: found.bar.height }).toEqual({ kind, height: 40 });
         for (const button of found.buttons)
@@ -192,6 +195,153 @@ test("nothing in the toolbars moves once the page stands: a hover and a press ke
     await button.click();
     await settled(page);
     expect(await boxes()).toEqual(before);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("every symbol in both toolbars has the v2 icon size, also on a labelled control of the host", async () => {
+  const page = await open(1440);
+  try {
+    const sizes = await page.evaluate(() =>
+      [...document.querySelectorAll(".k2b-markdown-editor__toolbar .ti, [data-k2b-editor-toolbar] .ti")]
+        .filter((icon) => icon.getClientRects().length > 0)
+        .map((icon) => `${icon.closest("button")?.getAttribute("aria-label")}: ${getComputedStyle(icon).fontSize}`),
+    );
+    expect(sizes.length).toBeGreaterThan(15);
+    expect(sizes.filter((size) => !size.endsWith(": 16px"))).toEqual([]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+for (const width of [1440, 390])
+  test(`at ${width} px the text and the line of counts of MarkdownEditor stand on the v2 text edge, the counts in the meta role`, async () => {
+    const page = await open(width);
+    try {
+      const found = await page.evaluate(() => {
+        const canvas = document.querySelector('[data-editor="ui"]')?.closest(".k2-canvas");
+        const input = document.querySelector('[data-editor="ui"] .k2b-markdown-editor__input');
+        const stats = document.querySelector('[data-editor="ui"] .k2b-markdown-editor__stats');
+        if (!canvas || !input || !stats) throw new Error("no editor");
+        const edge = canvas.getBoundingClientRect().left;
+        const text = (element: Element) =>
+          Math.round(element.getBoundingClientRect().left - edge + Number.parseFloat(getComputedStyle(element).paddingLeft));
+        const style = getComputedStyle(stats);
+        return { input: text(input), stats: text(stats), size: style.fontSize, line: style.lineHeight };
+      });
+      const edge = width < 768 ? 16 : 20;
+      expect(found).toEqual({ input: edge, stats: edge, size: "12px", line: "16px" });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+/** Walks the focused toolbar with the arrow keys; for each button, where its 3 px ring is cut or covered. */
+const ringsCut = async (page: Page, bar: string) => {
+  await page.locator(`${bar} button`).first().focus();
+  // the ring shows for keyboard focus: one arrow there and back starts the walk from the keyboard
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowLeft");
+  const cut: string[] = [];
+  const seen = new Set<string>();
+  for (let step = 0; step < 30; step++) {
+    // a focused tool may scroll the bar: read once it stands
+    await settled(page);
+    const found = await page.evaluate(() => {
+      const button = document.activeElement;
+      if (!(button instanceof HTMLElement)) return { name: "", cut: "nothing focused" };
+      const name = button.getAttribute("aria-label") ?? "";
+      if (!getComputedStyle(button).boxShadow.includes("3px")) return { name, cut: "no 3 px ring" };
+      const box = button.getBoundingClientRect();
+      const ring = { left: box.left - 3, top: box.top - 3, right: box.right + 3, bottom: box.bottom + 3 };
+      for (let clip = button.parentElement; clip && !clip.classList.contains("k2-canvas"); clip = clip.parentElement) {
+        const style = getComputedStyle(clip);
+        if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+        const outer = clip.getBoundingClientRect();
+        const left = outer.left + clip.clientLeft;
+        const top = outer.top + clip.clientTop;
+        if (
+          ring.left < left - 0.5 ||
+          ring.top < top - 0.5 ||
+          ring.right > left + clip.clientWidth + 0.5 ||
+          ring.bottom > top + clip.clientHeight + 0.5
+        )
+          return { name, cut: `cut by ${clip.className || clip.tagName}` };
+      }
+      // nothing stands over it, such as the controls that stay at the end of a scrolled bar
+      const over = document.elementFromPoint((box.left + box.right) / 2, (box.top + box.bottom) / 2);
+      if (!over || !button.contains(over)) return { name, cut: "covered" };
+      return { name, cut: "" };
+    });
+    if (seen.has(found.name)) break;
+    seen.add(found.name);
+    if (found.cut) cut.push(`${found.name}: ${found.cut}`);
+    await page.keyboard.press("ArrowRight");
+  }
+  return { cut, walked: seen.size };
+};
+
+for (const width of [1440, 390])
+  test(`at ${width} px the focus ring of every toolbar button shows whole, nothing cuts or covers it`, async () => {
+    const page = await open(width);
+    try {
+      const bars =
+        width < 768
+          ? ['[data-editor="ui"] [role="toolbar"]']
+          : ['[data-editor="ui"] [role="toolbar"]', "[data-k2b-editor-toolbar] [role=toolbar]"];
+      for (const bar of bars) {
+        const walk = await ringsCut(page, bar);
+        expect(walk.walked).toBeGreaterThan(7);
+        expect({ bar, cut: walk.cut }).toEqual({ bar, cut: [] });
+      }
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+test("both toolbars show a format that is on, and a button under the pointer, the same way, in the v2 tint of selection", async () => {
+  const page = await open(1440);
+  try {
+    // the caret in the bold word of each editor turns "Fett" on in its toolbar
+    await page.locator('[data-editor="ui"] .k2b-markdown-editor__input').evaluate((input) => {
+      if (!(input instanceof HTMLTextAreaElement)) return;
+      const at = input.value.indexOf("Lieferung") + 3;
+      input.focus();
+      input.setSelectionRange(at, at);
+      input.dispatchEvent(new Event("select", { bubbles: true }));
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    await page.locator('[data-editor="shared"] .cm-content').getByText("Lieferung").click();
+    await page.waitForFunction(() => document.querySelectorAll('[aria-pressed="true"][aria-label^="Fett"]').length === 2);
+    // the toolbars ease their colours (150 ms): read them once no transition runs (the caret blinks on, an animation)
+    const eased = () => page.waitForFunction(() => document.getAnimations().every((motion) => !(motion instanceof CSSTransition)));
+    await eased();
+    const look = (selector: string) =>
+      page.locator(selector).evaluate((button) => {
+        const style = getComputedStyle(button);
+        return `${style.color} on ${style.backgroundColor}`;
+      });
+    const tint = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.cssText = "color: var(--k2-blue-ink); background: var(--k2-blue-tint)";
+      document.querySelector(".k2-ui")?.append(probe);
+      const style = getComputedStyle(probe);
+      const found = `${style.color} on ${style.backgroundColor}`;
+      probe.remove();
+      return found;
+    });
+    expect(await look('[data-editor="ui"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    expect(await look('[data-editor="shared"] [aria-pressed="true"][aria-label^="Fett"]')).toBe(tint);
+    // a button under the pointer, in each toolbar
+    const hovered: string[] = [];
+    for (const editor of ["ui", "shared"]) {
+      const button = page.locator(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`);
+      await hoverInPlace(button);
+      await eased();
+      hovered.push(await look(`[data-editor="${editor}"] button[aria-label^="Kursiv"]`));
+    }
+    expect(hovered[0]).toBe(hovered[1]);
   } finally {
     await page.close();
   }

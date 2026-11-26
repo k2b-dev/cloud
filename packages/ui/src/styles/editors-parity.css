@@ -768,12 +768,30 @@
    Below `.k2-ui` the editor's chrome speaks v2, its behaviour unchanged: a toolbar of the v2 bar height (40 px) with
    icon buttons of the v2 hit area (28 px) and icon size (16 px), the first glyph on the v2 text edge (the button's
    6 px inset pulled out), the text on the same edge, and the count line in the meta role. A v1 page renders as before. */
+/* One line at every width: the tools scroll sideways where the line is too short (a phone), the save and close at its
+   end stay in place over them. Its padding is the room of the focus ring, and a focused tool scrolls clear of that end. */
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar {
   min-height: var(--k2-h-bar);
+  flex-wrap: nowrap;
   gap: 2px;
   padding: 6px calc(var(--k2-edge) - 6px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  scroll-padding-inline: 6px calc(2 * var(--k2-h-control-small) + 2px + 12px);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__toolbar::-webkit-scrollbar {
+  display: none;
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__trailing {
+  position: sticky;
+  right: 0;
+  flex: none;
+  gap: 2px;
+  padding-left: 4px;
+  background: var(--k2-surface);
 }
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool {
+  flex: none;
   width: var(--k2-h-control-small);
   height: var(--k2-h-control-small);
   border-radius: var(--k2-r-control);
@@ -782,6 +800,16 @@
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool > .ti {
   font-size: 16px;
   line-height: 1;
+}
+/* the same states as the toolbar of `@k2b/editor` in v2: a neutral tint under the pointer, the tint of selection for a
+   format that is on */
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:hover:not(:disabled, [aria-pressed="true"]) {
+  color: var(--k2-text);
+  background: var(--k2-n100);
+}
+.k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool[aria-pressed="true"] {
+  color: var(--k2-blue-ink);
+  background: var(--k2-blue-tint);
 }
 .k2-ui .k2b-markdown-editor .k2b-markdown-editor__tool:focus-visible {
   outline: none;
