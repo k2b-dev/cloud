@@ -4,7 +4,7 @@ import { Button, Check, Dialog, Icon, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
-import ApprovalFeedback from "./Feedback";
+import ApprovalFeedback from "./FeedbackV2";
 import { appApprovalMessages } from "./messages";
 
 /** A revocation waiting for approval, kept for this tab so a reload continues it. */

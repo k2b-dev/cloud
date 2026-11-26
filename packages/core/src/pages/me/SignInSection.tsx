@@ -4,7 +4,6 @@ import { normalizeRedirectTo } from "@k2b/cloud/shared";
 import { useLocale } from "@k2b/ui";
 import { Button, confirm, Dialog, Field, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
-import { PasswordInput, PasswordSetupFields } from "../auth/PasswordSetupFields";
 import {
   isSignOutOthersRetry,
   retrySignOutOthers,
@@ -14,6 +13,7 @@ import {
 } from "../sign-out-others";
 import { useAccountMessages } from "./AccountWorkspace";
 import { signOutCurrentSession } from "./account-session";
+import { PasswordInput, PasswordSetupFields } from "./PasswordFields";
 
 type Outcome = "signed-out" | "sign-in-again" | "sign-out-failed";
 

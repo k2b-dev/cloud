@@ -10,7 +10,6 @@ import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 import { FREEIPA_APP_SIGN_IN_COOKIE } from "../app-approval/availability";
-import { authMessages } from "./messages";
 
 const root = mkdtempSync(join(tmpdir(), "core-login-page-tests-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -45,31 +44,15 @@ const page = async (query = "", cookie = "") => {
   const raw = await response.text();
   const decode = (text: string) => text.replaceAll("&quot;", '"').replaceAll("&amp;", "&");
   const html = decode(raw);
-  // The sign-in page is one island on v2; its props say which form it opens and which way leads to the other one.
-  const island = /data-props="([^"]*)" data-file="LoginScreen\.island\.tsx"/.exec(raw);
-  const props = (island ? fromJSON(JSON.parse(decode(island[1]!))) : undefined) as
-    | {
-        form: { kind: string; category?: string; fallback?: { href: string; label: string } };
-        forget: boolean;
-        signedOutIdle: boolean;
-        others: { appInstead: string | null } | null;
-      }
-    | undefined;
-  const names: Record<string, string> = { freeipa: "LoginForm", app: "AppLoginForm", email: "GuestLoginForm", admin: "AdminLoginForm" };
-  const t = authMessages.resolve([cookie.includes("cloud.locale=de") ? "de" : "en"]).t;
-  const appInstead = props?.others?.appInstead;
+  const form = /data-props="([^"]*)" data-file="(\w*LoginForm)\.island\.tsx"/.exec(raw);
+  const props: unknown = form ? fromJSON(JSON.parse(decode(form[1]!))) : undefined;
   return {
     html,
-    form: props ? names[props.form.kind] : undefined,
-    category: props?.form.category,
-    forget: props?.forget,
-    signedOutIdle: props?.signedOutIdle,
+    form: form?.[2],
+    category: props && typeof props === "object" && "category" in props ? props.category : undefined,
+    forget: props && typeof props === "object" && "forget" in props ? props.forget : undefined,
     /** The plain link to the other credential: [target, label]. */
-    alternative: props?.form.fallback
-      ? [props.form.fallback.href, props.form.fallback.label]
-      : appInstead
-        ? [appInstead, t.useAppInstead]
-        : undefined,
+    alternative: /<a href="([^"]+)" class="k2b-button auth-login-alternative[^>]*><span[^>]*>([^<]+)</.exec(html)?.slice(1),
   };
 };
 
@@ -94,20 +77,6 @@ test("FreeIPA opens with the password and the name from the link, one link away 
   const back = new URL(app.alternative![0]!, "https://cloud.example.test").search;
   expect((await page(back)).form).toBe("LoginForm");
   expect((await page(back, usedApp)).form).toBe("LoginForm");
-});
-
-test("a password manager finds the sign-in fields in the server's markup, before any script runs", async () => {
-  const password = await page("?method=ipa");
-  expect(password.form).toBe("LoginForm");
-  expect(password.html).toMatch(/<input[^>]*autocomplete="username"/);
-  expect(password.html).toMatch(
-    /<input[^>]*type="password"[^>]*autocomplete="current-password"|<input[^>]*autocomplete="current-password"[^>]*type="password"/,
-  );
-  // On a shared workstation the browser remembers nothing.
-  spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
-  const shared = await page("?method=ipa");
-  expect(shared.html).not.toContain('autocomplete="username"');
-  expect(shared.html).toMatch(/<input[^>]*autocomplete="off"/);
 });
 
 test("a browser that last signed in to FreeIPA with the app opens FreeIPA with the app", async () => {
@@ -167,9 +136,9 @@ test("after an idle sign-out the page says why and finishes the sign-out", async
   spies.push(spyOn(auth.session, "isSharedWorkstation").mockReturnValue(true));
   const signedOut = await page("?signedOut=idle");
   expect(signedOut.html).toContain("You were signed out because nobody worked at this shared workstation for a while.");
-  expect(signedOut.signedOutIdle).toBe(true);
+  expect(signedOut.html).toContain('data-file="IdleSignOutFinish.island.tsx"');
   const regular = await page("");
-  expect(regular.signedOutIdle).toBe(false);
+  expect(regular.html).not.toContain("IdleSignOutFinish");
   expect((await page("?signedOut=idle", "cloud.locale=de")).html).toContain("Du wurdest abgemeldet");
 });
 

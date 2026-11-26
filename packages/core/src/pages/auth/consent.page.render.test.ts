@@ -47,7 +47,6 @@ beforeEach(() => {
     spyOn(services.legalConsent, "pending").mockResolvedValue({ user: pendingUser, sid: "consent-session", authEpoch: 0 }),
     spyOn(services.legalConsent, "documents").mockResolvedValue({ documents: [...documents], version }),
     spyOn(cloud, "listLegalLinks").mockResolvedValue([]),
-    spyOn(services.coreSettings, "get").mockResolvedValue("Cloud" as never),
   );
 });
 afterEach(() => {

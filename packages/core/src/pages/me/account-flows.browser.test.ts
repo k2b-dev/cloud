@@ -7,7 +7,7 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page, Request } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 
-// The deeds of the account and sign-in screens on v2, end to end in a browser: the screens render from frozen fixtures
+// The deeds of the account screens on v2, end to end in a browser: the screens render from frozen fixtures
 // and the test answers the API itself, so every request's address and payload is checked. Only presentation changed
 // in v2; these tests pin that the requests, the sign-in confirmation and the redirects are still the same.
 const ui = resolve(import.meta.dir, "../../../../ui");
@@ -290,62 +290,6 @@ describe("account deeds on v2", () => {
       await picker.waitFor({ state: "detached" });
       const body = seen.find((entry) => entry.method === "PATCH")?.body as { doNotDisturbUntil: string };
       expect(body.doNotDisturbUntil).toBe("2026-11-27T13:30:00.000Z");
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
-});
-
-describe("sign-in deeds on v2", () => {
-  test("FreeIPA sends username and password to the same endpoint and goes on to the page it came for", async () => {
-    const { context, tab, errors, seen, navigations } = await open("login", "/auth/login?redirectTo=%2Fapp%2Ffiles", {
-      "POST /api/auth/login": [{ json: { ok: true } }],
-    });
-    try {
-      expect(await tab.locator('input[autocomplete="username"]').count()).toBe(1);
-      expect(await tab.locator('input[autocomplete="current-password"]').count()).toBe(1);
-      await tab.locator('input[autocomplete="username"]').fill("jbeispiel");
-      await tab.locator('input[autocomplete="current-password"]').fill("secret-1");
-      // Enter in the password field sends, as a form did
-      await tab.locator('input[autocomplete="current-password"]').press("Enter");
-      await eventually(() => navigations.length === 1);
-      expect(seen[0]).toEqual({ method: "POST", path: "/api/auth/login", body: { username: "jbeispiel", password: "secret-1" } });
-      // as before v2, a sign-in goes on through the terms check to the page it came for
-      expect(navigations[0]).toBe("/auth/continue?redirectTo=%2Fapp%2Ffiles");
-      expect(errors).toEqual([]);
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
-
-  test("an expired FreeIPA password continues on the new-password page with the account and the way on", async () => {
-    const { context, tab, navigations } = await open("login", "/auth/login", {
-      "POST /api/auth/login": [{ status: 401, json: { passwordExpired: true, ipaUid: "jbeispiel" } }],
-    });
-    try {
-      await tab.locator('input[autocomplete="username"]').fill("jbeispiel");
-      await tab.locator('input[autocomplete="current-password"]').fill("old");
-      await tab.getByRole("button", { name: "Sign in with FreeIPA" }).click();
-      await eventually(() => navigations.length === 1);
-      expect(navigations[0]).toBe("/auth/new-password?ipa-uid=jbeispiel&redirectTo=%2Fapp%2Ffiles");
-    } finally {
-      await context.close();
-    }
-  }, 30_000);
-
-  test("consent sends the shown version, and continues only once it is accepted", async () => {
-    const { context, tab, errors, seen, navigations } = await open("consent", "/auth/continue", {
-      "POST /api/auth/legal-consent": [{ json: { ok: true } }],
-    });
-    try {
-      const accept = tab.getByRole("button", { name: "Accept and continue" });
-      expect(await accept.isDisabled()).toBe(true);
-      await tab.getByRole("checkbox").check();
-      await accept.click();
-      await eventually(() => navigations.length === 1);
-      expect(seen[0]).toEqual({ method: "POST", path: "/api/auth/legal-consent", body: { accepted: true, version: "v-7" } });
-      expect(navigations[0]).toBe("/app/files");
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -1,8 +1,7 @@
 import { type AccountCategory, AppLoginStartResultSchema, AppLoginStatusSchema } from "@k2b/cloud/contracts";
 import { cookies } from "@k2b/stdlib/browser";
-import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Canvas, Field, Input, Notice, Text } from "@k2b/ui/v2";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Button, ButtonLink, NoticeCard, Placeholder, TextInput, useLocale } from "@k2b/ui";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import { FREEIPA_APP_SIGN_IN_COOKIE, LOGIN_EMAIL_SIGN_IN_COOKIE } from "../app-approval/availability";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";
@@ -15,8 +14,6 @@ export default function AppLoginForm(props: {
   redirectTo?: string;
   fallback?: { href: string; label: string };
   setupHint?: string;
-  /** The sentence that opens the form. */
-  lead?: string | null;
   /** A shared workstation: the page remembers neither the account nor the method. */
   forget?: boolean;
 }) {
@@ -145,105 +142,79 @@ export default function AppLoginForm(props: {
       if (!disposed) setBusy(false);
     }
   };
-  // k2b-ui gap: no form primitive (Enter sends from the field) and no large display of a code to compare (a Canvas).
   return (
-    <>
+    <section class="flex flex-col gap-3">
       <ApprovalFeedback error={error()} />
-      <Show when={message()}>{(key) => <Notice tone={key() === "retrying" ? "note" : "warn"}>{t()[key()]}</Notice>}</Show>
-      <Show when={!signedIn()} fallback={<Text muted>{t().signedIn}</Text>}>
+      <Show when={message()}>
+        {(key) => (
+          <NoticeCard tone={key() === "retrying" ? "info" : "warning"}>
+            <p role="status">{t()[key()]}</p>
+          </NoticeCard>
+        )}
+      </Show>
+      <Show when={!signedIn()} fallback={<Placeholder state="loading" title={t().signedIn} />}>
         <Show
           when={pending()}
           fallback={
-            <>
-              <Band>
-                <Show when={props.lead}>
-                  <Text muted>{props.lead}</Text>
-                </Show>
-                <Field name="identifier" label={t().identifier} required>
-                  <Input
-                    value={identifier()}
-                    onInput={setIdentifier}
-                    placeholder={t().identifierPlaceholder}
-                    autocomplete={props.forget ? "off" : "username"}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.isComposing) void start();
-                    }}
-                  />
-                </Field>
-              </Band>
-              <Bar
-                start={
-                  <Show when={!busy() ? props.fallback : undefined}>
-                    {(fallback) => (
-                      <Button variant="text" href={fallback().href} onClick={clear}>
-                        {fallback().label}
-                      </Button>
-                    )}
-                  </Show>
-                }
-                end={
-                  <Button variant="primary" busy={busy()} disabled={!identifier().trim()} onClick={() => void start()}>
-                    {t().signIn}
-                  </Button>
-                }
+            <form
+              class="flex flex-col gap-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void start();
+              }}
+            >
+              <TextInput
+                class="auth-login-identifier"
+                label={t().identifier}
+                placeholder={t().identifierPlaceholder}
+                value={identifier}
+                onValueChange={setIdentifier}
+                autocomplete={props.forget ? "off" : "username"}
+                icon=""
+                activeIcon=""
+                required
+                maxLength={254}
               />
-              <Show when={props.setupHint}>
-                <Text muted type="meta">
-                  {props.setupHint}
-                </Text>
-              </Show>
-            </>
+              <Button type="submit" class="auth-login-action w-full justify-center" loading={busy()} disabled={!identifier().trim()}>
+                {t().signIn}
+              </Button>
+            </form>
           }
         >
           {(request) => (
-            <>
-              <Text muted>{t().waiting}</Text>
-              {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
-              <Band>
-                <Canvas label={`${t().comparison} ${request().comparison}`} height={96}>
-                  <span
-                    style={{
-                      display: "flex",
-                      "justify-content": "center",
-                      "align-items": "center",
-                      gap: "16px",
-                      height: "100%",
-                      "font-family": "ui-monospace, monospace",
-                      "font-size": "44px",
-                      "letter-spacing": "0.12em",
-                      "font-variant-numeric": "tabular-nums",
-                    }}
-                  >
-                    {(request().comparison.match(/.{1,3}/g) ?? [request().comparison]).join(" ")}
-                  </span>
-                </Canvas>
-              </Band>
-              <Bar
-                start={
-                  <Show when={!busy() ? props.fallback : undefined}>
-                    {(fallback) => (
-                      <Button variant="text" href={fallback().href} onClick={clear}>
-                        {fallback().label}
-                      </Button>
-                    )}
-                  </Show>
-                }
-                end={
-                  <Button
-                    disabled={busy()}
-                    onClick={() => {
-                      clear();
-                      setMessage(undefined);
-                    }}
-                  >
-                    {t().cancelWait}
-                  </Button>
-                }
-              />
-            </>
+            <div class="flex flex-col gap-5">
+              <div class="text-center" role="status" aria-live="polite">
+                <p class="text-sm text-dimmed">{t().waiting}</p>
+                <span class="sr-only">{t().comparison}</span>
+                {/* Grouped by three like Cloud Login shows it, so the two codes read the same at a glance. */}
+                <p class="flex justify-center gap-4 py-6 text-4xl sm:text-5xl font-mono tabular-nums tracking-widest">
+                  <For each={request().comparison.match(/.{1,3}/g) ?? [request().comparison]}>{(group) => <span>{group}</span>}</For>
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                disabled={busy()}
+                onClick={() => {
+                  clear();
+                  setMessage(undefined);
+                }}
+              >
+                {t().cancelWait}
+              </Button>
+            </div>
           )}
         </Show>
       </Show>
-    </>
+      <Show when={!busy() ? props.fallback : undefined}>
+        {(fallback) => (
+          <ButtonLink href={fallback().href} variant="ghost" class="auth-login-alternative w-full justify-center" onClick={clear}>
+            {fallback().label}
+          </ButtonLink>
+        )}
+      </Show>
+      <Show when={!pending() && props.setupHint}>
+        <p class="text-xs text-center text-dimmed">{props.setupHint}</p>
+      </Show>
+    </section>
   );
 }

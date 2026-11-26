@@ -6,7 +6,7 @@ import { Band, Bar, Button, Canvas, Dialog, Notice, Text, useToast } from "@k2b/
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";
-import ApprovalFeedback from "./Feedback";
+import ApprovalFeedback from "./FeedbackV2";
 import { InstallLink } from "./InstallApp";
 import { appApprovalMessages } from "./messages";
 

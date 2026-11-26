@@ -7,7 +7,7 @@ import type { z } from "zod";
 import ApprovalNotice from "./ApprovalNotice";
 import type { ApprovalAvailability } from "./availability";
 import { approvalApi, approvalRequestOptions, checked, parsed } from "./client";
-import ApprovalFeedback from "./Feedback";
+import ApprovalFeedback from "./FeedbackV2";
 import { useInstallApp } from "./InstallApp";
 import { appApprovalMessages } from "./messages";
 import Pairing from "./Pairing";
