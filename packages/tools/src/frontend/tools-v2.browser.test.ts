@@ -8,7 +8,20 @@ import { buildHarness } from "./tools/image-intake/browser-harness";
 
 // Every Tools screen on v2 at 1440, 1024 and 390 px: no outline problem, no layout problem, no loader in the first
 // picture, no page error. CLOUD_TOOLS_SHOTS=<dir> keeps a light screenshot and the outline of each.
-const SCREENS = ["catalog", "password", "uuid", "lorem", "hash", "encoding", "color", "mailto", "encryption", "qr"];
+const SCREENS = [
+  "catalog",
+  "password",
+  "uuid",
+  "lorem",
+  "hash",
+  "encoding",
+  "color",
+  "mailto",
+  "encryption",
+  "qr",
+  "document-markdown",
+  "markdown-pdf",
+];
 const shots = process.env.CLOUD_TOOLS_SHOTS;
 type Browser = Awaited<ReturnType<typeof launchBrowser>>;
 type Page = Awaited<ReturnType<Browser["newPage"]>>;
@@ -112,3 +125,65 @@ test("encoding shows its error at the field and the hash of the text", async () 
     await page.close();
   }
 });
+
+// ── Documents: the main paths against an answering API ──
+
+test("a chosen document converts to Markdown, and a refused one says why at the place", async () => {
+  for (const width of [1440, 390]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    try {
+      let refuse = false;
+      await page.route("**/tools/api/documents/markdown", (route) =>
+        refuse
+          ? route.fulfill({ status: 422, json: { message: "Das PDF enthält keinen lesbaren Text." } })
+          : route.fulfill({
+              json: {
+                filename: "angebot-1047.docx",
+                format: "docx",
+                markdown: "# Angebot 1047\n\n- Küchenfront Eiche",
+                inputBytes: 18_432,
+                outputBytes: 42,
+                truncated: false,
+              },
+            }),
+      );
+      await page.goto(`${server.url.href}?screen=document-markdown`);
+      const choose = async () => {
+        const chooser = page.waitForEvent("filechooser");
+        await page.getByRole("button", { name: "Dokument wählen" }).first().click();
+        await (await chooser).setFiles({ name: "angebot-1047.docx", mimeType: "application/octet-stream", buffer: Buffer.from("fixture") });
+      };
+      await choose();
+      await page.getByText("angebot-1047.docx wurde konvertiert.").waitFor();
+      expect(await page.getByRole("group", { name: "Reines Markdown, extrahiert aus angebot-1047.docx" }).textContent()).toContain(
+        "# Angebot 1047",
+      );
+      refuse = true;
+      await choose();
+      await page.getByText("Das PDF enthält keinen lesbaren Text.").waitFor();
+      expect(await page.locator('[data-k2-part="Notice"]').textContent()).toContain("Konvertierung fehlgeschlagen");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally {
+      await page.close();
+    }
+  }
+}, 60_000);
+
+test("Markdown becomes a PDF in the preview, and a change marks it stale", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.route("**/tools/api/markdown/pdf", (route) =>
+      route.fulfill({ contentType: "application/pdf", body: Buffer.from("%PDF-1.4\n%fixture\n") }),
+    );
+    await page.goto(`${server.url.href}?screen=markdown-pdf`);
+    await page.getByRole("textbox", { name: "Markdown" }).fill("# Angebot 1047\n\nKüchenfront Eiche, 2 Stück");
+    await page.getByRole("button", { name: "PDF erstellen" }).first().click();
+    await page.getByText("PDF erstellt.").waitFor();
+    expect(await page.locator('iframe[title="Vorschau des erstellten PDFs"]').count()).toBe(1);
+    expect(await page.getByRole("button", { name: "PDF herunterladen" }).isEnabled()).toBe(true);
+    await page.getByRole("textbox", { name: "Markdown" }).fill("# Angebot 1048");
+    await page.getByText("Erstelle das PDF erneut, damit es deine letzten Änderungen enthält.").waitFor();
+  } finally {
+    await page.close();
+  }
+}, 30_000);

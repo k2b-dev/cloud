@@ -29,8 +29,6 @@ const toolComponents: Record<
     baseHref?: string;
   }) => JSX.Element
 > = {
-  "document-markdown": () => <DocumentMarkdown />,
-  "markdown-pdf": () => <MarkdownPdf />,
   "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   speedtest: (props) => <SpeedTest server={props.speedtestConfig?.server} enabled={props.speedtestConfig?.enabled} />,
@@ -39,6 +37,8 @@ const toolComponents: Record<
 
 /** The tools on v2; each island renders the whole Tools screen with its own panes. */
 const v2Tools: Partial<Record<string, () => JSX.Element>> = {
+  "document-markdown": () => <DocumentMarkdown />,
+  "markdown-pdf": () => <MarkdownPdf />,
   password: () => <PasswordGenerator />,
   uuid: () => <UuidGenerator />,
   lorem: () => <LoremIpsumGenerator />,

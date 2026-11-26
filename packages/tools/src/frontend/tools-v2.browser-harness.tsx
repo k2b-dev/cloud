@@ -3,11 +3,13 @@ import type { JSX } from "solid-js";
 import { render } from "solid-js/web";
 import ToolCatalog from "./ToolCatalog.island";
 import ColorConverter from "./tools/ColorConverter.island";
+import DocumentMarkdown from "./tools/DocumentMarkdown.island";
 import EncodingTool from "./tools/EncodingTool.island";
 import EncryptionTool from "./tools/EncryptionTool.island";
 import HashGenerator from "./tools/HashGenerator.island";
 import LoremIpsumGenerator from "./tools/LoremIpsumGenerator.island";
 import MailtoGenerator from "./tools/MailtoGenerator.island";
+import MarkdownPdf from "./tools/MarkdownPdf.island";
 import PasswordGenerator from "./tools/PasswordGenerator.island";
 import QrCodeGenerator from "./tools/QrCodeGenerator.island";
 import UuidGenerator from "./tools/UuidGenerator.island";
@@ -24,6 +26,8 @@ export const v2Screens: Record<string, () => JSX.Element> = {
   mailto: () => <MailtoGenerator />,
   encryption: () => <EncryptionTool />,
   qr: () => <QrCodeGenerator />,
+  "document-markdown": () => <DocumentMarkdown />,
+  "markdown-pdf": () => <MarkdownPdf />,
 };
 
 const params = new URL(location.href).searchParams;

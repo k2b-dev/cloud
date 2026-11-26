@@ -41,7 +41,7 @@ export const markdownPdfMessages = i18n.define({
       templateLabel: "Template",
       filenameLabel: "Filename",
       markdownLabel: "Markdown",
-      markdownPlaceholder: "# Document title\\n\\nWrite or paste Markdown here…",
+      markdownPlaceholder: "# Document title\n\nWrite or paste Markdown here…",
       customCssLabel: "Custom CSS",
       customCssDescription: "This replaces the print template. External resources are not supported. Maximum 32 KiB.",
       serverNotice:
@@ -94,7 +94,7 @@ export const markdownPdfMessages = i18n.define({
       templateLabel: "Vorlage",
       filenameLabel: "Dateiname",
       markdownLabel: "Markdown",
-      markdownPlaceholder: "# Dokumenttitel\\n\\nSchreibe Markdown oder füge es hier ein…",
+      markdownPlaceholder: "# Dokumenttitel\n\nSchreibe Markdown oder füge es hier ein…",
       customCssLabel: "Eigenes CSS",
       customCssDescription: "Ersetzt die Druckvorlage vollständig. Externe Ressourcen werden nicht geladen. Maximal 32 KiB.",
       serverNotice:
