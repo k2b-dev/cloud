@@ -218,4 +218,27 @@ describe("a Space on v2", () => {
       await context.close();
     }
   }, 60_000);
+
+  // The phone's main action is the main action of the page in view: the list's "New task" floats over the list, an
+  // open item is its own page with back, its title and its deeds in its head, and the list's action leaves with the list.
+  test("on the phone the list's New task floats over the list, leaves while an item is open, and comes back with the list", async () => {
+    const { context, tab, errors } = await open(phone, "/app/spaces/Space1?view=list");
+    try {
+      const fab = tab.locator(".k2-fab");
+      expect(await fab.isVisible()).toBe(true);
+      await tab.getByRole("link", { name: "Count stock on shelf B" }).click();
+      await tab.waitForURL(/item=Item05/);
+      const head = tab.locator('[data-k2-part="Pane"][data-detail] > [data-slot="head"]');
+      await head.getByRole("button", { name: "Mark complete" }).waitFor();
+      expect(await fab.count()).toBe(0);
+      expect(await tab.locator('[data-k2-part="Back"] a').isVisible()).toBe(true);
+      await tab.locator('[data-k2-part="Back"] a').click();
+      await tab.waitForFunction(() => !location.search.includes("item="));
+      await fab.waitFor();
+      expect(await fab.isVisible()).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 });
