@@ -49,9 +49,7 @@ export const sentVsLive = (): string[] => {
       return;
     }
     const names = new Set(
-      [...a.getAttributeNames(), ...b.getAttributeNames()].filter(
-        (name) => name !== "data-hk" && !measuredAttribute(b, name),
-      ),
+      [...a.getAttributeNames(), ...b.getAttributeNames()].filter((name) => name !== "data-hk" && !measuredAttribute(b, name)),
     );
     for (const name of names) {
       const same = name === "style" ? style(a) === style(b) : a.getAttribute(name) === b.getAttribute(name);

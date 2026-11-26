@@ -265,8 +265,7 @@ test("the grip of a line stands in the middle of the line in sight", async () =>
 });
 
 /** The rendered width of `selector`, whole px. */
-const widthOf = (page: Page, selector: string) =>
-  page.$eval(selector, (element) => Math.round(element.getBoundingClientRect().width));
+const widthOf = (page: Page, selector: string) => page.$eval(selector, (element) => Math.round(element.getBoundingClientRect().width));
 /** Waits until `selector` is `px` wide. */
 const becomes = (page: Page, selector: string, px: number) =>
   page.waitForFunction(({ selector, px }) => Math.round(document.querySelector(selector)?.getBoundingClientRect().width ?? -1) === px, {
@@ -300,7 +299,7 @@ test("a grip of the server's markup moves its column by keys and by pointer, and
     await page.mouse.up();
     await becomes(page, 'section[aria-label="Liste"]', before + 40);
     // a column of the table, by its grip in the next column's head
-    const head = '.k2-table th:nth-child(1)';
+    const head = ".k2-table th:nth-child(1)";
     const first = await widthOf(page, head);
     await column.focus();
     await page.keyboard.press("Shift+ArrowRight");
