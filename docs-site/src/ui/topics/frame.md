@@ -46,7 +46,7 @@ One per screen: the sidebar, the head, the main action, and the columns; it turn
 
 ### Pane
 
-A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`.
+A column that scrolls, with no padding: a head, a status that stays, a `width` inside a split, and `detail`, `back` and `side`. A `foot` (a `Bar` with "Verwerfen" and "Speichern") ends the column; with `unsaved` it stays on the bottom while the column scrolls, and a field that takes the focus stands above it. Its save is the page's one primary, so a page with a `foot` has no `Workspace primary`.
 
 <Props of="Pane" />
 
