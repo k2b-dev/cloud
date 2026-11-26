@@ -32,7 +32,7 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Text
 
-Words in one of the four type roles (meta, row, body, lead); emphasis is a weight, never a size.
+Words in one of the four type roles (meta, row, body, lead), and the one figure of a screen in a `Hero` (the fifth size, once per screen); emphasis is a weight, never a size.
 
 <Props of="Text" />
 

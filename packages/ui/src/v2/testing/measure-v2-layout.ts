@@ -68,7 +68,7 @@ export type V2LayoutOptions = {
   /** Text that has no type role, such as initials in an avatar or the type on a mark ("PDF"): a glyph, not words. */
   untyped?: string;
   /** The one figure of a screen (`Hero`), which may stand in the figure type (30/34 600), once per page. */
-  figures?: string;
+  heroFigure?: string;
 };
 
 export type V2GripMeasure = {
@@ -634,7 +634,7 @@ function measureInPage(options: InPage): DomResult {
       const size = Number.parseFloat(style.fontSize);
       const lineHeight = Number.parseFloat(style.lineHeight);
       const weight = Number(style.fontWeight);
-      const figure = parent.closest(options.figures);
+      const figure = parent.closest(options.heroFigure);
       if (
         figure &&
         size === options.figureType.size &&
@@ -767,7 +767,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     skip: options.skip ?? "[data-k2-canvas]",
     figure: options.figure ?? "[data-k2-figure]",
     untyped: options.untyped ?? "[data-k2-avatar], [data-k2-glyph]",
-    figures: options.figures ?? "[data-k2-type='figure']",
+    heroFigure: options.heroFigure ?? "[data-k2-type='figure']",
     figureType: figureRole,
     unbroken: options.unbroken ?? "[data-k2-part='Band'], [data-k2-part='Group']",
     controls: options.controls ?? ".k2-btn, .k2-chip, .k2-tab",

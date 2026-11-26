@@ -595,3 +595,43 @@ export const IdentityWorstScreen = (props: { part: "hero" | "head"; bare?: boole
     )}
   </Workspace>
 );
+
+// The owner's colour at its hardest: light colours whose ink and soft data colour must still be read (#eab308 is the
+// yellow of Notebooks), with a hero, the open row of a table and the head of the open thing; and a long figure in a
+// list of 480 px beside its detail.
+export const OwnerScreen = (props: { color: string }) => (
+  <Workspace>
+    <Pane.Split>
+      <Pane label="Liste" owner={props.color} width={{ min: 480, default: 480 }}>
+        <Hero
+          figure="12.345.678.901"
+          label="Werte heute"
+          trend={{ kind: "ticks", values: [...ok30, "bad"], label: "30 Abrufe, der letzte fehlgeschlagen" }}
+        />
+        <Table
+          label="Quellen"
+          rows={sources.slice(0, 3)}
+          rowKey={(source) => source.name}
+          current="Drucker Halle 2"
+          columns={[
+            { title: "Quelle", cell: (source) => source.name, mark: (source) => ({ icon: source.icon, color: source.color }) },
+            { title: "Abrufe", cell: (source) => <Ticks values={source.ticks} label={`${source.name}: Abrufe`} /> },
+          ]}
+        />
+      </Pane>
+      <Pane
+        label="Detail"
+        detail
+        owner={props.color}
+        head={<ObjectHead mark={{ icon: "printer", color: props.color }} name="Drucker Halle 2" meta="Metrikendpunkt" />}
+      >
+        <Facts
+          items={[
+            { label: "http.response.status_code", value: "200" },
+            { label: "Letzte Anmeldung", value: "heute, 09:42" },
+          ]}
+        />
+      </Pane>
+    </Pane.Split>
+  </Workspace>
+);

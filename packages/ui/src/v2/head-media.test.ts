@@ -11,7 +11,8 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 const root = mkdtempSync(resolve(tmpdir(), "k2-v2-head-media-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
-const { Mark, Preview } = await import("./marks");
+const { Mark, Preview, Ticks } = await import("./marks");
+const { Hero, ObjectHead } = await import("./identity");
 const { Cells, Tiles } = await import("./layout");
 const { Nav, Path } = await import("./components");
 const { Choice, Input, Select, Setting } = await import("./controls");
@@ -187,4 +188,35 @@ test("a media tile may open by a deed: its title is a button, and the tile is ma
   });
   expect(markup).toMatch(/class="k2-tile"[^>]*data-open=""/);
   expect(markup).toMatch(/<button type="button" class="k2-row-open"[^>]*>Notiz zur Abnahme</);
+});
+
+test("a hero comes whole from the server: the figure in its role, the history named, the exceptions with their who", () => {
+  const markup = html(Hero, {
+    figure: "178",
+    label: "aktive Verbindungen",
+    trend: { kind: "bars", values: [1, 0, 3], label: "Neue Verbindungen je Tag", caption: "je Tag" },
+    exceptions: [{ status: "warn", count: 1, word: "ungenutzt", who: "MCP Inspector" }],
+  });
+  expect(markup).toMatch(/data-k2-type="figure"[^>]*>178</);
+  expect(markup).toContain('aria-label="Neue Verbindungen je Tag"');
+  expect(markup).toContain("· MCP Inspector");
+  // a failure from the very first value is drawn, one past the last is none
+  const area = (failedFrom: number) =>
+    html(Hero, { figure: "1", label: "Werte", trend: { kind: "area", values: [1, 2, 3], label: "Werte", failedFrom } });
+  expect(area(0)).toContain("k2-hero-failed");
+  expect(area(3)).not.toContain("k2-hero-failed");
+});
+
+test("the head of an open thing and the ticks come whole from the server", () => {
+  const head = html(ObjectHead, {
+    mark: { icon: "printer" },
+    name: "Drucker Halle 2",
+    facts: [{ label: "Verbunden", value: "6 von 6" }],
+    problem: { title: "Liefert keine Werte" },
+  });
+  expect(head).toMatch(/<header class="k2-ohead" data-k2-part="ObjectHead">/);
+  expect(head).toContain("<dt>Verbunden</dt>");
+  expect(head).toContain("Liefert keine Werte");
+  const ticks = html(Ticks, { values: ["ok", "bad", "none"], label: "3 Abrufe" });
+  expect([...ticks.matchAll(/data-state="(\w+)"/g)].map((match) => match[1])).toEqual(["ok", "bad", "none"]);
 });

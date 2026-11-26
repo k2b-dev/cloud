@@ -49,7 +49,8 @@ type Case =
   | "hero-worst"
   | "hero-bare"
   | "head-worst"
-  | "head-bare";
+  | "head-bare"
+  | `owner-${string}`;
 
 let browser: Browser;
 let client: string;
@@ -1527,8 +1528,8 @@ test("on the phone a row that leads with a mark is 56 px with a mark of 40; a ro
 const rgb = (color: string) => color.replace(/\s/g, "");
 
 for (const which of ["oauth-b", "pulse-b"] as const)
-  test(`identity B, ${which}: one figure per screen in the owner's colour, its real history beside it, the exceptions as one line`, async () => {
-    for (const width of [1920, 1440, 1024, 390])
+  for (const width of [1920, 1440, 1024, 390])
+    test(`identity B, ${which} at ${width}: one figure per screen in the owner's colour, its real history beside it, the exceptions as one line`, async () => {
       await withPage(
         // on the phone an open thing is the page: the hero stands over the list alone
         width === 390 ? `${which}-list` : which,
@@ -1541,7 +1542,7 @@ for (const which of ["oauth-b", "pulse-b"] as const)
             const style = getComputedStyle(figure);
             const drawing = hero.querySelector(".k2-hero-trend [role='img']")!;
             const ex = [...hero.querySelectorAll(".k2-hero-ex > li")];
-            const owner = getComputedStyle(hero.closest("[data-owner]")!).getPropertyValue("--k2-app").trim();
+            const owner = getComputedStyle(hero.closest("[data-k2-owner]")!).getPropertyValue("--k2-app").trim();
             return {
               figures: document.querySelectorAll("[data-k2-type='figure']").length,
               type: [style.fontSize, style.lineHeight, style.fontWeight, style.fontVariantNumeric],
@@ -1571,10 +1572,10 @@ for (const which of ["oauth-b", "pulse-b"] as const)
         },
         width,
       );
-  });
+    });
 
-test("identity B: the open thing has a head on the owner's tint, a sign of 40, its name in 18, three facts, a problem red in place", async () => {
-  for (const width of [1440, 390])
+for (const width of [1440, 390])
+  test(`identity B at ${width}: the open thing has a head on the owner's tint, a sign of 40, its name in 18, three facts, a problem red in place, its deeds in reach`, async () => {
     await withPage(
       "pulse-b",
       async (page) => {
@@ -1585,13 +1586,29 @@ test("identity B: the open thing has a head on the owner's tint, a sign of 40, i
           const name = getComputedStyle(head.querySelector(".k2-ohead-name")!);
           const problem = head.querySelector<HTMLElement>(".k2-ohead-problem")!;
           const row = document.querySelector<HTMLElement>(".k2-table tr[aria-current] > td");
+          const deeds = [...head.querySelectorAll<HTMLElement>(".k2-ohead-end .k2-btn")];
+          const back = document.querySelector(".k2-pane[data-detail] > .k2-pane-back");
+          const bar = back && back.getClientRects().length > 0 ? back.getBoundingClientRect() : null;
           return {
             ground: getComputedStyle(head).backgroundColor,
             row: row ? getComputedStyle(row).backgroundColor : null,
             mark: [mark.width, mark.height],
             name: [name.fontSize, name.fontWeight],
             problem: [getComputedStyle(problem).color, problem.textContent?.startsWith("Liefert seit 10:40 keine Werte")],
-            deeds: getComputedStyle(head.querySelector(".k2-ohead-end")!).display,
+            // every deed is in sight; on the phone in the bar of the way back, at its end
+            deeds: deeds.length > 0 && deeds.every((deed) => deed.getBoundingClientRect().width > 0),
+            inBar: bar
+              ? deeds.every((deed) => {
+                  const box = deed.getBoundingClientRect();
+                  const backButton = document.querySelector(".k2-pane[data-detail] > .k2-pane-back .k2-btn")!.getBoundingClientRect();
+                  return (
+                    box.top >= bar.top - 0.5 &&
+                    box.bottom <= bar.bottom + 0.5 &&
+                    box.left >= backButton.right &&
+                    box.right <= bar.right + 0.5
+                  );
+                })
+              : null,
           };
         });
         expect(found.mark).toEqual([40, 40]);
@@ -1601,14 +1618,20 @@ test("identity B: the open thing has a head on the owner's tint, a sign of 40, i
         // a tint of the owner's colour, the same as the open row's
         expect(found.ground).not.toBe("rgba(0, 0, 0, 0)");
         if (width === 1440) expect(found.row).toBe(found.ground);
-        // on the phone the deeds stand in the bar of the detail
-        expect(found.deeds).toBe(width === 390 ? "none" : "flex");
+        expect(found.deeds).toBe(true);
+        expect(found.inBar).toBe(width === 390 ? true : null);
+        if (width === 390) {
+          // the keys go back, then the deeds, then the head: the way back is the first, the first deed the next
+          await page.locator(".k2-pane[data-detail] > .k2-pane-back .k2-btn").focus();
+          await page.keyboard.press("Tab");
+          expect(await page.evaluate(() => document.activeElement?.closest(".k2-ohead-end") !== null)).toBe(true);
+        }
         const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
         expect(layout.problems).toEqual([]);
       },
       width,
     );
-});
+  });
 
 test("identity B: the shell keeps the colour of the app one is in, the content takes its owner's", async () => {
   await withPage(
@@ -1680,8 +1703,8 @@ test("identity B: one picture of the data per row: ticks in the owner's soft col
 });
 
 for (const which of ["hero-worst", "hero-bare", "head-worst", "head-bare"] as const)
-  test(`identity B break-ui, ${which}: a huge figure, long words and missing parts never leave their place or cut a number`, async () => {
-    for (const width of [1440, 1024, 390])
+  for (const width of [1440, 1024, 390])
+    test(`identity B break-ui, ${which} at ${width}: a huge figure, long words and missing parts never leave their place or cut a number`, async () => {
       await withPage(
         which,
         async (page) => {
@@ -1714,7 +1737,7 @@ for (const which of ["hero-worst", "hero-bare", "head-worst", "head-bare"] as co
         },
         width,
       );
-  });
+    });
 
 for (const width of [1440, 1024, 800])
   test(`a bar in the flow of a column puts its end on a line of its own where it has no room, never under its deeds (Files, ${width})`, async () => {
@@ -1744,3 +1767,123 @@ for (const width of [1440, 1024, 800])
       width,
     );
   });
+
+// the contrast of two computed colours, from rgb() or color(srgb …) as color-mix() leaves them
+const contrastIn = (page: Page, pairs: [string, string][]) =>
+  page.evaluate((list) => {
+    const channels = (color: string) => {
+      const srgb = color.match(/color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)/);
+      if (srgb) return [srgb[1], srgb[2], srgb[3]].map((value) => Number(value) * 255);
+      const hex = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1];
+      if (hex) {
+        const full = hex.length === 3 ? [...hex].map((digit) => digit + digit).join("") : hex;
+        return [0, 2, 4].map((at) => Number.parseInt(full.slice(at, at + 2), 16));
+      }
+      return (color.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+    };
+    const luminance = (color: string) => {
+      const [r, g, b] = channels(color).map((value) => {
+        const unit = value / 255;
+        return unit <= 0.03928 ? unit / 12.92 : ((unit + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+    };
+    return list.map(([selector, against]) => {
+      const element = document.querySelector(selector)!;
+      const style = getComputedStyle(element);
+      const fore = against === "background" ? style.backgroundColor : style.color;
+      const back =
+        against === "surface" || against === "background"
+          ? getComputedStyle(document.body).getPropertyValue("--k2-surface").trim() || "rgb(255, 255, 255)"
+          : getComputedStyle(element.closest(against)!).backgroundColor;
+      const [light, dark] = [luminance(fore), luminance(back)].sort((x, y) => y - x);
+      return Math.round(((light! + 0.05) / (dark! + 0.05)) * 100) / 100;
+    });
+  }, pairs);
+
+for (const color of ["eab308", "f59e0b", "06b6d4", "84cc16"])
+  for (const theme of ["light", "dark"] as const)
+    test(`identity B, owner #${color} ${theme}: the figure keeps 3:1, the open row's name 4.5:1 on its tint, the soft data 3:1`, async () => {
+      await withPage(
+        `owner-${color}`,
+        async (page) => {
+          if (theme === "dark") await page.evaluate(() => document.body.setAttribute("data-theme", "dark"));
+          await settled(page);
+          const [figure, name, ticks] = await contrastIn(page, [
+            ["[data-k2-type='figure']", "surface"],
+            [".k2-table tr[aria-current] > td:first-child", "td"],
+            [".k2-table tbody tr:not([aria-current]) .k2-ticks > i[data-state='ok']", "background"],
+          ]);
+          expect({ color, theme, figure: figure! >= 3, name: name! >= 4.5, ticks: ticks! >= 3 }).toEqual({
+            color,
+            theme,
+            figure: true,
+            name: true,
+            ticks: true,
+          });
+        },
+        1440,
+      );
+    });
+
+test("identity B in forced colours: ticks keep their marks in the system's colours, a failure apart; the open row and the head keep a frame", async () => {
+  await withPage(
+    "pulse-b",
+    async (page) => {
+      await page.emulateMedia({ forcedColors: "active" });
+      await settled(page);
+      const found = await page.evaluate(() => {
+        const ticks = [
+          ...document.querySelectorAll<HTMLElement>(".k2-pane:not([data-detail]) .k2-table tbody tr:first-child .k2-ticks > i"),
+        ];
+        const ok = getComputedStyle(ticks[0]!).backgroundColor;
+        const bad = getComputedStyle(ticks.at(-1)!).backgroundColor;
+        const canvas = getComputedStyle(document.body).backgroundColor;
+        return {
+          apart: ok !== bad,
+          seen: ok !== canvas && bad !== canvas,
+          row: getComputedStyle(document.querySelector(".k2-table tbody tr[aria-current]")!).outlineStyle,
+          head: getComputedStyle(document.querySelector(".k2-ohead")!).outlineStyle,
+        };
+      });
+      expect(found).toEqual({ apart: true, seen: true, row: "solid", head: "solid" });
+    },
+    1440,
+  );
+});
+
+test("facts keep a long key whole: it wraps in its column of 116 px instead of ending in an ellipsis", async () => {
+  await withPage(
+    "owner-4338ca",
+    async (page) => {
+      const found = await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>(".k2-fact-pair > dt")].map((label) => ({
+          text: label.textContent,
+          whole: label.scrollWidth <= label.clientWidth + 1 && getComputedStyle(label).textOverflow !== "ellipsis",
+          width: Math.round(label.getBoundingClientRect().width),
+        })),
+      );
+      expect(found.map((label) => label.whole)).toEqual([true, true]);
+      expect(found[0]!.width).toBeLessThanOrEqual(116);
+    },
+    1440,
+  );
+});
+
+test("a long figure fits a list of 480 px beside its detail: the hero stands one under the other there", async () => {
+  await withPage(
+    "owner-4338ca",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const figure = document.querySelector<HTMLElement>("[data-k2-type='figure']")!;
+        const pane = figure.closest(".k2-pane")!.getBoundingClientRect();
+        return {
+          pane: Math.round(pane.width),
+          whole: figure.scrollWidth <= figure.clientWidth + 1 && figure.getBoundingClientRect().right <= pane.right + 0.5,
+        };
+      });
+      expect(found).toEqual({ pane: 480, whole: true });
+    },
+    1440,
+  );
+});

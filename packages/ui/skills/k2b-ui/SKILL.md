@@ -176,7 +176,7 @@ Dense is not busy: show more, never the same thing twice (design pass 26.11.).
 - **A state is colour, symbol and word**; a limit a bar. **Space structures,
   lines separate groups**; no box in a card, no empty half.
 - **People beside what they did**: avatars, stacks, `Digest activity`.
-- **Four type sizes** (12, 13, 14, 18); sample data dense and real.
+- **Five type sizes** (12, 13, 14, 18; the figure 30 once); sample data real.
 - **Two head rows at most**; **settings are `Setting` rows**.
 
 ## Primitives in one line each

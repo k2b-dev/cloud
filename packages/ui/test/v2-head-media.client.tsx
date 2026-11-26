@@ -2,7 +2,7 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
-import { IdentityWorstScreen, OAuthScreen, PulseScreen } from "./v2-identity-b.fixture";
+import { IdentityWorstScreen, OAuthScreen, OwnerScreen, PulseScreen } from "./v2-identity-b.fixture";
 import {
   AgendaTilesScreen,
   AreasMenuScreen,
@@ -61,7 +61,8 @@ declare global {
       | "hero-worst"
       | "hero-bare"
       | "head-worst"
-      | "head-bare";
+      | "head-bare"
+      | `owner-${string}`;
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -90,6 +91,8 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which.startsWith("owner-") ? (
+        <OwnerScreen color={`#${which.slice(6)}`} />
       ) : which === "hero-worst" || which === "hero-bare" || which === "head-worst" || which === "head-bare" ? (
         <IdentityWorstScreen part={which.startsWith("hero") ? "hero" : "head"} bare={which.endsWith("bare")} />
       ) : which === "oauth-b" || which === "oauth-b-list" ? (

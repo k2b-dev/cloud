@@ -101,5 +101,29 @@ export const colorStyle = (value: string | undefined): Record<string, string> | 
   };
 };
 
+/** The share of the owner's colour in its tint: 7 % light (identity B, the study's `--app-tint`), 28 % dark. */
+const OWNER_TINT = 0.07;
+const OWNER_TINT_DARK = 0.28;
+
+/**
+ * The style values of the colour of the app a content belongs to (`Pane owner`): the colour as `--k2-app`, and for a
+ * hex colour the ink of its figure and words, 4.5:1 against its own tint (so also in the open row), and the soft colour
+ * of its data over time, 3:1 against the surface, light and dark. A value that points back to the app's colour
+ * (`var(--k2-app…)`) is no owner: it would name itself.
+ */
+export const ownerStyle = (value: string | undefined): Record<string, string> | undefined => {
+  const color = safeColor(value);
+  if (color === undefined || /^var\(--k2-app/i.test(color)) return undefined;
+  const rgb = rgbOf(color);
+  if (!rgb) return { "--k2-app": color };
+  return {
+    "--k2-app": color,
+    "--k2-owner-ink": hexOf(towards(rgb, BLACK, mix(rgb, OWNER_TINT, SURFACE_LIGHT), 4.5)),
+    "--k2-owner-ink-dark": hexOf(towards(rgb, WHITE, mix(rgb, OWNER_TINT_DARK, SURFACE_DARK), 4.5)),
+    "--k2-owner-soft": hexOf(softest(rgb, SURFACE_LIGHT, BLACK, 3)),
+    "--k2-owner-soft-dark": hexOf(softest(rgb, SURFACE_DARK, WHITE, 3)),
+  };
+};
+
 /** A value for a custom property that cannot end its declaration or open another one. */
 export const safeValue = (value: string) => !/[;{}<>\\]/.test(value);

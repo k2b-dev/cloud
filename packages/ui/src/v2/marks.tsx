@@ -424,7 +424,14 @@ export const Chip = (props: ChipProps) => {
 };
 
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
-export const Dot = (props: { status?: Status | "app"; label?: string }) => (
+export type DotProps = {
+  /** The state it shows; without one a neutral dot (what rests). `app`: in the colour of the app. */
+  status?: Status | "app";
+  /** A name for assistive technology; without one the dot is decoration beside its word. */
+  label?: string;
+};
+
+export const Dot = (props: DotProps) => (
   <span class="k2-dot" data-status={props.status} role="img" aria-label={props.label} aria-hidden={props.label ? undefined : "true"} />
 );
 

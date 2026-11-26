@@ -1,5 +1,6 @@
-import { For, type JSX, Show } from "solid-js";
+import { For, type JSX, Show, useContext } from "solid-js";
 import { Dot, Icon, Mark, type MarkProps, type TickState, Ticks } from "./marks";
+import { PaneHeadContext } from "./pane-head";
 import type { Status } from "./types";
 
 // ── Hero ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -91,6 +92,9 @@ const Area = (props: { values: readonly number[]; label: string; failedFrom?: nu
   const top = () => Math.max(...props.values, 1);
   const x = (index: number) => (props.values.length > 1 ? (index / (props.values.length - 1)) * width : 0);
   const y = (value: number) => height - 2 - (value / top()) * (height - 6);
+  // from index 0 on is a failure too; an index past the last value is none
+  const failed = () =>
+    props.failedFrom != null && props.failedFrom < props.values.length ? { value: Math.max(0, props.failedFrom) } : undefined;
   const line = () => props.values.map((value, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`).join("");
   return (
     <svg
@@ -101,8 +105,8 @@ const Area = (props: { values: readonly number[]; label: string; failedFrom?: nu
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
     >
-      <Show when={props.failedFrom}>
-        {(from) => <rect class="k2-hero-failed" x={x(from())} y={0} width={width - x(from())} height={height} />}
+      <Show when={failed()}>
+        {(from) => <rect class="k2-hero-failed" x={x(from().value)} y={0} width={width - x(from().value)} height={height} />}
       </Show>
       <path class="k2-hero-fill" d={`${line()}L${width},${height}L0,${height}Z`} />
       <path class="k2-hero-line" d={line()} vector-effect="non-scaling-stroke" />
@@ -158,7 +162,7 @@ export const Hero = (props: HeroProps) => (
               </Show>
               <b>{exception.count}</b> {exception.word}
               <Show when={exception.who}>
-                <span class="k2-hero-meta">{exception.who}</span>
+                <span class="k2-hero-meta">· {exception.who}</span>
               </Show>
             </li>
           )}
@@ -190,44 +194,48 @@ export type ObjectHeadProps = {
  * name in 18 and one meta line, then three key facts; a problem in red in place. Give it as the `head` of the detail's
  * `Pane`; the deeds stand at the end of the name's line.
  */
-export const ObjectHead = (props: ObjectHeadProps) => (
-  <header class="k2-ohead" data-k2-part="ObjectHead">
-    <div class="k2-ohead-top">
-      <Mark {...props.mark} />
-      <div class="k2-ohead-who">
-        <h1 class="k2-ohead-name">{props.name}</h1>
-        <Show when={props.meta}>
-          <span class="k2-ohead-meta">{props.meta}</span>
+export const ObjectHead = (props: ObjectHeadProps) => {
+  // the pane learns that it holds the head of an open thing: on the phone its bar takes this head's deeds
+  useContext(PaneHeadContext)?.();
+  return (
+    <header class="k2-ohead" data-k2-part="ObjectHead">
+      <div class="k2-ohead-top">
+        <Mark {...props.mark} />
+        <div class="k2-ohead-who">
+          <h1 class="k2-ohead-name">{props.name}</h1>
+          <Show when={props.meta}>
+            <span class="k2-ohead-meta">{props.meta}</span>
+          </Show>
+        </div>
+        <Show when={props.actions}>
+          <div class="k2-ohead-end">{props.actions}</div>
         </Show>
       </div>
-      <Show when={props.actions}>
-        <div class="k2-ohead-end">{props.actions}</div>
+      <Show when={props.facts?.length}>
+        <dl class="k2-ohead-facts">
+          <For each={props.facts?.slice(0, 3)}>
+            {(fact) => (
+              <div>
+                <dt>{fact.label}</dt>
+                <dd>{fact.value}</dd>
+              </div>
+            )}
+          </For>
+        </dl>
       </Show>
-    </div>
-    <Show when={props.facts?.length}>
-      <dl class="k2-ohead-facts">
-        <For each={props.facts?.slice(0, 3)}>
-          {(fact) => (
-            <div>
-              <dt>{fact.label}</dt>
-              <dd>{fact.value}</dd>
-            </div>
-          )}
-        </For>
-      </dl>
-    </Show>
-    <Show when={props.problem}>
-      {(problem) => (
-        <p class="k2-ohead-problem" role="status">
-          <Icon name="alert-circle" />
-          <span>
-            {problem().title}
-            <Show when={problem().text}>
-              <span class="k2-ohead-why">{problem().text}</span>
-            </Show>
-          </span>
-        </p>
-      )}
-    </Show>
-  </header>
-);
+      <Show when={props.problem}>
+        {(problem) => (
+          <p class="k2-ohead-problem" role="status">
+            <Icon name="alert-circle" />
+            <span>
+              {problem().title}
+              <Show when={problem().text}>
+                <span class="k2-ohead-why">{problem().text}</span>
+              </Show>
+            </span>
+          </p>
+        )}
+      </Show>
+    </header>
+  );
+};

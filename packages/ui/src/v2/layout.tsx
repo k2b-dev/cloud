@@ -18,12 +18,13 @@ import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { type GripOptions, useGrip } from "./behavior/resize";
 import { ActionButton } from "./button";
-import { safeColor } from "./colors";
+import { ownerStyle } from "./colors";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
 import { ConfirmDialog } from "./overlays";
+import { PaneHeadContext } from "./pane-head";
 import { Empty, PlaceholderValue } from "./states";
 import { Toasts } from "./toast";
 import type { Action, OnNavigate, Person, Status, Width } from "./types";
@@ -449,8 +450,23 @@ export const Pane = (props: PaneProps) => {
       return props.detail === true;
     },
   });
-  const head = resolveChildren(() => props.head);
+  // the head of an open thing says so while it is made, so the pane can put its deeds into its phone bar
+  let objectHead = false;
+  const head = resolveChildren(() => (
+    <PaneHeadContext.Provider
+      value={() => {
+        objectHead = true;
+      }}
+    >
+      {props.head}
+    </PaneHeadContext.Provider>
+  ));
   const status = resolveChildren(() => props.status);
+  // read after the head, which said so while it was made
+  const holdsObjectHead = () => {
+    head();
+    return objectHead;
+  };
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
   // focus is in it (its way back, its close button), the focus returns there instead of falling to the page.
@@ -466,8 +482,8 @@ export const Pane = (props: PaneProps) => {
       });
     });
   });
-  // the owner's colour only when it is one: a value that is no colour leaves the app's colour standing
-  const owner = () => (props.owner === undefined ? undefined : safeColor(props.owner));
+  // the owner's colour and its readable inks, only when it is a colour; else the app's colour stands
+  const owner = () => ownerStyle(props.owner);
   return (
     <section
       ref={(element) => {
@@ -481,12 +497,16 @@ export const Pane = (props: PaneProps) => {
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
       data-side={props.side ? "" : undefined}
-      data-owner={owner() ? "" : undefined}
-      style={custom({
-        "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
-        "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
-        "--k2-app": owner(),
-      })}
+      data-k2-owner={owner() ? "" : undefined}
+      data-k2-ohead={holdsObjectHead() ? "" : undefined}
+      data-k2-back={props.back ? "" : undefined}
+      style={{
+        ...custom({
+          "--k2-pane-w": props.width ? `${size() ?? props.width.default}px` : undefined,
+          "--k2-pane-min": props.width ? `${props.width.min}px` : undefined,
+        }),
+        ...owner(),
+      }}
     >
       {/* the way back shows only on the phone, above the head of the detail; a public part, so a shell can find it */}
       <Show when={props.back}>

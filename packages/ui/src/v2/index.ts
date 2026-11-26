@@ -123,6 +123,7 @@ export {
   Chip,
   type ChipProps,
   Dot,
+  type DotProps,
   Icon,
   type IconProps,
   Mark,

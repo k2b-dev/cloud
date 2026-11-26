@@ -298,7 +298,7 @@ no rows and nothing loading, the empty state stands in place of the table.
 
 `items: { label, value, hint?, copy?, mono? }[]`: label 13 quiet, value 13, 32 px
 per row; one label column of 116 px and a gap of 16 in every list, so all
-values start on one edge (a longer label ends with "…"). On the phone each pair is one line, the label on the left and a short
+values start on one edge (a longer label wraps within it). On the phone each pair is one line, the label on the left and a short
 value at the end; a value longer than the rest of the line goes under its
 label.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
