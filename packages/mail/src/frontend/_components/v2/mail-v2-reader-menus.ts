@@ -85,7 +85,7 @@ export function createMailV2ReaderMenus(props: {
     const conversationId = data().selectedConversationId;
     const pick = (at: string) => {
       if (disposed || conversationId !== data().selectedConversationId) return;
-      if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast);
+      if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast, { title: v2Text().laterNotApplied });
       choose(at);
     };
     const times = mailV2LaterTimes(props.dateConfig, v2Text(), Date.now());

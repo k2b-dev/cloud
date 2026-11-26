@@ -225,6 +225,8 @@ test("an entry's current value stands at its end, set apart, in its name, in pla
   await withPage(async (page) => {
     await page.getByRole("button", { name: "Später" }).click();
     const when = page.getByRole("menuitem", { name: /^Wann/ });
+    await when.waitFor();
+    await settled(page);
     expect(await when.locator(".k2-mi-meta[data-set]").textContent()).toBe("Morgen");
     expect((await when.textContent())?.includes("⌘ W")).toBe(false);
     expect(await page.getByRole("menuitem", { name: "Wann Morgen" }).count()).toBe(1);
