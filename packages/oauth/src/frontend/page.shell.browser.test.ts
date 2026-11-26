@@ -13,7 +13,7 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { FAKE_SECRET, fixtureClient, NORMAL, WORST } from "./_components/oauth-fixture-data";
+import { FAKE_SECRET, fixtureActivity, fixtureClient, fixtureConnections, NORMAL, WORST } from "./_components/oauth-fixture-data";
 
 // The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
 // (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_OAUTH_SHELL_SHOTS=<dir>` also saves light
@@ -79,6 +79,9 @@ const firstHtml = async (search: string, data: Data) => {
           },
     ),
     spyOn(oauthService.client, "get").mockImplementation(async ({ id }) => clients.find((client) => client.id === id) ?? null),
+    // invented connections, relative to now
+    spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(clients, data === "worst")),
+    spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(clients)),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();

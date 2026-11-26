@@ -322,9 +322,7 @@ describe("OAuth authorization pages", () => {
 // The connected page names what this person approved, by the decision's request, never by a name in the address: a
 // request of someone else, a self-registered application or a made-up request says the generic sentence.
 test("the connected page names only an application this person approved and an administrator set up", async () => {
-  expect(text(await renderConnected(approvedRequests.terminal, "de"))).toContain(
-    "Drucker-Terminal ist jetzt mit deinem Konto verbunden.",
-  );
+  expect(text(await renderConnected(approvedRequests.terminal, "de"))).toContain("Drucker-Terminal ist jetzt mit deinem Konto verbunden.");
   for (const request of [approvedRequests.dynamic, "44444444-4444-4444-8444-444444444444", "kein-uuid"]) {
     const page = text(await renderConnected(request, "de"));
     expect(page, request).toContain("Du kannst diesen Tab jetzt schließen.");

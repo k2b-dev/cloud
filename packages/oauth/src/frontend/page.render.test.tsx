@@ -9,7 +9,7 @@ import { Hono } from "hono";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { NORMAL } from "./_components/oauth-fixture-data";
+import { fixtureActivity, fixtureConnections, NORMAL } from "./_components/oauth-fixture-data";
 
 const root = mkdtempSync(join(tmpdir(), "oauth-page-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
@@ -51,6 +51,8 @@ const spies = [
   spyOn(services, "get").mockResolvedValue("cloud.example.test" as never),
   spyOn(oauthService.client, "list").mockResolvedValue({ items: NORMAL, page: 1, perPage: 50, total: 120, hasNext: true } as never),
   spyOn(oauthService.client, "summary").mockResolvedValue({ total: 120, public: 30, dynamic: 2 }),
+  spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(NORMAL)),
+  spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(NORMAL)),
 ];
 const get = spyOn(oauthService.client, "get").mockImplementation(async ({ id }) => (id === beyond.id ? beyond : null));
 afterEach(() => get.mockClear());

@@ -8,8 +8,8 @@ import { ssr } from "../config";
 import { oauth } from "../service/oauth";
 import { isConfirmedBrowserSignIn } from "../service/sign-in";
 import { AuthorizationPage, signedInName } from "./_components/AuthorizationPage";
-import { KIND_MARKS } from "./_components/kind-marks";
 import { ConsentDecision } from "./_components/ConsentDecision";
+import { KIND_MARKS } from "./_components/kind-marks";
 import { type ErrorReason, errorPageHref } from "./error-reasons";
 import { oauthMessages } from "./messages";
 

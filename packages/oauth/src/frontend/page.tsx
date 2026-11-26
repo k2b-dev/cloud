@@ -23,12 +23,17 @@ export default ssr<AuthContext>(async (c) => {
   const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
   const tab = c.req.query("tab") === "endpoints" ? "endpoints" : "clients";
   const openId = tab === "clients" ? c.req.query("client")?.trim() || null : null;
-  const [clientsPage, summary, opened] = await Promise.all([
+  const [clientsPage, summary, activity, opened] = await Promise.all([
     oauthService.client.list({ pagination: { page, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     oauthService.client.summary(),
+    oauthService.client.connectionFigures(),
     // an id that is no id names no client; the store is never asked for it
     openId && UUID.test(openId) ? oauthService.client.get({ id: openId }) : null,
   ]);
+  // the connections of the clients on this page and of the open one, in one statement
+  const connections = await oauthService.client.connections({
+    clientIds: [...new Set([...clientsPage.items.map((client) => client.clientId), ...(opened ? [opened.clientId] : [])])],
+  });
 
   // Build base URL for OAuth endpoints
   const rawAppUrl = await get<string>("app.url");
@@ -45,6 +50,8 @@ export default ssr<AuthContext>(async (c) => {
         paging={{ page: clientsPage.page, pages: Math.max(1, Math.ceil(clientsPage.total / clientsPage.perPage)) }}
         clients={clientsPage.items.map(row)}
         figures={summary}
+        activity={activity}
+        connections={connections}
         open={openId ? { id: openId, found: opened ? row(opened) : null } : null}
       />
     </AdminLayout>

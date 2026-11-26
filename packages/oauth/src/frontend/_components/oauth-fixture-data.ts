@@ -1,4 +1,5 @@
 import type { OAuthClient } from "@/contracts";
+import type { ClientConnections, ConnectionFigures } from "../../service/connections";
 import type { ClientRow } from "./OAuthScreen";
 
 // Invented clients for render and browser tests and pictures: fixed dates, no production data. The secrets are fakes
@@ -116,7 +117,7 @@ export const NORMAL: ClientRow[] = [
     registrationKind: "dynamic",
     isPublic: true,
     redirectUris: ["http://localhost:6274/oauth/callback"],
-    scopes: ["read"],
+    scopes: ["read", "offline_access"],
     allowedProfiles: ["user", "guest"],
   }),
 ];
@@ -148,3 +149,62 @@ export const WORST: ClientRow[] = [
     }),
   ),
 ];
+
+// ── Connections ─────────────────────────────────────────────────────────────────────────────────────────────────────
+// Invented connections for the pictures and tests, relative to now, so a relative time reads the same on any day.
+
+const MINUTE = 60 * 1000;
+const PEOPLE = ["Ada Renz", "Jana Berger", "Tom Ochs", "Lena Hartwig", "Mira Sander", "Sami Yilmaz", "Felix Thal", "Jonas Kern"];
+/** Active connections and minutes since the last use, by client name; the rest get a small share. */
+const USE: Record<string, { active: number; minutesAgo: number | null }> = {
+  Wiki: { active: 58, minutesAgo: 3 },
+  "Cloud CLI": { active: 41, minutesAgo: 2 },
+  Zeiterfassung: { active: 31, minutesAgo: 9 },
+  Grafana: { active: 23, minutesAgo: 6 },
+  Nextcloud: { active: 12, minutesAgo: 16 * 60 },
+  Paperless: { active: 6, minutesAgo: 60 },
+  "Drucker-Terminal": { active: 4, minutesAgo: 3 * 60 },
+  "Claude Code": { active: 3, minutesAgo: 20 },
+  "Backup-Agent": { active: 0, minutesAgo: null },
+  "MCP Inspector": { active: 0, minutesAgo: 34 * 24 * 60 },
+};
+/** Thirty days of new connections that roughly add up to a client's connections, the same for a name every time. */
+const days = (seed: number, active: number) =>
+  Array.from({ length: 30 }, (_, day) => {
+    const wave = Math.abs(Math.sin(seed * 7.1 + day * 1.7));
+    return active === 0 ? 0 : Math.round(wave * Math.max(1, active / 12)) * (day % 6 === 5 ? 0 : 1);
+  });
+
+/** The connections of a list of clients as the service returns them, by client ID. */
+export const fixtureConnections = (clients: readonly ClientRow[]): Record<string, ClientConnections> =>
+  Object.fromEntries(
+    clients.map((client, index) => {
+      const use = USE[client.name] ?? { active: (index * 7) % 13, minutesAgo: 30 + index * 11 };
+      const people = PEOPLE.slice(index % 4, (index % 4) + Math.min(3, use.active)).map((name) => ({ name }));
+      return [
+        client.clientId,
+        {
+          active: use.active,
+          peopleCount: Math.min(use.active, Math.max(people.length, Math.ceil(use.active * 0.6))),
+          people,
+          perDay: days(index + 1, use.active),
+          lastUsedAt: use.minutesAgo === null ? null : new Date(Date.now() - use.minutesAgo * MINUTE).toISOString(),
+        },
+      ];
+    }),
+  );
+
+/** The figures of all connections for a list of clients. */
+export const fixtureActivity = (clients: readonly ClientRow[], worst = false): ConnectionFigures => {
+  const connections = Object.values(fixtureConnections(clients));
+  const perDay = Array.from({ length: 30 }, (_, day) => connections.reduce((sum, client) => sum + (client.perDay[day] ?? 0), 0));
+  return worst
+    ? { active: 98_765, people: 12_345, newLast7: 4_321, perDay, unused: { count: 1_234, names: [clients[0]!.name, "X"] } }
+    : {
+        active: connections.reduce((sum, client) => sum + client.active, 0),
+        people: 97,
+        newLast7: perDay.slice(-7).reduce((sum, count) => sum + count, 0),
+        perDay,
+        unused: { count: 1, names: ["MCP Inspector"] },
+      };
+};
