@@ -174,8 +174,22 @@ for (const viewport of [
         expect(box.y).toBeGreaterThanOrEqual(row.y + row.height);
       }
       // centred over the graph's pane, not over the window with the sidebar
-      const pane = (await page.locator('[data-k2-part="Pane"]').first().boundingBox())!;
-      expect(Math.abs(box.x + box.width / 2 - (pane.x + pane.width / 2))).toBeLessThanOrEqual(2);
+      const pane = page.locator('[data-k2-part="Pane"]').first();
+      const before = (await pane.boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - (before.x + before.width / 2))).toBeLessThanOrEqual(2);
+      if (viewport.width < 768) return;
+      // a wider sidebar (what its grip sets) moves the pane without resizing the window, and the notice follows it
+      await page.evaluate(() => {
+        const workspace = document.querySelector<HTMLElement>("[data-k2-workspace]")!;
+        workspace.style.setProperty("--k2-ws-side", "368px");
+      });
+      const after = (await pane.boundingBox())!;
+      expect(after.x).toBeGreaterThan(before.x + 60);
+      await page.waitForFunction(() => {
+        const notice = document.querySelector(".notebook-graph-live-notice [role=alert]")!.getBoundingClientRect();
+        const moved = document.querySelector('[data-k2-part="Pane"]')!.getBoundingClientRect();
+        return Math.abs(notice.left + notice.width / 2 - (moved.left + moved.width / 2)) <= 2;
+      });
     } finally {
       await close(page);
     }
@@ -228,7 +242,8 @@ test(`${browserName}: Book's live updates arrive in the list and survive a switc
     await page.request.get(new URL("/__fixture/book-name?name=Lagerhandbuch", server.url).href);
     await changed();
     await page.waitForFunction(() => document.querySelector("[data-k2-workspace]")?.textContent?.includes("Lagerhandbuch"));
-    await display(page, "Network").click();
+    // the head's As list returns to the drawing
+    await page.getByRole("button", { name: "As list" }).click();
     await labelsPlaced(page);
     expect(await page.locator("[data-k2-workspace]").textContent()).toContain("Lagerhandbuch");
     // a failed update says so in the list, and its notice stays when the drawing comes back
@@ -1642,6 +1657,10 @@ test(`${browserName}: a list sorted by Changed shows when each note changed on a
     const rows = page.locator('[data-k2-part="Row"]').filter({ visible: true });
     await rows.first().waitFor();
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
+    // the list's count stands whole in the pane head, where the list replaces the display tabs; each row names its links
+    const count = filters(page).locator('[data-k2-part="Text"]', { hasText: "notes" });
+    expect((await count.textContent())?.trim()).toBe("49 notes");
+    expect(await count.evaluate((text) => text.scrollWidth <= text.clientWidth)).toBe(true);
     // the order is the pane head's menu, which the phone keeps
     await filters(page).getByRole("button", { name: "Order" }).click();
     expect(await page.getByRole("menuitemradio", { name: "Changed, newest first" }).getAttribute("aria-checked")).toBe("true");

@@ -95,13 +95,12 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
     else if (g.display() === "timeline") g.focusNote();
     else g.focusNote(first?.id);
   };
-  // A large notebook's graph holds the pages around one page: its count says of how many.
+  // A large notebook's graph holds the pages around one page: its count says of how many. The list counts its rows
+  // only; each row names its links.
   const listCount = () => {
     const notes = g.query().trim() ? g.hits().length : g.notes().length;
     const scope = props.graph.scope;
-    return scope
-      ? t().graphNoteCountScoped({ notes, total: scope.total, links: g.edges().length })
-      : t().graphNoteCount({ notes, links: g.edges().length });
+    return scope ? t().graphListCountScoped({ notes, total: scope.total }) : t().graphListCount({ notes });
   };
   // Umgebung around a note whose links the filters hide, or that has none: the display gives way to a way out.
   // k2b-ui gap: Empty takes one sentence and one way out. Its second way (Ganzes Notizbuch zeigen when the filters hide
@@ -174,7 +173,9 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
             <Bar
               start={
                 <>
-                  <Show when={g.hasLinks}>
+                  {/* The list stands instead of the drawing: its row says how many notes it holds, and the head's
+                      As list returns to the display. Beside the tabs the count would yield to them on the phone. */}
+                  <Show when={g.hasLinks && !g.state().list}>
                     <Tabs
                       label={t().graphDisplay}
                       items={GRAPH_DISPLAY_REGISTRY.map((entry) => ({
@@ -182,12 +183,11 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
                         icon: entry.icon.replace(/^ti ti-/, ""),
                         // k2b-ui gap: Tabs cannot mark a device default before the browser knows the width, so no tab is
                         // current until then; the display itself is the same on both sides.
-                        current: !g.state().list && g.display() === entry.id,
-                        onClick: () => g.update({ display: entry.id, list: false }),
+                        current: g.display() === entry.id,
+                        onClick: () => g.update({ display: entry.id }),
                       }))}
                     />
                   </Show>
-                  {/* the list's count stands in this row, so no row of its own goes above the table */}
                   <Show when={g.state().list && g.model.notes.length > 0}>
                     <Text type="meta">{listCount()}</Text>
                   </Show>

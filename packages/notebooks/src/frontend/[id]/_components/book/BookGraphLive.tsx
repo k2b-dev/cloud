@@ -75,28 +75,37 @@ export default function BookGraphLive(props: Props) {
   // Over the page, not in its flow, so the notice moves nothing when it appears: centred over the graph's pane and below
   // whatever heads the pane has (the pane head may be absent, a phone's heads are different), measured while it shows.
   const [place, setPlace] = createSignal<{ top: number; left: number; width: number } | null>(null);
+  const pane = () => document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="Pane"]');
   const measure = () => {
-    const pane = document.querySelector<HTMLElement>('[data-k2-workspace] [data-k2-part="Pane"]');
     // the pane's last part is its content, under its head and status
-    const content = (pane?.lastElementChild ?? pane)?.getBoundingClientRect();
+    const content = (pane()?.lastElementChild ?? pane())?.getBoundingClientRect();
     setPlace(content ? { top: content.top, left: content.left, width: content.width } : null);
   };
   createEffect(() => {
     if (!failed()) return;
     measure();
+    // the pane moves or resizes with the window and the sidebar's grip; its content changes with the list and the
+    // drawing, which can bring or take the pane's head
+    const target = pane();
+    const sizes = new ResizeObserver(measure);
+    const parts = new MutationObserver(measure);
+    if (target) {
+      sizes.observe(target);
+      parts.observe(target, { childList: true });
+    }
     window.addEventListener("resize", measure);
-    onCleanup(() => window.removeEventListener("resize", measure));
+    onCleanup(() => {
+      sizes.disconnect();
+      parts.disconnect();
+      window.removeEventListener("resize", measure);
+    });
   });
+  const style = () => {
+    const at = place();
+    return at ? { top: `${at.top + 12}px`, left: `${at.left}px`, width: `${at.width}px` } : { top: "0", left: "0", right: "0" };
+  };
   return (
-    <div
-      aria-live="polite"
-      class="notebook-graph-live-notice pointer-events-none fixed z-20 flex justify-center px-12"
-      style={
-        place()
-          ? { top: `${place()!.top + 12}px`, left: `${place()!.left}px`, width: `${place()!.width}px` }
-          : { top: "0", left: "0", right: "0" }
-      }
-    >
+    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none fixed z-20 flex justify-center px-12" style={style()}>
       <Show when={failed()}>
         <NoticeCard role="alert" tone="danger" title={t().updateLoadFailed} class="pointer-events-auto max-w-md">
           <Button variant="secondary" size="xs" loading={retrying()} onClick={retry}>
