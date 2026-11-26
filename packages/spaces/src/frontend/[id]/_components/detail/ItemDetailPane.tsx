@@ -31,7 +31,7 @@ import {
   Text,
   useToast,
 } from "@k2b/ui/v2";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { isPlayableVideoType, type SpaceDetail, type SpaceItem, type WormholeTransferResult } from "@/contracts";
 import { deadlineDayKey, formatDeadline, isDateOnlyDeadline } from "@/presentation/deadline";
@@ -76,6 +76,11 @@ type Shared = {
   mailIntegrationAvailable: boolean;
   /** Whether the edit form asks the assistant for a task estimate; decided on the server for this person. */
   estimateSuggestions?: boolean;
+  /**
+   * The server's time of the page's snapshot. Due dates read against it on the server and in the first browser picture,
+   * so both agree; the browser's clock takes over once the page is live.
+   */
+  now?: string;
 };
 
 type Props = Shared & {
@@ -86,9 +91,9 @@ type Props = Shared & {
 };
 
 /** "today", "tomorrow", "in 3 days" for a date-only deadline, counted in whole days from today in the app timezone. */
-const daysAway = (deadline: string, dateConfig: DateContext | undefined, locale: string): string => {
+const daysAway = (deadline: string, now: number, dateConfig: DateContext | undefined, locale: string): string => {
   const day = (key: string) => Date.UTC(Number(key.slice(0, 4)), Number(key.slice(5, 7)) - 1, Number(key.slice(8, 10)));
-  const today = deadlineDayKey(dates.today(dateConfig).toISOString(), dateConfig);
+  const today = deadlineDayKey(new Date(now).toISOString(), dateConfig);
   const days = Math.round((day(deadline) - day(today)) / 86_400_000);
   const format = new Intl.RelativeTimeFormat(dateConfig?.locale ?? locale, { numeric: "auto" });
   return Math.abs(days) < 7 ? format.format(days, "day") : format.format(Math.round(days / 7), "week");
@@ -588,16 +593,21 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
   const column = () => props.space.columns.find((entry) => entry.id === columnEdit.value());
   const priorityLabel = (priority: string | null) =>
     priority === "urgent" ? t.urgent : priority === "high" ? t.high : priority === "medium" ? t.medium : priority === "low" ? t.low : null;
+  // The snapshot's time on the server and in the first browser picture, then the browser's clock.
+  const [now, setNow] = createSignal(props.now ? Date.parse(props.now) : Date.now());
+  onMount(() => setNow(Date.now()));
   const due = (deadline: string) =>
     `${isDateOnlyDeadline(deadline) ? formatDeadline(deadline, props.dateConfig) : dates.formatDateTime(deadline, props.dateConfig)} · ${
-      isDateOnlyDeadline(deadline) ? daysAway(deadline, props.dateConfig, locale()) : dates.formatTimeSpan(deadline, props.dateConfig)
+      isDateOnlyDeadline(deadline)
+        ? daysAway(deadline, now(), props.dateConfig, locale())
+        : dates.formatTimeSpan(deadline, { ...props.dateConfig, base: new Date(now()) })
     }`;
   /** An open task whose day (or time) has passed: its due date reads in the danger tone, with the word. */
   const overdue = (deadline: string) =>
     !isCompleted() &&
     (isDateOnlyDeadline(deadline)
-      ? deadline < deadlineDayKey(dates.today(props.dateConfig).toISOString(), props.dateConfig)
-      : Date.parse(deadline) < Date.now());
+      ? deadline < deadlineDayKey(new Date(now()).toISOString(), props.dateConfig)
+      : Date.parse(deadline) < now());
   const dueText = (deadline: string | null) =>
     !deadline ? (
       t.noDeadline
@@ -749,8 +759,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
     // k2b-ui gap: no answer (RSVP) on an avatar; Spaces keeps no answers of participants yet either.
     const stack = () => (faces.length > 0 ? <Avatar.Stack people={faces} max={4} label={people} /> : undefined);
     return [
-      // An event without participants shows no row for them; "Edit item" adds the first.
-      ...((canEditItem() && !isEvent()) || people
+      ...(canEditItem() || people
         ? [
             {
               label: isEvent() ? t.participants : t.assignedPeople,
@@ -764,7 +773,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                     {stack()}
                     <Popover
                       variant="text"
-                      title={t.assignedPeople}
+                      title={isEvent() ? t.participants : t.assignedPeople}
                       content={
                         <Lookup
                           label={t.searchPeople}
@@ -803,7 +812,8 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
           </Menu>
         )),
       },
-      ...(tagNames()
+      // Editors see the empty rows as places to set them in place; readers see only what is set.
+      ...(canEditItem() || tagNames()
         ? [
             {
               label: t.tags,
@@ -820,13 +830,13 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
                       ),
                   }))}
                 >
-                  {tagChips()}
+                  {tagNames() ? tagChips() : t.addValue}
                 </Menu>
               )),
             },
           ]
         : []),
-      ...(!isEvent() && priorityEdit.value()
+      ...(!isEvent() && (canEditItem() || priorityEdit.value())
         ? [
             {
               label: t.priority,
@@ -854,7 +864,7 @@ function ItemDetail(props: Props & { detail: SpaceItemDetail; close: () => JSXEl
             },
           ]
         : []),
-      ...(!isEvent() && estimateEdit.value()
+      ...(!isEvent() && (canEditItem() || estimateEdit.value())
         ? [
             {
               label: t.estimate,

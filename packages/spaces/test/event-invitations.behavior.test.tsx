@@ -82,4 +82,43 @@ describe("Spaces event invitations", () => {
       dom.cleanup();
     }
   });
+
+  test("the section names five attendees and counts the rest; the dialog says who sends and who receives", async () => {
+    const dom = createDomTestHarness();
+    installV2Globals(dom);
+    const { createSpaceCommands } = await import("../src/frontend/space-commands");
+    const { default: EventInvitations } = await import("../src/frontend/[id]/_components/detail/EventInvitations");
+    const attendees = Array.from({ length: 7 }, (_, index) => ({ name: null, address: `person${index}@example.org` }));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (url: RequestInfo | URL) => {
+        if (String(url).endsWith("/spaces/item.read"))
+          return Response.json({ data: { kind: "event", spaceId: "Space1", title: "Review" } });
+        if (String(url).endsWith("/invitation-context")) return Response.json({ ...invitationContext, attendees });
+        throw new Error(`Unexpected request ${url}`);
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+    const dispose = render(() => {
+      createSpaceCommands({});
+      return createComponent(EventInvitations, { spaceId: "Space1", itemId: "Item01", title: "Review" });
+    }, dom.root);
+    try {
+      await settle();
+      expect(dom.root.textContent).toContain("person4@example.org");
+      expect(dom.root.textContent).not.toContain("person5@example.org");
+      expect(dom.root.textContent).toContain("2 more attendees");
+
+      buttonNamed(dom, "Prepare invitation")!.click();
+      await settle();
+      const dialog = dom.document.querySelector<HTMLElement>('[role="dialog"]');
+      expect(dialog?.textContent).toContain("Choose the organizer identity and recipients.");
+      expect(dialog?.textContent).toContain("Choose the sender and recipients.");
+    } finally {
+      dispose();
+      await settle();
+      globalThis.fetch = originalFetch;
+      dom.cleanup();
+    }
+  });
 });

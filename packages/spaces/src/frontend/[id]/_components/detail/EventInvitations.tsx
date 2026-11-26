@@ -232,7 +232,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
             when={value().mailboxes.length > 0}
             fallback={<Empty icon="mail-off" text={`${t.noMailSender}. ${t.noMailSenderDescription}`} />}
           >
-            <Field label={t.mailbox} name="mailbox">
+            <Field label={t.mailbox} name="mailbox" hint={t.deliveryDescription}>
               <Select
                 value={mailboxId() ?? undefined}
                 placeholder={t.noWritableMailbox}
@@ -240,7 +240,7 @@ function InvitationDialog(props: { spaceId: string; itemId: string; title: strin
                 onChange={chooseMailbox}
               />
             </Field>
-            <Field label={t.from} name="sender">
+            <Field label={t.from} name="sender" hint={t.senderRecipientsDescription}>
               <Select
                 value={senderIdentityId() ?? undefined}
                 placeholder={t.noVerifiedIdentity}
@@ -417,7 +417,7 @@ export default function EventInvitations(props: { spaceId: string; itemId: strin
               )}
             </For>
             <Show when={value().attendees.length > ATTENDEES_SHOWN}>
-              <Text type="meta">{t.moreDependencies({ count: value().attendees.length - ATTENDEES_SHOWN })}</Text>
+              <Text type="meta">{t.moreAttendees({ count: value().attendees.length - ATTENDEES_SHOWN })}</Text>
             </Show>
           </>
         )}

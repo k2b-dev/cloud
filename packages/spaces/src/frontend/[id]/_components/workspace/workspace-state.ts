@@ -912,7 +912,8 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     loadEventCursor(params.spaceId),
     spacesService.space.permission.member({ spaceId: params.spaceId, subject: { type: "user", userId: params.user.id } }),
   ]);
-  const snapshotDay = calendar.formatDateKey(new Date(), params.dateConfig);
+  const snapshotTime = new Date();
+  const snapshotDay = calendar.formatDateKey(snapshotTime, params.dateConfig);
   const context = await loadWorkspaceContext(params, authorized.value);
   if (!context.ok) return context.error;
   const { route, space, publicSpace, permissions, calendarFilter, publicCalendarFilter, columnIds } = context.value;
@@ -959,6 +960,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
     icalBaseUrl: `${route.url.protocol}//${route.url.host}`,
     eventCursor,
     snapshotDay,
+    snapshotAt: snapshotTime.toISOString(),
     itemsResult: publicItemsResult,
     kanbanBuckets: publicKanbanBuckets,
     calendarView: calendarState.calendarView,

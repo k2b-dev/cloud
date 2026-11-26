@@ -3,6 +3,7 @@ import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import type { SpaceItem } from "@/contracts";
 import { createDomTestHarness, type DomTestHarness } from "../../ui/test/dom";
+import { installV2Globals } from "./v2-dom";
 
 const now = "2026-09-26T08:00:00.000Z";
 const userId = "33333333-3333-4333-8333-333333333333";
@@ -40,14 +41,17 @@ const _flush = async () => {
   await Bun.sleep(20);
 };
 
-const mount = async (dom: DomTestHarness, overrides: { canWrite?: boolean; activeBlockerCount?: number } = {}) => {
+const mount = async (
+  dom: DomTestHarness,
+  overrides: { canWrite?: boolean; activeBlockerCount?: number; item?: Partial<SpaceItem> } = {},
+) => {
   const { DetailPaneFixture } = await import("./detail-pane");
   const blocker = (index: number) => ({
     blocker: { id: `Blk00${index}`, spaceId: item.spaceId, title: `Step ${index}`, completedAt: index === 0 ? now : null },
     createdAt: now,
   });
   const detail = {
-    item: { ...item, activeBlockerCount: overrides.activeBlockerCount ?? item.activeBlockerCount },
+    item: { ...item, activeBlockerCount: overrides.activeBlockerCount ?? item.activeBlockerCount, ...overrides.item },
     comments: { items: [], page: 1, perPage: 50, total: 0, hasNext: false },
     commentTarget: { itemId: item.id, recurrenceId: null },
     recurringContext: null,
@@ -105,6 +109,48 @@ describe("Spaces detail planning rows", () => {
     expect(text).not.toContain("Blocked by 4");
     expect(text).toContain("2 more blocking tasks you cannot open");
     dispose();
+    dom.cleanup();
+  });
+
+  test("an editor sees empty tags, priority and estimate as places to set them; a reader sees no empty rows", async () => {
+    const labels = (dom: DomTestHarness) => Array.from(dom.root.querySelectorAll(".k2-fact-pair > dt"), (label) => label.textContent);
+    const empty = { priority: null, tags: [], estimatedDurationMinutes: null };
+    const editor = createDomTestHarness();
+    editor.root.className = "k2b-ui";
+    const disposeEditor = await mount(editor, { item: empty });
+    expect(labels(editor)).toEqual(expect.arrayContaining(["Tags", "Priority", "Estimate"]));
+    disposeEditor();
+    editor.cleanup();
+
+    const reader = createDomTestHarness();
+    reader.root.className = "k2b-ui";
+    const disposeReader = await mount(reader, { canWrite: false, item: empty });
+    expect(labels(reader)).not.toContain("Tags");
+    expect(labels(reader)).not.toContain("Priority");
+    expect(labels(reader)).not.toContain("Estimate");
+    disposeReader();
+    reader.cleanup();
+  });
+
+  test("an event names its people Participants, in the row and in the picker that changes them", async () => {
+    const dom = createDomTestHarness();
+    dom.root.className = "k2b-ui";
+    // The picker is a popover: it needs the v2 globals the DOM harness leaves out.
+    installV2Globals(dom);
+    const dispose = await mount(dom, {
+      item: { startsAt: "2026-09-28T09:00:00.000Z", endsAt: "2026-09-28T10:00:00.000Z", priority: null },
+    });
+    expect(Array.from(dom.root.querySelectorAll(".k2-fact-pair > dt"), (label) => label.textContent)).toContain("Participants");
+    const picker = Array.from(dom.root.querySelectorAll<HTMLButtonElement>(".k2-fact-pair button")).find(
+      (button) => button.textContent?.trim() === "Nobody",
+    )!;
+    picker.click();
+    await _flush();
+    const title = dom.document.querySelector('[data-k2-part="Popover"] .k2-pop-title');
+    expect(title?.textContent).toBe("Participants");
+    dispose();
+    // The popover settles its focus after it leaves; the document stays until then.
+    await _flush();
     dom.cleanup();
   });
 

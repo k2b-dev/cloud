@@ -379,6 +379,7 @@ export default function SpaceScreen(props: SpaceScreenProps) {
             canWrite={state.canWrite}
             mailIntegrationAvailable={props.mailIntegrationAvailable}
             estimateSuggestions={props.estimateSuggestions}
+            now={state.snapshotAt}
           />
         ) : undefined}
       </Pane.Split>

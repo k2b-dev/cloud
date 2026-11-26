@@ -133,6 +133,11 @@ const SpacesWorkspaceStateSchema = z.discriminatedUnion("kind", [
     eventCursor: z.string().nullable(),
     /** The day, in the person's time zone, that deadline views in this snapshot were computed for. */
     snapshotDay: z.string(),
+    /**
+     * When the snapshot was taken, on the server: the open item reads its due time against it, so the server and the
+     * first browser picture agree. Older snapshots and test fixtures may leave it out.
+     */
+    snapshotAt: z.string().datetime().optional(),
     itemsResult: ItemListResultSchema,
     kanbanBuckets: z.array(KanbanBucketInitialSchema),
     calendarView: CalendarViewSchema,
