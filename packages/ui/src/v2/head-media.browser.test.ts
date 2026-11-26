@@ -29,7 +29,9 @@ type Case =
   | "side-canvas"
   | "long"
   | "areas"
-  | "split-selecting";
+  | "split-selecting"
+  | "form-fab"
+  | "split-form-fab";
 
 let browser: Browser;
 let client: string;
@@ -484,6 +486,40 @@ test("on the phone a split that scrolls its panes as one page ends above the flo
     390,
   );
 });
+
+for (const which of ["form-fab", "split-form-fab"] as const)
+  test(`on the phone the main action covers no field of a long form once it is scrolled to its end, and a covered one can be scrolled clear (${which}, Spaces W3)`, async () => {
+    await withPage(
+      which,
+      async (page) => {
+        for (const height of [900, 700]) {
+          await page.setViewportSize({ width: 390, height });
+          await settled(page);
+          for (const at of ["rest", "end"] as const) {
+            const found = await page.evaluate((end) => {
+              const scroller = [...document.querySelectorAll<HTMLElement>(".k2-ws-main > .k2-split, .k2-pane > .k2-scroll")].find((each) =>
+                ["auto", "scroll"].includes(getComputedStyle(each).overflowY),
+              )!;
+              scroller.scrollTop = end ? scroller.scrollHeight : 0;
+              const fab = document.querySelector(".k2-fab")!.getBoundingClientRect();
+              const fields = [...document.querySelectorAll(".k2-field .k2-input")].map((input) => input.getBoundingClientRect());
+              const covered = fields.filter((box) => box.bottom > fab.top && box.top < fab.bottom && box.right > fab.left);
+              return {
+                covered: covered.length,
+                canScroll: scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 1,
+                last: fields.at(-1)!.bottom,
+                fab: fab.top,
+              };
+            }, at === "end");
+            if (at === "end") expect({ height, last: found.last <= found.fab - 8 }).toEqual({ height, last: true });
+            // at rest the action floats over the column (as on every phone page), and what it covers scrolls clear
+            else if (found.covered) expect({ height, canScroll: found.canScroll }).toEqual({ height, canScroll: true });
+          }
+        }
+      },
+      390,
+    );
+  });
 
 test("a setting stands with its value beside its name, and an unsaved change says what it was", async () => {
   await withPage("settings", async (page) => {

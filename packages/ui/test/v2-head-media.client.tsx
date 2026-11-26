@@ -6,6 +6,7 @@ import {
   AreasMenuScreen,
   CanvasFillScreen,
   DeepPathScreen,
+  FormFabScreen,
   LongAddressScreen,
   RowStatesScreen,
   SplitSelectionScreen,
@@ -29,7 +30,9 @@ declare global {
       | "side-canvas"
       | "long"
       | "areas"
-      | "split-selecting";
+      | "split-selecting"
+      | "form-fab"
+      | "split-form-fab";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -46,6 +49,8 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "form-fab" || which === "split-form-fab" ? (
+        <FormFabScreen split={which === "split-form-fab"} />
       ) : which === "split-selecting" ? (
         <SplitSelectionScreen />
       ) : which === "areas" ? (

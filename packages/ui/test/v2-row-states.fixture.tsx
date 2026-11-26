@@ -5,6 +5,7 @@ import {
   Canvas,
   Chip,
   Facts,
+  Field,
   FilterBar,
   Input,
   List,
@@ -273,3 +274,37 @@ export const SplitSelectionScreen = () => (
     </Pane.Split>
   </Workspace>
 );
+
+// A long task as a form, with its main action: on the phone the action floats over the column, and the column keeps
+// room after its last field, so scrolled to its end that field stands clear of the action. (Spaces W3)
+export const FormFabScreen = (props: { split?: boolean }) => {
+  const form = () => (
+    <Pane label="Aufgabe">
+      <Section title="Aufgabe">
+        {["Titel", "Kunde", "Ort", "Ansprechpartner", "Telefon", "Fällig am", "Zuständig", "Material", "Werkzeug", "Notiz zur Anfahrt"].map(
+          (label) => (
+            <Field name={label} label={label}>
+              <Input value={`${label} der Aufgabe`} />
+            </Field>
+          ),
+        )}
+      </Section>
+    </Pane>
+  );
+  return (
+    <Workspace primary={{ label: "Neue Aufgabe", icon: "plus" }}>
+      {props.split ? (
+        <Pane.Split>
+          {form()}
+          <Pane side label="Verlauf">
+            <Section title="Verlauf">
+              <Facts items={[{ label: "Angelegt", value: "gestern" }]} />
+            </Section>
+          </Pane>
+        </Pane.Split>
+      ) : (
+        form()
+      )}
+    </Workspace>
+  );
+};
