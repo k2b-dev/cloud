@@ -3167,22 +3167,14 @@
   /* its content (the calendar) in the middle */
   align-items: center;
 }
-/* A panel's head: its name, which leads back to the entries it took the place of ("‹ Datum und Uhrzeit …"); a
-   menu entry in look, the words strong as a sheet's step. 44 px for a finger in the phone's sheet. */
-.k2-ui .k2-pop > .k2-panel-back {
+/* the head of a panel's sheet: its name, which leads back to the entries ("‹ Datum und Uhrzeit …") */
+.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
   align-self: stretch;
   width: auto;
-  margin-bottom: 4px;
-  font-weight: 600;
-  color: var(--k2-text);
-}
-.k2-ui .k2-pop[data-presentation="sheet"] > .k2-panel-back {
   height: 44px;
   margin: 0 8px;
-}
-/* the menu a panel took the place of waits behind it, unseen, until the panel leads back */
-.k2-ui .k2-menu[data-covered] {
-  visibility: hidden;
+  font-weight: 600;
+  color: var(--k2-text);
 }
 /* Tip: a short hint, dark, in the meta role */
 .k2-ui .k2-tip {

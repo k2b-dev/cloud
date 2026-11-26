@@ -83,8 +83,7 @@ export function createMailV2ReaderMenus(props: {
       if (Date.parse(at) <= Date.now()) return void toast.error(v2Text().laterPast);
       choose(at);
     };
-    const times = mailV2LaterTimes(props.dateConfig, v2Text(), Date.now());
-    const offered = times.map(
+    const offered = mailV2LaterTimes(props.dateConfig, v2Text(), Date.now()).map(
       (time): MenuItem => ({ label: time.label, ...(time.meta ? { meta: time.meta } : {}), value: time.at, onClick: () => pick(time.at) }),
     );
     // With a time set, the offered times are one choice: the one that is set carries the tick, another replaces it
@@ -101,8 +100,6 @@ export function createMailV2ReaderMenus(props: {
             label,
             timeZone: mailV2TimeZone(props.dateConfig),
             current,
-            // without a time set, the calendar starts at tomorrow's 8:00, the offered time every day has
-            suggested: times.find((time) => time.kind === "tomorrow")?.at ?? times[0]?.at ?? new Date().toISOString(),
             pastError: v2Text().laterPast,
             onPick: (at) => {
               close();

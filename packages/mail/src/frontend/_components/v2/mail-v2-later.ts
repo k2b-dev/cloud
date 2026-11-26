@@ -2,13 +2,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import type { MailV2Text } from "./mail-v2-messages";
 
 /** One time "Später" and "Erinnere mich" offer: its words, the real day as a quiet hint when it helps, the instant. */
-export type MailV2LaterTime = {
-  /** Which offer it is: later today, tomorrow morning, the start of the next week. */
-  kind: "today" | "tomorrow" | "week";
-  label: string;
-  meta?: string;
-  at: string;
-};
+export type MailV2LaterTime = { label: string; meta?: string; at: string };
 
 /** The person's time zone for the offered times and the calendar: the configured one, else the browser's. */
 export const mailV2TimeZone = (config: DateContext) =>
@@ -52,10 +46,9 @@ export const mailV2LaterTimes = (config: DateContext, text: MailV2Text, now = Da
 
   const times: MailV2LaterTime[] = [];
   const evening = at(today, "17:00");
-  if (Date.parse(evening) > now) times.push({ kind: "today", label: text.laterToday({ time: clock(evening) }), at: evening });
+  if (Date.parse(evening) > now) times.push({ label: text.laterToday({ time: clock(evening) }), at: evening });
   const morning = at(tomorrow, "08:00");
   times.push({
-    kind: "tomorrow",
     label: text.laterTomorrow({ time: clock(morning) }),
     meta: format(morning, { weekday: "short", day: "numeric", month: "short" }),
     at: morning,
@@ -65,13 +58,11 @@ export const mailV2LaterTimes = (config: DateContext, text: MailV2Text, now = Da
     times.push(
       weekday === 5 || weekday === 6
         ? {
-            kind: "week",
             label: text.laterOnDay({ day: format(week, { weekday: "long" }), time: clock(week) }),
             meta: format(week, { day: "numeric", month: "short" }),
             at: week,
           }
         : {
-            kind: "week",
             label: text.laterNextWeek,
             meta: format(week, { weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }),
             at: week,
