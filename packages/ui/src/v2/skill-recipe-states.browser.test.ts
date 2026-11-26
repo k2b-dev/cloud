@@ -111,6 +111,20 @@ const faceless = (page: Page) =>
       .map((thing) => (thing.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 48));
   });
 
+/**
+ * The search places a person sees on the phone (below 768 CSS px): the host's search button and every head search
+ * that shows a box of its own. The host's bar holds the one place; a head's search gives way to it. Wider, 1.
+ */
+const searchPlaces = (page: Page) =>
+  page.evaluate(() => {
+    if (innerWidth >= 768) return 1;
+    const seen = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return box.width > 2 && box.height > 2;
+    };
+    return [...document.querySelectorAll("[data-k2-host-search-button], [data-slot='head'] .k2-input[data-search]")].filter(seen).length;
+  });
+
 /** Presses the visible button, link or menu entry with exactly this name. */
 const press = async (page: Page, name: string) => {
   const target = page
@@ -158,6 +172,7 @@ describe("k2b-ui recipe states keep the v2 rules in the browser", () => {
             // the screen stands in the frame of a host (tinted page, rail), never on a bare white page
             expect([where, await page.locator("[data-k2-frame] > .k2-sf-card > [data-k2-workspace]").count()]).toEqual([where, 1]);
             expect([where, await faceless(page)]).toEqual([where, []]);
+            expect([where, await searchPlaces(page)]).toEqual([where, 1]);
 
             const outline = await describeV2Page(page, "body");
             expect(`${where}\n${outline}`).not.toContain("Problems");

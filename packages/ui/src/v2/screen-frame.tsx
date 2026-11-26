@@ -34,13 +34,13 @@ background:linear-gradient(135deg,color-mix(in srgb,var(--k2-app,var(--k2-blue))
 .k2-sf-fill{flex:1}
 .k2-sf-me{width:28px;height:28px;margin-top:4px;display:grid;place-items:center;border-radius:50%;background:#0f766e;color:#fff;font:600 10px/1 var(--k2-font)}
 .k2-sf-bar{display:none}
-@media not all and (min-width:768px){.k2-sf{flex-direction:column;padding:0;background:var(--k2-surface)}.k2-sf-rail{display:none}
-.k2-sf-bar{display:flex;align-items:center;gap:8px;height:52px;flex:none;box-sizing:border-box;padding:0 16px;border-bottom:1px solid var(--k2-card-edge);background:color-mix(in srgb,var(--k2-app,var(--k2-blue)) 6%,var(--k2-surface))}
+@media not all and (min-width:768px){.k2-sf{flex-direction:column;padding:0}.k2-sf-rail{display:none}
+.k2-sf-bar{display:flex;align-items:center;gap:8px;height:52px;flex:none;box-sizing:border-box;padding:0 16px}
 .k2-sf-bar-app{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:var(--k2-app,var(--k2-blue));color:#fff;font-size:16px}
 .k2-sf-bar-name{font:600 14px/20px var(--k2-font);color:var(--k2-text)}
 .k2-sf-bar-fill{flex:1}
 .k2-sf-bar .k2-sf-app{width:32px;height:32px}
-.k2-sf-card{min-height:0}}
+.k2-sf-card{min-height:0;overflow:hidden;border-radius:28px 28px 0 0;background:var(--k2-surface)}}
 `;
 
 /**
@@ -93,6 +93,8 @@ export const ScreenFrame = (props: ScreenFrameProps) => (
         MS
       </span>
     </div>
-    <div class="k2-sf-card">{props.children}</div>
+    {/* the host puts the v2 scope on its main area, inside the host, as Cloud's layout does: rules that ask the host
+        (`[data-k2-host-search] .k2-ui …`) then reach the screen */}
+    <div class="k2-sf-card k2-ui">{props.children}</div>
   </div>
 );
