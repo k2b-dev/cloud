@@ -17,7 +17,20 @@ export const QUERIES_PER_PAGE = 50;
 export type QueryAuthor = { principal: Principal; displayName?: string; serviceAccountKind?: ServiceAccountKind };
 
 /** A saved query's mark: the SQL symbol in the colour Pulse gives queries. */
-const QUERY_MARK = { icon: "file-code", color: "#0d9488" };
+/**
+ * A saved query's mark tells what it reads, from the first view after FROM: measured values, events, states, the
+ * hourly rollups or the sources; anything else keeps the plain code mark.
+ */
+const QUERY_MARKS: Record<string, { icon: string; color: string }> = {
+  samples: { icon: "chart-line", color: "#2563eb" },
+  rollups: { icon: "chart-bar", color: "#4f46e5" },
+  series: { icon: "list-details", color: "#0891b2" },
+  events: { icon: "bolt", color: "#d97706" },
+  states: { icon: "toggle-right", color: "#7c3aed" },
+  sources: { icon: "plug", color: "#059669" },
+};
+const queryMark = (sql: string) =>
+  QUERY_MARKS[/\bFROM\s+([a-z_]+)/i.exec(sql)?.[1]?.toLowerCase() ?? ""] ?? { icon: "file-code", color: "#0d9488" };
 
 export type QueriesScreenProps = {
   bases: PulseBase[];
@@ -87,14 +100,14 @@ export default function QueriesScreen(props: QueriesScreenProps) {
                   rowKey={(query) => query.id}
                   open={open}
                   phone={(query) => ({
-                    mark: QUERY_MARK,
+                    mark: queryMark(query.sql),
                     lines: [query.name, author(query) ? `${author(query)} · ${time(query.updatedAt)}` : time(query.updatedAt)],
                   })}
                   columns={[
                     {
                       title: t().name,
                       width: { min: 240, default: 520 },
-                      mark: () => QUERY_MARK,
+                      mark: (query) => queryMark(query.sql),
                       cell: (query) => ({ lines: [query.name, excerpt(query.sql)] }),
                     },
                     {

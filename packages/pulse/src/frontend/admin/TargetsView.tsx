@@ -229,7 +229,14 @@ export default function TargetsView(props: {
             <For each={rows()}>
               {(row) => (
                 <Row
-                  icon="route"
+                  // a network stands apart from a single server, one port from all of a host
+                  mark={
+                    row.scope === "network"
+                      ? { icon: "network", color: "#7c3aed" }
+                      : row.scope === "host_port"
+                        ? { icon: "plug-connected", color: "#2563eb" }
+                        : { icon: "server", color: "#0891b2" }
+                  }
                   lines={[row.entry, `${row.baseName} · ${scopeText(t(), row)}`]}
                   end={
                     <Menu
