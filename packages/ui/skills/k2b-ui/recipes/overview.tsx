@@ -153,7 +153,10 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.felix, people.jonas, people.mira, people.tom, people.sami],
                           foot: "Felix · vor 2 Min",
-                          trend: { values: [12, 22, 16, 28, 20, 34, 41], label: "Änderungen der letzten 7 Tage" },
+                          trend: {
+                            values: [12, 22, 16, 28, 20, 34, 41],
+                            label: "Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen",
+                          },
                         },
                         {
                           ...base.customers,
@@ -166,7 +169,7 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.ada, people.jana, people.mira, people.felix],
                           foot: "Ada · vor 14 Min",
-                          trend: { values: [30, 41, 33, 45, 38, 9, 36], label: "Änderungen der letzten 7 Tage" },
+                          trend: { values: [30, 41, 33, 45, 38, 9, 36], label: "Kunden & Aufträge: 9 bis 45 Änderungen am Tag, heute 36" },
                         },
                         {
                           ...base.stock,
@@ -179,7 +182,7 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.sami, people.felix],
                           foot: "Sami · vor 1 Std",
-                          trend: { values: [14, 12, 18, 16, 10, 4, 20], label: "Änderungen der letzten 7 Tage" },
+                          trend: { values: [14, 12, 18, 16, 10, 4, 20], label: "Lager Nord: heute 20 Änderungen, die meisten der Woche" },
                         },
                         {
                           ...base.staff,
@@ -192,7 +195,7 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.lena, people.mira],
                           foot: "Lena · gestern",
-                          trend: { values: [8, 10, 6, 12, 8, 2, 14], label: "Änderungen der letzten 7 Tage" },
+                          trend: { values: [8, 10, 6, 12, 8, 2, 14], label: "Personal: heute 14 Änderungen, die meisten der Woche" },
                         },
                         {
                           ...base.money,
@@ -205,7 +208,7 @@ export default function BasesOverview(props: Props) {
                           ],
                           people: [people.ada, people.mira, people.tom],
                           foot: "Ada · Mo.",
-                          trend: { values: [4, 6, 4, 16, 5, 2, 9], label: "Änderungen der letzten 7 Tage" },
+                          trend: { values: [4, 6, 4, 16, 5, 2, 9], label: "Finanzen 2027: 2 bis 16 Änderungen am Tag, heute 9" },
                         },
                       ]
                 }

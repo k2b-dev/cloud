@@ -37,7 +37,11 @@ The working surface of an app: one per screen.
 - Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
-  and folds back, its words kept, on blur or Escape.
+  and folds back, its words kept, on blur or Escape. A host that offers the
+  page's search in a bar of its own (the Cloud shell's phone bar) marks the
+  v2 scope with `data-k2-host-search`: the folded search then leaves the head
+  to its tabs and the Tab key's order on the phone, and the host focuses the
+  field from its bar (a head with a path opens it over the first row).
 
 ### Pane
 
@@ -100,8 +104,10 @@ fields. A message in a thread is one `Band`.
 2–4 equal cells with a line between; stacked on the phone. A cell:
 `icon`, `color` (data colour of its area), `label`, `value`, `meta`,
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
-as orders per day this week). Use for the key statements of a record or
-the home of a place.
+as orders per day this week), `loading` (a bar lies on value and `meta`;
+what is there keeps its room unseen under it, a value not there yet is one
+line; symbol and label stay, a `trend` keeps its place unseen). Use for the
+key statements of a record or the home of a place.
 
 ### Tiles
 
@@ -280,7 +286,12 @@ edges.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one
-line with `end` (such as a print button).
+line with `end` (such as a print button). `loading` while the values are on
+their way: labels, hints and copy buttons (not yet usable) stay, and a
+quiet bar lies on each value. A value that is there (a refresh) keeps its
+exact room unseen under the bar (lines, chips, wrapping); a value not there
+yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
+one.
 
 ### Text
 
@@ -323,11 +334,19 @@ lines instead of cutting a thing.
   its name). The place sets the size: 20 in the sidebar and in a sentence,
   24 leading a row of one line, 32 leading a row of two or three, 36 on a
   card. In a sentence write `<Mark {...table} /><Text weight="strong">Aufträge</Text>`.
-- `Avatar.Stack`: `people`, `max` (3), `label`. People over each other with
-  a ring and "+n"; one picture with every name.
-- `Spark`: `values` (oldest first), `label` (what the bars show). A few bars
-  of a short history, the last in full colour; beside a number, never
-  instead of it.
+- `Avatar.Stack`: `people`, `max` (3, at most 5), `label`. People over each
+  other with a ring and "+n"; one picture with every name. In a narrow
+  place (a 90 px column) it shows the faces it holds whole and counts the
+  rest; the count is always right and never cut, from the first render.
+- `Spark`: `values` (oldest first), `label`: what the bars say as one
+  sentence ("Werkstatt: in 7 Tagen von 12 auf 41 Änderungen gestiegen"),
+  never only the title of the data. A few bars of a short history, the
+  last strongest; beside a number, never instead of it.
+- Data colours (`color` of `Mark`, `Avatar`, `Chip tag`, `Nav`, `Tiles`,
+  `Section`, `Cells.Cell`, `Digest`) are validated: a hex colour, an
+  `oklch()` or `var(--…)`; anything else renders neutral. For a hex colour
+  the primitives derive readable foregrounds themselves (symbols and bars
+  3:1, type 4.5:1, light and dark), so a pale yellow works too.
 - `Preview`: `label`, `icon`, `color`, `image`, `kind`. The large picture of
   the open thing at the top of its detail, 4:3 from text edge to text edge;
   the symbol stands while it loads, fails or is missing.
@@ -366,9 +385,32 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
 - `Select`: `options` (strings or `{ value, label }`), `value`, `onChange`,
   `placeholder`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds the ui-sdk time input: hour
+  and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
+  in American English; typing, arrows, Backspace; never the browser's time
+  field), applied
+  with "Übernehmen". Use it inside a popover or sheet; a form field is
+  `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
@@ -496,7 +538,9 @@ lines instead of cutting a thing.
   right-click.
 - `Popover`: a panel behind a button: the button's look like `Menu`,
   `title`, `content` (primitives such as `Check`, `Facts`, `Text`). Escape
-  and a press outside close it. With `tip` instead, a short hint on its one
+  and a press outside close it. Like the menu's "…", a button without words
+  stays in a head on the phone; there the panel is a sheet from the bottom,
+  which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
   `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
