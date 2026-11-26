@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-worst.client";
+import { measureV2Layout } from "./testing";
 
 // Worst-case states that change after the page is live (break-ui 25.11., review of #4210): a note that grows past its
 // lines, a hidden tab that becomes the open one, an address cut in the middle in a narrow row, an amount among marks.
@@ -22,13 +23,13 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, scenario = "") => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui" data-case="${scenario}"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
@@ -108,3 +109,61 @@ for (const width of [1024, 220])
       if (width === 1024) expect(amount.inside).toBe(true);
     });
   });
+
+// W1b (Files #4206): the date of a large table's phone row stood past the right edge at 390 px, and the measure
+// passed it. Every part of a row stays inside the row; the measure reports a part that does not.
+test("a large table's phone rows keep their date inside the row at 390 px, and the measure says so", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const past = await page.evaluate(() =>
+        Array.from(document.querySelectorAll(".k2-table-phone .k2-row-time")).map((time) => {
+          const row = time.closest(".k2-row")!.getBoundingClientRect();
+          const r = time.closest(".k2-row")!;
+          return {
+            over: Math.round(time.getBoundingClientRect().right - (row.right - 16)),
+            row: [Math.round(row.left), Math.round(row.right)],
+            cols: getComputedStyle(r).gridTemplateColumns,
+            pad: getComputedStyle(r).paddingRight,
+            kids: [...r.children].map(
+              (kid) => `${kid.className}:${Math.round(kid.getBoundingClientRect().left)}-${Math.round(kid.getBoundingClientRect().right)}`,
+            ),
+          };
+        }),
+      );
+      expect(past.length).toBe(2);
+      for (const each of past) expect(each).toEqual(expect.objectContaining({ over: 0 }));
+      const layout = await measureV2Layout(page, { root: "#root" });
+      expect(layout.past).toEqual([]);
+    },
+    "table",
+  );
+});
+
+// The coordinator's decision of 26.11.: on the phone the open view never gives way to deeds that keep their words;
+// they fold into the head's menu, the open tab keeps its whole name.
+test("on the phone a crowded head keeps the open tab whole; its kept deeds wait in the head's menu", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const tab = page.locator(".k2-tab", { hasText: "Alle" });
+      const label = await tab.evaluate((element) => {
+        const words = element.querySelector(".k2-tab-label") ?? element;
+        const box = words.getBoundingClientRect();
+        const row = element.closest(".k2-tabs")!.getBoundingClientRect();
+        return { width: Math.round(box.width), whole: words.scrollWidth <= words.clientWidth + 0.5, inside: box.right <= row.right + 0.5 };
+      });
+      expect(label.width).toBeGreaterThan(10);
+      expect(label).toEqual(expect.objectContaining({ whole: true, inside: true }));
+      // the kept deeds still reach their person: in the head's menu
+      await page.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: "Suche fokussieren" }).waitFor();
+      expect(await page.getByRole("menuitem", { name: "Gesperrt" }).isDisabled()).toBe(true);
+      await page.keyboard.press("Escape");
+      const layout = await measureV2Layout(page, { root: "#root" });
+      expect(layout.squeezed).toEqual([]);
+      expect(layout.cut).toEqual([]);
+    },
+    "head",
+  );
+});
