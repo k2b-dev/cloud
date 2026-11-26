@@ -2,6 +2,7 @@ import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
+  createSignal,
   createUniqueId,
   For,
   type JSX,
@@ -14,13 +15,14 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status, Width } from "./types";
+import { type Action, type ColumnWidth, columnPx, draggable, type OnNavigate, type Person, type Status } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -467,10 +469,10 @@ export type Column<T> = {
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px (`fixed`: its default, no grip). The
-   * column is exactly its default wide; cut text never widens it.
+   * A column that can be dragged wider or narrower: its minimum and default in px; `{ fixed }`: one width, no grip. The
+   * column is exactly that wide; cut text never widens it.
    */
-  width?: Width;
+  width?: ColumnWidth;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
@@ -551,6 +553,35 @@ const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
   <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
 );
 
+/**
+ * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
+ * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
+ */
+const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+  const grip = useGrip({
+    label: () => props.label,
+    value: () => props.value,
+    onChange: (px) => props.onChange(px),
+    min: () => props.width.min,
+    reset: () => props.width.default,
+    direction: () => 1,
+    measure: (element) => {
+      const head = element.parentElement?.previousElementSibling;
+      const scroller = element.closest(".k2-table-scroll");
+      const now = head?.getBoundingClientRect().width;
+      if (!now || !scroller) return undefined;
+      return { now, max: scroller.clientWidth };
+    },
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
+  });
+  return <span class="k2-cgrip" {...grip} />;
+};
+
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
   typeof value === "object" &&
@@ -576,6 +607,11 @@ type TableItem<T> = { group: TableGroup } | { row: T; index: number };
 export const Table = <T,>(props: TableProps<T>) => {
   const grid = () => props.select !== undefined || props.sticky === true;
   const sized = () => grid() || props.columns.some((column) => column.width);
+  /** The width of column `index` when it can be dragged, else nothing. */
+  const dragWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return draggable(width) ? width : undefined;
+  };
   // Every cell is made once: what `cell` returns is placed, never rendered a second time.
   const values = createMemo(() => props.rows.map((row) => props.columns.map((column) => column.cell(row))));
   // the shape of the placeholders while the rows load
@@ -622,6 +658,13 @@ export const Table = <T,>(props: TableProps<T>) => {
     select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
   };
   const span = () => props.columns.length + (props.select ? 1 : 0);
+  // The widths the grips gave columns, by index; a column keeps its default until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const columnWidth = (index: number) => {
+    const width = props.columns[index]?.width;
+    return sizes()[index] ?? (width ? columnPx(width) : undefined);
+  };
+  const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
@@ -673,13 +716,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </Show>
               {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column, index) => (
-                  <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
-                  />
-                )}
+                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
               </For>
             </colgroup>
           </Show>
@@ -702,16 +739,16 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width && !props.columns[index() - 1]!.width!.fixed}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                    {/* a grip after a column that can be dragged; a fixed one keeps its width */}
+                    <Show when={index() > 0 && dragWidth(index() - 1)}>
+                      {(width) => (
+                        <ColumnGrip
+                          label={props.columns[index() - 1]?.title ?? ""}
+                          width={width()}
+                          value={columnWidth(index() - 1) ?? width().default}
+                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}

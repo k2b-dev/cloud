@@ -9,11 +9,20 @@ import type { LinkNavigateEvent } from "@k2b/ssr/nav";
  */
 export type OnNavigate = (event: LinkNavigateEvent) => void | Promise<void>;
 
+/** The width of a column that can be dragged: its minimum and its default, in CSS px. */
+export type Width = { min: number; default: number };
+
 /**
- * The width of a column: its minimum and its default, in CSS px. It can be dragged; `fixed` keeps it at its default
+ * The width of a pane or a table column: one that can be dragged (`Width`), or `{ fixed }`, one width in CSS px
  * without a grip, for a page to read rather than to arrange (a visitor page, a wall screen).
  */
-export type Width = { min: number; default: number; fixed?: boolean };
+export type ColumnWidth = Width | { fixed: number };
+
+/** The width a column stands at: its default, or its fixed width. */
+export const columnPx = (width: ColumnWidth): number => ("fixed" in width ? width.fixed : width.default);
+
+/** A width with a grip: the column can be dragged. */
+export const draggable = (width: ColumnWidth | undefined): width is Width => width !== undefined && !("fixed" in width);
 
 /**
  * An action as data. The primitive decides whether it becomes a button, an icon button or a text button, so the
