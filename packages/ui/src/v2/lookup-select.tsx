@@ -5,7 +5,7 @@ import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useField } from "./controls";
 import { useFilterMessages } from "./filter-messages";
 import type { LookupItem } from "./list-query";
-import { type LookupLoad, type LookupResolve, lookupTiming } from "./lookup";
+import { hasSign, LookupLead, type LookupLoad, type LookupResolve, lookupTiming } from "./lookup";
 import { Icon } from "./marks";
 import { Empty, Failed } from "./states";
 
@@ -108,7 +108,10 @@ export const LookupSelect = (props: LookupSelectProps) => {
   onCleanup(options.subscribe(() => setState(options.getState())));
   onCleanup(() => options.cancel());
   const items = (): ChoiceItem[] => state().items.map((item) => ({ value: item.value, label: item.label }));
-  const metaOf = (code: string) => state().items.find((item) => item.value === code)?.meta;
+  const found = (code: string) => state().items.find((item) => item.value === code);
+  const metaOf = (code: string) => found(code)?.meta;
+  // when any match has a sign, every match keeps its place, so the words line up
+  const signed = () => state().items.some(hasSign);
 
   const [open, setOpen] = createSignal(false);
   // One value that may stay empty can be taken back: "Auswahl entfernen" under the matches.
@@ -196,6 +199,9 @@ export const LookupSelect = (props: LookupSelectProps) => {
                   <Icon name="check" />
                 </Show>
               </span>
+            </Show>
+            <Show when={signed()}>
+              <LookupLead item={found(item.value)} />
             </Show>
             <span class="k2-mi-label">
               {item.label}

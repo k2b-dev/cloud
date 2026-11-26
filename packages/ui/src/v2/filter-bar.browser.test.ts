@@ -241,7 +241,9 @@ test("lookup: a failed load says so, keeps the choice, and “Erneut versuchen�
     await page.getByRole("combobox", { name: "Einlieferer suchen" }).waitFor();
     await page.evaluate(() => window.__lookup?.fail());
     await page.getByText("Konnte nicht geladen werden. Deine Auswahl bleibt.").waitFor();
-    expect(await page.locator(".k2-lookup [role=option]").allTextContents()).toEqual(["Nachlass KesslerWaldkirch"]);
+    // the words of the kept choice (its sign before them is a picture, hidden from assistive technology)
+    expect(await page.locator(".k2-lookup [role=option] .k2-opt-label").allTextContents()).toEqual(["Nachlass KesslerWaldkirch"]);
+    expect(await page.getByRole("option", { name: /^Nachlass Kessler/ }).count()).toBe(1);
     await page.getByRole("button", { name: "Erneut versuchen" }).click();
     expect((await calls(page)).length).toBe(2);
     await page.evaluate(() => window.__lookup?.answer());
@@ -768,5 +770,64 @@ test("options locked by the full address say why and what to do, visibly and to 
     const option = page.getByRole("option", { name: /Fotografiert/ });
     expect(await option.getAttribute("aria-disabled")).toBe("true");
     expect((await option.getAttribute("aria-describedby"))?.split(" ")).toContain(id);
+  });
+});
+
+test("lookup: each match carries its sign before its words, a symbol in its colour or a person's picture", async () => {
+  await withPage("", async (page) => {
+    await page.locator(".k2-fbar-add .k2-btn").click();
+    await page.getByRole("menuitem", { name: /Einlieferer/ }).click();
+    await page.locator(".k2-lookup").waitFor();
+    await page.evaluate(() => window.__lookup?.answer());
+    await page.locator(".k2-lookup .k2-opt").first().waitFor();
+    await settled(page);
+    const signs = await page.locator(".k2-lookup-list .k2-opt").evaluateAll((options) =>
+      options.map((option) => {
+        const lead = option.querySelector<HTMLElement>(".k2-opt-lead");
+        const label = option.querySelector<HTMLElement>(".k2-opt-label")!;
+        return {
+          label: label.firstChild?.textContent,
+          sign: lead?.querySelector(".k2-av") ? "person" : lead?.querySelector(".ti, .k2-icon") ? getComputedStyle(lead).color : "none",
+          before: !!lead && lead.getBoundingClientRect().right <= label.getBoundingClientRect().left,
+        };
+      }),
+    );
+    expect(signs).toEqual([
+      { label: "Haus Bergmann", sign: "rgb(15, 118, 110)", before: true },
+      { label: "Bergmann & Söhne", sign: "rgb(180, 83, 9)", before: true },
+      { label: "Haus am Bergsee", sign: "rgb(67, 56, 202)", before: true },
+      { label: "Antik Weber KG", sign: "rgb(190, 18, 60)", before: true },
+      { label: "Nachlass Kessler", sign: "person", before: true },
+      { label: "Gräfin von Thal", sign: "person", before: true },
+    ]);
+  });
+});
+
+test("lookup: a limit note shows only when a search hit the limit, never as a standing sentence", async () => {
+  await withPage("", async (page) => {
+    await page.locator(".k2-fbar-add .k2-btn").click();
+    await page.getByRole("menuitem", { name: /Einlieferer/ }).click();
+    await page.locator(".k2-lookup").waitFor();
+    const hint = page.locator(".k2-lookup .k2-lookup-hint");
+    // before any answer there is nothing to say
+    expect(await hint.count()).toBe(0);
+    // all six consignors: the limit of the field (6) is reached, so there may be more
+    await page.evaluate(() => window.__lookup?.answer());
+    await page.locator(".k2-lookup .k2-opt").first().waitFor();
+    expect(await hint.textContent()).toBe("Die ersten 6 Treffer – genauer suchen zeigt weitere.");
+    // whole inside the editor: it wraps where it needs to, nothing is cut
+    await settled(page);
+    expect(
+      await hint.evaluate((note) => {
+        const editor = note.closest(".k2-fpop")!.getBoundingClientRect();
+        return note.scrollWidth <= note.clientWidth && note.getBoundingClientRect().right <= editor.right;
+      }),
+    ).toBe(true);
+    // three matches for "Berg": below the limit, no note
+    await page.locator(".k2-lookup-search input").fill("Berg");
+    await page.waitForFunction(() => (window.__lookup?.calls.length ?? 0) >= 2);
+    await page.evaluate(() => window.__lookup?.answer());
+    await page.waitForFunction(() => document.querySelectorAll(".k2-lookup-list .k2-opt").length === 3);
+    expect(await hint.count()).toBe(0);
   });
 });

@@ -1,17 +1,18 @@
 import { createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Band, Bar, Field, Input, Lookup, LookupSelect, Pane, Text, Workspace } from "../src/v2";
+import { Band, Bar, Field, Input, Lookup, LookupSelect, Nav, Pane, Text, Workspace } from "../src/v2";
 import type { LookupItem } from "../src/v2/list-query";
 
 // A form that picks a customer (one, named on the server), contact people (several) and a required consignor from values that
 // load while the person types. Every load waits for the test (`window.__picks`), so a test decides when it answers,
 // fails or is aborted.
 
+// a customer carries its sign: a family as people, a company its symbol in its colour; one has none
 const CUSTOMERS: readonly LookupItem[] = [
-  { value: "k-17", label: "Familie Oswald", meta: "Freiburg" },
-  { value: "k-23", label: "Architekturbüro Winter", meta: "Lahr" },
-  { value: "k-31", label: "Stadtwerke Auental", meta: "Kehl" },
-  { value: "k-44", label: "Haus Bergmann", meta: "Offenburg" },
+  { value: "k-17", label: "Familie Oswald", meta: "Freiburg", avatar: { name: "Familie Oswald", color: "#0f766e" } },
+  { value: "k-23", label: "Architekturbüro Winter", meta: "Lahr", icon: "building", color: "#4338ca" },
+  { value: "k-31", label: "Stadtwerke Auental", meta: "Kehl", icon: "building-factory", color: "#b45309" },
+  { value: "k-44", label: "Haus Bergmann", meta: "Offenburg", icon: "building-store", color: "#be123c" },
   { value: "k-58", label: "Bergmann & Söhne", meta: "Emmendingen" },
 ];
 
@@ -96,7 +97,25 @@ export function Demo() {
   const picks = hooks();
   if (picks) picks.setQuantity = setQuantity;
   return (
-    <Workspace head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}>
+    <Workspace
+      // the app's own navigation, as a screen of a Cloud app has it
+      sidebar={
+        <Nav
+          title="Werkstatt"
+          icon="tools"
+          groups={[
+            {
+              items: [
+                { label: "Aufträge", icon: "clipboard-list", current: true, count: 12 },
+                { label: "Kunden", icon: "users" },
+                { label: "Lager", icon: "building-warehouse" },
+              ],
+            },
+          ]}
+        />
+      }
+      head={<Bar start={<Text type="body">Neuer Auftrag</Text>} />}
+    >
       <Pane label="Neuer Auftrag">
         <Band>
           <Field.Row>
