@@ -24,6 +24,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { ssr } = await import("../config");
 const notFoundPage = (await import("./NotFound")).default;
 const { buildFontAssets } = await import("../../scripts/font-assets");
+const { LAUF_CSS, LAUF_SCRIPT, maintenanceGameMessages } = await import("@k2b/cloud/maintenance-game");
 const { buildTablerIconAssets } = await import("../../scripts/tabler-assets");
 const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_ERROR_SHOTS;
@@ -186,6 +187,47 @@ describe("error pages on v2", () => {
       }
     expect(findings).toEqual([]);
   }, 180_000);
+
+  test("the waiting game plays below the ways out: they stay reachable while it runs and after leaving it", async () => {
+    const texts = maintenanceGameMessages.resolve(["de"]).t;
+    for (const view of [views[0]!, views[2]!]) {
+      const { tab } = await open(view, "/gone");
+      try {
+        // what the invitation does when pressed, without the island bundle: the game on the screen's stage
+        await tab.addStyleTag({ content: LAUF_CSS });
+        await tab.addScriptTag({ content: `window.__k2bLauf=${LAUF_SCRIPT};` });
+        await tab.evaluate((t) => {
+          const host = document.querySelector<HTMLElement>(`[data-k2-part="ErrorScreen"]`)!;
+          const factory = Reflect.get(window, "__k2bLauf") as (options: object) => { open(): void; start(): void };
+          const game = factory({ host, anchor: () => host.querySelector(".k2-es-stack"), t, dark: () => false, onFinish: () => {} });
+          host.setAttribute("data-k2-stage", "");
+          game.open();
+          game.start();
+        }, texts);
+        const primary = tab.locator(".k2-es-actions .k2-btn").first();
+        const reachable = async () => {
+          const box = (await primary.boundingBox())!;
+          return tab.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".k2-btn")?.getAttribute("data-variant") ?? null, {
+            x: box.x + box.width / 2,
+            y: box.y + box.height / 2,
+          });
+        };
+        await tab.waitForTimeout(400);
+        expect(await tab.evaluate(() => document.documentElement.dataset.lauf)).toBe("run");
+        expect(await reachable()).toBe("primary");
+        // the words moved to the top, so the road has the room below the ways out
+        const actions = (await tab.locator(".k2-es-actions").boundingBox())!;
+        if (shots) await tab.screenshot({ path: join(shots, `404-${view.name}-game.png`) });
+        await tab.keyboard.press("Escape");
+        await tab.waitForTimeout(200);
+        expect(await tab.evaluate(() => document.documentElement.dataset.lauf)).toBe("wait");
+        expect(await reachable()).toBe("primary");
+        expect(actions.y + actions.height).toBeLessThan(view.height / 2);
+      } finally {
+        await tab.close();
+      }
+    }
+  }, 60_000);
 
   test.if(Boolean(shots))(
     "the dark theme takes the dark tokens, the outline too",

@@ -1,32 +1,7 @@
 import { ErrorScreen } from "@k2b/ui/v2";
 import { onCleanup, onMount } from "solid-js";
-import { importOnDemand } from "../browser/reload";
-import type { MaintenanceGameFactory, MaintenanceGameTexts } from "../maintenance-game";
-
-const GLOBAL = "__k2bLauf";
-
-/** The game's source defines the factory as a global; nothing else may sit under its name. */
-const isFactory = (value: unknown): value is MaintenanceGameFactory => typeof value === "function";
-
-/** Runs the platform's game source once per page, with the page's nonce, as the gateway's maintenance page does. */
-const loadFactory = async (): Promise<MaintenanceGameFactory | undefined> => {
-  const known: unknown = Reflect.get(window, GLOBAL);
-  if (isFactory(known)) return known;
-  const source = await importOnDemand(() => import("../maintenance-game/source"));
-  if (!source) return undefined;
-  const style = document.createElement("style");
-  const script = document.createElement("script");
-  const nonce = document.querySelector<HTMLScriptElement>("script[nonce]")?.nonce;
-  if (nonce) {
-    style.nonce = nonce;
-    script.nonce = nonce;
-  }
-  style.textContent = source.LAUF_CSS;
-  script.textContent = `window.${GLOBAL}=${source.LAUF_SCRIPT};`;
-  document.head.append(style, script);
-  const loaded: unknown = Reflect.get(window, GLOBAL);
-  return isFactory(loaded) ? loaded : undefined;
-};
+import type { MaintenanceGameController, MaintenanceGameTexts } from "../maintenance-game";
+import { loadMaintenanceGame } from "./maintenance-game-loader";
 
 /** Space belongs to the page only when nothing that takes keys has the focus: no field, button, link or editor. */
 const pageHasTheKeys = (target: EventTarget | null): boolean => {
@@ -40,21 +15,22 @@ const pageHasTheKeys = (target: EventTarget | null): boolean => {
 /**
  * The waiting game's invitation at the foot of an error page: a symbol and quiet words, nothing drawn until the person
  * asks. The button starts it, and so does Space while the focus is on the page itself (as a browser's offline game
- * does), never while typing in a field such as the shell's search. The game then opens over the error screen, its road
- * below the page's words, and a round starts; it handles motion and keys itself from then on.
+ * does), never while typing in a field such as the shell's search. The game then plays on the error screen's stage:
+ * the words move to the top and stay reachable, the road runs below the ways out, and a round starts. There is one
+ * game per page; it handles motion and keys itself from then on.
  */
 export default function ErrorPageGame(props: { t: MaintenanceGameTexts; keys: string; touch: string }) {
-  let started = false;
+  let game: MaintenanceGameController | undefined;
+  let loading = false;
   const start = async () => {
-    if (started) return;
-    started = true;
+    if (game) return game.start();
+    if (loading) return;
+    loading = true;
     const host = document.querySelector<HTMLElement>('[data-k2-part="ErrorScreen"]');
-    const factory = host ? await loadFactory() : undefined;
-    if (!factory || !host) {
-      started = false;
-      return;
-    }
-    const game = factory({
+    const factory = host ? await loadMaintenanceGame() : undefined;
+    loading = false;
+    if (!factory || !host || game) return;
+    game = factory({
       host,
       anchor: () => host.querySelector(".k2-es-stack"),
       t: props.t,
@@ -62,12 +38,14 @@ export default function ErrorPageGame(props: { t: MaintenanceGameTexts; keys: st
       // These pages never end a maintenance, so a round never waits for one.
       onFinish: () => {},
     });
+    host.setAttribute("data-k2-stage", "");
     game.open();
     game.start();
   };
   onMount(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (started || event.key !== " " || event.isComposing || event.repeat || event.defaultPrevented) return;
+      // once the game is open, it takes Space itself
+      if (game || loading || event.key !== " " || event.isComposing || event.repeat || event.defaultPrevented) return;
       if (event.altKey || event.ctrlKey || event.metaKey || !pageHasTheKeys(event.target)) return;
       event.preventDefault();
       void start();

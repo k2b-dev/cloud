@@ -4180,8 +4180,6 @@
   user-select: none;
 }
 .k2-ui .k2-es-title {
-  font: var(--k2-t-figure);
-  letter-spacing: -0.015em;
   color: var(--k2-text);
   margin: 8px 0 0;
   text-wrap: balance;
@@ -4204,6 +4202,21 @@
   display: flex;
   justify-content: center;
   margin-top: 32px;
+}
+/* the words stand above a layer that plays in the screen; on its stage the code steps aside, the words move to the
+   top, the foot gives way, and the layer has the room below the ways out */
+.k2-ui :is(.k2-es-stack, .k2-es-foot) {
+  position: relative;
+  z-index: 1;
+}
+.k2-ui .k2-errorscreen[data-k2-stage] .k2-es-code {
+  display: none;
+}
+.k2-ui .k2-errorscreen[data-k2-stage] .k2-es-stack {
+  margin: 0;
+}
+.k2-ui .k2-errorscreen[data-k2-stage] .k2-es-foot {
+  visibility: hidden;
 }
 /* the invitation: a symbol and quiet words, no frame; the words fit the device (keys or a tap), both in the markup */
 .k2-ui .k2-es-invite {

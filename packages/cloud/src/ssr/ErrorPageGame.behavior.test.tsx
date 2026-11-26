@@ -62,7 +62,8 @@ const mount = async () => {
   };
 };
 
-test("the invitation is a plain button named in one sentence, with the words for keys and for a tap in its markup", async () => {
+// Solid delegates clicks to the first document it renders into, so the clicks stand in this one test.
+test("the invitation is a plain button in one sentence; the game plays on the stage, one game per page", async () => {
   const page = await mount();
   try {
     const invite = page.host.querySelector<HTMLButtonElement>('button[data-k2-part="ErrorScreen.Invite"]');
@@ -70,10 +71,18 @@ test("the invitation is a plain button named in one sentence, with the words for
     expect(invite?.querySelector(".k2-es-invite-keys")?.textContent).toBe("Leertaste drücken, um dir die Zeit zu vertreiben");
     expect(invite?.querySelector(".k2-es-invite-touch")?.textContent).toBe("Tippen, um dir die Zeit zu vertreiben");
     expect(page.factory).not.toHaveBeenCalled();
+    expect(page.host.hasAttribute("data-k2-stage")).toBe(false);
     invite!.click();
     expect(await page.started()).toBe(true);
     expect(page.factory).toHaveBeenCalledTimes(1);
     expect(page.open).toHaveBeenCalledTimes(1);
+    expect(page.host.hasAttribute("data-k2-stage")).toBe(true);
+    // a second press keeps the one game and only starts a new round
+    invite!.click();
+    await Bun.sleep(30);
+    expect(page.factory).toHaveBeenCalledTimes(1);
+    expect(page.open).toHaveBeenCalledTimes(1);
+    expect(page.start).toHaveBeenCalledTimes(2);
   } finally {
     page.cleanup();
   }
