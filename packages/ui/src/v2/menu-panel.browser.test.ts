@@ -240,7 +240,18 @@ test("a choice without a heading: another option is chosen once and closes the m
     const today = page.getByRole("menuitemradio", { name: "Heute" });
     await today.waitFor();
     expect(await page.locator('[role="menu"]').nth(1).locator(".k2-mh").count()).toBe(0);
-    expect(await page.getByRole("menuitemradio", { name: "Morgen" }).getAttribute("aria-checked")).toBe("true");
+    // no heading, so the group points at none
+    expect(await page.locator('[role="menu"]').nth(1).locator('[role="group"]').getAttribute("aria-labelledby")).toBe(null);
+    const tomorrow = page.getByRole("menuitemradio", { name: "Morgen" });
+    expect(await tomorrow.getAttribute("aria-checked")).toBe("true");
+    // the keys: Enter on the ticked option only closes the menu
+    await tomorrow.focus();
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
+    expect(await deeds(page)).toEqual([]);
+    await page.getByRole("button", { name: "Später" }).click();
+    await page.getByRole("menuitem", { name: /^Wann/ }).hover();
+    await today.waitFor();
     await today.click();
     await page.waitForFunction(() => !document.querySelector('[role="menu"]'));
     expect(await deeds(page)).toEqual(["when:today"]);
