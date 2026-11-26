@@ -36,7 +36,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       tx`DELETE FROM auth.rail_shortcuts WHERE shortcut->>'kind' = 'app' AND shortcut->>'appId' = ${appId}`,
     );
     await track(
-      "auth.rail_preferences",
+      "auth.rail_preferences.changed",
       tx`UPDATE auth.rail_preferences p SET visibility = visibility - ${appId},
       shortcuts = COALESCE((SELECT jsonb_agg(s.value ORDER BY s.position)
         FROM jsonb_array_elements(p.shortcuts) WITH ORDINALITY s(value, position)
@@ -51,8 +51,10 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     // Lock, narrow and audit the same mandate snapshot; absent grants must stay absent.
     const [mandates] = await tx<{ count: number }[]>`WITH candidates AS MATERIALIZED (
       SELECT id, state AS previous_state, revision AS expected_revision FROM auth.mandates
-      WHERE (jsonb_typeof(policy->'apps') = 'array' AND policy->'apps' ? ${appId})
+      WHERE state <> 'revoked' AND (
+        (jsonb_typeof(policy->'apps') = 'array' AND policy->'apps' ? ${appId})
         OR EXISTS (SELECT FROM jsonb_array_elements(COALESCE(policy->'grants', '[]'::jsonb)) g WHERE g->>'appId' = ${appId})
+      )
       FOR UPDATE
     ), changed AS (
       UPDATE auth.mandates m SET policy = (
@@ -73,11 +75,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     ), audited AS (
       INSERT INTO audit.events(action, outcome, target_type, target_id, metadata)
       SELECT 'mandate.pause', 'allowed', 'mandate', id::text,
-        jsonb_build_object('expectedRevision', expected_revision, 'ownerAppId', owner_app_id,
+        jsonb_build_object('expectedRevision', expected_revision, 'mandateOwnerAppId', owner_app_id,
           'removedAppId', ${appId}::text, 'reason', 'application_removed')
       FROM changed WHERE previous_state = 'active' RETURNING 1
     ) SELECT count(*)::int AS count FROM changed`;
-    counts["auth.mandates"] = (counts["auth.mandates"] ?? 0) + (mandates?.count ?? 0);
+    counts["auth.mandates.narrowed"] = mandates?.count ?? 0;
     // App-owned Code and its children must go before their resource-bound/code accounts.
     await track("code.codes", tx`DELETE FROM code.codes WHERE owner_app_id = ${appId}`);
     await track("auth.service_accounts", tx`DELETE FROM auth.service_accounts WHERE app_id = ${appId}`);
@@ -150,7 +152,7 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
       WHERE key = ${appId} OR starts_with(key, ${`${appId}.`}) RETURNING key`;
     await track("core.known_apps", tx`DELETE FROM core.known_apps WHERE id = ${appId}`);
     await track(
-      "core.known_apps",
+      "core.known_apps.status_providers",
       tx`UPDATE core.known_apps SET status_providers = status_providers - ${appId}
       WHERE status_providers ? ${appId}`,
     );
@@ -160,9 +162,11 @@ export const migrate = async (db: SQL = sql): Promise<void> => {
     if (packages?.present)
       await track("platform.application_packages", tx`DELETE FROM platform.application_packages WHERE app_id = ${appId}`);
     counts["settings.entries"] = deleted.length;
-    await tx`INSERT INTO audit.events(action, outcome, target_type, target_id, metadata)
-      VALUES ('app.removed', 'allowed', 'app', ${appId},
-        ${JSON.stringify({ counts, countScope: "direct table mutations; foreign-key cascades are additional" })}::text::jsonb)`;
+    if (Object.values(counts).some((count) => count > 0)) {
+      await tx`INSERT INTO audit.events(action, outcome, target_type, target_id, metadata)
+        VALUES ('app.removed', 'allowed', 'app', ${appId},
+          ${JSON.stringify({ counts, countScope: "direct table mutations; foreign-key cascades are additional" })}::text::jsonb)`;
+    }
     return deleted.map(({ key }) => key);
   });
   if (keys.length) {

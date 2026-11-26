@@ -122,9 +122,12 @@ workloads' mandates; affected active mandates are paused and audited.
 Historical audit events, AI inference/quota and structured-run records,
 outgoing-mail messages, logging data and other providers' capability execution
 records stay, including executions called through FAQ. Core writes one
-`app.removed` audit event with direct row-mutation counts per table;
-foreign-key cascades delete additional dependent rows. Other applications'
-data stays. Back up the database before upgrading if you need removed data.
+`app.removed` audit event only when it removes or changes rows; fresh
+installations get no removal event. Direct counts separate deletions from
+changes to surviving rows; foreign-key cascades delete additional dependent
+rows. Revoked mandates owned by other applications stay unchanged. Other
+applications' data stays. Back up the database before upgrading if you need
+removed data.
 
 Stopping the old FAQ service first is mandatory: restarting its old container
 would recreate an empty FAQ schema. Remove it from automatic restart and
