@@ -197,7 +197,13 @@ export const Workspace = (props: WorkspaceProps) => {
   ));
   // the head's main actions: where they are several, the phone's round button offers them all as one "+"
   const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
-  const headPlace = { place: () => placeName()?.(), creates: (entries: () => readonly MenuEntry[]) => setHeadCreates(() => entries) };
+  const headPlace = {
+    place: () => placeName()?.(),
+    creates: (entries: () => readonly MenuEntry[]) => {
+      setHeadCreates(() => entries);
+      return () => setHeadCreates((current) => (current === entries ? undefined : current));
+    },
+  };
   const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
   const fabCreates = () => headCreates()?.() ?? [];
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
@@ -229,7 +235,7 @@ export const Workspace = (props: WorkspaceProps) => {
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-drawer: 1; } ` +
     // the sidebar is a drawer now: the head names the page again
-    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; } } }`;
+    `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-names-place: static; --k2-names-place-size: auto; --k2-names-place-clip: none; --k2-names-place-head: var(--k2-h-head); } } }`;
   const [drawerOpen, setDrawerOpen] = createSignal(false);
   const drawer = useDrawer(() => ({ open: drawerOpen(), onOpenChange: setDrawerOpen, side: "start" }));
   let element: HTMLDivElement | undefined;
@@ -327,8 +333,8 @@ export const Workspace = (props: WorkspaceProps) => {
       <Show when={fabCreates().length > 1}>
         {/* several main actions in the head: the round button is their one "+" (its own words, or "Neu") */}
         <span class="k2-fab-menu">
-          <Menu variant="primary" icon={props.primary?.icon ?? "plus"} items={fabCreates()}>
-            {props.primary?.label ?? overlay().create}
+          <Menu variant="primary" icon="plus" items={fabCreates()}>
+            {overlay().create}
           </Menu>
         </span>
       </Show>
@@ -603,6 +609,7 @@ export const Bar = (props: BarProps) => {
   const [path, setPath] = createSignal(0);
   const [search, setSearch] = createSignal(0);
   const [more, setMore] = createSignal(0);
+  const [kept, setKept] = createSignal(0);
   const counter = (set: (change: (count: number) => number) => void) => () => {
     set((count) => count + 1);
     return () => set((count) => count - 1);
@@ -613,6 +620,7 @@ export const Bar = (props: BarProps) => {
     path: counter(setPath),
     more: counter(setMore),
     search: counter(setSearch),
+    kept: counter(setKept),
   };
   /** A list of what parts of the bar tell it, each gone with its part. */
   const heard = <T,>() => {
@@ -629,7 +637,7 @@ export const Bar = (props: BarProps) => {
   const [creates, create] = heard<() => MenuEntry | undefined>();
   const entries = () => creates().flatMap((entry) => entry() ?? []);
   const many = () => entries().length > 1;
-  head?.creates(entries);
+  if (head) onCleanup(head.creates(entries));
   const [searches, filled] = heard<() => boolean>();
   const [titles, repeats] = heard<() => boolean>();
   const t = useOverlayMessages();
@@ -647,7 +655,8 @@ export const Bar = (props: BarProps) => {
   // action floats as the round button and a host's bar opens the search, so such a head may show nothing
   // (`data-hollow`). A search with words shows them, and its head with them.
   const hollow = () => {
-    if (start() !== undefined || searches().some((holds) => holds())) return undefined;
+    // a main action with `keep` stays in the head on the phone, so the head has something to show
+    if (start() !== undefined || kept() > 0 || searches().some((holds) => holds())) return undefined;
     const count = parts(end);
     if (count === 0 || count !== search() + entries().length) return undefined;
     return search() > 0 ? "search" : "";

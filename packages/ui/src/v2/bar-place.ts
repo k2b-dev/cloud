@@ -2,7 +2,7 @@ import { createContext, onCleanup, useContext } from "solid-js";
 import type { MenuEntry } from "./menu";
 
 /** What marks a bar: a title, a toolbar (a filter bar) or a path in its start, the "…" or a search at its end. */
-export type BarMark = "title" | "toolbar" | "path" | "more" | "search";
+export type BarMark = "title" | "toolbar" | "path" | "more" | "search" | "kept";
 
 /** A place of a `Bar`, its start or its end, which hears what stands in it. */
 type BarPlace = {
@@ -78,7 +78,7 @@ export const SidebarPlaceContext = createContext<(name: () => string | undefined
  * The head of a workspace: the words of the sidebar's current entry, which a title of the same words repeats, and
  * where the head's bar tells its main actions, so the round button of the phone offers them all.
  */
-export type HeadPlace = { place: () => string | undefined; creates: (entries: () => readonly MenuEntry[]) => void };
+export type HeadPlace = { place: () => string | undefined; creates: (entries: () => readonly MenuEntry[]) => () => void };
 
 export const HeadPlaceContext = createContext<HeadPlace>();
 

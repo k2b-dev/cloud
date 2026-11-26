@@ -35,7 +35,8 @@ type Head =
   | "hollow"
   | "hollow-words"
   | "named-bare"
-  | "pane-actions";
+  | "pane-actions"
+  | "named-bare-drawer";
 const screens = {
   list: () => createComponent(FilteredOrders, {}),
   toolbar: () => createComponent(ToolbarInHead, {}),
@@ -50,6 +51,7 @@ const screens = {
   "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
   "named-bare": () => createComponent(NamedPlace, { bare: true }),
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
+  "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 const markup = (head: Head) => renderToString(screens[head]);
 const bundle = await demoBundle("head-block");
@@ -526,3 +528,45 @@ test("1440 px: a head that holds nothing but the repeated title gives way whole;
     await phone.close();
   }
 }, 60_000);
+
+test("390 px: an open item after a path keeps its way back, its title and its action in one row, and the first row free", async () => {
+  const page = await open(390, "item");
+  try {
+    const seen = await page.evaluate(() => {
+      const pane = document.querySelector(".k2-pane[data-detail]")!;
+      const bar = pane.querySelector(':scope > [data-slot="head"] > .k2-bar')!.getBoundingClientRect();
+      const box = (selector: string) => pane.querySelector(selector)!.getBoundingClientRect();
+      const back = box(':scope > [data-k2-part="Back"] .k2-btn');
+      const title = box(':scope > [data-slot="head"] .k2-bar-start > .k2-text');
+      const action = box(':scope > [data-slot="head"] .k2-bar-end .k2-btn');
+      const row = box('[data-k2-part="Row"]');
+      const inRow = (part: DOMRect) => part.width > 2 && part.top >= bar.top - 1 && part.bottom <= bar.bottom + 1;
+      return {
+        row: [back, title, action].map(inRow),
+        order: back.right <= title.left && title.right <= action.left,
+        path: pane.querySelector<HTMLElement>(':scope > [data-slot="head"] .k2-path')!.getBoundingClientRect().width,
+        firstRowFree: row.top >= bar.bottom - 1,
+      };
+    });
+    expect(seen).toEqual({ row: [true, true, true], order: true, path: 0, firstRowFree: true });
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+for (const [width, head] of [
+  [390, "named-bare"],
+  [1024, "named-bare-drawer"],
+] as const)
+  test(`${width} px: a head of the repeated title alone names the page again at the head's own height`, async () => {
+    const page = await open(width, head);
+    try {
+      const seen = await page.evaluate(() => ({
+        height: Math.round(document.querySelector('.k2-ws-main > [data-slot="head"] > .k2-bar')!.getBoundingClientRect().height),
+        title: document.querySelector('.k2-ws-main > [data-slot="head"] .k2-bar-start > .k2-text')!.getBoundingClientRect().width > 2,
+      }));
+      expect(seen).toEqual({ height: 56, title: true });
+    } finally {
+      await page.close();
+    }
+  }, 30_000);

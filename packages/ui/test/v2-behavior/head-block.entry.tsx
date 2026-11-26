@@ -28,7 +28,8 @@ declare global {
       | "hollow"
       | "hollow-words"
       | "named-bare"
-      | "pane-actions";
+      | "pane-actions"
+      | "named-bare-drawer";
   }
 }
 
@@ -46,6 +47,7 @@ const heads: Record<string, () => JSX.Element> = {
   "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
   "named-bare": () => createComponent(NamedPlace, { bare: true }),
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
+  "named-bare-drawer": () => createComponent(NamedPlace, { bare: true, detail: 600 }),
 };
 
 // A head as its island renders it over the server's markup: a list with its toolbar rows, a toolbar in the head, or a

@@ -1,7 +1,7 @@
 import { type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { markBarCreate } from "./bar-place";
+import { markBarCreate, markBarPlace } from "./bar-place";
 import { linkOr } from "./link";
 import { Avatar, Icon } from "./marks";
 import type { Action, OnNavigate, Person } from "./types";
@@ -81,6 +81,8 @@ export const Button = (props: ButtonProps) => {
   let element: HTMLElement | undefined;
   // A main action at the end of a workspace's head: several there become one "+" menu, whose entry runs this button's
   // own click, or opens its address as the button does. It follows the button's variant.
+  // a main action that keeps its place on the phone leaves its head something to show
+  if (props.keep) markBarPlace("end", "kept");
   markBarCreate(() => {
     if (props.variant !== "primary") return undefined;
     const words = label();

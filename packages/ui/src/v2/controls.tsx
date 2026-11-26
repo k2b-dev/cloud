@@ -391,6 +391,9 @@ export const Input = (props: InputProps) => {
               props.onKeyDown?.(event);
               if (props.type === "search") foldHeadSearch(event);
             }}
+            // an app may clear the field itself (Escape in Spaces sets its value to ""): its words are read again when
+            // the focus leaves, so an empty search folds
+            onBlur={(event) => setFilled(event.currentTarget.value !== "")}
           />
         }
       >
