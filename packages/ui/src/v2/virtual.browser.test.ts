@@ -300,29 +300,37 @@ test(
   TEST_TIMEOUT,
 );
 
-// Review of #4211: the current page of a long sidebar group is always in the page, and shown on load.
-test(
-  "the current entry of a long sidebar group is in the page and in view from the start",
-  async () => {
-    await withPage(
-      async (page) => {
-        const current = page.locator('[data-k2-part="Nav"] [aria-current="page"]');
-        await current.waitFor();
-        expect(await current.textContent()).toContain("Tabelle 700");
-        expect(await current.isVisible()).toBe(true);
-        const inView = await current.evaluate((element) => {
-          const scroller = element.closest(".k2-nav-scroll")!.getBoundingClientRect();
-          const box = element.getBoundingClientRect();
-          return box.top >= scroller.top - 1 && box.bottom <= scroller.bottom + 1;
-        });
-        expect(inView).toBe(true);
-      },
-      1200,
-      "nav",
-    );
-  },
-  TEST_TIMEOUT,
-);
+// Review of #4211: the current page of a sidebar is always in the page and shown on load: in a long group, in an open
+// fold of a long group (r2), and in a short group without a window (r2 P3).
+for (const [scenario, name] of [
+  ["nav", "Tabelle 700"],
+  ["navfold", "Archiv Tabelle 30"],
+  ["navshort", "Tabelle 38"],
+] as const)
+  test(
+    `the current entry of a sidebar (${scenario}) is in the page and in view from the start`,
+    async () => {
+      await withPage(
+        async (page) => {
+          const current = page.locator('[data-k2-part="Nav"] [aria-current="page"]');
+          await current.waitFor();
+          await settled(page);
+          expect(await current.textContent()).toContain(name);
+          const inView = await current.evaluate((element) => {
+            const scroller = element.closest(".k2-nav-scroll")!.getBoundingClientRect();
+            const box = element.getBoundingClientRect();
+            return box.top >= scroller.top - 1 && box.bottom <= scroller.bottom + 1
+              ? true
+              : `${Math.round(box.top)} in ${Math.round(scroller.top)}-${Math.round(scroller.bottom)} scrollTop ${element.closest(".k2-nav-scroll")!.scrollTop} height ${element.closest(".k2-nav-scroll")!.scrollHeight}`;
+          });
+          expect(inView).toBe(true);
+        },
+        1200,
+        scenario,
+      );
+    },
+    TEST_TIMEOUT,
+  );
 
 // Review of #4211: a group head stands in the list as no entry of it (role presentation); axe finds no fault in it.
 test(
