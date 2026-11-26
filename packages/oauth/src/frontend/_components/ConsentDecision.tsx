@@ -1,7 +1,7 @@
 import { useLocale } from "@k2b/ui";
 import { Facts } from "@k2b/ui/v2";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, Parties, RequestedAccess } from "./AuthorizationParts";
 
 export type ConsentDecisionView = {
   request: string;
@@ -23,6 +23,13 @@ export function ConsentDecision(props: { view: ConsentDecisionView }) {
 
   return (
     <>
+      {/* who asks and who decides, then what is asked, then the technical facts */}
+      <Parties
+        app={props.view.client.name}
+        kind={props.view.firstParty ? "first_party" : "dynamic"}
+        detail={props.view.firstParty ? t().firstParty : t().dynamic}
+      />
+      <RequestedAccess scopes={props.view.scopes} />
       <Facts
         items={[
           { label: t().returnsTo, value: props.view.redirectHost, mono: true },
@@ -30,7 +37,6 @@ export function ConsentDecision(props: { view: ConsentDecisionView }) {
           { label: t().clientId, value: props.view.client.clientId, mono: true },
         ]}
       />
-      <RequestedAccess scopes={props.view.scopes} />
       <CautionNote
         text={props.view.firstParty ? t().firstPartyOwnRequest : t().unverifiedDynamic}
         reauthenticate={!!props.view.reauthenticateHref}

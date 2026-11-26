@@ -35,7 +35,7 @@ export const sample = {
   code: "WDJB-MJHT",
   scopes: ["openid", "read", "write", "offline_access"],
   cli: { name: "Cloud CLI", clientId: "cloud-cli" },
-  dynamic: { name: "Example Assistant", clientId: "dyn_3f9c2a7e5b1d4c8a" },
+  dynamic: { name: "Werkstatt-Notizen", clientId: "dyn_3f9c2a7e5b1d4c8a" },
   terminal: { name: "Drucker-Terminal", clientId: "drucker-terminal" },
   kiosk: { name: "Empfangs-Kiosk", clientId: "empfangs-kiosk" },
 } as const;
@@ -135,7 +135,7 @@ const confirmPage = (reauthenticate: boolean) =>
         person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
-        heading: oauthMessages.resolve([getLocale(c)]).t.deviceConfirmTitle({ name: sample.cli.name }),
+        heading: oauthMessages.resolve([getLocale(c)]).t.deviceConfirmTitle,
         get children() {
           return createComponent(DeviceApproval, {
             view: {
@@ -143,7 +143,7 @@ const confirmPage = (reauthenticate: boolean) =>
               reauthenticateHref: reauthenticate ? reauthenticateHref(`/oauth/device?user_code=${sample.code}`) : null,
               request: sample.request,
               code: sample.code,
-              client: sample.cli,
+              client: { ...sample.cli, kind: "first_party" },
               scopes: [...sample.scopes],
             },
           });
@@ -158,7 +158,7 @@ const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
         person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
-        heading: oauthMessages.resolve([getLocale(c)]).t.authorize({ name: sample[client].name }),
+        heading: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
         get children() {
           return createComponent(ConsentDecision, {
             view: {
@@ -166,8 +166,8 @@ const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
               firstParty: client === "cli",
               reauthenticateHref: reauthenticate ? reauthenticateHref(`/oauth/consent?request=${sample.request}`) : null,
               client: sample[client],
-              resource: client === "cli" ? null : "https://cloud.example/api/mcp/v1",
-              redirectHost: client === "cli" ? "127.0.0.1:53682" : "localhost:53682",
+              resource: client === "cli" ? null : "https://cloud.werkstatt.example/api/mcp/v1",
+              redirectHost: client === "cli" ? "127.0.0.1:53682" : "notizen.werkstatt.example",
               scopes: client === "cli" ? [...sample.scopes] : ["read", "write", "offline_access"],
             },
           });

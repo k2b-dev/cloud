@@ -77,7 +77,7 @@ test("the clients render on v2 with a statement lead, their figures and three pa
   const html = await render("");
   expect(html).toContain('data-k2-part="Workspace"');
   const text = read(html);
-  expect(text).toContain("2 Clients haben sich selbst registriert");
+  expect(text).toContain("2 selbst registriert");
   expect(text).toContain("Grafana");
   expect(text).toContain("1 / 3");
   expect(get).not.toHaveBeenCalled();

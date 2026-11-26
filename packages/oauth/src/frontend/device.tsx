@@ -19,7 +19,7 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       person={signedInName(c.get("actor"))}
       title={title}
-      heading={view.kind === "confirm" ? t.deviceConfirmTitle({ name: view.client.name }) : undefined}
+      heading={view.kind === "confirm" ? t.deviceConfirmTitle : undefined}
     >
       <DeviceApproval view={view} />
     </AuthorizationPage>

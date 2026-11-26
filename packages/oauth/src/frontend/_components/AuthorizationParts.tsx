@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Notice, Row, Section, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Icon, List, Row, Section, Text } from "@k2b/ui/v2";
 import { For } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -40,10 +40,27 @@ export function RequestedAccess(props: { scopes: readonly string[] }) {
  */
 export function CautionNote(props: { text: string; reauthenticate?: boolean }) {
   const t = useMessages();
+  // a quiet line with its sign, right before the buttons
   return (
-    <Notice tone="warn" icon="alert-triangle">
-      {props.reauthenticate ? `${props.text} ${t().confirmIdentityHint}` : props.text}
-    </Notice>
+    <Band>
+      <Text>
+        <Icon name="alert-triangle" tone="warn" /> {props.reauthenticate ? `${props.text} ${t().confirmIdentityHint}` : props.text}
+      </Text>
+    </Band>
+  );
+}
+
+/** Who asks: the requesting application with the sign of its kind and where it returns to. */
+export function Parties(props: { app: string; kind: "first_party" | "dynamic" | "managed"; detail: string }) {
+  const t = useMessages();
+  return (
+    <List label={t().parties}>
+      <Row
+        icon={props.kind === "first_party" ? "cloud" : props.kind === "dynamic" ? "world" : "key"}
+        color={props.kind === "first_party" ? "var(--k2-app, var(--k2-blue))" : props.kind === "dynamic" ? "var(--k2-warn)" : "var(--k2-ok)"}
+        lines={[props.app, props.detail]}
+      />
+    </List>
   );
 }
 
@@ -88,5 +105,21 @@ export function DecisionForm(props: { action: string; request: string; userCode?
 
 /** The final state of a decision: its sign, one sentence and, where there is one, the way on; read as a status. */
 export function Outcome(props: { icon: string; body: string; ok?: boolean; action?: { label: string; href: string } }) {
-  return <Empty icon={props.icon} text={props.body} action={props.action} tone={props.ok ? "ok" : undefined} live />;
+  // the sign stands in the sentence's line; the way on follows below
+  return (
+    <Band>
+      <Text>
+        <Icon name={props.icon} tone={props.ok ? "ok" : "muted"} /> <span role="status">{props.body}</span>
+      </Text>
+      {props.action ? (
+        <Bar
+          end={
+            <Button icon="arrow-right" href={props.action.href}>
+              {props.action.label}
+            </Button>
+          }
+        />
+      ) : null}
+    </Band>
+  );
 }

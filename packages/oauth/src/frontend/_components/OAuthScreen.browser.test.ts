@@ -121,13 +121,13 @@ const open = async (view: View, address: string, state = "normal", answers: Answ
       if (method === "GET" && url.pathname === API)
         return route.fulfill({
           json: {
-            clients: [...NORMAL, fixtureClient(90, { name: "Wiki", clientId: "oc_wiki" })],
+            clients: [...NORMAL, fixtureClient(90, { name: "Wiki", clientId: "b84e1f27-3d6c-4a95-8e02-7c1f9a4d6b35" })],
             pagination: { page: 1, per_page: 50, total: NORMAL.length + 1, total_pages: 1, has_next: false },
           },
         });
       if (method === "POST" && url.pathname === API) {
         await answers.hold;
-        return route.fulfill({ json: { clientId: "oc_wiki", clientSecret: FAKE_SECRET } });
+        return route.fulfill({ json: { clientId: "b84e1f27-3d6c-4a95-8e02-7c1f9a4d6b35", clientSecret: FAKE_SECRET } });
       }
       if (url.pathname.endsWith("/regenerate-secret")) return route.fulfill({ json: { clientSecret: FAKE_SECRET } });
       return route.fulfill({ json: { message: "ok" } });
@@ -203,7 +203,7 @@ describe("OAuth on v2", () => {
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       const secret = tab.getByRole("dialog", { name: "Client erstellt" });
       await secret.getByText(FAKE_SECRET).waitFor();
-      expect(await secret.innerText()).toContain("oc_wiki");
+      expect(await secret.innerText()).toContain("b84e1f27-3d6c-4a95-8e02-7c1f9a4d6b35");
       expect(await secret.innerText()).toContain("Speichere dieses Secret jetzt.");
       await shoot(tab, "oauth-dialog-secret-1440");
       // the create, then the list read again behind the secret
@@ -234,9 +234,9 @@ describe("OAuth on v2", () => {
       await tab.getByRole("button", { name: "Neuer Client" }).first().click();
       const dialog = tab.getByRole("dialog");
       await dialog.getByRole("textbox", { name: "Name" }).fill("Terminal");
-      await dialog.getByRole("checkbox", { name: "Öffentlicher Client" }).check();
-      await dialog.getByRole("group", { name: "Geräteanmeldung" }).getByRole("checkbox").check();
-      await dialog.getByRole("checkbox", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
+      await dialog.getByRole("radio", { name: /^Öffentlich:/ }).check();
+      await dialog.getByRole("checkbox", { name: /kurzen Code/ }).check();
+      await dialog.getByRole("radio", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
       expect(await dialog.innerText()).toContain("Wähle mindestens einen Benutzer oder eine Gruppe aus.");
       expect(await dialog.getByRole("button", { name: "Erstellen" }).isDisabled()).toBe(true);
       await dialog.getByRole("searchbox").fill("a");
@@ -249,6 +249,8 @@ describe("OAuth on v2", () => {
         isPublic: true,
         allowDeviceGrant: true,
         accessMode: "specific",
+        // chosen people and groups keep the profile the client had
+        allowedProfiles: ["user"],
         allowedUserIds: ["11111111-1111-4111-8111-000000000007"],
         allowedGroupIds: ["22222222-2222-4222-8222-000000000007"],
       });

@@ -8,7 +8,7 @@ const confirm: DeviceApprovalView = {
   reauthenticateHref: null,
   request: "11111111-1111-4111-8111-111111111111",
   code: "WDJB-MJHT",
-  client: { name: "Cloud CLI", clientId: "cloud-cli" },
+  client: { name: "Cloud CLI", clientId: "cloud-cli", kind: "first_party" },
   scopes: ["openid", "read", "write", "offline_access"],
 };
 

@@ -52,8 +52,9 @@ const runtime = {
   apps: [{ id: "oauth", name: "OAuth", icon: "ti ti-key", description: "", adminHref: "/admin/oauth", routes: ["/admin/oauth"] }],
 } as unknown as CloudRuntime;
 
-type Data = "normal" | "worst" | "empty";
-const clientsOf = (data: Data) => (data === "normal" ? NORMAL : data === "worst" ? WORST : []);
+// "fresh" is a new installation: Cloud brings its own CLI client, so the list is never empty
+type Data = "normal" | "worst" | "fresh";
+const clientsOf = (data: Data) => (data === "normal" ? NORMAL : data === "worst" ? WORST : NORMAL.slice(0, 1));
 
 /** The first HTML of an address, as the page renders it for invented clients. */
 const firstHtml = async (search: string, data: Data) => {
@@ -143,13 +144,13 @@ afterAll(async () => {
 });
 
 describe("OAuth in the Cloud shell", () => {
-  test("the first picture keeps the v2 rules at 1440 and 390 px: list, open client, endpoints, empty and worst case", async () => {
+  test("the first picture keeps the v2 rules at 1440 and 390 px: list, open client, endpoints, a fresh installation and worst case", async () => {
     const cases: [string, string, Data][] = [
       ["clients", "", "normal"],
       ["client-offen", `?client=${NORMAL[2]!.id}`, "normal"],
       ["client-dynamisch", `?client=${NORMAL[4]!.id}`, "normal"],
       ["endpunkte", "?tab=endpoints", "normal"],
-      ["leer", "", "empty"],
+      ["frisch", "", "fresh"],
       ["worst-case", "", "worst"],
       ["worst-case-offen", `?client=${WORST[0]!.id}`, "worst"],
     ];
@@ -207,15 +208,20 @@ describe("OAuth in the Cloud shell", () => {
             },
             "/api/oauth/admin/clients": {
               type: "application/json",
-              body: JSON.stringify({ clientId: "oc_handbuch", clientSecret: FAKE_SECRET }),
+              body: JSON.stringify({ clientId: "6f1d2c84-9a3b-4e57-b210-3c8e5d7a9f42", clientSecret: FAKE_SECRET }),
             },
-            // the list read again after creating: the page's clients and the new one, as the service returns them
+            // the list read again after creating: the new client first, made today, as the service returns them
             "GET /api/oauth/admin/clients": {
               type: "application/json",
               body: JSON.stringify({
                 clients: [
+                  fixtureClient(90, {
+                    name: "Handbuch",
+                    clientId: "6f1d2c84-9a3b-4e57-b210-3c8e5d7a9f42",
+                    description: "Anleitungen der Werkstatt",
+                    createdAt: "2026-11-26T09:30:00.000Z",
+                  }),
                   ...NORMAL,
-                  fixtureClient(90, { name: "Handbuch", clientId: "oc_handbuch", description: "Anleitungen der Werkstatt" }),
                 ],
                 pagination: { page: 1, per_page: 50, total: NORMAL.length + 1, total_pages: 1, has_next: false },
               }),
@@ -230,7 +236,7 @@ describe("OAuth in the Cloud shell", () => {
         await dialog.getByRole("textbox", { name: "Weiterleitungs-URIs" }).fill("https://wiki.werkstatt.example/login/callback");
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
-        await dialog.getByRole("checkbox", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
+        await dialog.getByRole("radio", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
         await dialog.getByRole("searchbox").fill("a");
         await dialog.getByRole("option", { name: /Ben Okafor/ }).click();
         await settled(tab);

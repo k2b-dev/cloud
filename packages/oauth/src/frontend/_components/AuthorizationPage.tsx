@@ -1,6 +1,6 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
 import { MinimalLayout, type MinimalLayoutProps } from "@k2b/cloud/ssr";
-import { Avatar, Bar, Pane, RecordHead, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, List, Pane, RecordHead, Row, Workspace } from "@k2b/ui/v2";
 import type { JSX } from "solid-js";
 import { oauthMessages } from "../messages";
 
@@ -13,7 +13,7 @@ export function AuthorizationPage(props: {
   c: MinimalLayoutProps["c"];
   title: string;
   heading?: string;
-  /** The signed-in person who decides here (`signedInName`); the head names them with their picture. */
+  /** The signed-in person who decides here (`signedInName`); the page names them first, with their picture. */
   person?: string;
   children: JSX.Element;
 }) {
@@ -22,22 +22,16 @@ export function AuthorizationPage(props: {
   const person = props.person;
   return (
     <MinimalLayout c={props.c} ui="v2" measure>
-      <Workspace
-        head={
-          <Bar
-            start={<RecordHead name={props.heading ?? props.title} />}
-            end={
-              person ? (
-                <>
-                  <Text type="meta">{t.signedInAs({ name: person })}</Text>
-                  <Avatar name={person} />
-                </>
-              ) : undefined
-            }
-          />
-        }
-      >
-        <Pane label={props.heading ?? props.title}>{props.children}</Pane>
+      <Workspace head={<Bar start={<RecordHead name={props.heading ?? props.title} />} />}>
+        <Pane label={props.heading ?? props.title}>
+          {/* who decides here, with their picture, first on every width */}
+          {person ? (
+            <List label={t.signedInAs({ name: person })}>
+              <Row avatar={{ name: person }} lines={[t.signedInAs({ name: person })]} />
+            </List>
+          ) : null}
+          {props.children}
+        </Pane>
       </Workspace>
     </MinimalLayout>
   );

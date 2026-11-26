@@ -6,6 +6,7 @@ import {
   Button,
   Check,
   Chip,
+  Choice,
   confirm,
   Dialog,
   Empty,
@@ -19,7 +20,6 @@ import {
   Notice,
   Pane,
   Section,
-  Select,
   StatusRow,
   Table,
   Tabs,
@@ -144,25 +144,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       admin: t().admin,
     })[scope];
 
-  /**
-   * What sets a client apart from the usual one (managed here, with a secret), in colour, sign and word: registered by
-   * itself, brought by Cloud, or public. The usual client carries no mark.
-   */
-  const _kindChips = (client: OAuthClient) => (
-    <>
-      <Show when={client.registrationKind === "dynamic"}>
-        <Chip status="warn" icon="world">
-          {kind(client)}
-        </Chip>
-      </Show>
-      <Show when={client.registrationKind === "first_party"}>
-        <Chip icon="cloud">{kind(client)}</Chip>
-      </Show>
-      <Show when={client.isPublic}>
-        <Chip icon="lock-open">{t().public}</Chip>
-      </Show>
-    </>
-  );
   /** A client's sign in the colour of its kind: brought by Cloud, set up here, or registered by itself. */
   const ClientName = (mark: { client: OAuthClient }) => (
     <>
@@ -423,40 +404,37 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         />
       }
     >
-      <Show when={client.registrationKind === "first_party"}>
-        <Notice tone="note" icon="cloud">
-          {t().firstPartyNote}
-        </Notice>
-      </Show>
-      <Show when={client.registrationKind === "dynamic"}>
-        <Notice tone="warn" icon="world">
-          {t().dynamicNote}
-        </Notice>
-      </Show>
       {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
       <Facts
         items={[
+          ...(client.registrationKind === "managed"
+            ? []
+            : [
+                {
+                  label: t().origin,
+                  value: (
+                    <>
+                      <Icon
+                        name={client.registrationKind === "first_party" ? "cloud" : "world"}
+                        tone={client.registrationKind === "first_party" ? "app" : "warn"}
+                      />{" "}
+                      {client.registrationKind === "first_party" ? t().firstPartyNote : t().dynamicNote}
+                    </>
+                  ),
+                },
+              ]),
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
           { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
           ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          // the addresses under one label, one per line
-          client.redirectUris.length === 0
-            ? { label: t().redirectUri, value: t().noRedirect }
-            : {
-                label: t().redirectUri,
-                value: (
-                  <For each={client.redirectUris}>
-                    {(uri, index) => (
-                      <>
-                        {index() > 0 ? <br /> : null}
-                        {uri}
-                      </>
-                    )}
-                  </For>
-                ),
+          // one address per row, each to copy on its own; the label names the first
+          ...(client.redirectUris.length === 0
+            ? [{ label: t().redirectUri, value: t().noRedirect }]
+            : client.redirectUris.map((uri, index) => ({
+                label: index === 0 ? t().redirectUri : "",
+                value: uri,
                 mono: true,
-                copy: client.redirectUris.join("\n"),
-              },
+                copy: uri,
+              }))),
           ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
           { label: t().scopes, value: <>{scopeChips(client)}</> },
           { label: t().whoCanUse, value: profileLabel(client) },
@@ -494,11 +472,12 @@ export default function OAuthScreen(props: OAuthScreenProps) {
               ? t().emptyLead
               : props.figures.dynamic > 0
                 ? t().dynamicLead({ count: props.figures.dynamic })
-                : t().managedLead({ count: total() })
+                : t().managedLead
           }
           facts={[
-            ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
-            ...(total() > 0 ? [{ value: t().clientCount({ count: total() }) }] : []),
+            ...(props.search ? [{ before: t().searchFact, after: props.search }] : []),
+            // the count is quiet meta beside the statement
+            ...(total() > 0 ? [{ before: t().clientCount({ count: total() }) }] : []),
           ]}
         />
       }
@@ -538,10 +517,15 @@ export default function OAuthScreen(props: OAuthScreenProps) {
             cell: (client) =>
               client.description ? { lines: [<ClientName client={client} />, client.description] } : <ClientName client={client} />,
           },
-          // words, with a chip only for what is not the usual: registered by itself, or access for chosen people only
-          { title: t().type, width: { min: 130, default: 150 }, cell: (client) => <>{kindWords(client)}</>, drop: true },
+          // words, with a chip only for what is not the usual: registered by itself, or access for chosen people only;
+          // beside an open client the list keeps who may sign in (the name's sign says the kind), so no column is cut
+          ...(props.open
+            ? []
+            : [{ title: t().type, width: { min: 130, default: 150 }, cell: (client: ClientRow) => <>{kindWords(client)}</>, drop: true }]),
           { title: t().access, width: { min: 150, default: 150 }, cell: (client) => accessWords(client), drop: true },
-          { title: t().created, width: { min: 110, default: 110 }, cell: (client) => client.created, drop: true },
+          ...(props.open
+            ? []
+            : [{ title: t().created, width: { min: 110, default: 110 }, cell: (client: ClientRow) => client.created, drop: true }]),
         ]}
       />
       <Show when={props.paging.pages > 1}>
@@ -574,7 +558,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     const address = (label: string, path: string) => ({ label, value: at(path), mono: true, copy: at(path) });
     return (
       <Pane label={t().endpoints} scrollKey="oauth-endpoints">
-        {/* one list of addresses, so they share one label column */}
+        {/* one list of addresses and scopes, so they share one value column */}
         <Section icon="route" title={t().oauthEndpoints}>
           <Facts
             items={[
@@ -585,27 +569,11 @@ export default function OAuthScreen(props: OAuthScreenProps) {
               address(t().dynamicRegistrationEndpoint, "/oauth/register"),
               address(t().userInfoEndpoint, "/oauth/userinfo"),
               address(t().logoutUrl, "/oauth/logout"),
-            ]}
-          />
-        </Section>
-        <Section icon="key" title={t().availableScopes}>
-          <Facts
-            items={[
-              { label: "openid", value: t().requiredReturnsUserId },
-              { label: "profile", value: t().returnsProfileClaims },
-              { label: "email", value: t().returnsEmail },
-              { label: "groups", value: t().returnsGroups },
-            ]}
-          />
-        </Section>
-        <Section icon="id-badge-2" title={t().claimMapping}>
-          <Facts
-            items={[
-              { label: t().idClaim, value: `sub ${t().or} uid (${t().username})` },
-              { label: t().databaseId, value: "id (UUID)", mono: true },
-              { label: t().displayNameClaim, value: "display_name", mono: true },
-              { label: t().emailClaim, value: "email", mono: true },
-              { label: t().groupsClaim, value: "groups", mono: true },
+              // each scope with the claims it returns: every claim is named once, in the same value column
+              { label: t().scopeNamed({ scope: "openid" }), value: "sub, uid, id", mono: true, hint: t().openidClaims },
+              { label: t().scopeNamed({ scope: "profile" }), value: "name, display_name, given_name, family_name", mono: true },
+              { label: t().scopeNamed({ scope: "email" }), value: "email", mono: true },
+              { label: t().scopeNamed({ scope: "groups" }), value: "groups", mono: true, hint: t().groupsClaims },
             ]}
           />
         </Section>
@@ -614,14 +582,16 @@ export default function OAuthScreen(props: OAuthScreenProps) {
   };
 
   const opened = () => props.open;
-  const showsList = () => props.tab === "clients" && !props.open;
+  const _showsList = () => props.tab === "clients" && !props.open;
+  /** No client yet and no search: the empty state is the one way to the first client, and there is nothing to search. */
+  const nothingYet = () => props.figures.total === 0 && !props.search;
 
   return (
     <AdminWorkspace
       nav={props.nav}
       detail={props.tab === "clients" && props.open ? 460 : undefined}
       // the main action on the list, floating at the bottom right on the phone; never over an open client
-      primary={showsList() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
+      primary={props.tab === "clients" && !nothingYet() ? { label: t().newClient, icon: "plus", onClick: () => start("new") } : undefined}
       head={
         <Bar
           start={
@@ -640,7 +610,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           }
           end={
             <>
-              <Show when={props.tab === "clients"}>
+              <Show when={props.tab === "clients" && !nothingYet()}>
                 <Input
                   type="search"
                   icon="search"
@@ -655,7 +625,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                   }}
                 />
               </Show>
-              <Show when={showsList()}>
+              <Show when={props.tab === "clients" && !nothingYet()}>
                 <Button variant="primary" icon="plus" onClick={() => start("new")}>
                   {t().newClient}
                 </Button>
@@ -735,42 +705,45 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           />
         </Field>
         <Show when={editing() === "new"}>
-          <Field label={t().clientKind} hint={t().publicClientDescription}>
-            <Check label={t().publicClient} checked={draft().isPublic} onChange={(checked) => change({ isPublic: checked })} />
+          <Field label={t().clientKind}>
+            <Choice
+              name="kind"
+              value={draft().isPublic ? "public" : "confidential"}
+              onChange={(value) => change({ isPublic: value === "public" })}
+              options={[
+                { value: "confidential", label: t().confidentialChoice },
+                { value: "public", label: t().publicChoice },
+              ]}
+            />
           </Field>
         </Show>
         <Show when={draft().isPublic}>
-          <Field label={t().deviceGrant} hint={t().deviceGrantDescription}>
-            <Check label={t().allowed} checked={draft().allowDeviceGrant} onChange={(checked) => change({ allowDeviceGrant: checked })} />
+          <Field label={t().deviceGrant}>
+            <Check
+              label={t().deviceGrantChoice}
+              checked={draft().allowDeviceGrant}
+              onChange={(checked) => change({ allowDeviceGrant: checked })}
+            />
           </Field>
         </Show>
-        <Field
-          label={t().whoCanUse}
-          hint={
-            {
-              user: t().fullUsersOnlyDescription,
-              everybody: t().everybodyDescription,
-              guest: t().guestsOnlyDescription,
-              none: t().noUserProfilesDescription,
-            }[draft().profiles]
-          }
-          required
-        >
-          <Select
-            value={draft().profiles}
+        <Field label={t().whoCanUse} required>
+          <Choice
+            name="access"
+            value={draft().specific ? "specific" : draft().profiles}
             onChange={(value) => {
-              if (value === "user" || value === "everybody" || value === "guest" || value === "none") change({ profiles: value });
+              // chosen people keep the profiles already set, so a client that also lets guests in stays as it was
+              if (value === "specific") change({ specific: true, profiles: draft().profiles === "none" ? "user" : draft().profiles });
+              else if (value === "user" || value === "everybody" || value === "guest" || value === "none")
+                change({ specific: false, profiles: value });
             }}
             options={[
               { value: "user", label: t().fullUsersOnly },
               { value: "everybody", label: t().everybody },
               { value: "guest", label: t().guestsOnly },
+              { value: "specific", label: t().onlyChosen },
               { value: "none", label: t().noUserProfiles },
             ]}
           />
-        </Field>
-        <Field label={t().access} hint={t().specificDescription}>
-          <Check label={t().onlyChosen} checked={draft().specific} onChange={(checked) => change({ specific: checked })} />
         </Field>
         <Show when={draft().specific}>
           <Field
@@ -822,9 +795,9 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           </Text>
         </Show>
         <Show when={secret()?.value} fallback={<Text>{t().publicNoSecret}</Text>}>
-          <Notice tone="warn" icon="alert-triangle">
-            {t().saveSecretNow}
-          </Notice>
+          <Text>
+            <Icon name="alert-triangle" tone="warn" /> {t().saveSecretNow}
+          </Text>
         </Show>
         <Facts
           items={[

@@ -2,7 +2,7 @@ import { useLocale } from "@k2b/ui";
 import { Band, Canvas, Text } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, Outcome, Parties, RequestedAccess } from "./AuthorizationParts";
 import { DeviceCodeDrawing } from "./DeviceCodeDrawing";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
@@ -14,7 +14,7 @@ export type DeviceApprovalView =
       kind: "confirm";
       request: string;
       code: string;
-      client: { name: string; clientId: string };
+      client: { name: string; clientId: string; kind: "first_party" | "dynamic" | "managed" };
       scopes: string[];
       reauthenticateHref: string | null;
     }
@@ -43,7 +43,12 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
       <Match when={props.view.kind === "confirm" && props.view}>
         {(view) => (
           <>
-            {/* the question, what to compare and the code: one block below the head, with its own top edge */}
+            {/* who asks, with the sign of its kind; then what to compare and the code, in one block */}
+            <Parties
+              app={view().client.name}
+              kind={view().client.kind}
+              detail={{ first_party: t().firstParty, dynamic: t().dynamic, managed: t().managed }[view().client.kind]}
+            />
             <Band>
               <Text>{t().deviceConfirmCode}</Text>
               {/* comparing the code with the terminal is what keeps a person from approving someone else's sign-in */}

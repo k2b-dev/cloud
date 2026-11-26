@@ -10,14 +10,18 @@ import type { ClientRow } from "./OAuthScreen";
 export const FAKE_SECRET = "oc_sk_7Kp2Vx9mQ4rT8wL3sB6dF1hJ5yC0zN2eG4aR8uW";
 
 const id = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+/** Eight hex signs that look random but stay the same for an index. */
+const hex = (index: number, factor: number) => (Math.imul(index + 1, factor) >>> 0).toString(16).padStart(8, "0");
+/** A client ID as the service makes one (a random UUID), the same for an index in every run. */
+const clientUuid = (index: number) =>
+  `${hex(index, 0x9e3779b1)}-${hex(index, 0x85ebca77).slice(0, 4)}-4${hex(index, 0xc2b2ae3d).slice(1, 4)}-a${hex(index, 0x27d4eb2f).slice(1, 4)}-${hex(index, 0x165667b1)}${hex(index, 0x7feb352d).slice(0, 4)}`;
+/** The list's dates fall with its order, as the service lists the newest first. */
+const createdOn = (index: number) => `2026-11-${String(25 - (index % 15)).padStart(2, "0")}T08:00:00.000Z`;
 
 export const fixtureClient = (index: number, values: Partial<OAuthClient> & { name: string }): ClientRow => ({
   id: id(index),
   description: null,
-  clientId: `oc_${values.name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .slice(0, 48)}`,
+  clientId: clientUuid(index),
   redirectUris: [],
   logoutUri: null,
   scopes: ["openid", "profile", "email"],
@@ -30,15 +34,15 @@ export const fixtureClient = (index: number, values: Partial<OAuthClient> & { na
   registrationKind: "managed",
   isPublic: false,
   allowDeviceGrant: false,
-  createdAt: `2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`,
   createdBy: null,
+  ...values,
+  createdAt: values.createdAt ?? createdOn(index),
   // the date as the page words it (`formatDate`, German)
-  created: new Date(`2026-11-${String(10 + (index % 15)).padStart(2, "0")}T08:00:00.000Z`).toLocaleDateString("de-DE", {
+  created: new Date(values.createdAt ?? createdOn(index)).toLocaleDateString("de-DE", {
     day: "numeric",
     month: "short",
     year: "numeric",
   }),
-  ...values,
 });
 
 const person = (index: number, displayName: string) => ({

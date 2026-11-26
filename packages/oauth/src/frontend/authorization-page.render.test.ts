@@ -99,7 +99,10 @@ describe("OAuth authorization pages", () => {
     const html = await renderAuthorizationState("confirm", "en");
     const body = text(html);
     expect(html).toContain("<title>Connect a device");
-    expect(body).toContain("Allow Cloud CLI to access your account?");
+    expect(heading(html)).toBe("Allow access to your account?");
+    // the requesting application stands once, in its row with the sign of its kind, before the code
+    expect(body.split(sample.cli.name)).toHaveLength(2);
+    expect(body.indexOf(sample.cli.name)).toBeLessThan(body.indexOf("Check that this code matches"));
     // the code stands large in a block of its own, where it is compared with the terminal
     expect(html).toMatch(new RegExp(`data-testid="device-user-code"[^>]*>${sample.code}<`));
     expect(body).toContain("Check that this code matches the one on your device");
@@ -129,7 +132,7 @@ describe("OAuth authorization pages", () => {
 
   test("the device confirmation and the consent page read naturally in German", async () => {
     const confirm = text(await renderAuthorizationState("confirm", "de"));
-    expect(confirm).toContain("Cloud CLI Zugriff auf dein Konto erlauben?");
+    expect(confirm).toMatch(/^ Zugriff auf dein Konto erlauben\? AR Angemeldet als Ada Renz Cloud CLI Intern Prüfe/);
     expect(confirm).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
     expect(confirm).not.toContain("Client-ID");
     expect(confirm).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
@@ -138,12 +141,13 @@ describe("OAuth authorization pages", () => {
     const html = await renderAuthorizationState("consent", "de");
     const consent = text(html);
     expect(html).toContain("<title>Anwendung autorisieren");
-    expect(heading(html)).toBe(`${sample.dynamic.name} autorisieren`);
-    // the client names itself: its whole name also stands where it wraps
-    // the heading names the application; no fact repeats it
+    // the heading names the task; the application stands once, in its own row with the sign of its kind
+    expect(heading(html)).toBe("Anwendung autorisieren");
     expect(consent.split(sample.dynamic.name)).toHaveLength(2);
-    expect(consent).toContain("Rückkehr zu localhost:53682");
-    expect(consent).toContain("Ressource https://cloud.example/api/mcp/v1");
+    // who asks comes before the technical facts
+    expect(consent.indexOf(sample.dynamic.name)).toBeLessThan(consent.indexOf("Rückkehr zu"));
+    expect(consent).toContain("Rückkehr zu notizen.werkstatt.example");
+    expect(consent).toContain("Ressource https://cloud.werkstatt.example/api/mcp/v1");
     expect(consent).toContain(`Client-ID ${sample.dynamic.clientId}`);
     expect(consent).toContain("Für dein Konto verfügbare Änderungen ausführen");
     expect(consent).toContain("nicht verifiziert");
@@ -218,10 +222,11 @@ describe("OAuth authorization pages", () => {
       const html = await renderAuthorizationState("approved", locale);
       expect(heading(html)).toBe(title);
       expect(text(html)).toContain(body);
-      // it names what was connected, and to whom, without saying "connected" a second time
+      // it names what was connected; the person stands once, signed in above it
       expect(text(html)).toContain(
-        locale === "de" ? "Cloud CLI meldet sich jetzt als Ada Renz an." : "Cloud CLI now signs in as Ada Renz.",
+        locale === "de" ? "Cloud CLI ist jetzt mit deinem Konto verbunden." : "Cloud CLI is now connected to your account.",
       );
+      expect(text(html).split("Ada Renz")).toHaveLength(2);
       // the result is read as a status
       expect(html).toMatch(/role="status"[^>]*>[\s\S]*?You can close this tab now|role="status"[^>]*>[\s\S]*?Du kannst diesen Tab/);
       expect(html).not.toContain("<form");
@@ -270,7 +275,6 @@ describe("OAuth authorization pages", () => {
       expect(page).not.toContain("Der Zugriff wurde nicht erlaubt.");
     }
 
-    // the application is named only to a signed-in person, and only one an administrator set up for devices
     // the application is named only for the refused request itself: open, set up by an administrator, and one the
     // signed-in person may indeed not use; a guessed request or client names nothing
     const refused = { error: "account_not_allowed" };
@@ -313,11 +317,13 @@ describe("OAuth authorization pages", () => {
 // The connected page names what this person approved, by the decision's request, never by a name in the address: a
 // request of someone else, a self-registered application or a made-up request says the generic sentence.
 test("the connected page names only an application this person approved and an administrator set up", async () => {
-  expect(text(await renderConnected(approvedRequests.terminal, "de"))).toContain("Drucker-Terminal meldet sich jetzt als Ada Renz an.");
+  expect(text(await renderConnected(approvedRequests.terminal, "de"))).toContain(
+    "Drucker-Terminal ist jetzt mit deinem Konto verbunden.",
+  );
   for (const request of [approvedRequests.dynamic, "44444444-4444-4444-8444-444444444444", "kein-uuid"]) {
     const page = text(await renderConnected(request, "de"));
     expect(page, request).toContain("Du kannst diesen Tab jetzt schließen.");
     expect(page, request).not.toContain(sample.dynamic.name);
-    expect(page, request).not.toContain("meldet sich jetzt als");
+    expect(page, request).not.toContain("ist jetzt mit deinem Konto verbunden");
   }
 });
