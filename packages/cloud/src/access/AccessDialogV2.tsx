@@ -25,7 +25,7 @@ import type { AccessDialogProps, FoundServiceAccount } from "./AccessDialog";
 import { type AccessMark, createAccessDialogState, isApiKeyAccount, isCodeAccount } from "./access-dialog-state";
 import type { DraftRow } from "./access-draft";
 import { removeRow, restoreRow } from "./access-draft";
-import { levelKey } from "./PermissionEditor";
+import { levelKey } from "./permission-levels";
 import { principalFace } from "./principal-face";
 import { principalKey } from "./principal-key";
 import { type PrincipalSearchEntry, searchPrincipals } from "./principal-search";

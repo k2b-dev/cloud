@@ -7,7 +7,7 @@ import { PermissionEditor } from "./v2";
 /**
  * The v2 permission editor in a v2 settings pane, with invented people, a group and an agent. Changes are recorded
  * on `window.calls`; `?fail` lets the first level change fail, `?readonly` shows it without the right to change,
- * `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows).
+ * `?pair` lists only the last manager and one more person, `?worst` lists the worst case (long, unbreakable and non-Latin names, many rows).
  */
 const params = new URLSearchParams(location.search);
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
@@ -18,41 +18,43 @@ const person = (n: number, displayName: string, permission: AccessEntry["permiss
   permission,
   createdAt: "2026-11-03T00:00:00.000Z",
 });
-const entries: AccessEntry[] = params.has("worst")
-  ? [
-      person(1, "Mia Hoffmann", "admin"),
-      ...Array.from({ length: 40 }, (_, index) =>
-        person(
-          index + 10,
-          index % 3 === 0
-            ? `Maximiliane Donaudampfschifffahrtsgesellschaftskapitänin ${index}`
-            : index % 3 === 1
-              ? `${"x".repeat(60)}${index}`
-              : `山田 花子 ${index}`,
-          (["read", "write", "admin"] as const)[index % 3] ?? "read",
+const entries: AccessEntry[] = params.has("pair")
+  ? [person(1, "Mia Hoffmann", "admin"), person(2, "Jonas Weber", "write")]
+  : params.has("worst")
+    ? [
+        person(1, "Mia Hoffmann", "admin"),
+        ...Array.from({ length: 40 }, (_, index) =>
+          person(
+            index + 10,
+            index % 3 === 0
+              ? `Maximiliane Donaudampfschifffahrtsgesellschaftskapitänin ${index}`
+              : index % 3 === 1
+                ? `${"x".repeat(60)}${index}`
+                : `山田 花子 ${index}`,
+            (["read", "write", "admin"] as const)[index % 3] ?? "read",
+          ),
         ),
-      ),
-    ]
-  : [
-      person(1, "Mia Hoffmann", "admin"),
-      person(2, "Jonas Weber", "write"),
-      {
-        id: id(3),
-        principal: { type: "group", groupId: "30000000-0000-4000-8000-000000000003" },
-        displayName: "Logistik",
-        permission: "read",
-        createdAt: "2026-11-03T00:00:00.000Z",
-      },
-      {
-        id: id(4),
-        principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000004" },
-        displayName: "Lagerbot",
-        permission: "write",
-        serviceAccountKind: "agent",
-        createdAt: "2026-11-03T00:00:00.000Z",
-      },
-      { id: id(5), principal: { type: "authenticated" }, permission: "read", createdAt: "2026-11-03T00:00:00.000Z" },
-    ];
+      ]
+    : [
+        person(1, "Mia Hoffmann", "admin"),
+        person(2, "Jonas Weber", "write"),
+        {
+          id: id(3),
+          principal: { type: "group", groupId: "30000000-0000-4000-8000-000000000003" },
+          displayName: "Logistik",
+          permission: "read",
+          createdAt: "2026-11-03T00:00:00.000Z",
+        },
+        {
+          id: id(4),
+          principal: { type: "service_account", serviceAccountId: "20000000-0000-4000-8000-000000000004" },
+          displayName: "Lagerbot",
+          permission: "write",
+          serviceAccountKind: "agent",
+          createdAt: "2026-11-03T00:00:00.000Z",
+        },
+        { id: id(5), principal: { type: "authenticated" }, permission: "read", createdAt: "2026-11-03T00:00:00.000Z" },
+      ];
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = Object.assign(

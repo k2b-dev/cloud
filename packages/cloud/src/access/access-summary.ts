@@ -2,7 +2,7 @@ import { createMemo } from "solid-js";
 import type { AccessEntry, ServiceAccountKind } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
 import { accessMessages } from "./messages";
-import { type AllowedLevel, levelKey, resolveAllowedLevels } from "./PermissionEditor";
+import { type AllowedLevel, levelKey, resolveAllowedLevels } from "./permission-levels";
 import { principalKey } from "./principal-key";
 import { principalLabel } from "./principal-label";
 

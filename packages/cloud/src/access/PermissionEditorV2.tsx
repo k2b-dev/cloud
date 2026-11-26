@@ -1,12 +1,13 @@
 import { useLocale } from "@k2b/ui";
 import { Button, confirm, Empty, Failed, List, Loading, Menu, Notice, Popover, Row, Text, useToast } from "@k2b/ui/v2";
-import { For, type JSX, mergeProps, Show } from "solid-js";
+import { For, type JSX, mergeProps, onCleanup, Show } from "solid-js";
 import type { AccessEntry } from "../contracts/shared";
 import { accessDialogMessages } from "./access-dialog-messages";
-import { createGroupCoverage, type GroupCoverage } from "./GroupCoverage";
+import { createGroupCoverage, type GroupCoverage } from "./group-coverage";
 import { accessMessages } from "./messages";
-import { levelKey, type PermissionEditorProps, type ResolvedLevel } from "./PermissionEditor";
+import type { PermissionEditorProps } from "./PermissionEditor";
 import { createPermissionEditorState } from "./permission-editor-state";
+import { levelKey, type ResolvedLevel } from "./permission-levels";
 import { principalFace } from "./principal-face";
 import { serviceAccountKindDisplay } from "./service-account-kind";
 
@@ -100,7 +101,7 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
   const locale = useLocale();
   const toast = useToast();
   // k2b-ui gap: Row keeps no focus when its own action leaves; after a removal the focus goes to the next row's Remove.
-  let root: HTMLSpanElement | undefined;
+  const anchors = new Set<HTMLElement>();
   // v2 has one look: saves and failures always speak in their own row (the v1 `expanded` behaviour).
   const state = createPermissionEditorState(mergeProps(props, { expanded: true }), locale, {
     confirm: (question) => confirm({ title: question.title, description: question.body, confirm: state.t().removeAccess }),
@@ -108,9 +109,16 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
     focusAdd: () => {},
     focusAfterRemoval: (index) =>
       queueMicrotask(() => {
-        const list = root?.closest('[data-k2-part="List"]') ?? root?.parentElement;
-        const removes = [...(list?.querySelectorAll<HTMLButtonElement>("[data-access-remove-anchor] button") ?? [])];
-        [removes[index], removes[index - 1]].find((button) => button && !button.disabled)?.focus();
+        // The removed row took its own anchor along: find the list through a row that is still there.
+        const anchor = [...anchors].find((element) => element.isConnected);
+        const list = anchor?.closest('[data-k2-part="List"]');
+        if (!list) return;
+        const removes = [...list.querySelectorAll<HTMLButtonElement>("[data-access-remove-anchor] button")];
+        // The next or previous Remove; when only the protected last manager remains, the first control left in the list.
+        const next =
+          [removes[index], removes[index - 1]].find((button) => button && !button.disabled) ??
+          list.querySelector<HTMLElement>("button:not(:disabled), a[href]");
+        next?.focus();
       }),
   });
   const t = state.t;
@@ -211,7 +219,13 @@ export function PermissionEditorV2(props: PermissionEditorProps) {
             </Show>
             <Show when={state.canEdit()}>
               {/* The remove button keeps its place: disabled for the last manager, with the reason as its name. */}
-              <span ref={root} data-access-remove-anchor="">
+              <span
+                ref={(element) => {
+                  anchors.add(element);
+                  onCleanup(() => anchors.delete(element));
+                }}
+                data-access-remove-anchor=""
+              >
                 <Button
                   variant="ghost"
                   icon="x"
