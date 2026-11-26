@@ -155,7 +155,8 @@ export const Group = (props: GroupProps) => {
           )}
         </Show>
         <span class="k2-gh-title">
-          {props.title}
+          {/* the name gives way with "…"; the count beside it stays whole */}
+          <span class="k2-gh-name">{props.title}</span>
           <Show when={props.count !== undefined}>
             <span class="k2-gh-count">{props.count}</span>
           </Show>
