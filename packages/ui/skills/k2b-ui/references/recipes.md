@@ -267,10 +267,12 @@ side column keep a width `{ fixed }`. On the phone each event is a row of two
 lines with its seats. A `Pane side` holds the visit and only what the table
 does not say: free places today as one meter, the way in as `Facts`, and
 access as a `Section` of its own (good news is no notice). The status row
-names its day ("Heute"), so its chips count the rows they stand for. Each date
-is said once. `states` exports kiosk (the same page on a wall screen: no task,
-what runs now first, "aktualisiert sich jede Minute" in the head), empty and
-failed.
+names its reference ("Bis Sonntag"), so its chips count the rows the list
+shows. Seats read one way everywhere: free seats in words beside the meter of
+what is taken. The host shows as a face and a name. Each date is said once.
+`states` exports kiosk (the same page on a wall screen: no task, what runs now
+marked "läuft" on its row, "aktualisiert sich jede Minute" in the head), empty
+and failed.
 
 - A visitor page has no rail and no sidebar: the brand stands in the head.
 - A kiosk refreshes itself and says so in words, never with a button.
