@@ -42,7 +42,7 @@ import { installPeriodicRefresh } from "../workspace/periodic-refresh";
 import type { PulseSettingsTab } from "../workspace/routes";
 import { baseHref, baseNavGroups } from "./BaseFrame";
 import { useScreenMessages } from "./messages";
-import { baseColor, iconName, storeState } from "./store-state";
+import { baseColor, iconName, StoreChip, storeState } from "./store-state";
 
 export type SettingsScreenProps = {
   bases: PulseBase[];
@@ -624,9 +624,8 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
       <Section icon="database" title={store().storeTitle} summary={store().storeDescription}>
         <Facts
           items={[
-            { label: store().state, value: state().label },
-            // one limit per line; values per minute stand in the cells above
-            { label: words().queryProfile, value: profile(props.base.store.profile) },
+            { label: store().state, value: <StoreChip store={props.base.store} t={store()} /> },
+            // the query profile stands with the SQL limits, values per minute in the cells above
             { label: words().maxSeries, value: number(props.base.store.limits.maxSeries) },
           ]}
         />
