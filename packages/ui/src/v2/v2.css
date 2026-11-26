@@ -385,7 +385,10 @@
 .k2-ui .k2-ws-side-body {
   display: contents;
 }
+/* The main column is the reference box of the buttons at the start of its head (the drawer's, the collapse's): its
+   head slot draws no box of its own, so without it they would stand at the start of the workspace, over the sidebar. */
 .k2-ui .k2-ws-main {
+  position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
@@ -409,7 +412,7 @@
 .k2-ui .k2-ws {
   container-type: inline-size;
 }
-/* the button stands in the workspace (its reference box), where the head starts while the sidebar is a drawer */
+/* the button stands in the main column (its reference box), where the head starts while the sidebar is a drawer */
 .k2-ui .k2-btn.k2-ws-toggle {
   display: var(--k2-ws-toggle, none);
   position: absolute;

@@ -173,6 +173,37 @@ test("on a wide screen the sidebar collapses and expands by its button and Mod+A
   });
 });
 
+test("the collapse button stands at the start of the head, after the sidebar's line, and covers nothing", async () => {
+  await withPage(1440, async (page) => {
+    const seen = await page.evaluate(() => {
+      const box = (element: Element) => element.getBoundingClientRect();
+      const button = box(document.querySelector(".k2-ws-collapse")!);
+      const main = box(document.querySelector(".k2-ws-main")!);
+      const side = box(document.querySelector(".k2-ws-side")!);
+      const parts = [...document.querySelectorAll('.k2-ws-side *, .k2-ws-main > [data-slot="head"] .k2-bar-start > *')];
+      const over = parts.filter((part) => {
+        const other = box(part);
+        return (
+          other.width > 0 &&
+          other.left < button.right &&
+          other.right > button.left &&
+          other.top < button.bottom &&
+          other.bottom > button.top
+        );
+      });
+      return {
+        afterLine: button.left >= main.left && button.left >= side.right,
+        atStart: Math.round(button.left - main.left),
+        over: over.map((part) => part.className || part.tagName),
+      };
+    });
+    expect(seen.afterLine).toBe(true);
+    // the button's icon on the text edge: 20 px in, the button 10 px wider on each side than its icon
+    expect(seen.atStart).toBe(10);
+    expect(seen.over).toEqual([]);
+  });
+});
+
 test("a command of the page hides and shows the sidebar as its button does, opens the drawer where it is one, and nothing once detached", async () => {
   await withPage(1440, async (page) => {
     const collapse = page.locator(".k2-ws-collapse");
