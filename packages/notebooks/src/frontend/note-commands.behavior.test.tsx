@@ -123,6 +123,11 @@ if (!isServer) {
       ]);
       expect(created).toEqual(["Book01"]);
       expect(window.location.search).toBe("");
+      // once the link is taken, New note inside this writable notebook writes here again without asking
+      const { openCommand } = await import("@k2b/cloud/browser/commands");
+      await openCommand("notebooks.note.compose");
+      expect(created).toEqual(["Book01", "Book01"]);
+      expect(choose).toHaveBeenCalledTimes(1);
     } finally {
       dispose();
       choose.mockRestore();

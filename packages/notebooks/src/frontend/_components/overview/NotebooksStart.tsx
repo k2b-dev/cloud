@@ -5,7 +5,8 @@ import { notebooksPageMessages } from "../../messages";
 import { createNoteCommands } from "../../note-commands";
 import NewNotebookDialog, { type NewNotebookSource, type TemplateSummary } from "./NewNotebookDialog";
 
-export type { TemplateSummary } from "./NewNotebookDialog";
+/** The signs stand in the app's ink, so the rows read as Notebooks' own ways to start. */
+const appInk = "var(--k2-app-text)";
 
 /** A template's sign as the v2 icon name. */
 const sign = (icon: string) => icon.replace(/^ti ti-/, "");
@@ -27,14 +28,20 @@ export default function NotebooksStart(props: { templates: TemplateSummary[] }) 
     <>
       <Workspace primary={{ label: t().newNotebook, icon: "plus", onClick: () => setCreating({ kind: "blank" }) }}>
         <Pane label={t().notebooks}>
-          <Section icon="notebook" title={t().firstNotebook} summary={t().noNotebooksYet}>
+          <Section icon="notebook" title={t().firstNotebook}>
             <List label={t().firstNotebook}>
-              <Row lines={[t().blankNotebook, t().blankNotebookHint]} icon="notebook" onOpen={() => setCreating({ kind: "blank" })} />
+              <Row
+                lines={[t().blankNotebook, t().blankNotebookHint]}
+                icon="notebook"
+                color={appInk}
+                onOpen={() => setCreating({ kind: "blank" })}
+              />
               <For each={props.templates}>
                 {(template) => (
                   <Row
                     lines={[template.name, template.description]}
                     icon={sign(template.icon)}
+                    color={appInk}
                     onOpen={() => setCreating({ kind: "template", templateId: template.id })}
                   />
                 )}

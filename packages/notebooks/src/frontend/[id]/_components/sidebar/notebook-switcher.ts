@@ -1,7 +1,7 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { AppWorkspaceSidebarSwitcherProps, AppWorkspaceSwitcherOption } from "@k2b/ui";
 import { useLocale } from "@k2b/ui";
-import { type Accessor, createSignal } from "solid-js";
+import { type Accessor, createSignal, onCleanup } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import { listAccessibleNotebooks } from "./notebooks";
 import type { Notebook } from "./types";
@@ -22,14 +22,16 @@ export function createNotebookSwitcher(
   const [failed, setFailed] = createSignal(false);
   let requested = false;
   const [creating, setCreating] = createSignal(false);
-  // the start page's dialog, blank or from a template: one way to make a notebook
+  // the start page's dialog, blank or from a template: one way to make a notebook; it closes with this switcher
+  const closing = new AbortController();
+  onCleanup(() => closing.abort());
   const create = async (from: "blank" | "template") => {
     if (!canCreate || creating()) return;
     setCreating(true);
     try {
       const dialog = await importOnDemand(() => import("../../../create-notebook-dialog"));
       if (!dialog) return;
-      await dialog.openNewNotebookDialog({ kind: from }, locale());
+      await dialog.openNewNotebookDialog({ kind: from }, locale(), closing.signal);
     } finally {
       setCreating(false);
     }

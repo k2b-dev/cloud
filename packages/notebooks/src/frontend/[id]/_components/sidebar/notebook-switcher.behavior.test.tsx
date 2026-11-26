@@ -25,7 +25,7 @@ describe("notebooks container switcher loader", () => {
   const get = mock((_input: { query: Record<string, string> }) => reply());
   mock.module("@/api/client", () => ({ apiClient: { index: { $get: get, $post: post } } }));
   // the dialog itself is the start page's (its browser test covers it); here it only records how it was opened
-  const openDialog = mock(async (_source: { kind: string }, _locale: string) => {});
+  const openDialog = mock(async (_source: { kind: string }, _locale: string, _signal?: AbortSignal) => {});
   mock.module("../../../create-notebook-dialog", () => ({ openNewNotebookDialog: openDialog }));
   const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
   const mount = async (canCreate = false) => {
@@ -154,7 +154,7 @@ describe("notebooks container switcher loader", () => {
         view.switcher().actions?.[index]?.action?.();
         for (let attempt = 0; attempt < 30 && openDialog.mock.calls.length <= index; attempt++) await settle();
         // one dialog at a time: both actions wait while it is open
-        expect(openDialog.mock.calls[index]).toEqual([{ kind }, "en"]);
+        expect(openDialog.mock.calls[index]?.slice(0, 2)).toEqual([{ kind }, "en"]);
         expect(view.switcher().actions?.map((action) => action.disabled)).toEqual([true, true]);
         closed.resolve();
         for (let attempt = 0; attempt < 30 && view.switcher().actions?.[index]?.disabled; attempt++) await settle();
@@ -162,6 +162,11 @@ describe("notebooks container switcher loader", () => {
       }
       expect(openDialog).toHaveBeenCalledTimes(2);
       expect(post).not.toHaveBeenCalled();
+      // the dialog closes with the switcher, so a soft navigation leaves no dialog behind
+      const signal = openDialog.mock.calls[0]?.[2];
+      expect(signal?.aborted).toBe(false);
+      view.dispose();
+      expect(signal?.aborted).toBe(true);
     } finally {
       view.dispose();
     }

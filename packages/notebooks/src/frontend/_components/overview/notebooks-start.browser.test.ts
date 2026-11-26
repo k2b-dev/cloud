@@ -167,7 +167,7 @@ test("a template's row opens the dialog on that template, which keeps its name w
   const page = await open();
   try {
     await row(page, "Handbuch").click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch aus Vorlage" });
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.waitFor();
     expect(await dialog.getByText("Kapitel, Abläufe und Ansprechpersonen").isVisible()).toBe(true);
     await dialog.getByRole("button", { name: "Erstellen" }).click();
@@ -188,7 +188,7 @@ for (const [answer, says] of [
     try {
       server.creation = answer;
       await row(page, "Besprechungen").click();
-      const dialog = page.getByRole("dialog", { name: "Neues Notizbuch aus Vorlage" });
+      const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
       await dialog.getByRole("button", { name: "Erstellen" }).click();
       await dialog.getByText(says).waitFor();
       expect(new URL(page.url()).pathname).toBe("/app/notebooks");
@@ -203,7 +203,7 @@ test("the switcher of a page that is not v2 opens the same dialog, which loads t
   const page = await open(1440, "/app/notebooks?switcher");
   try {
     await page.getByRole("button", { name: "Notizbuch aus Vorlage" }).click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch aus Vorlage" });
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.waitFor();
     // a v2 dialog in a v2 scope of its own: it is drawn, not a bare element
     expect(await dialog.evaluate((element) => getComputedStyle(element).borderRadius !== "0px")).toBe(true);
@@ -221,7 +221,7 @@ test("templates that come as something other than a list say so, and nothing can
   try {
     server.templates = "object";
     await page.getByRole("button", { name: "Notizbuch aus Vorlage" }).click();
-    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch aus Vorlage" });
+    const dialog = page.getByRole("dialog", { name: "Neues Notizbuch" });
     await dialog.getByText("Die Vorlagen konnten nicht geladen werden.").waitFor();
     expect(await dialog.getByRole("button", { name: "Erstellen" }).isDisabled()).toBe(true);
     await dialog.getByRole("button", { name: "Abbrechen" }).click();

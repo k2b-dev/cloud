@@ -83,7 +83,7 @@ export default function NewNotebookDialog(props: {
   };
   return (
     <Dialog
-      title={fromTemplate() ? t().newNotebookFromTemplate : t().newNotebook}
+      title={t().newNotebook}
       open={props.source !== null}
       onOpenChange={(open) => {
         if (!open) close();
@@ -113,6 +113,8 @@ export default function NewNotebookDialog(props: {
               options={props.templates.map((candidate) => ({ value: candidate.id, label: candidate.name }))}
               value={templateId()}
               onChange={(value) => {
+                // the request in flight makes the template it was sent for
+                if (busy()) return;
                 setTemplateId(value);
                 setFailed(null);
               }}
