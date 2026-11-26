@@ -4,6 +4,9 @@ import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
+
+const axeSource = readFileSync(Bun.resolveSync("axe-core/axe.min.js", import.meta.dir), "utf8");
+
 import type {} from "../../test/v2-virtual.client";
 
 // The virtual window of v2 lists and tables (review of #4211): cells that live with their row, the reading place
@@ -316,6 +319,41 @@ test(
       },
       1200,
       "nav",
+    );
+  },
+  TEST_TIMEOUT,
+);
+
+// Review of #4211: a group head stands in the list as no entry of it (role presentation); axe finds no fault in it.
+test(
+  "a list under group heads passes axe",
+  async () => {
+    await withPage(
+      async (page) => {
+        await page.addScriptTag({ content: axeSource });
+        const violations = await page.evaluate(async () => {
+          const axe = (
+            window as unknown as {
+              axe: {
+                run: (context: unknown, options: unknown) => Promise<{ violations: { id: string; nodes: { target: string[] }[] }[] }>;
+              };
+            }
+          ).axe;
+          const result = await axe.run(
+            { include: [['[data-k2-part="List"]']] },
+            {
+              runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"] },
+              resultTypes: ["violations"],
+            },
+          );
+          return result.violations.map(
+            (violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(" ")).join(", ")}`,
+          );
+        });
+        expect(violations).toEqual([]);
+      },
+      1200,
+      "groups",
     );
   },
   TEST_TIMEOUT,
