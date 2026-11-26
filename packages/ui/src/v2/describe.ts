@@ -371,7 +371,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         const title = element.querySelector(".k2-code-label")?.textContent;
         const language = element.querySelector(".k2-code-language")?.textContent;
         const shown = element.querySelectorAll(".k2-code-line").length;
-        const deeds = [...element.querySelectorAll(".k2-code-deeds > .k2-btn")].map(
+        const deeds = [...element.querySelectorAll(".k2-code-deeds .k2-btn")].map(
           (button) => button.getAttribute("aria-label")?.split(":")[0] ?? button.textContent ?? "",
         );
         const more = element.querySelector(".k2-code-more")?.textContent;

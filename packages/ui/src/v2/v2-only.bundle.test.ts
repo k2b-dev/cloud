@@ -14,6 +14,7 @@ const src = resolve(import.meta.dir, "..");
  */
 // Measured 26.11.2026 (Bun 1.4, minified), plus a quarter for the helpers growing.
 const allowed: Record<string, number> = {
+  "content/code-highlight.ts": 5_300, // highlightCodeDisplayLines for `CodeBlock`: the whole module is that helper
   "content/MarkdownView.tsx": 2_500, // renderSafeMarkdown for `Prose`
   "content/markdown-info-block-messages.ts": 550,
   "content/markdown-info-blocks.ts": 7_200,
