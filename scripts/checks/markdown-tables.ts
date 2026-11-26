@@ -32,9 +32,11 @@ export const findInMarkdown = (source: string): { line: number; message: string 
     if (run) {
       const marks = run[1]!;
       const rest = run[2] ?? "";
-      if (!fence) fence = marks;
-      else if (marks[0] === fence[0] && marks.length >= fence.length && rest.trim() === "") fence = undefined;
-      continue;
+      // a backtick run whose info string holds a backtick opens no fence (CommonMark): it is a line of text
+      const opens = !fence && !(marks[0] === "`" && rest.includes("`"));
+      if (opens) fence = marks;
+      else if (fence && marks[0] === fence[0] && marks.length >= fence.length && rest.trim() === "") fence = undefined;
+      if (opens || fence || rest.trim() === "") continue;
     }
     if (fence || !line.trimStart().startsWith("|") || !separator.test(lines[index + 1] ?? "")) continue;
     const head = cells(line);

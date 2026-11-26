@@ -69,3 +69,10 @@ test("a tilde run inside a backtick fence, and a backtick run with words after i
   ].join("\n");
   expect(findInMarkdown(source)).toEqual([{ line: 14, message: "the row has 1 cells, its table's head 2" }]);
 });
+
+test("a backtick run with a backtick in its info string opens no fence, so a table after it is still checked", () => {
+  const source = ["```js `inline` code```", "", "| A | B |", "| --- | --- |", "| one | two | three |"].join("\n");
+  expect(findInMarkdown(source)).toEqual([{ line: 5, message: "the row has 3 cells, its table's head 2" }]);
+  // a tilde run may carry backticks in its info string and still opens a fence
+  expect(findInMarkdown(["~~~ `x`", "| A | B |", "| --- | --- |", "| one | two | three |", "~~~"].join("\n"))).toEqual([]);
+});
