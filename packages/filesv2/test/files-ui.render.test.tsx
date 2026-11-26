@@ -8,6 +8,7 @@ import { parseAdminLocation } from "../src/frontend/admin-location";
 import FilesScreen from "../src/frontend/FilesScreen.island";
 import FileThumbnail from "../src/frontend/FileThumbnail";
 import { DirectoryStatus, IssueMessage } from "../src/frontend/feedback";
+import { itemHistoryRequest, itemHistorySource } from "../src/frontend/history-requests";
 import Inventory from "../src/frontend/Inventory";
 import { chain, current, entry, gone, live, page } from "./history-fixtures";
 
@@ -280,6 +281,11 @@ describe("Filesv2 server-rendered feedback", () => {
             selectedId: base.id,
             directory: { base, path: "Projects", items, next: null, actions: { create: true } },
             detail: { base, entry: items[2]!, favorite: false },
+            // the server reads the open file's history for the first picture, as the page does
+            history: {
+              source: itemHistorySource(itemHistoryRequest(base, items[2]!)),
+              page: { items: [], next: null, visibleCount: 0, batches: [], exhausted: true },
+            },
             errorCode: null,
             now: "2026-11-25T12:00:00.000Z",
           }}

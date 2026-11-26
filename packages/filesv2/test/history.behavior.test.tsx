@@ -58,8 +58,7 @@ describe("Files history components", () => {
     expect(dom.root.textContent).toContain(historyMessages(locale).historyUnavailable);
     expect(dom.root.textContent).not.toContain("Transport text");
     expect(buttonNamed(dom.root, historyMessages(locale).retry)).toBeUndefined();
-    expect(dom.root.querySelector('[role="status"]')).not.toBeNull();
-    expect(dom.root.querySelectorAll(".filesv2-history-row")).toHaveLength(0);
+    expect(dom.root.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]')).toHaveLength(0);
   });
 
   test("activity version evidence retries, restores the exact saved content, and disappears for a new row", async () => {
@@ -157,7 +156,7 @@ describe("Files history components", () => {
       />
     ));
     await flush();
-    expect(dom.root.querySelectorAll(".filesv2-history-row--skeleton")).toHaveLength(4);
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
     replies[0]!.reject(new Error("down"));
     await flush();
     expect(dom.root.textContent).toContain("Verlauf nicht geladen.");
@@ -165,11 +164,11 @@ describe("Files history components", () => {
     await flush();
     replies.at(-1)!.resolve(page(items));
     await flush();
-    const rows = () => dom.root.querySelectorAll(".filesv2-history-row:not(.filesv2-history-row--skeleton)");
+    const rows = () => dom.root.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"]');
     expect(rows()).toHaveLength(4);
     expect(dom.root.textContent).toContain("Tom Albers hat die Datei im Editor bearbeitet");
     expect(dom.root.textContent).toContain("4-mal gespeichert");
-    expect(dom.root.textContent).toContain("Lukas Pohl hat Proof_v1.pdf in Proof.pdf umbenannt");
+    expect(dom.root.textContent).toMatch(/Lukas Pohl hat Proof_v1\.pdf in\s+Proof\.pdf umbenannt/);
     expect(dom.root.textContent).toContain("Besucher eines Upload-Links hat die Datei hochgeladen");
     expect(buttonNamed(dom.root, "Alles in Aktivität")?.getAttribute("href")).toBe("/app/filesv2/activity?item=proof");
     buttonNamed(dom.root, "2 ältere anzeigen")!.click();
@@ -275,7 +274,9 @@ describe("Files history components", () => {
     const dialog = dom.document.querySelector("dialog")!;
     buttonNamed(dialog, "Widerrufen")!.click();
     await flush();
-    expect(dom.root.querySelector("[role='alert']")?.textContent).toBe("Der Link konnte nicht widerrufen werden.");
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toBe(
+      "Der Link konnte nicht widerrufen werden.",
+    );
   });
   test("rows use the approved avatar sizes, a finding without a Cloud entry reads as a warning, and link figures stay flat", async () => {
     const { HistoryAvatar } = await import("../src/frontend/history-rows");
@@ -377,7 +378,7 @@ describe("Files history components", () => {
     networks: { known: 21, overflow: false, incomplete: true, rolledUp: false, next: null, items: [] },
   });
   const rowTimes = (root: ParentNode) =>
-    [...root.querySelectorAll(".filesv2-history-rows > li time")].map((time) => time.getAttribute("datetime"));
+    [...root.querySelectorAll('[data-k2-part="List"] [data-k2-part="Row"] time')].map((time) => time.getAttribute("datetime"));
 
   test("item source changes hide old rows and counts through failure, retry from the first page, and retain same-source pages", async () => {
     const { default: ItemHistory } = await import("../src/frontend/ItemHistory");
@@ -413,7 +414,7 @@ describe("Files history components", () => {
       </Show>
     ));
     await flush();
-    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip, .k2-sh-count")].map((chip) => chip.textContent);
     expect(calls).toHaveLength(0);
     expect(rowTimes(dom.root)).toEqual([old.time]);
     expect(chips()).toEqual(["1"]);
@@ -424,12 +425,14 @@ describe("Files history components", () => {
     expect(calls[0]).toMatchObject({ source: "new", cursor: null });
     expect(rowTimes(dom.root)).toEqual([]);
     expect(chips()).toEqual([]);
-    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("true");
-    expect(dom.root.querySelectorAll(".filesv2-history-row--skeleton")).toHaveLength(4);
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).not.toBeNull();
     calls[0]!.reply.reject(new Error("offline"));
     await flush();
-    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Verlauf nicht geladen.");
-    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("false");
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toContain(
+      "Verlauf nicht geladen.",
+    );
+    expect(dom.root.querySelector('[data-k2-part="Loading"]')).toBeNull();
     expect(rowTimes(dom.root)).toEqual([]);
     expect(chips()).toEqual([]);
     expect(dom.root.textContent).not.toContain("Noch keine Einträge");
@@ -450,7 +453,9 @@ describe("Files history components", () => {
     await flush();
     // A failed older page belongs to the same source: keep its good first page and retry its cursor.
     expect(rowTimes(dom.root)).toEqual([fresh.time]);
-    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Ältere Einträge konnten nicht geladen werden.");
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toContain(
+      "Ältere Einträge konnten nicht geladen werden.",
+    );
     buttonNamed(dom.root, "Erneut versuchen")!.click();
     await flush();
     expect(calls[3]).toMatchObject({ source: "new", cursor: "new-older" });
@@ -458,7 +463,7 @@ describe("Files history components", () => {
     await flush();
     expect(rowTimes(dom.root)).toEqual([fresh.time, older.time]);
     expect(chips()).toEqual(["2"]);
-    expect(dom.root.querySelector("[role='alert']")).toBeNull();
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')).toBeNull();
 
     setSource("pending");
     await flush();
@@ -525,8 +530,8 @@ describe("Files history components", () => {
     await flush();
     const access = () => links()[0]!.access;
     const facts = () => [...dom.root.querySelectorAll(".filesv2-share-facts__stats dd")].map((value) => value.textContent);
-    const history = () => dom.root.querySelector(".filesv2-item-history")!;
-    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    const history = () => dom.root.querySelector<HTMLElement>('[data-k2-part="Section"]')!;
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip, .k2-sh-count")].map((chip) => chip.textContent);
     expect(calls).toHaveLength(0);
     expect(facts()).toEqual(["99", "2", "21"]);
     expect(rowTimes(dom.root)).toEqual(["2026-10-18T08:00:00.000Z"]);
@@ -539,13 +544,16 @@ describe("Files history components", () => {
     expect(access().hasMore()).toBe(false);
     expect(facts()).toEqual([]);
     expect(rowTimes(dom.root)).toEqual([]);
-    expect(history().getAttribute("aria-busy")).toBe("true");
+    // the history waits for the links' use quietly, never with an empty or complete list
+    expect(history().textContent).toContain("Zugriffe werden geladen");
     expect(dom.root.querySelector(".filesv2-share-facts__skeleton")).not.toBeNull();
     expect(chips()).toEqual(["1"]); // Only the known link count, never the old history count.
     calls[0]!.reply.reject(new Error("offline"));
     await flush();
-    expect(history().getAttribute("aria-busy")).toBe("false");
-    expect(history().querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(history().querySelector('[data-k2-part="Loading"]')).toBeNull();
+    expect(history().querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toContain(
+      "Zugriffe nicht geladen.",
+    );
     expect(facts()).toEqual([]);
     expect(rowTimes(dom.root)).toEqual([]);
     expect(access().hasMore()).toBe(false);
@@ -573,7 +581,9 @@ describe("Files history components", () => {
     expect(access().pages()).toEqual([fresh]);
     expect(facts()).toEqual(["7", "2", "21"]);
     expect(rowTimes(dom.root)).toEqual(["2026-10-19T08:00:00.000Z"]);
-    expect(history().querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(history().querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toContain(
+      "Zugriffe nicht geladen.",
+    );
     expect(chips()).toEqual(["1"]);
     buttonNamed(history(), "Erneut versuchen")!.click();
     await flush();
@@ -581,7 +591,7 @@ describe("Files history components", () => {
     calls[3]!.reply.resolve({ ...fresh, pages: 8 });
     await flush();
     expect(facts()).toEqual(["8", "2", "21"]);
-    expect(history().querySelector("[role='alert']")).toBeNull();
+    expect(history().querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')).toBeNull();
     expect(chips()).toEqual(["1", "1"]);
 
     setPeriod({ from: "2026-10-02", to: "2026-10-20" });
@@ -651,7 +661,7 @@ describe("Files history components", () => {
     });
     await flush();
     const text = () => dom.root.textContent ?? "";
-    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip, .k2-sh-count")].map((chip) => chip.textContent);
     // Facts and history read one query: one first-page request for the link, none for the SSR activity page.
     expect(requests).toEqual([{ shareId: share.id }]);
     // The access timeline may still hold rows newer than the older changes, so those wait; the history does not count.
@@ -662,9 +672,13 @@ describe("Files history components", () => {
       "2026-10-15T08:00:00.000Z",
     ]);
     expect(chips()).toEqual(["1"]);
-    expect(dom.root.querySelectorAll("[data-kind='link-access']")).toHaveLength(3);
-    expect(dom.root.querySelectorAll("[data-kind='link-access'] .k2b-avatar")).toHaveLength(3);
-    expect(dom.root.querySelector("[data-kind='link-access'] button")).toBeNull();
+    // the links' use: rows led by the link's mark, without a deed
+    const access = () =>
+      [...dom.root.querySelectorAll<HTMLElement>('[data-k2-part="List"] [data-k2-part="Row"]')].filter((row) =>
+        row.querySelector('[data-k2-part="Mark"] [data-name="link"]'),
+      );
+    expect(access()).toHaveLength(3);
+    expect(access().some((row) => row.querySelector("button"))).toBe(false);
     expect(text()).toContain("Die Seite des Links wurde 96-mal aus einem Netz aufgerufen");
     expect(text()).toContain("18.10., 22:00 bis 23:00");
     expect(text()).toContain("Link „Druckdaten für Hoffmann“");
@@ -733,15 +747,17 @@ describe("Files history components", () => {
     });
     await flush();
     const text = () => dom.root.textContent ?? "";
-    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip")].map((chip) => chip.textContent);
+    const chips = () => [...dom.root.querySelectorAll(".k2b-count-chip, .k2-sh-count")].map((chip) => chip.textContent);
     // Known changes show at once; pending links keep the history uncounted and busy, never "no entries".
     expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
     expect(chips()).toEqual([]);
-    expect(dom.root.querySelector(".filesv2-item-history")?.getAttribute("aria-busy")).toBe("true");
+    expect(text()).toContain("Zugriffe werden geladen");
     setState("complete");
     calls[0]!.reply.reject(new Error("forbidden"));
     await flush();
-    expect(dom.root.querySelector("[role='alert']")?.textContent).toContain("Zugriffe nicht geladen.");
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')?.textContent).toContain(
+      "Zugriffe nicht geladen.",
+    );
     expect(rowTimes(dom.root)).toEqual(["2026-10-16T12:20:00.000Z"]);
     expect(chips()).toEqual([]);
     expect(text()).not.toContain("Noch keine Einträge");
@@ -752,7 +768,7 @@ describe("Files history components", () => {
     await flush();
     expect(rowTimes(dom.root)).toEqual(["2026-10-18T20:00:00.000Z", "2026-10-16T12:20:00.000Z"]);
     expect(chips()).toEqual(["2"]);
-    expect(dom.root.querySelector("[role='alert']")).toBeNull();
+    expect(dom.root.querySelector('[role="alert"], [data-k2-part="Notice"][data-tone="bad"]')).toBeNull();
     // Further link pages unloaded: rows stay, the count goes.
     setState("partial");
     await flush();

@@ -374,33 +374,24 @@ function Loaded(
           currentAuthor={currentAuthor()}
         />
       </Show>
-      {/* the item's history is still the v1 part of the detail; its v2 rebuild follows */}
-      <Band>
-        <Canvas label={h().publicLink}>
-          {/* The v1 parts bring no text edge of their own; until PR 2 they stand on the column's edge. */}
-          <div style={{ padding: "0 var(--k2-edge) 16px" }}>
-            <EntryHistory
-              base={props.base}
-              entry={props.item}
-              resourceId={props.result.resourceId}
-              busy={busy()}
-              onChanged={(path) => void props.onChanged(path)}
-              onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
-              locale={locale()}
-              history={props.history}
-              versions={versions}
-              currentAuthor={currentAuthor()}
-              links={links}
-              // the versions' list in this detail, found by its name
-              onShowVersions={() =>
-                document
-                  .querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)
-                  ?.scrollIntoView({ block: "nearest" })
-              }
-            />
-          </div>
-        </Canvas>
-      </Band>
+      {/* the item's history, its changes and the links' use as one list */}
+      <EntryHistory
+        base={props.base}
+        entry={props.item}
+        resourceId={props.result.resourceId}
+        busy={busy()}
+        onChanged={(path) => void props.onChanged(path)}
+        onOpen={(item) => (item.directory ? undefined : props.actions.preview(item))}
+        locale={locale()}
+        history={props.history}
+        versions={versions}
+        currentAuthor={currentAuthor()}
+        links={links}
+        // the versions' list in this detail, found by its name
+        onShowVersions={() =>
+          document.querySelector(`[data-k2-part="List"][aria-label="${CSS.escape(t().versions)}"]`)?.scrollIntoView({ block: "nearest" })
+        }
+      />
     </>
   );
 }
