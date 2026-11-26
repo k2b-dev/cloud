@@ -1,7 +1,6 @@
 import type { MaintenanceStatus } from "@k2b/cloud/contracts/maintenance";
-import type { DateContext } from "@k2b/stdlib";
-import { DateTimePicker } from "@k2b/ui";
-import { Button, Dialog, Field, Notice } from "@k2b/ui/v2";
+import { type DateContext, dates } from "@k2b/stdlib";
+import { Button, DatePicker, Dialog, Field, Notice } from "@k2b/ui/v2";
 import { createEffect, createSignal, Show } from "solid-js";
 import { maintenanceApi, refusedField } from "./client";
 import { maintenanceAdminMessages } from "./messages";
@@ -64,17 +63,23 @@ export default function MoveEndDialog(props: {
         </>
       }
     >
-      <Field name="until" label={t().newEnd} error={error()}>
-        {/* k2b-ui gap: no date and time picker in v2; the v1 picker stands in, with the time zone it names. */}
-        <DateTimePicker
-          aria-label={t().newEnd}
-          value={value}
-          dateConfig={props.dateConfig}
+      <Field name="until" label={t().newEnd} hint={t().timeIn({ zone: props.dateConfig.timeZone })} error={error()}>
+        <DatePicker
+          time
+          label={t().newEnd}
+          value={value() ? dates.instantToZonedInput(value()!, props.dateConfig.timeZone) : undefined}
           min={todayKey(props.dateConfig.timeZone)}
-          disabled={saving()}
-          onValueChange={(next) => {
+          timeZone={props.dateConfig.timeZone}
+          onPick={(wall) => {
+            // a wall time the clock change skips or repeats is refused, never moved to a neighbouring hour
+            let next: string;
+            try {
+              next = dates.zonedDateTimeToInstant(wall, props.dateConfig.timeZone);
+            } catch {
+              return void setError(t().timeUnclear);
+            }
             setValue(next);
-            setError(next && !isFutureEnd(next) ? t().timePassed : undefined);
+            setError(isFutureEnd(next) ? undefined : t().timePassed);
           }}
         />
       </Field>

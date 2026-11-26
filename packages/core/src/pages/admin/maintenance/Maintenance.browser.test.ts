@@ -136,11 +136,13 @@ test("the end moves past midnight with the date-time picker, which names the tim
     fixture.control.requests.length = 0;
     await page.getByRole("button", { name: "Ende verschieben", exact: true }).click();
     const dialog = page.getByRole("dialog");
-    await dialog.locator(".k2b-date-trigger").click();
-    await page.locator(".k2b-date-popover__timezone", { hasText: "Europe/Berlin" }).waitFor();
-    await page.locator('[data-date-day="2026-11-17"]').click();
-    await page.locator(".k2b-date-time__control input").fill("01:30");
-    await page.getByRole("button", { name: "Übernehmen", exact: true }).click();
+    // the field names the zone of the wall time it asks for
+    expect(await dialog.innerText()).toContain("Uhrzeit in Europe/Berlin");
+    await dialog.locator('[data-value="2026-11-17"]').click();
+    const hour = dialog.getByRole("group", { name: "Uhrzeit" }).getByRole("spinbutton", { name: "Stunde" });
+    await hour.focus();
+    await page.keyboard.type("0130");
+    await dialog.getByRole("button", { name: "Übernehmen", exact: true }).click();
     await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
     await dialog.waitFor({ state: "detached" });
     const saved = fixture.control.requests.find((request) => request.path === "/api/admin/maintenance/until");
