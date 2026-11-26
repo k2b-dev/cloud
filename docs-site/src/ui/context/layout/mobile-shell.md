@@ -35,7 +35,9 @@ when the page has one:
   so the title and the content stay in place between pages. Icon buttons in
   `actions` are 44 px targets with a glyph the size of the tab bar's icons,
   and the last glyph ends at the side gutter, as Back's starts at it. Pass
-  plain icon buttons and leave their size to the shell.
+  plain icon buttons and leave their size to the shell. `phoneActions` follow
+  `actions` only while the shell shows no sidebar, for a way the sidebar
+  already offers, such as Settings: never twice beside the sidebar.
 - Children render in the shell's only scroll area, a
   [`ScrollArea`](/en/ui/layout/scroll-area) inside `<main>`. Its content pads the
   side insets, and the bottom safe area when no footer is visible.

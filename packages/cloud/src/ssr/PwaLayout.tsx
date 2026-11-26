@@ -133,16 +133,8 @@ export default function PwaLayout(props: PwaLayoutProps) {
             title={props.title}
             sidebarTitle={props.sidebarTitle}
             back={props.back}
-            actions={
-              props.phoneActions === undefined ? (
-                props.actions
-              ) : (
-                <>
-                  {props.actions}
-                  {props.phoneActions}
-                </>
-              )
-            }
+            actions={props.actions}
+            phoneActions={props.phoneActions}
           />
         }
         scroll={!props.bare}
