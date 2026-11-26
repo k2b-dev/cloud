@@ -44,7 +44,7 @@ The identity of the record in the head `Bar start`: picture, name, kinds and ide
 
 ### Cells
 
-Two to four key statements side by side, with the area's colour; one under the other on the phone.
+Two to four key statements side by side, with the area's colour; two in a row on the phone, and a last one alone takes the whole row.
 
 <Props of="Cells Cells.Cell" />
 
@@ -68,7 +68,7 @@ One statement that stands out in a column, in a tone; free height and one line b
 
 ### Facts
 
-Labels with their values; `copy` for what people paste elsewhere, `mono` for keys and IDs, `inline` for one line.
+Labels with their values; `copy` for what people paste elsewhere, `mono` for keys, IDs and addresses (they break after their signs, never inside a word), `inline` for one line.
 
 <Props of="Facts Fact" />
 

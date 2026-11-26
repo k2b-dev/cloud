@@ -103,7 +103,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
-| a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
+| a token, key, ID or address to read and copy | `Facts` item with `mono` and `copy`; in a table a `mono` column | – |
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |

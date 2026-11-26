@@ -50,7 +50,7 @@ One entry: one to three lines, a lead, a time, marks and one action; `current`, 
 
 ### Table
 
-Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone.
+Columns of like things: fixed widths, cut text, dropped columns and two-line rows on the phone. A `mono` column shows IDs, fingerprints or addresses in monospace at the same row height.
 
 <Props of="Table Column" />
 
