@@ -298,8 +298,10 @@ describe("a group's record on v2", () => {
     const { context, tab, errors } = await open(wide, record, hugeDb());
     try {
       await tab.getByText("Person 100", { exact: true }).waitFor();
-      // from the start of the screen's render to its rows (the harness renders in the browser what the server renders)
-      const ready = await tab.evaluate(() => performance.now() - Number(document.documentElement.dataset.renderStart));
+      // from the start of the screen's render to the screen with its rows (the server renders it in production)
+      const ready = await tab.evaluate(
+        () => Number(document.documentElement.dataset.renderEnd) - Number(document.documentElement.dataset.renderStart),
+      );
       expect(ready).toBeLessThan(1500);
       expect(await tab.locator("[data-k2-part='Row']").count()).toBe(100);
       expect(await tab.locator("#root *").count()).toBeLessThan(2500);

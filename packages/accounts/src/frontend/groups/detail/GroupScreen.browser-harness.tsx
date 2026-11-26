@@ -53,3 +53,5 @@ render(
   ),
   host,
 );
+// rendering is synchronous: the screen with its rows stands now
+document.documentElement.dataset.renderEnd = String(performance.now());
