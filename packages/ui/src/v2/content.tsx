@@ -758,6 +758,20 @@ export const Table = <T,>(props: TableProps<T>) => {
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
   const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
+
+  // the row object of each key of the tree now, so an item made once reads the newest one
+  const rowsByKey = createMemo(() => {
+    const out = new Map<string, T>();
+    for (const entry of flat()) if ("row" in entry && entry.tree) out.set(key(entry.row, 0), entry.row);
+    return out;
+  });
+  const treeItem = (rowKey: string, row: T, index: number, tree: TreePlace): TableItem<T> => ({
+    get row() {
+      return rowsByKey().get(rowKey) ?? row;
+    },
+    index,
+    tree,
+  });
   // the entries of a tree stay the same objects while nothing about their row changes, so its `tr` stays
   let lastItems = new Map<string, TableItem<T>>();
   const items = createMemo((): TableItem<T>[] => {
@@ -786,8 +800,9 @@ export const Table = <T,>(props: TableProps<T>) => {
       if (place) {
         const rowKey = key(row, index);
         const before = lastItems.get(rowKey);
-        // the same row keeps its element (and the focus in it); its place is read by key from `places`
-        const item = before && "row" in before && before.row === row ? before : { row, index, tree: place };
+        // A row keeps its element (and the focus in it) for as long as its key stays, also when the app hands a new
+        // object for it (a refetch): the item reads its row by key, its place from `places`.
+        const item = before && "row" in before ? before : treeItem(rowKey, row, index, place);
         kept.set(rowKey, item);
         out.push(item);
       } else out.push({ row, index });
