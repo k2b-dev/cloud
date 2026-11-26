@@ -337,3 +337,36 @@ test("a link in a cut second line shows its whole focus ring", async () => {
     "rows",
   );
 });
+
+// W7 (Assistant): a row of one or two lines let its title wrap without bound, so a long memory grew its row to any
+// height. Its title now stops after two lines with "…", says its whole text on hover, and the row stays bounded.
+for (const width of [1440, 390])
+  test(`a long title of a row of one or two lines stops after two lines at ${width} px`, async () => {
+    await withPage(
+      width,
+      async (page) => {
+        const rows = await page.evaluate(() =>
+          Array.from(document.querySelectorAll<HTMLElement>(".k2-row")).map((row) => {
+            const title = row.querySelector<HTMLElement>(".k2-row-title")!;
+            const line = Number.parseFloat(getComputedStyle(title).lineHeight);
+            return {
+              lines: Math.round(title.getBoundingClientRect().height / line),
+              cut: title.scrollHeight > title.clientHeight + 1,
+              // the whole text on hover where the title can be cut; no hint a screen reader would read twice where not
+              hint: title.getAttribute("title") === null ? "none" : title.getAttribute("title") === title.textContent ? "whole" : "other",
+            };
+          }),
+        );
+        // the two long ones: two lines, cut, the whole text on hover; the short one: one line, whole, no hint
+        expect(rows).toEqual([
+          { lines: 2, cut: true, hint: "whole" },
+          { lines: 2, cut: true, hint: "whole" },
+          { lines: 1, cut: false, hint: "none" },
+        ]);
+        const layout = await measureV2Layout(page, { root: "#root" });
+        expect(layout.past).toEqual([]);
+        expect(layout.squeezed).toEqual([]);
+      },
+      "notes",
+    );
+  });

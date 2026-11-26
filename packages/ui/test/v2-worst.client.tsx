@@ -42,7 +42,25 @@ const scenario = document.body.dataset.case;
 // `<body data-case="rows">`: endpoints whose second line is an address of 300 characters without a break, beside a deed
 const address = `https://cloud.example.test/tools/api/webhooks/receive/${"segmentwithoutanybreak".repeat(12)}`;
 const hyphened = `https://cloud.example.test/tools/api/webhooks/receive/${"segment-with-breaks-".repeat(12)}end`;
-if (scenario === "rows")
+// `<body data-case="notes">`: what the Assistant remembers (W7), as rows of one and of two lines whose text runs to
+// 600 signs; each row stays two lines of title at most, its text whole on hover
+const memory = `Valentin möchte Angebote immer zuerst als Entwurf sehen, mit den Maßen der Werkstatt, ${"dem Holz, der Oberfläche und dem Liefertermin, ".repeat(10)}bevor etwas an Kundinnen geht.`;
+if (scenario === "notes")
+  render(
+    () => (
+      <Workspace>
+        <Pane label="Spalte">
+          <List label="Erinnerungen">
+            <Row icon="brain" lines={[memory]} />
+            <Row icon="brain" lines={[memory, "gemerkt am 26. Nov."]} time="heute" />
+            <Row icon="brain" lines={["Kurz gemerkt"]} />
+          </List>
+        </Pane>
+      </Workspace>
+    ),
+    root,
+  );
+else if (scenario === "rows")
   render(
     () => (
       <Workspace>

@@ -1080,11 +1080,19 @@
   align-items: baseline;
   column-gap: 8px;
 }
-/* in a row of one or two lines the title wraps (it is what the row is about); the quiet note after it is cut */
+/* in a row of one or two lines the title wraps (it is what the row is about), but two lines at most, then "…", whole
+   on hover (W7 26.11.: a long memory grew its row to any height); the quiet note after it is cut */
 .k2-ui .k2-row-title {
   font-weight: 400;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.k2-ui .k2-row:not([data-lines="3"]) > .k2-row-l1 > .k2-row-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
 }
 .k2-ui .k2-row-l1 > .k2-row-meta {
   font: var(--k2-t-meta);

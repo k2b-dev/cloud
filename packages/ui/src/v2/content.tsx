@@ -401,17 +401,26 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
   </Show>
 );
 
+/**
+ * The signs a row's title holds in its two lines in the narrowest column (320 px, about 256 px of title at 14 px): up
+ * to this it is never cut, so it needs no hint on hover.
+ */
+const TITLE_FITS_TWO_LINES = 60;
+
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
   // Parts passed as JSX are made once and read from here: reading a prop again would make its JSX again.
   const text = createMemo(() => props.lines);
   const lines = () => text().length;
-  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover
+  // a row of three lines cuts each line with "…", a row of two its second line: a cut line of words says all on hover.
+  // The title of a row of one or two stops after two lines (W7 26.11.) and says all on hover only where two lines can
+  // be too few, so a short title has no hint that a screen reader would read twice (review of #4259).
   const cut = (index: number) => {
     const line = text()[index];
-    const cuts = lines() === 3 || (lines() === 2 && index === 1);
-    return cuts && typeof line === "string" && line.trim() ? line : undefined;
+    if (typeof line !== "string" || !line.trim()) return undefined;
+    if (lines() === 3 || (lines() === 2 && index === 1)) return line;
+    return index === 0 && Array.from(line).length > TITLE_FITS_TWO_LINES ? line : undefined;
   };
   const meta = resolveChildren(() => props.meta);
   const time = resolveChildren(() => props.time);
