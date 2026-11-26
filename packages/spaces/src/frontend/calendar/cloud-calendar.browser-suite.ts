@@ -89,6 +89,7 @@ const serverBody = (data: Case, href: string) => {
         items,
         reads,
         today: TODAY,
+        now: NOW.toISOString(),
         canCreateSpace: true,
         dateConfig,
       }),

@@ -52,6 +52,8 @@ export type CloudCalendarProps = {
   reads: CalendarSourceRead[];
   /** Today in the person's date settings, as the server saw it. */
   today: string;
+  /** The server's time of the page, so the first row names the same next entry on the server and in the browser. */
+  now: string;
   canCreateSpace: boolean;
   dateConfig?: DateContext;
 };
@@ -298,13 +300,24 @@ export default function CloudCalendar(props: CloudCalendarProps) {
     };
     return shownItems().filter((item) => itemInRange(item, span, props.dateConfig)).length;
   };
-  /** The statement of the row: what today holds in the chosen calendars; the days in view are a quiet count after it. */
-  const todayCount = () => {
-    const span = {
-      from: dates.parseCalendarDate(todayKey(), props.dateConfig).toISOString(),
-      to: dates.parseCalendarDate(shiftDateKey(todayKey(), 1), props.dateConfig).toISOString(),
-    };
-    return shownItems().filter((item) => itemInRange(item, span, props.dateConfig)).length;
+  /**
+   * The statement of the row: the next timed entry of today in the chosen calendars, read at the page's time. A count of
+   * the days in view tells nothing to act on, so the row has none (review 26.11., "say it once").
+   */
+  const nextToday = () => {
+    const now = Date.parse(props.now);
+    const end = dates.parseCalendarDate(shiftDateKey(todayKey(), 1), props.dateConfig).getTime();
+    return shownItems()
+      .flatMap((item) => (item.type !== "deadline" && item.time.kind === "instant" ? [{ item, start: Date.parse(item.time.start) }] : []))
+      .filter((entry) => entry.start > now && entry.start < end)
+      .sort((left, right) => left.start - right.start)[0];
+  };
+  const lead = () => {
+    const next = nextToday();
+    return next
+      ? // The entry itself stands in the calendar; the row says only when it starts, so its title is not said twice.
+        t.nextAt({ time: dates.formatTime(new Date(next.start), props.dateConfig) })
+      : t.nothingLaterToday;
   };
   const loading = () => status()?.kind === "loading";
   const empty = (): "sources" | "selection" | "events" | null => {
@@ -359,10 +372,9 @@ export default function CloudCalendar(props: CloudCalendarProps) {
   /** What the status row says beside the count: what still loads, which calendars show busy times only. */
   const statusFacts = () => {
     const current = status();
-    const shown = { value: new Intl.NumberFormat(props.dateConfig?.locale).format(shownCount()), after: t.shownAfter };
-    if (current?.kind === "loading") return [shown, { after: t.loading({ count: current.count, total: current.total }) }];
-    if (current?.kind === "busy") return [shown, { after: t.busyOnly({ names: current.names.join(", ") }) }];
-    return [shown];
+    if (current?.kind === "loading") return [{ after: t.loading({ count: current.count, total: current.total }) }];
+    if (current?.kind === "busy") return [{ after: t.busyOnly({ names: current.names.join(", ") }) }];
+    return [];
   };
   /** Apps that did not answer, or a range cut short: the sentence of the warning above the calendar. */
   const problem = (current: NonNullable<ReturnType<typeof status>>) =>
@@ -392,8 +404,8 @@ export default function CloudCalendar(props: CloudCalendarProps) {
               <Button
                 variant="ghost"
                 icon="search"
+                // On the phone the shell's bar holds the one search, so this one gives way there.
                 label={overview.search}
-                keep
                 onClick={() => void openGlobalSearch({ scope: { appId: "spaces", label: "Spaces", icon: "ti ti-layout-kanban" } })}
               />
               <Show when={!catalogFailed() && sources().some((source) => source.calendars.length > 0)}>
@@ -406,16 +418,7 @@ export default function CloudCalendar(props: CloudCalendarProps) {
         />
       }
     >
-      <Pane
-        label={t.calendar}
-        status={
-          <StatusRow
-            lead={t.todayLead({ count: new Intl.NumberFormat(props.dateConfig?.locale).format(todayCount()) })}
-            loading={loading()}
-            facts={statusFacts()}
-          />
-        }
-      >
+      <Pane label={t.calendar} status={<StatusRow lead={lead()} loading={loading()} facts={statusFacts()} />}>
         <Show
           when={!catalogFailed()}
           fallback={<Failed text={`${t.catalogFailed} ${t.catalogFailedBody}`} onRetry={() => void retryCatalog()} />}

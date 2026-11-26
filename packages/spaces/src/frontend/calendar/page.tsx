@@ -99,6 +99,7 @@ export default ssr<AuthContext>(async (c) => {
         items={items}
         reads={reads}
         today={dates.formatDateKey(dates.today(dateConfig), dateConfig)}
+        now={new Date(started).toISOString()}
         canCreateSpace
         dateConfig={dateConfig}
       />

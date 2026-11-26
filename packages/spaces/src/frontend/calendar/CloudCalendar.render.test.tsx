@@ -39,6 +39,7 @@ const render = (href: string, options: { locale?: "en" | "de"; catalog?: boolean
         items: answer.items.filter((item) => !pending.has(item.appId)),
         reads: answer.sources.map((read) => (pending.has(read.appId) ? { ...read, state: "pending" as const } : read)),
         today: TODAY,
+        now: NOW.toISOString(),
         canCreateSpace: true,
         dateConfig,
       }),
@@ -55,6 +56,16 @@ describe("calendar of all Spaces on the server", () => {
     expect(html).toContain("Gabelstapler-Wartung");
     expect(html).toMatch(/aria-current="page"[^>]*>[\s\S]*?Kalender/);
     expect(html).not.toContain("Frühschicht");
+  });
+
+  test("the first row names what comes next today, not a count of the days in view", () => {
+    const html = render("/app/spaces/calendar?view=week&date=2026-10-27");
+    const lead = html.match(/class="k2-status-lead"[^>]*>([^<]*)</)?.[1];
+    // 10:40 in Berlin: the forklift service runs already; the next entry starts later today.
+    // Only when: the entry's title stands in the calendar itself and is not said twice.
+    expect(lead).toMatch(/^Nächster um \d\d:\d\d$/);
+    expect(html).not.toMatch(/\d+ heute/);
+    expect(html).not.toContain("angezeigt");
   });
 
   test("sources the server had no time for say they load, in the line the browser keeps", () => {
