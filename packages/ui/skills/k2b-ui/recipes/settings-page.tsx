@@ -174,7 +174,12 @@ export default function SigninSettings(props: Props) {
               />
             </Section>
             <Section icon="clock-hour-4" title="Sitzungen">
-              <Setting label="Angemeldet bleiben" hint="Danach muss man sich neu anmelden." was={props.saved ? undefined : "12 Std."}>
+              <Setting
+                label="Angemeldet bleiben"
+                hint="Danach muss man sich neu anmelden."
+                was={props.saved ? undefined : "12 Std."}
+                action={{ label: "Auf Standard zurücksetzen", icon: "arrow-back-up" }}
+              >
                 <Input type="number" value="8" end={<Text type="meta">Std.</Text>} />
               </Setting>
               <Setting label="Gemeinschaftsrechner" hint="Abmelden, wenn niemand den Rechner nutzt.">

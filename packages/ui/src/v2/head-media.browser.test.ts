@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas";
 
 let browser: Browser;
 let client: string;
@@ -31,10 +31,15 @@ const withPage = async (which: Case, run: (page: Page) => Promise<void>, width =
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
+  // a real address, so a sort or filter chosen in the bar can write it
+  await page.route("http://head-media.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
+    }),
+  );
   try {
-    await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
-    );
+    await page.goto("http://head-media.test/dateien");
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await page.waitForFunction(() =>
@@ -56,6 +61,40 @@ const rect = (page: Page, selector: string) =>
       const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height };
     });
+
+test("on the phone how the list shows stays in reach: sort, grouping and display in one menu 'Ansicht'", async () => {
+  await withPage(
+    "closed",
+    async (page) => {
+      const button = page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
+      expect(await button.isVisible()).toBe(true);
+      // at the end of the bar, inside the window
+      const box = (await button.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      await button.click();
+      await settled(page);
+      const menu = page.getByRole("menu");
+      for (const title of ["Sortierung", "Darstellung"]) expect(await menu.getByText(title, { exact: true }).count()).toBe(1);
+      expect(await menu.getByRole("menuitemradio", { name: "Raster" }).count()).toBe(1);
+      // a sort chosen here writes the list's address, as the sort of the desktop does
+      await menu
+        .getByRole("menuitemradio", { name: /Geändert/ })
+        .first()
+        .click();
+      await settled(page);
+      expect(await page.evaluate(() => new URL(location.href).searchParams.get("sort"))).toMatch(/^changed\./);
+    },
+    390,
+  );
+  // a page, a menu and a sort that writes the address: about 4 s in WebKit, too close to the default 5 s
+}, 10_000);
+
+test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
+  await withPage("list", async (page) => {
+    expect(await page.locator(".k2-fbar-view").isVisible()).toBe(false);
+    expect(await page.locator(".k2-fbar-display").getByRole("button", { name: /Liste/ }).isVisible()).toBe(true);
+  });
+});
 
 test("the head has two full-width rows above list and detail: path and deeds, then the filter bar", async () => {
   await withPage("list", async (page) => {
@@ -106,6 +145,7 @@ test("media tiles: picture 4:3, a box that shows on hover and on every tile whil
     });
     expect(shape).toEqual({ wide: true, ratio: 1.33, box: "0" });
     await tile.hover();
+    await settled(page);
     expect(await tile.locator(".k2-tile-check").evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     // the box is named by the tile's title and selects it
     await page.getByRole("checkbox", { name: "Ansicht Front Eiche.jpg" }).check();
@@ -158,7 +198,7 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
       expect(labels).toEqual([
         { text: "Teilen", visible: true },
         { text: "Verschieben", visible: true },
-        { text: "Als ZIP laden", visible: true },
+        { text: "Laden", visible: true },
         { text: "Löschen", visible: true },
       ]);
       expect(await page.locator(".k2-fab").evaluate((element) => getComputedStyle(element).display)).toBe("none");
@@ -227,6 +267,50 @@ test("the sidebar shows what the storage uses, as a meter with its words", async
   });
 });
 
+test("a setting goes to one column by the width of its pane, so its name never runs into its value (review #4223)", async () => {
+  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone
+  for (const width of [800, 1024, 1440])
+    await withPage(
+      "settings",
+      async (page) => {
+        const crossed = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-k2-part='Setting']")]
+            .map((setting) => {
+              const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
+              const control = setting
+                .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was)")!
+                .getBoundingClientRect();
+              const box = label.getBoundingClientRect();
+              const beside = control.left > box.left;
+              return { name: label.textContent, bad: label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left) };
+            })
+            .filter((setting) => setting.bad)
+            .map((setting) => setting.name),
+        );
+        expect(crossed).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("on the phone the end of the list stays above the floating actions of a selection (review #4223)", async () => {
+  await withPage(
+    "selecting",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        // scrolled to the very end: every column that scrolls, inner and outer
+        for (const scroller of document.querySelectorAll(".k2-scroll")) scroller.scrollTop = scroller.scrollHeight;
+        const titles = [...document.querySelectorAll(".k2-tile-title")].map((title) => title.getBoundingClientRect().bottom);
+        const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+        return { last: Math.max(...titles), bar: bar.top };
+      });
+      // the last names stand above the bar, with room to breathe
+      expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+    },
+    390,
+  );
+});
+
 test("a setting stands with its value beside its name, and an unsaved change says what it was", async () => {
   await withPage("settings", async (page) => {
     const setting = page.locator("[data-k2-part='Setting']").first();
@@ -247,6 +331,20 @@ test("a setting stands with its value beside its name, and an unsaved change say
       .locator("[data-k2-part='Setting'] > :is(.k2-input, .k2-check)")
       .evaluateAll((elements) => [...new Set(elements.map((element) => Math.round(element.getBoundingClientRect().left)))]);
     expect(lefts.length).toBe(1);
+    // the deed of a setting stands at the end of its name's line, between the name and the value, and moves no value
+    const deed = await page.evaluate(() => {
+      const setting = document.querySelector("[data-k2-part='Setting'][data-action]")!;
+      const button = setting.querySelector(".k2-field-action button")!;
+      const box = button.getBoundingClientRect();
+      const name = setting.querySelector(".k2-field-label")!.getBoundingClientRect();
+      const control = setting.querySelector(".k2-input")!.getBoundingClientRect();
+      return {
+        name: button.textContent?.trim(),
+        between: box.left >= name.right - 1 && box.right <= control.left,
+        top: Math.abs(box.top - name.top) < 4,
+      };
+    });
+    expect(deed).toEqual({ name: "Auf Standard zurücksetzen", between: true, top: true });
   });
   await withPage(
     "settings",

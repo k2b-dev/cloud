@@ -1,4 +1,13 @@
-import { Cells, Chip, Digest, List, Mark, Nav, Pane, Row, Section, Text, Tiles, Workspace } from "../src/v2";
+import { Avatar, Cells, Chip, Digest, List, Mark, Nav, Pane, Row, Section, Table, Text, Tiles, Workspace } from "../src/v2";
+
+// teams of 4, 8 and 30 people in a column of 90 px: the stack shows what it holds whole and counts the rest
+const names = ["Felix Thal", "Jonas Kern", "Mira Solberg", "Tom Oswald", "Sami Yilmaz", "Lena Hartwig", "Ada Renz", "Jana Berger"];
+const crew = (count: number) => Array.from({ length: count }, (_, index) => ({ name: `${names[index % names.length]} ${index + 1}` }));
+export const teams = [
+  { name: "Montage", people: crew(4), orders: 12 },
+  { name: "Werkstatt", people: crew(8), orders: 41 },
+  { name: "Alle Monteure und Aushilfen der Saison", people: crew(30), orders: 1284 },
+];
 
 // Things with a face and people beside what they did: marks by place (sidebar, rows of one and two lines, tiles, a
 // sentence), a thumbnail that shows and one that fails, cards with figures, people and a history, the card that
@@ -38,7 +47,7 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
           label="Offene Aufträge"
           value="41"
           meta="+12 heute"
-          trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge der letzten 7 Tage" }}
+          trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge: in 7 Tagen von 22 auf 41 gestiegen" }}
         />
         <Cells.Cell icon="calendar-due" label="Heute fällig" value="9" />
       </Cells>
@@ -66,7 +75,7 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
                 { name: "Sami Yilmaz" },
               ],
               foot: "Felix · vor 2 Min",
-              trend: { values: [0, 4, 2, 8, 6, 3, 10], label: "Änderungen der letzten 7 Tage" },
+              trend: { values: [0, 4, 2, 8, 6, 3, 10], label: "Werkstatt: in 7 Tagen von 0 auf 10 Änderungen gestiegen" },
             },
             {
               icon: "building-warehouse",
@@ -91,6 +100,7 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
       <Section title="Dateien" count={4}>
         <List label="Dateien">
           <Row mark={{ ...table }} lines={["Aufträge"]} time="vor 2 Min" />
+          <Row mark={{ icon: "sun", color: "#fef08a", kind: "GELB" }} lines={["Sommerfest Plakat"]} time="gestern" />
           <Row mark={{ icon: "photo", color: "#be185d", image: photo }} lines={["Ansicht Front Eiche.jpg", "4,2 MB · heute 09:42"]} />
           <Row mark={{ icon: "photo", color: "#be185d", image: broken }} lines={["Bestand Küche vorher.jpg", "5,6 MB · gestern"]} />
           <Row mark={{ icon: "file-type-pdf", color: "#dc2626", kind: "PDF", label: "PDF" }} lines={["Angebot 2026-118.pdf", "312 KB"]} />
@@ -131,6 +141,17 @@ export const IdentityScreen = (props: { onChoice?: (name: string) => void; onCre
         <List>
           <Row icon="circle-check" lines={["Nachbestellung"]} marks={<Chip status="bad">Fehler</Chip>} />
         </List>
+      </Section>
+      <Section title="Teams" count={3}>
+        <Table
+          label="Teams"
+          rows={teams}
+          columns={[
+            { title: "Team", width: { min: 140, default: 180 }, cell: (row) => row.name },
+            { title: "Leute", width: { min: 90, default: 90 }, cell: (row) => <Avatar.Stack people={row.people} /> },
+            { title: "Aufträge", width: { min: 80, default: 90 }, align: "end", cell: (row) => String(row.orders) },
+          ]}
+        />
       </Section>
     </Pane>
   </Workspace>
