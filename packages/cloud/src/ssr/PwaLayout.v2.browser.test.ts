@@ -16,7 +16,7 @@ import type { User } from "../contracts/shared";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { announcements } from "../services/announcements";
 import { session } from "../services/session";
-import { buildOlderGlobal } from "../styles/older-core-global.fixture";
+import { buildOlderGlobal } from "../styles/older-core-global.test-fixture";
 
 // A Cloud app page on v2 (`PwaLayout ui="v2"`) as the phone and a wide screen show it: the frame, the page's panes, the
 // tab bar or the sidebar, clear of the safe areas, in the canvas the status bar takes. The page loads Core's v2.css
