@@ -454,12 +454,14 @@ for (const width of [1440, 390])
 // The popover's sheet stands on the bottom like a dialog's: when its content gets shorter it is lower in the very next
 // frame, never a frame higher up (a tap there would hit the backdrop and close it, #4141), also when core's sheet
 // module loads after the panel is open.
-for (const [touch, slowSheet] of [
-  [false, false],
-  [true, false],
-  [false, true],
+for (const [change, touch, slowSheet] of [
+  ["shorter", false, false],
+  ["shorter", true, false],
+  ["shorter", false, true],
+  ["taller", false, false],
+  ["taller", true, false],
 ] as const)
-  test(`popover sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets shorter keeps its bottom`, async () => {
+  test(`popover sheet${touch ? " on a touch screen" : ""}${slowSheet ? " whose module loads late" : ""}: content that gets ${change} keeps its bottom`, async () => {
     await withPage(
       async (page) => {
         const trigger = page.getByRole("button", { name: "Vorschau" });
@@ -475,10 +477,15 @@ for (const [touch, slowSheet] of [
         await panel.waitFor();
         await settled(page);
         expect(await panel.getAttribute("data-presentation")).toBe("sheet");
+        // taller: the box ticked first (the lines go), so unticking it brings them back
+        if (change === "taller") {
+          await page.locator('.k2-pop input[name="images"]').evaluate((box: HTMLInputElement) => box.click());
+          await settled(page);
+        }
         const before = await box(panel);
         expect(Math.round(before.y + before.height)).toBe(900);
         // as high as its content: title, box and three lines, never squeezed to a sliver
-        expect(before.height).toBeGreaterThan(120);
+        if (change === "shorter") expect(before.height).toBeGreaterThan(120);
         const frames = await page.evaluate(async () => {
           const sheet = document.querySelector(".k2-pop") as HTMLElement;
           // the place each frame is drawn at: read after the frame (a task after its animation frame)
@@ -494,7 +501,8 @@ for (const [touch, slowSheet] of [
         });
         await settled(page);
         const after = await box(panel);
-        expect(after.height).toBeLessThan(before.height);
+        if (change === "taller") expect(after.height).toBeGreaterThan(before.height);
+        else expect(after.height).toBeLessThan(before.height);
         expect(frames).toEqual([after.y, 900, after.y, 900, after.y, 900, after.y, 900].map(Math.round));
       },
       { width: 390, touch, slowSheet },

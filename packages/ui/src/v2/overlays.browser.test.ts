@@ -32,7 +32,7 @@ afterAll(async () => {
 
 const withPage = async (
   run: (page: Page) => Promise<void>,
-  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false } = {},
+  { width = 1440, scale = 1, long = false, touch = false, two = false, opened = false, slowSheet = false, toEnd = false } = {},
 ) => {
   // a phone: a touch screen with a coarse pointer
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: scale, hasTouch: touch, isMobile: touch });
@@ -40,7 +40,7 @@ const withPage = async (
   const errors = pageErrors(page);
   try {
     await page.setContent(
-      `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
+      `<!doctype html><html lang="de"${long ? " data-long" : ""}${two ? " data-two" : ""}${opened ? " data-opened" : ""}${toEnd ? " data-to-end" : ""}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style><style>${testCss}</style></head><body class="k2-ui"><div id="root"></div></body></html>`,
     );
     await page.addScriptTag({ content: slowSheet ? slowSheetBundle() : bundle });
     // another island with its own copy of the library and no Workspace of its own
@@ -259,8 +259,16 @@ for (const touch of [false, true])
               const lines = document.querySelectorAll(".k2-dialog-body > *");
               lines[0]?.scrollIntoView({ block: where });
             }, block);
-            // the sheet would have glided away and closed by now
-            await page.evaluate(() => new Promise((done) => setTimeout(done, 500)));
+            // the host's scroll has ended (where it scrolls at all), and whatever core does after it has happened
+            await page.evaluate(() => {
+              const host = document.querySelector(".k2-dialog")?.parentElement;
+              return new Promise((done) => {
+                if (!host) return done(undefined);
+                host.addEventListener("scrollend", () => done(undefined), { once: true });
+                // a host that did not scroll sends no scrollend: two frames are enough to know
+                requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(() => done(undefined), 50)));
+              });
+            });
             await settled(page);
             expect(await page.locator(".k2-dialog").count()).toBe(1);
             const after = await box(page.locator(".k2-dialog"));
@@ -269,6 +277,60 @@ for (const touch of [false, true])
           { width: 390, long, touch },
         );
       });
+
+// A tap on a button in the sheet whose press scrolls something into view (a calendar's step, #4167): the tap is a touch,
+// but it moved nothing; the scroll that follows it is the script's and is put back, so the sheet stays open.
+test("sheet on a touch screen: a tap whose press scrolls a line into view keeps it open on the bottom", async () => {
+  await withPage(
+    async (page) => {
+      await openDialog(page);
+      const before = await box(page.locator(".k2-dialog"));
+      await page.getByRole("button", { name: "Zur ersten Zeile" }).tap();
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      await settled(page);
+      expect(await page.locator(".k2-dialog").count()).toBe(1);
+      const after = await box(page.locator(".k2-dialog"));
+      expect([after.y, after.height]).toEqual([before.y, before.height]);
+    },
+    { width: 390, touch: true, toEnd: true },
+  );
+});
+
+// While core slides the sheet's host itself (above an on-screen keyboard: an animation of the host), a scroll of the
+// host is core's: nothing is put back.
+test("sheet on a touch screen: a scroll of its host while core animates the host stays as it is", async () => {
+  await withPage(
+    async (page) => {
+      await openDialog(page);
+      // what v2 writes to the host's scroll while core's slide runs (the snap's own moves write nothing)
+      const written = await page.evaluate(async () => {
+        const host = document.querySelector(".k2-dialog")!.parentElement!;
+        const frame = () => new Promise((done) => requestAnimationFrame(() => setTimeout(done)));
+        // core's slide above a keyboard: the host stands 120 px lower and glides up; its scroll is core's relayout
+        const slide = host.animate([{ translate: "0 120px" }, { translate: "0 0" }], { duration: 400 });
+        const real = Object.getOwnPropertyDescriptor(Element.prototype, "scrollTop")!;
+        const writes: number[] = [];
+        Object.defineProperty(host, "scrollTop", {
+          configurable: true,
+          get: () => real.get!.call(host),
+          set: (value: number) => {
+            writes.push(value);
+            real.set!.call(host, value);
+          },
+        });
+        await frame();
+        // the scroll that core's relayout caused, seen while the host still slides
+        host.dispatchEvent(new Event("scroll"));
+        await frame();
+        slide.cancel();
+        Reflect.deleteProperty(host, "scrollTop");
+        return writes;
+      });
+      expect(written).toEqual([]);
+    },
+    { width: 390, long: true, touch: true },
+  );
+});
 
 // A swipe down still closes it: the host's scroll that a touch began is the person's.
 test("sheet on a touch screen: a scroll of its host that a touch began closes it", async () => {

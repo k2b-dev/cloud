@@ -68,8 +68,7 @@ export type DialogOptions = OverlayOptions & {
  * The moves core plays on a sheet over time (opening, closing, a spring): animations on the document's timeline. The
  * effects that follow a touch screen sheet's scroll (`ScrollTimeline`) run all the time and are no move.
  */
-const moves = (element: HTMLElement) =>
-  element.getAnimations().filter((animation) => animation.timeline === element.ownerDocument.timeline);
+const moves = (element: Element) => element.getAnimations().filter((animation) => animation.timeline === element.ownerDocument.timeline);
 
 /**
  * A sheet (a dialog's, or a popover's on the phone) stands on the bottom of the screen. Core answers a change of its
@@ -112,15 +111,23 @@ const holdSheetBottom = (element: HTMLElement) => {
  * Only a person's touch moves a sheet. On a touch screen core lets the sheet's host scroll (its scroll-snap way): a
  * swipe down scrolls the host and closes the sheet. A script's scroll of something inside the sheet into view
  * (`scrollIntoView`, a focus) scrolls that host too and closed the resting sheet (#4167). So a scroll of the host that
- * no touch began, while core moves nothing itself (no animation of the sheet), is put back: the sheet's bottom on the
- * bottom of the window. A swipe, its glide after the finger left and core's own moves stay as they are.
+ * no touch moved, while core moves nothing itself (no animation of the sheet or of its host, such as its slide above an
+ * on-screen keyboard), is put back: the sheet's bottom on the bottom of the window, once a frame at most.
+ *
+ * A swipe and its glide after the finger left stay as they are: the glide counts only after a touch that scrolled the
+ * host. A tap scrolls nothing, so the scroll its press starts (a calendar's step that scrolls its day into view) is a
+ * script's and is put back. Only touch moves the host: a wheel or the keys on a touch screen are put back too.
  */
 const holdSheetOpen = (element: HTMLElement) => {
   const doc = element.ownerDocument;
   const view = doc.defaultView;
   if (!view) return;
   let touched = false;
+  // the touch scrolled the host: a swipe, which glides on after the finger left
+  let dragged = false;
   let gliding = false;
+  // one correction a frame, so the host and its snap do not answer each other within it
+  let corrected = false;
   let glide = 0;
   // a swipe's glide ends when the host has not scrolled for a moment
   const glideOn = () => {
@@ -132,19 +139,31 @@ const holdSheetOpen = (element: HTMLElement) => {
   };
   const touchStart = () => {
     touched = true;
+    dragged = false;
   };
   const touchEnd = () => {
     touched = false;
-    glideOn();
+    if (dragged) glideOn();
+    dragged = false;
   };
   const scroll = (event: Event) => {
     const host = element.parentElement;
     if (event.target !== host || !host) return;
-    if (touched || gliding) return glideOn();
-    if (element.getAttribute("data-presentation") !== "sheet" || element.hidden || moves(element).length > 0) return;
+    if (touched) {
+      dragged = true;
+      return glideOn();
+    }
+    if (gliding) return glideOn();
+    if (element.getAttribute("data-presentation") !== "sheet" || element.hidden) return;
+    if (moves(element).length > 0 || moves(host).length > 0 || corrected) return;
     const floor = view.visualViewport ? view.visualViewport.offsetTop + view.visualViewport.height : view.innerHeight;
     const drop = element.getBoundingClientRect().bottom - floor;
-    if (Math.abs(drop) > 1) host.scrollTop += drop;
+    if (Math.abs(drop) <= 1) return;
+    corrected = true;
+    view.requestAnimationFrame(() => {
+      corrected = false;
+    });
+    host.scrollTop += drop;
   };
   doc.addEventListener("touchstart", touchStart, { capture: true, passive: true });
   doc.addEventListener("touchend", touchEnd, { capture: true, passive: true });
