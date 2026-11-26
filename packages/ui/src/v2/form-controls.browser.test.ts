@@ -202,6 +202,104 @@ test("choice held by the page: after a form's reset the boxes and the entries se
   });
 });
 
+for (const width of [1440, 390])
+  test(`choice as cards at ${width} px: one connected row (a column on the phone), named by their words, keys and form as a radio group`, async () => {
+    await withPage(async (page) => {
+      const kinds = page.getByRole("radiogroup", { name: "Art der Quelle" });
+      // each card is a radio named by its words; its line describes it, its symbol says nothing
+      const poll = kinds.getByRole("radio", { name: "Abruf", exact: true });
+      expect(await poll.isChecked()).toBe(true);
+      const described = await poll.getAttribute("aria-describedby");
+      expect(await page.evaluate((id) => document.getElementById(id ?? "")?.textContent, described)).toBe(
+        "Cloud fragt in einem Takt nach.",
+      );
+      expect(await kinds.locator(".k2-icon:not([aria-hidden='true'])").count()).toBe(0);
+      // the cards touch: one frame around them and a hairline between them; four stand two by two, a column on the phone
+      const boxes = await kinds.locator(".k2-choice").evaluateAll((cards) =>
+        cards.map((card) => {
+          const box = card.getBoundingClientRect();
+          return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width };
+        }),
+      );
+      expect(boxes).toHaveLength(4);
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1.5;
+      const [first, second, third, fourth] = boxes as [(typeof boxes)[0], (typeof boxes)[0], (typeof boxes)[0], (typeof boxes)[0]];
+      if (width >= 768) {
+        expect([near(second.left, first.right), near(second.top, first.top), near(second.width, first.width)]).toEqual([true, true, true]);
+        expect([near(third.top, first.bottom), near(third.left, first.left), near(fourth.left, second.left)]).toEqual([true, true, true]);
+      } else {
+        for (const [before, after] of [
+          [first, second],
+          [second, third],
+          [third, fourth],
+        ] as const)
+          expect([near(after.top, before.bottom), near(after.left, before.left)]).toEqual([true, true]);
+      }
+      const frame = await kinds.evaluate((group) => {
+        const style = getComputedStyle(group);
+        return { border: style.borderTopWidth, radius: style.borderTopLeftRadius };
+      });
+      expect(frame).toEqual({ border: "1px", radius: "8px" });
+      // the chosen card is framed blue and carries a tick, so it does not rest on colour alone
+      const chosen = kinds.locator(".k2-choice").nth(1);
+      expect(await chosen.evaluate((card) => getComputedStyle(card).boxShadow)).toContain("inset");
+      expect(await chosen.locator(".k2-icon[data-name='check']").count()).toBe(1);
+      // the arrows move the choice, as in every radio group, and the form sends it; the group is reached from the
+      // keyboard, as a person reaches it (WebKit shows no keyboard ring after a focus set by script)
+      await poll.focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await page.keyboard.press("ArrowRight");
+      await settled(page);
+      expect(await kinds.getByRole("radio", { name: "Datei", exact: true }).isChecked()).toBe(true);
+      expect(entriesOf((await sent(page)).entries, "source")).toEqual(["file"]);
+      // the focused card shows where the keyboard stands
+      expect(
+        await kinds
+          .locator(".k2-choice")
+          .nth(2)
+          .evaluate((card) => getComputedStyle(card).boxShadow),
+      ).toContain("2px");
+      // an option that cannot be chosen now is dimmed and never chosen: the arrows pass it (where they go on from the
+      // end is the browser's: Chromium wraps to the first, WebKit stays), and a press does nothing
+      const mail = kinds.getByRole("radio", { name: "E-Mail", exact: true });
+      expect(await mail.isDisabled()).toBe(true);
+      await page.keyboard.press("ArrowRight");
+      await settled(page);
+      expect(await mail.isChecked()).toBe(false);
+      await kinds.getByText("E-Mail", { exact: true }).click({ force: true });
+      await settled(page);
+      expect(await mail.isChecked()).toBe(false);
+      expect(await kinds.locator(".k2-choice").nth(3).getAttribute("data-disabled")).toBe("");
+    }, width);
+  });
+
+test("choice of one: the arrows move the point, and its ring stays while the keyboard moves it (WebKit drops :focus-visible)", async () => {
+  await withPage(async (page) => {
+    const repeat = page.getByRole("radiogroup", { name: "Wiederholen" });
+    await repeat.getByRole("radio", { name: "Nie" }).focus();
+    await page.keyboard.press("Shift+Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("ArrowRight");
+    await settled(page);
+    expect(await repeat.getByRole("radio", { name: "Täglich" }).isChecked()).toBe(true);
+    const ring = await repeat
+      .locator(".k2-radio")
+      .nth(1)
+      .evaluate((mark) => getComputedStyle(mark).boxShadow);
+    expect(ring).not.toBe("none");
+    // a press shows no ring: the pointer needs none
+    await repeat.getByText("Wöchentlich").click();
+    await settled(page);
+    expect(
+      await repeat
+        .locator(".k2-radio")
+        .nth(2)
+        .evaluate((mark) => getComputedStyle(mark).boxShadow),
+    ).toBe("none");
+  });
+});
+
 test("choice of several that is required: the form cannot be sent until one is chosen", async () => {
   await withPage(async (page) => {
     const crew = field(page, "Mannschaft");

@@ -181,6 +181,24 @@ export function Demo() {
                 ]}
               />
             </Field>
+            {/* one of a few, as points */}
+            <Field name="repeat" label="Wiederholen">
+              <Choice name="repeat" value="Nie" options={["Nie", "Täglich", "Wöchentlich"]} />
+            </Field>
+            {/* a few kinds to compare, as one connected row of cards: symbol, words and a line each */}
+            <Field name="source" label="Art der Quelle">
+              <Choice
+                name="source"
+                cards
+                value="poll"
+                options={[
+                  { value: "hook", label: "Webhook", icon: "webhook", hint: "Die Quelle meldet jede Änderung." },
+                  { value: "poll", label: "Abruf", icon: "refresh", hint: "Cloud fragt in einem Takt nach." },
+                  { value: "file", label: "Datei", icon: "file-upload", hint: "Einmal hochladen, von Hand." },
+                  { value: "mail", label: "E-Mail", icon: "mail", hint: "Im Tarif nicht enthalten.", disabled: true },
+                ]}
+              />
+            </Field>
             <Field name="hosts" label="Server">
               <TagsInput value={["mx1.example"]} />
             </Field>

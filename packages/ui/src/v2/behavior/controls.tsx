@@ -3,8 +3,15 @@
  * structure and look; no ui-sdk type crosses these exports. (Tooltips are `useTip`; checkboxes and switches are native
  * inputs in the v2 controls.)
  */
+import { isFocusFromKeyboard } from "@ui-sdk/core";
 import { tabs as tabsPrimitive } from "@ui-sdk/core/tabs";
 import { type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+
+/**
+ * Whether the focus that just arrived came from the keyboard (core's modality), also where the browser's
+ * `:focus-visible` gives up: WebKit drops it once the arrows move the focus of a radio group.
+ */
+export const focusFromKeyboard = (): boolean => isFocusFromKeyboard();
 
 export type TabsParts = {
   List: SlotComponent;

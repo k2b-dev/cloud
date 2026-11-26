@@ -2063,7 +2063,8 @@
 /* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
-.k2-ui .k2-mark-input:focus-visible + .k2-switch {
+.k2-ui .k2-mark-input:focus-visible + .k2-switch,
+.k2-ui .k2-choices[data-keyed] .k2-mark-input:focus + .k2-radio {
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
 .k2-ui .k2-choice {
@@ -2092,6 +2093,98 @@
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
+}
+/* the line of an option under its words: what it means, quiet */
+.k2-ui .k2-choice-text {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-choice-hint {
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+}
+.k2-ui .k2-choice > .k2-icon {
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--k2-muted);
+}
+/* A few kinds to compare as one connected row of cards: one frame, a hairline between them (the 1 px gap shows the
+   line behind), the chosen one framed blue on a blue tint with a tick at its end. Up to three stand in one row, four
+   as two by two, so the words keep their width; one column on the phone. The radio lies, unseen, over the card. */
+.k2-ui .k2-choices[data-cards] {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  overflow: hidden;
+  background: var(--k2-line);
+}
+.k2-ui .k2-choices:is([data-cards="2"], [data-cards="4"]) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-choices[data-cards] {
+  padding-inline: 0;
+  margin-inline: var(--k2-edge);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice {
+  padding: 12px;
+  background: var(--k2-surface);
+}
+/* a card that cannot be chosen now is a grey well with its words dimmed, as a disabled field; its line says why */
+.k2-ui .k2-choices[data-cards] > .k2-choice[data-disabled] {
+  opacity: 1;
+  background: var(--k2-n50);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice[data-disabled] > * {
+  opacity: 0.5;
+}
+/* the point takes no place: the radio lies over the whole card */
+.k2-ui .k2-choices[data-cards] .k2-mark {
+  display: contents;
+}
+.k2-ui .k2-choices[data-cards] .k2-radio {
+  display: none;
+}
+/* the words of a card: strong, and room at their end for the tick */
+.k2-ui .k2-choices[data-cards] .k2-choice-text > :first-child {
+  font-weight: 500;
+  padding-inline-end: 24px;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) {
+  background: var(--k2-blue-tint);
+  box-shadow: inset 0 0 0 1px var(--k2-blue);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:focus-visible),
+.k2-ui .k2-choices[data-cards][data-keyed] > .k2-choice:has(.k2-mark-input:focus) {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) > .k2-icon {
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-choice-on {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+  color: var(--k2-blue-ink);
+  font-size: 16px;
+  line-height: 20px;
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:focus-visible),
+  .k2-ui .k2-choices[data-cards][data-keyed] > .k2-choice:has(.k2-mark-input:focus) {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-choices[data-cards] {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .k2-ui .k2-input {
   height: var(--k2-h-control);
