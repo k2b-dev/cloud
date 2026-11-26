@@ -263,6 +263,9 @@ export default function SigninSettings(props: Props) {
   );
 }
 
+// The app the screen belongs to (die Verwaltung): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#0284c7", icon: "adjustments" };
+
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
   saved: () => <SigninSettings saved />,

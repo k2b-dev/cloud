@@ -460,6 +460,9 @@ export default function Folder(props: Props) {
   );
 }
 
+// The app the screen belongs to (Dateien): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#1d4ed8", icon: "folders" };
+
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
   closed: () => <Folder closed />,

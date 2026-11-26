@@ -267,7 +267,7 @@ export const Workspace = (props: WorkspaceProps) => {
         <aside ref={aside} class="k2-ws-side" data-k2-column="">
           {sidebar()}
         </aside>
-        <Seam grip={{ label: props.sidebarLabel ?? "Sidebar", width: width() }} />
+        <Seam grip={{ label: props.sidebarLabel ?? t().sidebar, width: width() }} />
       </Show>
       <div class="k2-ws-main" data-k2-column="">
         <Show when={head() || sidebar()}>

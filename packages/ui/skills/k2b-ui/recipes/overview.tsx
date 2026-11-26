@@ -324,6 +324,9 @@ export default function BasesOverview(props: Props) {
   );
 }
 
+// The app the screen belongs to (Grids): its colour and symbol, for the frame of a host around its pictures.
+export const app = { color: "#008f4c", icon: "table" };
+
 // The states that Fibel's Example offers beside the default; the recipe test renders each one as well.
 export const states = {
   empty: () => <BasesOverview empty />,
