@@ -1,7 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import {
   Button,
-  Canvas,
   Check,
   Chip,
   confirm,
@@ -489,10 +488,8 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
         </Section>
       </Show>
 
-      <Show when={props.extraSections}>
-        {/* The app's further section (such as its v1 API keys) keeps its own drawing until it has a v2 form. */}
-        <Canvas label={t().apiKeys}>{props.extraSections}</Canvas>
-      </Show>
+      {/* The app's further sections, such as its `ResourceApiKeys` from `@k2b/cloud/access/v2`. */}
+      {props.extraSections}
 
       <Show when={state.changes().length > 0}>
         <Section

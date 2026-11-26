@@ -4,6 +4,8 @@ import type { AccessDialogProps } from "./AccessDialog";
 import { AccessDialogV2 } from "./AccessDialogV2";
 
 export type { AccessDialogProps, FoundServiceAccount } from "./AccessDialog";
+export type { ResourceApiKey, ResourceApiKeyPermissionOption, ResourceApiKeysProps } from "./ResourceApiKeys";
+export { ResourceApiKeysV2 as ResourceApiKeys } from "./ResourceApiKeysV2";
 
 /**
  * Opens the access dialog for a page built with `@k2b/ui/v2` (its layout has `ui: "v2"`); resolves `true` when changes

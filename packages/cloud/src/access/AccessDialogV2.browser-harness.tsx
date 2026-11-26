@@ -1,11 +1,11 @@
 import type { AccessEntry, Principal } from "../contracts/shared";
-import { openAccessDialog } from "./v2";
+import { openAccessDialog, ResourceApiKeys } from "./v2";
 
 /**
  * The v2 access dialog for a browser test: invented people, groups and agents; the directory answers searches and
  * e-mails; grants, changes and removals are recorded on `window.calls`. `?worst` lists the worst case (long,
  * unbreakable and non-Latin names, many rows), `?readonly` opens it without the right to change access, `?public`
- * offers public access with a link.
+ * offers public access with a link, `?keys` adds the resource's API keys below.
  */
 const params = new URLSearchParams(location.search);
 const person = (id: number, displayName: string, permission: AccessEntry["permission"]): AccessEntry => ({
@@ -104,6 +104,37 @@ page.openShare = () => {
     },
     updateAccess: async (accessId, permission) => void page.calls.push({ update: accessId, permission }),
     revokeAccess: async (accessId) => void page.calls.push({ revoke: accessId }),
+    extraSections: params.has("keys") ? (
+      <ResourceApiKeys
+        initialKeys={[
+          {
+            id: "50000000-0000-4000-8000-000000000001",
+            name: "Lagerimport",
+            tokenPrefix: "k2b_7Hq",
+            permission: "write",
+            createdAt: "2026-11-01T08:00:00.000Z",
+            expiresAt: "2027-02-01T08:00:00.000Z",
+            lastUsedAt: null,
+          } as never,
+        ]}
+        createKey={async (input) => {
+          page.calls.push({ createKey: input.name, permission: input.permission, expires: input.expiresAt !== null });
+          return {
+            credential: {
+              id: "50000000-0000-4000-8000-000000000002",
+              name: input.name,
+              tokenPrefix: "k2b_Zx9",
+              permission: input.permission,
+              createdAt: "2026-11-26T08:00:00.000Z",
+              expiresAt: input.expiresAt,
+              lastUsedAt: null,
+            } as never,
+            token: "k2b_Zx9-invented-token-for-the-test",
+          };
+        }}
+        revokeKey={async (id) => void page.calls.push({ revokeKey: id })}
+      />
+    ) : undefined,
   }).then((saved) => {
     page.result = saved;
   });

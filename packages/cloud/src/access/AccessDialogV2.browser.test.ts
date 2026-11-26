@@ -221,6 +221,37 @@ describe("the access dialog on v2", () => {
     }
   });
 
+  test("API keys: a name is required, the token shows once to copy, and revoking asks first", async () => {
+    const { context, tab, dialog } = await open(views[0]!, "?keys");
+    try {
+      const keys = dialog.getByRole("region", { name: "API keys" });
+      await keys.getByText("Lagerimport").waitFor();
+      await keys.getByRole("button", { name: "Add" }).click();
+      const create = tab.getByRole("dialog", { name: "Create API key" });
+      await create.getByRole("button", { name: "Create key" }).click();
+      await create.getByText(/name/i).first().waitFor();
+      await create.getByRole("textbox").first().fill("Nachtlauf");
+      await create.getByRole("button", { name: "Create key" }).click();
+      const shown = tab.getByRole("dialog", { name: /API key created/i });
+      await shown.getByText("k2b_Zx9-invented-token-for-the-test").waitFor();
+      await shown.getByRole("button", { name: "Done" }).click();
+      await keys.getByText("Nachtlauf").waitFor();
+      await keys.getByRole("button", { name: "Actions for Lagerimport" }).click();
+      await tab.getByRole("menuitem", { name: "Revoke" }).click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Revoke" }).click();
+      await tab.waitForFunction(() => (window as unknown as { calls: { revokeKey?: string }[] }).calls.some((call) => call.revokeKey));
+      expect(await keys.getByText("Lagerimport").count()).toBe(0);
+      expect(((await calls(tab)) as Record<string, unknown>[]).find((call) => "createKey" in call)).toEqual({
+        createKey: "Nachtlauf",
+        permission: "read",
+        expires: true,
+      });
+      await clean(tab);
+    } finally {
+      await context.close();
+    }
+  });
+
   for (const view of [views[0]!, views[2]!])
     test(`${view.name} px: the worst case stays readable and nothing overflows`, async () => {
       const { context, tab, errors, dialog } = await open(view, "?worst");

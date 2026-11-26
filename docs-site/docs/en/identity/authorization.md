@@ -732,9 +732,10 @@ On a page built with `@k2b/ui/v2` (its layout has `ui: "v2"`), import
 `openAccessDialog` from `@k2b/cloud/access/v2` instead. It takes the same props,
 keeps the same draft, rules, questions, and saving order, and opens a v2
 `Dialog` in its own v2 scope, so it works from any island. It is a separate
-entry, so pages that are still v1 do not load v2. An `extraSections` element,
-such as the v1 `ResourceApiKeys`, keeps its own look inside the dialog until it
-has a v2 form.
+entry, so pages that are still v1 do not load v2. Pass v2 content as
+`extraSections`, such as `ResourceApiKeys` from the same entry: the same props
+as the v1 component, one row per key, a v2 dialog to create one (name, level,
+expiry), and its token shown once to copy.
 
 The last entry that manages the resource keeps Manage: its lower levels and its
 removal are disabled, counted on the result after saving (`effectiveEntries`
