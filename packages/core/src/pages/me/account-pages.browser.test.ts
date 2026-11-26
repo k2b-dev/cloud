@@ -44,7 +44,7 @@ const pages = {
   "/me/notifications": (await import("./notifications.page")).default,
   "/me/activity": (await import("./activity.page")).default,
 } as const;
-const { oldAccountAddresses } = await import("./old-addresses");
+const { createPagesRouter } = await import("../create");
 const fixture = await import("./account-pages.test-fixture");
 type Path = keyof typeof pages;
 const { buildFontAssets } = await import("../../../scripts/font-assets");
@@ -314,8 +314,8 @@ describe("account pages on v2", () => {
   });
 
   test("every old address of the account leads to its new place with every parameter", async () => {
-    const app = new Hono();
-    for (const [path, redirect] of oldAccountAddresses) app.get(path, redirect);
+    // through Core's real pages router, where the catch-all must not answer first
+    const app = createPagesRouter();
     const target = async (address: string) => {
       const response = await app.request(`${origin}${address}`);
       expect(response.status).toBe(302);

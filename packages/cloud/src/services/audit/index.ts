@@ -453,4 +453,6 @@ export const audit = {
   deny,
   list,
   listSelfServiceActivity,
+  /** The actions the account's own activity lists; an app that words them can check it knows each one. */
+  selfServiceActions: SELF_SERVICE_ACTIONS as readonly string[],
 };

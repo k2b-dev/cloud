@@ -124,7 +124,7 @@ service workers only over HTTPS. To try the app on a device:
    Administration → Settings. Pairing and renewal accept only requests whose
    `Origin` is this address.
 3. Use the same address on the computer and on the device. Pair the device from
-   `/me/app` on the computer, or open `/pwa/` on the device to install the app
+   `/me/security` on the computer, or open `/pwa/` on the device to install the app
    first.
 
 ## Connect Pulse to development ClickHouse

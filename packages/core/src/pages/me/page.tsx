@@ -1,21 +1,12 @@
-import { accountCategoryLabel } from "@k2b/cloud/contracts";
 import { type AuthContext, getLocale, isAppSessionActor } from "@k2b/cloud/server";
-import {
-  accountsAppService,
-  audit,
-  coreSettings,
-  readAccountCategoryPolicy,
-  serviceAccountCredentials,
-  webauthn,
-} from "@k2b/cloud/services";
+import { accountsAppService, coreSettings, readAccountCategoryPolicy, serviceAccountCredentials, webauthn } from "@k2b/cloud/services";
 import { screenPreferences } from "@k2b/cloud/services/screen-preferences";
 import { sharedWorkstationIdleSeconds } from "@k2b/cloud/services/session/shared-workstation";
 import { Layout } from "@k2b/cloud/ssr";
 import { dates } from "@k2b/stdlib";
 import { keyboardPlatform } from "@k2b/ui";
 import { ssr } from "../../config";
-import { accountRoles, accountUserView } from "./account-view";
-import { activityLabel } from "./activity-labels";
+import { accountCategoryWords, accountRoles, accountUserView } from "./account-view";
 import { type AccountMessages, accountMessages } from "./messages";
 import ProfileScreen from "./ProfileScreen.island";
 import { profileActionsUser } from "./profile-actions-user";
@@ -55,11 +46,10 @@ export default ssr<AuthContext>(async (c) => {
   const appName = rawAppName || "Cloud";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);
   const platform = keyboardPlatform(c.req.header("User-Agent") ?? "");
-  const [pendingRequest, apiKeys, passkeys, activityPage, screen] = await Promise.all([
+  const [pendingRequest, apiKeys, passkeys, screen] = await Promise.all([
     user.provider === "local" ? accountsAppService.accountRequest.getPendingForUser({ userId: user.id }) : Promise.resolve(null),
     serviceAccountCredentials.listForDelegatedUser({ userId: user.id }),
     webauthn.listForUser({ userId: user.id }),
-    audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 5 } }),
     screenPreferences.get(user.id),
   ]);
   // Only a browser session can mark its browser as a shared workstation; the mobile app's phone never is one.
@@ -114,7 +104,7 @@ export default ssr<AuthContext>(async (c) => {
           { label: t.address, value: address ?? t.notSet },
         ]}
         accountFacts={[
-          { label: t.accountType, value: accountCategoryLabel(user, categoryPolicy.login.label) },
+          { label: t.accountType, value: accountCategoryWords(user, categoryPolicy.login.label, t) },
           ...(accountRoles(user, t).length > 0 ? [{ label: t.roles, value: accountRoles(user, t).join(", ") }] : []),
           ...(user.ipa?.passwordExpires ? [{ label: t.passwordExpiry, value: formatted(user.ipa.passwordExpires, t.notApplicable) }] : []),
           { label: t.sshKeys, value: t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 }) },
@@ -127,17 +117,17 @@ export default ssr<AuthContext>(async (c) => {
                 meta: expiryNotice?.title ?? "",
                 ...(expiryNotice && expiryNotice.tone !== "note" ? { status: expiryNotice.tone } : {}),
               }
-            : { value: t.noExpiry, meta: accountCategoryLabel(user, categoryPolicy.login.label) },
+            : { value: t.noExpiry, meta: accountCategoryWords(user, categoryPolicy.login.label, t) },
           passkeys:
             passkeys.length > 0
               ? {
-                  value: t.passkeyCount({ count: passkeys.length }),
+                  value: String(passkeys.length),
                   meta: lastUse ? t.lastSignIn({ date: dates.formatDateTimeRelative(lastUse, { locale, base: now }) }) : t.neverUsed,
                 }
-              : { value: t.passkeyCount({ count: 0 }), meta: t.noPasskeyYet, status: "warn" },
-          groups: { value: t.groupCount({ count: user.memberofGroup.length }), meta: t.managedCount({ count: user.manages.length }) },
+              : { value: "0", meta: t.noPasskeyYet, status: "warn" },
+          groups: { value: String(user.memberofGroup.length), meta: t.managedCount({ count: user.manages.length }) },
           apiKeys: {
-            value: t.apiKeyCount({ count: apiKeys.length }),
+            value: String(apiKeys.length),
             meta: nextKeyExpiry
               ? t.nextKeyExpiry({ date: dates.formatDate(nextKeyExpiry, { locale }) })
               : apiKeys.length > 0
@@ -145,12 +135,6 @@ export default ssr<AuthContext>(async (c) => {
                 : t.cliAndSsh,
           },
         }}
-        activity={activityPage.items.slice(0, 4).map((entry) => ({
-          label: activityLabel(entry, t),
-          context: entry.context || t.accountContext,
-          // relative to the time of this answer, so the server and the first paint agree
-          when: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),
-        }))}
       />
     </Layout>
   );

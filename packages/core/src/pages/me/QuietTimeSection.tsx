@@ -262,8 +262,14 @@ export default function QuietTimeSection(props: { initial: NotificationQuietSett
             />
           )}
         </Index>
+        {/* how the periods work belongs to the periods, not to the zone */}
+        <Show when={hours().periods.length > 0}>
+          <Text muted type="meta">
+            {t().quietHoursDescription}
+          </Text>
+        </Show>
         <Row
-          lines={[t().quietTimeZone, t().quietHoursDescription]}
+          lines={[t().quietTimeZone]}
           end={
             <Select
               label={t().quietTimeZone}

@@ -1,11 +1,10 @@
 import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import type { KeyboardPlatform } from "@k2b/ui";
-import { Button, Cells, Chip, Digest, Empty, Facts, Notice, Pane, Section } from "@k2b/ui/v2";
+import { Button, Cells, Chip, Facts, Notice, Pane, Section } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import AccountWorkspace, { sideWidth, twoActions, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { ACCOUNT_KINDS } from "./kinds";
-import { ACCOUNT_ACTIVITY_PATH } from "./paths";
 import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
 import ScreenSection from "./ScreenSection";
 
@@ -34,8 +33,6 @@ export type ProfileScreenProps = {
   };
   /** The first row: how long the account lasts, how the person signs in, their groups and their keys. */
   figures: Record<"validity" | "passkeys" | "groups" | "apiKeys", Figure>;
-  /** The newest few entries of the account's activity, with their time formatted relative to the page's time. */
-  activity: { label: string; context: string; when: string }[];
 };
 
 /** `/me` on v2: the person's identity, what to know about the account, the screen settings and the other sections. */
@@ -140,33 +137,16 @@ export default function ProfileScreen(props: ProfileScreenProps) {
             <Section icon="user" title={t().profileTitle} actions={profileActions()}>
               <Facts items={props.profileFacts} />
             </Section>
+            <Section icon="id" title={t().accountFacts} actions={urgentExpiry() ? undefined : extendAction()}>
+              <Facts items={props.accountFacts} />
+            </Section>
+          </Pane>
+          <Pane side label={t().screenTitle} width={sideWidth}>
             <ScreenSection
               timerSeconds={props.screen.timerSeconds}
               platform={props.screen.platform}
               sharedWorkstation={props.screen.sharedWorkstation}
             />
-          </Pane>
-          <Pane side label={t().accountFacts} width={sideWidth}>
-            <Section icon="id" title={t().accountFacts} actions={urgentExpiry() ? undefined : extendAction()}>
-              <Facts items={props.accountFacts} />
-            </Section>
-            <Section
-              icon="activity"
-              title={t().recently}
-              more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
-            >
-              <Show when={props.activity.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
-                <Digest
-                  label={t().recently}
-                  activity={props.activity.map((entry) => ({
-                    person: { name: props.user.name, image: props.user.image },
-                    text: entry.label,
-                    place: entry.context,
-                    time: entry.when,
-                  }))}
-                />
-              </Show>
-            </Section>
           </Pane>
         </Pane.Split>
       </Pane>

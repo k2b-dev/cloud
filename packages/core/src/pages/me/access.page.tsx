@@ -35,7 +35,6 @@ export default ssr<AuthContext>(async (c) => {
         user={accountUserView(user, t)}
         actionsUser={profileActionsUser(user)}
         appName={rawAppName || "Cloud"}
-        freeIpaEnabled={freeIpaEnabled}
         accountsUi={accountsUi}
         showInherited={showInherited}
         groups={displayGroups.map((name) => ({ name, label: groupDisplayName(name, locale), inherited: !directGroups.includes(name) }))}

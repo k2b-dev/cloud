@@ -6,7 +6,7 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import { approvalAvailability } from "../app-approval/availability";
 import { accountUserView } from "./account-view";
-import { activityLabel } from "./activity-labels";
+import { activityLabel, activityMark, activityRefused } from "./activity-labels";
 import { activityHref } from "./activity-query";
 import { pwaAvailable } from "./app-availability";
 import { accountMessages } from "./messages";
@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
       coreSettings.get<string>("app.name"),
       coreSettings.get<string>("app.url"),
       coreSettings.get<boolean>("ai.openai_api_enabled"),
-      audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 4 } }),
+      audit.listSelfServiceActivity({ userId: user.id, days: 30, pagination: { page: 1, perPage: 6 } }),
     ]);
   const now = new Date();
   // relative to the time of this answer, so the server and the first paint agree
@@ -55,6 +55,8 @@ export default ssr<AuthContext>(async (c) => {
     label: activityLabel(entry, t),
     context: entry.context || t.accountContext,
     when: dates.formatDateTimeRelative(entry.createdAt, { locale, base: now }),
+    mark: activityMark(entry.action),
+    refused: activityRefused(entry),
   }));
   const passwordExpires = user.ipa?.passwordExpires;
   const availability = approvalAvailability(approvalConfig);
@@ -99,7 +101,6 @@ export default ssr<AuthContext>(async (c) => {
         }}
         now={now.toISOString()}
         recent={recent}
-        eventCount={activityPage.total}
         password={
           passwordExpires
             ? {

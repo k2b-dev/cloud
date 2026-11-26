@@ -178,7 +178,7 @@ test("API access appears only while the operator offers the OpenAI-compatible AP
     expect(text).toContain(`${globalThis.location.origin}/api/ai/openai/v1`);
     expect(text).toContain("flash");
     expect(text).not.toContain("whisper");
-    expect(dom.document.querySelector('a[href="/me/developer"]')).not.toBeNull();
+    expect(dom.document.querySelector('a[href="/me/security"]')).not.toBeNull();
     dialogCore.close();
     await dialog;
 

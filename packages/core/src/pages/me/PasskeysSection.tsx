@@ -7,7 +7,7 @@ import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/brow
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { confirmIdentity, SignInNeededError, takeReturnIntent, throwIfSignInNeeded } from "./confirm-identity";
-import { ACCOUNT_KINDS } from "./kinds";
+import { ACCOUNT_KINDS, transportWords } from "./kinds";
 
 const ADD_INTENT = { key: "add", value: "passkey" };
 
@@ -147,7 +147,8 @@ export default function PasskeysSection(props: {
     [
       t().created({ date: dates.formatDate(passkey.createdAt, { locale: locale() }) }),
       passkey.lastUsedAt ? t().used({ date: dates.formatDateTimeRelative(passkey.lastUsedAt, { locale: locale(), base }) }) : t().neverUsed,
-      ...(passkey.transports.length > 0 ? [passkey.transports.join(", ")] : []),
+      // how the key reaches the browser, in words (the raw WebAuthn names mean nothing to people)
+      ...(transportWords(passkey.transports, t()).length > 0 ? [transportWords(passkey.transports, t()).join(", ")] : []),
     ].join(" · ");
 
   return (

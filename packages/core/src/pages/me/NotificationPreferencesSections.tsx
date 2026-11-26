@@ -89,12 +89,9 @@ const Preference = (props: { preference: UserNotificationPreference; availableCh
               const on = () => !excluded.has(channel) && selected().includes(channel);
               const usable = () => !busy() && !excluded.has(channel) && availability(channel).enabled;
               return (
-                <Chip
-                  icon={notificationChannelMeta(channel, locale()).icon.replace(/^ti ti-/, "")}
-                  pressed={on()}
-                  onClick={usable() ? () => toggle(channel, !on()) : undefined}
-                >
-                  {notificationChannelMeta(channel, locale()).label}
+                // on or off in words and symbol too, not only in the tint
+                <Chip icon={on() ? "check" : "minus"} pressed={on()} onClick={usable() ? () => toggle(channel, !on()) : undefined}>
+                  {(on() ? t().channelOn : t().channelOff)({ channel: notificationChannelMeta(channel, locale()).label })}
                 </Chip>
               );
             }}

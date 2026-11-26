@@ -72,16 +72,16 @@ describe("profile menu App item", () => {
   test("appears in the rail menu and the mobile launcher data while the Cloud app runs", async () => {
     const html = await (await page([shell]).request("/", { headers: { "Accept-Language": "de" } })).text();
     // The no-JS panel of the rail avatar links it; the header has no avatar.
-    expect(html.match(/<a href="\/me\/app" class="menu-item">/g)).toHaveLength(1);
+    expect(html.match(/<a href="\/me\/security" class="menu-item">/g)).toHaveLength(1);
     expect(html).toContain("ti ti-device-mobile");
     // The mobile launcher reads the profile from embedded data.
     const data = html.match(/<script id="cloud-shell-data" type="application\/json">(.*?)<\/script>/)?.[1] ?? "";
-    expect(JSON.parse(data).profile).toMatchObject({ appHref: "/me/app" });
+    expect(JSON.parse(data).profile).toMatchObject({ appHref: "/me/security" });
   });
 
   test("is absent without the Cloud app", async () => {
     const html = await (await page([]).request("/")).text();
-    expect(html).not.toContain("/me/app");
+    expect(html).not.toContain("ti ti-device-mobile");
   });
 });
 

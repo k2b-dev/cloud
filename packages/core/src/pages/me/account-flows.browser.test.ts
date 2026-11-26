@@ -260,6 +260,34 @@ describe("account deeds on v2", () => {
     }
   }, 30_000);
 
+  test("a quiet period is changed in its dialog and saved at once, as the whole quiet hours", async () => {
+    const saved = {
+      doNotDisturbUntil: null,
+      quietHours: { timeZone: "Europe/Berlin", periods: [{ days: [1, 2, 3, 4, 5], start: "21:00", end: "07:00" }] },
+      state: { active: false, reason: null, until: null, nextStart: null },
+    };
+    const { context, tab, errors, seen } = await open("quiet", "/me/notifications", {
+      "PATCH /api/me/notifications/quiet": [{ json: saved }],
+    });
+    try {
+      await tab.getByRole("button", { name: "Quiet hours actions" }).click();
+      await tab.getByRole("menuitem", { name: "Change" }).click();
+      const editor = dialog(tab);
+      await editor.locator('[data-k2-part="Select"]').first().click();
+      await tab.getByRole("option", { name: "21:00" }).click();
+      await editor.getByRole("button", { name: "Save" }).click();
+      await editor.waitFor({ state: "detached" });
+      const body = seen.find((entry) => entry.method === "PATCH")?.body as { quietHours: typeof saved.quietHours };
+      expect(body.quietHours).toEqual(saved.quietHours);
+      // the row shows the saved period; there is no second "Save" for the quiet hours any more
+      await tab.getByText("21:00–07:00").first().waitFor();
+      expect(await tab.getByRole("button", { name: "Save" }).count()).toBe(0);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 30_000);
+
   test("do not disturb pauses until a chosen day and time in the person's zone, and refuses a time in the past", async () => {
     const { context, tab, errors, seen } = await open("quiet", "/me/notifications", {
       "PATCH /api/me/notifications/quiet": [

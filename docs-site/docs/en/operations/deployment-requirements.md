@@ -352,7 +352,7 @@ Ensure the normal browser sign-in methods remain available for confirmation.
 
 People must create personal API keys and passkeys in the browser. Automation
 that created personal API keys using OAuth tokens or API keys now receives
-`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/developer` instead.
+`403 BROWSER_SIGN_IN_REQUIRED`; create those keys in `/me/security` instead.
 An older browser sign-in receives `403 REAUTHENTICATE` and requires signing in
 again. Resource and standalone service-account keys are unchanged.
 SSH public key changes of FreeIPA accounts follow the same rule: OAuth tokens,

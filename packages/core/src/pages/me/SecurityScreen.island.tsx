@@ -8,8 +8,8 @@ import type {
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Cells, Chip, Digest, Empty, Pane, Section } from "@k2b/ui/v2";
-import { Show } from "solid-js";
+import { Cells, Chip, Empty, Pane, Row, Section } from "@k2b/ui/v2";
+import { For, Show } from "solid-js";
 import type { z } from "zod";
 import type { ApprovalAvailability } from "../app-approval/availability";
 import DevicesSection from "../app-approval/DevicesSection";
@@ -48,9 +48,7 @@ export type SecurityScreenProps = {
   };
   now: string;
   /** The newest few entries of the account's activity, their time formatted relative to the page's time. */
-  recent: { label: string; context: string; when: string }[];
-  /** How many things happened in the account in the last 30 days. */
-  eventCount: number;
+  recent: { label: string; context: string; when: string; mark: { icon: string; color: string }; refused: boolean }[];
   /** A FreeIPA password's end, formatted, and whether it is near; null without one. */
   password: { value: string; soon: boolean } | null;
 };
@@ -101,13 +99,6 @@ export default function SecurityScreen(props: SecurityScreenProps) {
     <AccountWorkspace user={props.user} place="security">
       <Pane label={t().securityAndDevices}>
         <Cells>
-          <Cells.Cell
-            icon="activity"
-            label={t().accountEvents}
-            value={String(props.eventCount)}
-            meta={t().inLast30Days}
-            href={`${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`}
-          />
           <Show when={props.password}>
             {(password) => (
               <Cells.Cell
@@ -141,15 +132,16 @@ export default function SecurityScreen(props: SecurityScreenProps) {
               more={{ label: t().viewAll, href: `${ACCOUNT_ACTIVITY_PATH}?kind=sign-ins`, forward: true }}
             >
               <Show when={props.recent.length > 0} fallback={<Empty icon="clipboard-list" text={t().noRecentAccountActivity} />}>
-                <Digest
-                  label={t().recently}
-                  activity={props.recent.map((entry) => ({
-                    person: { name: props.user.name, image: props.user.image },
-                    text: entry.label,
-                    place: entry.context,
-                    time: entry.when,
-                  }))}
-                />
+                <For each={props.recent}>
+                  {(entry) => (
+                    <Row
+                      mark={entry.mark}
+                      lines={[entry.label, entry.context]}
+                      time={entry.when}
+                      marks={entry.refused ? <Chip status="warn">{t().refused}</Chip> : undefined}
+                    />
+                  )}
+                </For>
               </Show>
             </Section>
           </Pane>

@@ -61,8 +61,15 @@ export const securityProps = (): SecurityScreenProps => ({
     timeZone: "Europe/Berlin",
   },
   now: NOW,
-  recent: [{ label: "Signed in with a passkey", context: "Arbeitslaptop", when: "vor 2 Std." }],
-  eventCount: 12,
+  recent: [
+    {
+      label: "Passkey verwendet",
+      context: "Arbeitslaptop",
+      when: "vor 2 Std.",
+      mark: { icon: "fingerprint", color: "#0d9488" },
+      refused: false,
+    },
+  ],
   password: null,
 });
 

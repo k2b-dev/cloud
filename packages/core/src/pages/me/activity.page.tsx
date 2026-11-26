@@ -7,9 +7,8 @@ import { dates } from "@k2b/stdlib";
 import { ssr } from "../../config";
 import ActivityScreen, { type ActivityScreenProps } from "./ActivityScreen.island";
 import { accountUserView } from "./account-view";
-import { activityLabel } from "./activity-labels";
-import { activityDaysOf, activityKindOf, activityQuery, deliveryStatusOf } from "./activity-query";
-import { ACCOUNT_KINDS } from "./kinds";
+import { activityLabel, activityMark } from "./activity-labels";
+import { activityDaysOf, activityKindOf, activityQuery, activityStateFor, deliveryStatusOf } from "./activity-query";
 import { accountMessages } from "./messages";
 import { notificationChannelMeta, notificationErrorText, notificationStatusMeta } from "./notification-ui";
 
@@ -17,24 +16,6 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
-
-/** An account event as the kind of thing it touched, with the same mark as on the account's pages. */
-const eventMark = (action: string): { icon: string; color?: string } =>
-  action.startsWith("webauthn_credential.")
-    ? ACCOUNT_KINDS.passkey
-    : action.startsWith("service_account_credential.")
-      ? ACCOUNT_KINDS.apiKey
-      : action.startsWith("auth.pwa.device.")
-        ? ACCOUNT_KINDS.phone
-        : action === "accounts.user.change_own_password"
-          ? ACCOUNT_KINDS.password
-          : action === "auth.session.sign_out_others"
-            ? ACCOUNT_KINDS.session
-            : action === "accounts.user.remove_self"
-              ? ACCOUNT_KINDS.deletion
-              : action.startsWith("accounts.request.")
-                ? ACCOUNT_KINDS.freeIpa
-                : { icon: "user", color: "#0284c7" };
 
 /** A delivery's state as a word with its meaning: delivered is ok, failed is bad, a held or waiting one waits. */
 const deliveryTone = (status: NotificationDeliveryStatus): "ok" | "warn" | "bad" | undefined =>
@@ -91,13 +72,13 @@ export default ssr<AuthContext>(async (c) => {
     const activity = await audit.listSelfServiceActivity({
       userId: user.id,
       days: activityDaysOf(state),
-      pagination: { page: 1, perPage: 50 },
+      pagination: { page, perPage: 25 },
     });
     return {
       kind,
-      total: activity.items.length,
-      page: 1,
-      pages: 1,
+      total: activity.total,
+      page,
+      pages: Math.max(1, Math.ceil(activity.total / 25)),
       rows: activity.items.map((entry) => ({
         id: String(entry.id),
         time: dates.formatDateTime(entry.createdAt, { locale }),
@@ -111,7 +92,7 @@ export default ssr<AuthContext>(async (c) => {
               ? { label: t.outcomeDenied, tone: "warn" }
               : { label: t.outcomeFailed, tone: "bad" },
         detail: null,
-        mark: eventMark(entry.action),
+        mark: activityMark(entry.action),
       })),
     };
   };
@@ -119,7 +100,11 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} fullWidth ui="v2" title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.activity }]}>
-      <ActivityScreen user={accountUserView(user, t)} state={state} content={content} />
+      <ActivityScreen
+        user={accountUserView(user, t)}
+        state={activityStateFor(t, kind, new URL(c.req.url).searchParams)}
+        content={content}
+      />
     </Layout>
   );
 });

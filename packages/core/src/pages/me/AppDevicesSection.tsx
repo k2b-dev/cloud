@@ -32,7 +32,7 @@ const icon = (platform: PwaDeviceView["platform"]) =>
   platform === "ios" ? "brand-apple" : platform === "android" ? "brand-android" : "device-mobile";
 
 /**
- * The paired phones on `/me/app` and the pairing dialog. SSR renders the list; pairing needs the browser. Closing the
+ * The paired phones on `/me/security` and the pairing dialog. SSR renders the list; pairing needs the browser. Closing the
  * dialog cancels an open pairing. `pair` opens it from the page head; `dialog` must stand once in the screen.
  */
 export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[]; dateConfig: DateContext; summary: string }) => {
@@ -270,7 +270,7 @@ export const useAppDevices = (props: { userId: string; initial: PwaDeviceView[];
 
   const reauthenticate = () => {
     remember(null);
-    const target = new URL("/me/app", window.location.origin);
+    const target = new URL("/me/security", window.location.origin);
     target.searchParams.set("pair", "1");
     target.searchParams.set("reauthenticate", "1");
     window.location.assign(`/auth/login?${new URLSearchParams({ redirectTo: target.pathname + target.search })}`);

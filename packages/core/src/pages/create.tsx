@@ -178,10 +178,10 @@ export const createPagesRouter = (options?: { brandingPublicDir?: string }): Hon
     .route("/branding", createAppIconRoutes())
     .route("/open", createResourceOpenRoutes());
 
-  // 404 catch-all (must be after all mounted routes)
-  pages.get("/*", auth.requireRole("*"), ...notFoundPage);
   // The account pages before v2: each old address leads to its new place with every parameter.
   for (const [path, redirect] of oldAccountAddresses) pages.get(path, redirect);
+  // 404 catch-all (must be after all routes, the old account addresses included)
+  pages.get("/*", auth.requireRole("*"), ...notFoundPage);
   return pages;
 };
 

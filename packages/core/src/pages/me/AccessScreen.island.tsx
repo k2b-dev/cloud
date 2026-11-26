@@ -1,10 +1,10 @@
-import { Button, Empty, Notice, Pane, Row, Section } from "@k2b/ui/v2";
-import { For, Show } from "solid-js";
+import { Button, Empty, Notice, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
+import { type JSX, Show } from "solid-js";
 import AccountWorkspace, { sideWidth, useAccountMessages } from "./AccountWorkspace";
 import type { AccountUserView } from "./account-view";
 import { useFreeIpaRequest } from "./freeipa-request";
 import { ACCOUNT_KINDS } from "./kinds";
-import { type ProfileActionsUser, useProfileActions } from "./profile-actions";
+import type { ProfileActionsUser } from "./profile-actions";
 
 type Group = { name: string; label: string; inherited: boolean };
 
@@ -12,7 +12,6 @@ export type AccessScreenProps = {
   user: AccountUserView;
   actionsUser: ProfileActionsUser;
   appName: string;
-  freeIpaEnabled: boolean;
   /** Links into the Accounts app's groups while it runs. */
   accountsUi: boolean;
   showInherited: boolean;
@@ -22,15 +21,14 @@ export type AccessScreenProps = {
   freeIpa: { pendingSince: string | null } | null;
 };
 
-/** `/me/access` on v2: the groups the person belongs to and manages, and the FreeIPA account request. */
+/**
+ * `/me/access` on v2: the person's groups by their part in them — the ones they manage, the ones they belong to, and
+ * (on request) the ones they belong to through another group — and the FreeIPA account request beside them.
+ * Data gap: a membership's start and who granted it are not in the account service's answer yet; each row shows the
+ * group's name and the name other apps and the command line use for it.
+ */
 export default function AccessScreen(props: AccessScreenProps) {
   const t = useAccountMessages();
-  const actions = useProfileActions({
-    user: props.actionsUser,
-    appName: props.appName,
-    freeIpaEnabled: props.freeIpaEnabled,
-    details: false,
-  });
   const request = useFreeIpaRequest({
     givenname: props.actionsUser.givenname,
     sn: props.actionsUser.sn,
@@ -39,66 +37,91 @@ export default function AccessScreen(props: AccessScreenProps) {
   });
   const groupHref = (scope: "member" | "managed", name: string) =>
     props.accountsUi ? `/app/accounts/groups?scope=${scope}&search=${encodeURIComponent(name)}` : undefined;
+  // Each group stands once, in the place of its strongest part: managed before member before inherited.
+  const managed = () => new Set(props.managed.map((group) => group.name));
+  const direct = () => props.groups.filter((group) => !group.inherited && !managed().has(group.name));
+  const inherited = () => props.groups.filter((group) => group.inherited && !managed().has(group.name));
+
+  // Groups as cards side by side, so many groups fill the width instead of one thin column of names.
+  const groups = (): JSX.Element => (
+    <>
+      <Show when={props.managed.length > 0}>
+        <Section icon="user-shield" title={t().groupsYouManage} count={props.managed.length}>
+          <Tiles
+            variant="card"
+            label={t().groupsYouManage}
+            items={props.managed.map((group) => ({
+              ...ACCOUNT_KINDS.managedGroup,
+              title: group.label,
+              meta: group.name,
+              href: groupHref("managed", group.name),
+            }))}
+          />
+        </Section>
+      </Show>
+      <Section
+        icon="users-group"
+        title={t().groupsMember}
+        count={direct().length}
+        actions={[
+          {
+            label: props.showInherited ? t().directOnly : t().showInherited,
+            icon: "git-branch",
+            href: props.showInherited ? "/me/access" : "/me/access?groups=all",
+          },
+        ]}
+      >
+        <Show when={direct().length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
+          <Tiles
+            variant="card"
+            label={t().groupsMember}
+            items={direct().map((group) => ({
+              ...ACCOUNT_KINDS.group,
+              title: group.label,
+              meta: group.name,
+              href: groupHref("member", group.name),
+            }))}
+          />
+        </Show>
+      </Section>
+      <Show when={props.showInherited}>
+        <Section icon="git-branch" title={t().groupsInherited} count={inherited().length}>
+          <Show when={inherited().length > 0} fallback={<Empty icon="git-branch" text={t().noGroups} />}>
+            <Tiles
+              variant="card"
+              label={t().groupsInherited}
+              items={inherited().map((group) => ({
+                ...ACCOUNT_KINDS.inheritedGroup,
+                title: group.label,
+                meta: group.name,
+                href: groupHref("member", group.name),
+              }))}
+            />
+          </Show>
+        </Section>
+      </Show>
+    </>
+  );
+
   return (
     <AccountWorkspace
       user={props.user}
       place="access"
       actions={
-        <>
-          <Show when={props.accountsUi}>
-            <Button icon="users-group" href="/app/accounts/groups">
-              {t().browseGroups}
-            </Button>
-          </Show>
-          <Show when={actions.extend}>
-            {(extend) => (
-              <Button icon="calendar-plus" busy={actions.extending()} onClick={extend()}>
-                {t().extendAccount}
-              </Button>
-            )}
-          </Show>
-        </>
+        <Show when={props.accountsUi}>
+          <Button icon="users-group" href="/app/accounts/groups">
+            {t().browseGroups}
+          </Button>
+        </Show>
       }
     >
       <Pane label={t().accessAndGroups}>
-        <Pane.Split>
-          <Pane label={t().groupMemberships}>
-            <Section
-              icon="users-group"
-              title={t().groupMemberships}
-              count={props.groups.length}
-              actions={[
-                {
-                  label: props.showInherited ? t().directOnly : t().showInherited,
-                  icon: "git-branch",
-                  href: props.showInherited ? "/me/access" : "/me/access?groups=all",
-                },
-              ]}
-            >
-              <Show when={props.groups.length > 0} fallback={<Empty icon="users-group" text={t().noGroups} />}>
-                <For each={props.groups}>
-                  {(group) => (
-                    <Row
-                      mark={group.inherited ? ACCOUNT_KINDS.inheritedGroup : ACCOUNT_KINDS.group}
-                      lines={[group.label]}
-                      meta={group.inherited ? t().inheritedMembership : undefined}
-                      href={groupHref("member", group.name)}
-                    />
-                  )}
-                </For>
-              </Show>
-            </Section>
-          </Pane>
-          <Pane side label={t().delegatedManagement} width={sideWidth}>
-            <Section icon="user-shield" title={t().delegatedManagement} count={props.managed.length}>
-              <Show when={props.managed.length > 0} fallback={<Empty icon="user-shield" text={t().noManagedGroups} />}>
-                <For each={props.managed}>
-                  {(group) => <Row mark={ACCOUNT_KINDS.managedGroup} lines={[group.label]} href={groupHref("managed", group.name)} />}
-                </For>
-              </Show>
-            </Section>
-            <Show when={props.freeIpa}>
-              {(freeIpa) => (
+        {/* a side column only while it has something to hold: the FreeIPA account request */}
+        <Show when={props.freeIpa} fallback={groups()}>
+          {(freeIpa) => (
+            <Pane.Split>
+              <Pane label={t().groupMemberships}>{groups()}</Pane>
+              <Pane side label={t().freeIpaAccount} width={sideWidth}>
                 <Section icon="building-fortress" title={t().freeIpaAccount}>
                   <Show
                     when={freeIpa().pendingSince}
@@ -128,12 +151,11 @@ export default function AccessScreen(props: AccessScreenProps) {
                     )}
                   </Show>
                 </Section>
-              )}
-            </Show>
-          </Pane>
-        </Pane.Split>
+              </Pane>
+            </Pane.Split>
+          )}
+        </Show>
       </Pane>
-      {actions.dialogs()}
       {request.dialogs()}
     </AccountWorkspace>
   );

@@ -12,6 +12,7 @@ import {
   Empty,
   Facts,
   Field,
+  Inline,
   Input,
   Notice,
   Row,
@@ -187,21 +188,22 @@ export const useApiKeys = (props: {
             <Row
               mark={isModelsOnlyApiKey(key) ? ACCOUNT_KINDS.modelsKey : ACCOUNT_KINDS.apiKey}
               lines={[key.name, line(key)]}
-              marks={
-                key.expiresAt && Date.parse(key.expiresAt) - base.getTime() < SOON_MS ? (
-                  <Chip status={Date.parse(key.expiresAt) <= base.getTime() ? "bad" : "warn"}>
-                    {Date.parse(key.expiresAt) <= base.getTime() ? t().expired : t().expiresSoon}
-                  </Chip>
-                ) : undefined
-              }
+              // the state chip stands beside the deed, so it never takes a line of its own
               end={
-                <Button
-                  variant="ghost"
-                  icon="key-off"
-                  label={t().revokeNamedApiKey({ name: key.name })}
-                  busy={revoking() === key.id}
-                  onClick={() => void revoke(key)}
-                />
+                <Inline>
+                  <Show when={key.expiresAt && Date.parse(key.expiresAt) - base.getTime() < SOON_MS}>
+                    <Chip status={key.expiresAt && Date.parse(key.expiresAt) <= base.getTime() ? "bad" : "warn"}>
+                      {key.expiresAt && Date.parse(key.expiresAt) <= base.getTime() ? t().expired : t().expiresSoon}
+                    </Chip>
+                  </Show>
+                  <Button
+                    variant="ghost"
+                    icon="key-off"
+                    label={t().revokeNamedApiKey({ name: key.name })}
+                    busy={revoking() === key.id}
+                    onClick={() => void revoke(key)}
+                  />
+                </Inline>
               }
             />
           )}

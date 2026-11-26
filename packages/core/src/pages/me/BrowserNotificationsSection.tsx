@@ -74,12 +74,17 @@ export default function BrowserNotificationsSection() {
             <Chip status="bad">{t().blocked}</Chip>
           ) : undefined
         }
-        action={{
-          label: pending() ? (state()?.enabled ? t().disabling : t().enabling) : state()?.enabled ? t().disable : t().enable,
-          icon: state()?.enabled ? "bell-off" : "bell-plus",
-          disabled: !usable() || pending(),
-          onClick: () => void (state()?.enabled ? disable() : enable()),
-        }}
+        // the deed stands only once this browser answered whether it can; before that it would be a dead button
+        action={
+          state() && usable()
+            ? {
+                label: pending() ? (state()?.enabled ? t().disabling : t().enabling) : state()?.enabled ? t().disable : t().enable,
+                icon: state()?.enabled ? "bell-off" : "bell-plus",
+                disabled: !usable() || pending(),
+                onClick: () => void (state()?.enabled ? disable() : enable()),
+              }
+            : undefined
+        }
       />
       <Show when={state()?.reason}>
         {(reason) => (
