@@ -158,7 +158,7 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
       expect(labels).toEqual([
         { text: "Teilen", visible: true },
         { text: "Verschieben", visible: true },
-        { text: "Als ZIP laden", visible: true },
+        { text: "Laden", visible: true },
         { text: "Löschen", visible: true },
       ]);
       expect(await page.locator(".k2-fab").evaluate((element) => getComputedStyle(element).display)).toBe("none");
@@ -255,6 +255,50 @@ test("the sidebar shows what the storage uses, as a meter with its words", async
   });
 });
 
+test("a setting goes to one column by the width of its pane, so its name never runs into its value (review #4223)", async () => {
+  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone
+  for (const width of [800, 1024, 1440])
+    await withPage(
+      "settings",
+      async (page) => {
+        const crossed = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-k2-part='Setting']")]
+            .map((setting) => {
+              const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
+              const control = setting
+                .querySelector(":scope > :not(.k2-field-label, .k2-field-message, .k2-field-was)")!
+                .getBoundingClientRect();
+              const box = label.getBoundingClientRect();
+              const beside = control.left > box.left;
+              return { name: label.textContent, bad: label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left) };
+            })
+            .filter((setting) => setting.bad)
+            .map((setting) => setting.name),
+        );
+        expect(crossed).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("on the phone the end of the list stays above the floating actions of a selection (review #4223)", async () => {
+  await withPage(
+    "selecting",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        // scrolled to the very end: every column that scrolls, inner and outer
+        for (const scroller of document.querySelectorAll(".k2-scroll")) scroller.scrollTop = scroller.scrollHeight;
+        const titles = [...document.querySelectorAll(".k2-tile-title")].map((title) => title.getBoundingClientRect().bottom);
+        const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+        return { last: Math.max(...titles), bar: bar.top };
+      });
+      // the last names stand above the bar, with room to breathe
+      expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+    },
+    390,
+  );
+});
+
 test("a setting stands with its value beside its name, and an unsaved change says what it was", async () => {
   await withPage("settings", async (page) => {
     const setting = page.locator("[data-k2-part='Setting']").first();
@@ -275,6 +319,20 @@ test("a setting stands with its value beside its name, and an unsaved change say
       .locator("[data-k2-part='Setting'] > :is(.k2-input, .k2-check)")
       .evaluateAll((elements) => [...new Set(elements.map((element) => Math.round(element.getBoundingClientRect().left)))]);
     expect(lefts.length).toBe(1);
+    // the deed of a setting stands at the end of its name's line, between the name and the value, and moves no value
+    const deed = await page.evaluate(() => {
+      const setting = document.querySelector("[data-k2-part='Setting'][data-action]")!;
+      const button = setting.querySelector(".k2-field-action button")!;
+      const box = button.getBoundingClientRect();
+      const name = setting.querySelector(".k2-field-label")!.getBoundingClientRect();
+      const control = setting.querySelector(".k2-input")!.getBoundingClientRect();
+      return {
+        name: button.textContent?.trim(),
+        between: box.left >= name.right - 1 && box.right <= control.left,
+        top: Math.abs(box.top - name.top) < 4,
+      };
+    });
+    expect(deed).toEqual({ name: "Auf Standard zurücksetzen", between: true, top: true });
   });
   await withPage(
     "settings",

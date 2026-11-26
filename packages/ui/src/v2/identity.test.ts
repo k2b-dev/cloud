@@ -16,8 +16,7 @@ const { Tiles } = await import("./layout");
 const { Digest } = await import("./components");
 const { Row } = await import("./content");
 
-const html = <P extends object>(component: (props: P) => JSX.Element, props: P) =>
-  renderToString(() => createComponent(component, props));
+const html = <P extends object>(component: (props: P) => JSX.Element, props: P) => renderToString(() => createComponent(component, props));
 
 test("a mark is decoration beside its name, names itself with a label, and sends its picture over its symbol", () => {
   const plain = html(Mark, { icon: "table", color: "#008f4c" });
@@ -42,8 +41,15 @@ test("a stack shows three people and '+n', named once with every name", () => {
   const stack = html(Avatar.Stack, { people });
   expect(stack).toContain('aria-label="Felix Thal, Jonas Kern, Mira Solberg, Tom Oswald, Sami Yilmaz"');
   expect(stack.match(/class="k2-av"/g)?.length).toBe(3);
-  expect(stack).toContain('<span class="k2-avs-rest" aria-hidden="true">+2</span>');
-  expect(html(Avatar.Stack, { people, max: 5 })).not.toContain("k2-avs-rest");
+  // a count for each number of faces a narrow place may leave: the stylesheet shows the one that matches
+  expect(stack.match(/data-visible="(\d)" aria-hidden="true">(\+\d+)</g)).toEqual([
+    'data-visible="1" aria-hidden="true">+4<',
+    'data-visible="2" aria-hidden="true">+3<',
+    'data-visible="3" aria-hidden="true">+2<',
+  ]);
+  expect(stack).toContain('data-k="3"');
+  // with every face shown no count belongs to the full stack
+  expect(html(Avatar.Stack, { people, max: 5 })).not.toContain('data-visible="5"');
   expect(html(Avatar.Stack, { people, label: "Werkstatt-Team" })).toContain('aria-label="Werkstatt-Team"');
 });
 

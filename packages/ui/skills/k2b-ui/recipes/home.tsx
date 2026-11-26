@@ -88,7 +88,7 @@ export default function PlaceHome(props: Props) {
             label="Offene Aufträge"
             value="41"
             meta="+12 heute · 7 über das Formular"
-            trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge der letzten 7 Tage" }}
+            trend={{ values: [22, 30, 27, 36, 31, 38, 41], label: "Offene Aufträge: in 7 Tagen von 22 auf 41 gestiegen" }}
             href="#offen"
           />
           <Cells.Cell
