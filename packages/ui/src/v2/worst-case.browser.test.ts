@@ -124,9 +124,34 @@ test("a large table's phone rows keep their date inside the row at 390 px, and t
         }),
       );
       expect(past.length).toBe(3);
-      for (const over of past) expect(over).toBeLessThanOrEqual(0);
+      for (const over of past) expect(Math.abs(over)).toBe(0);
       const layout = await measureV2Layout(page, { root: "#root" });
       expect(layout.past).toEqual([]);
+    },
+    "table",
+  );
+});
+
+// DR (#4229): a table's phone rows lost the row's deeds, so a dialog's table could not be worked on the phone. A phone
+// row carries them at its end, inside the row, and they open.
+test("a large table's phone rows keep the row's deeds at 390 px", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      const deeds = page.locator(".k2-table-phone .k2-row .k2-btn[aria-haspopup='menu']");
+      expect(await deeds.count()).toBe(3);
+      const inside = await deeds.evaluateAll((buttons) =>
+        buttons.map((button) => {
+          const box = button.getBoundingClientRect();
+          const row = button.closest(".k2-row")!.getBoundingClientRect();
+          return box.width > 0 && box.left >= row.left && box.right <= row.right + 0.5;
+        }),
+      );
+      expect(inside).toEqual([true, true, true]);
+      await page.getByRole("button", { name: "Aktionen für Angebote" }).click();
+      await page.getByRole("menuitem", { name: "Umbenennen" }).waitFor();
+      await page.keyboard.press("Escape");
+      expect((await measureV2Layout(page, { root: "#root" })).past).toEqual([]);
     },
     "table",
   );
@@ -236,5 +261,78 @@ test("on the phone a head with its own … folds its kept deeds into that one me
       expect(await page.getByRole("menuitemcheckbox", { name: "Markiert" }).getAttribute("aria-checked")).toBe("false");
     },
     "headmenu",
+  );
+});
+
+/** The "…" buttons a person sees in the head. */
+const shownMenus = (page: Page) =>
+  page
+    .locator("[data-slot='head'] .k2-btn[data-icon-only][aria-haspopup='menu']")
+    .evaluateAll((buttons) =>
+      buttons.filter((button) => (button as HTMLElement).offsetWidth > 0).map((button) => button.getAttribute("aria-label")),
+    );
+
+// Review r3 of #4210: a kept icon button is no "…": beside it the bar's own "…" still shows and holds the folded deed.
+test("on the phone a kept icon button beside a folded deed leaves the bar's … to hold that deed", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      expect(await shownMenus(page)).toEqual(["Weitere Aktionen"]);
+      await page.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await page.getByRole("menuitem", { name: "Freigeben" }).waitFor();
+    },
+    "headicon",
+  );
+});
+
+// Review r3 of #4210: with two "…" of its own the head lists a folded deed once, in the first, and shows no third "…".
+test("on the phone a head with two … of its own folds its kept deed into the first only", async () => {
+  await withPage(
+    390,
+    async (page) => {
+      expect(await shownMenus(page)).toEqual(["Weitere Aktionen", "Ansicht"]);
+      const entries = async (name: string) => {
+        await page.getByRole("button", { name }).click();
+        await page.getByRole("menu").waitFor();
+        const labels = await page.getByRole("menu").getByRole("menuitem").allTextContents();
+        await page.keyboard.press("Escape");
+        await page.getByRole("menu").waitFor({ state: "hidden" });
+        return labels.map((label) => label.trim());
+      };
+      expect(await entries("Weitere Aktionen")).toEqual(["Einstellungen", "Freigeben"]);
+      expect(await entries("Ansicht")).toEqual(["Kompakt"]);
+    },
+    "headtwo",
+  );
+});
+
+// Review r3 of #4210: a second line is cut in its own box, so a link in it draws its ring inside that box.
+test("a link in a cut second line shows its whole focus ring", async () => {
+  await withPage(
+    1024,
+    async (page) => {
+      const link = page.getByRole("link", { name: "Letzte Anfragen öffnen" });
+      for (let step = 0; step < 20 && !(await link.evaluate((element) => element === document.activeElement)); step++)
+        await page.keyboard.press("Tab");
+      const ring = await link.evaluate((element) => {
+        const style = getComputedStyle(element);
+        const grow =
+          style.outlineStyle === "none" ? 0 : Math.max(0, Number.parseFloat(style.outlineWidth) + Number.parseFloat(style.outlineOffset));
+        const box = element.getBoundingClientRect();
+        const clip = element.closest(".k2-row-l2")!.getBoundingClientRect();
+        return {
+          focused: element.matches(":focus-visible"),
+          drawn: style.outlineStyle !== "none" || style.boxShadow !== "none",
+          inside:
+            box.left - grow >= clip.left - 0.5 &&
+            box.right + grow <= clip.right + 0.5 &&
+            box.top - grow >= clip.top - 0.5 &&
+            box.bottom + grow <= clip.bottom + 0.5 &&
+            !style.boxShadow.split("),").some((shadow) => shadow !== "none" && !shadow.includes("inset")),
+        };
+      });
+      expect(ring).toEqual({ focused: true, drawn: true, inside: true });
+    },
+    "rows",
   );
 });

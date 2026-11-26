@@ -245,9 +245,11 @@ column; pair it with `StatusRow selection`), `current` (the open row's key,
 tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (tinted group rows), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?, end?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
-`marks` at the end of the second line, such as the entry's state chip).
+`marks` at the end of the second line, such as the entry's state chip, `end`
+the row's deeds as on a `Row`, such as its "…": give it whatever a column of
+deeds offers on the desktop, or the phone loses them).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
