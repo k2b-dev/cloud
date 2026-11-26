@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, setDefaultTimeout, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Browser, Page } from "playwright";
-import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
+import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { demoBundle, serverMarkup } from "../../test/v2-behavior/harness";
 import type {} from "../../test/v2-tree.demo";
 
@@ -27,8 +27,8 @@ afterAll(async () => {
   await browser?.close();
 });
 
-const withPage = async (run: (page: Page) => Promise<void>, width = 1440) => {
-  const page = await browser.newPage({ viewport: { width, height: 900 } });
+const withPage = async (run: (page: Page) => Promise<void>, width = 1440, touch = false) => {
+  const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
@@ -521,5 +521,61 @@ test("nav tree: a place's row opens its deeds on a long press (a phone, also wit
         .locator(":scope > .k2-nt-row")
         .evaluate((row) => (row as HTMLElement).style.getPropertyValue("--hold-delay")),
     ).toBe("500ms");
+  });
+});
+
+// ── Review r4 (Opus, 26.11.) ─────────────────────────────────────────────────────────────────────────────────────
+
+test("server markup: a place with deeds says it has a menu and how to open it without keys", () => {
+  const nav = markup.slice(markup.indexOf('role="tree"'), markup.indexOf('role="treegrid"'));
+  const item = nav.match(/<div[^>]*id="[^"]*-item-projekte"[^>]*>/)?.[0] ?? "";
+  expect(item).toContain('aria-haspopup="menu"');
+  expect(item).toContain('aria-description="Aktionen: lange drücken oder Umschalt+F10"');
+});
+
+test("nav tree: a finger held on a place opens its deeds", async () => {
+  // Playwright drives WebKit touch only as a whole tap; a held finger needs Chromium's touch input
+  if (browserName !== "chromium") return;
+  await withPage(
+    async (page) => {
+      const row = place(page, "Projekte").locator(":scope > .k2-nt-row");
+      const box = await row.boundingBox();
+      if (!box) throw new Error("no row");
+      const cdp = await page.context().newCDPSession(page);
+      try {
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 40, y: box.y + box.height / 2 }] });
+        await page.getByRole("menuitem", { name: "Umbenennen" }).waitFor();
+        await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      } finally {
+        await cdp.detach();
+      }
+    },
+    1440,
+    true,
+  );
+});
+
+test("nav tree: a menu opened on a place's row gives the focus back to the place when it closes", async () => {
+  await withPage(async (page) => {
+    await place(page, "Projekte").locator(":scope > .k2-nt-row").click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Umbenennen" }).waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "treeitem");
+    expect(await focusedName(page)).toBe("Projekte");
+  });
+});
+
+test("nav tree: the menu key on a place leaves the menu to the context menu event: one menu opens", async () => {
+  await withPage(async (page) => {
+    await place(page, "Projekte").focus();
+    await page.evaluate(() => {
+      const item = document.activeElement;
+      item?.dispatchEvent(new KeyboardEvent("keydown", { key: "ContextMenu", bubbles: true, cancelable: true }));
+      // Firefox and Windows send the context menu event after the key, to the focused place
+      item?.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    await page.getByRole("menuitem", { name: "Umbenennen" }).first().waitFor();
+    await settled(page);
+    expect(await page.getByRole("menu").count()).toBe(1);
   });
 });

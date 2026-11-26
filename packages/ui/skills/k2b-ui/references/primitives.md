@@ -418,11 +418,7 @@ lines instead of cutting a thing.
   entries are options (`value`, else `label`), the chosen one carries the
   tick, choosing closes the menu. Lines around sections and before the
   first `danger` entry come by themselves. The menu lines up with
-  its button; there is no `align`. `pointerOnly`: the button is for the
-  pointer only (no Tab stop, hidden from screen readers), such as a "…" on
-  a tree place or a tile in a grid that is one Tab stop; only together
-  with `Menu.Context` on the thing (right-click, long press, also with
-  VoiceOver) and Shift+F10 named in its `aria-keyshortcuts`.
+  its button; there is no `align`.
 - `Menu.Context`: `items`, and one element as child, such as a `Row`. A
   right-click or a long press opens the menu at the pointer, Shift+F10 at
   the element. It adds no wrapper, so a `Row` stays a child of its `List`.

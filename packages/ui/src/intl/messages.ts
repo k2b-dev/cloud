@@ -99,6 +99,7 @@ const uiMessages = i18n.define({
       loadMore: ({ count }: { count: number | undefined }) =>
         count === undefined ? "Load more" : `Load ${count.toLocaleString("en")} more`,
       loadMoreFailed: "Couldn't load more. Try again",
+      deedsHint: "Actions: long press or Shift+F10",
       yes: "Yes",
     },
     de: {
@@ -194,6 +195,7 @@ const uiMessages = i18n.define({
       nothingSelected: "Nichts ausgewählt",
       loadMore: ({ count }) => (count === undefined ? "Weitere laden" : `Weitere ${count.toLocaleString("de")} laden`),
       loadMoreFailed: "Weitere konnten nicht geladen werden. Erneut versuchen",
+      deedsHint: "Aktionen: lange drücken oder Umschalt+F10",
       yes: "Ja",
     },
   },
