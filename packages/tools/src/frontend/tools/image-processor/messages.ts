@@ -159,6 +159,8 @@ export const imageProcessorMessages = i18n.define({
       maxWidth: "Max width",
       maxHeight: "Max height",
       keepOriginalSize: "Leave empty to keep original size",
+      qualityInvalid: "Enter a quality from 10 to 100.",
+      pixelsInvalid: "Enter a whole number from 1, or leave it empty.",
       noImageToExport: "No image is available to export",
       unknownExportError: "Unknown export error",
       exportStopped: ({ completed, count }: { completed: number; count: number }) =>
@@ -319,6 +321,8 @@ export const imageProcessorMessages = i18n.define({
       maxWidth: "Maximale Breite",
       maxHeight: "Maximale Höhe",
       keepOriginalSize: "Leer lassen, um die Originalgröße zu behalten",
+      qualityInvalid: "Gib eine Qualität von 10 bis 100 ein.",
+      pixelsInvalid: "Gib eine ganze Zahl ab 1 ein oder lass das Feld leer.",
       noImageToExport: "Kein Bild zum Exportieren verfügbar",
       unknownExportError: "Das Bild konnte nicht exportiert werden",
       exportStopped: ({ completed, count }) => `Export nach ${completed} von ${count} Bildern gestoppt.`,

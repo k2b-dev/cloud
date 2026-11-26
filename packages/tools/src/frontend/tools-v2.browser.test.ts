@@ -177,3 +177,42 @@ test("the photo editor exports from a dialog, crops on the stage and writes a te
     await page.close();
   }
 }, 30_000);
+
+test("the photo editor's export names a setting that is not valid at its field and holds the export", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${server.url.href}?screen=image-one`);
+    await page.locator('[data-k2-part="Workspace"]').waitFor();
+    await page.getByRole("button", { name: "Exportieren" }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Bild exportieren" });
+    const exportButton = dialog.getByRole("button", { name: "Exportieren" });
+    await dialog.getByRole("spinbutton", { name: /Qualität/ }).fill("5");
+    await dialog.getByText("Gib eine Qualität von 10 bis 100 ein.").waitFor();
+    expect(await exportButton.isDisabled()).toBe(true);
+    await dialog.getByRole("spinbutton", { name: /Qualität/ }).fill("80");
+    await dialog.getByRole("spinbutton", { name: /Maximale Breite/ }).fill("0");
+    await dialog.getByText("Gib eine ganze Zahl ab 1 ein oder lass das Feld leer.").waitFor();
+    expect(await exportButton.isDisabled()).toBe(true);
+    await dialog.getByRole("spinbutton", { name: /Maximale Breite/ }).fill("");
+    expect(await exportButton.isDisabled()).toBe(false);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("the photo editor's own picture tiles show where the keyboard is", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  try {
+    await page.goto(`${server.url.href}?screen=image-open`);
+    await page.locator('[data-k2-part="Workspace"]').waitFor();
+    const tiles = page.locator("[data-tools-tile]");
+    expect(await tiles.count()).toBeGreaterThan(8);
+    await page.keyboard.press("Shift");
+    for (const index of [0, 4, 6]) {
+      await tiles.nth(index).focus();
+      expect(await tiles.nth(index).evaluate((tile) => getComputedStyle(tile).outlineStyle)).toBe("solid");
+    }
+  } finally {
+    await page.close();
+  }
+}, 30_000);

@@ -164,3 +164,10 @@
 }
 
 /* Speedtest: reserved measurement, feedback and terminal slots in every state. */
+
+/* Buttons a Tools drawing makes itself (picture tiles, swatches) inside a v2 Canvas: the keyboard sees where it is,
+   in v2's focus colour. k2b-ui gap: no v2 picture tile or swatch yet. */
+[data-k2-canvas] [data-tools-tile]:focus-visible {
+  outline: 2px solid var(--k2-blue);
+  outline-offset: 2px;
+}
