@@ -18,6 +18,11 @@ export type StateTimelineInterval = {
   label?: string;
   href?: string;
   tooltip?: string;
+  /**
+   * A start still to come (a planned run): drawn as an outline in its state's colour instead of filled, and its text
+   * alternative says so (`plannedLabel`).
+   */
+  planned?: boolean;
 };
 
 export type StateTimelineRow = {
@@ -45,6 +50,16 @@ export type StateTimelineChartOptions = {
    * share one; `Chart` gives each instance its own. Without it the ids come from the geometry.
    */
   idPrefix?: string;
+  /**
+   * The present moment as the page knows it (the server's request time, then the island's): a thin line over the
+   * lanes with `nowLabel`. The drawing reads no clock of its own, so the server and the first render in the browser
+   * draw the same; without it there is no line.
+   */
+  now?: number;
+  /** The word on the line of `now`, such as "Jetzt"; `Chart` gives it in the page's language. */
+  nowLabel?: string;
+  /** The word a planned start adds to its text alternative, such as "geplant"; `Chart` gives it. */
+  plannedLabel?: string;
 };
 
 const ROW_HEIGHT = 24;
@@ -52,6 +67,8 @@ const TOP = 38;
 const AXIS_HEIGHT = 28;
 const LEGEND_HEIGHT = 24;
 const MIN_VIEW_FRACTION = 1 / 64;
+/** The narrowest a region is drawn: a run of seconds on a day stays visible and can be pointed at, centred on its start. */
+const MIN_REGION = 3;
 
 const finiteDomain = (domain: StateTimelineDomain): StateTimelineDomain | null => {
   if (!Number.isFinite(domain[0]) || !Number.isFinite(domain[1]) || domain[0] === domain[1]) return null;
@@ -173,9 +190,20 @@ export const renderStateTimelineSvg = (
       const x2 = mapRange(to, viewport, [plotLeft, plotRight]);
       const style = stateStyles.get(interval.state);
       const stateIndex = style?.index ?? stateIndexes.get(interval.state) ?? 0;
-      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")} x="${fmt(
-        x,
-      )}" y="${fmt(y + 3)}" width="${fmt(Math.max(2, x2 - x))}" height="${ROW_HEIGHT - 6}" rx="3"/>`;
+      // too short to see: the narrowest region, centred on the start and kept on the plot
+      const narrow = x2 - x < MIN_REGION;
+      const left = narrow ? Math.max(plotLeft, Math.min(plotRight - MIN_REGION, x - MIN_REGION / 2)) : x;
+      const regionWidth = narrow ? MIN_REGION : x2 - x;
+      // a planned start: an outline in its state's colour over a faint fill (the stroke as a style, which wins over
+      // the white edge every region has)
+      const planned = interval.planned
+        ? ` data-planned="" fill-opacity="0.12" stroke-dasharray="3 2" style="stroke:${
+            style?.color ? escapeXml(style.color) : `var(--stdlib-chart-c${(stateIndex % 8) + 1})`
+          }"`
+        : "";
+      const rect = `<rect ${seriesPaint(style?.color, stateIndex, "stdlib-chart-state-region")}${planned} x="${fmt(
+        left,
+      )}" y="${fmt(y + 3)}" width="${fmt(regionWidth)}" height="${ROW_HEIGHT - 6}" rx="${narrow ? 1 : 3}"/>`;
       const stateLabel = style?.label ?? interval.state;
       body.push(
         interactiveGroup(
@@ -200,7 +228,7 @@ export const renderStateTimelineSvg = (
           ),
           interval.href,
           interval.tooltip ?? interval.label,
-          [row.label, interval.label, stateLabel].filter(Boolean).join(", "),
+          [row.label, interval.label, stateLabel, interval.planned ? opts.plannedLabel : undefined].filter(Boolean).join(", "),
         ),
       );
     }
@@ -232,6 +260,21 @@ export const renderStateTimelineSvg = (
         format(tick),
       )}</text>`,
     );
+  }
+
+  // now: a thin line over the lanes and its word above them, kept inside the plot at its ends
+  if (opts.now !== undefined && Number.isFinite(opts.now) && opts.now >= viewport[0] && opts.now <= viewport[1]) {
+    const x = mapRange(opts.now, viewport, [plotLeft, plotRight]);
+    const anchor = x < plotLeft + 24 ? "start" : x > plotRight - 24 ? "end" : "middle";
+    body.push(
+      `<line class="stdlib-chart-state-now" x1="${fmt(x)}" x2="${fmt(x)}" y1="${TOP - 4}" y2="${fmt(rowsBottom)}" stroke="currentColor" stroke-width="1"/>`,
+    );
+    if (opts.nowLabel)
+      body.push(
+        `<text class="stdlib-chart-heatmap-label stdlib-chart-state-now-label" x="${fmt(x)}" y="${TOP - 8}" text-anchor="${anchor}">${escapeXml(
+          opts.nowLabel,
+        )}</text>`,
+      );
   }
 
   if (opts.xAxis?.label) {
