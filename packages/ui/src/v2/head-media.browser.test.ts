@@ -32,6 +32,7 @@ type Case =
   | "long"
   | "areas"
   | "structure"
+  | "groups"
   | "split-list-canvas";
 
 let browser: Browser;
@@ -882,6 +883,39 @@ test("on the phone a deep path gives way to the shell's bar, and the head keeps 
 });
 
 // From DR's look pass (#4229), each in the primitive that owns it.
+test("a group in a section draws no frame of its own, a line parts two groups; a group outside keeps its frame apart from the line above (no box in a box, no double line)", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "groups",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const frame = (group: Element) => {
+            const style = getComputedStyle(group);
+            return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth].join(" ");
+          };
+          const inside = [...document.querySelectorAll(".k2-sec > .k2-group")];
+          const outside = [...document.querySelectorAll(".k2-scroll > .k2-group")];
+          const section = document.querySelector(".k2-sec")!.getBoundingClientRect();
+          const notice = document.querySelector(".k2-notice")!.getBoundingClientRect();
+          return {
+            inside: inside.map(frame),
+            // inside a section a group stands on the section's edges, as its rows do
+            flush: inside.every((group) => Math.round(group.getBoundingClientRect().left) === Math.round(section.left)),
+            outside: outside.map(frame),
+            gap: Math.round(outside[0]!.getBoundingClientRect().top - notice.bottom),
+          };
+        });
+        expect(found.inside).toEqual(["0px 0px 0px 0px", "1px 0px 0px 0px"]);
+        expect(found.flush).toBe(true);
+        expect(found.outside).toEqual(["1px 1px 1px 1px", "1px 1px 1px 1px"]);
+        expect(found.gap).toBeGreaterThanOrEqual(12);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+});
+
 test("a home of sections: side by side where both get 360 px, a group head as text, the time at the end of a sentence without a place, a foot without a line under it", async () => {
   for (const width of [1440, 390])
     await withPage(
