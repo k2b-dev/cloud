@@ -26,6 +26,7 @@ import {
 } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import ToolsScreen from "../ToolsScreen";
+import { LiveStatus } from "../tools-status";
 import { IMAGE_ACCEPT } from "./image-intake/formats";
 import { disposeHeifDecoder, ImageIntakeError, type ImageIntakeFailure, type ImageIntakeStage, prepareImage } from "./image-intake/intake";
 import { imageIntakeMessages } from "./image-intake/messages";
@@ -134,6 +135,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const [stageHeight, setStageHeight] = createSignal(STAGE_HEIGHT);
   const [phone, setPhone] = createSignal(false);
   const [draggingFiles, setDraggingFiles] = createSignal(false);
+  /** The last thing done, for the live region, such as "4 Bilder offen" after a load. */
+  const [announcement, setAnnouncement] = createSignal<string>();
 
   // --- Editor mode + markup ---
   const [editorMode, setEditorMode] = createSignal<"edit" | "markup">(props.initialEditorMode ?? "edit");
@@ -330,6 +333,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     onFinally: () => {
       loadingFiles = [];
       setCurrentLoad(null);
+      setAnnouncement(t().photosOpen({ count: images().length }));
     },
   });
 
@@ -965,6 +969,14 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       setDraggingFiles(false);
       loadFiles(files);
     };
+    // Open photos and their edits live only in this page: leaving it (reload, closing the tab) asks first.
+    const leaving = (event: BeforeUnloadEvent) => {
+      if (images().length === 0) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", leaving);
+    onCleanup(() => window.removeEventListener("beforeunload", leaving));
     document.addEventListener("dragenter", enter);
     document.addEventListener("dragleave", leave);
     document.addEventListener("dragover", over);
@@ -1012,6 +1024,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     if (!image) return [];
     const { width, height } = image.source;
     return [
+      { label: t().factName, value: image.name },
       { label: t().factSize, value: `${width} × ${height} px` },
       ...(image.file ? [{ label: t().factFile, value: `${(image.file.size / 1024).toFixed(0)} KB` }] : []),
       ...(images().length > 1
@@ -1083,6 +1096,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     >
       <Pane.Split>
         <Pane label={t().canvasLabel}>
+          <Canvas label={t().statusLabel}>
+            <LiveStatus text={happening() ?? announcement()} />
+          </Canvas>
           <Show
             when={hasImages()}
             fallback={
@@ -1113,12 +1129,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   <Show when={happening()}>
                     {(text) => (
                       <p
-                        role="status"
+                        aria-hidden="true"
                         style={{
                           position: "absolute",
                           top: "12px",
                           left: "12px",
                           "z-index": "20",
+                          // the zoom group takes about 200 px at the stage's top right; the statement stays left of it
                           "max-width": "calc(100% - 220px)",
                           margin: "0",
                           padding: "6px 10px",

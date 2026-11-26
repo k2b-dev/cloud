@@ -6,13 +6,16 @@ export const imageProcessorMessages = i18n.define({
     en: {
       // Canvas and filmstrip
       canvasLabel: "Image processor canvas",
-      factsTitle: "Photo",
+      factsTitle: "Image",
+      factName: "Name",
+      statusLabel: "Status",
+      photosOpen: ({ count }: { count: number }) => (count === 1 ? "1 image open" : `${count} images open`),
       factSize: "Size",
       factFile: "File",
       factPosition: "Position",
       emptyText: "Drop photos here or add them. They are edited in this browser and never uploaded.",
       staysInBrowser: "Photos stay in this browser: editing and export happen here, nothing is uploaded.",
-      positionOf: ({ index, count }: { index: number; count: number }) => `image ${index} of ${count}`,
+      positionOf: ({ index, count }: { index: number; count: number }) => `Image ${index} of ${count}`,
       dismissFailure: ({ name }: { name: string }) => `Hide ${name}`,
       cropRefusalHint: "The crop of the open image is still running. Apply or cancel it, then add the images again.",
       somethingFailed: "Something did not work",
@@ -172,7 +175,10 @@ export const imageProcessorMessages = i18n.define({
     de: {
       // Canvas and filmstrip
       canvasLabel: "Zeichenfläche der Bildbearbeitung",
-      factsTitle: "Foto",
+      factsTitle: "Bild",
+      factName: "Name",
+      statusLabel: "Status",
+      photosOpen: ({ count }) => (count === 1 ? "1 Bild offen" : `${count} Bilder offen`),
       factSize: "Größe",
       factFile: "Datei",
       factPosition: "Position",
