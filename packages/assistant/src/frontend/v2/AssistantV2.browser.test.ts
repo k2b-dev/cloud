@@ -620,6 +620,13 @@ describe("Assistant on v2", () => {
         await settled(page);
         await shoot(page, `${view.name}-apps`);
         expect(await pane.locator('[data-k2-part="StatusRow"]').textContent()).toContain("Läufe heute");
+        if (view === phone) {
+          // On the phone the shell's bar holds the one search; New chat floats as the list's main action.
+          expect(await page.locator(".k2-fab:visible").textContent()).toContain("Neuer Chat");
+          // The head's own search folds to the host's bar: it keeps no room of its own (v2 clips it to 1 px).
+          const field = await page.locator('[data-slot="head"] [data-k2-part="Input"][data-search]').boundingBox();
+          expect(field === null || field.width <= 1).toBe(true);
+        }
         // One row per app, in the server's order, each a link to its Code (the day line's marks are links too).
         const rows = await pane.evaluate((root) =>
           [...root.querySelectorAll<HTMLAnchorElement>('a[href^="/app/assistant/code/c_"]')]
@@ -723,6 +730,8 @@ describe("Assistant on v2", () => {
   test("on the phone the chat fills the screen and its composer stands in view", async () => {
     const { context, page, errors } = await open(phone, "/app/assistant");
     try {
+      // A chat's main action is its composer: nothing floats over it.
+      expect(await page.locator(".k2-fab:visible").count()).toBe(0);
       const composer = page.locator(".assistant-chat-composer");
       const rect = await composer.boundingBox();
       expect(rect && rect.y + rect.height <= phone.height).toBe(true);
