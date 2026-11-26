@@ -200,10 +200,11 @@ export const notebookWorkspaceMessages = i18n.define({
       graphNoteCountScoped: ({ notes, total, links }: { notes: number; total: number; links: number }) =>
         `${notes} of ${total.toLocaleString("en")} notes · ${links === 1 ? "1 link" : `${links} links`}`,
       graphLinkHint: "Insert a link to another note in the editor with /note.",
-      graphListCount: ({ notes }: { notes: number }) => (notes === 1 ? "1 note" : `${notes} notes`),
-      graphListCountScoped: ({ notes, total }: { notes: number; total: number }) => `${notes} of ${total.toLocaleString("en")} notes`,
+      graphListCount: ({ notes }: { notes: number }) => (notes === 1 ? "1 note" : `${notes.toLocaleString("en")} notes`),
+      graphListCountScoped: ({ notes, total }: { notes: number; total: number }) =>
+        `${notes.toLocaleString("en")} of ${total.toLocaleString("en")} notes`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
-        `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
+        `${notes === 1 ? "1 note" : `${notes.toLocaleString("en")} notes`} · ${links === 1 ? "1 link" : `${links.toLocaleString("en")} links`}`,
       graphLinkCounts: ({ out, incoming }: { out: number; incoming: number }) => `links to ${out} · linked from ${incoming}`,
       graphChanged: "changed",
       graphArranging: ({ count }: { count: number }) => `Arranging ${count === 1 ? "1 note" : `${count} notes`}…`,
@@ -252,12 +253,12 @@ export const notebookWorkspaceMessages = i18n.define({
       graphColumnLinks: "Links",
       graphColumnChanged: "Changed",
       graphFigureLabel: "Links in this notebook",
-      graphFigureLinks: ({ count }: { count: number }) => (count === 1 ? "1 link" : `${count} links`),
+      graphFigureLinks: ({ count }: { count: number }) => (count === 1 ? "1 link" : `${count.toLocaleString("en")} links`),
       graphFigureNotes: ({ notes, areas }: { notes: number; areas: number }) =>
-        `between ${notes === 1 ? "1 note" : `${notes} notes`}${areas > 1 ? ` in ${areas} areas` : ""}`,
+        `between ${notes === 1 ? "1 note" : `${notes.toLocaleString("en")} notes`}${areas > 1 ? ` in ${areas} areas` : ""}`,
       graphFigureNotesScoped: ({ notes, total }: { notes: number; total: number }) =>
-        `between ${notes} of ${total.toLocaleString("en")} notes`,
-      graphFigureUnlinked: ({ count }: { count: number }) => `${count} without links`,
+        `between ${notes.toLocaleString("en")} of ${total.toLocaleString("en")} notes`,
+      graphFigureUnlinked: ({ count }: { count: number }) => `${count.toLocaleString("en")} without links`,
       graphOrder: "Order",
       graphOrderTree: "As in the notebook",
       graphOrderNewest: "Changed, newest first",
@@ -786,10 +787,10 @@ export const notebookWorkspaceMessages = i18n.define({
       graphNoteCountScoped: ({ notes, total, links }) =>
         `${notes} von ${total.toLocaleString("de")} Notizen · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
       graphLinkHint: "Einen Verweis auf eine andere Notiz fügst du im Editor mit /note ein.",
-      graphListCount: ({ notes }) => (notes === 1 ? "1 Notiz" : `${notes} Notizen`),
-      graphListCountScoped: ({ notes, total }) => `${notes} von ${total.toLocaleString("de")} Notizen`,
+      graphListCount: ({ notes }) => (notes === 1 ? "1 Notiz" : `${notes.toLocaleString("de")} Notizen`),
+      graphListCountScoped: ({ notes, total }) => `${notes.toLocaleString("de")} von ${total.toLocaleString("de")} Notizen`,
       graphNoteCount: ({ notes, links }) =>
-        `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,
+        `${notes === 1 ? "1 Notiz" : `${notes.toLocaleString("de")} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links.toLocaleString("de")} Verknüpfungen`}`,
       graphLinkCounts: ({ out, incoming }) => `verweist auf ${out} · verwiesen von ${incoming}`,
       graphChanged: "geändert",
       graphArranging: ({ count }) => `${count === 1 ? "1 Notiz wird" : `${count} Notizen werden`} angeordnet …`,
@@ -825,11 +826,11 @@ export const notebookWorkspaceMessages = i18n.define({
       graphColumnLinks: "Verknüpfungen",
       graphColumnChanged: "Geändert",
       graphFigureLabel: "Verknüpfungen im Notizbuch",
-      graphFigureLinks: ({ count }) => (count === 1 ? "1 Verknüpfung" : `${count} Verknüpfungen`),
+      graphFigureLinks: ({ count }) => (count === 1 ? "1 Verknüpfung" : `${count.toLocaleString("de")} Verknüpfungen`),
       graphFigureNotes: ({ notes, areas }) =>
-        `zwischen ${notes === 1 ? "1 Notiz" : `${notes} Notizen`}${areas > 1 ? ` in ${areas} Bereichen` : ""}`,
-      graphFigureNotesScoped: ({ notes, total }) => `zwischen ${notes} von ${total.toLocaleString("de")} Notizen`,
-      graphFigureUnlinked: ({ count }) => `${count} ohne Verknüpfung`,
+        `zwischen ${notes === 1 ? "1 Notiz" : `${notes.toLocaleString("de")} Notizen`}${areas > 1 ? ` in ${areas} Bereichen` : ""}`,
+      graphFigureNotesScoped: ({ notes, total }) => `zwischen ${notes.toLocaleString("de")} von ${total.toLocaleString("de")} Notizen`,
+      graphFigureUnlinked: ({ count }) => `${count.toLocaleString("de")} ohne Verknüpfung`,
       graphOrder: "Reihenfolge",
       graphOrderTree: "Wie im Notizbuch",
       graphOrderNewest: "Geändert, neueste zuerst",

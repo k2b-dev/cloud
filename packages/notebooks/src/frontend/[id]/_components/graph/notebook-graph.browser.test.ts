@@ -295,7 +295,8 @@ test(`${browserName}: the graph is one tab stop with arrows, Home and Enter insi
   const page = await open(graphPath("hand01"));
   try {
     const activeNode = () => page.evaluate(() => document.activeElement?.getAttribute("data-node") ?? null);
-    await filters(page).getByRole("button", { name: "Fit graph" }).focus();
+    // the figure above the drawing is the last stop before it (its exception shows the notes without a link)
+    await figure(page).getByRole("button").focus();
     await page.keyboard.press("Tab");
     expect(await activeNode()).toBe(WAREHOUSE);
     expect(await page.locator(`[data-node="${WAREHOUSE}"]`).getAttribute("aria-label")).toBe(
@@ -1171,7 +1172,7 @@ test(`${browserName}: Circle arrow keys walk the full ring and wrap from the cur
   try {
     const { ring } = await circleGeometry(page);
     const current = ring.findIndex((note) => note.id === WAREHOUSE);
-    await page.getByRole("button", { name: "Fit graph", exact: true }).focus();
+    await figure(page).getByRole("button").focus();
     await page.keyboard.press("Tab");
     expect(await focusedNode(page)).toBe(WAREHOUSE);
     expect(await page.locator('[data-node][tabindex="0"]').count()).toBe(1);
@@ -1483,8 +1484,8 @@ test(`${browserName}: Timeline has one tab stop, scrolls with arrows, and opens 
   try {
     const ids = changedOrder("desc").map((note) => note.id);
     const current = ids.indexOf(WAREHOUSE);
-    // zoom is disabled here, so the filter menu is the last control before the timeline
-    await whichNotes(page).focus();
+    // the figure above the timeline is the last stop before it
+    await figure(page).getByRole("button").focus();
     await page.keyboard.press("Tab");
     expect(await focusedRow(page)).toBe(WAREHOUSE);
     const inside = () =>
