@@ -246,6 +246,9 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 
 ## public-page.tsx: a page for visitors
 
+![public-page at 1440 px](../images/public-page-1440.png)
+![public-page at 390 px](../images/public-page-390.png)
+
 A page that people open without signing in, without the Cloud shell (a
 venue's programme, a public form, a share). In Cloud it stands in
 `MinimalLayout ui="v2"`. A head `Bar` with the brand as `RecordHead` (its

@@ -9,6 +9,7 @@ import * as formDetail from "../skills/k2b-ui/recipes/form-detail";
 import * as frame from "../skills/k2b-ui/recipes/frame";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
+import * as publicPage from "../skills/k2b-ui/recipes/public-page";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
 import * as states from "../skills/k2b-ui/recipes/states";
@@ -30,6 +31,7 @@ const recipes: Record<string, Recipe> = {
   "frame.tsx": frame,
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
+  "public-page.tsx": publicPage,
   "record-groups.tsx": recordGroups,
   "record.tsx": record,
   "states.tsx": states,
