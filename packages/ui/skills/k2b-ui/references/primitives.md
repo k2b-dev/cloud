@@ -481,7 +481,9 @@ status row above it never move.
 
 - `Empty`: `icon`, `text` (one sentence that says what is the matter: "Noch
   keine Einlieferung." is not "Keine Treffer mit diesem Filter."), `action`
-  (the one way out).
+  (the one way out), `tone` (`bad` or `warn` for a place empty because
+  something went wrong or waits and cannot be retried there, such as an error
+  page; data to load again is `Failed`).
 - `Loading`: `rows` (3 when not set; give as many as usually come),
   `lines` (1, 2 or 3, as the rows that will come). It stands where the
   `List` will stand; a `Table` takes `loading` itself.
