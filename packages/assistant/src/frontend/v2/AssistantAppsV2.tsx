@@ -6,7 +6,7 @@ import { type CodeCardStatus, type CodeOverviewItem, cardStatus } from "../code-
 import {
   type CodeOverviewProps,
   cardDescription,
-  cardLast,
+  cardLastText,
   cardWhen,
   codeHref,
   createCodeOverview,
@@ -104,26 +104,28 @@ export default function AssistantAppsV2(props: CodeOverviewProps) {
               }}
               open={(item) => ({ href: codeHref(item.id) })}
               columns={[
+                // B rule 4: one line per row on the desktop; the schedule is a column of its own, not a second line.
                 {
                   title: t().appsColumnName,
                   mark: () => ({ icon: "code" }),
-                  cell: (item) => ({ lines: [item.title, cardDescription(item, t(), locale())] }),
-                  width: { min: 180, default: 260 },
-                  // A long name or schedule wraps instead of hiding its end, such as the last run of the day.
-                  wrap: true,
+                  cell: (item) => item.title,
+                  width: { min: 160, default: 240 },
                 },
+                { title: t().appsColumnSchedule, cell: (item) => cardDescription(item, t(), locale()) },
                 { title: t().appsColumnState, cell: (item) => state(cardStatus(item)), width: { min: 210, default: 210 } },
                 {
                   title: t().appsColumnLast,
-                  cell: (item) => cardLast(item, cardStatus(item), t(), locale(), props.timeZone, o.now()),
+                  // The column head says "Zuletzt"; the cell says what happened, once.
+                  cell: (item) => cardLastText(item, cardStatus(item), t(), locale(), props.timeZone, o.now()) ?? t().codeRunUnknown,
                   drop: true,
                 },
-                { title: t().appsColumnWhen, cell: when, align: "end", width: { min: 110, default: 140 } },
+                { title: t().appsColumnWhen, cell: when, align: "end", width: { min: 110, default: 130 } },
                 // k2b-ui gap: the runs of the last days as one dot per result (v1's DotStrip) has no public v2 part;
                 // the column comes back with it.
               ]}
+              // On the phone always two lines: the name; its schedule and when, joined with "·" (B rule 4).
               phone={(item) => ({
-                lines: [item.title, when(item) || cardDescription(item, t(), locale())],
+                lines: [item.title, [cardDescription(item, t(), locale()), when(item)].filter(Boolean).join(" · ")],
                 mark: { icon: "code" },
                 time: STATE[cardStatus(item)].word(t()),
               })}

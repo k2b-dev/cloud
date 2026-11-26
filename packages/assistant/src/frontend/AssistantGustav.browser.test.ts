@@ -805,7 +805,7 @@ describe("Gustav", () => {
         expect(rows[0]).toContain("Eingeschaltet");
         expect(rows[2]).toContain("Letzter Lauf fehlgeschlagen");
         expect(rows[3]).toContain("Pausiert");
-        if (view !== phone) expect(rows[2]).toContain("Zuletzt: Preisliste von stoffe-nord.example nicht erreichbar");
+        if (view !== phone) expect(rows[2]).toContain("Preisliste von stoffe-nord.example nicht erreichbar");
         if (view === desktop) {
           // The v2 sidebar leads with what waits and the person's own Code; Personalize stands at its foot.
           const entries = await h.page.locator('[data-k2-part="Nav"] .k2-ni-name').allTextContents();
@@ -820,33 +820,22 @@ describe("Gustav", () => {
     }
   }, 120_000);
 
-  test("a long title wraps in the app's row instead of ending in an ellipsis", async () => {
+  test("a long title keeps the app's row on one line (B rule 4) and its whole name in the row's link", async () => {
     for (const view of [desktop, phone]) {
       const h = await open(view, { codeOpen: true, longNames: true });
       try {
         await until(async () => (await appRows(h.page)).some((row) => row.includes(LONG.title)));
         await settled(h.page);
         if (view === desktop) {
-          // The name's line wraps instead of ending after one line.
           const title = appsPane(h.page).locator(`.k2-cell-line:has(a.k2-row-open:text-is("${LONG.title}"))`);
-          const box = await title.evaluate((element) => {
-            const style = getComputedStyle(element);
-            const own = element.getBoundingClientRect();
-            const cell = element.closest("td, [role=cell]")!.getBoundingClientRect();
-            return {
-              inside: own.left >= cell.left && own.right <= cell.right + 0.5,
-              lines: Math.round(own.height / Number.parseFloat(style.lineHeight)),
-            };
-          });
-          // It wraps to at most the table's three lines, inside its cell; the link keeps the whole name for every reader.
-          expect(box.inside).toBe(true);
-          expect(box.lines).toBeGreaterThan(1);
-          expect(box.lines).toBeLessThanOrEqual(3);
+          const lines = await title.evaluate((element) =>
+            Math.round(element.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(element).lineHeight)),
+          );
+          expect(lines).toBe(1);
           expect(await title.locator("a.k2-row-open").textContent()).toBe(LONG.title);
-          // k2b-ui gap: a table cell's second line (here the schedule) is always cut with "…"; v1's card showed its
-          // end ("bis 19:59 Uhr"). The schedule stays complete on the Code's page until the table can wrap it.
+          // The schedule stands in its own column, not under the name.
+          expect((await appRows(h.page)).find((entry) => entry.includes(LONG.title))).toContain("Alle 15 Minuten");
         }
-        expect((await appRows(h.page)).find((entry) => entry.includes(LONG.title))).toBeDefined();
         expect(h.errors).toEqual([]);
         await shot(h.page, `a-meine-apps-lang-${view.name}-light`);
       } finally {
