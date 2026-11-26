@@ -22,18 +22,27 @@ export type MinimalLayoutProps = {
    * (default), or `false` for embeds and fixed presentation surfaces.
    */
   preferences?: boolean | MinimalLayoutPreferencePosition;
+  /**
+   * The page's content is built with `@k2b/ui/v2` (provisional), as `Layout ui="v2"`: it stands in a v2 scope in the
+   * app's colour, filling the window above the footer (a visitor page, a form, a kiosk screen). No Cloud chrome; the
+   * footer with the legal links and the language and theme settings stays as it is.
+   */
+  ui?: "v2";
 };
 
 export default function MinimalLayout(props: MinimalLayoutProps) {
   const cookie = props.c.req.raw.headers.get("Cookie") ?? "";
   const theme = readThemePreferenceFromCookieHeader(cookie);
   const locale = getLocale(props.c);
+  // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
+  if (props.ui === "v2") props.c.get("page").appUi = "v2";
+  const content = () => (props.ui === "v2" ? <main class="k2-ui minimal-layout-main">{props.children}</main> : props.children);
 
   if (props.preferences === false) {
     return (
       <LocaleProvider locale={locale}>
         <TimezoneCookie />
-        {props.children}
+        {content()}
       </LocaleProvider>
     );
   }
@@ -49,7 +58,7 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
     <LocaleProvider locale={locale}>
       <TimezoneCookie />
       <div class="minimal-layout">
-        {props.children}
+        {content()}
         <footer class="minimal-layout-footer">
           {legalLinks.length > 0 && (
             <nav class="minimal-layout-footer__links" aria-label={t.legalLinks}>
