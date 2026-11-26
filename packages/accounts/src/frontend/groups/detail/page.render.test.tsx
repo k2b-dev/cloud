@@ -104,7 +104,7 @@ const withGroup = async (
     entities?: (page: number, perPage: number) => EntityListItem[];
     relations?: () => ReturnType<typeof accountsAppService.group.relations>;
     /** The group's audit events, newest first. */
-    audit?: Awaited<ReturnType<typeof audit.list>>["items"];
+    audit?: Awaited<ReturnType<typeof audit.latest>>;
     /** The group's direct members by kind. */
     direct?: { type: "user" | "group" | "service_account"; id: string }[];
     /** Who manages the group directly. */
@@ -140,9 +140,9 @@ const withGroup = async (
     spyOn(accountsAppService.group.parent, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.managedGroup, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.member, "list").mockResolvedValue({ ...empty, items: options.direct ?? [] } as never),
-    spyOn(audit, "list").mockImplementation(async () => {
+    spyOn(audit, "latest").mockImplementation(async () => {
       calls.audit += 1;
-      return { items: options.audit ?? [], page: 1, perPage: 10, total: options.audit?.length ?? 0, hasNext: false };
+      return options.audit ?? [];
     }),
     spyOn(accountsAppService.group.manager, "list").mockResolvedValue({ ...empty, items: options.managers ?? [] } as never),
     // Like the service: a page past the end is empty, but the total still counts every entry.

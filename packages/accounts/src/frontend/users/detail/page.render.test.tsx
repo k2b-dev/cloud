@@ -275,9 +275,9 @@ test("kinds the agent page refused and unknown ids stay a 404", async () => {
   expect((await render("/app/accounts/users/not-a-uuid")).status).toBe(404);
 });
 
-test("an agent's page from before leads to its record, whose key section opens the keys", async () => {
+test("an agent's page from before leads to its record and keeps the open key", async () => {
   const { status, location } = await render(`/app/accounts/agents/${AGENT}?sort=used&key=new&page=3`);
   expect(status).toBe(302);
-  expect(location).toBe(`/app/accounts/users/${AGENT}`);
+  expect(location).toBe(`/app/accounts/users/${AGENT}?key=new`);
   expect((await render("/app/accounts/agents/nope")).status).toBe(404);
 });

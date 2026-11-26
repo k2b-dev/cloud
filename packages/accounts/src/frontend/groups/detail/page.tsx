@@ -68,7 +68,7 @@ const ACTIVITY_ACTIONS: Record<string, GroupActivity["action"]> = {
 /** How many changes the side column tells. */
 const ACTIVITY_SIZE = 5;
 
-type AuditEvents = Awaited<ReturnType<typeof audit.list>>["items"];
+type AuditEvents = Awaited<ReturnType<typeof audit.latest>>;
 type Named = GroupPerson & { kind: "user" | "group" | "agent" };
 type Wanted = { user: Set<string>; group: Set<string>; service_account: Set<string> };
 
@@ -99,12 +99,12 @@ const named = (item: EntityListItem, locale: string): [string, Named] =>
 /**
  * The group's last changes (administrators, who may read the audit log), newest first: one read of the audit log, of
  * which only the group's own changes stay. A failure leaves the activity out.
- * k2b-ui gap (platform): `audit.list` always counts beside its page; the record needs the rows only (a second statement).
+ * One statement: `audit.latest` reads the rows only, without a count.
  */
 const readEvents = async (groupId: string): Promise<AuditEvents> => {
   try {
-    const page = await audit.list({ pagination: { page: 1, perPage: ACTIVITY_SIZE * 2 }, filter: { target: groupId, outcome: "allowed" } });
-    return page.items.filter((event) => event.target.id === groupId && ACTIVITY_ACTIONS[event.action]).slice(0, ACTIVITY_SIZE);
+    const events = await audit.latest({ filter: { target: groupId, outcome: "allowed" }, limit: ACTIVITY_SIZE * 2 });
+    return events.filter((event) => event.target.id === groupId && ACTIVITY_ACTIONS[event.action]).slice(0, ACTIVITY_SIZE);
   } catch {
     return [];
   }

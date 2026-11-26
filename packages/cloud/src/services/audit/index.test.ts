@@ -3,6 +3,38 @@ import { testFor } from "../../../../../scripts/fixtures/test-infra";
 import { sql } from "../../runtime/clients";
 import { audit, sanitizeAuditMetadata, sanitizeAuditText } from "./index";
 
+describe("audit.latest", () => {
+  testFor("database")("reads the newest events of a target in one statement, without automatic app keys", async () => {
+    const target = crypto.randomUUID();
+    const requestId = `audit-latest-${target}`;
+    try {
+      for (const [index, metadata] of [
+        [0, null],
+        [1, { provenance: "system", service: "app-workload" }],
+        [2, null],
+        [3, null],
+      ] as const)
+        await audit.record({
+          action: `user.update.${index}`,
+          outcome: "allowed",
+          requestId,
+          target: { type: "user", id: target },
+          metadata,
+        });
+      const events = await audit.latest({ filter: { target }, limit: 2 });
+      // newest first, the automatic one left out, and no more than asked for
+      expect(events.map((event) => event.action)).toEqual(["user.update.3", "user.update.2"]);
+      expect((await audit.latest({ filter: { target }, limit: 10 })).map((event) => event.action)).toEqual([
+        "user.update.3",
+        "user.update.2",
+        "user.update.0",
+      ]);
+    } finally {
+      await sql`DELETE FROM audit.events WHERE request_id = ${requestId}`;
+    }
+  });
+});
+
 describe("sanitizeAuditMetadata", () => {
   testFor("database")("stores searchable JSON objects rather than encoded strings", async () => {
     const requestId = `audit-json-${crypto.randomUUID()}`;

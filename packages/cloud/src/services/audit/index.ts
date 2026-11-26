@@ -413,6 +413,25 @@ const list = async (config: {
   };
 };
 
+/**
+ * The newest events of a filter in one statement, without a count: for a short "latest activity" on a record that
+ * links to the full log instead of paging. Automatic app keys stay out as with `automatic: "hide"`. At most 50.
+ */
+const latest = async (config: { filter?: Omit<AuditListFilter, "automatic">; limit: number }): Promise<AuditEvent[]> => {
+  const limit = Math.max(1, Math.min(Math.floor(config.limit), 50));
+  const where = buildWhere(config.filter);
+  // Remove this predicate when runtime keys are no longer issued (step 8), as in `list`.
+  const automatic = sql`(metadata->>'provenance' = 'system' AND metadata->>'service' = 'app-workload') IS TRUE`;
+  const rows = await sql<DbAuditRow[]>`
+    SELECT *
+    FROM audit.events
+    WHERE ${where} AND NOT (${automatic})
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit}
+  `;
+  return rows.map(mapRow);
+};
+
 const listSelfServiceActivity = async (config: {
   userId: string;
   pagination?: PageParams;
@@ -452,5 +471,6 @@ export const audit = {
   recordResultAfterSideEffect,
   deny,
   list,
+  latest,
   listSelfServiceActivity,
 };

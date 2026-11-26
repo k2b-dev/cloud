@@ -190,7 +190,7 @@ suite("a group record's statements per tab (integration)", () => {
               {
                 purpose: "activity (audit)",
                 v1: false,
-                run: () => audit.list({ pagination: { page: 1, perPage: 10 }, filter: { target: teamId, outcome: "allowed" } }),
+                run: () => audit.latest({ filter: { target: teamId, outcome: "allowed" }, limit: 10 }),
               },
             ]
           : []),
@@ -264,10 +264,10 @@ suite("a group record's statements per tab (integration)", () => {
     // The record's own statements per tab, by purpose (besides the session person, the screen preferences and the
     // settings every page reads). The local group's member and manager lists cost five statements, the parent and
     // managed group ids three each; v1 read them the same way. New in v2: the key figures (one count each, or the
-    // managers' first faces), the activity for administrators (the audit log's count and rows: `audit.list` always
-    // counts) and one directory read for names no row of the page carries.
+    // managers' first faces), the activity for administrators (the audit log's newest rows, one statement without a
+    // count) and one directory read for names no row of the page carries.
     const frame = { group: 1, "parent group ids": 3, "managed group ids": 3 };
-    const activity = { "activity (audit)": 2, "names of faces and activity": 1 };
+    const activity = { "activity (audit)": 1, "names of faces and activity": 1 };
     expect(counts).toEqual({
       "admin members": { ...frame, "open requests": 1, "members page": 1, "direct members": 5, "managers' faces": 1, ...activity },
       "admin managers": {
@@ -294,9 +294,9 @@ suite("a group record's statements per tab (integration)", () => {
     });
     // v1 (the page before v2, and the relations page of its own) against v2, statements of the record alone
     expect(budget).toEqual({
-      "admin members": { v1: 14, v2: 18 },
-      "admin managers": { v1: 14, v2: 19 },
-      "admin member-of": { v1: 9, v2: 15 },
+      "admin members": { v1: 14, v2: 17 },
+      "admin managers": { v1: 14, v2: 18 },
+      "admin member-of": { v1: 9, v2: 14 },
       "admin relations": { v1: 3, v2: 4 },
       "manager members": { v1: 13, v2: 14 },
       "manager managers": { v1: 13, v2: 15 },

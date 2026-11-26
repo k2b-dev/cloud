@@ -40,16 +40,26 @@ const person = async (name: string, admin = false) => {
  */
 const purpose = (statement: string): string => {
   const rules: [RegExp, string][] = [
-    [/auth\.rail_state/, "session person"],
-    [/auth\.screen_preferences/, "screen preferences"],
-    [/account_requests/, "open requests badge"],
-    [/audit\.events/, "latest activity"],
-    [/service_account_credentials/, statement.startsWith("SELECT COUNT") ? "API keys: count" : "API keys: first page"],
-    [/directory_shares|directory/, "directory access: first page"],
-    [/app_devices|app_approval/, "sign-in devices"],
-    [/pwa/, "Cloud app devices"],
-    [/settings/, "setting"],
-    [/posix|linux/, "Linux identity"],
+    [/auth\.rail_state/, "session: the signed-in person"],
+    [/auth\.screen_preferences/, "shell: screen preferences"],
+    [/auth\.account_requests/, "nav: open requests badge"],
+    [/auth\.user_posix p WHERE p\.user_id = u\.id/, "a person by id"],
+    [/^WITH candidates/, "Linux identity"],
+    [/user\.category\./, "settings: account categories"],
+    [/^SELECT value FROM settings\.entries WHERE key = \$1/, "settings: one uncached setting"],
+    [/'app\.url','app\.name','user\.app_approval/, "settings: sign-in app"],
+    [/auth\.app_devices/, "sign-in devices"],
+    [/auth\.pwa_devices/, "Cloud app devices"],
+    [/auth\.user_groups_v2/, "groups: direct group ids"],
+    [/^SELECT g\.id, g\.provider, g\.name/, "groups: one page (member or managed)"],
+    [/COUNT\(\*\)::text AS count, 0::text AS automatic_count FROM auth\.service_account_credentials/, "API keys: count"],
+    [/^SELECT c\.id, c\.service_account_id/, "API keys: first page"],
+    [/audit\.events/, "activity: newest five, no count"],
+    [/^SELECT id, name, kind, status, delegated_user_id/, "a service account by id"],
+    [/avatar_kind, avatar_config/, "agent picture"],
+    [/kind IN \('standalone','agent'\)/, "directory access: the agent check"],
+    [/auth\.directory_shares/, "directory access: count"],
+    [/^SELECT share\.id/, "directory access: first page"],
   ];
   return rules.find(([pattern]) => pattern.test(statement))?.[1] ?? statement;
 };
@@ -110,5 +120,49 @@ suite("the account record's statement budget on its real route (integration)", (
   }, 120_000);
 });
 
-/** Pinned after the first run; see the report of the migration for v1's numbers beside them. */
-const EXPECTED: Record<string, string[]> = {};
+/**
+ * Every tab of a person's record reads the same: the record is one page whose tabs only choose what shows. v1 read the
+ * same list without the activity (16); the activity adds its one statement. An agent reads 12; v1's agent page read 8
+ * (session, preferences, badge, the account, its picture, its creator, keys count and page): the record first asks
+ * whether the id is a person (1), and the directory access, which v1 showed on another page, adds its check, count and
+ * page (3).
+ */
+const PERSON = [
+  "API keys: count",
+  "API keys: first page",
+  "Cloud app devices",
+  "Linux identity",
+  "a person by id",
+  "activity: newest five, no count",
+  "groups: direct group ids",
+  "groups: one page (member or managed)",
+  "groups: one page (member or managed)",
+  "nav: open requests badge",
+  "session: the signed-in person",
+  "settings: account categories",
+  "settings: one uncached setting",
+  "settings: sign-in app",
+  "settings: sign-in app",
+  "shell: screen preferences",
+  "sign-in devices",
+];
+const EXPECTED: Record<string, string[]> = {
+  "person overview": PERSON,
+  "person ?tab=groups": PERSON,
+  "person ?tab=keys": PERSON,
+  "person ?tab=devices": PERSON,
+  agent: [
+    "API keys: count",
+    "API keys: first page",
+    "a person by id",
+    "a person by id",
+    "a service account by id",
+    "agent picture",
+    "directory access: count",
+    "directory access: first page",
+    "directory access: the agent check",
+    "nav: open requests badge",
+    "session: the signed-in person",
+    "shell: screen preferences",
+  ],
+};
