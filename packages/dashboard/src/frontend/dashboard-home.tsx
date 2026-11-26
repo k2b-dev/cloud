@@ -1,5 +1,6 @@
 import { importOnDemand } from "@k2b/cloud/browser/reload";
 import type { DashboardWidgetSize } from "@k2b/cloud/contracts";
+import type { WidgetAnswer } from "@k2b/cloud/server/widgets-within";
 import { openAppLaunchpad } from "@k2b/cloud/ssr/islands";
 import { announce, Button, IconButton, Placeholder, SegmentedControl, suppressTextSelection, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -25,7 +26,7 @@ import { openDashboardGallery } from "./dashboard-gallery";
 import { askForShortcut, DashboardShortcuts } from "./dashboard-shortcuts";
 import { DashboardWidgetFrame } from "./dashboard-tile";
 import { dashboardMessages } from "./messages";
-import { type DashboardTiles, loadDashboardWidgets } from "./widget-board";
+import { type DashboardTiles, initialTiles, loadDashboardWidgets, pendingEntries } from "./widget-board";
 
 export type DashboardHomeProps = {
   greeting: string;
@@ -42,6 +43,11 @@ export type DashboardHomeProps = {
   kept: DashboardKeptEntry[];
   /** The person has not arranged their own board and sees the default one. */
   followsDefault: boolean;
+  /**
+   * The widgets the server render already has, by entry id, as Core's widget stream sent them. Their frames show at
+   * once; the others load after hydration.
+   */
+  answered?: Record<string, WidgetAnswer>;
 };
 
 /** A press this long on a widget opens the edit mode. */
@@ -97,7 +103,8 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const [saving, setSaving] = createSignal(false);
   /** The board can change only in the edit mode and not while Done saves it, so what is saved is what is shown. */
   const editable = () => editing() && !saving();
-  const [tiles, setTiles] = createSignal<DashboardTiles>(Object.fromEntries(props.board.map((entry) => [entry.id, { status: "loading" }])));
+  const answered = props.answered ?? {};
+  const [tiles, setTiles] = createSignal<DashboardTiles>(initialTiles(props.board, answered));
   const [dragged, setDragged] = createSignal<string>();
   const [fresh, setFresh] = createSignal<string>();
   let snapshot: Snapshot | undefined;
@@ -140,6 +147,8 @@ export default function DashboardHome(props: DashboardHomeProps) {
   const generation = new Map<string, number>();
   const asked = new Map<string, string>();
   const signature = (entry: DashboardBoardEntry) => entry.size + JSON.stringify(widgetRequestSettings(entry.settings));
+  // what the server render answered counts as asked in its size and settings
+  for (const entry of props.board) if (answered[entry.id]) asked.set(entry.id, signature(entry));
   const requests = new Set<AbortController>();
   const load = (entries: readonly DashboardBoardEntry[], options: { quiet?: boolean } = {}) => {
     if (entries.length === 0) return;
@@ -182,7 +191,8 @@ export default function DashboardHome(props: DashboardHomeProps) {
 
   onMount(() => {
     document.cookie = RETIRED_HINT_COOKIE;
-    load(board());
+    // only what the server render did not have; the rest already shows its answer
+    load(pendingEntries(board(), answered));
   });
   onCleanup(() => {
     for (const controller of requests) controller.abort();

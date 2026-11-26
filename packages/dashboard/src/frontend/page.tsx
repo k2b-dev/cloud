@@ -2,6 +2,7 @@ import { listLegalLinks, listWidgets } from "@k2b/cloud";
 import { hasRole, type Role, type RuntimeAppMeta, type User, widgetKey } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import { expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { loadWidgetsWithin } from "@k2b/cloud/server/widgets-within";
 import { getDisplayRuntimeContext, getLocalizedRuntimeContext, Layout } from "@k2b/cloud/ssr";
 import { ScrollArea } from "@k2b/ui";
 import { ssr } from "../config";
@@ -19,6 +20,7 @@ import {
 } from "../shared";
 import DashboardHome from "./DashboardHome.island";
 import { dashboardMessages } from "./messages";
+import { widgetRequestOf } from "./widget-board";
 
 /** Settings from the cookie that held them before they moved to the account; read once for people who never returned. */
 const readLegacyCookie = (cookieHeader: string) => {
@@ -33,6 +35,13 @@ const readLegacyCookie = (cookieHeader: string) => {
     return null;
   }
 };
+
+/**
+ * How long the server render waits for the board's widgets before it sends the page; a widget that answers later
+ * loads in the browser. Unset until the widget handlers' measured times (widget-timing integration tests in CI) give
+ * it a value: without it the page sends every frame loading, as before.
+ */
+const DASHBOARD_WIDGET_BUDGET_MS: number | undefined = undefined;
 
 const mayUse = (requiresRoles: readonly Role[], user: User) =>
   requiresRoles.length === 0 || requiresRoles.some((role) => hasRole(user, role));
@@ -117,6 +126,21 @@ export default ssr<AuthContext>(async (c) => {
     }
   }
   const { shown, kept } = board ? splitDashboardBoard(board, catalog) : { shown: defaultDashboardBoard(catalog), kept: [] };
+  // The widgets the board shows, asked through Core with the person's own credentials as the browser would ask them.
+  const { answered } =
+    DASHBOARD_WIDGET_BUDGET_MS === undefined
+      ? { answered: {} }
+      : await loadWidgetsWithin(
+          {
+            cookie: c.req.header("cookie"),
+            authorization: c.req.header("authorization"),
+            locale,
+            signal: c.req.raw.signal,
+            requestId: c.req.header("x-request-id"),
+          },
+          shown.map(widgetRequestOf),
+          { budgetMs: DASHBOARD_WIDGET_BUDGET_MS },
+        );
 
   return () => (
     <Layout c={c} title={t.title} fullPage>
@@ -131,6 +155,7 @@ export default ssr<AuthContext>(async (c) => {
           board={shown}
           kept={kept}
           followsDefault={board === null}
+          answered={answered}
         />
       </ScrollArea>
     </Layout>

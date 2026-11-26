@@ -1,4 +1,5 @@
 import { streamWidgets, type WidgetResponse, type WidgetStreamLine } from "@k2b/cloud/browser/widgets";
+import type { WidgetAnswer, WidgetLoadRequest } from "@k2b/cloud/server/widgets-within";
 
 import { type DashboardBoardEntry, widgetRequestSettings } from "../shared";
 
@@ -17,6 +18,20 @@ export type DashboardTiles = Record<string, DashboardTileState>;
 export const tileFromLine = (line: Extract<WidgetStreamLine, { type: "widget" }>): DashboardTileState =>
   line.status === "ok" ? { status: "ok", widget: line.widget } : { status: line.status };
 
+/** What Core is asked for one board entry: its widget, its size and its settings. */
+export const widgetRequestOf = (entry: DashboardBoardEntry): WidgetLoadRequest => {
+  const settings = widgetRequestSettings(entry.settings);
+  return { id: entry.id, key: entry.key, size: entry.size, ...(settings ? { settings } : {}) };
+};
+
+/** The first state of every frame: what the server render already has, the rest loading. */
+export const initialTiles = (board: readonly DashboardBoardEntry[], answered: Readonly<Record<string, WidgetAnswer>>): DashboardTiles =>
+  Object.fromEntries(board.map((entry) => [entry.id, answered[entry.id] ? tileFromLine(answered[entry.id]!) : { status: "loading" }]));
+
+/** The entries the browser still asks for after hydration: those the server render has no answer for. */
+export const pendingEntries = (board: readonly DashboardBoardEntry[], answered: Readonly<Record<string, WidgetAnswer>>) =>
+  board.filter((entry) => answered[entry.id] === undefined);
+
 /**
  * Asks Core for `widgets`, each in its size, and reports every widget exactly once: with its own answer, or as
  * `error` when the request fails or the stream breaks off before it answered. Nothing is reported once `signal` aborts.
@@ -31,10 +46,7 @@ export const loadDashboardWidgets = async (options: {
   const owed = new Set(options.widgets.map((widget) => widget.id));
   try {
     await streamWidgets({
-      requests: options.widgets.map((entry) => {
-        const settings = widgetRequestSettings(entry.settings);
-        return { id: entry.id, key: entry.key, size: entry.size, ...(settings ? { settings } : {}) };
-      }),
+      requests: options.widgets.map(widgetRequestOf),
       signal: options.signal,
       locale: options.locale,
       onLine: (line) => {

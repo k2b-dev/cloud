@@ -90,3 +90,28 @@ test("an empty board offers to add a widget instead of a blank page", () => {
   expect(html).toContain("Dein Dashboard ist leer.");
   expect(html).toContain("Widget hinzufügen");
 });
+
+test("widgets the server render has show at once, and the page renders the same from their JSON", () => {
+  const input = {
+    ...props([
+      { id: "spaces/today", key: "spaces/today", size: "large" },
+      { id: "weather/current", key: "weather/current", size: "small" },
+    ]),
+    answered: {
+      "spaces/today": {
+        type: "widget" as const,
+        id: "spaces/today",
+        key: "spaces/today",
+        status: "ok" as const,
+        widget: { title: "Heute", blocks: [{ kind: "status" as const, tone: "ok" as const, title: "3 Aufgaben fällig" }] },
+        ms: 18,
+      },
+    },
+  };
+  const html = render(input);
+  const states = [...html.matchAll(/<div[^>]*class="dashboard-tile"[^>]*>/g)].map((match) => match[0].match(/data-state="([^"]+)"/)?.[1]);
+  expect(states).toEqual(["ok", "loading"]);
+  expect(html).toContain("3 Aufgaben fällig");
+  // the island gets the same props as JSON: its first render is the server's markup
+  expect(render(JSON.parse(JSON.stringify(input)))).toBe(html);
+});
