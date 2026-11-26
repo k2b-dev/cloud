@@ -1,5 +1,5 @@
 import { dates } from "@k2b/stdlib";
-import { Format, useLocale } from "@k2b/ui";
+import { useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { GraphDisplayProps } from "./GraphCanvas";
@@ -257,7 +257,7 @@ export default function TimelineDisplay(props: Props) {
                         {note.in.size}
                       </span>
                       <span class="notebook-graph__row-time">
-                        <Format.RelativeTime value={note.updatedAt} base={props.now} />
+                        {dates.formatDateTimeRelative(note.updatedAt, { base: props.now, locale: locale() })}
                       </span>
                     </span>
                   </a>

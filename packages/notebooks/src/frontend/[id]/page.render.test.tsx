@@ -759,10 +759,10 @@ for (const [locale, label] of [
 ]) {
   test(`reader graph renders the Book navigation and origin (${locale})`, async () => {
     const html = await renderLinkedNotebook("read", "graph", locale);
-    expect(html).toContain("notebook-book-workspace");
+    expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
     expect(html).not.toContain("Private note body.");
     expect(html).not.toContain("notebook-book-content");
-    const rows = await select(html, ".notebook-book-workspace .notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
+    const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
     expect(rows).toHaveLength(1);
     expect(rows[0]?.text.trim()).toBe(label!);
     expect(rows[0]?.attributes["aria-current"]).toBe("page");
@@ -776,7 +776,8 @@ for (const [locale, label] of [
     expect(await select(html, '[role="tree"] [aria-current="page"]')).toEqual([]);
     // Like Book, the reading graph follows revoked access and ended sessions.
     expect(await select(html, 'solid-island[data-file="WorkspaceEventBridge.island.tsx"]')).toHaveLength(1);
-    expect(await select(html, 'solid-island[data-file="BookGraphLive.island.tsx"]')).toHaveLength(1);
+    // its live notice stands over the drawing inside the graph's island
+    expect(await select(html, 'solid-island[data-file="BookGraphWorkspace.island.tsx"]')).toHaveLength(1);
   });
 
   test(`reader Book note has a Links footer that is not current (${locale})`, async () => {
@@ -794,7 +795,7 @@ for (const [locale, label] of [
 
 test("writer graph marks Links current in the workspace footer and phone navigation", async () => {
   const html = await renderLinkedNotebook("write", "graph");
-  expect(html).not.toContain("notebook-book-workspace");
+  expect(html).not.toContain('data-file="BookGraphWorkspace.island.tsx"');
   const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
   expect(rows.map((item) => item.text.trim())).toEqual(["Links", "Attachments", "Settings"]);
   expect(rows[0]?.attributes["aria-current"]).toBe("page");
@@ -811,14 +812,16 @@ test("writer graph marks Links current in the workspace footer and phone navigat
 
 test("writer graph from Book keeps Write pointed at the selected note", async () => {
   const html = await renderLinkedNotebook("write", "graph&from=book");
-  expect(html).toContain("notebook-book-workspace");
-  expect((await select(html, '#notebook-navigation a[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe("Write");
+  expect(html).toContain('data-file="BookGraphWorkspace.island.tsx"');
+  expect((await select(html, '.k2b-app-workspace__sidebar-item[href="/app/notebooks/book01/notes/note01?mode=write"]'))[0]?.text).toBe(
+    "Write",
+  );
   expect((await select(html, 'a[aria-label="Close graph"]'))[0]?.attributes.href).toBe("/app/notebooks/book01/notes/note01?mode=book");
 });
 
 test.each(["write", "readonly"] as const)("writer graph preserves %s origin over the Book default", async (mode) => {
   const html = await renderLinkedNotebook("write", `graph&from=${mode}`, "en", "book");
-  expect(html).not.toContain("notebook-book-workspace");
+  expect(html).not.toContain('data-file="BookGraphWorkspace.island.tsx"');
   const rows = await select(html, ".notebook-sidebar-foot .k2b-app-workspace__sidebar-item");
   expect(rows[0]?.text.trim()).toBe("Links");
   expect(rows[0]?.attributes.href).toBe(
@@ -873,15 +876,15 @@ test.each(["note02", "other1"])(
       "graph",
       `&display=neighborhood&note=${queryNote}`,
     );
-    const [island] = await select(html, 'solid-island[data-file="GraphWorkspace.island.tsx"]');
+    const [island] = await select(html, 'solid-island[data-file="NotebookGraphWorkspace.island.tsx"]');
     expect(island).toBeDefined();
     const props = islandProps(island?.attributes["data-props"]);
     expect(props.selectedNoteId).toBe(queryNote === "note02" ? "note02" : "note01");
     expect(props.view).toMatchObject({ display: "neighborhood", depth: 2, sort: null });
     expect(props.timeZone).toBe("UTC");
-    // the head names where the graph was opened from
-    const [head] = await select(html, '[data-k2-workspace] [data-k2-part="Bar"]');
-    expect(head?.text).toContain(`von „${queryNote === "note02" ? "Team notes" : "Private folder"}“`);
+    // Close leads back to the note the graph was opened from
+    const [close] = await select(html, 'a[aria-label="Graph schließen"]');
+    expect(close?.attributes.href).toContain(`/notes/${queryNote === "note02" ? "note02" : "note01"}`);
     expect(html).not.toContain("Foreign note");
   },
 );

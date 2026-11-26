@@ -1,4 +1,5 @@
-import { Button, Format, IconButton, Kbd, useLocale } from "@k2b/ui";
+import { dates } from "@k2b/stdlib";
+import { Button, IconButton, Kbd, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import { notebookWorkspaceMessages } from "../../messages";
 import type { GraphNote } from "./model";
@@ -30,7 +31,7 @@ export default function GraphFeedback(props: {
               <strong>{note().title || t().untitled}</strong>
               <span class="notebook-graph__status-text">
                 {areaName(note())} · {t().graphLinkCounts({ out: note().out.size, incoming: note().in.size })} · {t().graphChanged}{" "}
-                <Format.RelativeTime value={note().updatedAt} base={props.now} />
+                {dates.formatDateTimeRelative(note().updatedAt, { base: props.now, locale: locale() })}
               </span>
             </>
           )}

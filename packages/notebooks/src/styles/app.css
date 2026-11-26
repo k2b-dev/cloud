@@ -892,10 +892,9 @@
   visibility: visible;
 }
 
-/* Links graph. Area hues are the validated categorical order (blue, orange, aqua, violet, magenta, green, red) after a
-   neutral top level; the app's yellow stays out, so the current note is the only note in the accent. Ink variants keep
-   area names at 4.6:1 on the surface. */
-.notebook-graph {
+/* The areas' colours belong to the notebook, not to the drawing: rows and the list outside the graph mark a note with
+   its area, as the graph colours it. */
+:root {
   --notebook-graph-area-0: #71717a;
   --notebook-graph-area-1: #2a78d6;
   --notebook-graph-area-2: #eb6834;
@@ -912,20 +911,8 @@
   --notebook-graph-ink-5: #ac5b79;
   --notebook-graph-ink-6: #008300;
   --notebook-graph-ink-7: #cf4242;
-  --notebook-graph-edge: var(--color-zinc-400);
-  --notebook-graph-orbit: var(--color-zinc-200);
-  --notebook-graph-hull-opacity: 0.075;
-  --notebook-graph-current: var(--app-accent, var(--color-blue-500));
-  --notebook-graph-current-chip: color-mix(in srgb, var(--notebook-graph-current) 14%, var(--ui-surface));
-  --notebook-graph-current-ink: var(--ui-app-accent-text);
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
 }
-.dark .notebook-graph {
+.dark {
   --notebook-graph-area-0: #8b8b94;
   --notebook-graph-area-1: #3987e5;
   --notebook-graph-area-2: #d95926;
@@ -942,6 +929,33 @@
   --notebook-graph-ink-5: #d55181;
   --notebook-graph-ink-6: #249424;
   --notebook-graph-ink-7: #e66767;
+}
+.notebook-graph-area-mark {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  flex: none;
+  border-radius: 999px;
+  vertical-align: middle;
+}
+/* Links graph. Area hues are the validated categorical order (blue, orange, aqua, violet, magenta, green, red) after a
+   neutral top level; the app's yellow stays out, so the current note is the only note in the accent. Ink variants keep
+   area names at 4.6:1 on the surface. */
+.notebook-graph {
+  --notebook-graph-edge: var(--color-zinc-400);
+  --notebook-graph-orbit: var(--color-zinc-200);
+  --notebook-graph-hull-opacity: 0.075;
+  --notebook-graph-current: var(--app-accent, var(--color-blue-500));
+  --notebook-graph-current-chip: color-mix(in srgb, var(--notebook-graph-current) 14%, var(--ui-surface));
+  --notebook-graph-current-ink: var(--ui-app-accent-text);
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+}
+.dark .notebook-graph {
   --notebook-graph-edge: var(--color-zinc-600);
   --notebook-graph-orbit: var(--color-zinc-700);
   --notebook-graph-hull-opacity: 0.11;

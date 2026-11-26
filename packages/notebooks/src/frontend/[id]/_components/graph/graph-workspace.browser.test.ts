@@ -127,11 +127,11 @@ test("a display tab, the links filter and an area go into the address and surviv
     const display = (name: string) => page.locator('[data-k2-part="Tabs"]').getByRole("button", { name });
     await display("Circle").click();
     expect(param(page, "display")).toBe("circle");
-    await page.getByRole("button", { name: "All notes" }).click();
+    await page.getByRole("button", { name: "Which notes" }).click();
     await page.getByRole("menuitemradio", { name: "Only linked" }).click();
     expect(param(page, "links")).toBe("linked");
     // the areas stand in the same menu, each one ticked while it shows
-    await page.getByRole("button", { name: "Only linked" }).click();
+    await page.getByRole("button", { name: "Which notes" }).click();
     const area = page.getByRole("menuitemcheckbox").first();
     expect(await area.getAttribute("aria-checked")).toBe("true");
     await area.click();
@@ -139,7 +139,8 @@ test("a display tab, the links filter and an area go into the address and surviv
     await page.reload();
     await page.locator("[data-k2-workspace]").waitFor();
     expect(await display("Circle").getAttribute("aria-current")).toBe("page");
-    await page.getByRole("button", { name: "Only linked" }).click();
+    await page.getByRole("button", { name: "Which notes" }).click();
+    expect(await page.getByRole("menuitemradio", { name: "Only linked" }).getAttribute("aria-checked")).toBe("true");
     expect(await page.getByRole("menuitemcheckbox").first().getAttribute("aria-checked")).toBe("false");
   } finally {
     await page.close();

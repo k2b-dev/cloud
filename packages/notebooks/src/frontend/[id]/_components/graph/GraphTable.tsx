@@ -2,6 +2,7 @@ import { dates } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { type Column, Table } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
+import AreaMark from "./AreaMark";
 import type { GraphView } from "./graph-controller";
 import type { GraphNote } from "./model";
 import { sortByChange } from "./timeline";
@@ -41,7 +42,11 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
     { title: t().graphColumnNote, cell: (note) => note.title || t().untitled, width: { min: 200, default: 280 } },
     {
       title: t().graphColumnArea,
-      cell: (note) => (note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled),
+      cell: (note) => (
+        <>
+          <AreaMark slot={note.area.slot} /> {note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled}
+        </>
+      ),
       drop: true,
     },
     { title: t().graphLinksTo, cell: (note) => related(note.out), wrap: true },
@@ -65,6 +70,7 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
       phone={(note) => ({
         lines: [note.title || t().untitled, related(note.out)],
         time: changed(note),
+        marks: <AreaMark slot={note.area.slot} />,
       })}
     />
   );

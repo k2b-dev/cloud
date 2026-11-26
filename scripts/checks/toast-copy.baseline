@@ -297,8 +297,6 @@ packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled
 packages/notebooks/src/frontend/[id]/_components/sidebar/NoteTree.tsx | untitled | err.message
 packages/notebooks/src/frontend/[id]/_components/sidebar/WorkspaceEventBridge.island.tsx | untitled | t().liveUpdatesStopped
 packages/notebooks/src/frontend/[id]/_components/sidebar/useFavoriteNotes.ts | untitled | t().favoriteUpdateFailed
-packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.island.tsx | untitled | error.message
-packages/notebooks/src/frontend/[id]/_components/versions/VersionHistory.island.tsx | untitled | error.message
 packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | untitled | error instanceof Error ? error.message : t.restoreFailed
 packages/notebooks/src/frontend/[id]/_components/versions/restore-notice.ts | untitled | t.restoreUndone
 packages/notebooks/src/frontend/_components/AdminNotebooksAppSettings.island.tsx | untitled | t().settingsSaved
