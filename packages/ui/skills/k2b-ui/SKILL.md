@@ -109,17 +109,15 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
 | the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
-| folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
-| rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
+| folders or pages in levels | in the sidebar a `Nav` group with `tree` (`load`, `loadMore`); in the content `Table` with `rowKey` and `tree` | `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
 | many like things, one per line | `List` of `Row` | `mail.tsx` |
 | a thing with a face (a base, a file, a table, a storage) | `Mark` (`Row mark`, `Nav` item `color`, `Tiles color`) | `overview.tsx` |
 | an overview of things with figures, people and a history | `Tiles variant="card"` (+ `create` for the new one) | `overview.tsx` |
-| who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
+| the newest few, who did what | `Digest`, `Digest activity` | `record.tsx`, `overview.tsx` |
 | several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
-| a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
 | many like things with columns | `Table` | `table.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
@@ -130,19 +128,17 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | saved views of a list | `FilterBar views` with the app's `ViewStore`s (cookie, own table, none); leave it out and nothing is saved | – |
 | a list beside the open entry | `Pane.Split` with a `Pane detail` | `list-detail.tsx` |
 | a record (customer, contact) | `RecordHead` in the head, `Tabs`, `Pane side` | `record.tsx` |
-| 2–4 key numbers side by side | `Cells` with `Cells.Cell` | `record.tsx` |
+| 2–4 key numbers side by side | `Cells` with `Cells.Cell` (`trend` for a short history; elsewhere `Spark`) | `record.tsx`, `home.tsx` |
 | a titled part of a page | `Section` (title, count, ≤ 2 actions, `more`) | `record.tsx` |
 | what belongs together (a delivery, a thread) | `Group`; `folded` when done | `record-groups.tsx` |
 | the way of a thing (arrived → … → paid) | `Steps` | `record-groups.tsx` |
-| the newest few on a first page | `Digest` | `record.tsx` |
-| labels with values | `Facts` (`inline` for one line) | `record.tsx` |
+| labels with values; a token to copy | `Facts` (`inline` for one line; `mono` and `copy` for a key) | `record.tsx` |
 | something wrong, waiting, a person's note, an AI summary | `Notice` with `tone` (`bad`, `warn`, `note`, `ai`) | `list-detail.tsx` |
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
-| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
-| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| short values (domains), an image, a one-time code, a range, a colour | `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput` in a `Field` or `Setting` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen"; not in a `Setting` yet) | – |
 | an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
@@ -150,9 +146,7 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
 | a toggle that is on or off (favourite, reply to all) | `Button pressed` (`true` on, `false` off) | `actions.tsx` |
-| a token, key or ID to read and copy | `Facts` item with `mono` and `copy` | – |
-| pairing a device: a QR code to scan, a code to compare | `QrCode` (SVG from `@k2b/stdlib/qr`), `CodeDisplay`; steps in a `Dialog stepwise` | – |
-| a question before a deed that destroys | `Dialog.confirm({ …, danger: true })` | – |
+| pairing a device: a QR code to scan, a code to compare | `QrCode` (SVG from `@k2b/stdlib/qr`), `CodeDisplay`; steps in a `Dialog stepwise` | `pairing.tsx` |
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
@@ -160,13 +154,11 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
-| more deeds behind "…", or a choice of deeds behind a button | `Menu` with `items` (submenus, ticks, `danger`) | `actions.tsx` |
-| the same deeds on a right-click or a long press on a row | `Menu.Context` around the `Row`, plus a `Menu` in its `end` | `actions.tsx` |
-| a small panel behind a button (a preview, details) | `Popover` with `title` and `content` | `actions.tsx` |
-| a short hint on a button | `Popover tip` around the `Button` | `actions.tsx` |
+| more deeds behind "…" or a button; the same on a right-click | `Menu` with `items` (submenus, ticks, `danger`); `Menu.Context` around the `Row` | `actions.tsx` |
+| a small panel or a short hint behind a button | `Popover` with `title` and `content`; `Popover tip` | `actions.tsx` |
 | "done" after a deed, with a way back | `useToast()`, then `toast(text, { undo })` | `dialogs.tsx` |
 | a short task above the page (invite, save as a template) | `Dialog` with `title`, `foot`, `open`; a sheet on the phone | `dialogs.tsx` |
-| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })` | `dialogs.tsx` |
+| a question before something that cannot be taken back | `await Dialog.confirm({ title, confirm })`; `danger: true` when it destroys | `dialogs.tsx`, `pairing.tsx` |
 
 ## The rules, and why
 
@@ -214,14 +206,12 @@ a `Notice` that names the deed.
 ## Primitives
 
 Every part with its props and place: [primitives](references/primitives.md).
-Not there yet (write a `k2b-ui gap` comment, never a replacement):
-the mail and chat composer and a Markdown editor (come from `@k2b/editor`),
-a code block with highlighting, an image or video viewer, and an assistant
-message or answer card.
+Not there yet (write a `k2b-ui gap` comment, never a replacement): the mail
+and chat composer and a Markdown editor (from `@k2b/editor`), a code block
+with highlighting, a full image or video viewer, an assistant answer card.
 
-Filters, sorts and groups have exactly one way: declare them with
-`defineListQuery`, show them with `FilterBar` and `ListOrder`; the address
-holds the state. Read [list queries](references/list-queries.md).
+Filters, sorts and groups: `defineListQuery`, `FilterBar`, `ListOrder`;
+the address holds the state ([list queries](references/list-queries.md)).
 
 ## See what you built
 

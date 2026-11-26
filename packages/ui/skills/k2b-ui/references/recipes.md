@@ -54,12 +54,17 @@ state that is not "in plan" speaks up as a chip in `marks`.
 ![folders as a tree at 1440 px](../images/tree-1440.png)
 ![folders as a tree at 390 px](../images/tree-390.png)
 
-`Nav` with a plain group ("Zuletzt", "Favoriten") and a group with `tree`
-(folders; "Website" is `current`, so the way to it is open; "Archiv" and
-"Texte" are `branch` and load on the first open; "Kunden" has `more`); a
-head `Bar` with the `Path` and the one primary; a `Pane` with a
-`StatusRow` and a `Table` with `tree` (folders and files as rows in
-levels; the open file is `current`, so its folder starts open).
+`Nav` with a plain group ("Zuletzt", "Favoriten", "Freigaben") and a
+group with `tree`: the storages with their `color` (so each leads with its
+`Mark`), their folders with counts and a `dot` ("Küche Lindqvist" is
+`current`, so the way to it is open; closed folders are `branch` and load
+on the first open; "Fotoarchiv" has `more`), and the storage's `quota`.
+A head `Bar` with the `Path`, a search and the one primary; a `Pane` with
+a `StatusRow` that says what waits, and a `Table` with `tree`: folders and
+files as rows in levels, each with the mark of its kind (`Column mark`),
+its owner (`Column avatar`) and how it is shared (symbol and word, or a
+status chip when it waits for someone); the open file is `current`, so
+its folder starts open.
 
 - Give the loaded nodes down to the open place; the rest loads through
   `load` and `loadMore` when a person opens it. Never load the whole tree.
@@ -127,31 +132,38 @@ in its words. Its footer `Bar` saves with a default button.
 ![pairing at 1440 px](../images/pairing-1440.png)
 ![pairing at 390 px](../images/pairing-390.png)
 
-A `Section` with `id` (a link target) holds the steps as `Text`, a
-`QrCode` (the app makes its SVG with `@k2b/stdlib/qr`) and the code to
-compare as `CodeDisplay`; the wait for the other device is a
-`Notice tone="warn"`, which assistive technology hears politely.
-"Gerät entfernen" asks with `Dialog.confirm({ …, danger: true })`.
+The paired devices as a `List` of `Row`s with the mark of their kind,
+their person and when they were last seen, a state chip only where
+something is off, and an icon button that removes the device after
+`Dialog.confirm({ …, danger: true })`. Beside them a `Pane side` with a
+`Section` with `id` (a link target): the steps as `Text`, a `QrCode` (the
+app makes its SVG with `@k2b/stdlib/qr`) and the code to compare as
+`CodeDisplay`; the wait for the other device is a `Notice tone="warn"`,
+which assistive technology hears politely.
 
 - Steps of a pairing in a dialog: `Dialog stepwise`, so a shorter step
   does not make it jump.
-- States: `paired`.
+- States: `paired` (the new device stands first in the list).
 
 ## settings.tsx: settings with more than text
 
 ![settings at 1440 px](../images/settings-1440.png)
 ![settings at 390 px](../images/settings-390.png)
 
-The sign-in settings of an app: a `Field` with an `action` that resets it
-to its default, a `Select` the operator fixed (`disabled`), allowed
-domains in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
-`ColorInput`, how dark the background is in a `Slider`, a pairing code in a
-`CodeInput`, and two `Disclosure`s with questions in a `Section`.
+The sign-in page of an administration as `Setting` rows in `Section`s:
+a `Select` with `was` (the value before the unsaved change), a `Select`
+the operator fixed (`disabled`, the reason in the hint), allowed domains
+in a `TagsInput`, a logo in an `ImageInput`, an accent colour in a
+`ColorInput`, how dark the background is in a `Slider`, a pairing code in
+a `CodeInput`. The head says how many changes wait and holds "Verwerfen"
+and the one primary "Speichern"; a `Pane side` shows who changed what
+(`Digest activity`) and two `Disclosure`s with questions.
 
-- A field's deed stands at the end of its label line and never moves the
-  field; it takes the place of `optional`.
 - A choice the person may not change is a dimmed control with the reason
   in its hint, not a missing one.
+- A field's deed (`Field action`, such as "Auf Standard zurücksetzen") has
+  no place in a `Setting` row yet (k2b-ui gap); name the default in the
+  hint.
 - States: `empty`, `locked`.
 
 ## record.tsx: a record, first tab
@@ -282,7 +294,7 @@ The head says "1 Änderung" and saves the page as a whole.
 A `Nav` with the app's places and accounts; `StatusRow` with the lead
 ("33.000,20 € offen"), a count as fact and toned chips at the end (overdue,
 reminders due); `Table` with widths, the invoice's `Mark` before its
-number (in `Inline`), the person in charge as `Avatar`,
+number (`Column mark`), the person in charge as `Avatar`,
 a status `Chip`, an amount column `align: "end"`, a quiet icon button with
 its name only where the deed is due, `drop` on the columns that matter
 least, and `phone(row)` so the phone shows two-line rows instead of a cut
@@ -304,10 +316,10 @@ too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 
 `defineListQuery` declares the fields (`choice`, `numberRange`, `lookup`),
 the search, the sorts and the grouping once; `FilterBar` shows the active
-filters as statements in `Pane status` above the `StatusRow`, and
-`ListOrder` shows the sort and the grouping in its `filters`. The `Table`
-shows what the server found for the address: each order with the mark of
-its kind, the team as `Avatar` or `Avatar.Stack`, the state as a chip.
+filters as statements in `Pane status`, with the count and sum in
+`results` and `ListOrder` (sort and grouping in words) at its `end`, so
+the page head has two rows. The `Table` shows what the server found for
+the address: each order with the mark of its kind (`Column mark`), the team as `Avatar` or `Avatar.Stack`, the state as a chip.
 
 - The server reads the same address with `orderQuery.parse(...)` and filters
   its own data; `@k2b/ui` filters nothing.

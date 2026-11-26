@@ -1,25 +1,9 @@
 // Recipe: a table people filter, sort and group. The list is declared once with `defineListQuery` (shared with the
-// server), the filters stand as statements in a `FilterBar` above the `StatusRow`, the sort and the grouping in words in
-// its `filters`. The address holds the whole state: the server reads it with `parse`, filters its own data, and renders
-// this page; the bar writes the address and calls `onChange`, and the app loads its rows again.
-import {
-  Avatar,
-  Bar,
-  Button,
-  Chip,
-  FilterBar,
-  Inline,
-  Input,
-  ListOrder,
-  Mark,
-  Nav,
-  Pane,
-  StatusRow,
-  Table,
-  Tabs,
-  Text,
-  Workspace,
-} from "@k2b/ui/v2";
+// server), the filters stand as statements in a `FilterBar` under the head, with the count and the sort and grouping
+// in words (`ListOrder`) at its `end`: two rows above the table. The address holds the whole state: the server reads
+// it with `parse`, filters its own data, and renders this page; the bar writes the address and calls `onChange`, and
+// the app loads its rows again.
+import { Avatar, Bar, Button, Chip, FilterBar, Input, ListOrder, Nav, Pane, Table, Tabs, Workspace } from "@k2b/ui/v2";
 import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "@k2b/ui/v2/list-query";
 import { createSignal } from "solid-js";
 
@@ -257,23 +241,21 @@ export default function FilteredOrders(props: Props) {
     >
       <Pane
         label="Aufträge"
+        // the filters with the count and the order at their end: one row under the head, so the page head has two rows
         status={
-          <>
-            <FilterBar
-              query={orderQuery}
-              state={state()}
-              onChange={setState}
-              icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
-              names={{ customer: CUSTOMERS }}
-              results={`${rows().length} Aufträge`}
-            />
-            {/* k2b-ui gap: the count and the order belong at the end of the filter row (two head rows, rule 9) */}
-            <StatusRow
-              lead={props.loading ? "Wird geladen" : `${euro(rows().reduce((sum, order) => sum + order.amount, 0))} in Arbeit und offen`}
-              facts={props.loading ? [] : [{ value: rows().length, after: "von 34 Aufträgen" }]}
-              filters={<ListOrder query={orderQuery} state={state()} onChange={setState} />}
-            />
-          </>
+          <FilterBar
+            query={orderQuery}
+            state={state()}
+            onChange={setState}
+            icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
+            names={{ customer: CUSTOMERS }}
+            results={
+              props.loading
+                ? "Wird geladen"
+                : `${rows().length} von 34 Aufträgen · ${euro(rows().reduce((sum, order) => sum + order.amount, 0))}`
+            }
+            end={<ListOrder query={orderQuery} state={state()} onChange={setState} />}
+          />
         }
       >
         <Table
@@ -293,13 +275,9 @@ export default function FilteredOrders(props: Props) {
             {
               title: "Auftrag",
               width: { min: 170, default: 190 },
-              // the order's mark leads its name; `Inline` keeps the one gap between them
-              cell: (row) => (
-                <Inline>
-                  <Mark {...kind[row.kind]} />
-                  <Text>{row.title}</Text>
-                </Inline>
-              ),
+              // the order's mark leads its name
+              mark: (row) => kind[row.kind],
+              cell: (row) => row.title,
             },
             { title: "Kunde", width: { min: 140, default: 160 }, cell: (row) => row.customer, drop: true },
             {

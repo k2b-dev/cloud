@@ -10,10 +10,8 @@ import {
   Facts,
   Failed,
   Group,
-  Inline,
   List,
   Loading,
-  Mark,
   Nav,
   Pane,
   Progress,
@@ -179,15 +177,8 @@ export default function CustomerDeliveries(props: Props) {
                   columns={[
                     {
                       title: "Auslauftag",
-                      cell: (row) => ({
-                        lines: [
-                          <Inline>
-                            <Mark {...settlement} />
-                            <Text>{row.day}</Text>
-                          </Inline>,
-                          row.items,
-                        ],
-                      }),
+                      mark: () => settlement,
+                      cell: (row) => ({ lines: [row.day, row.items] }),
                     },
                     {
                       title: "Abrechnung",

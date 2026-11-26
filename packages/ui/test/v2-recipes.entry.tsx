@@ -12,11 +12,14 @@ import * as home from "../skills/k2b-ui/recipes/home";
 import * as listDetail from "../skills/k2b-ui/recipes/list-detail";
 import * as mail from "../skills/k2b-ui/recipes/mail";
 import * as overview from "../skills/k2b-ui/recipes/overview";
+import * as pairing from "../skills/k2b-ui/recipes/pairing";
 import * as record from "../skills/k2b-ui/recipes/record";
 import * as recordGroups from "../skills/k2b-ui/recipes/record-groups";
+import * as settings from "../skills/k2b-ui/recipes/settings";
 import * as settingsPage from "../skills/k2b-ui/recipes/settings-page";
 import * as states from "../skills/k2b-ui/recipes/states";
 import * as table from "../skills/k2b-ui/recipes/table";
+import * as tree from "../skills/k2b-ui/recipes/tree";
 import { type ScreenApp, ScreenFrame } from "../src/v2/screen-frame";
 
 // The recipes of the k2b-ui skill in the browser, as Fibel's Example shows them: the page names a recipe and one of its
@@ -38,11 +41,14 @@ const recipes: Record<string, Recipe> = {
   "list-detail.tsx": listDetail,
   "mail.tsx": mail,
   "overview.tsx": overview,
+  "pairing.tsx": pairing,
   "record-groups.tsx": recordGroups,
   "record.tsx": record,
   "settings-page.tsx": settingsPage,
+  "settings.tsx": settings,
   "states.tsx": states,
   "table.tsx": table,
+  "tree.tsx": tree,
 };
 
 declare global {

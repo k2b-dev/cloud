@@ -2,7 +2,7 @@
 // row leads with the thing's mark, shows the person in charge as an avatar and its state as colour, symbol and word.
 // Each row opens its invoice and, when it is overdue, has one deed; on the phone the table becomes two-line rows with the same mark.
 // Empty, loading and failed stand where the rows would stand, and nothing above them moves (see `states` at the end).
-import { Avatar, Bar, Button, Chip, Failed, Inline, Input, Mark, Nav, Pane, StatusRow, Table, Tabs, Text, Workspace } from "@k2b/ui/v2";
+import { Avatar, Bar, Button, Chip, Failed, Input, Nav, Pane, StatusRow, Table, Tabs, Workspace } from "@k2b/ui/v2";
 
 // The app this screen belongs to: its colour tints the page and marks it in the host's rail.
 export const app = { color: "#15803d", icon: "coin-euro" };
@@ -147,13 +147,9 @@ export default function OpenInvoices(props: Props) {
               {
                 title: "Rechnung",
                 width: { min: 110, default: 120 },
-                // the thing's mark leads its name; `Inline` keeps the one gap between them
-                cell: (row) => (
-                  <Inline>
-                    <Mark {...kind.invoice} />
-                    <Text>{row.number}</Text>
-                  </Inline>
-                ),
+                // the thing's mark leads its name
+                mark: () => kind.invoice,
+                cell: (row) => row.number,
               },
               { title: "Kunde", width: { min: 130, default: 140 }, cell: (row) => row.customer },
               {
