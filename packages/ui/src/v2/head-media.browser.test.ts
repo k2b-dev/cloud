@@ -36,7 +36,8 @@ type Case =
   | "prose"
   | "groups"
   | "split-list-canvas"
-  | "empty-ways";
+  | "empty-ways"
+  | "view-statement";
 
 let browser: Browser;
 let client: string;
@@ -1246,4 +1247,29 @@ test("an empty state with two ways out: the first a button, the second quiet tex
       },
       width,
     );
+});
+
+test("on the phone a statement longer than its room runs out before 'Ansicht', never under it; the menu stays whole", async () => {
+  await withPage(
+    "view-statement",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const bar = document.querySelector(".k2-fbar")!;
+        const view = bar.querySelector(".k2-fbar-view")!.getBoundingClientRect();
+        const statement = bar.querySelector(".k2-stmt")!;
+        // where the statement can be seen: inside every box around it that clips
+        let seen = statement.getBoundingClientRect().right;
+        for (let box = statement.parentElement; box && box !== bar.parentElement; box = box.parentElement) {
+          const style = getComputedStyle(box);
+          if (style.overflowX !== "visible") seen = Math.min(seen, box.getBoundingClientRect().right);
+        }
+        return { seen, view: view.left, viewRight: view.right, bar: bar.getBoundingClientRect().right };
+      });
+      expect(found.seen).toBeLessThanOrEqual(found.view + 0.5);
+      expect(found.viewRight).toBeLessThanOrEqual(found.bar + 0.5);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
 });

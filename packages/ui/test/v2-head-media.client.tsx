@@ -14,6 +14,7 @@ import {
   RowStatesScreen,
   SelectionScreen,
   StructureScreen,
+  ViewStatementScreen,
 } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
@@ -42,7 +43,8 @@ declare global {
       | "prose"
       | "groups"
       | "split-list-canvas"
-      | "empty-ways";
+      | "empty-ways"
+      | "view-statement";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -71,6 +73,8 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which === "view-statement" ? (
+        <ViewStatementScreen />
       ) : which === "long" ? (
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (

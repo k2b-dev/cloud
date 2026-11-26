@@ -5845,6 +5845,20 @@
     flex-wrap: nowrap;
     flex: none;
   }
+  /* with that menu only the statements scroll, between the filter button and the menu: a statement longer than its
+     room runs out at the menu's fade, never under its words. The strip keeps room for a focus ring (3 px) around. */
+  .k2-ui .k2-fbar[data-view] > .k2-fbar-flow {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    padding: 4px;
+    margin: -4px;
+  }
+  .k2-ui .k2-fbar[data-view] > .k2-fbar-flow::-webkit-scrollbar {
+    display: none;
+  }
   .k2-ui .k2-fbar-flow > :is(.k2-fbar-add, .k2-fbar-reset),
   .k2-ui .k2-fbar-and,
   .k2-ui .k2-fbar-end,

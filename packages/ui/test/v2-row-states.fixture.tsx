@@ -24,7 +24,7 @@ import {
   Text,
   Workspace,
 } from "../src/v2";
-import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
+import { defineListQuery, field, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
 // states, a state longer than the row, rows with and without states side by side. Beside it a drawing that is the
@@ -440,6 +440,48 @@ export const EmptyWaysScreen = () => {
             secondary={{ label: "Ganzes Notizbuch zeigen", href: "#notizbuch" }}
           />
         )}
+      </Pane>
+    </Workspace>
+  );
+};
+
+// A folder filtered by three people on the phone, with the menu of how the list shows: the statement is longer than
+// the room between the filter button and that menu (Files, DR #4229).
+const ownerQuery = defineListQuery({
+  key: "owners",
+  fields: {
+    owner: field.choice({
+      label: "Person",
+      options: [
+        { value: "felix", label: "Felix Thal" },
+        { value: "mira", label: "Mira Solberg" },
+        { value: "jonas", label: "Jonas Kern" },
+      ],
+      common: true,
+    }),
+  },
+  sort: { options: { name: { label: "Name", directions: ["asc", "desc"] } }, default: { field: "name", direction: "asc" } },
+});
+
+export const ViewStatementScreen = () => {
+  const [state, setState] = createSignal<ListQueryStateOf<typeof ownerQuery>>(ownerQuery.parse("owner=felix,mira,jonas").state);
+  return (
+    <Workspace>
+      <Pane
+        label="Dateien"
+        status={
+          <FilterBar
+            query={ownerQuery}
+            state={state()}
+            onChange={setState}
+            results="3 Einträge"
+            display={[{ title: "Darstellung", choice: "list", onChoose: () => {}, items: [{ label: "Liste", value: "list" }] }]}
+          />
+        }
+      >
+        <List label="Dateien">
+          <Row lines={["Angebot.pdf"]} />
+        </List>
       </Pane>
     </Workspace>
   );
