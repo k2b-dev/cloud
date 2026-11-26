@@ -22,6 +22,7 @@ declare global {
       | "split-canvas"
       | "split-list-canvas"
       | "chat-canvas"
+      | "chat-split-canvas"
       | "long"
       | "areas";
     /** The height of the drawing right after the first render, before anything could measure it. */
@@ -46,11 +47,15 @@ render(
         <LongAddressScreen />
       ) : which === "path" || which === "path-chip" ? (
         <DeepPathScreen chip={which === "path-chip"} />
-      ) : which === "canvas" || which === "split-canvas" || which === "split-list-canvas" || which === "chat-canvas" ? (
+      ) : which === "canvas" ||
+        which === "split-canvas" ||
+        which === "split-list-canvas" ||
+        which === "chat-canvas" ||
+        which === "chat-split-canvas" ? (
         <CanvasFillScreen
-          split={which === "split-canvas" || which === "split-list-canvas"}
+          split={which === "split-canvas" || which === "split-list-canvas" || which === "chat-split-canvas"}
           list={which === "split-list-canvas"}
-          chat={which === "chat-canvas"}
+          chat={which === "chat-canvas" || which === "chat-split-canvas"}
         />
       ) : (
         <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />

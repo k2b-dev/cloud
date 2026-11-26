@@ -29,6 +29,7 @@ type Case =
   | "split-canvas"
   | "split-list-canvas"
   | "chat-canvas"
+  | "chat-split-canvas"
   | "long"
   | "areas";
 
@@ -578,28 +579,30 @@ for (const which of ["canvas", "split-canvas"] as const)
 
 // Assistant (W7): a drawing far taller than the phone (a chat history) grew its pane past the screen, because the pane
 // holds at least what its content needs, and so hid the composer under it. A drawing that is the whole pane asks only
-// for its own 240 px; what is taller scrolls inside it.
-for (const width of [390, 1440])
-  test(`a tall drawing that is the whole pane keeps the pane to the screen and scrolls inside at ${width} px`, async () => {
-    await withPage(
-      "chat-canvas",
-      async (page) => {
-        const found = await page.evaluate(() => {
-          const pane = document.querySelector(".k2-canvas[data-fill]")!.closest(".k2-pane")!.getBoundingClientRect();
-          const composer = document.querySelector(".chat-composer")!.getBoundingClientRect();
-          const history = document.querySelector(".chat-history")!;
-          return {
-            pane: Math.round(innerHeight - pane.bottom) >= 0,
-            composer: composer.top >= 0 && composer.bottom <= innerHeight,
-            scrolls: history.scrollHeight > history.clientHeight + 100,
-            page: document.scrollingElement!.scrollHeight <= innerHeight,
-          };
-        });
-        expect(found).toEqual({ pane: true, composer: true, scrolls: true, page: true });
-      },
-      width,
-    );
-  });
+// for its own 240 px; what is taller scrolls inside it. Alone in its column, and in a split, where on the phone the
+// pane holds at least its min-content (review of #4284).
+for (const which of ["chat-canvas", "chat-split-canvas"] as const)
+  for (const width of [390, 1440])
+    test(`a tall drawing that is the whole pane keeps the pane to the screen and scrolls inside at ${width} px (${which})`, async () => {
+      await withPage(
+        which,
+        async (page) => {
+          const found = await page.evaluate(() => {
+            const pane = document.querySelector(".k2-canvas[data-fill]")!.closest(".k2-pane")!.getBoundingClientRect();
+            const composer = document.querySelector(".chat-composer")!.getBoundingClientRect();
+            const history = document.querySelector(".chat-history")!;
+            return {
+              pane: Math.round(innerHeight - pane.bottom) >= 0,
+              composer: composer.top >= 0 && composer.bottom <= innerHeight,
+              scrolls: history.scrollHeight > history.clientHeight + 100,
+              page: document.scrollingElement!.scrollHeight <= innerHeight,
+            };
+          });
+          expect(found).toEqual({ pane: true, composer: true, scrolls: true, page: true });
+        },
+        width,
+      );
+    });
 
 test("on the phone a long list beside a drawing in a split does not squeeze the drawing below its 240 px (review r3)", async () => {
   await withPage(

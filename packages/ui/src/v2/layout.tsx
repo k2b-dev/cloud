@@ -904,7 +904,8 @@ export type CanvasProps = {
    * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
    * it scrolls itself, and below 240 px the pane scrolls instead. It asks its pane for those 240 px only, never for
    * what the drawing holds: one drawing that asks for no height of its own takes the whole height, and what is taller
-   * scrolls inside it.
+   * scrolls inside it. Give it one child, the drawing: a second child stands in a row of its own under the first and
+   * is cut away.
    */
   height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */

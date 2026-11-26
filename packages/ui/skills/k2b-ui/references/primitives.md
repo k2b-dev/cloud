@@ -147,7 +147,8 @@ height that is left, so the drawing still fills it. The pane asks only for
 the drawing's 240 px, never for what the drawing holds: one drawing that
 asks for no height of its own (a chat column) takes the whole height, and
 what is taller (its history) scrolls inside it, the composer stays in sight.
-No absolute positioning is needed.
+No absolute positioning is needed. A fill `Canvas` holds one child, the
+drawing: a second child stands in a row of its own under it and is cut away.
 
 ## Structure
 
