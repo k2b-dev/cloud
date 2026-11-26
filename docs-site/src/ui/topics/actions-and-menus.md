@@ -59,6 +59,12 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
+### Kbd
+
+A shortcut as keycaps, such as ⌘ K on a Mac and Strg + K elsewhere; assistive technology hears the keys by name. A menu entry shows its shortcut with `keys`.
+
+<Props of="Kbd" />
+
 ## Not in v2 yet
 
 A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs is a `Menu` with ticked entries. Write `// k2b-ui gap: popover keep on the phone` at that place.

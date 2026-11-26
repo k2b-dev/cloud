@@ -158,6 +158,13 @@ inside it.
   the marks, so keep it a preview text that may be cut, never an amount.
 - `action` (one framed button at the end; under the text on the phone),
   `end` (a few icon buttons, or the state chip of a one- or two-line row).
+  When the action leaves while it has the focus ("Zurückziehen"), the
+  focus stays in the row: its next button, else what opens it, else the
+  row itself; never the page.
+- `status`: a short state that changes while the row stands ("Link
+  kopiert", "Zurückgezogen"), quiet after the title and heard politely.
+  Pass `""` while there is nothing to say, so the status is there
+  before its words come.
 - states: `unread`, `strong`, `current` (the open one, app tint),
   `yours` (you are next).
 - `select: { selected, onChange }`: the row stands in a selection (pair it
@@ -380,7 +387,8 @@ lines instead of cutting a thing.
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
   head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  `disabled`, `meta` (a quiet hint at the end), `keys` (the shortcut as
+  keycaps: `mod+d` is ⌘ D on a Mac, Strg + D elsewhere), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with

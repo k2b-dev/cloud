@@ -159,6 +159,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
       return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
     }
+    if (name === "Kbd") return `[${clip(element.querySelector(".k2-kbd-name")?.textContent ?? "", 30)}]`;
     if (name === "Progress")
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
     if (name === "Check") {
