@@ -43,7 +43,7 @@ The one button: `primary` once per page, framed by default, `ghost` and `text` f
 
 ### Menu
 
-More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles.
+More deeds behind a button or behind "…": items, sections, one choice, toggles and submenus. An entry whose `onClick` returns a Promise keeps the menu open and turns until it settles. Beside a text that is being written, such as in an editor's toolbar, `keepFocus` on a touch screen leaves the focus in the text, so the phone's keyboard stays open, and `returnFocus` gives it back to the text when the menu closes.
 
 <Props of="Menu MenuItem MenuSection" />
 

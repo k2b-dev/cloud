@@ -83,6 +83,13 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /**
+   * Opening leaves the focus where it was, such as in a note whose keyboard must stay open on a phone: the entries are
+   * then pressed, not walked with keys. For touch screens; with keys the menu takes the focus as usual.
+   */
+  keepFocus?: boolean;
+  /** Where the focus goes when the menu closes from inside, such as the note of a toolbar; its button by default. */
+  returnFocus?: () => HTMLElement | null | undefined;
 };
 
 /**
@@ -333,10 +340,17 @@ const MenuRoot = (props: MenuProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
+  // with `keepFocus`: what had the focus when the button was pressed gets it back once the menu is open
+  let owner: Element | null = null;
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
+      const before = owner;
+      if (open && props.keepFocus && before instanceof HTMLElement)
+        requestAnimationFrame(() => {
+          if (before.isConnected) before.focus({ preventScroll: true });
+        });
     },
   }));
   return (
@@ -344,6 +358,13 @@ const MenuRoot = (props: MenuProps) => {
       <level.Trigger
         ref={(element: HTMLElement) => {
           trigger = element;
+          element.addEventListener(
+            "pointerdown",
+            () => {
+              owner = document.activeElement;
+            },
+            true,
+          );
         }}
         disabled={props.disabled}
         class="k2-btn"
@@ -358,7 +379,15 @@ const MenuRoot = (props: MenuProps) => {
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
-      <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
+      <level.Popup
+        class="k2-menu"
+        data-k2-part="Menu"
+        side="bottom"
+        align={align()}
+        sideOffset={4}
+        collisionPadding={8}
+        finalFocus={props.returnFocus}
+      >
         <Entries level={level} entries={props.items} />
       </level.Popup>
     </>
