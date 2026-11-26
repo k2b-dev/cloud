@@ -1127,8 +1127,8 @@ function EditorInstance(
 
   const onCopy = () => {
     void clipboard.copy(exportContent()).then(
-      () => toast.success(t().contentCopied),
-      () => toast.error(t().contentCopyFailed),
+      () => toast.success(t().contentCopied, { title: t().copiedTitle }),
+      () => toast.error(t().contentCopyFailed, { title: t().copyFailedTitle }),
     );
   };
 
