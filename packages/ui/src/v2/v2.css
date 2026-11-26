@@ -79,6 +79,7 @@
   --k2-h-bar: 40px;
   --k2-h-columns: 36px;
   --k2-h-row: 40px;
+  --k2-h-row-mark: 44px;
   --k2-h-row2: 52px;
   --k2-h-row3: 72px;
   --k2-h-dense: 32px;
@@ -1522,6 +1523,22 @@
   vertical-align: middle;
   min-width: 0;
 }
+/* a table whose rows lead with a thing's mark: 44 px rows and marks of 32, as the mockup's lists of files and folders */
+.k2-ui .k2-table[data-marks]:not([data-lines="2"]) td {
+  height: var(--k2-h-row-mark);
+}
+.k2-ui .k2-table td > .k2-cell-lead > .k2-mk {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-icon {
+  font-size: 18px;
+}
+.k2-ui .k2-table td > .k2-cell-lead > .k2-mk > .k2-mk-kind {
+  font-size: 8px;
+  line-height: 9px;
+}
 .k2-ui .k2-table[data-lines="2"] td {
   height: var(--k2-h-row2);
   padding-block: 8px;
@@ -2204,16 +2221,20 @@
 .k2-ui :is(.k2-row-l1, .k2-text) .k2-mk {
   margin: -2px 2px 0;
 }
-/* leading a row of two or three lines: 32 */
-.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk {
+/* leading a row: 32, as the mockup's lists of files and folders; a row of one line is 44 px for it */
+.k2-ui .k2-row[data-mark][data-lines="1"] {
+  min-height: var(--k2-h-row-mark);
+  padding-block: 6px;
+}
+.k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk {
   width: 32px;
   height: 32px;
   border-radius: 8px;
 }
-.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk > .k2-icon {
+.k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-icon {
   font-size: 18px;
 }
-.k2-ui .k2-row[data-mark]:not([data-lines="1"]) > .k2-row-lead > .k2-mk > .k2-mk-kind {
+.k2-ui .k2-row[data-mark] > .k2-row-lead > .k2-mk > .k2-mk-kind {
   font-size: 8px;
   line-height: 9px;
 }
@@ -4169,7 +4190,8 @@
   .k2-ui .k2-split > .k2-pane:not([data-width]) {
     min-width: 0;
   }
-  .k2-ui .k2-row {
+  .k2-ui .k2-row,
+  .k2-ui .k2-row[data-mark][data-lines="1"] {
     min-height: 60px;
   }
   .k2-ui .k2-row[data-action] {
