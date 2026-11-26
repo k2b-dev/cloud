@@ -43,3 +43,36 @@ test("addresses: a megabyte of pasted text is read in one pass", () => {
   // linear: far below the second a quadratic reading took for a tenth of this
   expect(performance.now() - started).toBeLessThan(500);
 });
+
+test("addresses: a semicolon and a new line always end an entry; only a comma may belong to a name", () => {
+  expect(scanAddresses("Kein Name\nAnna Berg <anna@werkstatt.example>")).toEqual({
+    found: ["Anna Berg <anna@werkstatt.example>"],
+    rest: "Kein Name",
+  });
+  expect(scanAddresses("Kein Name; Anna Berg <anna@werkstatt.example>")).toEqual({
+    found: ["Anna Berg <anna@werkstatt.example>"],
+    rest: "Kein Name",
+  });
+});
+
+test("addresses: while typing, only entries a separator closed are taken; the last one waits for Enter, a paste or leaving", () => {
+  expect(scanAddresses("Mia Lindqvist, mia@lindqvist.e", { final: false })).toEqual({ found: [], rest: "Mia Lindqvist, mia@lindqvist.e" });
+  expect(scanAddresses("jonas@werkstatt.example, mia@lindqvist.e", { final: false })).toEqual({
+    found: ["jonas@werkstatt.example"],
+    rest: "mia@lindqvist.e",
+  });
+  expect(scanAddresses("Mia Lindqvist <mia@lindqvist.example>").found).toEqual(["Mia Lindqvist <mia@lindqvist.example>"]);
+});
+
+test("addresses: Outlook's quoted address as name; an unclosed quote or bracket holds the rest; no dot at the end of a domain", () => {
+  expect(scanAddresses("'anna@werkstatt.example' <anna@werkstatt.example>").found).toEqual([
+    "'anna@werkstatt.example' <anna@werkstatt.example>",
+  ]);
+  expect(scanAddresses('jonas@werkstatt.example; "Anna <anna@werkstatt.example>, mia@lindqvist.example')).toEqual({
+    found: ["jonas@werkstatt.example"],
+    rest: '"Anna <anna@werkstatt.example>, mia@lindqvist.example',
+  });
+  expect(scanAddresses("jonas@werkstatt.example; <anna@werkstatt.example").found).toEqual(["jonas@werkstatt.example"]);
+  expect(scanAddresses("anna@werkstatt.example.").found).toEqual([]);
+  expect(scanAddresses("anna@werkstatt..example").found).toEqual([]);
+});

@@ -317,16 +317,65 @@ test("addresses: Enter, a comma or a paste turn addresses into chips, with quote
   });
 });
 
-test("addresses: a field takes no more than it may; more are named in a sentence", async () => {
+test("addresses: a field takes no more than it may, and says so beside a refused text; values of every kind", async () => {
   await withPage(async (page) => {
     const cc = field(page, "Kopie");
     const input = cc.getByRole("combobox");
-    await paste(input, "a@werkstatt.example, b@werkstatt.example, c@werkstatt.example, d@werkstatt.example, e@werkstatt.example");
+    // five addresses and a wrong text: three are taken, and both sentences stand under the chips
+    await paste(input, "a@werkstatt.example, b@werkstatt.example, c@werkstatt.example, d@werkstatt.example, e@werkstatt.example, kaputt");
     await cc.locator(".k2-chip").nth(2).waitFor();
     expect(await cc.locator(".k2-chip").count()).toBe(3);
-    expect(await cc.locator(".k2-field-message").textContent()).toBe("Dieses Feld nimmt höchstens 3 Adressen; 2 wurden nicht übernommen.");
-    // not a refusal of a text: the form may be sent
-    expect(await cc.locator(".k2-field-message[data-error]").count()).toBe(0);
+    expect(await cc.locator(".k2-field-message").textContent()).toBe(
+      "„kaputt“ ist keine E-Mail-Adresse. Dieses Feld nimmt höchstens 3 Adressen; 2 wurden nicht übernommen.",
+    );
+    // a long wrong text is named in short in the sentence
+    await input.fill("");
+    await paste(input, `${"x".repeat(100)}, f@werkstatt.example`);
+    const said = (await cc.locator(".k2-field-message[data-error]").textContent()) ?? "";
+    const quoted = said.slice(said.indexOf("„") + 1, said.indexOf("“"));
+    expect(quoted.endsWith("…")).toBe(true);
+    expect(quoted.length).toBe(60);
+    // removing the last chip there is: the focus goes to the field
+    await input.fill("");
+    for (const name of ["c", "b"]) await cc.getByRole("button", { name: `${name}@werkstatt.example entfernen` }).click();
+    await cc.getByRole("button", { name: "a@werkstatt.example entfernen" }).click();
+    await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "combobox");
+    // a field of other values keeps its own limit too
+    const hosts = page.getByRole("combobox", { name: "Server", exact: true });
+    await hosts.click();
+    await page.keyboard.type("mx2.example");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("mx3.example");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-field-message")].some((message) => message.textContent?.includes("höchstens 2 Werte")),
+    );
+    expect(entriesOf((await sent(page)).entries, "hosts")).toEqual(["mx1.example", "mx2.example"]);
+  });
+});
+
+test("addresses: while typing, an address is taken once a separator, Enter or leaving the field closes it; the same news is said again", async () => {
+  await withPage(async (page) => {
+    const to = field(page, "An");
+    const input = to.getByRole("combobox");
+    await input.fill("");
+    // a name with a comma and an address still being typed: nothing is taken yet
+    await input.pressSequentially("Mia Lindqvist, mia@lindqvist.e");
+    expect(await to.locator(".k2-chip").count()).toBe(1);
+    expect(await input.inputValue()).toBe("Mia Lindqvist, mia@lindqvist.e");
+    await input.fill("kai@werkstatt.example");
+    // leaving the field takes it
+    await page.keyboard.press("Tab");
+    await to.locator(".k2-chip").nth(1).waitFor();
+    // the status is emptied before each news, so \"1 Adresse hinzugefügt.\" twice is heard twice
+    await to.locator('.k2-hidden-text[role="status"]').evaluate((status) => {
+      Reflect.set(window, "__k2Said", 0);
+      new MutationObserver(() => {
+        if (status.textContent) Reflect.set(window, "__k2Said", Number(Reflect.get(window, "__k2Said")) + 1);
+      }).observe(status, { childList: true, characterData: true, subtree: true });
+    });
+    for (const address of ["lea@werkstatt.example, ", "tom@werkstatt.example, "]) await paste(input, address);
+    await page.waitForFunction(() => Number(Reflect.get(window, "__k2Said")) >= 2);
   });
 });
 

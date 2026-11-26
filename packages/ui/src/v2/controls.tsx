@@ -538,13 +538,21 @@ export const TagsInput = (props: TagsInputProps) => {
   const email = () => props.type === "email";
   // the text being typed; with `email` it is held here, so a separator or a paste can turn it into chips
   const [query, setQuery] = createSignal("");
-  // what the field says under its chips (no address, too many), and what assistive technology hears of a change
-  const [notice, setNotice] = createSignal<{ text: string; rejected: boolean }>();
+  // What the field says under its chips: a text that is no address (it keeps the form from being sent) and values it
+  // left out over `max`, each a sentence of its own; and what assistive technology hears of a change.
+  const [refused, setRefused] = createSignal<string>();
+  const [overflow, setOverflow] = createSignal<string>();
   const [heard, setHeard] = createSignal("");
-  const rejected = () => notice()?.rejected === true;
+  const rejected = () => refused() !== undefined;
   const noticeId = createUniqueId();
+  // a status says each change, also the same words twice: it is emptied first, so the new words are a change
+  const say = (words: string) => {
+    setHeard("");
+    queueMicrotask(() => setHeard(words));
+  };
   const max = () => props.max ?? (email() ? 200 : Number.POSITIVE_INFINITY);
   const keyOf = (value: string) => (email() ? addressKey(value) : value);
+  // the values as the field holds them: trimmed, each once, at most `max` (for every kind of value)
   const commit = (next: string[]) => {
     const seen = new Set<string>();
     const clean = next
@@ -555,32 +563,28 @@ export const TagsInput = (props: TagsInputProps) => {
         seen.add(key);
         return true;
       });
-    if (email() && clean.length < values().length) setHeard(t().addressesRemoved({ count: values().length - clean.length }));
-    setOwn(clean);
-    props.onChange?.(clean);
+    const kept = clean.slice(0, max());
+    const left = clean.length - kept.length;
+    setOverflow(left > 0 ? (email() ? t().tooManyAddresses({ max: max(), left }) : t().tooManyValues({ max: max(), left })) : undefined);
+    if (email() && kept.length < values().length) say(t().addressesRemoved({ count: values().length - kept.length }));
+    else if (email() && kept.length > values().length) say(t().addressesAdded({ count: kept.length - values().length }));
+    setOwn(kept);
+    props.onChange?.(kept);
   };
-  // The addresses in a text become chips, up to `max`; what is no address stays in the field, with a sentence why,
-  // and keeps the form from being sent. A text with no address in it is left as it is typed.
-  const take = (text: string, commitAttempt: boolean) => {
-    const { found, rest } = scanAddresses(text);
-    if (!found.length && !commitAttempt) {
+  // The addresses in a text become chips. While typing (not `final`) only entries a separator closed are taken, and
+  // a text with no address yet is left as it is typed; Enter, a paste and leaving the field take the last entry too,
+  // and what is no address then stays in the field with a sentence why.
+  const take = (text: string, final: boolean) => {
+    const { found, rest } = scanAddresses(text, { final });
+    if (!found.length && !final) {
       setQuery(text);
-      setNotice(undefined);
+      setRefused(undefined);
       return;
     }
-    const have = new Set(values().map(keyOf));
-    const fresh = found.filter((value) => !have.has(keyOf(value)) && have.add(keyOf(value)));
-    const room = Math.max(0, max() - values().length);
-    const added = fresh.slice(0, room);
-    if (added.length) {
-      commit([...values(), ...added]);
-      setHeard(t().addressesAdded({ count: added.length }));
-    }
+    if (found.length) commit([...values(), ...found]);
     setQuery(rest);
-    if (rest) setNotice({ text: t().notAnAddress({ text: rest }), rejected: true });
-    else if (fresh.length > added.length)
-      setNotice({ text: t().tooManyAddresses({ max: max(), left: fresh.length - added.length }), rejected: false });
-    else setNotice(undefined);
+    const shown = rest.length > 60 ? `${rest.slice(0, 59)}…` : rest;
+    setRefused(final && rest ? t().notAnAddress({ text: shown }) : undefined);
   };
   const items = (): ChoiceItem[] => [...new Set([...(props.suggestions ?? []), ...values()])].map((value) => ({ value, label: value }));
   // the core's input owns its id, so the field's label names it through aria-labelledby; a press on the label focuses it
@@ -588,7 +592,8 @@ export const TagsInput = (props: TagsInputProps) => {
   field?.named(() => input?.focus());
   // a refused text keeps the form from being sent, with the field's own sentence as the reason
   createRenderEffect(() => {
-    const reason = rejected() ? (notice()?.text ?? "") : "";
+    // read before the input is there too, so the effect follows the sentence from the start
+    const reason = refused() ?? "";
     input?.setCustomValidity(reason);
   });
   // Without `onChange` the given values are where a form's reset returns to; core reports the reset like any change.
@@ -599,7 +604,8 @@ export const TagsInput = (props: TagsInputProps) => {
     if (!email() || props.onChange || !(event.target instanceof HTMLFormElement) || !chips || !event.target.contains(chips)) return;
     setOwn(initial);
     setQuery("");
-    setNotice(undefined);
+    setRefused(undefined);
+    setOverflow(undefined);
   };
   onMount(() => {
     document.addEventListener("reset", onReset);
@@ -616,10 +622,12 @@ export const TagsInput = (props: TagsInputProps) => {
     ...(email()
       ? {
           query: query(),
-          onQueryChange: (next: string) => {
+          onQueryChange: (next: string, details?: { reason?: string }) => {
+            // leaving the field (core empties it then) takes the last entry, as Enter does
+            if (details?.reason === "focus-out" && query().trim()) return take(query(), true);
             if (/[,;\n]/.test(next)) return take(next, false);
             setQuery(next);
-            if (rejected()) setNotice(undefined);
+            if (rejected()) setRefused(undefined);
           },
         }
       : {}),
@@ -665,7 +673,7 @@ export const TagsInput = (props: TagsInputProps) => {
           aria-labelledby={field?.label}
           aria-label={field ? undefined : props.label}
           aria-invalid={field?.invalid || rejected() ? "true" : undefined}
-          aria-describedby={[field?.described, notice() ? noticeId : undefined].filter(Boolean).join(" ") || undefined}
+          aria-describedby={[field?.described, refused() || overflow() ? noticeId : undefined].filter(Boolean).join(" ") || undefined}
           inputMode={email() ? "email" : undefined}
           autocomplete={email() ? "email" : undefined}
           onPaste={(event: ClipboardEvent) => {
@@ -681,12 +689,10 @@ export const TagsInput = (props: TagsInputProps) => {
         />
       </combo.Chips>
       {/* why a text was not taken, under the chips; a refused text keeps the form from being sent */}
-      <Show when={notice()}>
-        {(said) => (
-          <span class="k2-field-message" id={noticeId} data-error={said().rejected ? "" : undefined}>
-            {said().text}
-          </span>
-        )}
+      <Show when={refused() || overflow()}>
+        <span class="k2-field-message" id={noticeId} data-error={refused() ? "" : undefined}>
+          {[refused(), overflow()].filter(Boolean).join(" ")}
+        </span>
       </Show>
       <Show when={email()}>
         <span class="k2-hidden-text" role="status">

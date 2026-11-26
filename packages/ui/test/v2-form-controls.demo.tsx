@@ -134,7 +134,7 @@ export function Demo() {
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
             <Field name="hosts" label="Server">
-              <TagsInput value={["mx1.example"]} />
+              <TagsInput value={["mx1.example"]} max={2} />
             </Field>
             {/* addresses as chips: typed, pasted several at once, "Name <address>" too */}
             <Field name="to" label="An">
