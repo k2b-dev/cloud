@@ -247,12 +247,14 @@ const createDefaultTableView = async (initial: {
 
 type DefaultTableView = Awaited<ReturnType<typeof createDefaultTableView>>;
 
+// `on:click` binds the button itself: a delegated handler would register document events while the module loads,
+// before the DOM harness exists.
 /** The edit menu's "Add column" entry, offered exactly while the records page offers it (hidden columns exist). */
 const renderAdminToolbar = async (root: HTMLElement, view: DefaultTableView) =>
   render(
     () => (
       <Show when={view.columns.hiddenViewColumnCount() > 0}>
-        <button type="button" onClick={view.columns.openAddViewColumnDialog}>
+        <button type="button" on:click={() => view.columns.openAddViewColumnDialog()}>
           Add column
         </button>
       </Show>
