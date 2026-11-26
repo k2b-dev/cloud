@@ -185,8 +185,11 @@ export function PublicPageEditor(props: {
     if (active && active !== document.body && active.isConnected && !active.disabled) return;
     const section = sections().find((entry) => entry.id === target.id);
     if (!section) return;
+    // Compared as text, so a title with quotes or brackets needs no escaping in a selector.
     const button = (direction: -1 | 1) =>
-      document.querySelector<HTMLButtonElement>(`button[aria-label="${CSS.escape(moveLabel(direction, section.title))}"]`);
+      [...document.querySelectorAll<HTMLButtonElement>("button[aria-label]")].find(
+        (entry) => entry.getAttribute("aria-label") === moveLabel(direction, section.title),
+      );
     const preferred = button(target.direction);
     const fallback = button(target.direction === -1 ? 1 : -1);
     (preferred && !preferred.disabled ? preferred : fallback)?.focus();
