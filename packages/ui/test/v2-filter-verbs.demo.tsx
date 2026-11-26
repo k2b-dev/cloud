@@ -1,7 +1,21 @@
 import { createMemo, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Bar, Button, Chip, FilterBar, Input, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
-import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "../src/v2/list-query";
+import {
+  Bar,
+  Button,
+  Chip,
+  FilterBar,
+  Input,
+  type ListChange,
+  ListOrder,
+  Pane,
+  Popover,
+  StatusRow,
+  Table,
+  Tabs,
+  Workspace,
+} from "../src/v2";
+import { defineListQuery, field, type ListQueryStateOf, type LookupItem, type SavedListView, type ViewStore } from "../src/v2/list-query";
 
 // The inventory of an antiques trade on invented data, as a table with many columns would declare it: thirteen fields
 // in categories, most with verbs (contains, is not, before, after, is empty), one without. The query names its own
@@ -261,6 +275,10 @@ declare global {
   interface Window {
     /** The address of every change, in order. */
     __verbChanges?: string[];
+    /** Where every change came from (`ListChange.source`), in order. */
+    __sources?: string[];
+    /** With `_slow` in the address: the rows of the last change come only when the test calls this. */
+    __releaseRows?: () => void;
   }
 }
 
@@ -272,17 +290,68 @@ export function Demo() {
     ? ({ ...parsed, filters: { ...parsed.filters, status: { verb: "is", value: ["consigned", "gone"] } } } as unknown as State)
     : parsed;
   const [state, setState] = createSignal<State>(initial);
+  // the rows the page has fetched: with `_slow` they follow a change only when the test lets them, as a slow server's
+  const slow = !isServer && new URLSearchParams(location.search).has("_slow");
+  const [fetched, setFetched] = createSignal<State>(initial);
+  if (!isServer) window.__releaseRows = () => setFetched(state());
+  const busy = () => fetched() !== state();
   const rows = createMemo(() => {
-    const list = items.filter((item) => matches(item, state()));
-    const sort = state().sort;
+    const list = items.filter((item) => matches(item, fetched()));
+    const sort = fetched().sort;
     const sign = sort.direction === "asc" ? 1 : -1;
     list.sort((a, b) => (sort.field === "price" ? (a.price - b.price) * sign : a.received.localeCompare(b.received) * sign));
     return list;
   });
-  const change = (next: State) => {
-    if (!isServer) window.__verbChanges = [...(window.__verbChanges ?? []), location.search];
+  const change = (next: State, at: ListChange) => {
+    if (!isServer) {
+      window.__verbChanges = [...(window.__verbChanges ?? []), location.search];
+      window.__sources = [...(window.__sources ?? []), at.source];
+    }
     setState(next);
+    if (!slow) setFetched(next);
   };
+  // `_host`: the bar lives in a toolbar (a v2 Bar), as the calendar of a Space puts it in its head; a popover in the same
+  // toolbar holds a second bar, which stays a bar of its own
+  const host = !isServer && new URLSearchParams(location.search).has("_host");
+  // one store of views in memory, as an app's own table would hold them
+  const saved: SavedListView[] = [{ key: "mine-1", label: "Teure Stücke", query: "price.after=2000" }];
+  const views: ViewStore = {
+    scope: "person",
+    writable: true,
+    list: async () => saved,
+    save: async (view) => {
+      const next = { key: view.key ?? `mine-${saved.length + 1}`, label: view.label, query: view.query };
+      saved.push(next);
+      return next;
+    },
+    remove: async () => undefined,
+  };
+  const filterBar = () => (
+    <FilterBar
+      query={inventoryQuery}
+      state={state()}
+      onChange={change}
+      icons={{
+        status: "circle-dashed",
+        title: "letter-case",
+        price: "currency-euro",
+        estimate: "scale",
+        received: "calendar",
+        due: "calendar-due",
+        seen: "eye",
+        consignor: "user",
+        origin: "map-pin",
+        era: "hourglass",
+        location: "building-warehouse",
+        shelf: "layout-rows",
+        photographed: "camera",
+      }}
+      names={{ consignor: CONSIGNORS }}
+      results={`${rows().length} Artikel`}
+      // in the toolbar the bar also offers its views ("Ansicht ▾" at its end)
+      views={host ? { stores: [views] } : undefined}
+    />
+  );
   return (
     <Workspace
       head={
@@ -309,30 +378,22 @@ export function Demo() {
     >
       <Pane
         label="Inventar"
+        busy={busy()}
         status={
           <>
-            <FilterBar
-              query={inventoryQuery}
-              state={state()}
-              onChange={change}
-              icons={{
-                status: "circle-dashed",
-                title: "letter-case",
-                price: "currency-euro",
-                estimate: "scale",
-                received: "calendar",
-                due: "calendar-due",
-                seen: "eye",
-                consignor: "user",
-                origin: "map-pin",
-                era: "hourglass",
-                location: "building-warehouse",
-                shelf: "layout-rows",
-                photographed: "camera",
-              }}
-              names={{ consignor: CONSIGNORS }}
-              results={`${rows().length} Artikel`}
-            />
+            {host ? (
+              <Bar
+                start={filterBar()}
+                end={
+                  <>
+                    <span>{rows().length} Artikel</span>
+                    <Popover icon="adjustments" label="Weitere Filter" title="Weitere Filter" content={filterBar()} />
+                  </>
+                }
+              />
+            ) : (
+              filterBar()
+            )}
             <StatusRow
               lead={`${rows().length} von ${items.length} Artikeln`}
               filters={<ListOrder query={inventoryQuery} state={state()} onChange={change} />}

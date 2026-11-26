@@ -19,7 +19,7 @@ import { RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
 import { ConfirmDialog } from "./overlays";
-import { Empty } from "./states";
+import { Empty, LoadingStatus } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
 
@@ -363,6 +363,13 @@ export type PaneProps = {
    * the list back where it was (the page restores every `data-scroll-preserve` region, as v1's `ScrollArea` does).
    */
   scrollKey?: string;
+  /**
+   * The app is fetching what the column shows anew, such as the rows after a filter changed: what it shows stays where
+   * it is, turns quieter after 150 ms (so a fast answer never flickers), and a thin line runs along the top of the
+   * scrolling region; the region is `aria-busy` and says "Lädt …" once. Nothing moves. For the first load, with
+   * nothing to show yet, give the list its own placeholders (`Table loading`, `Loading`).
+   */
+  busy?: boolean;
   /** Bands, rows, sections; the pane pads nothing. */
   children?: JSX.Element;
 };
@@ -441,7 +448,17 @@ export const Pane = (props: PaneProps) => {
           {status()}
         </div>
       </Show>
-      <div class="k2-scroll" data-scroll-preserve={props.scrollKey}>
+      <div
+        class="k2-scroll"
+        data-scroll-preserve={props.scrollKey}
+        data-busy={props.busy ? "" : undefined}
+        aria-busy={props.busy ? "true" : undefined}
+      >
+        <Show when={props.busy}>
+          {/* no height of its own: the line stands over the top of the region, so nothing below it moves */}
+          <div class="k2-busy-line" aria-hidden="true" />
+          <LoadingStatus />
+        </Show>
         <ColumnsContext.Provider value={undefined}>{props.children}</ColumnsContext.Provider>
       </div>
     </section>

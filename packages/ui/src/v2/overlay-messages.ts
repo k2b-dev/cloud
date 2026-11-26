@@ -7,6 +7,8 @@ const overlayMessages = i18n.define({
   messages: {
     en: {
       moreActions: "More actions",
+      noMatch: ({ query }: { query: string }) => `Nothing matches “${query}”.`,
+      failed: "That did not work. Try again.",
       back: "Back",
       undo: "Undo",
       retry: "Try again",
@@ -14,6 +16,8 @@ const overlayMessages = i18n.define({
     },
     de: {
       moreActions: "Weitere Aktionen",
+      noMatch: ({ query }: { query: string }) => `Nichts passt zu „${query}“.`,
+      failed: "Das hat nicht geklappt. Versuch es noch einmal.",
       back: "Zurück",
       undo: "Rückgängig",
       retry: "Erneut versuchen",

@@ -13,7 +13,8 @@ export type CommandOptions = {
   query?: string;
   onQueryChange?: (query: string) => void;
   /** An entry ran (Enter or a press), with its value. */
-  onAction?: (value: string) => void;
+  /** A returned Promise keeps the entry pending (`data-pending`, `aria-busy`) until it settles; a rejection is its error. */
+  onAction?: (value: string) => unknown;
   /** `false` keeps every entry, for matches a server already found for the text. */
   filter?: false;
   /** Whether the entries are loading or failed; the list is `aria-busy` while loading. */
@@ -22,6 +23,8 @@ export type CommandOptions = {
   onLoadMore?: () => void;
   /** Whether the arrows wrap from the last entry to the first. */
   loop?: boolean;
+  /** The first entry is highlighted as the text changes, so Enter runs the best match; off by default. */
+  autoHighlight?: boolean;
 };
 
 export type CommandParts = {
@@ -50,8 +53,15 @@ const announce =
 
 /** A search over a list that stays open: the inline form of a select, as a filter's lookup is. */
 export function useCommand(options: () => CommandOptions): CommandParts {
-  const announcement = announce(useBehaviorMessages());
-  const handle = usePrimitive(commandPrimitive, () => ({ ...options(), autoHighlight: false, announcement }));
+  const t = useBehaviorMessages();
+  const announcement = announce(t);
+  // what a pending entry says after a second comes from the render locale too
+  const handle = usePrimitive(commandPrimitive, () => ({
+    autoHighlight: false,
+    ...options(),
+    announcement,
+    pendingAnnouncement: t().loading,
+  }));
   return {
     Root: slotComponent(handle, "root", "div"),
     Input: slotComponent(handle, "input", "input"),

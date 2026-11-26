@@ -186,7 +186,7 @@ test("a day verb picks one day in the calendar of the editor; “ist leer” fin
 test("a choice says “ist nicht” and “ist weder … noch …”; back and forward bring the verb back", async () => {
   await withPage("", async (page) => {
     await page.locator(".k2-fbar-add .k2-btn").click();
-    await page.locator(".k2-fpick input").fill("status");
+    await page.locator(".k2-msearch input").fill("status");
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await page.locator(".k2-fpop .k2-fed").waitFor();
@@ -213,11 +213,11 @@ test("a choice says “ist nicht” and “ist weder … noch …”; back and f
 test("“+ Filter” with many fields searches them: groups by category, accents do not matter, nothing found says so", async () => {
   await withPage("price.after=500", async (page) => {
     await page.locator(".k2-fbar-add .k2-btn").click();
-    const picker = page.locator(".k2-fpick");
+    const picker = page.locator(".k2-msearch");
     await picker.waitFor();
     // the focus is in the search
-    await page.waitForFunction(() => document.activeElement?.matches(".k2-fpick input") === true);
-    expect(await picker.locator(".k2-opt-head").allTextContents()).toEqual(["Häufig", "Preise", "Termine", "Herkunft", "Lager"]);
+    await page.waitForFunction(() => document.activeElement?.matches(".k2-msearch input") === true);
+    expect(await picker.locator(".k2-mh").allTextContents()).toEqual(["Häufig", "Preise", "Termine", "Herkunft", "Lager"]);
     // an active field shows its value
     expect(
       await picker
@@ -260,7 +260,7 @@ test("the query's own parameter names: sort and grouping write `ordnung` and `gr
     expect(address(page)).toBe("sort=col3.asc&q=raw&suche=Vitrine&ordnung=price.desc&gruppe=status");
     // a filter goes in beside them; a reload reads the same
     await page.locator(".k2-fbar-add .k2-btn").click();
-    await page.locator(".k2-fpick input").fill("lager");
+    await page.locator(".k2-msearch input").fill("lager");
     await page.getByRole("option", { name: "Lagerort" }).click();
     await page.locator(".k2-fpop").getByRole("option", { name: "Laden" }).click();
     expect(address(page)).toBe("sort=col3.asc&q=raw&location=shop&suche=Vitrine&ordnung=price.desc&gruppe=status");
@@ -332,4 +332,255 @@ test("an option the app deleted, from its own old state, shows with a warning, a
     expect(address(page)).toBe("_stale=1&status=consigned,online");
     expect(await statements(page)).toEqual(["Status ist Eingeliefert oder Online"]);
   });
+});
+
+test("while the page fetches after a change, the list region is busy: its rows stay and nothing moves", async () => {
+  await withPage("_slow=1&title=Vitrine", async (page) => {
+    const region = page.locator(".k2-pane > .k2-scroll");
+    const before = await region.boundingBox();
+    const table = await page.locator("table").boundingBox();
+    await edit(page, "Titel");
+    await page.locator(".k2-fpop .k2-fed-field input").fill("Spiegel");
+    await page.keyboard.press("Enter");
+    // the statement follows at once; the rows wait for the page's answer, in a busy region that keeps its place
+    expect(await statements(page)).toEqual(["Titel enthält Spiegel"]);
+    await page.waitForFunction(() => document.querySelector(".k2-pane > .k2-scroll")?.getAttribute("aria-busy") === "true");
+    expect(await rows(page)).toEqual(["Jugendstil-Vitrine", "Vitrinenschrank, Nussbaum"]);
+    expect(await region.getByRole("status").count()).toBe(1);
+    await settled(page);
+    expect(await region.boundingBox()).toEqual(before);
+    expect(await page.locator("table").boundingBox()).toEqual(table);
+    expect(await page.locator(".k2-busy-line").evaluate((line) => line.getBoundingClientRect().height)).toBe(0);
+    // quieter, not hidden
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-pane > .k2-scroll > :not(.k2-busy-line, .k2-hidden-text)")].every(
+        (part) => getComputedStyle(part).opacity === "0.55",
+      ),
+    );
+    await page.evaluate(() => window.__releaseRows?.());
+    await page.waitForFunction(() => !document.querySelector(".k2-pane > .k2-scroll")?.hasAttribute("aria-busy"));
+    expect(await rows(page)).toEqual(["Spiegel mit Goldrahmen"]);
+    expect(await page.locator(".k2-busy-line").count()).toBe(0);
+  });
+});
+
+test("onChange says where a change came from: the person in the bar, or back and forward", async () => {
+  await withPage("", async (page) => {
+    await page.locator(".k2-order .k2-btn").first().click();
+    await page.getByRole("menuitemradio", { name: "Preis" }).click();
+    await page.locator(".k2-fbar-add .k2-btn").click();
+    await page.locator(".k2-msearch input").fill("epoche");
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-fpop").getByRole("option", { name: "Barock" }).click();
+    await page.keyboard.press("Escape");
+    await page.locator(".k2-fpop").waitFor({ state: "detached" });
+    expect(await page.evaluate(() => window.__sources)).toEqual(["user", "user"]);
+    await page.goBack();
+    await page.waitForFunction(() => window.__sources?.length === 3);
+    await page.goForward();
+    await page.waitForFunction(() => window.__sources?.length === 4);
+    expect(await page.evaluate(() => window.__sources)).toEqual(["user", "user", "history", "history"]);
+    expect(address(page)).toBe("era=baroque&ordnung=price.desc");
+  });
+});
+
+test("in a v2 Bar the filter bar has no line and no side edge of its own: only the host draws a line", async () => {
+  for (const width of [1440, 390]) {
+    await withPage(
+      "_host=1&title=Vitrine",
+      async (page) => {
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+          const host = filterBar.closest<HTMLElement>(".k2-bar")!;
+          const row = document.querySelector<HTMLElement>('[data-k2-part="StatusRow"]')!;
+          // every element between the host's top and bottom that draws a line below itself
+          const lines = [host, ...host.querySelectorAll<HTMLElement>("*")].filter(
+            (element) =>
+              element.getClientRects().length > 0 &&
+              Number.parseFloat(getComputedStyle(element).borderBottomWidth) > 0 &&
+              !element.matches(".k2-btn, .k2-stmt, .k2-stmt-b, .k2-input"),
+          );
+          const first = [...filterBar.querySelectorAll<HTMLElement>(".k2-btn, .k2-stmt")].find(
+            (element) => element.getClientRects().length > 0,
+          );
+          return {
+            onlyHost: lines.length === 1 && lines[0] === host,
+            fits: filterBar.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom,
+            start: Math.round(first?.getBoundingClientRect().left ?? -1),
+            edge: Math.round(row.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(row).paddingLeft)),
+          };
+        });
+        expect(look.onlyHost).toBe(true);
+        expect(look.fits).toBe(true);
+        // the first thing of the bar stands on the host's text edge, as the status row's words below
+        expect(look.start).toBe(look.edge);
+      },
+      { width, touch: width < 768 },
+    );
+  }
+});
+
+test("a filter bar elsewhere in a Bar's tree (in its popover) keeps its own line and edge", async () => {
+  await withPage("_host=1&title=Vitrine", async (page) => {
+    await page.getByRole("button", { name: "Weitere Filter" }).click();
+    const inner = page.locator('.k2-pop [data-k2-part="FilterBar"]');
+    await inner.waitFor();
+    await settled(page);
+    const look = await inner.evaluate((element) => ({
+      line: getComputedStyle(element).borderBottomWidth,
+      edge: getComputedStyle(element).paddingLeft,
+      underBar: element.closest(".k2-bar") !== null,
+    }));
+    expect(look.underBar).toBe(true);
+    expect(look.line).toBe("1px");
+    expect(look.edge).not.toBe("0px");
+  });
+});
+
+test("in a Bar the focus ring of the first control is whole in its scroller, on the phone and from 768 px", async () => {
+  for (const width of [390, 1024])
+    await withPage(
+      "_host=1&title=Vitrine",
+      async (page) => {
+        // the keys bring the focus to the bar's first control (the filter button), so its ring shows
+        for (let step = 0; step < 30; step += 1) {
+          await page.keyboard.press("Tab");
+          if (await page.evaluate(() => document.activeElement?.closest('.k2-bar-start > [data-k2-part="FilterBar"]') !== null)) break;
+        }
+        await settled(page);
+        const ring = await page.evaluate(() => {
+          // a statement draws the ring of its button around itself
+          const focused = document.activeElement as HTMLElement;
+          const ringed = focused.closest<HTMLElement>(".k2-stmt") ?? focused;
+          // the scroller that clips it: the bar on the phone, its line of statements from 768 px
+          let scroller = ringed.parentElement;
+          while (scroller && getComputedStyle(scroller).overflowX === "visible") scroller = scroller.parentElement;
+          const box = ringed.getBoundingClientRect();
+          const clip = scroller!.getBoundingClientRect();
+          const spread = Number.parseFloat(getComputedStyle(ringed).boxShadow.match(/(\d+(?:\.\d+)?)px\s*$/)?.[1] ?? "0");
+          return {
+            spread,
+            left: box.left - spread,
+            clip: clip.left,
+            top: box.top - spread,
+            clipTop: clip.top,
+            bottom: box.bottom + spread,
+            clipBottom: clip.bottom,
+          };
+        });
+        expect(ring.spread).toBe(3);
+        expect(ring.left).toBeGreaterThanOrEqual(ring.clip);
+        expect(ring.top).toBeGreaterThanOrEqual(ring.clipTop);
+        expect(ring.bottom).toBeLessThanOrEqual(ring.clipBottom);
+      },
+      { width, touch: width < 768 },
+    );
+});
+
+test("from 768 px a Bar keeps the filter bar on one line: it never grows the head, scrolls, and the keys reach the last filter", async () => {
+  await withPage(
+    "_host=1&title=Vitrine&status.not=online,sold&price.after=500&due.empty=&era.notEmpty=&origin=Wien&shelf=B",
+    async (page) => {
+      await settled(page);
+      const look = await page.evaluate(() => {
+        const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+        const host = filterBar.closest<HTMLElement>(".k2-bar")!;
+        const row = document.querySelector<HTMLElement>('[data-k2-part="StatusRow"]')!;
+        const tops = new Set(
+          [...filterBar.querySelectorAll<HTMLElement>(".k2-stmt")].map((element) => Math.round(element.getBoundingClientRect().top)),
+        );
+        return {
+          lines: tops.size,
+          hostHeight: host.getBoundingClientRect().height,
+          fits: filterBar.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom,
+          clear: host.getBoundingClientRect().bottom <= row.getBoundingClientRect().top,
+          // from 768 px the statements scroll; the end ("Ansicht ▾") stands beside them
+          scrolls: (() => {
+            const flow = filterBar.querySelector<HTMLElement>(".k2-fbar-flow")!;
+            return flow.scrollWidth > flow.clientWidth;
+          })(),
+          // the host's end keeps its whole size: the filters take only the room it leaves
+          endWhole: (() => {
+            const end = host.querySelector<HTMLElement>(".k2-bar-end")!;
+            const inner = host.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(host).paddingRight);
+            return end.scrollWidth <= end.clientWidth && end.getBoundingClientRect().right <= inner + 0.5;
+          })(),
+        };
+      });
+      expect(look.lines).toBe(1);
+      expect(look.hostHeight).toBe(40);
+      expect(look.fits).toBe(true);
+      expect(look.clear).toBe(true);
+      expect(look.scrolls).toBe(true);
+      expect(look.endWhole).toBe(true);
+      expect(await viewsEnd(page)).toEqual({ shown: true, outside: true, masked: false });
+      // the keys reach the last filter, and the line scrolls it into view
+      const last = page.locator('.k2-bar-start > [data-k2-part="FilterBar"] .k2-stmt-b').last();
+      for (let step = 0; step < 60; step += 1) {
+        await page.keyboard.press("Tab");
+        if (await last.evaluate((element) => element === document.activeElement)) break;
+      }
+      expect(await last.evaluate((element) => element === document.activeElement)).toBe(true);
+      await settled(page);
+      const seen = await last.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const clip = element.closest<HTMLElement>(".k2-fbar-flow")!.getBoundingClientRect();
+        return box.left >= clip.left && box.right <= clip.right;
+      });
+      expect(seen).toBe(true);
+    },
+    { width: 1024 },
+  );
+  // with room to spare the end is just as whole
+  await withPage(
+    "_host=1&title=Vitrine",
+    async (page) => {
+      await settled(page);
+      expect(await viewsEnd(page)).toEqual({ shown: true, outside: true, masked: false });
+    },
+    { width: 1440 },
+  );
+});
+
+/**
+ * Whether the bar's end in the toolbar ("Ansicht ▾") shows whole inside the bar, stands outside the line of statements
+ * that scrolls, and lies under no fade (a mask on it or on anything between it and the toolbar).
+ */
+const viewsEnd = (page: Page) =>
+  page.evaluate(() => {
+    const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+    const end = filterBar.querySelector<HTMLElement>(".k2-fbar-end")!;
+    const flow = filterBar.querySelector<HTMLElement>(".k2-fbar-flow")!;
+    const box = end.getBoundingClientRect();
+    const bar = filterBar.getBoundingClientRect();
+    const masks: string[] = [];
+    for (let element: HTMLElement | null = end; element && element !== filterBar.parentElement; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      masks.push(style.maskImage || style.getPropertyValue("-webkit-mask-image") || "none");
+    }
+    return {
+      shown: box.width > 0 && box.left >= bar.left - 0.5 && box.right <= bar.right + 8.5,
+      outside: !flow.contains(end) && box.left >= flow.getBoundingClientRect().right - 0.5,
+      masked: masks.some((mask) => mask !== "none" && mask !== ""),
+    };
+  });
+
+test("phone: in a Bar the line keeps one gap before sort and group, as without a Bar", async () => {
+  await withPage(
+    "_host=1&title=Vitrine",
+    async (page) => {
+      await settled(page);
+      const gap = await page.evaluate(() => {
+        const filterBar = document.querySelector<HTMLElement>('.k2-bar-start > [data-k2-part="FilterBar"]')!;
+        const order = filterBar.querySelector<HTMLElement>(".k2-fbar-order")!;
+        const shown = [...filterBar.querySelectorAll<HTMLElement>(".k2-fbar-flow > *")].filter(
+          (element) => element.getClientRects().length > 0,
+        );
+        return Math.round(order.getBoundingClientRect().left - shown.at(-1)!.getBoundingClientRect().right);
+      });
+      expect(gap).toBe(8);
+    },
+    { width: 390, touch: true },
+  );
 });

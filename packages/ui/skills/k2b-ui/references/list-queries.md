@@ -87,6 +87,10 @@ no × at its default; changed, it is tinted and × returns it to the default.
   state; never parse search parameters yourself, keep filter values the
   address does not hold, or build a row of filter `Chip`s or a filter
   `Popover`. One declaration, one bar.
+- In a toolbar (a calendar's head) put the `FilterBar` straight into a v2
+  `Bar`'s `start` or `end`: it drops its own line and side edge and keeps
+  one line that scrolls sideways. Never hide the bar's line with your own
+  CSS or wrap it in a box of your own.
 - `names` are per field (`{ consignor: [...] }`): two lookups may use the same
   code for different things.
 - `timeZone` (default "UTC") is the zone points in time are read and entered
@@ -104,6 +108,12 @@ no × at its default; changed, it is tinted and × returns it to the default.
   `viewIcon(scope)` gives a saved view's tab its symbol.
 - A value the address cannot hold is refused at its field; nothing is
   written.
+- `onChange(state, { source })`: `"user"` from the bar or `ListOrder`
+  (start a paged list at page 1), `"history"` from back and forward
+  (keep the page the address names). Never listen to `popstate` yourself.
+- While the rows load after a change, set `Pane busy` on the list's pane:
+  one quiet state for the whole region, nothing per statement, nothing
+  moves.
 - What the app deleted (an option, preset, sort or group an old link or saved
   view still names) is left out by `parse`, `serialize` and `set`, never
   thrown. Build no app-side filter for it. A new value given to `set` must
