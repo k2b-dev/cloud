@@ -503,7 +503,13 @@ describe("calendar of all Spaces and apps", () => {
       try {
         const edges = await page.locator(".k2b-content-calendar").evaluate((calendar) => {
           const style = getComputedStyle(calendar);
-          return [style.borderTopWidth, style.borderLeftWidth, style.borderRightWidth, style.borderBottomWidth, style.borderTopLeftRadius].join(" ");
+          return [
+            style.borderTopWidth,
+            style.borderLeftWidth,
+            style.borderRightWidth,
+            style.borderBottomWidth,
+            style.borderTopLeftRadius,
+          ].join(" ");
         });
         expect(edges).toBe("0px 0px 0px 0px 0px");
       } finally {

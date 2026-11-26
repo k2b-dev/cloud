@@ -21,7 +21,10 @@ const open = (view: View, address = "/app/spaces", state = "") =>
     now: OVERVIEW_NOW,
     state,
     api: (url, route) => {
-      if (url.pathname === "/api/spaces/overview/work") return work((url.searchParams.get("view") ?? "mine") as "mine" | "today" | "upcoming");
+      if (url.pathname === "/api/spaces/overview/work") {
+        const view = url.searchParams.get("view");
+        return work(view === "today" || view === "upcoming" ? view : "mine");
+      }
       if (url.pathname === "/api/spaces/overview/activity") return { data: [], nextCursor: null };
       if (url.pathname === "/api/spaces" && route.request().method() === "POST") {
         created.push(route.request().postDataJSON());
