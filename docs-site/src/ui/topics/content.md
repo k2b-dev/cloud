@@ -12,12 +12,6 @@ A guide of Warenfluss: the title and the one deed "Bearbeiten" in the head, the 
 
 <Example recipe="content" height="560" default="Text" />
 
-## Files as pictures, dragged onto folders
-
-The grid view of Files: each file a tile with its picture in a box of a fixed shape, as large as the person chose (`pictures`, kept in the address). The symbol of its kind stands in the box while the picture loads, when it fails and when there is none, so nothing moves. The grid is one Tab stop: arrows go to the nearest tile, Space selects, Enter opens. A tile, or all selected ones, drags onto a folder of the grid or of the sidebar's tree (`drag`, one `scope`); a closed folder the pointer rests on opens, a folder that does not take them says so, and a place at the bottom says "Hier loslassen: nichts passiert". Files from the computer drop onto a folder (`onFiles`). Dragging is a shortcut: give each tile a menu entry "Verschieben nach …" for keys and touch, and move nothing before `onDrop`.
-
-<Example recipe="file-grid" height="560" default="Medium" />
-
 ## A chart in a screen
 
 A chart is the `Chart` of `@k2b/ui` (data types in `@k2b/ui/charts`, every kind in [Charts](/en/ui/charts)) in a `Canvas` with a height, directly in its `Section`. The chart fills the `Canvas`; with no data, `Empty` stands in place of the `Canvas`.
@@ -56,15 +50,21 @@ Values with their labels; `mono` and `copy` make a key, a token or an ID easy to
 
 ### Tiles
 
-Like things to press, such as attachments and media files; each opens its file. With `pictures`, tiles with a picture box in a grid that select and drag like rows.
+Like things to press, such as attachments and media files; each opens its file. `variant="media"` shows photos, pages and videos as a grid of pictures that people select: one Tab stop (arrows go to the nearest tile, Space selects, Enter opens), `menu` on a tile (its "…", a right-click, Shift+F10) and `drag` onto folders.
 
-<Props of="Tiles Tile PictureTile" />
+<Props of="Tiles Tile" />
 
 ### DragMove
 
-Dragging onto folders, the same for `Table` rows, picture `Tiles` and a `Nav` tree: a `scope` joins lists, `target` names folders, `accepts` says what a folder takes, `onDrop` and `onFiles` act after the drop only.
+Dragging onto folders, the same for `Table` rows, media `Tiles` and a `Nav` tree: a `scope` joins lists, `target` names folders, `accepts` says what a folder takes, `onDrop` and `onFiles` act after the drop only.
 
 <Props of="DragMove" />
+
+### Preview
+
+The large picture of the open thing at the top of its detail, 4:3; its symbol stands while the picture loads, fails or is missing.
+
+<Props of="Preview" />
 
 ### Canvas
 

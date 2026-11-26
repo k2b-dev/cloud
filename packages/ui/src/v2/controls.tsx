@@ -11,7 +11,8 @@ import {
 } from "solid-js";
 import { isServer } from "solid-js/web";
 import { type ChoiceItem, useSelect } from "./behavior/select";
-import { Icon } from "./marks";
+import { Chip, Icon } from "./marks";
+import { useSettingMessages } from "./setting-messages";
 import { textEdge } from "./tokens";
 
 type FieldIds = {
@@ -58,7 +59,26 @@ export type FieldProps = {
  * A field: a label line of 20 px, the control of 36 px, a hint or the error under it. The label line has a fixed
  * height, so fields in a row stand on one line (rule K5).
  */
-export const Field = (props: FieldProps) => {
+export const Field = (props: FieldProps) => <FieldFrame field={props} />;
+
+export type SettingProps = Omit<FieldProps, "optional" | "required"> & {
+  /**
+   * The value before an unsaved change, such as "12 Std.": the setting then says "geändert · vorher 12 Std." beside
+   * its control, so a page that saves as a whole shows what will change.
+   */
+  was?: string;
+};
+
+/**
+ * One setting of a settings page: its name and a quiet hint on the left, the control beside them in a column of
+ * 300 px, so the values stand in one line down the page and are read at a glance. On a narrow column the control
+ * goes under the name. The control is the same as in a `Field`: `Input`, `Select`, `DateInput`, `Check` or `Choice`.
+ */
+export const Setting = (props: SettingProps) => <FieldFrame field={props} setting />;
+
+const FieldFrame = (frame: { field: FieldProps & { was?: string }; setting?: boolean }) => {
+  const props = frame.field;
+  const t = useSettingMessages();
   const control = createUniqueId();
   const label = createUniqueId();
   const message = createUniqueId();
@@ -111,30 +131,45 @@ export const Field = (props: FieldProps) => {
       )}
     </Show>
   );
+  const part = frame.setting ? "Setting" : "Field";
+  const setting = frame.setting ? "" : undefined;
+  // a changed setting says what it was beside its control (inside the content, so the control keeps its place)
+  const was = (
+    <Show when={props.was}>
+      {(before) => (
+        <span class="k2-field-was">
+          <Chip yours>{t().changedFrom({ value: before() })}</Chip>
+        </span>
+      )}
+    </Show>
+  );
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
-    <div class="k2-field" data-k2-part="Field" role="group" aria-labelledby={label}>
+    <div class="k2-field" data-k2-part={part} data-setting={setting} role="group" aria-labelledby={label}>
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
       {content}
+      {was}
       {messageLine}
     </div>
   ) : named ? (
-    <div class="k2-field" data-k2-part="Field">
+    <div class="k2-field" data-k2-part={part} data-setting={setting}>
       {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/useKeyWithClickEvents: a pointer shortcut like a native label's; the control it names is the keyboard target. A <label for> would press the button and open its list. */}
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
       {content}
+      {was}
       {messageLine}
     </div>
   ) : (
-    <div class="k2-field" data-k2-part="Field">
+    <div class="k2-field" data-k2-part={part} data-setting={setting}>
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
       {content}
+      {was}
       {messageLine}
     </div>
   );

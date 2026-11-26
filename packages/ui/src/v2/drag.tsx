@@ -110,14 +110,21 @@ export const useDragMove = (
   };
   const onto = createDragOnto({
     targets: () => scoped().flatMap((other) => other.targets()),
-    targetElements: () => scoped().flatMap((other) => [...other.elements]),
+    // each list's elements count only for that list's own targets: an entry that is no folder there never takes a drop,
+    // also when its key is a folder in another list of the scope
+    targetElements: () =>
+      scoped().flatMap((other) => {
+        const own = new Set(other.targets().map((target) => target.id));
+        return [...other.elements].filter(([, id]) => own.has(id));
+      }),
     itemLabel: (key) => {
       const keys = carried(key);
       return keys.length > 1 ? t().entries({ count: keys.length }) : (drag()?.label(key) ?? key);
     },
     accepts: (key, target) => takes(carried(key), target),
     onLift: (key) => {
-      lifted = selectionOf(key);
+      // a copy: the app may change its selection array in place while the drag is under way
+      lifted = [...selectionOf(key)];
     },
     onDrop: (key, target) => drag()?.onDrop?.(carried(key), target),
     touch: false,

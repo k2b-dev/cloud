@@ -14,15 +14,19 @@ import {
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
+import { useTileGrid } from "./behavior/tiles";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
+import { MarkCheck } from "./controls";
+import { type DragMove, useDragMove } from "./drag";
 import { linkOr } from "./link";
-import { custom, Icon } from "./marks";
+import { Avatar, Chip, custom, Icon, Mark, Spark, type SparkProps } from "./marks";
+import { Menu, type MenuEntry } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
-import { PictureTiles, type PictureTilesProps } from "./picture-tiles";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
-import type { Action, Width } from "./types";
+import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -585,6 +589,8 @@ export type CellProps = {
   meta?: JSX.Element;
   /** The cell leads to this page: a chevron at its end. */
   href?: string;
+  /** A short history beside the value, such as orders per day this week (`Spark`). */
+  trend?: SparkProps;
 };
 
 /** Two to four equal cells side by side with a line between them; one under the other on the phone. */
@@ -614,7 +620,10 @@ Cells.Cell = (props: CellProps) => {
       <Show when={props.href} fallback={<span />}>
         <i class="ti ti-chevron-right k2-icon k2-cell-go" aria-hidden="true" />
       </Show>
-      <span class="k2-cell-value">{props.value}</span>
+      <span class="k2-cell-value">
+        {props.value}
+        <Show when={props.trend}>{(trend) => <Spark {...trend()} />}</Show>
+      </span>
       <Show when={meta() !== undefined}>
         <span class="k2-cell-meta">{meta()}</span>
       </Show>
@@ -624,59 +633,344 @@ Cells.Cell = (props: CellProps) => {
 
 // ── Tiles ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
+/** A figure on a card, such as "6 Tabellen" or a state such as "8 knapp". */
+export type TileStat = {
+  /** A Tabler icon before the words. */
+  icon?: string;
+  /** The figure in words, such as "6 Tabellen". */
+  label: string;
+  /** A state: its colour, with the words (never a colour alone). */
+  status?: Status;
+  /** "Waits for you", in the blue of selection, such as "3 Anträge". */
+  yours?: boolean;
+};
+
 export type Tile = {
   /** A Tabler icon for the kind of thing, such as `file-type-pdf`. */
   icon: string;
   /** The name, such as a file name. */
   title: string;
-  /** A quiet line under the name, such as the size. */
+  /** A quiet line under the name, such as the size or a description. */
   meta?: string;
-  /** The tile opens this page or file. */
+  /** The tile opens this page or file … */
   href?: string;
+  /** … in place on a plain click (see `OnNavigate`). */
+  onNavigate?: OnNavigate;
+  /** The data colour of the thing: its symbol becomes its mark on a tint of this colour. */
+  color?: string;
+  /** Cards only: figures and states under the name, such as tables, forms and "8 knapp". */
+  stats?: readonly TileStat[];
+  /** Cards only: the people at the foot, such as who changed it last (`Avatar.Stack`). */
+  people?: readonly Person[];
+  /** Cards only: quiet words at the end of the foot, such as "Felix · vor 2 Min". */
+  foot?: string;
+  /** Cards only: a short history at the top end, in the thing's colour (`Spark`). */
+  trend?: SparkProps;
+  /** Media only: the picture of the thing, such as a photo or the first page of a PDF; its symbol stands without one. */
+  image?: string;
+  /** Media only: the type on the picture's corner, such as `PDF`, or a video's length. */
+  kind?: string;
+  /** Media only: a quiet symbol at the end of the second line with its name, such as the sharing state. */
+  sign?: { icon: string; label: string };
+  /** The stable key of the tile, which a selection names; its `href` or title when not set. */
+  key?: string;
+  /**
+   * Media only: the deeds of the thing, such as "Verschieben nach …", "Umbenennen", "Löschen": a "…" on the picture
+   * under the pointer, a right-click, Shift+F10 or the menu key. It is the way to move a tile without dragging.
+   */
+  menu?: readonly MenuEntry[];
 };
 
-type PlainTilesProps = {
+/** The last card, which makes a new thing: a dashed frame, its name, and optional quick choices such as templates. */
+export type TileCreate = {
+  /** What it makes, such as "Neue Base". */
+  title: string;
+  /** A quiet line, such as "Leer beginnen oder aus einer Vorlage". */
+  meta?: string;
+  /** The page that makes it … */
+  href?: string;
+  /** … or the deed. */
+  onClick?: () => void;
+  /** Quick choices as round chips, such as the templates "CRM" and "Lager". */
+  choices?: readonly Action[];
+};
+
+/** Like things side by side, such as attachments. Each is pressed, so each is round; never nested. */
+export type TilesProps = {
   /** The tiles, in order. */
   items: readonly Tile[];
+  /**
+   * `card`: each thing a card in a grid (at least 240 px a card), with its mark, figures, people and a short history,
+   * such as the bases of Grids or the projects of a team. Without it: small tiles in one wrapping line (attachments).
+   */
+  variant?: "card" | "media";
+  /** Cards only: the last card makes a new thing. */
+  create?: TileCreate;
+  /**
+   * Media only: the tiles stand in a selection (pair it with `StatusRow selection`). Each tile has a box on its
+   * picture, named by its title; it shows under the pointer, with the focus, on touch, and on every tile while one is
+   * selected. A selected tile is tinted blue with a line inside its edge.
+   */
+  select?: { selected: readonly string[]; onChange: (key: string, selected: boolean) => void };
+  /**
+   * Media only: tiles drag onto folders, and folders among them take tiles, rows and files of the same scope (see
+   * `DragMove`). Give each tile a `menu` with "Verschieben nach …" for keys and touch.
+   */
+  drag?: DragMove;
   /** One deed after the tiles, such as "Alle herunterladen". */
   more?: Action;
   /** A name for the tiles, for assistive technology. */
   label?: string;
-  pictures?: undefined;
 };
 
-/**
- * Like things side by side, such as attachments. Each is pressed, so each is round; never nested. With `pictures`, tiles
- * with a picture box in a grid (see `PictureTilesProps`).
- */
-export type TilesProps = PlainTilesProps | PictureTilesProps;
-
-export const Tiles = (props: TilesProps) => {
-  const pictures = () => (props.pictures === undefined ? undefined : props);
-  return (
-    <Show when={pictures()} fallback={<PlainTiles items={props.items} more={props.more} label={props.label} />}>
-      {(given) => <PictureTiles {...given()} />}
+const TileName = (props: { tile: Tile }) => (
+  <span class="k2-tile-name">
+    <span class="k2-tile-title">
+      <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
+        {props.tile.title}
+      </RowOpen>
+    </span>
+    <Show when={props.tile.meta}>
+      <span class="k2-tile-meta">{props.tile.meta}</span>
     </Show>
+  </span>
+);
+
+const TileCard = (props: { tile: Tile }) => (
+  <div
+    class="k2-tile"
+    role="listitem"
+    data-open={props.tile.href !== undefined ? "" : undefined}
+    style={custom({ "--k2-c": props.tile.color })}
+  >
+    <span class="k2-tile-top">
+      <Mark icon={props.tile.icon} color={props.tile.color} />
+      <TileName tile={props.tile} />
+      <Show when={props.tile.trend}>{(trend) => <Spark {...trend()} />}</Show>
+    </span>
+    <Show when={props.tile.stats?.length}>
+      <span class="k2-tile-stats">
+        <For each={props.tile.stats}>
+          {(stat) => (
+            <span class="k2-tile-stat" data-status={stat.status} data-yours={stat.yours ? "" : undefined}>
+              <Show when={stat.icon}>{(name) => <Icon name={name()} />}</Show>
+              {stat.label}
+            </span>
+          )}
+        </For>
+      </span>
+    </Show>
+    <Show when={props.tile.people?.length || props.tile.foot}>
+      <span class="k2-tile-foot">
+        <Show when={props.tile.people?.length}>
+          <Avatar.Stack people={props.tile.people ?? []} />
+        </Show>
+        <Show when={props.tile.foot}>
+          <span class="k2-tile-foot-text">{props.tile.foot}</span>
+        </Show>
+      </span>
+    </Show>
+  </div>
+);
+
+const TileMake = (props: { create: TileCreate }) => (
+  <div class="k2-tile" role="listitem" data-create="" data-open={props.create.href !== undefined || props.create.onClick ? "" : undefined}>
+    <span class="k2-tile-top">
+      <Mark icon="plus" />
+      <span class="k2-tile-name">
+        <span class="k2-tile-title">
+          <RowOpen href={props.create.href} onOpen={props.create.onClick}>
+            {props.create.title}
+          </RowOpen>
+        </span>
+        <Show when={props.create.meta}>
+          <span class="k2-tile-meta">{props.create.meta}</span>
+        </Show>
+      </span>
+    </span>
+    <Show when={props.create.choices?.length}>
+      <span class="k2-tile-choices">
+        <For each={props.create.choices}>
+          {(choice) => (
+            <Chip href={choice.href} onNavigate={choice.onNavigate} onClick={choice.onClick} icon={choice.icon}>
+              {choice.label}
+            </Chip>
+          )}
+        </For>
+      </span>
+    </Show>
+  </div>
+);
+
+const keyOf = (tile: Tile) => tile.key ?? tile.href ?? tile.title;
+
+/** Keys and presses on the "…" stay its own; they must not reach the tile (Enter would open it). */
+const stopHere = (event: Event) => event.stopPropagation();
+
+/** A Shift+F10 or the menu key on a tile opens its deeds, as a right-click does. */
+const asksForMenu = (event: KeyboardEvent) => event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+
+const openMenuOf = (tile: Element) => tile.querySelector<HTMLElement>(":scope > .k2-tile-media > .k2-tile-menu > button")?.click();
+
+/**
+ * The "…" of a media tile: a shortcut for the pointer only, out of the tab order and hidden from assistive technology,
+ * which opens the same menu with Shift+F10 on the tile. The focus a closing menu gives back goes to the tile.
+ */
+const TileMenu = (props: { label: string; items: readonly MenuEntry[] }) => {
+  let span: HTMLSpanElement | undefined;
+  onMount(() => {
+    const button = span?.querySelector("button");
+    button?.setAttribute("tabindex", "-1");
+    button?.setAttribute("aria-hidden", "true");
+  });
+  const back = (event: FocusEvent) => {
+    if (event.target instanceof HTMLElement && event.target.matches("button[aria-hidden]"))
+      event.target.closest<HTMLElement>(".k2-tile")?.focus();
+  };
+  return (
+    <span ref={span} class="k2-tile-menu" on:keydown={stopHere} on:click={stopHere} on:pointerdown={stopHere} on:focusin={back}>
+      <Menu label={props.label} items={props.items} />
+    </span>
   );
 };
 
-const PlainTiles = (props: PlainTilesProps) => (
-  <div class="k2-tiles" data-k2-part="Tiles" role="list" aria-label={props.label}>
-    <For each={props.items}>
-      {(tile) => (
-        <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
-          <Icon name={tile.icon} />
-          <span>
-            <span class="k2-tile-title">
-              <RowOpen href={tile.href}>{tile.title}</RowOpen>
+/**
+ * A photo, a page or a video as a tile in a grid of at least 160 px: its picture 4:3 above its name and a quiet line
+ * with its owner, its meta and a sign. The whole tile opens its `href`; the box on the picture selects it. The grid is
+ * one Tab stop: arrows go to the nearest tile, Space selects, Enter opens, Shift+F10 opens its deeds.
+ */
+const TileMedia = (props: {
+  tile: Tile;
+  select?: TilesProps["select"];
+  grid: ReturnType<typeof useTileGrid>;
+  drag: ReturnType<ReturnType<typeof useDragMove>["entry"]>;
+}) => {
+  const overlay = useOverlayMessages();
+  const title = createUniqueId();
+  const selected = () => props.select?.selected.includes(keyOf(props.tile)) ?? false;
+  const owner = () => props.tile.people?.[0];
+  return (
+    <props.grid.Item
+      value={keyOf(props.tile)}
+      {...props.drag.attrs}
+      ref={props.drag.ref}
+      class="k2-tile"
+      role="listitem"
+      aria-labelledby={title}
+      data-open={props.tile.href !== undefined ? "" : undefined}
+      data-selected={selected() ? "" : undefined}
+      onContextMenu={(event: MouseEvent) => {
+        if (!props.tile.menu || !(event.currentTarget instanceof Element)) return;
+        event.preventDefault();
+        openMenuOf(event.currentTarget);
+      }}
+      onKeyDown={(event: KeyboardEvent) => {
+        if (event.target !== event.currentTarget || !(event.currentTarget instanceof HTMLElement)) return;
+        if (props.tile.menu && asksForMenu(event)) {
+          event.preventDefault();
+          openMenuOf(event.currentTarget);
+        } else if (event.key === " " && props.select) {
+          event.preventDefault();
+          props.select.onChange(keyOf(props.tile), !selected());
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.querySelector<HTMLElement>(".k2-row-open")?.click();
+        }
+      }}
+    >
+      <span class="k2-tile-media">
+        <Mark icon={props.tile.icon} color={props.tile.color} image={props.tile.image} kind={props.tile.kind} />
+        <Show when={props.select}>
+          {(select) => (
+            <span class="k2-tile-check">
+              {/* the tile takes the focus and Space selects it; the box is for the pointer */}
+              <MarkCheck
+                labelledBy={title}
+                checked={selected()}
+                onChange={(on) => select().onChange(keyOf(props.tile), on)}
+                focusable={false}
+              />
             </span>
-            <Show when={tile.meta}>
-              <span class="k2-t-meta">{tile.meta}</span>
-            </Show>
-          </span>
-        </div>
-      )}
-    </For>
+          )}
+        </Show>
+        <Show when={props.tile.menu}>{(menu) => <TileMenu label={overlay().actionsFor({ name: props.tile.title })} items={menu()} />}</Show>
+      </span>
+      <span class="k2-tile-title" id={title}>
+        <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate} rowFocus>
+          {props.tile.title}
+        </RowOpen>
+      </span>
+      <span class="k2-tile-line">
+        <Show when={owner()}>{(person) => <Avatar {...person()} />}</Show>
+        <Show when={props.tile.meta}>
+          <span class="k2-tile-meta">{props.tile.meta}</span>
+        </Show>
+        <Show when={props.tile.sign}>{(sign) => <Icon name={sign().icon} label={sign().label} />}</Show>
+      </span>
+    </props.grid.Item>
+  );
+};
+
+/** Media tiles: one roving Tab stop over the grid (core's spatial move), the drag of the list and its zone. */
+const MediaTiles = (props: TilesProps) => {
+  const grid = useTileGrid(() => ({}));
+  const dragging = useDragMove(() => props.drag, {
+    targets: () => props.items.map(keyOf).filter((key) => props.drag?.target?.(key)),
+    selected: () => props.select?.selected ?? [],
+  });
+  return (
+    <>
+      <grid.Root
+        class="k2-tiles"
+        data-k2-part="Tiles"
+        data-variant="media"
+        data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
+        role="list"
+        aria-label={props.label}
+      >
+        <For each={props.items}>
+          {(tile) => <TileMedia tile={tile} select={props.select} grid={grid} drag={dragging.entry(keyOf(tile))} />}
+        </For>
+        <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
+      </grid.Root>
+      {dragging.zone()}
+    </>
+  );
+};
+
+export const Tiles = (props: TilesProps) => (
+  <Show when={props.variant === "media"} fallback={<OtherTiles {...props} />}>
+    <MediaTiles {...props} />
+  </Show>
+);
+
+const OtherTiles = (props: TilesProps) => (
+  <div
+    class="k2-tiles"
+    data-k2-part="Tiles"
+    data-variant={props.variant}
+    data-selecting={props.select && props.select.selected.length > 0 ? "" : undefined}
+    role="list"
+    aria-label={props.label}
+  >
+    <Show
+      when={props.variant === "card"}
+      fallback={
+        <For each={props.variant === undefined ? props.items : []}>
+          {(tile) => (
+            <div class="k2-tile" role="listitem" data-open={tile.href !== undefined ? "" : undefined}>
+              <Show when={tile.color} fallback={<Icon name={tile.icon} />}>
+                {(color) => <Mark icon={tile.icon} color={color()} />}
+              </Show>
+              <TileName tile={tile} />
+            </div>
+          )}
+        </For>
+      }
+    >
+      <For each={props.items}>{(tile) => <TileCard tile={tile} />}</For>
+      <Show when={props.create}>{(create) => <TileMake create={create()} />}</Show>
+    </Show>
     <Show when={props.more}>{(more) => <ActionButton action={more()} variant="text" />}</Show>
   </div>
 );
@@ -686,8 +980,13 @@ const PlainTiles = (props: PlainTilesProps) => (
 export type CanvasProps = {
   /** What the drawing shows, for assistive technology. */
   label: string;
-  /** The height of the drawing in px; the width comes from its place. */
-  height?: number;
+  /**
+   * The height of the drawing in px; the width comes from its place. `"fill"`: the drawing is the whole pane (an
+   * editor, a frame of another page, a map that is the page). It stands directly in its `Pane` and takes the height
+   * the pane has left under what stands above it, from the first render on, so nothing is measured and nothing moves;
+   * it scrolls itself, and below 240 px the pane scrolls instead.
+   */
+  height?: number | "fill";
   /** The drawing: an SVG, a map, a chart of `@k2b/ui`; inside it, CSS is free. */
   children: JSX.Element;
 };
@@ -705,7 +1004,8 @@ export const Canvas = (props: CanvasProps) => (
     role="group"
     aria-label={props.label}
     data-height={props.height !== undefined ? "" : undefined}
-    style={custom({ "--k2-canvas-h": props.height !== undefined ? `${props.height}px` : undefined })}
+    data-fill={props.height === "fill" ? "" : undefined}
+    style={custom({ "--k2-canvas-h": typeof props.height === "number" ? `${props.height}px` : undefined })}
   >
     {props.children}
   </div>

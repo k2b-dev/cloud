@@ -28,7 +28,8 @@ afterAll(async () => {
 });
 
 const withPage = async (run: (page: Page) => Promise<void>) => {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  // tall enough that the media grids, the table and its last rows all stand in view
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1400 } });
   page.setDefaultTimeout(3000);
   const errors = pageErrors(page);
   try {
@@ -45,8 +46,8 @@ const withPage = async (run: (page: Page) => Promise<void>) => {
   }
 };
 
-const tiles = (page: Page) => page.getByRole("listbox", { name: "Dateien als Kacheln" });
-const tile = (page: Page, name: string) => tiles(page).getByRole("option", { name, exact: true });
+const tiles = (page: Page) => page.getByRole("list", { name: "Dateien als Kacheln" });
+const tile = (page: Page, name: string) => tiles(page).getByRole("listitem", { name, exact: true });
 const folder = (page: Page, name: string) => page.getByRole("treeitem", { name, exact: true }).locator(":scope > .k2-nt-row");
 const tableRow = (page: Page, name: string) =>
   page.getByRole("table", { name: "Dateien als Tabelle" }).locator("tbody tr", { hasText: name });
@@ -68,53 +69,32 @@ const dragTo = async (page: Page, from: Locator, to: Locator, rest = 0) => {
 const frames = (page: Page) =>
   page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
 
-test("server markup: picture tiles stand in a grid of their size, each picture over its symbol", () => {
-  expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-pictures="medium"/);
-  expect(markup).toMatch(/<span class="k2-tile-pic"[^>]*><i[^>]*ti-photo[^>]*><\/i><img[^>]*loading="lazy"/);
-});
-
-test("tiles: the picture box keeps one shape with a picture, a broken one and none, in every size", async () => {
-  await withPage(async (page) => {
-    for (const size of ["small", "medium", "large"] as const) {
-      await page.evaluate((next) => window.__size?.(next), size);
-      await settled(page);
-      const boxes = await tiles(page)
-        .locator(".k2-tile-pic")
-        .evaluateAll((pics) =>
-          pics.map((pic) => pic.getBoundingClientRect()).map((rect) => ({ w: Math.round(rect.width), h: Math.round(rect.height) })),
-        );
-      const first = boxes[0]!;
-      for (const box of boxes) expect(box).toEqual(first);
-      expect(first.h).toBe(Math.round((first.w * 3) / 4));
-      expect(first.w).toBeGreaterThanOrEqual({ small: 128, medium: 176, large: 248 }[size]);
-    }
-    // the broken picture draws nothing: its symbol shows through
-    const broken = tile(page, "Beschädigt.png").locator("img");
-    await page.waitForFunction(() => [...document.images].every((image) => image.complete));
-    expect(await broken.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBe(0);
-    // it leaves, so no broken-picture mark stands over the symbol
-    await page.waitForFunction(() => document.querySelector<HTMLImageElement>('img[src="data:image/png;base64,AAAA"]')?.hidden === true);
-    expect(await tile(page, "Beschädigt.png").locator(".k2-tile-pic > .ti").isVisible()).toBe(true);
-    // a long name is cut, the tile keeps its width
-    const title = tile(page, "Werkstatt mit einem sehr langen Dateinamen, der nicht passt.jpg").locator(".k2-tile-title");
-    expect(await title.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
-  });
+test("server markup: media tiles send their grid with one Tab stop and a '…' per tile out of the tab order", () => {
+  expect(markup).toMatch(/class="k2-tiles\s*"[^>]*data-variant="media"/);
+  const grid = markup.slice(markup.indexOf('aria-label="Dateien als Kacheln"'), markup.indexOf('aria-label="Verknüpfungen"'));
+  expect(grid.match(/class="k2-tile\s*"[^>]*tabindex="0"/g)?.length).toBe(1);
+  expect(markup).toContain('class="k2-tile-menu"');
 });
 
 test("tiles: one Tab stop, arrows follow the grid, Space selects, Enter opens", async () => {
   await withPage(async (page) => {
     await tile(page, "Belege").focus();
     await page.keyboard.press("ArrowRight");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Fotos");
+    await page.waitForFunction(() => document.activeElement?.querySelector(".k2-tile-title")?.textContent === "Fotos");
     await page.keyboard.press("Space");
-    expect(await tile(page, "Fotos").getAttribute("aria-selected")).toBe("true");
+    await page.waitForFunction(() =>
+      [...document.querySelectorAll(".k2-tile[data-selected]")].some((tile) => tile.textContent?.includes("Fotos")),
+    );
     await page.keyboard.press("End");
-    expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Angebot.pdf");
+    await page.waitForFunction(() => document.activeElement?.querySelector(".k2-tile-title")?.textContent === "Angebot.pdf");
     await page.keyboard.press("Enter");
-    expect(await tile(page, "Angebot.pdf").getAttribute("aria-current")).toBe("true");
-    // the tiles are one stop: Tab leaves them, past their boxes and names
+    await page.waitForFunction(() => location.hash === "#angebot");
+    // the tiles are one stop: Tab leaves them, past their boxes, names and "…"
+    await tile(page, "Angebot.pdf").focus();
     await page.keyboard.press("Tab");
-    expect(await page.evaluate(() => document.activeElement?.closest('[role="listbox"]'))).toBeNull();
+    expect(await page.evaluate(() => document.activeElement?.closest(".k2-tiles")?.getAttribute("aria-label") ?? null)).not.toBe(
+      "Dateien als Kacheln",
+    );
     expect(await tiles(page).locator('[tabindex="0"]').count()).toBe(1);
   });
 });
@@ -320,5 +300,28 @@ test("files: a folder from the computer is refused visibly; nothing is handed on
     });
     expect(result).toBe("refused");
     expect(await page.evaluate(() => window.__files)).toBeUndefined();
+  });
+});
+
+// ── Delta review (Codex, 26.11.) ─────────────────────────────────────────────────────────────────────────────────
+
+test("drag: an entry that is no folder in its list never takes a drop, also when its key is a folder elsewhere", async () => {
+  await withPage(async (page) => {
+    const shortcut = page.getByRole("list", { name: "Verknüpfungen" }).getByRole("listitem").first();
+    await dragTo(page, tile(page, "Angebot.pdf"), shortcut);
+    expect(await shortcut.getAttribute("data-drop-over")).toBeNull();
+    expect(await folder(page, "Projekte").getAttribute("data-drop-over")).toBeNull();
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toBeUndefined();
+  });
+});
+
+test("drag: a selection the app changes in place during the drag does not move more", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__select?.(["angebot"]));
+    await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Projekte"));
+    await page.evaluate(() => window.__growSelection?.("messe"));
+    await page.mouse.up();
+    expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>projekte"]);
   });
 });

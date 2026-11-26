@@ -3,8 +3,8 @@ import { type DragMove, Nav, type NavTreeNode, Pane, Table, Tiles, Workspace } f
 
 // Files with invented data: the folder tree in the sidebar, the open folder's files as picture tiles and as a table.
 // Every list shares the drag scope "files": a tile or a row is let go over a folder of the tree, the table or the
-// tiles. Moves land in `window.__moves`, files from the computer in `window.__files`; `window.__size(…)` switches
-// the tile size. Pictures are small inline SVGs; one address is broken, one tile has none.
+// tiles. Moves land in `window.__moves`, files from the computer in `window.__files`; the
+// tiles are media tiles. Pictures are small inline SVGs; one address is broken, one tile has none.
 // - "Gesperrt.pdf" cannot be moved (a selection with it moves nothing);
 // - `window.__select(keys)` changes the selection, `window.__refuseAll = true` makes every folder refuse;
 // - each tile's menu ("Verschieben nach …", "Löschen") lands its deed in `window.__deeds`;
@@ -14,10 +14,10 @@ declare global {
   interface Window {
     __moves?: string[];
     __files?: string[];
-    __size?: (size: "small" | "medium" | "large") => void;
     __select?: (keys: readonly string[]) => void;
     __refuseAll?: boolean;
     __deeds?: string[];
+    __growSelection?: (key: string) => void;
   }
 }
 
@@ -55,12 +55,12 @@ const tree: NavTreeNode[] = [
 
 export function Demo() {
   const [entries, setEntries] = createSignal(start);
-  const [size, setSize] = createSignal<"small" | "medium" | "large">("medium");
   const [selected, setSelected] = createSignal<readonly string[]>([]);
   const [current, setCurrent] = createSignal<string>();
   if (typeof window !== "undefined") {
-    window.__size = setSize;
     window.__select = setSelected;
+    // the app changes its selection array in place while a drag is under way
+    window.__growSelection = (key) => (selected() as string[]).push(key);
   }
   const did = (deed: string) => () => {
     window.__deeds = [...(window.__deeds ?? []), deed];
@@ -91,8 +91,8 @@ export function Demo() {
     <Workspace sidebar={<Nav title="Dateien" icon="folder" groups={[{ label: "Ordner", tree: { label: "Ordner", items: tree, drag } }]} />}>
       <Pane label="Dateien">
         <Tiles
+          variant="media"
           label="Dateien als Kacheln"
-          pictures={size()}
           items={entries().map((entry) => ({
             key: entry.key,
             icon: entry.folder ? "folder" : entry.image ? "photo" : "file-type-pdf",
@@ -100,20 +100,29 @@ export function Demo() {
             meta: entry.size,
             image: entry.image,
             color: entry.folder ? "#ca8a04" : entry.image ? "#0891b2" : "#dc2626",
-            onOpen: () => setCurrent(entry.key),
+            href: `#${entry.key}`,
             menu: [
               { label: "Verschieben nach …", icon: "folder-symlink", onClick: did(`move:${entry.key}`) },
               { label: "Löschen", icon: "trash", danger: true, onClick: did(`delete:${entry.key}`) },
             ],
           }))}
-          current={current()}
-          select={{ selected: selected(), onChange: setSelected }}
+          select={{
+            selected: selected(),
+            onChange: (key, on) => setSelected(on ? [...selected(), key] : selected().filter((other) => other !== key)),
+          }}
           drag={drag}
         />
         <Tiles
+          variant="media"
+          label="Verknüpfungen"
+          items={[{ key: "projekte", icon: "link", title: "Projekte (Verknüpfung)", color: "#ca8a04", href: "#verknuepfung" }]}
+          // same scope, but here "projekte" is a link, not a folder: it never takes a drop
+          drag={{ ...drag, target: () => false }}
+        />
+        <Tiles
+          variant="media"
           label="Andere Ablage"
-          pictures="small"
-          items={[{ key: "belege", icon: "folder", title: "Belege (andere Ablage)", color: "#ca8a04", onOpen: () => {} }]}
+          items={[{ key: "belege", icon: "folder", title: "Belege (andere Ablage)", color: "#ca8a04", href: "#andere" }]}
           drag={{ scope: "other", label: () => "Belege (andere Ablage)", target: () => true, onDrop: did("other-drop") }}
         />
         <Table
