@@ -309,8 +309,6 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         snapshotDay={state.snapshotDay}
         dateConfig={props.dateConfig}
       />
-      {/* k2b-ui gap: below 768 px a split gives its panes no height (flex: none), so a drawing that fills its pane
-          (board, calendar) falls back to 240 px on the phone; reported to the coordinator, the fix belongs to the split. */}
       <Pane.Split>
         <Show when={view === "list" || view === "table"}>
           <ItemsPane
