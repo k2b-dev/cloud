@@ -487,8 +487,11 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                     inputRef?.select();
                   }}
                 >
-                  <Show when={option.color} fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}>
-                    {(color) => <span class="k2b-choice-dot" style={{ "background-color": cssColor(color()) }} aria-hidden="true" />}
+                  <Show
+                    when={cssColor(option.color)}
+                    fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
+                  >
+                    {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
                   </Show>
                   <span>
                     <strong>{option.label}</strong>

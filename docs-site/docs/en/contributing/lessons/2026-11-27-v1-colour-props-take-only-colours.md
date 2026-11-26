@@ -1,6 +1,0 @@
-### v1 parts wrote colour props into styles unchecked
-
-- **What happened:** About 15 v1 parts of `@k2b/ui` (selects, dropdown, filter chip, colour inputs, navigation, calendar, notice row, dashboard, chat decision, detail presence, sidebar switcher) wrote a colour prop into a style exactly as they got it. Today every caller passes a hex colour, a colour name, `rgb()` or a custom property, so nothing showed. A value with a `;` would have added declarations to the style.
-- **Root cause:** The parts trusted their callers. A check lived in some apps' contracts, not in the library that writes the style.
-- **Error class:** A value from data goes into a style without a check in the layer that writes it.
-- **Guard:** `cssColor` in `packages/ui/src/internal/color.ts` accepts a hex colour, a colour name, a colour function of plain numbers or `var(--name)`. Every v1 part above passes its colour through it. Anything else is dropped, on the server and in the browser alike. `packages/ui/src/internal/colour-values.render.test.tsx` renders `NoticeRow`, `DashboardSection`, `DetailPresence`, `ColorChoices` and `Chat.Decision` on the server with values that are no colour, and expects no declaration of their own in the markup. v2 parts check their colours in `custom()`.

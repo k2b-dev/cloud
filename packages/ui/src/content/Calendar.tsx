@@ -1279,7 +1279,7 @@ const MonthPickerView = (props: {
                         {(event) => (
                           <span
                             class="k2b-calendar-dot"
-                            data-color={event.colorHex ? undefined : event.color}
+                            data-color={cssColor(event.colorHex) ? undefined : event.color}
                             style={cssColor(event.colorHex) ? { "background-color": cssColor(event.colorHex) } : undefined}
                           />
                         )}
@@ -3496,7 +3496,7 @@ const YearView = (props: { owner: CalendarOwner; date: Date; now: Date; events: 
                       {(event) => (
                         <span
                           class="k2b-calendar-year__indicator"
-                          data-color={event().colorHex ? undefined : event().color}
+                          data-color={cssColor(event().colorHex) ? undefined : event().color}
                           data-today={day.isToday ? "true" : undefined}
                           style={
                             cssColor(event().colorHex)

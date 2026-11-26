@@ -8,11 +8,17 @@ import { registerSsrTestPlugin } from "../../test/ssr-test-plugin";
 import { cssColor } from "./color";
 
 // A colour prop takes a colour and nothing else: the server writes it into a style attribute, and a value from data
-// must never add a declaration of its own there. The same check runs in the browser.
+// must never add a declaration of its own there. The same check runs in the browser. (FloatingWindow draws only in the
+// browser, where a value that is no colour is dropped by the same check; it has no server markup to test here.)
 const root = mkdtempSync(resolve(tmpdir(), "k2b-ui-colour-values-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Chat, ColorChoices, DashboardSection, DetailPresence, NoticeRow } = await import("../index");
+const { Select } = await import("../inputs/Select");
+const { default: Navigation } = await import("../layout/Navigation");
+const { createNavigation } = await import("../layout/navigation-model");
+const { default: AppWorkspace } = await import("../layout/AppWorkspace");
+const { default: Calendar } = await import("../content/Calendar");
 
 const unsafe = [
   "red;position:fixed;inset:0;background:url(https://example.org/x.png)",
@@ -27,6 +33,9 @@ const injected = /position:\s*fixed|display:\s*none|url\(|color:\s*transparent|<
 
 test("a colour is a hex colour, a colour name, a colour function of plain numbers or a custom property", () => {
   for (const color of [
+    // the tint of a section symbol in the code page tree (core), mixed in CSS
+    "color-mix(in srgb, var(--color-blue-600) 78%, var(--k2b-text))",
+    "light-dark(#ffffff, #000000)",
     "#fff",
     "#0f766e",
     "#7c3aed80",
@@ -37,7 +46,7 @@ test("a colour is a hex colour, a colour name, a colour function of plain number
     "oklch(0.62 0.19 264 / 50%)",
   ])
     expect(cssColor(color)).toBe(color);
-  for (const color of [...unsafe, "blue red", "var(--a, red)", "expression(alert(1))", "", undefined])
+  for (const color of [...unsafe, "expression(alert(1))", "color-mix(in srgb, url(x) 5%, red)", "(1)", "rgb(1, 2, 3", "", undefined])
     expect(cssColor(color)).toBeUndefined();
 });
 
@@ -50,6 +59,48 @@ const parts: [string, (color: string) => JSX.Element][] = [
     "ColorChoices",
     (color) => createComponent(ColorChoices, { label: "Farbe", value: null, options: [{ value: "a", label: "Eigene", color }] }),
   ],
+  [
+    "DashboardSection (color-mix)",
+    (color) =>
+      createComponent(DashboardSection, {
+        title: "Seiten",
+        icon: "ti ti-file",
+        iconColor: `color-mix(in srgb, ${color} 78%, var(--k2b-text))`,
+        children: "",
+      }),
+  ],
+  ["Select", (color) => createComponent(Select, { label: "Status", value: "a", options: [{ value: "a", label: "Offen", color }] })],
+  [
+    "Navigation",
+    (color) =>
+      createComponent(Navigation, {
+        label: "Spaces",
+        navigation: createNavigation({ items: () => [{ id: "a", label: "Lager", href: "/a", color }] }),
+      }),
+  ],
+  [
+    "SidebarSwitcher",
+    (color) =>
+      createComponent(AppWorkspace.SidebarSwitcher, {
+        currentId: "a",
+        label: "Lager",
+        icon: "ti-box",
+        color,
+        switchLabel: "Bereich wechseln",
+        options: [{ id: "a", label: "Lager", href: "#a", color }],
+      }),
+  ],
+  ...(["week", "month"] as const).map((view): [string, (color: string) => JSX.Element] => [
+    `Calendar ${view}`,
+    (color) =>
+      createComponent(Calendar, {
+        date: "2026-07-15T12:00:00Z",
+        view,
+        timeZone: "UTC",
+        events: [{ id: "r", title: "Review", start: "2026-07-15T09:00:00Z", end: "2026-07-15T10:00:00Z", colorHex: color }],
+      }),
+  ]),
+  ["Chat.Activity", (color) => createComponent(Chat.Activity, { icon: "ti ti-sparkles", accent: color, label: "Gustav denkt nach" })],
   [
     "Chat.Decision",
     (color) =>

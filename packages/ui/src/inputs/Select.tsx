@@ -294,10 +294,10 @@ export function Select(props: SelectProps): JSX.Element {
               }
             >
               <Show
-                when={selected()?.color}
+                when={cssColor(selected()?.color)}
                 fallback={<Show when={selected()?.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
               >
-                {(color) => <span class="k2b-choice-dot" style={{ "background-color": cssColor(color()) }} aria-hidden="true" />}
+                {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
               </Show>
             </Show>
             <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
@@ -425,10 +425,10 @@ export function Select(props: SelectProps): JSX.Element {
                       when={option.value === CLEAR_VALUE}
                       fallback={
                         <Show
-                          when={option.color}
+                          when={cssColor(option.color)}
                           fallback={<Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>}
                         >
-                          {(color) => <span class="k2b-choice-dot" style={{ "background-color": cssColor(color()) }} aria-hidden="true" />}
+                          {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
                         </Show>
                       }
                     >

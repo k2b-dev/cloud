@@ -93,7 +93,7 @@ export const CalendarEventDetail = (props: {
             <div
               class="k2b-calendar-detail"
               tabIndex={-1}
-              data-color={event.colorHex ? undefined : (event.color ?? "blue")}
+              data-color={cssColor(event.colorHex) ? undefined : (event.color ?? "blue")}
               style={cssColor(event.colorHex) ? { "--k2b-calendar-accent": cssColor(event.colorHex) } : undefined}
             >
               <header class="k2b-calendar-detail__head">

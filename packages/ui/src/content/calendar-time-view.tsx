@@ -115,7 +115,7 @@ const COLOR_TOKENS: Record<string, string> = {
   zinc: "#a1a1aa",
 };
 export const eventAccent = (event: Pick<CalendarEvent, "color" | "colorHex">): string =>
-  event.colorHex ?? COLOR_TOKENS[event.color ?? "blue"]!;
+  cssColor(event.colorHex) ?? COLOR_TOKENS[event.color ?? "blue"]!;
 
 /** Minimum minutes an overlap counts for a band, about the height of its title. */
 const LANE_MINUTES = 20;
@@ -582,7 +582,7 @@ export const createTimeView = (props: TimeViewProps) => {
     cancelGesture?.();
     cancelGesture = undefined;
     const length = Math.max(15, Math.round(item.minutes));
-    const color = item.colorHex ?? COLOR_TOKENS[item.color ?? "blue"]!;
+    const color = eventAccent(item);
     let token: HTMLElement | undefined;
     let spring: { element: Element; timer: number } | undefined;
     const target =

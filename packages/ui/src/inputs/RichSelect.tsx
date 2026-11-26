@@ -112,10 +112,10 @@ function RichSelectVisual(props: { item: RichSelectItem }): JSX.Element {
   return (
     <Switch>
       <Match when={props.item.visual}>{(visual) => <span class="k2b-rich-select__visual">{visual()()}</span>}</Match>
-      <Match when={props.item.color}>
+      <Match when={cssColor(props.item.color)}>
         {(color) => (
           <span class="k2b-rich-select__visual" aria-hidden="true">
-            <span class="k2b-rich-select__dot" style={{ "background-color": cssColor(color()) }} />
+            <span class="k2b-rich-select__dot" style={{ "background-color": color() }} />
           </span>
         )}
       </Match>

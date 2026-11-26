@@ -13,6 +13,7 @@ import {
 } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { cssColor } from "../internal/color";
 import { StepRowContent } from "../internal/step-row";
 import { Format } from "../intl/Format";
 import { useLocale } from "../intl/locale";
@@ -478,7 +479,10 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
     props.onOpenChange?.(next);
   };
   const tone = () => props.tone ?? "neutral";
-  const style = () => (props.accent ? { "--k2b-chat-activity-accent": props.accent } : undefined);
+  const style = () => {
+    const accent = cssColor(props.accent);
+    return accent ? { "--k2b-chat-activity-accent": accent } : undefined;
+  };
   const expandable = () => Boolean(props.renderBody || props.children);
   // A `Chat.Activity.Toggle` in the label registers while the label resolves, before the row picks its element, so the
   // server and the first browser frame agree on whether the whole row or only the toggle is the disclosure.
