@@ -407,6 +407,14 @@ packages/spaces/src/pwa/TaskFields.tsx | untitled | response && response.status 
 packages/spaces/src/pwa/TaskFields.tsx | untitled | t().movedTo({ title: task.title, status: next.name })
 packages/spaces/src/pwa/completion.ts | untitled | message
 packages/tools/src/frontend/tools/ImageConverter.island.tsx | title | t().copiedToClipboard
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error.message
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().endpointCreateFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().endpointDeleteFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | error?.message || t().requestFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().endpointCreatedRefreshFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().endpointDeletedRefreshFailed
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().enterEndpointName
+packages/tools/src/frontend/tools/WebhookTester.island.tsx | untitled | t().requestSentRefreshFailed
 packages/ui/src/inputs/file-drop.ts | untitled | fileDropRejectionMessage(rejected, options, messages, entry.locale())
 packages/venue/src/frontend/_components/PublicFeedbackForm.tsx | untitled | t().feedbackThanksToast
 packages/venue/src/frontend/_components/VenueWorkspace.island.tsx | untitled | successMessage

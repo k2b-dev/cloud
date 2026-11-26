@@ -1,8 +1,8 @@
 import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Canvas, Check, Choice, Field, Input, Pane, Section } from "@k2b/ui/v2";
+import { Band, Button, Canvas, Check, Choice, Field, Inline, Input, Progress, Section } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, Show } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { useToolCopy } from "../tool-copy";
 
 type PasswordMode = "random" | "memorable" | "pin";
@@ -37,6 +37,9 @@ export const passwordMessages = i18n.define({
       copied: "Copied",
       copyPassword: "Copy password",
       refreshPassword: "Refresh password",
+      strength: "Strength",
+      strengthLabel: ({ word, bits }: { word: string; bits: number }) => `${word} · ${bits} bit`,
+      strengthWord: ({ score }: { score: number }) => ["very weak", "weak", "fair", "strong", "very strong"][score] ?? "",
     },
     de: {
       passwordType: "Passworttyp",
@@ -65,6 +68,9 @@ export const passwordMessages = i18n.define({
       copied: "Kopiert",
       copyPassword: "Passwort kopieren",
       refreshPassword: "Passwort neu generieren",
+      strength: "Stärke",
+      strengthLabel: ({ word, bits }) => `${word} · ${bits} Bit`,
+      strengthWord: ({ score }) => ["sehr schwach", "schwach", "mittel", "stark", "sehr stark"][score] ?? "",
     },
   },
 });
@@ -120,6 +126,7 @@ export default function PasswordGenerator() {
         return pwdGen.random({ length: randomLength(), uppercase: randomUppercase(), numbers: randomNumbers(), symbols: randomSymbols() });
     }
   });
+  const strength = createMemo(() => pwdGen.strength(password()));
   const refresh = () => setNonce((value) => value + 1);
   const copyAction = { label: t().copyPassword, icon: "copy", onClick: () => void copy(password()) };
   return (
@@ -132,83 +139,110 @@ export default function PasswordGenerator() {
         </Button>
       }
     >
-      <Pane label={t().generatedPassword} scrollKey="tools-password">
-        <Section icon="key" title={t().generatedPassword} actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}>
-          {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
-          <Canvas label={t().generatedPassword} height={120}>
-            <div
-              style={{
-                display: "grid",
-                "place-items": "center",
-                height: "100%",
-                padding: "0 20px",
-                font: "600 28px/1.15 var(--k2-font-mono)",
-                "text-align": "center",
-                "overflow-wrap": "anywhere",
-                "user-select": "all",
-              }}
-            >
-              <span>
-                <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
-              </span>
-            </div>
-          </Canvas>
-        </Section>
-        <Band label={t().passwordType}>
-          <Field label={t().passwordType} hint={hint()}>
-            <Choice
-              name="password-mode"
-              value={mode()}
-              onChange={(value) => setMode(value as PasswordMode)}
-              options={[
-                { value: "random", label: t().modeRandom },
-                { value: "memorable", label: t().modeMemorable },
-                { value: "pin", label: t().modePin },
-              ]}
-            />
-          </Field>
-          <Show when={mode() === "random"}>
-            <Field label={t().characters} optional="8–64">
-              <Input
-                type="number"
-                min={8}
-                max={64}
-                value={String(randomLength())}
-                onInput={(value) => setRandomLength(within(value, 8, 64, 20))}
-              />
-            </Field>
-            <Check switch label={t().uppercase} checked={randomUppercase()} onChange={setRandomUppercase} />
-            <Check switch label={t().numbers} checked={randomNumbers()} onChange={setRandomNumbers} />
-            <Check switch label={t().symbols} checked={randomSymbols()} onChange={setRandomSymbols} />
-          </Show>
-          <Show when={mode() === "memorable"}>
-            <Field label={t().words} optional="3–8">
-              <Input
-                type="number"
-                min={3}
-                max={8}
-                value={String(memorableWords())}
-                onInput={(value) => setMemorableWords(within(value, 3, 8, 4))}
-              />
-            </Field>
-            <Check switch label={t().capitalizeFirstLetter} checked={memorableCapitalize()} onChange={setMemorableCapitalize} />
-            <Check switch label={t().useFullWords} checked={memorableFullWords()} onChange={setMemorableFullWords} />
-            <Check switch label={t().addNumber} checked={memorableNumber()} onChange={setMemorableNumber} />
-            <Check switch label={t().addSymbol} checked={memorableSymbol()} onChange={setMemorableSymbol} />
-          </Show>
-          <Show when={mode() === "pin"}>
-            <Field label={t().digits} optional="4–12">
-              <Input
-                type="number"
-                min={4}
-                max={12}
-                value={String(pinLength())}
-                onInput={(value) => setPinLength(within(value, 4, 12, 6))}
-              />
-            </Field>
-          </Show>
-        </Band>
-      </Pane>
+      <ToolPanes
+        kind="generator"
+        scrollKey="tools-password"
+        result={{
+          label: t().generatedPassword,
+          children: (
+            <Section icon="key" title={t().generatedPassword} actions={[{ label: t().refreshPassword, icon: "refresh", onClick: refresh }]}>
+              {/* The password is drawn: large, sign by sign, digits and symbols in their own colour, wrapped anywhere. */}
+              <Canvas label={t().generatedPassword} height={120}>
+                <div
+                  style={{
+                    display: "grid",
+                    "place-items": "center",
+                    height: "100%",
+                    padding: "0 20px",
+                    // three fixed steps by length keep the 120 px drawing whole: 64 signs with symbols take two lines at
+                    // 16 px on a phone, where 28 px cut them after the third line; anything longer scrolls inside
+                    font: `600 ${password().length <= 20 ? 28 : password().length <= 40 ? 22 : 16}px/1.3 var(--k2-font-mono)`,
+                    "overflow-y": "auto",
+                    "text-align": "center",
+                    "overflow-wrap": "anywhere",
+                    // the lines share the signs evenly, so no single sign stands alone on the last line
+                    "text-wrap": "balance",
+                    "user-select": "all",
+                  }}
+                >
+                  <span>
+                    <For each={password().split("")}>{(char) => <span style={{ color: tone(mode(), char) }}>{char}</span>}</For>
+                  </span>
+                </div>
+              </Canvas>
+              {/* the strength is a value with a limit: a bar and its word; 128 bits and more fill it */}
+              <Inline>
+                <Progress
+                  value={Math.min(128, Math.round(strength().entropy))}
+                  of={128}
+                  label={`${t().strength}: ${t().strengthLabel({ word: t().strengthWord({ score: strength().score }), bits: Math.round(strength().entropy) })}`}
+                />
+              </Inline>
+            </Section>
+          ),
+        }}
+        input={{
+          label: t().passwordType,
+          children: (
+            <>
+              <Band label={t().passwordType}>
+                <Field label={t().passwordType} hint={hint()}>
+                  <Choice
+                    name="password-mode"
+                    value={mode()}
+                    onChange={(value) => setMode(value as PasswordMode)}
+                    options={[
+                      { value: "random", label: t().modeRandom },
+                      { value: "memorable", label: t().modeMemorable },
+                      { value: "pin", label: t().modePin },
+                    ]}
+                  />
+                </Field>
+                <Show when={mode() === "random"}>
+                  <Field label={t().characters} optional="8–64">
+                    <Input
+                      type="number"
+                      min={8}
+                      max={64}
+                      value={String(randomLength())}
+                      onInput={(value) => setRandomLength(within(value, 8, 64, 20))}
+                    />
+                  </Field>
+                  <Check switch label={t().uppercase} checked={randomUppercase()} onChange={setRandomUppercase} />
+                  <Check switch label={t().numbers} checked={randomNumbers()} onChange={setRandomNumbers} />
+                  <Check switch label={t().symbols} checked={randomSymbols()} onChange={setRandomSymbols} />
+                </Show>
+                <Show when={mode() === "memorable"}>
+                  <Field label={t().words} optional="3–8">
+                    <Input
+                      type="number"
+                      min={3}
+                      max={8}
+                      value={String(memorableWords())}
+                      onInput={(value) => setMemorableWords(within(value, 3, 8, 4))}
+                    />
+                  </Field>
+                  <Check switch label={t().capitalizeFirstLetter} checked={memorableCapitalize()} onChange={setMemorableCapitalize} />
+                  <Check switch label={t().useFullWords} checked={memorableFullWords()} onChange={setMemorableFullWords} />
+                  <Check switch label={t().addNumber} checked={memorableNumber()} onChange={setMemorableNumber} />
+                  <Check switch label={t().addSymbol} checked={memorableSymbol()} onChange={setMemorableSymbol} />
+                </Show>
+                <Show when={mode() === "pin"}>
+                  <Field label={t().digits} optional="4–12">
+                    <Input
+                      type="number"
+                      min={4}
+                      max={12}
+                      value={String(pinLength())}
+                      onInput={(value) => setPinLength(within(value, 4, 12, 6))}
+                    />
+                  </Field>
+                </Show>
+              </Band>
+            </>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

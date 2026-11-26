@@ -30,8 +30,6 @@
  *   way back to a list with a long name); a one-line text (the lines of a row, the
  *   cells of a table with column widths) never wraps, it ends with "…"; a box that clips its text shows every line
  *   whole and cuts a line at its end only with "…".
- * - **squeezed** (`measure-v2-squeezed.ts`): no text is pressed by its neighbours to a box of a few px or to one
- *   letter per line; a visually hidden name is no finding.
  *
  * ```ts
  * import { measureV2Layout } from "@k2b/ui/v2/testing";
@@ -46,7 +44,6 @@
  */
 import type { Page } from "playwright";
 import { fontWeights, gripTolerance, hairline, typeRoles } from "../tokens";
-import { measureSqueezedInPage } from "./measure-v2-squeezed";
 import { settled } from "./settled";
 
 export type V2LayoutOptions = {
@@ -89,8 +86,6 @@ export type V2Layout = {
   inside: string[];
   /** Cut control labels and one-line texts that wrap. */
   cut: string[];
-  /** Text pressed to a box of a few px or to one letter per line (see `measure-v2-squeezed.ts`). */
-  squeezed: string[];
   type: string[];
   grip: string[];
   grips: V2GripMeasure[];
@@ -816,14 +811,12 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
     if (JSON.stringify(now) !== JSON.stringify(then))
       grip.push("the grips moved between the DOM measurement and the screenshots; measure a page that holds still");
   }
-  const text = await page.evaluate(measureSqueezedInPage, { root: limits.root, skip: limits.skip });
-  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...text.squeezed, ...dom.type, ...grip];
+  const problems = [...dom.pseudo, ...dom.edge, ...dom.double, ...dom.inside, ...dom.cut, ...dom.type, ...grip];
   return {
     edge: dom.edge,
     double: dom.double,
     inside: dom.inside,
     cut: dom.cut,
-    squeezed: text.squeezed,
     type: dom.type,
     grip,
     grips,

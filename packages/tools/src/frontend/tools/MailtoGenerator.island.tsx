@@ -1,8 +1,8 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Empty, Facts, Field, Input, Notice, Pane, Section } from "@k2b/ui/v2";
+import { Button, Facts, Field, Input, Notice, Section, Text } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 export const mailtoMessages = i18n.define({
@@ -100,42 +100,56 @@ export default function MailtoGenerator() {
         </Button>
       }
     >
-      <Pane label={w().result} scrollKey="tools-mailto">
-        <Notice tone="warn" title="mailto:">
-          {`mailto: ${t().noticeReplyTo}`}
-        </Notice>
-        <Band label={w().input}>
-          <Field label={t().toLabel} hint={t().toDescription}>
-            <Input type="email" icon="mail" placeholder={t().toPlaceholder} value={to()} onInput={setTo} />
-          </Field>
-          {/* k2b-ui gap: v2 has no tags input for several addresses; they are typed into one field, separated by commas. */}
-          <Field.Row>
-            <Field label="CC" hint={t().ccDescription} optional={w().optional}>
-              <Input icon="users" placeholder={t().ccPlaceholder} value={cc()} onInput={setCc} />
-            </Field>
-            <Field label="BCC" hint={t().bccDescription} optional={w().optional}>
-              <Input icon="user-off" placeholder={t().bccPlaceholder} value={bcc()} onInput={setBcc} />
-            </Field>
-          </Field.Row>
-          <Field label={t().subjectLabel} hint={t().subjectDescription} optional={w().optional}>
-            <Input placeholder={t().subjectPlaceholder} value={subject()} onInput={setSubject} />
-          </Field>
-          <Field label={t().bodyLabel} hint={t().bodyDescription} optional={w().optional}>
-            <Input multiline placeholder={t().bodyPlaceholder} value={body()} onInput={setBody} />
-          </Field>
-        </Band>
-        <Section icon="link" title={w().result}>
-          <Show when={mailto()} fallback={<Empty icon="mail-forward" text={w().nothingYet} />}>
-            <Facts
-              items={[
-                { label: t().mailtoLink, value: mailto(), mono: true, copy: mailto() },
-                { label: "Markdown", value: markdownLink(), mono: true, copy: markdownLink() },
-                { label: "HTML", value: htmlLink(), mono: true, copy: htmlLink() },
-              ]}
-            />
-          </Show>
-        </Section>
-      </Pane>
+      <ToolPanes
+        kind="converter"
+        scrollKey="tools-mailto"
+        input={{
+          label: w().input,
+          children: (
+            <>
+              <Notice tone="warn" title="mailto:">
+                {`mailto: ${t().noticeReplyTo}`}
+              </Notice>
+              <Field label={t().toLabel} hint={t().toDescription}>
+                <Input type="email" icon="mail" placeholder={t().toPlaceholder} value={to()} onInput={setTo} />
+              </Field>
+              {/* k2b-ui gap: v2 has no tags input for several addresses; they are typed into one field, separated by commas. */}
+              <Field.Row>
+                <Field label="CC" hint={t().ccDescription} optional={w().optional}>
+                  <Input icon="users" placeholder={t().ccPlaceholder} value={cc()} onInput={setCc} />
+                </Field>
+                <Field label="BCC" hint={t().bccDescription} optional={w().optional}>
+                  <Input icon="user-off" placeholder={t().bccPlaceholder} value={bcc()} onInput={setBcc} />
+                </Field>
+              </Field.Row>
+              <Field label={t().subjectLabel} hint={t().subjectDescription} optional={w().optional}>
+                <Input placeholder={t().subjectPlaceholder} value={subject()} onInput={setSubject} />
+              </Field>
+              <Field label={t().bodyLabel} hint={t().bodyDescription} optional={w().optional}>
+                <Input multiline placeholder={t().bodyPlaceholder} value={body()} onInput={setBody} />
+              </Field>
+            </>
+          ),
+        }}
+        result={{
+          label: w().result,
+          children: (
+            <>
+              <Section icon="link" title={w().result}>
+                <Show when={mailto()} fallback={<Text type="meta">{w().nothingYet}</Text>}>
+                  <Facts
+                    items={[
+                      { label: t().mailtoLink, value: mailto(), mono: true, copy: mailto() },
+                      { label: "Markdown", value: markdownLink(), mono: true, copy: markdownLink() },
+                      { label: "HTML", value: htmlLink(), mono: true, copy: htmlLink() },
+                    ]}
+                  />
+                </Show>
+              </Section>
+            </>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

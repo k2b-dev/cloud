@@ -1,8 +1,8 @@
 import { crypto, i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Check, Empty, Facts, Field, Input, Notice, Pane, Section, Tabs, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Check, Facts, Field, Inline, Input, Notice, Section, Tabs, Text } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
-import ToolsScreen from "../ToolsScreen";
+import ToolsScreen, { ToolPanes } from "../ToolsScreen";
 import { toolsWorkspaceMessages } from "../tools-messages";
 
 type Tab = "symmetric" | "asymmetric";
@@ -147,162 +147,169 @@ export default function EncryptionTool() {
   const symReady = () => !!symPayload() && !!symKey() && !running();
   return (
     <ToolsScreen tool="encryption">
-      <Pane
-        label={w().result}
+      <ToolPanes
+        kind="converter"
         scrollKey="tools-encryption"
-        head={
-          <Tabs
-            label={w().kind}
-            items={[
-              { label: t().tabSymmetric, icon: "key", current: tab() === "symmetric", onClick: () => switchTo("symmetric") },
-              { label: t().tabAsymmetric, icon: "keys", current: tab() === "asymmetric", onClick: () => switchTo("asymmetric") },
-            ]}
-          />
-        }
-      >
-        <Show when={error()}>
-          <Notice tone="bad" title={t().errEncryptFailed}>
-            {error()}
-          </Notice>
-        </Show>
-        <Show when={tab() === "symmetric"}>
-          <Band label={t().tabSymmetric}>
-            <Text type="body">{t().symIntro}</Text>
-            <Field label={t().payloadLabel} hint={t().symPayloadDescription}>
-              <Input multiline placeholder={t().symPayloadPlaceholder} value={symPayload()} onInput={setSymPayload} />
-            </Field>
-            <Field label={t().keyLabel} hint={t().keyDescription}>
-              <Input type="password" icon="key" placeholder={t().keyPlaceholder} value={symKey()} onInput={setSymKey} />
-            </Field>
-            <Check
-              switch
-              label={`${t().stretchedLabel} · ${symStretched() ? t().stretchedNote : t().fastNote}`}
-              checked={symStretched()}
-              onChange={setSymStretched}
+        input={{
+          label: w().input,
+          head: (
+            <Tabs
+              label={w().kind}
+              items={[
+                { label: t().tabSymmetric, icon: "key", current: tab() === "symmetric", onClick: () => switchTo("symmetric") },
+                { label: t().tabAsymmetric, icon: "keys", current: tab() === "asymmetric", onClick: () => switchTo("asymmetric") },
+              ]}
             />
-            <Text type="meta" muted>
-              {`${t().symStretchedHint} ${t().symFastHint}`}
-            </Text>
-          </Band>
-          <Bar
-            end={
-              <>
-                <Button
-                  icon="lock-open"
-                  busy={running() === "decrypt"}
-                  disabled={!symReady()}
-                  onClick={() =>
-                    void run(
-                      "decrypt",
-                      async () => setOutput(await crypto.symmetric.decrypt({ payload: symPayload(), key: symKey() })),
-                      t().errDecryptFailedWrongKey,
-                    )
+          ),
+          children: (
+            <>
+              <Show when={tab() === "symmetric"}>
+                <Band label={t().tabSymmetric}>
+                  <Text type="body">{t().symIntro}</Text>
+                  <Field label={t().payloadLabel} hint={t().symPayloadDescription}>
+                    <Input multiline placeholder={t().symPayloadPlaceholder} value={symPayload()} onInput={setSymPayload} />
+                  </Field>
+                  <Field label={t().keyLabel} hint={t().keyDescription}>
+                    <Input type="password" icon="key" placeholder={t().keyPlaceholder} value={symKey()} onInput={setSymKey} />
+                  </Field>
+                  <Check
+                    switch
+                    label={`${t().stretchedLabel} · ${symStretched() ? t().stretchedNote : t().fastNote}`}
+                    checked={symStretched()}
+                    onChange={setSymStretched}
+                  />
+                  <Text type="meta" muted>
+                    {`${t().symStretchedHint} ${t().symFastHint}`}
+                  </Text>
+                </Band>
+                {/* the deeds end the column on one line without a line of their own: the seam below separates */}
+                <Inline>
+                  <Button
+                    icon="lock-open"
+                    busy={running() === "decrypt"}
+                    disabled={!symReady()}
+                    onClick={() =>
+                      void run(
+                        "decrypt",
+                        async () => setOutput(await crypto.symmetric.decrypt({ payload: symPayload(), key: symKey() })),
+                        t().errDecryptFailedWrongKey,
+                      )
+                    }
+                  >
+                    {t().decrypt}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon="lock"
+                    busy={running() === "encrypt"}
+                    disabled={!symReady()}
+                    onClick={() =>
+                      void run(
+                        "encrypt",
+                        async () =>
+                          setOutput(await crypto.symmetric.encrypt({ payload: symPayload(), key: symKey(), stretched: symStretched() })),
+                        t().errEncryptFailed,
+                      )
+                    }
+                  >
+                    {t().encrypt}
+                  </Button>
+                </Inline>
+              </Show>
+              <Show when={tab() === "asymmetric"}>
+                <Band label={t().keyPair}>
+                  <Text type="body">{t().asymIntro}</Text>
+                  <Text type="meta" muted>
+                    {`${t().exampleLabel} ${t().exampleAlice} ${t().exampleKeyPair} ${t().exampleEncrypt} ${t().exampleDecrypt} ${t().exampleNobody}`}
+                  </Text>
+                  <Field label={t().publicKeyLabel} hint={t().publicKeyDescription}>
+                    <Input multiline placeholder={t().publicKeyPlaceholder} value={asymPubKey()} onInput={setAsymPubKey} />
+                  </Field>
+                  <Field label={t().privateKeyLabel} hint={t().privateKeyDescription}>
+                    <Input multiline placeholder={t().privateKeyPlaceholder} value={asymPrivKey()} onInput={setAsymPrivKey} />
+                  </Field>
+                </Band>
+                <Bar
+                  end={
+                    <Button
+                      icon="key"
+                      busy={running() === "keys"}
+                      disabled={!!running()}
+                      onClick={() =>
+                        void run(
+                          "keys",
+                          async () => {
+                            const keys = await crypto.asymmetric.generate();
+                            setAsymPubKey(keys.publicKey);
+                            setAsymPrivKey(keys.privateKey);
+                          },
+                          t().errKeyGenFailed,
+                        )
+                      }
+                    >
+                      {t().generateKeys}
+                    </Button>
                   }
-                >
-                  {t().decrypt}
-                </Button>
-                <Button
-                  variant="primary"
-                  icon="lock"
-                  busy={running() === "encrypt"}
-                  disabled={!symReady()}
-                  onClick={() =>
-                    void run(
-                      "encrypt",
-                      async () =>
-                        setOutput(await crypto.symmetric.encrypt({ payload: symPayload(), key: symKey(), stretched: symStretched() })),
-                      t().errEncryptFailed,
-                    )
-                  }
-                >
-                  {t().encrypt}
-                </Button>
-              </>
-            }
-          />
-        </Show>
-        <Show when={tab() === "asymmetric"}>
-          <Band label={t().keyPair}>
-            <Text type="body">{t().asymIntro}</Text>
-            <Text type="meta" muted>
-              {`${t().exampleLabel} ${t().exampleAlice} ${t().exampleKeyPair} ${t().exampleEncrypt} ${t().exampleDecrypt} ${t().exampleNobody}`}
-            </Text>
-            <Field label={t().publicKeyLabel} hint={t().publicKeyDescription}>
-              <Input multiline placeholder={t().publicKeyPlaceholder} value={asymPubKey()} onInput={setAsymPubKey} />
-            </Field>
-            <Field label={t().privateKeyLabel} hint={t().privateKeyDescription}>
-              <Input multiline placeholder={t().privateKeyPlaceholder} value={asymPrivKey()} onInput={setAsymPrivKey} />
-            </Field>
-          </Band>
-          <Bar
-            end={
-              <Button
-                icon="key"
-                busy={running() === "keys"}
-                disabled={!!running()}
-                onClick={() =>
-                  void run(
-                    "keys",
-                    async () => {
-                      const keys = await crypto.asymmetric.generate();
-                      setAsymPubKey(keys.publicKey);
-                      setAsymPrivKey(keys.privateKey);
-                    },
-                    t().errKeyGenFailed,
-                  )
-                }
-              >
-                {t().generateKeys}
-              </Button>
-            }
-          />
-          <Band label={t().encryptDecrypt}>
-            <Field label={t().payloadLabel} hint={t().asymHint}>
-              <Input multiline placeholder={t().asymPayloadPlaceholder} value={asymPayload()} onInput={setAsymPayload} />
-            </Field>
-          </Band>
-          <Bar
-            end={
-              <>
-                <Button
-                  icon="lock-open"
-                  busy={running() === "decrypt"}
-                  disabled={!asymPayload() || !asymPrivKey() || !!running()}
-                  onClick={() =>
-                    void run(
-                      "decrypt",
-                      async () => setOutput(await crypto.asymmetric.decrypt({ payload: asymPayload(), privateKey: asymPrivKey() })),
-                      t().errDecryptFailed,
-                    )
-                  }
-                >
-                  {t().decryptPrivateKey}
-                </Button>
-                <Button
-                  variant="primary"
-                  icon="lock"
-                  busy={running() === "encrypt"}
-                  disabled={!asymPayload() || !asymPubKey() || !!running()}
-                  onClick={() =>
-                    void run(
-                      "encrypt",
-                      async () => setOutput(await crypto.asymmetric.encrypt({ payload: asymPayload(), publicKey: asymPubKey() })),
-                      t().errEncryptFailed,
-                    )
-                  }
-                >
-                  {t().encryptPublicKey}
-                </Button>
-              </>
-            }
-          />
-        </Show>
-        <Section icon="file-code" title={t().output}>
-          <Show when={output()} fallback={<Empty icon="lock" text={w().nothingYet} />}>
-            <Facts items={[{ label: t().output, value: output(), mono: true, copy: output() }]} />
-          </Show>
-        </Section>
-      </Pane>
+                />
+                <Band label={t().encryptDecrypt}>
+                  <Field label={t().payloadLabel} hint={t().asymHint}>
+                    <Input multiline placeholder={t().asymPayloadPlaceholder} value={asymPayload()} onInput={setAsymPayload} />
+                  </Field>
+                </Band>
+                {/* the deeds end the column on one line without a line of their own: the seam below separates */}
+                <Inline>
+                  <Button
+                    icon="lock-open"
+                    busy={running() === "decrypt"}
+                    disabled={!asymPayload() || !asymPrivKey() || !!running()}
+                    onClick={() =>
+                      void run(
+                        "decrypt",
+                        async () => setOutput(await crypto.asymmetric.decrypt({ payload: asymPayload(), privateKey: asymPrivKey() })),
+                        t().errDecryptFailed,
+                      )
+                    }
+                  >
+                    {t().decryptPrivateKey}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    icon="lock"
+                    busy={running() === "encrypt"}
+                    disabled={!asymPayload() || !asymPubKey() || !!running()}
+                    onClick={() =>
+                      void run(
+                        "encrypt",
+                        async () => setOutput(await crypto.asymmetric.encrypt({ payload: asymPayload(), publicKey: asymPubKey() })),
+                        t().errEncryptFailed,
+                      )
+                    }
+                  >
+                    {t().encryptPublicKey}
+                  </Button>
+                </Inline>
+              </Show>
+            </>
+          ),
+        }}
+        result={{
+          label: w().result,
+          children: (
+            <>
+              <Show when={error()}>
+                <Notice tone="bad" title={t().errEncryptFailed}>
+                  {error()}
+                </Notice>
+              </Show>
+              <Section icon="file-code" title={t().output}>
+                <Show when={output()} fallback={<Text type="meta">{w().nothingYet}</Text>}>
+                  <Facts items={[{ label: t().output, value: output(), mono: true, copy: output() }]} />
+                </Show>
+              </Section>
+            </>
+          ),
+        }}
+      />
     </ToolsScreen>
   );
 }

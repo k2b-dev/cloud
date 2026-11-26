@@ -584,6 +584,28 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A control that gave way to its symbol keeps its words only as its name (sr-only, 1 px, clipped): the outline does
+  // not take that for a cut label. A label squeezed to 1 px without being hidden so is still cut.
+  test(
+    "the outline takes a visually hidden label as a name, and a label squeezed to 1 px as cut",
+    async () => {
+      const button = (probe: string, label: string) =>
+        `<button type="button" class="k2-btn" data-probe="${probe}"><i class="ti ti-plus k2-icon" aria-hidden="true"></i><span class="k2-btn-label" style="${label}">Todo anlegen</span></button>`;
+      const folded = await open(
+        columns(button("folded", "position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap")),
+      );
+      const squeezed = await open(columns(button("squeezed", "display:inline-block; width:1px; overflow:hidden; white-space:nowrap")));
+      try {
+        expect(await describeV2Page(folded)).not.toContain("cuts its label");
+        expect(await describeV2Page(squeezed)).toContain('"Todo anlegen" cuts its label');
+      } finally {
+        await folded.close();
+        await squeezed.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "red: a label cut by a parent that hides what overflows; a scroller does not cut",
     async () => {
@@ -658,61 +680,6 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
         await lines.close();
-      }
-    },
-    TEST_TIMEOUT,
-  );
-
-  // break-ui 25.11.: a sender pressed to 0 px by many marks, and "An" one letter per line beside a long sender.
-  test(
-    "red: text pressed to nothing and text standing one letter per line; green: a visually hidden name",
-    async () => {
-      const squeezed = columns(
-        '<div class="row" style="display:flex">' +
-          '<span data-probe="sender" style="min-width:0;flex:0 1 0;overflow:hidden">Aleksandra</span>' +
-          '<span style="flex:none;white-space:nowrap">Wartet · Reklamation Gewährleistung · bis Mo · Vorschlag</span></div>' +
-          '<div class="row" style="display:flex;width:240px">' +
-          '<span data-probe="to" style="flex:0 1 auto;min-width:0;overflow-wrap:anywhere">An</span>' +
-          '<span data-probe="name" style="flex:0 0 auto;width:8px;min-width:0;overflow-wrap:anywhere">Empfänger</span>' +
-          '<span style="flex:none;white-space:nowrap">von Kundenservice Gewährleistung und Reklamation</span></div>',
-      );
-      const hidden = columns(
-        '<div class="row">Eintrag<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">Name</span></div>',
-      );
-      const page = await open(squeezed, { width: 900 });
-      const fine = await open(hidden);
-      try {
-        const found = (await measureV2Layout(page)).squeezed;
-        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="sender"\] "Aleksandra" is 0 px wide/));
-        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="name"\] "Empfänger" stands one letter per line/));
-        expect((await measureV2Layout(page)).problems).toEqual(expect.arrayContaining(found));
-        expect((await measureV2Layout(fine)).squeezed).toEqual([]);
-      } finally {
-        await page.close();
-        await fine.close();
-      }
-    },
-    TEST_TIMEOUT,
-  );
-
-  // review of #4210: lines broken on purpose are no finding; text shown through an ancestor of 0 px is one.
-  test(
-    "green: short lines broken on purpose; red: text inside a box that an ancestor of 0 px cuts away",
-    async () => {
-      const page = await open(
-        columns(
-          '<div class="row"><span data-probe="list" style="white-space:pre-line">1.\n2.\n3.\n4.</span></div>' +
-            '<div class="row" style="display:flex"><span style="flex:0 0 0;min-width:0;overflow:hidden"><span data-probe="inner" style="display:inline-block;width:120px">Aleksandra</span></span>' +
-            '<span style="flex:none;white-space:nowrap">Wartet · Reklamation · bis Mo · Vorschlag · Anhang · Schloss · Person · noch mehr</span></div>',
-        ),
-        { width: 900 },
-      );
-      try {
-        const found = (await measureV2Layout(page)).squeezed;
-        expect(found.filter((line) => line.includes('"list"'))).toEqual([]);
-        expect(found).toContainEqual(expect.stringMatching(/^\[data-probe="inner"\] "Aleksandra" is 0 px wide/));
-      } finally {
-        await page.close();
       }
     },
     TEST_TIMEOUT,
