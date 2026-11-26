@@ -21,8 +21,6 @@ import { assistantV2Messages } from "./assistant-v2-messages";
 export const iconName = (icon: string | null | undefined, fallback: string): string => icon?.trim().replace(/^ti\s+ti-/, "") || fallback;
 
 export type AssistantNavOptions = {
-  /** "New chat", the first entry: what the person does most. */
-  newChat: () => { label: string; disabled?: boolean; onClick?: () => void };
   basePath: string;
   conversations: Accessor<AiConversation[]>;
   doneCount: Accessor<number>;
@@ -223,12 +221,6 @@ export function createAssistantNav(options: AssistantNavOptions) {
     const view = options.activeView();
     const base = options.basePath;
     const top: NavItem[] = [
-      {
-        label: options.newChat().label,
-        icon: "plus",
-        onClick: () => (options.newChat().disabled ? undefined : options.newChat().onClick?.()),
-      },
-      { label: t().searchChats, icon: "search", onClick: () => search() },
       {
         label: t().waitingForYou,
         icon: "hand-stop",

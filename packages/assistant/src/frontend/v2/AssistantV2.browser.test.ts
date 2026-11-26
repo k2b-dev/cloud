@@ -8,10 +8,13 @@ import type { Browser, Page, Route } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import {
   type AssistantV2FixtureState,
+  FIXTURE_APPROVAL,
+  FIXTURE_AUTOMATIONS,
   FIXTURE_MESSAGES,
   FIXTURE_NOW,
   FIXTURE_OPEN_ID,
   FIXTURE_PLACE_CHATS,
+  FIXTURE_QUESTIONS,
   fixtureConversations,
   fixtureProjects,
 } from "./assistant-v2.fixture";
@@ -80,11 +83,14 @@ const contextOf = (chatId: string) => ({
   runs: [],
 });
 
-type Scene = { state?: AssistantV2FixtureState; open?: boolean };
+type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean };
 const propsOf = (scene: Scene, url: URL) => {
   const state = scene.state ?? "usual";
   const conversations = fixtureConversations(state);
-  const openId = scene.open === false ? null : (url.searchParams.get("conversation") ?? (state === "usual" ? FIXTURE_OPEN_ID : null));
+  const openId =
+    scene.open === false || url.searchParams.has("approvals")
+      ? null
+      : (url.searchParams.get("conversation") ?? (state === "usual" ? FIXTURE_OPEN_ID : null));
   const open = openId ? conversations.find((conversation) => conversation.id === openId) : undefined;
   return {
     embedded: false,
@@ -108,7 +114,7 @@ const propsOf = (scene: Scene, url: URL) => {
     initialConversations: conversations,
     initialDoneCount: conversations.filter((conversation) => conversation.isDone).length,
     initialPlaceChats: state === "empty" ? { total: 0, items: [] } : { total: FIXTURE_PLACE_CHATS.length, items: FIXTURE_PLACE_CHATS },
-    initialQuestions: { items: [], count: 0 },
+    initialQuestions: scene.waiting ? FIXTURE_QUESTIONS : { items: [], count: 0 },
     initialConversationId: open?.id ?? null,
     initialArtifactPath: null,
     initialWorkspaceHref: `${url.pathname}${url.search}`,
@@ -126,7 +132,14 @@ const propsOf = (scene: Scene, url: URL) => {
     initialProject: null,
     initialProjectChats: null,
     initialProjectContext: null,
-    approvals: { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
+    approvals:
+      url.searchParams.get("approvals") === "1"
+        ? {
+            page: { items: scene.waiting ? [FIXTURE_APPROVAL] : [], nextCursor: null, count: scene.waiting ? 1 : 0, elsewhere: 0 },
+            open: true,
+          }
+        : { page: { items: [], nextCursor: null, count: 0, elsewhere: 0 }, open: false },
+    ...(url.searchParams.get("approvals") === "1" ? { initialAutomations: scene.waiting ? FIXTURE_AUTOMATIONS : [] } : {}),
     code: { has: true, open: false },
     initialCodeBlock: null,
   };
@@ -204,6 +217,9 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
   const errors = pageErrors(page);
   const unanswered: string[] = [];
   const calls: string[] = [];
+  const posted: { path: string; body: unknown }[] = [];
+  let created = 0;
+  const sent: string[] = [];
   await page.route(`${ORIGIN}/**`, async (route: Route) => {
     const url = new URL(route.request().url());
     const method = route.request().method();
@@ -225,6 +241,26 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
     if (url.pathname.startsWith("/ui/")) return route.fulfill({ path: resolve(ui, "dist", url.pathname.slice(4)) });
     calls.push(`${method} ${url.pathname}${url.search}`);
     const conversations = fixtureConversations(scene.state ?? "usual");
+    if (method !== "GET") posted.push({ path: url.pathname, body: route.request().postDataJSON() });
+    if (url.pathname === "/api/ai/conversations" && method === "POST") {
+      created++;
+      return route.fulfill({
+        status: 201,
+        json: {
+          ...conversations[0],
+          id: "New001",
+          shortId: "New001",
+          title: "Neuer Chat",
+          titleSource: "default",
+          pinnedAt: null,
+          runStatus: "idle",
+          unreadCompletion: false,
+          projectId: null,
+        },
+      });
+    }
+    if (url.pathname.startsWith("/api/approvals/") && method === "POST")
+      return route.fulfill({ json: { id: FIXTURE_APPROVAL.id, status: "approved", outcome: "approved" } });
     const done = /^\/api\/assistant\/workspace\/conversations\/([^/]+)\/done$/.exec(url.pathname);
     if (done && method !== "GET") {
       const found = conversations.find((conversation) => conversation.id === done[1]);
@@ -238,7 +274,53 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       if (suffix === "/stream") return; // stays open like a quiet stream
       if (suffix === "/viewed") return route.fulfill({ json: {} });
       if (suffix === "/dictations") return route.fulfill({ json: { items: [], nextCursor: null } });
-      if (suffix === "/queue") return route.fulfill({ json: [] });
+      if (suffix === "/queue" || suffix === "/timeline") return route.fulfill({ json: [] });
+      const openChat = conversations.find((conversation) => conversation.id === chat[1]) ?? null;
+      if (suffix === "/draft" && method === "PUT") {
+        const body = route.request().postDataJSON() as { content: unknown; expectedRevision?: number };
+        return route.fulfill({ json: { content: body.content, revision: (body.expectedRevision ?? 0) + 1, updatedAt: FIXTURE_NOW } });
+      }
+      if (suffix === "/turns" && method === "POST") {
+        const body = route.request().postDataJSON() as { message?: string; content?: unknown };
+        sent.push(JSON.stringify(body));
+        return route.fulfill({ status: 201, json: { turn: { id: "turn9", status: "completed" }, message: FIXTURE_MESSAGES[0] } });
+      }
+      if (suffix === "/archive" && method === "POST") return route.fulfill({ status: 204 });
+      if (suffix === "" && method === "GET" && openChat) {
+        // After a message went out, the chat holds it and Gustav's finished answer: the stream has ended.
+        const answered = sent.length > 0;
+        return route.fulfill({
+          json: {
+            conversation: { ...openChat, draft: { content: [], revision: answered ? 9 : 0, updatedAt: FIXTURE_NOW } },
+            messages: [
+              ...FIXTURE_MESSAGES.map((entry) => ({ ...entry, conversationId: openChat.id })),
+              ...(answered
+                ? [
+                    {
+                      ...FIXTURE_MESSAGES[2]!,
+                      id: "m5",
+                      shortId: "m5",
+                      seq: 5,
+                      conversationId: openChat.id,
+                      message: { role: "user", content: [{ type: "text", text: "Und die Anfahrt?" }] },
+                    },
+                    {
+                      ...FIXTURE_MESSAGES[3]!,
+                      id: "m6",
+                      shortId: "m6",
+                      seq: 6,
+                      conversationId: openChat.id,
+                      message: { role: "assistant", content: [{ type: "text", text: "Die Anfahrt war nicht vereinbart." }] },
+                    },
+                  ]
+                : []),
+            ],
+            hasMoreMessages: false,
+            activeTurn: null,
+            timeline: [],
+          },
+        });
+      }
     }
     const chatContext = /^\/api\/assistant\/workspace\/conversations\/(\w+)\/context$/.exec(url.pathname);
     if (chatContext) return route.fulfill({ json: contextOf(chatContext[1]!) });
@@ -266,7 +348,7 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
   await page.waitForSelector('body[data-ready="true"]');
   await page.evaluate(() => document.fonts.ready);
   await settled(page);
-  return { context, page, errors, unanswered, calls };
+  return { context, page, errors, unanswered, calls, posted, sent, created: () => created };
 };
 
 /** The rules of v2 on the resting page: no outline problem and no layout finding outside the chat's own drawing. */
@@ -275,6 +357,11 @@ const layoutProblems = async (page: Page): Promise<string[]> => {
   const outline = await describeV2Page(page, "[data-k2-workspace]");
   const layout = await measureV2Layout(page, { root: "[data-k2-workspace]", skip: "[data-k2-canvas]" });
   return [...(outline.includes("Problems (") ? [outline] : []), ...layout.problems];
+};
+
+/** Waits for something the test's routes saw, at most five seconds. */
+const until = async (seen: () => boolean) => {
+  for (let tries = 0; tries < 50 && !seen(); tries++) await Bun.sleep(100);
 };
 
 const shoot = async (page: Page, name: string) => {
@@ -304,6 +391,128 @@ describe("Assistant on v2", () => {
       const composer = page.locator(".assistant-chat-composer");
       const rect = await composer.boundingBox();
       expect(rect && rect.y + rect.height <= phone.height).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("New chat in the sidebar starts a chat and names it in the head", async () => {
+    const { context, page, errors, created } = await open(wide, "/app/assistant");
+    try {
+      await page.getByRole("button", { name: "Neuer Chat" }).click();
+      await page.waitForURL(/conversation=New001/);
+      expect(created()).toBe(1);
+      expect(await page.locator('[data-k2-part="Path"]').textContent()).toContain("Neuer Chat");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a message goes out from the composer in the v2 pane", async () => {
+    const { context, page, errors, sent, posted } = await open(wide, "/app/assistant");
+    try {
+      const field = page.locator(".assistant-chat-composer textarea").first();
+      await field.fill("Und die Anfahrt?");
+      await field.press("Enter");
+      await until(() => sent.length > 0);
+      // The answer streams through Cloud's shared chat parts (tested with them); here the turn goes out with its text.
+      expect(posted.some((entry) => entry.path.endsWith("/draft") && JSON.stringify(entry.body).includes("Und die Anfahrt?"))).toBe(true);
+      expect(sent).toHaveLength(1);
+      expect(await field.inputValue()).toBe("");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("Waiting for you keeps the v2 rules, and an approval is decided in place", async () => {
+    for (const view of [wide, phone]) {
+      const { context, page, errors, posted } = await open(view, "/app/assistant?approvals=1", { waiting: true });
+      try {
+        await shoot(page, `${view.name}-waiting`);
+        expect(await layoutProblems(page)).toEqual([]);
+        expect(await page.getByText("Version 2 von „Lagerliste exportieren“ einschalten").count()).toBe(1);
+        expect(await page.getByRole("button", { name: "Chat wiederherstellen" }).count()).toBe(1);
+        if (view === wide) {
+          await page.getByRole("button", { name: "Rückfrage zu Rechnung 2026-118 an Frau Berger senden" }).click();
+          await until(() => posted.some((entry) => entry.path.startsWith("/api/approvals/")));
+          expect(posted.some((entry) => entry.path.startsWith("/api/approvals/"))).toBe(true);
+        }
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 90_000);
+
+  test("a chat is renamed in its settings from the head's menu", async () => {
+    const { context, page, errors } = await open(wide, "/app/assistant");
+    try {
+      await page
+        .locator('[data-k2-workspace] [data-slot="head"]')
+        .getByRole("button", { name: "Weitere Aktionen für diesen Chat" })
+        .click();
+      await page.getByRole("menuitem", { name: "Chat bearbeiten …" }).click();
+      await page.getByRole("textbox", { name: "Name" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("a chat is archived after the question and the page leaves it", async () => {
+    const { context, page, errors, posted } = await open(wide, "/app/assistant");
+    try {
+      await page
+        .locator('[data-k2-workspace] [data-slot="head"]')
+        .getByRole("button", { name: "Weitere Aktionen für diesen Chat" })
+        .click();
+      await page.getByRole("menuitem", { name: "Archivieren …" }).click();
+      await page.getByRole("alertdialog").getByRole("button", { name: "Chat archivieren" }).click();
+      await page.waitForURL((url) => !url.search.includes("conversation="));
+      expect(posted.some((entry) => entry.path === "/api/ai/conversations/Tod003/archive")).toBe(true);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("the search of every chat opens Cloud's search in the Assistant's chats", async () => {
+    const { context, page, errors } = await open(wide, "/app/assistant");
+    try {
+      const search = page.getByRole("searchbox", { name: "Alle Chats durchsuchen" });
+      await search.fill("Rechnung");
+      await search.press("Enter");
+      const searches = await page.waitForFunction(
+        () => (window as unknown as { searches: unknown[] }).searches.length > 0 && (window as unknown as { searches: unknown[] }).searches,
+      );
+      expect(JSON.stringify(await searches.jsonValue())).toContain('"appId":"assistant"');
+      expect(JSON.stringify(await searches.jsonValue())).toContain('"query":"Rechnung"');
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("on the phone the shell's menu gets the sidebar's entries, chats with their deeds", async () => {
+    const { context, page, errors } = await open(phone, "/app/assistant");
+    try {
+      await shoot(page, "390-chat");
+      // The shell's phone menu reads what the page provides; its own rendering is the shell's and tested there.
+      const items = await page.evaluate(() => {
+        type Item = { label: string; href?: string; actions?: { label: string }[]; children?: Item[] };
+        const state = (window as unknown as { __cloudWorkspaceNavigation?: { label: string; navigation: { items: () => Item[] } } })
+          .__cloudWorkspaceNavigation;
+        const flat = (list: Item[]): Item[] => list.flatMap((item) => [item, ...flat(item.children ?? [])]);
+        return state ? { label: state.label, items: flat(state.navigation.items()) } : null;
+      });
+      expect(items?.label).toBe("Gustav");
+      const chat = items?.items.find((item) => item.label === "Urlaubsplanung Dezember");
+      expect(chat?.href).toBe("/app/assistant?conversation=Yes001");
+      expect(chat?.actions?.map((action) => action.label)).toContain("Chat bearbeiten …");
+      expect(items?.items.some((item) => item.label === "Werkstatt Angebote")).toBe(true);
       expect(errors).toEqual([]);
     } finally {
       await context.close();

@@ -201,6 +201,7 @@ import { quotaText } from "./quota-messages";
 import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
 import { useAssistantCopy, useAssistantText } from "./ui-copy";
 import AssistantFrameV2 from "./v2/AssistantFrameV2";
+import AssistantWaitingV2 from "./v2/AssistantWaitingV2";
 import { createAssistantChatDeeds } from "./v2/assistant-chat-deeds";
 import { assistantV2Messages } from "./v2/assistant-v2-messages";
 import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
@@ -3751,6 +3752,20 @@ export default function AssistantWorkspace(props: Props) {
           onClick: () => void createAndFocusConversation(),
         })}
         main={<MainContent />}
+        view={() =>
+          mainView() === "approvals"
+            ? () => (
+                <AssistantWaitingV2
+                  initial={approvalsRendered() ? props.approvals.page : undefined}
+                  questions={() => waiting().entries}
+                  questionsPage={openQuestions}
+                  onJump={(question) => void jumpToQuestion(question)}
+                  initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
+                  timeZone={props.timeZone}
+                />
+              )
+            : null
+        }
         tabs={{
           open: () => artifactWorkspace.state().tabs.length > 0 && (!phone() || artifactWorkspace.mobile() === "workspace"),
           back: () => ({ label: activeConversation()?.title ?? artifactCopy().chat, onClick: () => artifactWorkspace.setMobile("chat") }),

@@ -4,11 +4,13 @@ import { type ShellData, ShellDataProvider } from "@k2b/cloud/ssr/shell-data";
 import { LocaleProvider } from "@k2b/ui";
 import type { ComponentProps } from "solid-js";
 import { render } from "solid-js/web";
+import { registerGlobalSearchHost } from "../../../../cloud/src/browser/search-bridge";
 import AssistantWorkspace from "../AssistantWorkspace.island";
 
 declare global {
   interface Window {
     harness: { locale: string; props: ComponentProps<typeof AssistantWorkspace> };
+    searches: unknown[];
   }
 }
 
@@ -39,6 +41,9 @@ const shell: ShellData = {
   searchLinks: {},
   appId: "assistant",
 };
+// The shell's search host, as ShellRuntime registers it: the test reads which search the page asked for.
+window.searches = [];
+registerGlobalSearchHost((options) => window.searches.push(options));
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>

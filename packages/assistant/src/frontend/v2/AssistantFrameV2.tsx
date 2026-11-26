@@ -1,7 +1,7 @@
 import type { AiConversation } from "@k2b/cloud/ai";
 import { V2WorkspaceNavigation } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
-import { type Action, Bar, Canvas, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
+import { type Action, Bar, Button, Canvas, Input, Menu, Nav, Pane, Path, Workspace } from "@k2b/ui/v2";
 import { type Accessor, createSignal, type JSX, lazy, Show, Suspense } from "solid-js";
 import { assistantMessages } from "../messages";
 import { type AssistantNavOptions, createAssistantNav } from "./assistant-nav";
@@ -19,7 +19,7 @@ const drawing = { position: "absolute", inset: "0", display: "flex", "flex-direc
 const ChatDetails = lazy(() => import("./AssistantChatDetailsDialog"));
 
 export type AssistantFrameV2Props = {
-  nav: Omit<AssistantNavOptions, "showDetails" | "newChat">;
+  nav: Omit<AssistantNavOptions, "showDetails">;
   /** The chat the page shows, whose deeds stand behind the head's "…"; null on a view or a Project. */
   openChat: Accessor<AiConversation | null>;
   /** Where the page stands after "Gustav": the open chat, Project or view. */
@@ -27,6 +27,8 @@ export type AssistantFrameV2Props = {
   newChat: Accessor<Action>;
   /** The chat, a Project or a view: the Assistant's own surface, drawn by the shared chat parts. */
   main: JSX.Element;
+  /** A view rebuilt on v2 that takes the chat's place, as its own `Pane`; null while the chat (or a v1 view) shows. */
+  view: Accessor<(() => JSX.Element) | null>;
   /** The chat's tabs beside it while one is open; on the phone they are the page until the person goes back. */
   tabs: {
     open: Accessor<boolean>;
@@ -36,9 +38,9 @@ export type AssistantFrameV2Props = {
 };
 
 /**
- * The Assistant on @k2b/ui v2: the sidebar as `Nav` (and the phone menu) led by "New chat" and the search of every
- * chat, as v1's sidebar was; the head with where the page stands and the open chat's deeds; the chat with its tabs
- * beside it. The composer is the page's main action, so no button floats over the chat on the phone. The chat itself,
+ * The Assistant on @k2b/ui v2: the sidebar as `Nav` (and the phone menu); the head with where the page stands, the
+ * search of every chat, the open chat's deeds and "New chat", the one way to create; the chat with its tabs beside it.
+ * "New chat" stays in the head on the phone instead of floating over the composer. The chat itself,
  * its answers, cards and the composer are Cloud's shared chat parts; they keep their behaviour and draw themselves in
  * a `Canvas` that fills the pane.
  */
@@ -49,11 +51,16 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
   const [detailsOf, setDetailsOf] = createSignal<string | null>(null);
   const nav = createAssistantNav({
     ...props.nav,
-    newChat: () => props.newChat(),
     showDetails: (conversation) => {
       setDetailsOf(conversation.id);
     },
   });
+  const [query, setQuery] = createSignal("");
+  const searchKey = (event: KeyboardEvent) => {
+    if (event.key !== "Enter" || event.isComposing) return;
+    event.preventDefault();
+    nav.search(query().trim());
+  };
   const path = () => [{ label: t().assistant, href: props.nav.basePath }, ...props.path()];
   // The chat whose details are open, as the list knows it now, so a pin shows at once.
   const detailsChat = () => {
@@ -65,6 +72,23 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
       (props.openChat()?.id === id ? props.openChat() : null)
     );
   };
+  // The chat and, while one is open, its tabs: the Assistant's working columns.
+  const ChatColumns = () => (
+    <Pane.Split>
+      <Pane label={v2().chatPane}>
+        <Canvas label={v2().chatPane} height="fill">
+          <div style={drawing}>{props.main}</div>
+        </Canvas>
+      </Pane>
+      <Show when={props.tabs.open()}>
+        <Pane label={v2().tabsPane} detail back={props.tabs.back()} width={{ min: 320, default: 680 }}>
+          <Canvas label={v2().tabsPane} height="fill">
+            <div style={drawing}>{props.tabs.content}</div>
+          </Canvas>
+        </Pane>
+      </Show>
+    </Pane.Split>
+  );
   return (
     <>
       <V2WorkspaceNavigation label={nav.label()} groups={nav.groups()} foot={nav.foot()} />
@@ -74,24 +98,33 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
         head={
           <Bar
             start={<Path label={t().assistant} items={path()} />}
-            end={<Show when={props.openChat()}>{(chat) => <Menu label={v2().chatActions} items={nav.chatMenu(chat())} />}</Show>}
+            end={
+              <>
+                {/* k2b-ui gap: the head's search should be a symbol that opens over the head on click or "/" (look
+                    rules 26.11.); v2 has the field, which folds to its symbol on the phone only. Enter opens Cloud's
+                    search in the Assistant's chats (or the open Project's). */}
+                <Input
+                  type="search"
+                  icon="search"
+                  label={t().searchChats}
+                  placeholder={v2().searchHint}
+                  value={query()}
+                  onInput={setQuery}
+                  onKeyDown={searchKey}
+                />
+                <Show when={props.openChat()}>{(chat) => <Menu label={v2().chatActions} items={nav.chatMenu(chat())} />}</Show>
+                {/* The one way to create; it stays on the phone, where no button floats over the composer. */}
+                <Button variant="primary" icon="plus" keep disabled={props.newChat().disabled} onClick={() => props.newChat().onClick?.()}>
+                  {props.newChat().label}
+                </Button>
+              </>
+            }
           />
         }
       >
-        <Pane.Split>
-          <Pane label={v2().chatPane}>
-            <Canvas label={v2().chatPane} height="fill">
-              <div style={drawing}>{props.main}</div>
-            </Canvas>
-          </Pane>
-          <Show when={props.tabs.open()}>
-            <Pane label={v2().tabsPane} detail back={props.tabs.back()} width={{ min: 320, default: 680 }}>
-              <Canvas label={v2().tabsPane} height="fill">
-                <div style={drawing}>{props.tabs.content}</div>
-              </Canvas>
-            </Pane>
-          </Show>
-        </Pane.Split>
+        <Show when={props.view()} fallback={<ChatColumns />}>
+          {(view) => view()()}
+        </Show>
       </Workspace>
       <Show when={detailsChat()}>
         {(chat) => (

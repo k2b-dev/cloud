@@ -184,3 +184,69 @@ export const FIXTURE_MESSAGES: AiStoredMessage[] = [
 ];
 
 export const FIXTURE_OPEN_ID = "Tod003";
+
+/** Waiting for you: one approval of a mail, a version to switch on, a secret, and two automations that need the person. */
+export const FIXTURE_APPROVAL = {
+  id: "33333333-3333-4333-8333-333333333333",
+  app: { id: "mail", name: "Mail", icon: "ti ti-mail" },
+  action: "draft.send",
+  assurance: "confirm" as const,
+  sentence: "Mail: Rückfrage zu Rechnung 2026-118 an Frau Berger senden",
+  review: null,
+  requester: { kind: "chat" as const, appId: "assistant", title: "Rechnung 2026-118 prüfen", href: "/app/assistant?conversation=Tod003" },
+  remember: { chat: false, always: false, website: false },
+  createdAt: at(12),
+  expiresAt: at(-1440),
+};
+export const FIXTURE_QUESTIONS = {
+  count: 3,
+  items: [
+    {
+      id: "req-berger",
+      kind: "approval" as const,
+      conversationId: "Tod003",
+      conversationTitle: "Rechnung 2026-118 prüfen",
+      anchor: "tool-call-berger",
+      short: "Mail: Rückfrage an Frau Berger senden",
+      app: { name: "Mail", icon: "ti ti-mail" },
+      createdAt: at(12),
+    },
+    {
+      id: "code:v_lager2",
+      kind: "code_activate" as const,
+      conversationId: "Yes002",
+      conversationTitle: "Fehler im Export der Lagerliste",
+      anchor: "code-version-v_lager2",
+      short: "Version 2 von „Lagerliste exportieren“ einschalten",
+      app: { name: "Code", icon: "ti ti-player-play" },
+      createdAt: at(300),
+    },
+    {
+      id: "secret:shop",
+      kind: "secret" as const,
+      conversationId: "Wee003",
+      conversationTitle: "Lieferanten für Kantenband vergleichen",
+      anchor: "secret-shop",
+      short: "Zugang zum Lieferantenportal eintragen",
+      app: { name: "Gustav", icon: "ti ti-key" },
+      createdAt: at(2_000),
+    },
+  ],
+};
+export const FIXTURE_AUTOMATIONS = [
+  {
+    id: "auto-woche",
+    kind: "code_attention" as const,
+    href: "/app/assistant/code/c_woche1",
+    short: "Wochenbericht Vertrieb",
+    reason: "chat_missing" as const,
+  },
+  {
+    id: "auto-mahn",
+    kind: "code_attention" as const,
+    href: "/app/assistant/code/c_mahn01",
+    short: "Mahnungen vorbereiten",
+    reason: "chat_missing" as const,
+    archivedChat: { id: "Old009", title: "Mahnlauf Oktober" },
+  },
+];
