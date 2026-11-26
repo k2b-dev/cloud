@@ -497,7 +497,16 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
   )
     problems.push("the primary action is hidden at this width: give Workspace a `primary` action so the phone shows it");
   // A head with deeds but no name looks as if something were missing, and the page has no heading.
-  for (const workspace of root.querySelectorAll("[data-k2-part='Workspace']"))
+  // one heading names the page: a second h1 (a record's name beside the page's name) says the page twice
+  const pageHeadings = root.querySelectorAll("h1").length + (root.matches("h1") ? 1 : 0);
+  if (pageHeadings > 1)
+    problems.push(
+      `${pageHeadings} page headings (h1): one names the page; build the head inside its Workspace so a RecordHead can name it`,
+    );
+  // the root itself counts: describeV2(workspace) checks the Workspace it is given
+  for (const workspace of [root, ...root.querySelectorAll("[data-k2-part='Workspace']")].filter((element) =>
+    element.matches("[data-k2-part='Workspace']"),
+  ))
     if (
       workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] > .k2-bar") &&
       !workspace.querySelector(":scope > .k2-ws-main > [data-slot=head] h1")

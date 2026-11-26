@@ -360,7 +360,8 @@ lines instead of cutting a thing.
   `limit?`, `minChars?`; values that load while the person types, in a
   filter (the bar opens it) or in a form.
 - `RecordHead`: `name`, `avatar`, `kinds`, `ids: { label?, value, icon?,
-  copy? }[]`. Put it in the head `Bar start`. When the head has no room, the
+  copy? }[]`. Put it in the head `Bar start`, written inside the Workspace:
+  its name is then the page's one heading, in place of `Workspace title`. When the head has no room, the
   ids give way first (always on the phone), then the name is cut with "…";
   the head's actions keep their place.
 

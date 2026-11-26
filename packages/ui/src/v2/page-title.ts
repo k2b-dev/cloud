@@ -8,7 +8,15 @@ export const NavCurrentContext = createContext<(label: string | undefined) => vo
 
 /**
  * The page's name for the Bar in the Workspace's head. The first Bar made there takes it (`take`), so a Bar made inside
- * the head's parts does not show the page's name a second time; it gives it back when it goes.
+ * the head's parts does not show the page's name a second time; it gives it back when it goes. A part that names the
+ * page itself (a `RecordHead`, whose name is the page's heading) says so (`nameItself`): then the page has that one
+ * heading and no other (`namedItself`).
  */
-export type PageTitle = { title: () => string | undefined; take: () => boolean; giveBack: () => void };
+export type PageTitle = {
+  title: () => string | undefined;
+  take: () => boolean;
+  giveBack: () => void;
+  nameItself: () => void;
+  namedItself: () => boolean;
+};
 export const PageTitleContext = createContext<PageTitle>();

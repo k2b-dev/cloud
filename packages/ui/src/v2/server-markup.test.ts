@@ -12,7 +12,7 @@ const root = mkdtempSync(resolve(tmpdir(), "k2-v2-server-markup-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Bar, Pane, Workspace } = await import("./layout");
-const { Nav, Tabs } = await import("./components");
+const { Nav, RecordHead, Tabs } = await import("./components");
 const { Button } = await import("./button");
 const { Input } = await import("./controls");
 const { Text } = await import("./content");
@@ -98,6 +98,15 @@ test("the head names the page in its one h1: the title, else the Nav's current e
   const alone = page({ title: "Neue Quelle" });
   expect(alone).toContain('data-slot="head"');
   expect(headings(alone)).toEqual(["k2-head-title: Neue Quelle"]);
+  // a record's head names the page itself: its name is the one heading, never beside a second one
+  const record = () =>
+    createComponent(Bar, {
+      get start() {
+        return createComponent(RecordHead, { name: "Wochenbericht", kinds: ["Agent"] });
+      },
+    });
+  expect(headings(page({ sidebar: nav, head: record }))).toEqual(["k2-record-name: Wochenbericht"]);
+  expect(headings(page({ title: "Agenten", head: record }))).toEqual(["k2-record-name: Wochenbericht"]);
   // no name anywhere: no heading (describeV2 names it a finding); no head, no title: no head at all
   expect(headings(page({ head: deeds }))).toEqual([]);
   expect(page({})).not.toContain('data-slot="head"');

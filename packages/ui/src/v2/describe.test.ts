@@ -81,12 +81,25 @@ describe("describeV2", () => {
     const deeds =
       '<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-end"><button class="k2-btn" data-k2-part="Button">Neu</button></div></div>';
     expect(outline(head(deeds))).toContain("the head names no page");
+    // also when the Workspace itself is what is described, not a box around it
+    const window = new Window();
+    windows.push(window);
+    window.document.body.innerHTML = head(deeds);
+    expect(describeV2(window.document.body.firstElementChild as unknown as Element)).toContain("the head names no page");
     expect(outline(head(`<h1 class="k2-hidden-text">Notizbücher</h1>${deeds}`))).toContain("made before the Workspace");
     const named = outline(
       head('<div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-start"><h1 class="k2-head-title">Notizbücher</h1></div></div>'),
     );
     expect(named).toContain('Workspace "Notizbücher" (head)');
     expect(named).not.toContain("Problems");
+    // a record's name beside the page's name: two headings
+    expect(
+      outline(
+        head(
+          '<h1 class="k2-hidden-text">Agenten</h1><div class="k2-bar" data-k2-part="Bar"><div class="k2-bar-start"><h1 class="k2-record-name" data-k2-part="RecordHead">Wochenbericht</h1></div></div>',
+        ),
+      ),
+    ).toContain("2 page headings (h1)");
   });
 
   test("reports what no primitive owns, nested groups and a second primary action", () => {

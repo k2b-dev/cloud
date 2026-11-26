@@ -22,7 +22,7 @@ import { linkOr } from "./link";
 import { Avatar, Chip, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
-import { NavCurrentContext } from "./page-title";
+import { NavCurrentContext, PageTitleContext } from "./page-title";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 
 // Layer 2: components made only of the primitives. They exist where a form must be the same everywhere.
@@ -735,29 +735,35 @@ export type RecordHeadProps = {
   ids?: readonly RecordId[];
 };
 
-/** The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`. */
-export const RecordHead = (props: RecordHeadProps) => (
-  <>
-    <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
-    <h1 class="k2-record-name" data-k2-part="RecordHead">
-      {props.name}
-    </h1>
-    <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
-    <For each={props.ids}>
-      {(id) => (
-        <span class="k2-record-id">
-          <Show when={id.icon && !id.label}>
-            <Icon name={id.icon!} />
-          </Show>
-          <Show when={id.label}>{id.label} </Show>
-          <Show when={id.label} fallback={id.value}>
-            <b>{id.value}</b>
-          </Show>
-          <Show when={id.copy}>
-            <Icon name="copy" />
-          </Show>
-        </span>
-      )}
-    </For>
-  </>
-);
+/**
+ * The identity of a record in its head: avatar, name, kinds, identifiers. Put it in the start of the head `Bar`; its
+ * name is then the page's one heading, in place of the Workspace's `title`.
+ */
+export const RecordHead = (props: RecordHeadProps) => {
+  useContext(PageTitleContext)?.nameItself();
+  return (
+    <>
+      <Show when={props.avatar}>{(person) => <Avatar {...person()} decorative />}</Show>
+      <h1 class="k2-record-name" data-k2-part="RecordHead">
+        {props.name}
+      </h1>
+      <For each={props.kinds}>{(kind) => <Chip>{kind}</Chip>}</For>
+      <For each={props.ids}>
+        {(id) => (
+          <span class="k2-record-id">
+            <Show when={id.icon && !id.label}>
+              <Icon name={id.icon!} />
+            </Show>
+            <Show when={id.label}>{id.label} </Show>
+            <Show when={id.label} fallback={id.value}>
+              <b>{id.value}</b>
+            </Show>
+            <Show when={id.copy}>
+              <Icon name="copy" />
+            </Show>
+          </span>
+        )}
+      </For>
+    </>
+  );
+};

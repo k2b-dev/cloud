@@ -195,6 +195,8 @@ export const Workspace = (props: WorkspaceProps) => {
   const title = () => props.title ?? navCurrent();
   // the first Bar made in the head shows the page's name; a title alone makes that Bar
   let taken = false;
+  // a RecordHead in the head is the page's one heading: then neither the Bar nor the Workspace adds another
+  const [namedItself, setNamedItself] = createSignal(false);
   const page = {
     title,
     take: () => {
@@ -205,6 +207,11 @@ export const Workspace = (props: WorkspaceProps) => {
     giveBack: () => {
       taken = false;
     },
+    nameItself: () => {
+      setNamedItself(true);
+      onCleanup(() => setNamedItself(false));
+    },
+    namedItself,
   };
   const head = resolveChildren(() => (
     <PageTitleContext.Provider value={page}>{props.head ?? (props.title !== undefined ? <Bar /> : undefined)}</PageTitleContext.Provider>
@@ -310,7 +317,7 @@ export const Workspace = (props: WorkspaceProps) => {
           <div class="k2-slot" data-slot="head" data-toggle-only={head() ? undefined : ""}>
             <Show when={sidebar()}>{toggleButton()}</Show>
             {/* a head made before the Workspace (kept in a variable) cannot show the page's name: it is still heard */}
-            <Show when={!taken && title()}>{(name) => <h1 class="k2-hidden-text">{name()}</h1>}</Show>
+            <Show when={!taken && !namedItself() && title()}>{(name) => <h1 class="k2-hidden-text">{name()}</h1>}</Show>
             {head()}
           </div>
         </Show>
@@ -581,8 +588,9 @@ export const Bar = (props: BarProps) => {
   const page = useContext(PageTitleContext);
   const head = page?.take() ?? false;
   if (head) onCleanup(() => page?.giveBack());
-  const title = () => (head ? page?.title() : undefined);
   const start = resolveChildren(() => props.start);
+  // read after the start is made: a RecordHead in it names the page itself
+  const title = () => (head && !page?.namedItself() ? page?.title() : undefined);
   const end = resolveChildren(() => props.end);
   return (
     <div class="k2-bar" data-k2-part="Bar">
