@@ -183,9 +183,18 @@ for (const long of [false, true])
 
 // The operations log (break-ui finding 21): large counts, the live switch and sort and grouping as framed menus in
 // words. At every width, also the narrow list column beside an open entry, the figures give way before they reach the
-// switch, the lead is cut before a control, and no control is cut or pushed past the row's edge.
-for (const column of [1440, 1024, 760, 600, 520, 400, 320])
-  test(`a status row ${column} px wide as the operations log draws it: figures, lead and controls never overlap`, async () => {
+// switch, the lead is cut before a control, and no control is cut or pushed past the row's edge. In a window of 1024
+// px, where the finding was seen, the list column is about 760 px beside the sidebar and 520 px with an entry open.
+for (const [width, column] of [
+  [1440, 1440],
+  [1440, 1024],
+  [1024, 760],
+  [1024, 520],
+  [1440, 600],
+  [1440, 400],
+  [1440, 320],
+] as const)
+  test(`a status row ${column} px wide in a window of ${width} px as the operations log draws it: nothing overlaps`, async () => {
     await withPage(
       async (page) => {
         await page.evaluate(() => window.__k2Logs?.());
@@ -198,7 +207,7 @@ for (const column of [1440, 1024, 760, 600, 520, 400, 320])
         expect(found.words).toEqual(column <= 600 ? [false, false] : [true, true]);
         if (column >= 1024) expect(found.shown).toEqual([true, true]);
       },
-      { column },
+      { width, column },
     );
   });
 
