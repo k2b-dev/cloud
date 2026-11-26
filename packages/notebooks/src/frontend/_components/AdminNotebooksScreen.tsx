@@ -46,6 +46,29 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
   const locale = useLocale();
   const t = () => notebooksAdminMessages.resolve([locale()]).t;
   const toast = useToast();
+  /** A notebook's deeds: its access (the platform's dialog) and deleting it after asking. */
+  const actions = (row: AdminNotebookRow) => (
+    <Menu
+      label={t().actionsFor({ name: row.name })}
+      items={[
+        {
+          label: t().permissions,
+          icon: "shield",
+          // the menu stays busy while the access loads; a failure says why
+          onClick: () =>
+            openPermissionDialog({ notebookId: row.shortId, notebookName: row.name }, locale(), new AbortController().signal).catch(
+              (error: Error) => void toast(error.message, { status: "bad" }),
+            ),
+        },
+        {
+          label: t().delete,
+          icon: "trash",
+          danger: true,
+          onClick: () => deleteNotebook({ notebookId: row.shortId, notebookName: row.name }, locale(), toast),
+        },
+      ]}
+    />
+  );
   return (
     <AdminWorkspace
       nav={props.nav}
@@ -115,35 +138,18 @@ export default function AdminNotebooksScreen(props: AdminNotebooksScreenProps) {
             {
               title: t().settings,
               align: "end",
-              cell: (row) => (
-                <Menu
-                  label={t().actionsFor({ name: row.name })}
-                  items={[
-                    {
-                      label: t().permissions,
-                      icon: "shield",
-                      // the menu stays busy while the access loads; a failure says why
-                      onClick: () =>
-                        openPermissionDialog(
-                          { notebookId: row.shortId, notebookName: row.name },
-                          locale(),
-                          new AbortController().signal,
-                        ).catch((error: Error) => void toast(error.message, { status: "bad" })),
-                    },
-                    {
-                      label: t().delete,
-                      icon: "trash",
-                      danger: true,
-                      onClick: () => deleteNotebook({ notebookId: row.shortId, notebookName: row.name }, locale(), toast),
-                    },
-                  ]}
-                />
-              ),
+              cell: (row) => actions(row),
             },
           ]}
           phone={(row) => ({
             lines: [row.name, row.description || t().noDescription],
-            marks: row.permissionCount === 0 ? <Chip status="bad">{t().accessCount({ count: 0 })}</Chip> : undefined,
+            // the phone's rows have no columns, so the deeds stand among their marks
+            marks: (
+              <>
+                {row.permissionCount === 0 ? <Chip status="bad">{t().accessCount({ count: 0 })}</Chip> : undefined}
+                {actions(row)}
+              </>
+            ),
           })}
           empty={{ icon: "notebook", text: props.search ? t().noMatching({ search: props.search }) : t().noNotebooks }}
         />

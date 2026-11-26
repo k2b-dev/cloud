@@ -17,11 +17,9 @@ window.mountSettings = (locale) => {
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <div class="k2-ui">
-          <Button icon="settings" onClick={() => void openNotebooksAppSettings()}>
-            {locale === "de" ? "Einstellungen" : "Settings"}
-          </Button>
-        </div>
+        <Button icon="settings" onClick={() => void openNotebooksAppSettings()}>
+          {locale === "de" ? "Einstellungen" : "Settings"}
+        </Button>
       </LocaleProvider>
     ),
     host,

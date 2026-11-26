@@ -157,3 +157,19 @@ test("a row's menu deletes after asking, and a refused delete names the reason",
     await page.close();
   }
 }, 60_000);
+
+test("390: a row's deeds stay reachable on the phone, where the table shows rows", async () => {
+  const page = await open("/admin/notebooks", 390);
+  try {
+    const actions = page.getByRole("button", { name: "Aktionen für Altes Wiki" }).filter({ visible: true });
+    await actions.click();
+    await page.getByRole("menuitem", { name: "Löschen" }).click();
+    await page.getByRole("alertdialog").waitFor();
+    // asking deletes nothing yet
+    expect(deletes).toEqual([]);
+    await page.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
+  } finally {
+    deletes.length = 0;
+    await page.close();
+  }
+}, 60_000);
