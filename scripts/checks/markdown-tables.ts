@@ -5,27 +5,35 @@ import type { Finding, Rule } from "./rule";
 
 /** The cells of a table row: split at every pipe that is not escaped, as GitHub Flavored Markdown does. */
 const cells = (row: string): number => {
-  const inner = row.trim().replace(/^\|/, "").replace(/(?<!\\)\|$/, "");
+  const inner = row
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/(?<!\\)\|$/, "");
   return inner.split(/(?<!\\)\|/).length;
 };
 
-const separator = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+/** A table's separator row: one dash or more per cell, as GitHub Flavored Markdown accepts it. */
+const separator = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
 
 /**
- * Every row of a Markdown table has as many cells as its head. A renderer drops the cells after the head's count and
- * leaves the missing ones empty, so a row pasted into the middle of another one shows half a row and loses a link
- * without any warning (the API reference lost a row this way).
+ * Every row of a Markdown table in the documentation (`docs-site/docs`; skills and app sources are not scanned) has as
+ * many cells as its head. A renderer drops the cells after the head's count and leaves the missing ones empty, so a row
+ * pasted into the middle of another one shows half a row and loses a link without any warning (the API reference lost
+ * a row this way).
  */
 export const findInMarkdown = (source: string): { line: number; message: string }[] => {
   const lines = source.split("\n");
   const hits: { line: number; message: string }[] = [];
+  // the run that opened a code fence: a run of the same mark at least as long, and nothing after it, closes it
   let fence: string | undefined;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index]!;
-    const opener = /^\s*(`{3,}|~{3,})/.exec(line)?.[1];
-    if (opener) {
-      if (!fence) fence = opener[0];
-      else if (opener[0] === fence) fence = undefined;
+    const run = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+    if (run) {
+      const marks = run[1]!;
+      const rest = run[2] ?? "";
+      if (!fence) fence = marks;
+      else if (marks[0] === fence[0] && marks.length >= fence.length && rest.trim() === "") fence = undefined;
       continue;
     }
     if (fence || !line.trimStart().startsWith("|") || !separator.test(lines[index + 1] ?? "")) continue;
@@ -44,7 +52,7 @@ export const findInMarkdown = (source: string): { line: number; message: string 
 
 export const rule: Rule = {
   name: "markdown-tables",
-  description: "Every row of a documentation table has as many cells as its head",
+  description: "Every row of a table in docs-site/docs has as many cells as its head",
   run: async ({ workspaceRoot }) => {
     const findings: Finding[] = [];
     for (const path of listFiles(join(workspaceRoot, "docs-site/docs"), /\.md$/)) {
