@@ -85,6 +85,7 @@ const catalogs = {
   Video: (await import("../content/video-messages")).checkVideoMessages,
   RangePicker: (await import("../content/range-picker-messages")).checkRangePickerMessages,
   V2Date: (await import("../v2/date-messages")).checkDateMessages,
+  V2Workspace: (await import("../v2/workspace-messages")).checkWorkspaceMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
 };
 

@@ -3,6 +3,7 @@ import { keyboardPlatform } from "../intl/shortcut";
 import type { Live } from "./attach-live";
 import type { ConfirmOptions } from "./overlays";
 import type { ToastOptions } from "./toast";
+import { resolveWorkspaceMessages } from "./workspace-messages";
 
 // A `Workspace` renders on the server as plain markup: the frame, its columns, heads and bars need no script. What
 // needs the browser comes from `attachWorkspace`: the drawer of the sidebar, the collapse of the sidebar, the alert
@@ -20,6 +21,7 @@ export type AttachOptions = {
 const attached = Symbol.for("k2b.ui.v2.workspace.attached");
 // the keys under which the page finds its asking and toasting functions (`Dialog.confirm`, `useToast`)
 const confirmKey = Symbol.for("k2b.ui.v2.confirm");
+const sidebarKey = Symbol.for("k2b.ui.v2.toggleSidebar");
 const toasterKey = Symbol.for("k2b.ui.v2.toaster");
 const island = "solid-island, solid-client";
 
@@ -146,6 +148,7 @@ const showNotice = () => {
   if (notice?.dataset.retried === String(retried)) return;
   closeNotice();
   const t = resolveUiMessages();
+  const words = resolveWorkspaceMessages();
   // the v2 scope of the workspace, beside the page's other content
   const scope = document.createElement("div");
   scope.className = "k2-ui";
@@ -162,7 +165,7 @@ const showNotice = () => {
   item.dataset.type = "error";
   const text = item.appendChild(document.createElement("span"));
   text.className = "k2-toast-text";
-  text.textContent = t.controlsFailed;
+  text.textContent = words.controlsFailed;
   if (!retried)
     item.append(
       button(t.retry, () => {
@@ -175,7 +178,7 @@ const showNotice = () => {
     );
   else
     item.append(
-      button(t.reloadPage, () => window.location.reload()),
+      button(words.reloadPage, () => window.location.reload()),
       button(t.close, () => {
         closeNotice();
         const waiting = [...pending];
@@ -242,6 +245,7 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
   const collapse = head?.querySelector<HTMLElement>(":scope > .k2-ws-collapse");
   const aside = element.querySelector<HTMLElement>(":scope > .k2-ws-side");
   const t = resolveUiMessages();
+  const words = resolveWorkspaceMessages();
 
   // The live parts load once; a load that fails is tried again by the next use, and a use that was waiting for it
   // says so at the bottom of the page with "Retry", which runs it again. Nothing waits in silence.
@@ -321,10 +325,19 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
     const set = (collapsed: boolean) => {
       element.toggleAttribute("data-collapsed", collapsed);
       collapse.setAttribute("aria-expanded", String(!collapsed));
-      collapse.setAttribute("aria-label", collapsed ? t.showSidebar : t.hideSidebar);
-      collapse.setAttribute("title", collapsed ? t.showSidebar : t.hideSidebar);
+      collapse.setAttribute("aria-label", collapsed ? t.showSidebar : words.hideSidebar);
+      collapse.setAttribute("title", collapsed ? t.showSidebar : words.hideSidebar);
       options.onSidebarCollapsedChange?.(collapsed);
     };
+    // Mod+Alt+S and `toggleWorkspaceSidebar`: in a narrow window the sidebar is a drawer, and they open and close it
+    const toggleSidebar = (): boolean => {
+      if (toggle && toggle.getClientRects().length > 0) void withLive((parts) => parts.toggleDrawer()).catch(() => {});
+      else if (collapse.getClientRects().length > 0) set(!element.hasAttribute("data-collapsed"));
+      else return false;
+      return true;
+    };
+    Reflect.set(element, sidebarKey, toggleSidebar);
+    stops.push(() => Reflect.deleteProperty(element, sidebarKey));
     listen(collapse, "click", () => set(!element.hasAttribute("data-collapsed")));
     listen(document, "keydown", (event) => {
       if (!(event instanceof KeyboardEvent)) return;
@@ -337,11 +350,7 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
         (editable(event.target) && !event.metaKey)
       )
         return;
-      // in a narrow window the sidebar is a drawer, and the same keys open and close it
-      if (toggle && toggle.getClientRects().length > 0) void withLive((parts) => parts.toggleDrawer()).catch(() => {});
-      else if (collapse.getClientRects().length > 0) set(!element.hasAttribute("data-collapsed"));
-      else return;
-      event.preventDefault();
+      if (toggleSidebar()) event.preventDefault();
     });
   }
 
@@ -368,6 +377,21 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
  * page calls it once, after the page is there: in Cloud the `ui: "v2"` layout does; a standalone app writes a
  * `.client.tsx` with `onMount(() => onCleanup(attachWorkspaces()))` and renders it once on the page.
  */
+/**
+ * Hides or shows the sidebar of the page's first workspace that has the collapse (`collapsible`), as its button and
+ * Mod+Alt+S do: on a wide screen it collapses or expands it, and `onSidebarCollapsedChange` hears the change; where
+ * the sidebar is a drawer, it opens or closes the drawer. For a command of the page, such as "Hide navigation" in a
+ * search. Returns false when no attached workspace has the collapse or its sidebar shows neither way (the phone).
+ */
+export const toggleWorkspaceSidebar = (root?: ParentNode): boolean => {
+  if (typeof document === "undefined") return false;
+  for (const element of (root ?? document).querySelectorAll("[data-k2-workspace]")) {
+    const toggle: unknown = Reflect.get(element, sidebarKey);
+    if (typeof toggle === "function") return Boolean(toggle());
+  }
+  return false;
+};
+
 export const attachWorkspaces = (options: AttachOptions = {}, root: ParentNode = document): (() => void) => {
   const stops = [...root.querySelectorAll<HTMLElement>("[data-k2-workspace]")]
     .filter((element) => !element.closest(island))
