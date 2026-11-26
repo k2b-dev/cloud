@@ -371,7 +371,9 @@ lines instead of cutting a thing.
   }[]`; a way of a few steps, such as a delivery's way inside its `Group`.
 - `Notice`: `tone` `note`, `ai`, `bad`, `warn`; `title`, `meta`, `icon`,
   `actions` (≤ 2 text buttons; `disabled` on one that cannot be taken
-  now, and the sentence says why), children (the sentence and its
+  now, and the sentence says why), `primary` (the one thing to do, such as
+  "Neu laden": a framed button after one quiet text button at most; it is
+  no primary of the page), children (the sentence and its
   consequence). Use it for errors with a way out instead of "try again"
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
