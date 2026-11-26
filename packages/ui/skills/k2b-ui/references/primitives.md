@@ -219,7 +219,8 @@ returning one value, `{ lines: [line, quietLine] }`, or a person with lines
 never cut, the column at least as wide as its longest text value),
 `width={{ min, default }}` (its default where the row has room, sharing the
 room left with the other columns that can give way; down to its minimum
-where it has less; cut text never widens it; grip in the head), `wrap` (one text column may take 3
+where it has less; cut text never widens it; grip in the head; with
+`fixed: true` its default without a grip, for a narrow number or deed column), `wrap` (one text column may take 3
 lines), `drop` (leaves when the table has no room for it: one by one from
 the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or

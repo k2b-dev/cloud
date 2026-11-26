@@ -586,6 +586,76 @@ export const fixtures = {
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
   structure: StructureFixture,
   table: TableFixture,
+  // fixed widths without grips (W2, Notebooks admin): a narrow number and a deed column, the text columns take the rest
+  tableFixed: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { name: "Werkstatt", owner: "Mira Solberg", pages: "1.284" },
+            { name: "Kundenakten Nord", owner: "Felix Thal", pages: "36" },
+            { name: "Rezepte", owner: "Jule Amsel", pages: "4" },
+          ]}
+          columns={[
+            { title: "Notizbuch", cell: (row) => row.name },
+            { title: "Besitzer", cell: (row) => row.owner },
+            { title: "Seiten", width: { min: 100, default: 100, fixed: true }, align: "end", cell: (row) => row.pages },
+            {
+              title: "Aktion",
+              width: { min: 56, default: 56, fixed: true },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für ${row.name}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // number, text and deeds (Notebooks admin #4264): the description takes the room, the deed keeps its narrow width
+  tableFixedText: () =>
+    shell(
+      <Pane label="Notizbücher">
+        <Table
+          label="Notizbücher"
+          rows={[
+            { pages: "1.284", name: "Werkstatt", place: "Küche Lindqvist, Obergeschoss links neben dem Lager" },
+            { pages: "36", name: "Kundenakten Nord", place: "Büro" },
+            { pages: "4", name: "Rezepte", place: "Küche Lindqvist, Erdgeschoss" },
+            { pages: "212", name: "Lieferanten", place: "Archiv, Regal 3" },
+            { pages: "18", name: "Messen", place: "Halle 2" },
+          ]}
+          columns={[
+            { title: "Seiten", width: { min: 100, default: 100, fixed: true }, align: "end", cell: (row) => row.pages },
+            { title: "Name", cell: (row) => row.name },
+            { title: "Ort", cell: (row) => row.place },
+            {
+              title: "Aktionen",
+              width: { min: 72, default: 72, fixed: true },
+              cell: (row) => <Button variant="ghost" icon="dots" label={`Weitere Aktionen für Notizbuch ${row.pages}`} />,
+            },
+          ]}
+        />
+      </Pane>,
+    ),
+  // a small table with groups and rows of two lines (public page, PS #4227): a group head is one quiet line
+  tableGroups: () =>
+    shell(
+      <Pane label="Programm">
+        <Table
+          label="Programm"
+          rowKey={(row) => row.key}
+          group={(row) => ({ key: row.day, head: () => <Text weight="strong">{row.day}</Text>, meta: row.count })}
+          rows={[
+            { key: "a", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Werkstattführung", host: "Mira Solberg", time: "10:00" },
+            { key: "b", day: "Samstag, 28. Nov.", count: "2 Führungen", title: "Lackierwerk", host: "Felix Thal", time: "14:00" },
+            { key: "c", day: "Sonntag, 29. Nov.", count: "1 Führung", title: "Holzlager", host: "Jule Amsel", time: "11:00" },
+          ]}
+          columns={[
+            { title: "Führung", width: { min: 200, default: 260 }, cell: (row) => ({ lines: [row.title, row.host] }) },
+            { title: "Zeit", width: { min: 80, default: 80, fixed: true }, numeric: true, cell: (row) => row.time },
+          ]}
+        />
+      </Pane>,
+    ),
   // an open entry whose form ends at the bottom of a phone, under the floating main action (W3, Spaces #4197)
   detailForm: () =>
     shell(

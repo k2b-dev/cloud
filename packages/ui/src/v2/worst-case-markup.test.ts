@@ -108,6 +108,22 @@ test("a large table drops its columns by their defaults, since it never shrinks 
   );
 });
 
+test("fixed widths carry no grip; when every column is fixed, the last one takes the rest of the row", () => {
+  const markup = renderToString(() =>
+    createComponent(Table<Invoice>, {
+      label: "Rechnungen",
+      rows,
+      columns: [
+        { title: "Kunde", width: { min: 200, default: 200, fixed: true }, cell: (row) => row.customer },
+        { title: "Nummer", width: { min: 160, default: 160, fixed: true }, cell: (row) => row.number },
+      ],
+    }),
+  );
+  expect(markup).not.toContain("k2-cgrip");
+  expect(markup).toContain("--k2-col-base:200px");
+  expect(markup).toContain("--k2-col-base:max(160px, calc(160px + (100cqw - 360px) * 1))");
+});
+
 test("a person in a cell is a picture beside lines, the picture without a name of its own", () => {
   const markup = table();
   expect(markup).toContain('class="k2-cell-person"');

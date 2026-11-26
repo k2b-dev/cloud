@@ -20,7 +20,7 @@ import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon, Mark, type MarkProps } from "./marks";
 import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
 import type { TypeRole } from "./tokens";
-import type { Action, OnNavigate, Person, Status } from "./types";
+import type { Action, OnNavigate, Person, Status, Width } from "./types";
 
 // ── Text ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -486,11 +486,13 @@ export type Column<T> = {
    */
   numeric?: boolean;
   /**
-   * A column that can be dragged wider or narrower: its minimum and default in px. In a small table it is its default
-   * wide where the row has room and shares the room left with the other columns that can give way; where the row has
-   * less, it gives way down to its minimum. Cut text never widens it.
+   * The width of the column, its minimum and default in px: a column that can be dragged wider or narrower (a grip in
+   * its head); in a small table it is its default wide where the row has room and shares the room left with the other
+   * columns that can give way; where the row has less, it gives way down to its minimum. With `fixed` it is its default
+   * wide without a grip, such as a narrow column of numbers or deeds; it neither gives way nor grows. Columns without a
+   * width take the rest of the row when no column can give way. Cut text never widens a column.
    */
-  width?: { min: number; default: number };
+  width?: Width;
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
   /**
@@ -590,6 +592,9 @@ const isPair = (value: CellValue): value is CellLines =>
   !(typeof Node !== "undefined" && value instanceof Node) &&
   "lines" in value;
 
+/** The range of a column that can be dragged; a `fixed` width or none has no grip. */
+const resizable = <T,>(column: Column<T>) => (column.width && !column.width.fixed ? column.width : undefined);
+
 /** A column of numbers, amounts or times: never cut. */
 const isNumeric = <T,>(column: Column<T>) => column.numeric ?? column.align === "end";
 
@@ -648,13 +653,27 @@ export const Table = <T,>(props: TableProps<T>) => {
       return longest === 0 ? 0 : Math.max(longest, signsOf(column.title));
     }),
   );
+  // How long the text of each column is, in signs (its longest value, at least its head): the columns without a width
+  // share the rest of the row in this measure, so the one with more to say gets more room.
+  const lengths = createMemo(() =>
+    props.columns.map((column, index) =>
+      Math.max(
+        1,
+        signsOf(column.title),
+        values().reduce((most, row) => Math.max(most, signsOf(row[index]!)), 0),
+      ),
+    ),
+  );
   // What each column needs, in px: at least `lo` (its minimum; a numeric one its longest value) and at most `hi` (its
   // default). A column without a width counts with 96 and 160 px.
+  // A `fixed` width is its minimum and its default at once.
   const need = createMemo(() =>
     props.columns.map((column, index) => {
       const fit = (signs()[index] ?? 0) > 0 ? (signs()[index] ?? 0) * figureWidth + 32 : 0;
-      const lo = Math.max(column.width?.min ?? column.width?.default ?? flexibleMin, fit);
-      return { lo, hi: Math.max(column.width?.default ?? flexibleColumn, lo) };
+      const width = column.width;
+      const span = width?.fixed ? { min: width.default, default: width.default } : width;
+      const lo = Math.max(span?.min ?? flexibleMin, fit);
+      return { lo, hi: Math.max(span?.default ?? flexibleColumn, lo) };
     }),
   );
   const box = props.select ? 44 : 0;
@@ -671,18 +690,39 @@ export const Table = <T,>(props: TableProps<T>) => {
     const { lo, hi } = need()[index]!;
     const least = shown.reduce((sum, each) => sum + each.lo, box);
     const most = shown.reduce((sum, each) => sum + each.hi, box);
-    if (hi === lo || most <= least) return `${lo}px`;
-    const below = `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
-    const range = (at: number) => (props.columns[at]!.width ? need()[at]!.hi - need()[at]!.lo : 0);
-    const ranges = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + range(at)), 0);
-    if (range(index) === 0 || ranges === 0) return below;
-    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(range(index) / ranges)}))`;
+    const below =
+      hi === lo || most <= least
+        ? `${lo}px`
+        : `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${round((hi - lo) / (most - least))}), ${hi}px)`;
+    // What grows: the columns that can give way, in the measure they do; without such columns, the ones without a width
+    // (below); when every column is fixed, the last one, so there is always one that takes the rest of the row.
+    const span = (at: number) => {
+      const width = props.columns[at]!.width;
+      return width && !width.fixed ? need()[at]!.hi - need()[at]!.lo : 0;
+    };
+    const spans = need().reduce((sum, _, at) => (gone.has(at) ? sum : sum + span(at)), 0);
+    const free = need().filter((_, at) => !gone.has(at) && props.columns[at]!.width === undefined).length;
+    // Without columns that can give way, the columns without a width fill the whole rest of the row together, each in
+    // the measure of its text: a column cuts its text only when the row has no room left for both.
+    const isFree = (at: number) => !gone.has(at) && props.columns[at]!.width === undefined;
+    if (spans === 0 && free > 0 && isFree(index)) {
+      const fixedSum = need().reduce((sum, each, at) => (gone.has(at) || isFree(at) ? sum : sum + each.hi), box);
+      // the room a text takes: its signs at about 7 px and the padding of its cell
+      const room = (at: number) => lengths()[at]! * 7 + 32;
+      const textSum = need().reduce((sum, _, at) => (isFree(at) ? sum + room(at) : sum), 0);
+      return `max(${lo}px, calc((100cqw - ${fixedSum}px) * ${round(room(index) / textSum)}))`;
+    }
+    const lastShown = props.columns.findLastIndex((_, at) => !gone.has(at));
+    const weight = spans > 0 ? span(index) / spans : free > 0 ? 0 : index === lastShown ? 1 : 0;
+    if (weight === 0) return below;
+    return `max(${below}, calc(${hi}px + (100cqw - ${most}px) * ${round(weight)}))`;
   };
   const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
     const count = signs()[index] ?? 0;
     const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
     // a small table with widths sizes every column, also one without a width of its own; a large table keeps defaults
-    const base = grid() ? (column.width ? `${column.width.default}px` : undefined) : sized() ? shrink(index, gone) : undefined;
+    const fixed = column.width?.default;
+    const base = grid() ? (fixed !== undefined ? `${fixed}px` : undefined) : sized() ? shrink(index, gone) : undefined;
     return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
   const measured = () => signs().some((count) => count > 0);
@@ -872,16 +912,19 @@ export const Table = <T,>(props: TableProps<T>) => {
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
-                    <Show when={index() > 0 && props.columns[index() - 1]?.width}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                    {/* a grip only where the column before can be dragged; a fixed width has none */}
+                    <Show when={index() > 0 ? resizable(props.columns[index() - 1]!) : undefined}>
+                      {(width) => (
+                        <span
+                          class="k2-cgrip"
+                          role="separator"
+                          aria-orientation="vertical"
+                          aria-label={props.columns[index() - 1]!.title}
+                          aria-valuemin={width().min}
+                          aria-valuenow={width().default}
+                          tabindex="0"
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}
