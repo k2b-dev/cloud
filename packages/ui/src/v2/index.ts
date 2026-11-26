@@ -10,6 +10,8 @@
  *   enforce this.
  */
 
+// A host that names the page in its own bar (Cloud's phone shell) hears the open item a workspace head's path names.
+export { PageNameContext } from "./bar-place";
 export { Button, type ButtonProps } from "./button";
 // Layer 2: components made of the primitives.
 export {

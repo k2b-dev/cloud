@@ -1,6 +1,7 @@
 import { createComponent, type JSX } from "solid-js";
 import FilteredOrders from "../../skills/k2b-ui/recipes/filtered-table";
 import {
+  ChatWithTabs,
   LongPath,
   NamedPlace,
   OpenItem,
@@ -28,7 +29,9 @@ declare global {
       | "hollow"
       | "hollow-words"
       | "named-bare"
-      | "pane-actions";
+      | "pane-actions"
+      | "chat"
+      | "chat-open";
   }
 }
 
@@ -46,6 +49,8 @@ const heads: Record<string, () => JSX.Element> = {
   "hollow-words": () => createComponent(SearchAndAction, { words: "Kunden" }),
   "named-bare": () => createComponent(NamedPlace, { bare: true }),
   "pane-actions": () => createComponent(PaneWithTwoActions, {}),
+  chat: () => createComponent(ChatWithTabs, {}),
+  "chat-open": () => createComponent(ChatWithTabs, { open: true }),
 };
 
 // A head as its island renders it over the server's markup: a list with its toolbar rows, a toolbar in the head, or a

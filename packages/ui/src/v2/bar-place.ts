@@ -78,7 +78,19 @@ export const SidebarPlaceContext = createContext<(name: () => string | undefined
  * The head of a workspace: the words of the sidebar's current entry, which a title of the same words repeats, and
  * where the head's bar tells its main actions, so the round button of the phone offers them all.
  */
-export type HeadPlace = { place: () => string | undefined; creates: (entries: () => readonly MenuEntry[]) => void };
+export type HeadPlace = {
+  place: () => string | undefined;
+  creates: (entries: () => readonly MenuEntry[]) => void;
+  /** A path in the head's start tells the words of the open item, its last step. */
+  names: (name: () => string | undefined) => void;
+};
+
+/**
+ * A host that names the page in a bar of its own (Cloud's shell on the phone) hears the open item a workspace's head
+ * shows where it stands (the last step of its path), already as the server renders it: the page itself has no title
+ * then, such as the Assistant's open chat.
+ */
+export const PageNameContext = createContext<(name: () => string | undefined) => void>();
 
 export const HeadPlaceContext = createContext<HeadPlace>();
 

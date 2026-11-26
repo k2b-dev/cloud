@@ -3640,6 +3640,12 @@
   .k2-ui .k2-pane-back {
     display: flex;
   }
+  /* in a split only the pane in front stands: a detail that is closed (`detail={false}`, such as the Assistant's tabs
+     beside its chat) waits out of sight with the seam before it until it opens; it is then the page */
+  .k2-ui .k2-split > .k2-pane[data-detail-closed],
+  .k2-ui .k2-split > .k2-seam[data-before-closed] {
+    display: none;
+  }
   /* A detail with a head keeps its way back and its title in one row (W3): the way back is its chevron at the row's
      start, the list's name its accessible name and hint, and the head moves past it. A host that shows the way back in
      its own bar (Cloud's shell) keeps it there. */

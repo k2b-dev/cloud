@@ -73,6 +73,10 @@ A column that scrolls, with no padding: everything in it reaches both edges.
   with the state of an open entry above a reader), `label`.
 - `width={{ min, default }}`: only inside `Pane.Split`; puts a grip on its
   line.
+- `detail={false}`: a detail that is closed now (the Assistant's tabs beside
+  its chat). It stands as a column beside the others on a wide screen; on
+  the phone only the pane in front stands, and this one waits out of sight
+  until it opens (`detail` true), when it is the page.
 - `detail`: the reader beside a list. What is open belongs in the address:
   render the detail only while the address names an entry. On the phone
   the detail is the page, and the title in its head is never cut: beside the

@@ -13,7 +13,14 @@ import {
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
-import { BarPlaceContext, HeadPlaceContext, SidebarPlaceContext, StatusPlaceContext, type StatusRowKind } from "./bar-place";
+import {
+  BarPlaceContext,
+  HeadPlaceContext,
+  PageNameContext,
+  SidebarPlaceContext,
+  StatusPlaceContext,
+  type StatusRowKind,
+} from "./bar-place";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -97,8 +104,9 @@ const centerGrip = (grip: HTMLElement) => {
  * The seam between two columns: the one 1 px line, and on a line that moves its grip. The grip is the shape only;
  * dragging and the keyboard come with the behaviour layer.
  */
-const Seam = (props: { grip?: { label: string; width: Width } }) => (
-  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"}>
+const Seam = (props: { grip?: { label: string; width: Width }; beforeClosed?: boolean }) => (
+  // the seam before a closed detail goes with it on the phone
+  <div class="k2-seam" aria-hidden={props.grip ? undefined : "true"} data-before-closed={props.beforeClosed ? "" : undefined}>
     <Show when={props.grip}>
       {(grip) => (
         <span
@@ -197,7 +205,14 @@ export const Workspace = (props: WorkspaceProps) => {
   ));
   // the head's main actions: where they are several, the phone's round button offers them all as one "+"
   const [headCreates, setHeadCreates] = createSignal<() => readonly MenuEntry[]>();
-  const headPlace = { place: () => placeName()?.(), creates: (entries: () => readonly MenuEntry[]) => setHeadCreates(() => entries) };
+  // the open item the head's path names, for a host that names the page in its own bar
+  const [headName, setHeadName] = createSignal<() => string | undefined>();
+  useContext(PageNameContext)?.(() => headName()?.());
+  const headPlace = {
+    place: () => placeName()?.(),
+    creates: (entries: () => readonly MenuEntry[]) => setHeadCreates(() => entries),
+    names: (name: () => string | undefined) => setHeadName(() => name),
+  };
   const head = resolveChildren(() => <HeadPlaceContext.Provider value={headPlace}>{props.head}</HeadPlaceContext.Provider>);
   const fabCreates = () => headCreates()?.() ?? [];
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
@@ -363,7 +378,13 @@ export const Workspace = (props: WorkspaceProps) => {
 
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
-type SplitEntry = { readonly width?: Width; readonly label?: string; element?: HTMLElement };
+type SplitEntry = {
+  readonly width?: Width;
+  readonly label?: string;
+  /** A detail that is closed (`detail={false}`): on the phone it stands back until it opens. */
+  readonly closed?: boolean;
+  element?: HTMLElement;
+};
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 
@@ -413,6 +434,9 @@ export const Pane = (props: PaneProps) => {
     },
     get label() {
       return props.label;
+    },
+    get closed() {
+      return props.detail === false;
     },
   };
   useContext(SplitContext)?.(entry);
@@ -473,6 +497,9 @@ export const Pane = (props: PaneProps) => {
       aria-label={props.label}
       data-width={props.width ? "" : undefined}
       data-detail={props.detail ? "" : undefined}
+      // a detail that is closed (`detail={false}`): beside the columns on a wide screen, and on the phone out of sight
+      // until it opens, so only the pane in front stands
+      data-detail-closed={props.detail === false ? "" : undefined}
       // a detail with its way back: on the phone its `Back` closes it, so the × of its head leaves
       data-back={props.detail && props.back ? (head() !== undefined ? "head" : "") : undefined}
       data-beside-block={besideBlock() ? "" : undefined}
@@ -562,7 +589,7 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
         {(pane, index) => (
           <>
             {pane}
-            <Seam grip={grip(index())} />
+            <Seam grip={grip(index())} beforeClosed={entryOf(index() + 1)?.closed === true} />
           </>
         )}
       </For>

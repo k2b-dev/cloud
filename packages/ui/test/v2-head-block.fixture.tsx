@@ -270,3 +270,28 @@ export function PaneWithTwoActions() {
     </Workspace>
   );
 }
+
+/** The Assistant (W7): the chat in front and its tabs beside it, a detail that opens (`detail={false}` while closed). */
+export function ChatWithTabs(props: { open?: boolean }) {
+  return (
+    <Workspace head={<Bar start={<Text weight="strong">Gustav</Text>} />}>
+      <Pane.Split>
+        <Pane label="Chat">
+          <List label="Nachrichten">
+            <Row icon="message" lines={["Wie komme ich in die Altstadt?"]} />
+          </List>
+        </Pane>
+        <Pane
+          label="Tabs"
+          detail={props.open ?? false}
+          back={props.open ? { label: "Chat", href: "#chat" } : undefined}
+          width={{ min: 320, default: 480 }}
+        >
+          <List label="Tabs">
+            <Row icon="file" lines={["Fahrplan.pdf"]} />
+          </List>
+        </Pane>
+      </Pane.Split>
+    </Workspace>
+  );
+}
