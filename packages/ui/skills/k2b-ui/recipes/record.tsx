@@ -239,7 +239,8 @@ export default function CustomerOverview(props: Props) {
             icon="currency-euro"
             color={area.money}
             label="Geld heute"
-            value={props.empty ? "0,00 €" : <Chip amount="out">{customer.money.amount}</Chip>}
+            // an amount is a number, not a pill
+            value={props.empty ? "0,00 €" : customer.money.amount}
             meta={props.empty ? "nichts offen" : customer.money.meta}
             href="#geld"
           />
@@ -300,7 +301,21 @@ export default function CustomerOverview(props: Props) {
               ) : props.empty ? (
                 <Empty icon="package" text="Noch keine Einlieferung." action={{ label: "Einlieferung erfassen", icon: "plus" }} />
               ) : (
-                <Digest items={customer.history.map((entry) => ({ icon: "package", color: area.deliveries, ...entry }))} />
+                // each delivery as a row: its id over the sentence, the date at the end, its state as a chip
+                <List label="Vorgänge">
+                  <For each={customer.history}>
+                    {(entry) => (
+                      <Row
+                        mark={{ icon: "package", color: area.deliveries }}
+                        lines={[entry.title, entry.text]}
+                        time={entry.date}
+                        marks={
+                          entry.state.tone ? <Chip status={entry.state.tone}>{entry.state.label}</Chip> : <Chip>{entry.state.label}</Chip>
+                        }
+                      />
+                    )}
+                  </For>
+                </List>
               )}
             </Section>
             <Section

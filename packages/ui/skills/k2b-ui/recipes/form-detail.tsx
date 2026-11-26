@@ -1,5 +1,5 @@
-// Recipe: a form beside a list. The page's one primary ("Neuer Termin") stays in the head and opened the form; the
-// form saves with a default button in its own footer bar. On the phone the form is the page, with one way back.
+// Recipe: a form beside a list. "Neuer Termin" in the head opened the form; while the form is open it holds the page's
+// one primary, "Termin anlegen" in its own footer bar. On the phone the form is the page, with one way back.
 import {
   Band,
   Bar,
@@ -102,8 +102,10 @@ export default function NewAppointment(props: Props) {
               ]}
             />
           }
+          // while the form is open it is the task of the page: its "Termin anlegen" is the one primary, the head
+          // offers "Neuer Termin" again only once the form is closed
           end={
-            <Button variant="primary" icon="plus" href="#neu">
+            <Button icon="plus" href="#neu">
               Neuer Termin
             </Button>
           }
@@ -172,8 +174,8 @@ export default function NewAppointment(props: Props) {
             end={
               <>
                 <Button href="#termine">Abbrechen</Button>
-                {/* a default button: the page's one primary stays "Neuer Termin" in the head */}
-                <Button type="submit" icon="check" busy={props.saving}>
+                {/* the one primary of the page while the form is open */}
+                <Button variant="primary" type="submit" icon="check" busy={props.saving}>
                   Termin anlegen
                 </Button>
               </>

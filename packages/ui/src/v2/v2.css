@@ -626,6 +626,10 @@
   min-width: 0;
   flex: none;
 }
+/* the foot of a column (a form's deeds) draws no line under itself: the line above it separates it */
+.k2-ui .k2-scroll > .k2-bar:last-child {
+  border-bottom: 0;
+}
 .k2-ui .k2-bar-start,
 .k2-ui .k2-bar-end {
   display: flex;
@@ -2694,6 +2698,10 @@
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-field {
   padding: 0 var(--k2-edge);
+}
+/* a form reads down one column of a fixed width: its fields never run across a wide pane (settings stand as rows) */
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane) > :is(.k2-field:not([data-setting]), .k2-frow) {
+  max-width: 600px;
 }
 /* a control in the flow of a column without a field, such as a reply box in a band, stands on the text edge */
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-input {

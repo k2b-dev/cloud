@@ -189,8 +189,8 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 One primary action per page: the filled `Button variant="primary"` in the
 head, mirrored as `Workspace primary` so the phone shows it. A form page
 without a head action has its "Save" as the one primary in its footer
-`Bar`; a form shown beside a page that has a head primary saves with a
-default (framed) button. An open dialog or sheet is a surface of its own
+`Bar`; while a form is open beside a list, it holds the one primary and
+the head's "New" turns default. An open dialog or sheet is a surface of its own
 and has its own one primary (such as "Erstellen").
 
 What a list has open belongs in the address: render the `Pane detail` only
