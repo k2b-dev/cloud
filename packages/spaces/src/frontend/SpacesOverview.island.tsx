@@ -251,8 +251,15 @@ export default function SpacesOverview(props: Props) {
         : []),
     ];
   };
-  const lead = () =>
-    [t().forYou({ count: number(counts().mine) }), ...(overdueCount() > 0 ? [`${number(overdueCount())} ${t().overdue}`] : [])].join(" · ");
+  /**
+   * The first row says only what to act on: what is overdue, else what comes next. The tab already counts the work, so
+   * the row does not; with nothing overdue and nothing next there is no row.
+   */
+  const lead = () => {
+    const next = nextUp();
+    if (overdueCount() > 0) return `${number(overdueCount())} ${t().overdue}`;
+    return next?.startsAt ? t().nextLead({ title: next.title, time: dates.formatTime(next.startsAt, props.dateConfig) }) : undefined;
+  };
   const agendaTime = (item: WorkItem) =>
     item.startsAt
       ? `${dates.formatTime(item.startsAt, props.dateConfig)}${item.endsAt ? `–${dates.formatTime(item.endsAt, props.dateConfig)}` : ""}`
@@ -311,7 +318,8 @@ export default function SpacesOverview(props: Props) {
           }
           end={
             <>
-              <Button variant="ghost" icon="search" label={t().searchTitle} keep onClick={() => void openSearch()} />
+              {/* On the phone the shell's bar holds the one search, so this one gives way there. */}
+              <Button variant="ghost" icon="search" label={t().searchTitle} onClick={() => void openSearch()} />
               <Button variant="primary" icon="plus" onClick={() => void composeTask()}>
                 {t().newTask}
               </Button>
@@ -326,10 +334,16 @@ export default function SpacesOverview(props: Props) {
           label={t().myWork}
           scrollKey="spaces-overview-work"
           // The lead keeps what is overdue, as the phone shows no facts; the next entry follows as a fact.
-          status={<StatusRow lead={lead()} facts={statement()} />}
+          status={(() => {
+            const text = lead();
+            if (!text) return undefined;
+            // Overdue leads, and the next entry follows as a fact; a next entry that leads keeps only how long until it.
+            return <StatusRow lead={text} facts={overdueCount() > 0 ? statement() : statement().map(({ after }) => ({ after }))} />;
+          })()}
         >
           <Show when={view() === "mine" && agenda().length > 0}>
             <Band label={t().agenda}>
+              {/* k2b-ui gap: on the phone Tiles stand one per row; the rules want two compact tiles side by side. */}
               <Tiles
                 label={t().agenda}
                 items={agenda().map((item) => ({
@@ -379,7 +393,7 @@ export default function SpacesOverview(props: Props) {
           </Show>
         </Pane>
         <Pane side label={t().activity} width={{ min: 300, default: 380 }} scrollKey="spaces-overview-activity">
-          <Section icon="history" title={t().activity} summary={t().activityDescription}>
+          <Section icon="history" title={t().activity}>
             <Show
               when={activityItems().length > 0}
               fallback={

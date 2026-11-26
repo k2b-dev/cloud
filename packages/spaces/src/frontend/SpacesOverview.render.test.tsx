@@ -151,6 +151,21 @@ describe("Spaces overview", () => {
     expect(textOf(render(null, "en", { activitySpace: "AB" }))).toContain("Sofie · Completed “Ship overview” in AB");
   });
 
+  test("says each thing once: no line about the activity, and one search place on the phone", () => {
+    const html = render();
+    // The section's title says what it is; a sentence under it that names no deed is left out.
+    expect(textOf(html)).not.toContain("Recent changes across your Spaces.");
+    // On the phone the shell's bar holds the one search; the head's search gives way there.
+    const search = html.match(/<button[^>]*aria-label="Search Spaces"[^>]*>/)?.[0];
+    expect(search).toBeDefined();
+    expect(search).not.toContain("data-keep");
+  });
+
+  test("with nothing overdue and nothing next, the work has no first row", () => {
+    const html = render(null, "en", { day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next: null, overdue: 0 } });
+    expect(html).not.toContain('data-k2-part="StatusRow"');
+  });
+
   test("reads what counts today from the server in every view: overdue and the next entry", () => {
     const next = {
       shortId: "Event9",
@@ -169,7 +184,9 @@ describe("Spaces overview", () => {
     const text = textOf(
       render(null, "en", { initialView: "today", day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next, overdue: 2 } }),
     );
-    expect(text).toContain("1 for you · 2 overdue");
+    // The tab already counts the work for this person ("For me 1"); the row says only what to act on.
+    expect(text).toContain("2 overdue");
+    expect(text).not.toContain("for you");
     expect(text).toContain("Late review");
     expect(text).toContain("in 3 hr");
     // A day read later (after a view switch) counts from its own moment, not from when the page loaded.
