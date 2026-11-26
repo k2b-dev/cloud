@@ -306,6 +306,8 @@ suiteFor("database")("workflow observability", () => {
       ...(await listWorkflowRuns({ appId, states: ["failed", "needs_attention"], limit: 1, offset: 1 })),
     ];
     expect(needSomeone.map((run) => run.id).sort()).toEqual([failedRun!, attentionRun!].sort());
+    // an empty set names no state, so no run matches it
+    expect(await listWorkflowRuns({ appId, states: [] })).toEqual([]);
     expect((await listWorkflowRuns({ appId, states: ["queued", "waiting"] })).map((run) => run.id).sort()).toEqual(
       [queuedRun!, waitingRun!].sort(),
     );

@@ -48,7 +48,10 @@ export type WorkflowRunFilter = {
   /** Restrict the list to the direct children of one fan-out parent. */
   parentRunId?: string;
   state?: WorkflowRunState;
-  /** Any of these states, such as every state that needs someone (`failed`, `needs_attention`); with `state`, both apply. */
+  /**
+   * Any of these states, such as every state that needs someone (`failed`, `needs_attention`); with `state`, both apply.
+   * An empty set matches no run; leave it out for every state.
+   */
   states?: readonly WorkflowRunState[];
   mode?: WorkflowInvocationMode;
   /** Children are noise in a list view until you are looking at their parent. */
@@ -116,8 +119,8 @@ const RUN_FROM = `
   LEFT JOIN workflows.event AS e ON e.id = r.event_id
 `;
 
-/** The state set of a filter as a Postgres text array, or null when it names none. */
-const states = (filter: Pick<WorkflowRunFilter, "states">) => (filter.states?.length ? toPgTextArray([...filter.states]) : null);
+/** The state set of a filter as a Postgres text array (`{}` matches nothing), or null when it sets none. */
+const states = (filter: Pick<WorkflowRunFilter, "states">) => (filter.states ? toPgTextArray([...filter.states]) : null);
 /** A name search as a case-insensitive contains pattern, or null. */
 const search = (filter: { search?: string }) => (filter.search?.trim() ? `%${escapeLikePattern(filter.search.trim())}%` : null);
 

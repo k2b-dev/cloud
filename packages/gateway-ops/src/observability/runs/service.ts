@@ -93,7 +93,7 @@ const jobs = async (state: RunsState, paging: Paging): Promise<RunsPart> => {
 // ── Workflow runs ────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** Every workflow state each status stands for, as `workflowStatus` maps them back; the store filters them before paging. */
-export const WORKFLOW_STATES: Record<RunStatus, readonly WorkflowRunState[]> = {
+const WORKFLOW_STATES: Record<RunStatus, readonly WorkflowRunState[]> = {
   failed: ["failed", "needs_attention"],
   running: ["running"],
   waiting: ["queued", "waiting"],

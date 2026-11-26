@@ -37,7 +37,8 @@ const detail = latest ? await getWorkflowRun(latest.id) : null;
 The list filter accepts app, scope, workflow, parent, state, mode, start time,
 limit, and offset. `states` takes a set of states, such as
 `["failed", "needs_attention"]`, and applies before `limit`, so a page never
-misses a run of another state in the set. Run detail adds inputs, result, source, steps, effect usage,
+misses a run of another state in the set. An empty set matches no run; leave
+`states` out for every state. Run detail adds inputs, result, source, steps, effect usage,
 event data, and child-state counts. Once event retention expires the payload,
 `eventData` is `null` and `eventPayloadExpired` is `true`. The operations UI
 shows it as expired. Runs keep their own inputs and context. See

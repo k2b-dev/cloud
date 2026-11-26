@@ -177,11 +177,12 @@ export default function RunsScreen(props: RunsScreenProps) {
     }
   };
 
-  /** A new state from the bar, the search or the order: the list starts at its first page again. */
   /** The page of the address after a history step (back or forward), read before the bar reports the step. */
   let restoring: number | undefined;
   onMount(() => {
-    // capture: this runs before the bar's own listener reports the step through `change`
+    // This must run before the bar's own popstate listener reports the step through `change`. It does because this
+    // onMount registers first (window listeners run in registration order; capture changes nothing on window).
+    // k2b-ui gap: FilterBar.onChange should say whether a change came from history; switch to that when it lands.
     const step = () => {
       restoring = parseRunsAddress(query(), new URLSearchParams(location.search)).page;
     };
