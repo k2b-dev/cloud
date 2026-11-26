@@ -92,7 +92,6 @@ const consumers = [
   ["Core HTTP catalog and dispatcher", "packages/cloud/src/api/capabilities.test.ts"],
   ["browser and server clients", "packages/cloud/src/capabilities/client.test.ts"],
   ["generic CLI", "packages/cloud/src/cli/capabilities.test.ts"],
-  ["Capabilities app", "packages/capabilities/src/invocation.test.ts"],
   ["Universal Search", "packages/cloud/src/api/search.test.ts"],
   ["MCP", "packages/cloud/src/api/mcp.test.ts"],
   ["Assistant discovery and approval", "packages/cloud/src/ai/capabilities.test.ts"],
