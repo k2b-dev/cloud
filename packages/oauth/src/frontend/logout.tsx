@@ -1,5 +1,5 @@
 import { type AuthContext, getLocale } from "@k2b/cloud/server";
-import { Band, Bar, Button, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button } from "@k2b/ui/v2";
 import { ssr } from "../config";
 import { AuthorizationPage } from "./_components/AuthorizationPage";
 import { oauthMessages } from "./messages";
@@ -17,11 +17,10 @@ export default ssr<AuthContext>(async (c) => {
   }
   const action = `/oauth/logout${query.size ? `?${query}` : ""}`;
   return () => (
-    <AuthorizationPage c={c} title={t.signOut}>
+    <AuthorizationPage c={c} title={t.signOut} heading={t.signOutHint}>
       <form id={SIGN_OUT_FORM} method="post" action={action} hidden />
       {/* the question and its answers: one block below the head, with its own top edge */}
       <Band>
-        <Text>{t.signOutHint}</Text>
         <Bar
           end={
             <>

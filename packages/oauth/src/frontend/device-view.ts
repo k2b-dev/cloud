@@ -27,7 +27,19 @@ export const resolveDeviceView = async <E extends AuthContext>(c: Context<E>): P
   }
 
   const result = c.req.query("result");
-  if (result === "approved" || result === "denied" || result === "expired") return { kind: "result", outcome: result };
+  if (result === "approved") {
+    // what was connected, and to whom: the application's registered name and this account
+    const clientId = c.req.query("client");
+    const client = clientId && clientId.length <= 255 ? await oauth.clients.getByClientId({ clientId }) : null;
+    const account = user.displayName || user.uid;
+    if (!client) return { kind: "result", outcome: result };
+    return {
+      kind: "result",
+      outcome: result,
+      message: account ? t.deviceApprovedFor({ app: client.name, account }) : t.deviceApprovedApp({ app: client.name }),
+    };
+  }
+  if (result === "denied" || result === "expired") return { kind: "result", outcome: result };
 
   const typed = c.req.query("user_code");
   if (typed === undefined) return { kind: "entry" };

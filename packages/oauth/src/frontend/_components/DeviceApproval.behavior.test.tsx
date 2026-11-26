@@ -74,12 +74,13 @@ describe("device approval page DOM", () => {
     }
   });
 
-  test("confirmation names the client, the code, every scope, and the own-code warning in English", async () => {
+  test("confirmation names the client once, the code, every scope, and the own-code warning in English", async () => {
     const page = await mount("en", confirm);
     try {
       expect(page.root.textContent).toContain("Allow Cloud CLI to access your account?");
       expect(page.root.textContent).toContain("WDJB-MJHT");
-      expect(page.root.textContent).toContain("cloud-cli");
+      // the question names the client once; no fact repeats its name or ID
+      expect(page.root.textContent).not.toContain("cloud-cli");
       expect(page.root.textContent).toContain("Perform changes available to your account");
       expect(page.root.textContent).toContain("Stay connected until you revoke access");
       expect(page.root.textContent).toContain("Only continue if you started this sign-in yourself.");

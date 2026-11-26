@@ -23,7 +23,9 @@ export const oauthMessages = i18n.define({
       confidential: "Confidential",
       selected: ({ count }: { count: number }) => `${count} selected`,
       noMatch: ({ query }: { query: string }) => `No OAuth clients match “${query}”.`,
-      noClients: "No OAuth clients found. Create one to allow external applications to authenticate users.",
+      noClients: "Create a client so external applications can sign people in with this Cloud.",
+      clientCount: ({ count }: { count: number }) => `${count.toLocaleString("en")} ${count === 1 ? "client" : "clients"}`,
+      openClient: "Open",
       openIdConfiguration: "OpenID configuration",
       oauthEndpoints: "OAuth endpoints",
       authorizationEndpoint: "Authorization endpoint URL",
@@ -143,6 +145,9 @@ export const oauthMessages = i18n.define({
         "Only continue if you started this sign-in yourself. Never enter a code that someone else sent you or asked you to enter.",
       deviceApprovedTitle: "Device connected",
       deviceApprovedBody: "You can close this tab now.",
+      deviceApprovedFor: ({ app, account }: { app: string; account: string }) =>
+        `${app} is now connected to your account ${account}. You can close this tab now.`,
+      deviceApprovedApp: ({ app }: { app: string }) => `${app} is now connected to your account. You can close this tab now.`,
       deviceDeniedTitle: "Access denied",
       deviceDeniedBody: "The device was not connected. You can close this tab now.",
       deviceExpiredTitle: "Request no longer valid",
@@ -163,7 +168,6 @@ export const oauthMessages = i18n.define({
       profileNobody: "Nobody",
       dynamicLead: ({ count }: { count: number }) =>
         `${count.toLocaleString("en")} ${count === 1 ? "client registered itself" : "clients registered themselves"}`,
-      managedLead: "Every client is registered here",
       emptyLead: "No clients yet",
       dynamicNote: "This client registered itself. Its name and addresses are its own and unverified; revoke it if nobody here uses it.",
       firstPartyNote: "Cloud brings this client along; it cannot be changed or deleted here.",
@@ -205,7 +209,9 @@ export const oauthMessages = i18n.define({
       confidential: "Vertraulich",
       selected: ({ count }) => `${count} ausgewählt`,
       noMatch: ({ query }) => `Keine OAuth-Clients passend zu „${query}“ gefunden.`,
-      noClients: "Keine OAuth-Clients vorhanden. Erstelle einen Client, damit externe Anwendungen Benutzer authentifizieren können.",
+      noClients: "Erstelle einen Client, damit externe Anwendungen Personen mit dieser Cloud anmelden können.",
+      clientCount: ({ count }) => `${count.toLocaleString("de")} ${count === 1 ? "Client" : "Clients"}`,
+      openClient: "Öffnen",
       openIdConfiguration: "OpenID-Konfiguration",
       oauthEndpoints: "OAuth-Endpunkte",
       authorizationEndpoint: "Autorisierungs-Endpunkt",
@@ -325,6 +331,9 @@ export const oauthMessages = i18n.define({
         "Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast. Gib niemals einen Code ein, den dir jemand geschickt hat oder um dessen Eingabe du gebeten wurdest.",
       deviceApprovedTitle: "Gerät verbunden",
       deviceApprovedBody: "Du kannst diesen Tab jetzt schließen.",
+      deviceApprovedFor: ({ app, account }) =>
+        `${app} ist jetzt mit deinem Konto ${account} verbunden. Du kannst diesen Tab jetzt schließen.`,
+      deviceApprovedApp: ({ app }) => `${app} ist jetzt mit deinem Konto verbunden. Du kannst diesen Tab jetzt schließen.`,
       deviceDeniedTitle: "Zugriff abgelehnt",
       deviceDeniedBody: "Das Gerät wurde nicht verbunden. Du kannst diesen Tab jetzt schließen.",
       deviceExpiredTitle: "Anfrage nicht mehr gültig",
@@ -347,7 +356,6 @@ export const oauthMessages = i18n.define({
       profileNobody: "Niemand",
       dynamicLead: ({ count }) =>
         `${count.toLocaleString("de")} ${count === 1 ? "Client hat sich selbst registriert" : "Clients haben sich selbst registriert"}`,
-      managedLead: "Alle Clients sind hier registriert",
       emptyLead: "Noch keine Clients",
       dynamicNote:
         "Dieser Client hat sich selbst registriert. Name und Adressen stammen von ihm und sind nicht geprüft; widerrufe ihn, wenn ihn hier niemand nutzt.",

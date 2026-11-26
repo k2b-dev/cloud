@@ -192,9 +192,16 @@ describe("OAuth in the Cloud shell", () => {
             "/api/accounts/entities": {
               type: "application/json",
               body: JSON.stringify({
+                // enough people and groups that the picker has hits beside what is chosen
                 items: [
-                  { kind: "user", user: { id: "11111111-1111-4111-8111-000000000007", uid: "ada", displayName: "Ada Renz" } },
-                  { kind: "group", group: { id: "22222222-2222-4222-8222-000000000007", name: "betrieb" } },
+                  ...["Ada Renz", "Ben Okafor", "Clara Weiß", "David Nguyen", "Elif Yılmaz"].map((name, index) => ({
+                    kind: "user",
+                    user: { id: `11111111-1111-4111-8111-00000000000${index}`, uid: name.split(" ")[0]!.toLowerCase(), displayName: name },
+                  })),
+                  ...["betrieb", "buchhaltung", "entwicklung", "leitung"].map((name, index) => ({
+                    kind: "group",
+                    group: { id: `22222222-2222-4222-8222-00000000000${index}`, name },
+                  })),
                 ],
               }),
             },

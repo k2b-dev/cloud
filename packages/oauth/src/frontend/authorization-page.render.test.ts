@@ -100,7 +100,9 @@ describe("OAuth authorization pages", () => {
     // the code stands large in a block of its own, where it is compared with the terminal
     expect(html).toMatch(new RegExp(`data-testid="device-user-code"[^>]*>${sample.code}<`));
     expect(body).toContain("Check that this code matches the one on your device");
-    expect(body).toContain(`Client ID ${sample.cli.clientId}`);
+    // the question names the application once; no facts repeat its name or its ID
+    expect(body.split("Cloud CLI")).toHaveLength(2);
+    expect(body).not.toContain(`Client ID ${sample.cli.clientId}`);
     for (const scope of [
       "Identify your Cloud account",
       "Read data and Help available to your account",
@@ -126,7 +128,7 @@ describe("OAuth authorization pages", () => {
     const confirm = text(await renderAuthorizationState("confirm", "de"));
     expect(confirm).toContain("Cloud CLI Zugriff auf dein Konto erlauben?");
     expect(confirm).toContain("Prüfe, ob dieser Code mit dem auf deinem Gerät übereinstimmt");
-    expect(confirm).toContain("Client-ID");
+    expect(confirm).not.toContain("Client-ID");
     expect(confirm).toContain("Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast.");
     expect(confirm).toMatch(/Ablehnen .*Zugriff erlauben/);
 
@@ -135,7 +137,8 @@ describe("OAuth authorization pages", () => {
     expect(html).toContain("<title>Anwendung autorisieren");
     expect(heading(html)).toBe(`${sample.dynamic.name} autorisieren`);
     // the client names itself: its whole name also stands where it wraps
-    expect(consent).toContain(`Anwendung ${sample.dynamic.name}`);
+    // the heading names the application; no fact repeats it
+    expect(consent.split(sample.dynamic.name)).toHaveLength(2);
     expect(consent).toContain("Rückkehr zu localhost:53682");
     expect(consent).toContain("Ressource https://cloud.example/api/mcp/v1");
     expect(consent).toContain(`Client-ID ${sample.dynamic.clientId}`);
@@ -212,6 +215,12 @@ describe("OAuth authorization pages", () => {
       const html = await renderAuthorizationState("approved", locale);
       expect(heading(html)).toBe(title);
       expect(text(html)).toContain(body);
+      // it names what was connected, and to whom
+      expect(text(html)).toContain(
+        locale === "de"
+          ? "Cloud CLI ist jetzt mit deinem Konto Ada Admin verbunden."
+          : "Cloud CLI is now connected to your account Ada Admin.",
+      );
       // the result is read as a status
       expect(html).toMatch(/role="status"[^>]*>[\s\S]*?You can close this tab now|role="status"[^>]*>[\s\S]*?Du kannst diesen Tab/);
       expect(html).not.toContain("<form");

@@ -58,5 +58,8 @@ export const completeDeviceDecision = async (c: Context<AuthContext>, input: z.i
     return refused(c, "sign_in_again");
   }
   if (!decided) return c.redirect("/oauth/device?result=expired", 303);
-  return c.redirect(`/oauth/device?result=${input.decision === "approve" ? "approved" : "denied"}`, 303);
+  // the connected page names the application by its registered client ID, never by text in the address
+  if (input.decision === "approve")
+    return c.redirect(`/oauth/device?${new URLSearchParams({ result: "approved", client: client.clientId })}`, 303);
+  return c.redirect("/oauth/device?result=denied", 303);
 };

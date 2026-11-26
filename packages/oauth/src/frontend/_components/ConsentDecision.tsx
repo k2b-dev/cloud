@@ -25,7 +25,6 @@ export function ConsentDecision(props: { view: ConsentDecisionView }) {
     <>
       <Facts
         items={[
-          { label: t().application, value: props.view.client.name },
           { label: t().returnsTo, value: props.view.redirectHost, mono: true },
           ...(props.view.resource ? [{ label: t().resource, value: props.view.resource, mono: true }] : []),
           { label: t().clientId, value: props.view.client.clientId, mono: true },

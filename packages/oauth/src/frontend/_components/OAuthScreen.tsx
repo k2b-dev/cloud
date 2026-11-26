@@ -4,7 +4,6 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Cells,
   Check,
   Chip,
   confirm,
@@ -290,6 +289,8 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       });
   };
 
+  const dynamicClients = () => props.clients.filter((client) => client.registrationKind === "dynamic");
+
   // ── Deeds on an open client ───────────────────────────────────────────────────────────────────────────────────
   // A retry repeats what the person already agreed to; it does not ask again.
   const remove = async (client: ClientRow) => {
@@ -340,7 +341,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       back={{ label: t().backToClients, href: list() }}
       head={
         <Bar
-          start={<Text type="lead">{client.name}</Text>}
+          start={<Text weight="strong">{client.name}</Text>}
           end={
             <>
               {/* a self-registered client has one deed, revoking; a managed one keeps the rarer ones in "…", which the
@@ -418,24 +419,18 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     <Pane
       label={t().clients}
       scrollKey="oauth-clients"
-      status={
-        <StatusRow
-          lead={
-            props.figures.total === 0
-              ? t().emptyLead
-              : props.figures.dynamic > 0
-                ? t().dynamicLead({ count: props.figures.dynamic })
-                : t().managedLead
-          }
-        />
-      }
+      status={<StatusRow lead={props.figures.total === 0 ? t().emptyLead : t().clientCount({ count: props.figures.total })} />}
     >
-      {/* the figures say what the lead does not; before the first client there is nothing to count */}
-      <Show when={props.figures.total > 0}>
-        <Cells>
-          <Cells.Cell icon="key" label={t().clients} value={number(props.figures.total)} />
-          <Cells.Cell icon="lock-open" label={t().public} value={number(props.figures.public)} />
-        </Cells>
+      {/* clients that registered themselves are the ones to check: said once, with their colour and sign; while a
+          client is open, its own head says what it is */}
+      <Show when={props.figures.dynamic > 0 && !props.open && !props.search}>
+        <Notice
+          tone="warn"
+          icon="world"
+          actions={dynamicClients().length === 1 ? [{ label: t().openClient, href: href({ client: dynamicClients()[0]!.id }) }] : undefined}
+        >
+          {t().dynamicLead({ count: props.figures.dynamic })}
+        </Notice>
       </Show>
       <Table
         label={t().clients}

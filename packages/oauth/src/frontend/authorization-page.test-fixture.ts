@@ -1,3 +1,4 @@
+import { spyOn } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -37,6 +38,12 @@ export const sample = {
   dynamic: { name: "Example Assistant", clientId: "dyn_3f9c2a7e5b1d4c8a" },
 } as const;
 
+// the connected page reads the application's registered name by its client ID
+const { oauth } = await import("../service/oauth");
+spyOn(oauth.clients, "getByClientId").mockImplementation(async ({ clientId }) =>
+  clientId === sample.cli.clientId ? ({ ...sample.cli } as never) : null,
+);
+
 // Core's legal links, so the footer looks as it does in a running Cloud.
 const legalApp = {
   id: "legal-probe",
@@ -59,7 +66,11 @@ const signedIn: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("runtime" as never, { apps: [legalApp] } as never);
   c.set("credentialKind", "session" as never);
   c.set("sessionKind", "web" as never);
-  c.set("actor", { kind: "user", sessionKind: "web", user: { id: "22222222-2222-4222-8222-222222222222" } } as never);
+  c.set("actor", {
+    kind: "user",
+    sessionKind: "web",
+    user: { id: "22222222-2222-4222-8222-222222222222", uid: "ada", displayName: "Ada Admin" },
+  } as never);
   await next();
 };
 
@@ -138,7 +149,7 @@ export const authorizationStates = {
   consent: "/fixture/consent",
   consentCli: "/fixture/consent-cli",
   consentReauthenticate: "/fixture/consent-reauthenticate",
-  approved: "/oauth/device?result=approved",
+  approved: "/oauth/device?result=approved&client=cloud-cli",
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",

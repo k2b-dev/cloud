@@ -361,7 +361,7 @@ suite("OAuth device authorization grant", () => {
     expect(confirm.client).toEqual({ name: "Cloud CLI", clientId: "cloud-cli" });
     expect(confirm.scopes).toEqual(["openid", "profile", "read", "offline_access"]);
 
-    expect(await decide(who, confirm.request, "approve")).toBe("/oauth/device?result=approved");
+    expect(await decide(who, confirm.request, "approve")).toStartWith("/oauth/device?result=approved&client=");
     const tokens = await poll(started.device_code);
     expect(tokens.status).toBe(200);
     expect(tokens.body.scope).toBe("openid profile read offline_access");

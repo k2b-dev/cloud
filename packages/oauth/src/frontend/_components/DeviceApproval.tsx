@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Band, Canvas, Facts, Text } from "@k2b/ui/v2";
+import { Band, Canvas, Text } from "@k2b/ui/v2";
 import { Match, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
 import { CautionNote, DecisionForm, Outcome, RequestedAccess } from "./AuthorizationParts";
@@ -52,12 +52,6 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
                 <DeviceCodeDrawing code={view().code} />
               </Canvas>
             </Band>
-            <Facts
-              items={[
-                { label: t().application, value: view().client.name },
-                { label: t().clientId, value: view().client.clientId, mono: true },
-              ]}
-            />
             <RequestedAccess scopes={view().scopes} />
             <CautionNote text={t().deviceOwnCodeWarning} reauthenticate={!!view().reauthenticateHref} />
             <DecisionForm
@@ -73,7 +67,7 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
         {(view) => (
           <Switch>
             <Match when={view().outcome === "approved"}>
-              <Outcome icon="circle-check" ok body={t().deviceApprovedBody} />
+              <Outcome icon="circle-check" ok body={view().message ?? t().deviceApprovedBody} />
             </Match>
             <Match when={view().outcome === "denied"}>
               <Outcome icon="circle-x" body={t().deviceDeniedBody} />
