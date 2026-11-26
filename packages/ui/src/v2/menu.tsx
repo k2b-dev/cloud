@@ -84,8 +84,10 @@ export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
   /**
-   * Opening leaves the focus where it was, such as in a note whose keyboard must stay open on a phone: the entries are
-   * then pressed, not walked with keys. For touch screens; with keys the menu takes the focus as usual.
+   * Opened by a touch, the menu gives the focus back to where it was, such as a note whose keyboard should stay open on
+   * a phone; its entries are then pressed. Only a touch: opened with keys, a mouse or a screen reader (VoiceOver) the
+   * menu takes the focus as usual. The focus visits the menu for a moment before it comes back, so an iPhone may still
+   * close its keyboard (k2b-ui gap: core's menu has no initial focus "none").
    */
   keepFocus?: boolean;
   /** Where the focus goes when the menu closes from inside, such as the note of a toolbar; its button by default. */
@@ -340,13 +342,17 @@ const MenuRoot = (props: MenuProps) => {
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
   let trigger: HTMLElement | undefined;
-  // with `keepFocus`: what had the focus when the button was pressed gets it back once the menu is open
+  // with `keepFocus`: what had the focus when a finger pressed the button gets it back once the menu is open; a key, a
+  // mouse or the menu's opening and closing forget it, so a later open by keys puts the focus in the menu
   let owner: Element | null = null;
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
     onOpenChange: (open: boolean) => {
       if (open) setAlign(alignTo(trigger));
       const before = owner;
+      owner = null;
+      // k2b-ui gap: core's menu has no initial focus "none" (only a final focus), so a touch opener's focus visits the
+      // menu and is pulled back one frame later
       if (open && props.keepFocus && before instanceof HTMLElement)
         requestAnimationFrame(() => {
           if (before.isConnected) before.focus({ preventScroll: true });
@@ -360,8 +366,15 @@ const MenuRoot = (props: MenuProps) => {
           trigger = element;
           element.addEventListener(
             "pointerdown",
+            (event) => {
+              owner = event.pointerType === "touch" ? document.activeElement : null;
+            },
+            true,
+          );
+          element.addEventListener(
+            "keydown",
             () => {
-              owner = document.activeElement;
+              owner = null;
             },
             true,
           );

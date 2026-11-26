@@ -591,7 +591,7 @@ test("on a phone a menu of the toolbar leaves the note its focus, keyboard and c
 // `touchscreen.tap` sends no click in either engine here (logged: Chromium pointerdown, touchstart, pointerup, touchend;
 // WebKit pointerdown and touchstart only), and core dismisses on the click after a tap, so the press comes from the
 // mouse, in the phone's touch context. Safari and Chrome on a phone send that click.
-test("on a phone a press beside an open menu, on the page's head, closes it, and the note keeps its focus and caret", async () => {
+test("in a phone's touch context a mouse press beside an open menu, on the page's head, closes it, and the note keeps its focus and caret", async () => {
   const { context, page } = await openPhone();
   try {
     const note = page.locator('[data-editor="shared"] .cm-content');
@@ -616,6 +616,53 @@ test("on a phone a press beside an open menu, on the page's head, closes it, and
     await settled(page);
     expect(await noteFocused(page)).toBe(true);
     expect(await caretLine(page)).toContain("Familie Oswald");
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+test("on a phone, after a menu opened by a touch, keys open it again with the focus in the menu", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    const more = page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]');
+    await note.getByText("Familie Oswald").tap();
+    await more.tap();
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await noteFocused(page)).toBe(true);
+    // closed by a press beside it (see above), then opened from the keyboard: the menu takes the focus
+    const head = await page.locator('.k2-ws-main > [data-slot="head"]').boundingBox();
+    await page.mouse.click((head?.x ?? 0) + (head?.width ?? 0) - 40, (head?.y ?? 0) + (head?.height ?? 0) / 2);
+    await page.locator(".k2-menu").waitFor({ state: "hidden" });
+    await more.focus();
+    await page.keyboard.press("Enter");
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => !!document.activeElement?.closest(".k2-menu"))).toBe(true);
+  } finally {
+    await context.close();
+  }
+}, 30_000);
+
+// k2b-ui gap: core's menu has no initial focus "none", so a touch opener's focus visits the menu for a frame before
+// `keepFocus` takes it back; the note blurs once, which on an iPhone may close its keyboard. This test states the goal
+// and fails until core offers it (then `test.failing` turns red and this becomes a plain test).
+test.failing("on a phone the note never loses its focus while a toolbar menu opens by a touch", async () => {
+  const { context, page } = await openPhone();
+  try {
+    const note = page.locator('[data-editor="shared"] .cm-content');
+    await note.getByText("Familie Oswald").tap();
+    await page.evaluate(() => {
+      Reflect.set(window, "__k2Blurs", 0);
+      document
+        .querySelector('[data-editor="shared"] .cm-content')
+        ?.addEventListener("focusout", () => Reflect.set(window, "__k2Blurs", Number(Reflect.get(window, "__k2Blurs")) + 1));
+    });
+    await page.locator('[data-editor="shared"] [data-k2b-editor-toolbar] button[aria-label="Mehr"]').tap();
+    await page.locator(".k2-menu").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => Reflect.get(window, "__k2Blurs"))).toBe(0);
   } finally {
     await context.close();
   }
