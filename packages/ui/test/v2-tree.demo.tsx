@@ -24,6 +24,7 @@ declare global {
     __failMore?: boolean;
     __loadAll?: () => void;
     __selected?: readonly string[];
+    __refresh?: () => void;
   }
 }
 
@@ -81,6 +82,8 @@ export function Demo() {
   if (typeof window !== "undefined") {
     window.__release = () => waiting.splice(0).forEach((release) => release());
     window.__open = setCurrent;
+    // the app loads the same folders again: new objects with the same keys, as a refetch gives
+    window.__refresh = () => setFolders(JSON.parse(JSON.stringify(folders())));
     window.__loadAll = () =>
       setFolders(
         update(folders(), "fotos", (folder) => ({ ...folder, children: Array.from({ length: PHOTOS }, (_, index) => photo(index)) })),

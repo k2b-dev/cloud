@@ -435,3 +435,31 @@ test("a failed 'Weitere laden' says so on its row and tries again on Enter (tabl
     expect(await navMore.textContent()).toContain("nicht geladen");
   });
 });
+
+// ── Delta review (Codex, 26.11.) ─────────────────────────────────────────────────────────────────────────────────
+
+test("table and nav tree: the same rows loaded again as new objects keep their elements and the focus", async () => {
+  await withPage(async (page) => {
+    await row(page, "Projekte").focus();
+    await page.keyboard.press("ArrowRight");
+    await rowState(page, "Website", "aria-level", "2");
+    await row(page, "Website").focus();
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement & { __mark?: boolean }).__mark = true;
+      window.__refresh?.();
+    });
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await page.evaluate(() => (document.activeElement as (HTMLElement & { __mark?: boolean }) | null)?.__mark === true)).toBe(true);
+    await rowFocused(page, "Website");
+    // the rows show the new data: still open, still in their place
+    await rowState(page, "Projekte", "aria-expanded", "true");
+
+    await place(page, "Projekte").focus();
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement & { __mark?: boolean }).__mark = true;
+      window.__refresh?.();
+    });
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+    expect(await page.evaluate(() => (document.activeElement as (HTMLElement & { __mark?: boolean }) | null)?.__mark === true)).toBe(true);
+  });
+});
