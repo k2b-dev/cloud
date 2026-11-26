@@ -220,27 +220,38 @@ afterAll(async () => {
   await browser?.close();
 });
 
-// The relations between primitives (`~`) pass any number of islands that render nothing, and an island with content.
-test("groups and cells keep their spacing and lines with 0 to 3 empty islands between them, and in an island", async () => {
+// Neighbouring primitives keep their spacing and lines beside up to three empty islands in a row and in an island of
+// their own, and real content between two of a kind still takes it away, as without islands.
+test("groups, fields and cells keep their spacing beside empty islands, and content between them still counts", async () => {
   const empty = (count: number) => "<solid-island></solid-island>".repeat(count);
+  const notice = '<div class="k2-notice">Hinweis</div>';
   for (const count of [0, 1, 2, 3])
-    for (const wrapped of [false, true]) {
-      const second = (html: string) => (wrapped ? `<solid-client>${html}</solid-client>` : html);
-      const html =
-        `<div class="k2-sec"><div class="k2-sh"><h3>Titel</h3></div><section class="k2-group" id="g1"></section>${empty(count)}${second('<section class="k2-group" id="g2"></section>')}</div>` +
-        `<div class="k2-cells"><div class="k2-cell" id="c1"></div>${empty(count)}${second('<div class="k2-cell" id="c2"></div>')}</div>`;
-      const opened = await page(shipped, `<div style="display:block">${html}</div>`, 1440);
-      try {
-        const look = await opened.evaluate(() => {
-          const style = (id: string) => getComputedStyle(document.getElementById(id)!);
-          return [style("g1").marginTop, style("g2").marginTop, style("c1").borderLeftWidth, style("c2").borderLeftWidth];
-        });
-        expect(look, `${count} empty, ${wrapped ? "in an island" : "plain"}`).toEqual(["0px", "12px", "0px", "1px"]);
-      } finally {
-        await opened.close();
+    for (const between of ["", notice])
+      for (const wrapped of [false, true]) {
+        const second = (html: string) => (wrapped ? `<solid-client>${html}</solid-client>` : html);
+        const gap = `${empty(count)}${between}${between ? empty(count) : ""}`;
+        const html =
+          `<div class="k2-sec"><div class="k2-sh"><h3>Titel</h3></div><section class="k2-group" id="g1"></section>${gap}${second('<section class="k2-group" id="g2"></section>')}</div>` +
+          `<div class="k2-sec"><div class="k2-field" id="f1"></div>${gap}${second('<div class="k2-field" id="f2"></div>')}</div>` +
+          `<div class="k2-cells"><div class="k2-cell" id="c1"></div>${empty(count)}${second('<div class="k2-cell" id="c2"></div>')}</div>`;
+        const opened = await page(shipped, `<div style="display:block">${html}</div>`, 1440);
+        try {
+          const look = await opened.evaluate(() => {
+            const style = (id: string) => getComputedStyle(document.getElementById(id)!);
+            return [style("g2").marginTop, style("f2").marginTop, style("c1").borderLeftWidth, style("c2").borderLeftWidth];
+          });
+          const spaced = between ? "0px" : "12px";
+          expect(look, `${count} empty, ${between ? "a notice between" : "neighbours"}, ${wrapped ? "in an island" : "plain"}`).toEqual([
+            spaced,
+            spaced,
+            "0px",
+            "1px",
+          ]);
+        } finally {
+          await opened.close();
+        }
       }
-    }
-}, 60_000);
+}, 90_000);
 
 describe("a small island inside a v2 container keeps the container's layout", () => {
   test("there are recipes", () => {

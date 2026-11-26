@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { transparentIslands } from "./v2-island-css";
+import { MAX_EMPTY, transparentIslands } from "./v2-island-css";
 
 const W = ":where(solid-island,solid-client)";
 const E = ":where(solid-island:empty,solid-client:empty)";
@@ -14,22 +14,25 @@ describe("transparentIslands", () => {
   test("a sibling relation holds with either side, or both, in a wrapper", () => {
     const later = [`.a~.b`, `.a~${W}>.b`, `${W}:has(>.a)~.b`, `${W}:has(>.a)~${W}>.b`];
     expect(transparentIslands(".a ~ .b{x:1}")).toBe(`:is(${later.join(",")}){x:1}`);
-    // `+` only between two parts of one primitive, marked as such: there it keeps first and last in the wrapper
-    const next = [
-      `.a+.b`,
-      `.a+${W}>.b:where(:first-child)`,
-      `${W}:has(>.a:where(:last-child))+.b`,
-      `${W}:has(>.a:where(:last-child))+${W}>.b:where(:first-child)`,
+    // `+` keeps first and last in the wrapper, and steps over up to MAX_EMPTY empty wrappers, never over content
+    const pairs = [
+      [".a", ".b"],
+      [".a", `${W}>.b:where(:first-child)`],
+      [`${W}:has(>.a:where(:last-child))`, ".b"],
+      [`${W}:has(>.a:where(:last-child))`, `${W}>.b:where(:first-child)`],
     ];
-    expect(transparentIslands("/* one primitive: a and b */.a + .b{x:1}")).toBe(`/* one primitive: a and b */:is(${next.join(",")}){x:1}`);
+    const next = pairs.flatMap(([left, right]) => [0, 1, 2, 3].map((gap) => `${left}+${`${E}+`.repeat(gap)}${right}`));
+    expect(MAX_EMPTY).toBe(3);
+    expect(transparentIslands(".a + .b{x:1}")).toBe(`:is(${next.join(",")}){x:1}`);
+    // two parts of one primitive, marked as such, step over none
+    const marked = pairs.map(([left, right]) => `${left}+${right}`);
+    expect(transparentIslands("/* one primitive: a and b */.a + .b{x:1}")).toBe(
+      `/* one primitive: a and b */:is(${marked.join(",")}){x:1}`,
+    );
   });
 
-  test("`+` between primitives and two sibling relations in a row fail the build", () => {
-    // an empty island between two primitives would break `+`; `~` passes any number of them
-    expect(() => transparentIslands(".a + .b{x:1}")).toThrow("between primitives");
-    expect(() => transparentIslands("/* a group */.a + .b{x:1}")).toThrow("between primitives");
-    expect(() => transparentIslands(".a:has(+ .b){x:1}")).toThrow("between primitives");
-    expect(() => transparentIslands("/* one primitive: x */.a + .b + .c{x:1}")).toThrow("two sibling relations");
+  test("two sibling relations in a row fail the build", () => {
+    expect(() => transparentIslands(".a + .b + .c{x:1}")).toThrow("two sibling relations");
     expect(() => transparentIslands(".a ~ .b ~ .c{x:1}")).toThrow("two sibling relations");
   });
 
