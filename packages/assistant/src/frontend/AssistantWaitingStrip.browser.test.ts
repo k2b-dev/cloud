@@ -333,11 +333,11 @@ afterAll(async () => {
   assets?.stop(true);
 });
 
-type View = { name: string; width: number; height: number; touch: boolean; column?: string };
+type View = { name: string; width: number; height: number; touch: boolean; embedded?: true };
 const desktop: View = { name: "1440", width: 1440, height: 900, touch: false };
 const phone: View = { name: "390", width: 390, height: 844, touch: true };
-// The side panel the Assistant moves into: a 22 rem column at the right edge of a wide screen.
-const panel: View = { name: "panel", width: 1440, height: 900, touch: false, column: "22rem" };
+// The side panel the Assistant moves into: its own page of 22 rem beside a wide screen, so v2 measures the panel itself.
+const panel: View = { name: "panel", width: 352, height: 900, touch: false, embedded: true };
 
 // Longer than the stream's 500 ms reconnect delay, with room for a busy machine.
 const slowDocumentMs = 800;
@@ -374,14 +374,10 @@ const open = async (
       // A chat opened at a message that answers later than the stream's 500 ms reconnect delay, so the stream that
       // the navigation cancelled always opens again while the page waits, and WebKit refuses it.
       if (options.slowMessageDocument && url.searchParams.has("message")) await new Promise((done) => setTimeout(done, slowDocumentMs));
-      // The panel column is the real panel (v1 frame); the page is v2 and its main area is the v2 scope, as Layout ui="v2".
-      const harness = { locale: state.locale, props: { ...propsOf(state, url), ...(view.column ? { embedded: true } : {}) } };
-      const column = view.column
-        ? `display:flex;justify-content:flex-end;height:100vh` // The panel column sits at the right edge.
-        : "display:flex;height:100vh";
-      const inner = view.column
-        ? `<div id="root" style="width:${view.column};display:flex;height:100vh"></div>`
-        : `<div id="root" class="k2-ui" style="display:flex;width:100%;height:100vh"></div>`;
+      // The page and the panel are both v2: their main area is the v2 scope, as Layout ui="v2" and PanelLayout ui="v2".
+      const harness = { locale: state.locale, props: { ...propsOf(state, url), ...(view.embedded ? { embedded: true } : {}) } };
+      const column = "display:flex;height:100vh";
+      const inner = `<div id="root" class="k2-ui" style="display:flex;width:100%;height:100vh"></div>`;
       return route.fulfill({
         contentType: "text/html",
         body:
