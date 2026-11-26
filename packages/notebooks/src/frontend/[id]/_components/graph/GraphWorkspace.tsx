@@ -55,7 +55,6 @@ export default function GraphFrame(props: GraphFrameProps) {
             sidebar={props.shell.sidebar}
             head={
               <Bar
-                start={<Text weight="strong">{t().graphTitle}</Text>}
                 end={<Button icon="x" label={t().closeGraph} href={props.backHref ?? `/app/notebooks/${props.notebookId}`} keep />}
               />
             }

@@ -48,6 +48,13 @@ const head = (page: Page) => page.locator('[data-k2-workspace] [data-k2-part="Ba
 const filters = (page: Page) => head(page);
 /** A display's tab. */
 const display = (page: Page, name: string) => page.locator('[data-k2-part="Tabs"]').getByRole("button", { name, exact: true });
+/** Chooses a display: its tab, or on a narrow head the entry in the tabs' "More" menu. */
+const chooseDisplay = async (page: Page, name: string) => {
+  const tab = display(page, name);
+  if (await tab.isVisible()) return tab.click();
+  await page.locator('[data-k2-part="Tabs"]').getByRole("button", { name: /^More/ }).click();
+  await page.getByRole("menu").getByText(name, { exact: true }).click();
+};
 /** The filter menu's button, a symbol the phone keeps: which notes, Umgebung's depth and the areas. */
 const whichNotes = (page: Page) => filters(page).getByRole("button", { name: "Which notes" });
 /** Whether a choice of the filter menu (such as "Only linked" or "1 step") is ticked; the menu closes again. */
@@ -868,13 +875,13 @@ for (const viewport of [
       expect(await tabs.locator('[aria-current="page"]').first().textContent()).toContain(
         expected === "network" ? "Network" : "Neighborhood",
       );
-      await display(page, "Circle").click();
+      await chooseDisplay(page, "Circle");
       expect(search(page).get("display")).toBe("circle");
       expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
       // choosing a display moves no tab
       await settled(page);
       const before = await tabs.locator("button").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().x));
-      await display(page, "Network").click();
+      await chooseDisplay(page, "Network");
       await settled(page);
       expect(await tabs.locator("button").evaluateAll((items) => items.map((item) => item.getBoundingClientRect().x))).toEqual(before);
       await page.reload();
