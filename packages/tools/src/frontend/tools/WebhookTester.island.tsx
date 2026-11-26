@@ -300,7 +300,13 @@ function Received(props: { data: WebhookTesterData }) {
           >
             <Show
               when={!endpointsFailed()}
-              fallback={<Failed text={t().endpointsLoadFailed} onRetry={() => void queries.endpoints.refresh().catch(() => undefined)} />}
+              fallback={
+                // when the requests failed too, one statement and one way to try again stand for both
+                <Failed
+                  text={failed() ? t().bothLoadFailed : t().endpointsLoadFailed}
+                  onRetry={() => (failed() ? refreshAll() : void queries.endpoints.refresh().catch(() => undefined))}
+                />
+              }
             >
               <Show
                 when={endpoints().length > 0}
@@ -342,7 +348,11 @@ function Received(props: { data: WebhookTesterData }) {
           />
           <Show
             when={!failed()}
-            fallback={<Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />}
+            fallback={
+              <Show when={!endpointsFailed()}>
+                <Failed text={t().loadFailed} onRetry={() => void queries.logs.refresh().catch(() => undefined)} />
+              </Show>
+            }
           >
             <RequestTable
               label={t().requests}

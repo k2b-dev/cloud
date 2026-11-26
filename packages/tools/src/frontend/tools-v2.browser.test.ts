@@ -305,12 +305,12 @@ test("a list that cannot be read says so in place and offers to try again", asyn
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   try {
     await webhooks(page, "/tools/webhooks?fixture=error");
-    // the endpoints and the requests each say they failed; neither offers to create a first endpoint
-    await page.getByText("Die Endpunkte konnten nicht geladen werden.", { exact: false }).waitFor();
-    await page.getByText("Die Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
+    // both reads failed: one statement, one way to try again; no offer to create a first endpoint
+    await page.getByText("Endpunkte und Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
+    expect(await page.getByRole("button", { name: "Erneut versuchen" }).count()).toBe(1);
     expect(await page.getByText("Noch kein Endpunkt.", { exact: false }).count()).toBe(0);
-    await page.getByRole("button", { name: "Erneut versuchen" }).last().click();
-    await page.getByText("Die Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
+    await page.getByRole("button", { name: "Erneut versuchen" }).click();
+    await page.getByText("Endpunkte und Anfragen konnten nicht geladen werden.", { exact: false }).waitFor();
   } finally {
     await page.close();
   }

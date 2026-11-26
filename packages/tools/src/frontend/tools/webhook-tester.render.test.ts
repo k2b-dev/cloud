@@ -140,7 +140,9 @@ test("endpoints that could not be read say so instead of offering the first one"
   const data = await load("/tools/webhooks");
   expect(data.failed).toBe(true);
   const html = render(data);
-  expect(html).toContain("Die Endpunkte konnten nicht geladen werden.");
+  // the server read both at once, so one statement and one way to try again stand for both
+  expect(html).toContain("Endpunkte und Anfragen konnten nicht geladen werden.");
+  expect(html.match(/Erneut versuchen/g)).toHaveLength(1);
   expect(html).not.toContain("Noch kein Endpunkt.");
 });
 
