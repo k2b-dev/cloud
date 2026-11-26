@@ -602,10 +602,14 @@ const signsOf = (value: CellValue): number => {
   return 0;
 };
 
-/** What a column without a width counts with (its default and its minimum), and a figure's width for those sums. */
+/**
+ * What a column without a width counts with (its default and its minimum), and the room a figure takes in those sums:
+ * 10 px, above what any font gives a figure of the row's 13 px (Plex 7.6, a fallback font 8.3), so a column reckoned
+ * for a number never falls short of what the number takes.
+ */
 const flexibleColumn = 160;
 const flexibleMin = 96;
-const figureWidth = 8;
+const figureWidth = 10;
 
 /**
  * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
@@ -656,22 +660,23 @@ export const Table = <T,>(props: TableProps<T>) => {
   // In a small table with widths every column moves between its minimum and its default with the width of the table's
   // place (`100cqw`, the table's container), so together they fill it: at the sum of the defaults each has its default,
   // at the sum of the minimums each its minimum. The stylesheet decides, on the server's page too.
-  const shrink = (index: number) => {
-    const all = need();
-    const { lo, hi } = all[index]!;
-    const least = all.reduce((sum, each) => sum + each.lo, box);
-    const most = all.reduce((sum, each) => sum + each.hi, box);
+  // The sums are over the columns shown: after `drop` columns left, the others share the room among themselves.
+  const shrink = (index: number, gone: ReadonlySet<number> = new Set()) => {
+    const shown = need().filter((_, at) => !gone.has(at));
+    const { lo, hi } = need()[index]!;
+    const least = shown.reduce((sum, each) => sum + each.lo, box);
+    const most = shown.reduce((sum, each) => sum + each.hi, box);
     if (hi === lo || most <= least) return `${lo}px`;
     const share = Math.round(((hi - lo) / (most - least)) * 10000) / 10000;
     return `clamp(${lo}px, calc(${lo}px + (100cqw - ${least}px) * ${share}), ${hi}px)`;
   };
-  const colWidth = (column: Column<T>, index: number): string | undefined => {
+  const colWidth = (column: Column<T>, index: number, gone?: ReadonlySet<number>): string | undefined => {
     const last = index === props.columns.length - 1;
     // in a small table with widths the last column takes the rest of the row, which holds its value
     if (sized() && !grid() && last) return undefined;
     const count = signs()[index] ?? 0;
     const fit = count > 0 ? `calc(${count}ch + 12px + var(--k2-edge))` : undefined;
-    const base = !column.width ? undefined : grid() ? `${column.width.default}px` : shrink(index);
+    const base = !column.width ? undefined : grid() ? `${column.width.default}px` : shrink(index, gone);
     return base && fit ? `max(${base}, ${fit})` : (base ?? fit);
   };
   const measured = () => signs().some((count) => count > 0);
@@ -703,12 +708,26 @@ export const Table = <T,>(props: TableProps<T>) => {
   // in its grid of columns (a group row spans them all) at no width, so the others keep theirs.
   const hide = (selector: string) =>
     grid() ? `${selector} { display: none; }` : `${selector} { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`;
+  // Each step hides its column and, in a table of fixed columns, gives the columns still shown their widths anew over
+  // themselves, so they fill the room the column left instead of the last one taking all of it.
   const dropRule = () =>
     steps()
-      .map(
-        (entry, at) =>
-          `@container k2-table (width < ${entry.below}px) { ${hide(`.k2-ui [data-k2-table="${id}"] [data-drop-step="${at + 1}"]`)} }`,
-      )
+      .map((entry, at) => {
+        const scope = `.k2-ui [data-k2-table="${id}"]`;
+        const gone = new Set(
+          steps()
+            .slice(0, at + 1)
+            .map((each) => each.column),
+        );
+        const widths = grid()
+          ? []
+          : props.columns.flatMap((column, index) => {
+              const width = gone.has(index) ? undefined : colWidth(column, index, gone);
+              const place = index + 1 + (props.select ? 1 : 0);
+              return width ? [`${scope} col:nth-child(${place}) { --k2-col-w: ${width}; }`] : [];
+            });
+        return `@container k2-table (width < ${entry.below}px) { ${[hide(`${scope} [data-drop-step="${at + 1}"]`), ...widths].join(" ")} }`;
+      })
       .join(" ");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
@@ -819,7 +838,7 @@ export const Table = <T,>(props: TableProps<T>) => {
                   <col
                     data-drop={column.drop ? "" : undefined}
                     data-drop-step={step(index())}
-                    style={custom({ "--k2-col-w": colWidth(column, index()) })}
+                    style={custom({ "--k2-col-base": colWidth(column, index()) })}
                   />
                 )}
               </For>

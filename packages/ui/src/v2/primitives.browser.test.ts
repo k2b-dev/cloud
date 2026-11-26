@@ -458,6 +458,26 @@ describe("v2 primitives keep the numbers of the mockup", () => {
   );
 
   test(
+    "a last column of digits keeps every figure in sight at exactly the width the table reckons as its least",
+    async () => {
+      const page = await open("tableDigits");
+      try {
+        const least = await page.$eval(".k2-table", (table) => Number.parseFloat((table as HTMLElement).style.minWidth));
+        expect(least).toBeGreaterThan(0);
+        await narrowColumn(page, ".k2-table-scroll", least);
+        const cut = await page.$$eval(".k2-table td[data-numeric] > .k2-cell-line", (lines) =>
+          lines.filter((line) => line.scrollWidth > line.clientWidth).map((line) => line.textContent),
+        );
+        expect(cut).toEqual([]);
+        expect((await measureV2Layout(page, { root: "[data-k2-workspace]" })).number).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
     async () => {
       const page = await open("table");
