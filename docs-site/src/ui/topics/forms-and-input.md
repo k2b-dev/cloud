@@ -64,9 +64,15 @@ One choice from many options, in a list that opens.
 
 ### DateInput
 
-A day, typed as the person reads it, with a calendar symbol.
+A day, typed as the person reads it ("24.11.2026", also "heute" or "+3"), or picked from the calendar its symbol opens. The form gets the date key; text that is no date marks the field and keeps the form from sending.
 
 <Props of="DateInput" />
+
+### DatePicker
+
+One month of days to pick from, inside a popover or a sheet: the arrows by day and week, PageUp and PageDown by month, Home and End to the week's ends, the locale's names and first weekday, and always six weeks. With `time` it adds hour and minute.
+
+<Props of="DatePicker" />
 
 ### Check
 
@@ -83,7 +89,7 @@ One choice from a few options, all visible.
 ## Not in v2 yet
 
 - A time field: a time is an `Input` with a placeholder such as "09:00".
-- `DateInput` has no picker yet and takes no `disabled`.
+- `DateInput` takes no `disabled`.
 - `Select` can dim single options (`SelectOption` `disabled`), but not the whole select.
 - A multiline `Input` with a `value` shows empty in the server's page until the page comes alive ([#4148](https://github.com/k2b-dev/cloud/issues/4148)).
 

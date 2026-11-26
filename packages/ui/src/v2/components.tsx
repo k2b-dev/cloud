@@ -168,7 +168,7 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
         data-k2-part="Nav.Item"
         data-fold=""
         aria-expanded={open() ? "true" : "false"}
-        aria-controls={open() ? id : undefined}
+        aria-controls={id}
         data-holds-current={holdsCurrent() ? "" : undefined}
         data-level={props.level > 1 ? String(props.level) : undefined}
         onClick={() => setOpen(!open())}
@@ -176,11 +176,10 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
         <Icon name={open() ? "chevron-down" : "chevron-right"} />
         <NavEnd item={props.item} />
       </button>
-      <Show when={open()}>
-        <div class="k2-nav-fold" id={id} role="group" aria-labelledby={`${id}-fold`}>
-          <Index each={props.items}>{(item) => <NavEntry item={item()} level={props.level + 1} />}</Index>
-        </div>
-      </Show>
+      {/* always there and hidden while closed: `attachWorkspace` folds the server's Nav */}
+      <div class="k2-nav-fold" id={id} role="group" aria-labelledby={`${id}-fold`} hidden={!open()}>
+        <Index each={props.items}>{(item) => <NavEntry item={item()} level={props.level + 1} />}</Index>
+      </div>
     </>
   );
 };

@@ -1,5 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace, appWorkspaceLayoutStyle, keyboardPlatform, LocaleProvider, NoticeCard, PageTrailProvider } from "@k2b/ui";
+import { WorkspaceLayout } from "@k2b/ui/v2";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { readPanelCookie } from "../_internal/panel-cookie";
@@ -42,6 +43,7 @@ import { getDisplayRuntimeContext, getLocalizedRuntimeContext, type RuntimeConte
 import ShellRuntime from "./ShellRuntime.island";
 import { type ShellContentState, ShellContentStateContext } from "./shell-content-state";
 import { type ShellData, ShellDataProvider, ShellDataScript } from "./shell-data";
+import WorkspaceFrame from "./WorkspaceFrame.island";
 
 // Types
 type Breadcrumb = LayoutBreadcrumb;
@@ -199,6 +201,16 @@ export default function Layout(props: LayoutProps) {
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,
   );
+  // A v2 page's Workspace renders on the server with the sidebar as the person left it; one frame entry attaches it.
+  const pageContent = () =>
+    props.ui === "v2" ? (
+      <WorkspaceLayout sidebarCollapsed={workspaceLayout?.sidebarCollapsed}>
+        {props.children}
+        <WorkspaceFrame appId={currentApp?.id} />
+      </WorkspaceLayout>
+    ) : (
+      props.children
+    );
   const { primary: primaryApps, more: moreApps } = buildNavLinks(displayApps, user, lang);
   const allApps = sortRailApps([...primaryApps, ...moreApps], lang);
   const visibleAppIds = new Set(allApps.map((app) => app.id));
@@ -384,7 +396,7 @@ export default function Layout(props: LayoutProps) {
               // As in the full shell: the page renders first, so its area can say whether it shows its own title.
               const page = (
                 <ShellContentStateContext.Provider value={focusContent}>
-                  <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                  <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{pageContent()}</AppWorkspace.LayoutStateProvider>
                 </ShellContentStateContext.Provider>
               );
               return (
@@ -493,7 +505,7 @@ export default function Layout(props: LayoutProps) {
                     data-scroll-preserve={swap ? "cloud-main" : undefined}
                     data-scroll-page={swap ? "" : undefined}
                   >
-                    <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+                    <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{pageContent()}</AppWorkspace.LayoutStateProvider>
                   </main>
                 </PageTrailProvider>
               </ShellContentStateContext.Provider>

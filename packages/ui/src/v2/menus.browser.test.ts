@@ -424,8 +424,9 @@ test("tip: hovering the button shows its hint above it after a moment; the butto
 
 test("toast: at the bottom in the middle with Undo; Undo runs and closes it", async () => {
   await withPage(async (page) => {
-    // an empty region is no open popover: a page that lets an open popover take Escape first still gets it
-    await page.waitForFunction(() => document.querySelector('[data-slot="toast-region"][popover]') !== null);
+    // the toaster loads with the first toast, so before it there is no region and no open popover: a page that lets an
+    // open popover take Escape first still gets it
+    expect(await page.evaluate(() => document.querySelector('[data-slot="toast-region"]'))).toBeNull();
     expect(await page.evaluate(() => document.querySelector(":popover-open"))).toBeNull();
     // and Escape reaches the page untouched (Mail closes its reader with it)
     await page.evaluate(() => {

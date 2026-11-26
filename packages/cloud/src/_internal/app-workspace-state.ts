@@ -1,4 +1,4 @@
-import { type AppWorkspaceLayoutState, parseAppWorkspaceLayoutState } from "@k2b/ui";
+import { type AppWorkspaceLayoutState, parseAppWorkspaceLayoutState, serializeAppWorkspaceLayoutState } from "@k2b/ui";
 
 const safeAppId = (appId: string): string => appId.replace(/[^A-Za-z0-9_-]/g, "_");
 
@@ -22,3 +22,9 @@ export const resolveAppWorkspaceLayoutForSidebar = (
   state: AppWorkspaceLayoutState | null,
   collapsible: boolean | undefined,
 ): AppWorkspaceLayoutState | null => (collapsible === false && state?.sidebarCollapsed ? { ...state, sidebarCollapsed: false } : state);
+
+/** Keeps an app's workspace layout for a year, so the next page renders it from the server (browser only). */
+export const writeAppWorkspaceLayoutCookie = (appId: string, state: AppWorkspaceLayoutState): void => {
+  const secure = window.location.protocol === "https:" ? "; Secure" : "";
+  document.cookie = `${appWorkspaceCookieName(appId)}=${serializeAppWorkspaceLayoutState(state)}; Path=/; Max-Age=31536000; SameSite=Lax${secure}`;
+};

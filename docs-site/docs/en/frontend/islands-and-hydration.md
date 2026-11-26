@@ -5,7 +5,7 @@ section: Frontend
 order: 840
 description: Add browser interactivity to server-rendered pages without turning the whole page into a client application.
 tags: [islands, hydration, solidjs]
-updated: 2026-10-19
+updated: 2026-11-25
 ---
 
 # Islands
@@ -50,6 +50,29 @@ This has two consequences:
   browser's clock during the first render. Pass the server's value as a prop,
   for example the server's render time, or read the value in `onMount` and
   reserve its space in the server markup.
+
+Each island renders inside a `<solid-island>` element, and each client
+component inside a `<solid-client>` element, with `display: contents`. Boxes
+ignore the wrapper, but CSS selectors do not: `.list > .row`, `:last-child`,
+and `+` see the wrapper as the child or the sibling. `@k2b/ui/v2.css` ships
+each such rule also through one wrapper, so a v2 primitive in an island keeps
+the layout of its place, and `describeV2` outlines it as if there were no
+island. An island that renders nothing changes no layout either:
+`:first-child`, `:last-child` and `:only-child` skip any number of empty
+wrappers, and a `+` between two primitives steps over up to three in a row.
+Your own CSS must allow for the wrapper in the same way, or select by
+descendant.
+
+A v2 `Workspace` renders on the server as plain markup: its frame, columns,
+heads and bars load no script. On a `Layout ui="v2"` page, Cloud adds one
+frame entry that attaches every Workspace outside an island: the sidebar's
+drawer and its collapse, the grips, the folds of the `Nav`, `Dialog.confirm`
+and `useToast`. The drawer, the alert dialog and the toaster load on their
+first use. A Workspace with `collapsible` keeps a hidden sidebar in the app's
+workspace cookie, so the next page renders it hidden from the server. Make
+only the parts with browser behavior islands, such as a table whose rows open
+on a press or a sidebar entry with `onClick`; a Workspace inside an island
+still attaches itself, but its frame then loads with the island.
 
 Text a person typed into a text field (`<textarea>`, or `<input>` of type
 text, search, email, url, or tel) before the island mounted moves to the same
