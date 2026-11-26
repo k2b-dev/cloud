@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { sqlTestLimits, sqlTestResult } from "../workspace/sql-test-fixtures";
-import { FIXTURE_NOW, fixtureBase, fixtureBases, fixtureSources } from "./fixtures";
-import { renderPulseShell } from "./pulse-shell.browser-fixture";
+import { FIXTURE_NOW, fixtureBase, fixtureBases, fixtureScrapesFor, fixtureSources } from "./fixtures";
+import { type Crumb, renderPulseShell } from "./pulse-shell.browser-fixture";
 
 // The main paths of Pulse on v2 in Chromium (WebKit through the shared launcher): find and create a base, open,
 // add, edit and remove a source, run SQL, open a saved query, save settings, plus the layout rules at 1440 and
@@ -84,9 +84,22 @@ afterAll(async () => {
 
 const head = () =>
   `<link rel="stylesheet" href="${origin}/ui/plex.css"><link rel="stylesheet" href="${origin}/tabler-icons.css"><style>${css}</style>`;
+/** The title each Pulse page gives its layout: Start, Pulse, then the open base and "Einstellungen" where they apply. */
+const pageTitle = (address: string): Crumb[] => {
+  const [, app, , id, view] = new URL(address, origin).pathname.split("/");
+  const crumbs: Crumb[] = [
+    { title: "Start", href: "/" },
+    { title: "Pulse", href: "/app/pulse" },
+  ];
+  if (app === "admin") return [{ title: "Verwaltung", href: "/admin" }, { title: "Pulse" }];
+  const base = fixtureBases.find((entry) => entry.id === id);
+  if (!base) return crumbs;
+  crumbs.push({ title: base.name, href: `/app/pulse/${base.id}` });
+  return view === "settings" ? [...crumbs, { title: "Einstellungen" }] : crumbs;
+};
 const page = async (variant: string, address: string) => {
   if (shell)
-    return (await shell.page(address))
+    return (await shell.page(address, pageTitle(address)))
       .replace("<html", `<html data-variant="${variant}"`)
       .replace("</head>", `${head()}</head>`)
       .replace("</body>", '<script src="/harness.js"></script></body>');
@@ -146,7 +159,8 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
       json: { ...fixtureSources[0], id: "s9Zz8Yy7", name: String((call.body as { name?: string })?.name ?? "") },
     });
   if (call.path.endsWith("/scrape")) return route.fulfill({ json: { metrics: 12, events: 0, states: 0 } });
-  if (call.path.endsWith("/scrapes") || call.path.endsWith("/api-keys")) return route.fulfill({ json: [] });
+  if (call.path.endsWith("/scrapes")) return route.fulfill({ json: fixtureScrapesFor(call.path.split("/").at(-2) ?? "") });
+  if (call.path.endsWith("/api-keys")) return route.fulfill({ json: [] });
   if (call.path.startsWith(`${base}/sources/`) && call.method === "PATCH")
     return route.fulfill({
       json: { ...fixtureSources.find((source) => call.path.endsWith(source.id)), ...(call.body as object), revision: 2 },
@@ -155,6 +169,22 @@ const answer = async (route: Route, calls: Call[], override?: (call: Call) => { 
   if (call.path === "/api/pulse/admin/orphans")
     return route.fulfill({ json: { items: [{ database: "pulse_base_k3m8q2" }], nextCursor: null } });
   if (call.path === `${base}/sql/limits`) return route.fulfill({ json: sqlTestLimits });
+  // a saved query on CPU answers with a day of hourly values, as a real run would
+  if (call.path === `${base}/sql` && call.method === "POST" && String((call.body as { sql?: string })?.sql).includes("cpu"))
+    return route.fulfill({
+      json: {
+        ...sqlTestResult,
+        columns: [
+          { name: "time", type: "DateTime('UTC')" },
+          { name: "cpu", type: "Float64" },
+        ],
+        rows: Array.from({ length: 24 }, (_, hour) => [
+          `2026-11-24 ${String(hour).padStart(2, "0")}:00:00`,
+          Math.round((38 + 22 * Math.sin(hour / 3.8) + (hour % 5) * 3) * 10) / 10,
+        ]),
+        rowCount: 24,
+      },
+    });
   if (call.path === `${base}/sql` && call.method === "POST")
     return route.fulfill({
       json: {
@@ -393,7 +423,7 @@ describe("Pulse on v2", () => {
       "/app/pulse",
       `/app/pulse/${baseId}`,
       `/app/pulse/${baseId}/sources/s4Cc5Dd6`,
-      `/app/pulse/${baseId}/sql`,
+      `/app/pulse/${baseId}/sql/q1Ab2Cd3`,
       `/app/pulse/${baseId}/queries`,
       `/app/pulse/${baseId}/settings`,
       `/app/pulse/${baseId}/settings/members`,
@@ -409,6 +439,12 @@ describe("Pulse on v2", () => {
         const { context, tab, errors } = await open(view, address);
         try {
           const name = `${address.replace(/^\/(app|admin)\/pulse\/?/, "").replace(/[^a-z0-9]+/gi, "-") || "bases"}-${view.width}`;
+          // the console is measured as it is used: with a query that ran, its rows and its chart
+          if (address.includes("/sql/")) {
+            await tab.getByRole("button", { name: "Ausführen" }).click();
+            await tab.getByText("24 Zeilen", { exact: false }).first().waitFor();
+            await settled(tab);
+          }
           await shoot(tab, name);
           for (const problem of (await measureV2Layout(tab, { root: "#root" })).problems) found.push(`${name}: ${problem}`);
           found.push(...errors.map((error) => `${name}: ${error}`));

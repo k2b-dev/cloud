@@ -6,6 +6,7 @@ import { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } fro
 import { PULSE_SETTINGS_TABS, readWorkspacePathState } from "../workspace/routes";
 import { sqlTestLimits } from "../workspace/sql-test-fixtures";
 import {
+  fixtureAuthors,
   fixtureBases,
   fixtureDeletingBases,
   fixtureQueries,
@@ -65,6 +66,7 @@ const screen = (): JSX.Element => {
         {...frame}
         page={{ items: fixtureQueries, total: fixtureQueries.length, nextOffset: null }}
         offset={0}
+        authors={fixtureAuthors}
         dateConfig={{ timeZone: "Europe/Berlin", locale: "de" }}
       />
     );

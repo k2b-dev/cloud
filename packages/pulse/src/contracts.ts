@@ -7,6 +7,8 @@ export type MetricType = (typeof METRIC_TYPES)[number];
 
 export type PulseBase = {
   memberCount: number;
+  /** The first three members by name, admins first; older servers leave it out. */
+  members?: string[];
   store: BaseStoreStatus;
   id: string;
   name: string;

@@ -10,6 +10,9 @@ import { Dynamic } from "solid-js/web";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
 import { registerSsrTestPlugin } from "../../../../ui/test/ssr-test-plugin";
 
+/** One step of a page title, as `Layout` takes it. */
+export type Crumb = { title: string; href?: string };
+
 /**
  * The real Cloud shell (icon rail, tinted page, phone bar) around an empty `#root`, rendered by the public `Layout`
  * on the server, so the screens' pictures show a page as a person sees it. The screens mount into `#root` in the
@@ -63,6 +66,8 @@ export async function renderPulseShell() {
     entry("grids", "Grids", "table"),
   ];
   const app = defineApp({ ...apps[0]!, baseUrl: "http://pulse:3000" });
+  // the page's own title (breadcrumbs), handed in per address, as the page renders it
+  const titles = new Map<string, Crumb[]>();
   type Environment = { Variables: { runtime: RuntimeContext; user: User } };
   const routes = new Hono<Environment>()
     .use(async (c, next) => {
@@ -78,7 +83,9 @@ export async function renderPulseShell() {
             c,
             fullWidth: true,
             ui: "v2",
-            title: "Pulse",
+            get title() {
+              return titles.get(c.req.url) ?? "Pulse";
+            },
             get children() {
               return createComponent(Dynamic, { component: "div", id: "root", class: "flex min-h-0 flex-1 flex-col" });
             },
@@ -87,8 +94,10 @@ export async function renderPulseShell() {
     );
   return {
     /** The shell's page for an address, with `#root` where the screen goes, without the shell's scripts. */
-    async page(address: string) {
-      const response = await routes.request(address, { headers: { "accept-language": "de" } });
+    async page(address: string, title: Crumb[]) {
+      const url = new URL(address, "http://pulse.test").href;
+      titles.set(url, title);
+      const response = await routes.request(url, { headers: { "accept-language": "de" } });
       if (response.status !== 200) throw new Error(`The shell answered ${response.status} for ${address}.`);
       // the shell stays as the server drew it: its islands and their module links do not load in these pictures
       return (await response.text())

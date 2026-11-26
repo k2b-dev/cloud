@@ -28,6 +28,7 @@ export default ssr<AuthContext>(async (c) => {
         sourceCount={data.sourceCount}
         page={data.page}
         offset={data.offset}
+        authors={data.authors}
         dateConfig={{ timeZone: data.dateConfig.timeZone ?? "UTC", locale: data.dateConfig.locale ?? "en" }}
       />
     </Layout>

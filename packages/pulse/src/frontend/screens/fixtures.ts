@@ -27,8 +27,13 @@ const store = (patch: Partial<BaseStoreStatus> = {}): BaseStoreStatus => ({
   ...patch,
 });
 
+/** Invented people who work in the bases, admins first. */
+const PEOPLE = ["Jana Petersen", "Jonas Wolf", "Mira Aydın", "Ole Brandt", "Lea Sommer"];
+
 export const fixtureBase = (patch: Partial<PulseBase> & Pick<PulseBase, "id" | "name">): PulseBase => ({
   memberCount: 4,
+  // a base's first three members by name, as the list reads them; rotated so the bases differ
+  members: [...PEOPLE.slice(patch.id.charCodeAt(0) % 5), ...PEOPLE].slice(0, Math.min(3, patch.memberCount ?? 4)),
   store: store(),
   description: null,
   shortId: patch.id,
@@ -203,32 +208,24 @@ export const fixtureSources: PulseSource[] = [
   fixtureSource({ id: "s0Gg1Hh2", name: "Wechselrichter", enabled: false, seriesCount: 42 }),
 ];
 
-export const fixtureScrapes: PulseSourceScrape[] = [
-  {
-    id: "r1",
-    sourceId: "s1Aa2Bb3",
-    startedAt: "2026-11-25T09:41:00.000Z",
-    finishedAt: "2026-11-25T09:41:01.000Z",
-    durationMs: 412,
-    success: true,
-    metrics: 1_284,
+/** A source's last fetches, matching its state: the failing printer times out since yesterday evening, the others answer. */
+export const fixtureScrapesFor = (sourceId: string): PulseSourceScrape[] => {
+  const failing = sourceId === "s7Ee8Ff9";
+  const at = (minute: number) => `2026-11-25T09:${String(minute).padStart(2, "0")}:00.000Z`;
+  const fetches = [41, 40, 39, 38, 37].map((minute, index) => ({
+    id: `${sourceId}-r${index}`,
+    sourceId,
+    startedAt: at(minute),
+    finishedAt: at(minute).replace(":00.000Z", failing ? ":10.000Z" : ":01.000Z"),
+    durationMs: failing ? 10_000 : 412 - index * 7,
+    success: !failing,
+    metrics: failing ? 0 : 1_284 - index * 2,
     events: 0,
     states: 0,
-    errorMessage: null,
-  },
-  {
-    id: "r2",
-    sourceId: "s1Aa2Bb3",
-    startedAt: "2026-11-25T09:40:00.000Z",
-    finishedAt: "2026-11-25T09:40:01.000Z",
-    durationMs: 398,
-    success: true,
-    metrics: 1_280,
-    events: 0,
-    states: 0,
-    errorMessage: null,
-  },
-];
+    errorMessage: failing ? "SCRAPE_TIMEOUT" : null,
+  }));
+  return failing ? fetches.slice(1) : fetches.slice(0, 4);
+};
 
 /** The page props of a base on Sources, as the server builds them, from the invented data above. */
 export const sourcesProps = (
@@ -248,7 +245,7 @@ export const sourcesProps = (
       store: { unavailable: options.storeDown ?? false, since: options.storeDown ? "2026-11-25T09:20:00.000Z" : null },
       alerts: options.alerts ?? fixtureAlerts,
     },
-    initialSourceScrapes: open ? { [open]: fixtureScrapes } : {},
+    initialSourceScrapes: open ? { [open]: fixtureScrapesFor(open) } : {},
     initialSourceApiKeys: {},
     initialQueryCoverage: { bases: true, baseData: true, sourceDetail: true },
     initialDateConfig: { timeZone: "Europe/Berlin", locale: "de", firstDayOfWeek: 1 },
@@ -292,11 +289,11 @@ export const fixtureQueries: SavedQuery[] = [
     baseId: "b7Kq2mX9",
     name: "CPU pro Host, letzte Stunde",
     sql: "-- Last of every host\nSELECT toStartOfMinute(ts) AS time, host, avg(value) AS cpu\nFROM samples\nWHERE name = :metric\nGROUP BY time, host",
-    params: { metric: "node_cpu" },
+    params: {},
     revision: 3,
-    createdBy: null,
-    updatedBy: null,
-    createdAt: "2026-11-01T08:00:00.000Z",
+    createdBy: "00000000-0000-4000-8000-0000000000a1",
+    updatedBy: "00000000-0000-4000-8000-0000000000a1",
+    createdAt: "2026-10-01T08:00:00.000Z",
     updatedAt: "2026-11-24T16:20:00.000Z",
   },
   {
@@ -306,12 +303,92 @@ export const fixtureQueries: SavedQuery[] = [
     sql: "SELECT toDate(ts) AS day, count() FROM events WHERE kind = 'order.created' GROUP BY day",
     params: {},
     revision: 1,
-    createdBy: null,
-    updatedBy: null,
-    createdAt: "2026-10-12T08:00:00.000Z",
+    createdBy: "00000000-0000-4000-8000-0000000000a2",
+    updatedBy: "00000000-0000-4000-8000-0000000000a2",
+    createdAt: "2026-10-01T08:00:00.000Z",
     updatedAt: "2026-11-20T09:00:00.000Z",
   },
+  {
+    id: "q7Ij8Kl9",
+    baseId: "b7Kq2mX9",
+    name: "Freier Speicher je Laufwerk",
+    sql: "SELECT host, device, min(value) AS free FROM samples WHERE name = 'node_filesystem_avail_bytes' GROUP BY host, device",
+    params: {},
+    revision: 4,
+    createdBy: "00000000-0000-4000-8000-0000000000a3",
+    updatedBy: "00000000-0000-4000-8000-0000000000a3",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-19T14:05:00.000Z",
+  },
+  {
+    id: "q2Mn3Op4",
+    baseId: "b7Kq2mX9",
+    name: "Druckerfehler der Woche",
+    sql: "SELECT toDate(ts) AS day, attributes['printer'] AS printer, count() FROM events WHERE kind = 'printer.error' GROUP BY day, printer",
+    params: {},
+    revision: 2,
+    createdBy: "00000000-0000-4000-8000-0000000000a1",
+    updatedBy: "00000000-0000-4000-8000-0000000000a1",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-18T08:30:00.000Z",
+  },
+  {
+    id: "q5Qr6St7",
+    baseId: "b7Kq2mX9",
+    name: "Antwortzeit p95 Webshop",
+    sql: "SELECT toStartOfHour(ts) AS hour, quantile(0.95)(value) AS p95 FROM samples WHERE name = 'http_request_duration_seconds' GROUP BY hour",
+    params: {},
+    revision: 6,
+    createdBy: "00000000-0000-4000-8000-0000000000a4",
+    updatedBy: "00000000-0000-4000-8000-0000000000a4",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-15T11:45:00.000Z",
+  },
+  {
+    id: "q8Uv9Wx1",
+    baseId: "b7Kq2mX9",
+    name: "Netzwerk-Durchsatz je Switch",
+    sql: "SELECT toStartOfMinute(ts) AS time, host, rate(value) AS bytes FROM samples WHERE name = 'node_network_receive_bytes_total' GROUP BY time, host",
+    params: {},
+    revision: 1,
+    createdBy: "00000000-0000-4000-8000-0000000000a2",
+    updatedBy: "00000000-0000-4000-8000-0000000000a2",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-12T10:10:00.000Z",
+  },
+  {
+    id: "q3Yz4Ab5",
+    baseId: "b7Kq2mX9",
+    name: "Temperatur Serverraum",
+    sql: "SELECT toStartOfFiveMinutes(ts) AS time, avg(value) AS celsius FROM samples WHERE name = 'room_temperature' GROUP BY time",
+    params: {},
+    revision: 2,
+    createdBy: "00000000-0000-4000-8000-0000000000a3",
+    updatedBy: "00000000-0000-4000-8000-0000000000a3",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-08T07:55:00.000Z",
+  },
+  {
+    id: "q6Cd7Ef8",
+    baseId: "b7Kq2mX9",
+    name: "Anmeldungen je Stunde",
+    sql: "SELECT toStartOfHour(ts) AS hour, count() FROM events WHERE kind = 'user.login' GROUP BY hour",
+    params: {},
+    revision: 1,
+    createdBy: "00000000-0000-4000-8000-0000000000a4",
+    updatedBy: "00000000-0000-4000-8000-0000000000a4",
+    createdAt: "2026-10-01T08:00:00.000Z",
+    updatedAt: "2026-11-02T16:40:00.000Z",
+  },
 ];
+
+/** The people who changed the fixture queries, by id, as the page resolves their names. */
+export const fixtureAuthors: Record<string, string> = {
+  "00000000-0000-4000-8000-0000000000a1": "Jana Petersen",
+  "00000000-0000-4000-8000-0000000000a2": "Jonas Wolf",
+  "00000000-0000-4000-8000-0000000000a3": "Mira Aydın",
+  "00000000-0000-4000-8000-0000000000a4": "Ole Brandt",
+};
 
 /** Worst-case sources for break-ui: long and unbreakable names and endpoints, non-Latin text, emoji, huge counts. */
 export const worstSources: PulseSource[] = [

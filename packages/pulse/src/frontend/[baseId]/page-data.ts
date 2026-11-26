@@ -156,8 +156,20 @@ export async function loadPulseQueriesPageData<T extends AuthContext>(c: Context
   const offset = Number.isSafeInteger(raw) && raw > 0 ? raw : 0;
   const page = await savedQueries.list({ ...shell.identity, limit: perPage, offset });
   if (!page.ok && page.error.status !== 500) return { kind: "error" as const, status: page.error.status };
-  return { ...shell, offset, page: page.ok ? page.data : null, dateConfig: getDateConfig(c) };
+  const authors = page.ok ? await authorNames(page.data.items.flatMap((query) => [query.updatedBy, query.createdBy])) : {};
+  return { ...shell, offset, page: page.ok ? page.data : null, authors, dateConfig: getDateConfig(c) };
 }
+
+/** The names of the people and agents who wrote saved queries, by id; one read for the page, ids that are gone stay out. */
+const authorNames = async (ids: (string | null)[]): Promise<Record<string, string>> => {
+  const unique = [...new Set(ids.filter((id): id is string => id !== null))];
+  if (unique.length === 0) return {};
+  const rows = await sql<{ id: string; name: string }[]>`
+    SELECT id::text AS id, COALESCE(display_name, uid) AS name FROM auth.users WHERE id = ANY(${sql.array(unique, "UUID")})
+    UNION ALL
+    SELECT id::text AS id, name FROM auth.service_accounts WHERE id = ANY(${sql.array(unique, "UUID")})`;
+  return Object.fromEntries(rows.map((row) => [row.id, row.name]));
+};
 
 /** A base's settings: who may change them and who administers it, plus what the open tab shows on its first picture. */
 export async function loadPulseSettingsPageData<T extends AuthContext>(c: Context<T>, tab: string) {

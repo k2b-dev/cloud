@@ -93,15 +93,23 @@ type BaseUpdateValues = {
 };
 
 const mapBase = async (row: BaseRow): Promise<PulseBase> => {
-  // Count configured members, not the people inside a group or a general access rule.
-  const [membership] = await sql<{ count: number }[]>`
-    SELECT count(*)::int AS count FROM pulse.base_access b
+  // Count configured members, not the people inside a group or a general access rule; the same read names the first
+  // three (admins first), so a list can show who works in the base.
+  const members = await sql<{ count: number; name: string }[]>`
+    SELECT count(*) OVER()::int AS count, COALESCE(u.display_name, sa.name, g.name, 'Member') AS name
+    FROM pulse.base_access b
     JOIN auth.access a ON a.id=b.access_id
+    LEFT JOIN auth.users u ON u.id=a.user_id
+    LEFT JOIN auth.service_accounts sa ON sa.id=a.service_account_id
+    LEFT JOIN auth.groups g ON g.id=a.group_id
     WHERE b.base_id=${row.id}::uuid AND a.permission<>'none'
       AND (a.user_id IS NOT NULL OR a.group_id IS NOT NULL OR a.service_account_id IS NOT NULL)
+    ORDER BY (a.permission='admin') DESC, a.created_at
+    LIMIT 3
   `;
   return {
-    memberCount: membership!.count,
+    memberCount: members[0]?.count ?? 0,
+    members: members.map((member) => member.name),
     store: await baseStoreStatus(row.id),
     id: row.id,
     shortId: row.short_id,

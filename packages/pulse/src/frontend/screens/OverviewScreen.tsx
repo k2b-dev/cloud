@@ -1,6 +1,26 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { text } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Dialog, Empty, Field, Input, List, Pane, Row, Section, StatusRow, Text, useToast, Workspace } from "@k2b/ui/v2";
+import {
+  Avatar,
+  Bar,
+  Button,
+  Dialog,
+  Empty,
+  Field,
+  Inline,
+  Input,
+  List,
+  Pane,
+  Progress,
+  Row,
+  Section,
+  StatusRow,
+  Table,
+  Text,
+  useToast,
+  Workspace,
+} from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { isServer } from "solid-js/web";
 import type { PulseBase } from "../../contracts";
@@ -37,7 +57,9 @@ export default function OverviewScreen(props: OverviewScreenProps) {
   const [query, setQuery] = createSignal(props.initialQuery);
   const [creating, setCreating] = createSignal(false);
   // Only bases whose store does not take data are worth a word in the first row; healthy ones need none.
-  const troubled = () => props.bases.filter((base) => storeState(base.store, store()).status !== "ok").length;
+  const troubled = (base: PulseBase) => storeState(base.store, store()).status !== "ok";
+  const troubledBases = () => props.bases.filter(troubled);
+  const bytes = (value: number) => text.pprintBytes(value, { locale: locale(), mode: "si" });
   const shown = createMemo(() => props.bases.filter((base) => matches(base, query())));
   // k2b-ui gap: tables do not virtualize yet (lane MW); the list shows 100 rows at a time, so the page stays bounded.
   const [visible, setVisible] = createSignal(PAGE);
@@ -87,12 +109,21 @@ export default function OverviewScreen(props: OverviewScreenProps) {
         scrollKey="pulse-bases"
         // the first row speaks only when there is something to act on or a search found less than all
         status={
-          query().trim() || troubled() > 0 ? (
+          query().trim() || troubledBases().length > 0 ? (
             <StatusRow
               lead={
                 query().trim()
                   ? words().matchesCount({ count: shown().length, total: props.bases.length })
-                  : words().storeTrouble({ count: troubled() })
+                  : words().storeTrouble({ count: troubledBases().length })
+              }
+              // which ones, and what is wrong with each
+              // k2b-ui gap (#4259 StatusRow marks): the names stand as figures, not yet as tinted chips with their mark
+              facts={
+                query().trim()
+                  ? undefined
+                  : troubledBases()
+                      .slice(0, 3)
+                      .map((base) => ({ value: base.name, after: storeState(base.store, store()).label }))
               }
             />
           ) : undefined
@@ -113,22 +144,64 @@ export default function OverviewScreen(props: OverviewScreenProps) {
             when={shown().length > 0}
             fallback={<Empty icon="search" text={t().noMatchingBases} action={{ label: words().clearSearch, onClick: () => search("") }} />}
           >
-            <List label={t().yourBases}>
-              <For each={shown().slice(0, visible())}>
-                {(base) => (
-                  <Row
-                    mark={{ icon: iconName(base.icon), color: baseColor(base.color) }}
-                    lines={[
-                      base.name,
-                      `${base.description ? `${base.description} · ` : ""}${words().retentionDays({ days: base.rawRetentionDays })}`,
-                    ]}
-                    meta={words().membersMeta({ count: base.memberCount })}
-                    states={storeState(base.store, store()).status === "ok" ? undefined : <StoreChip store={base.store} t={store()} />}
-                    href={baseHref(base)}
-                  />
-                )}
-              </For>
-            </List>
+            <Table
+              label={t().yourBases}
+              rows={shown().slice(0, visible())}
+              rowKey={(base) => base.id}
+              open={(base) => ({ href: baseHref(base) })}
+              phone={(base) => ({
+                mark: { icon: iconName(base.icon), color: baseColor(base.color) },
+                lines: [base.name, base.description ?? words().membersMeta({ count: base.memberCount })],
+                states: troubled(base) ? <StoreChip store={base.store} t={store()} /> : undefined,
+              })}
+              columns={[
+                {
+                  title: words().baseColumn,
+                  width: { min: 220, default: 360 },
+                  mark: (base) => ({ icon: iconName(base.icon), color: baseColor(base.color) }),
+                  cell: (base) => ({ lines: [base.name, base.description ?? "—"] }),
+                },
+                {
+                  title: words().membersColumn,
+                  width: { min: 150, default: 190 },
+                  drop: true,
+                  cell: (base) => (
+                    <Inline>
+                      <Avatar.Stack people={(base.members ?? []).map((name) => ({ name }))} max={3} />
+                      <Text type="meta" muted>
+                        {words().membersMeta({ count: base.memberCount })}
+                      </Text>
+                    </Inline>
+                  ),
+                },
+                {
+                  title: words().storageColumn,
+                  width: { min: 170, default: 220 },
+                  // a store that does not take data says why; a working one shows how full it is
+                  cell: (base) =>
+                    troubled(base) ? (
+                      <StoreChip store={base.store} t={store()} />
+                    ) : base.store.usage ? (
+                      <Progress
+                        value={base.store.usage.bytes}
+                        of={base.store.limits.storageBytes}
+                        label={`${bytes(base.store.usage.bytes)} / ${bytes(base.store.limits.storageBytes)}`}
+                      />
+                    ) : (
+                      <Text type="meta" muted>
+                        {words().notMeasured}
+                      </Text>
+                    ),
+                },
+                {
+                  title: words().retentionColumn,
+                  width: { min: 100, default: 120 },
+                  drop: true,
+                  align: "end",
+                  cell: (base) => words().retentionDays({ days: base.rawRetentionDays }),
+                },
+              ]}
+            />
           </Show>
           <Show when={shown().length > visible()}>
             <Bar

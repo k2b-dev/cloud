@@ -213,6 +213,7 @@ export const MessageSchema = z.object({ message: z.string() });
 
 export const BaseSchema = z.object({
   memberCount: z.number().int().nonnegative(),
+  members: z.array(z.string()).max(3).optional(),
   store: BaseStoreStatusSchema,
   shortId: PulseShortIdSchema,
   icon: BaseIconSchema,

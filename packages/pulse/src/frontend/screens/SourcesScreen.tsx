@@ -6,6 +6,7 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Cells,
   Chip,
   Dialog,
   Empty,
@@ -254,7 +255,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
     if (controller.requireWritable()) setAdding(true);
   };
   const paused = () => sources().filter((source) => !source.enabled).length;
-  const failing = () => sources().filter((source) => source.enabled && source.status.lastError).length;
+  const failingSources = () => sources().filter((source) => source.enabled && source.status.lastError);
+  const number = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const alerts = () => props.initialAttention?.alerts ?? [];
 
   return (
@@ -295,21 +297,56 @@ export default function SourcesScreen(props: SourcesScreenProps) {
           // beside an open source the list keeps a width of its own; alone it has the whole page
           width={selected() ? { min: 360, default: 720 } : undefined}
           scrollKey="pulse-sources"
+          // a search says what it found; the base's state stands in the figures below
           status={
-            <StatusRow
-              lead={
-                search().trim()
-                  ? words().matchesCount({ count: shown().length, total: sources().length })
-                  : failing()
-                    ? words().sourcesFailing({ count: failing() })
-                    : words().sourcesFine
-              }
-              loading={refreshing()}
-              // the number of sources stands on the tab; here only what differs
-              facts={paused() ? [{ value: paused(), after: words().pausedAfter }] : []}
-            />
+            search().trim() ? (
+              <StatusRow lead={words().matchesCount({ count: shown().length, total: sources().length })} loading={refreshing()} />
+            ) : undefined
           }
         >
+          <Show when={!search().trim() && sources().length > 0}>
+            {/* k2b-ui gap: no history per day is stored for sources yet, so the cells carry no Spark (see the PR notes). */}
+            <Cells>
+              <Cells.Cell
+                icon="alert-circle"
+                color={failingSources().length ? "#dc2626" : "#059669"}
+                label={words().errorsCell}
+                value={String(failingSources().length)}
+                meta={
+                  failingSources().length
+                    ? failingSources()
+                        .map((source) => source.name)
+                        .join(", ")
+                    : words().sourcesFine
+                }
+                href={failingSources().length === 1 ? sourceHref(failingSources()[0]!) : undefined}
+                loading={refreshing()}
+              />
+              <Cells.Cell
+                icon="plug-connected"
+                label={words().activeCell}
+                value={String(sources().length - paused())}
+                meta={paused() ? `${paused()} ${words().pausedAfter}` : words().noneOff}
+                loading={refreshing()}
+              />
+              <Cells.Cell
+                icon="chart-dots"
+                color="#7c3aed"
+                label={words().seriesCell}
+                value={number(sources().reduce((sum, source) => sum + (source.seriesCount ?? 0), 0))}
+                meta={words().fromMetrics}
+                loading={refreshing()}
+              />
+              <Cells.Cell
+                icon="webhook"
+                color="#0891b2"
+                label={words().todayCell}
+                value={number(sources().reduce((sum, source) => sum + (source.todayCount ?? 0), 0))}
+                meta={words().sinceMidnight}
+                loading={refreshing()}
+              />
+            </Cells>
+          </Show>
           <Show when={removedNotice()}>
             <Notice
               tone="note"
@@ -374,10 +411,9 @@ export default function SourcesScreen(props: SourcesScreenProps) {
             }
             phone={(source) => ({
               mark: sourceMark(source),
-              lines: [
-                source.name,
-                `${sourceStatus(source, t()).label} · ${source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet}`,
-              ],
+              lines: [source.name, source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet],
+              // a healthy source needs no word; a failing or paused one shows its state in colour, symbol and word
+              states: sourceStatus(source, t()).tone === "ok" ? undefined : statusChip(source, t()),
             })}
             columns={[
               {
@@ -393,7 +429,13 @@ export default function SourcesScreen(props: SourcesScreenProps) {
                 drop: true,
                 cell: (source) => (source.status.newestDataAt ? when(source.status.newestDataAt) : t().noDataYet),
               },
-              { title: words().dataColumn, align: "end", drop: true, cell: (source) => dataCount(source, t()) },
+              {
+                title: words().dataColumn,
+                align: "end",
+                width: { min: 110, default: 130 },
+                drop: true,
+                cell: (source) => dataCount(source, t()),
+              },
             ]}
           />
           <Show when={shown().length > visible()}>
@@ -498,20 +540,22 @@ function FiredAlerts(props: {
               current={props.selected === alert.reference}
               href={props.sqlHref(alert.reference)}
               end={
-                alert.state === "firing" ? (
-                  <Chip status={alert.severity === "critical" ? "bad" : "warn"}>
-                    {alert.severity === "critical" ? t().severityCritical : t().severityWarning}
-                  </Chip>
-                ) : (
-                  <Chip>{alert.state === "error" ? t().error : t().noDataYet}</Chip>
-                )
+                <>
+                  {alert.state === "firing" ? (
+                    <Chip status={alert.severity === "critical" ? "bad" : "warn"}>
+                      {alert.severity === "critical" ? t().severityCritical : t().severityWarning}
+                    </Chip>
+                  ) : (
+                    <Chip status="warn">{alert.state === "error" ? t().error : t().noDataYet}</Chip>
+                  )}
+                  {/* the deed is the same on every alarm, so it waits behind the row's "…" */}
+                  <Menu
+                    label={`${t().adjustWithGustav}: ${alert.name}`}
+                    disabled={props.pending}
+                    items={[{ label: t().adjustWithGustav, icon: "sparkles", onClick: () => props.adjust(alert.reference) }]}
+                  />
+                </>
               }
-              action={{
-                label: t().adjustWithGustav,
-                icon: "sparkles",
-                disabled: props.pending,
-                onClick: () => props.adjust(alert.reference),
-              }}
             />
           )}
         </For>
@@ -568,8 +612,8 @@ function SourceDetail(props: {
   const facts = () => [
     {
       label: t().target,
+      // an address breaks at its slashes like words, not sign by sign as a token would
       value: source().kind === "metrics" ? (source().endpointUrl ?? t().noEndpoint) : `POST ${props.origin}/api/pulse/ingest`,
-      mono: true,
       copy: source().kind === "metrics" ? (source().endpointUrl ?? undefined) : `${props.origin}/api/pulse/ingest`,
     },
     // an error stands once, in its notice above the facts

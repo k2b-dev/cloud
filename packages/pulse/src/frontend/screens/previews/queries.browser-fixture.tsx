@@ -1,5 +1,5 @@
 import { LocaleProvider } from "@k2b/ui";
-import { fixtureBases, fixtureQueries } from "../fixtures";
+import { fixtureAuthors, fixtureBases, fixtureQueries } from "../fixtures";
 import QueriesScreen from "../QueriesScreen";
 
 /** The saved queries of a base, for `v2-preview`. */
@@ -11,6 +11,7 @@ export default () => (
       sourceCount={4}
       page={{ items: fixtureQueries, total: 63, nextOffset: 50 }}
       offset={0}
+      authors={fixtureAuthors}
       dateConfig={{ timeZone: "Europe/Berlin", locale: "de" }}
     />
   </LocaleProvider>

@@ -18,7 +18,7 @@ const { default: QueriesScreen } = await import("./QueriesScreen");
 const { default: SettingsScreen } = await import("./SettingsScreen");
 const { default: AdminScreen } = await import("../admin/AdminScreen");
 const { fixtureAdminBases, fixtureAdminNav, fixturePolicy, fixtureTargets } = await import("../admin/admin-fixtures");
-const { fixtureBases, fixtureDeletingBases, fixtureQueries, sourcesProps, worstBases } = await import("./fixtures");
+const { fixtureAuthors, fixtureBases, fixtureDeletingBases, fixtureQueries, sourcesProps, worstBases } = await import("./fixtures");
 const { sqlTestLimits } = await import("../workspace/sql-test-fixtures");
 
 const dom = createDomTestHarness();
@@ -65,7 +65,8 @@ describe("Pulse pages on the server", () => {
 
   test("sources show alerts, the table and the open source with its facts", () => {
     const page = render(() => createComponent(SourcesScreen, sourcesProps({ open: "s7Ee8Ff9" })));
-    expect(page.text).toContain("1 Quelle meldet Fehler");
+    expect(page.text).toContain("Drucker Halle 2");
+    expect(page.text).toContain("Fehler");
     expect(page.text).toContain("Braucht Aufmerksamkeit");
     expect(page.text).toContain("Alarm „CPU Werkstatt“ ausgelöst");
     expect(page.text).toContain("Drucker Halle 2");
@@ -97,10 +98,11 @@ describe("Pulse pages on the server", () => {
         ...frame,
         page: { items: fixtureQueries, total: 63, nextOffset: 50 },
         offset: 0,
+        authors: fixtureAuthors,
         dateConfig: { timeZone: "Europe/Berlin", locale: "de" },
       }),
     );
-    expect(page.text).toContain("63 Abfragen");
+    expect(page.text).toContain("/ 63");
     expect(page.text).toContain("SELECT toStartOfMinute(ts) AS time, host, avg(value) AS cpu");
     expect(page.text).toContain("Nächste Seite");
     expect(page.loading).toBe(0);

@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, Pane, StatusRow, Table, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Failed, Pane, Table, Text } from "@k2b/ui/v2";
 import { Show } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import type { SavedQueriesPage, SavedQuery } from "../../service/saved-queries";
@@ -10,6 +10,9 @@ import { useScreenMessages } from "./messages";
 
 export const QUERIES_PER_PAGE = 50;
 
+/** A saved query's mark: the SQL symbol in the colour Pulse gives queries. */
+const QUERY_MARK = { icon: "file-code", color: "#0d9488" };
+
 export type QueriesScreenProps = {
   bases: PulseBase[];
   baseId: string;
@@ -17,6 +20,8 @@ export type QueriesScreenProps = {
   /** The page of saved queries the address names; null when it could not be read. */
   page: SavedQueriesPage | null;
   offset: number;
+  /** Names of the people and agents who changed the queries, by id. */
+  authors: Record<string, string>;
   dateConfig: { timeZone: string; locale: string };
 };
 
@@ -43,6 +48,10 @@ export default function QueriesScreen(props: QueriesScreenProps) {
   const open = (query: SavedQuery) => ({
     href: buildPulseWorkspaceHref({ baseId: props.baseId, state: { view: "sql", queryId: query.id } }),
   });
+  const author = (query: SavedQuery) => {
+    const id = query.updatedBy ?? query.createdBy;
+    return id ? props.authors[id] : undefined;
+  };
   const newQuery = { label: t().sqlNewQuery, icon: "plus", href: baseHref(props.baseId, "sql") };
   return (
     <BaseFrame
@@ -57,11 +66,7 @@ export default function QueriesScreen(props: QueriesScreenProps) {
         </Button>
       }
     >
-      <Pane
-        label={words().queries}
-        scrollKey="pulse-queries"
-        status={<StatusRow lead={props.page ? words().queriesCount({ count: props.page.total }) : words().queries} />}
-      >
+      <Pane label={words().queries} scrollKey="pulse-queries">
         <Show when={props.page} fallback={<Failed text={t().sqlSavedLoadFailed} onRetry={() => location.reload()} />}>
           {(page) => (
             <>
@@ -74,9 +79,24 @@ export default function QueriesScreen(props: QueriesScreenProps) {
                   rows={page().items}
                   rowKey={(query) => query.id}
                   open={open}
-                  phone={(query) => ({ lines: [query.name, excerpt(query.sql)], time: time(query.updatedAt) })}
+                  phone={(query) => ({
+                    mark: QUERY_MARK,
+                    lines: [query.name, author(query) ? `${author(query)} · ${time(query.updatedAt)}` : time(query.updatedAt)],
+                  })}
                   columns={[
-                    { title: t().name, width: { min: 240, default: 520 }, cell: (query) => ({ lines: [query.name, excerpt(query.sql)] }) },
+                    {
+                      title: t().name,
+                      width: { min: 240, default: 520 },
+                      mark: () => QUERY_MARK,
+                      cell: (query) => ({ lines: [query.name, excerpt(query.sql)] }),
+                    },
+                    {
+                      title: words().changedBy,
+                      width: { min: 140, default: 200 },
+                      drop: true,
+                      avatar: (query) => ({ name: author(query) ?? "?" }),
+                      cell: (query) => author(query) ?? "—",
+                    },
                     { title: words().updated, drop: true, cell: (query) => time(query.updatedAt) },
                   ]}
                 />
