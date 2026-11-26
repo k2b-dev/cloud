@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { List, type ListController, Nav, Pane, Row, Table, Workspace } from "../src/v2";
+import { List, type ListController, Nav, type NavItem, Pane, Row, Table, Workspace } from "../src/v2";
 
 // A list of 1,000 entries whose titles wrap at narrow widths, and a table of 200 rows whose cells read a live value:
 // the virtual window of v2 (review of #4211) under scrolling, resizing, Tab and a reveal by key.
@@ -31,7 +31,25 @@ if (!root) throw new Error("virtual: #root is missing");
 // `<body data-case="groups">`: the same entries, seven a day under a head of their day, in a list and in a table
 const day = (index: number) => Math.floor(index / 7) + 1;
 // `<body data-case="nav">`: a sidebar whose group holds 1,000 entries (a base with 1,000 tables), and a foot
-if (document.body.dataset.case === "nav")
+// `nav`: 1,000 entries, the current one at 700; `navfold`: 500, the 301st a fold of 30 holding the current page as
+// its last; `navshort`: 40 entries (no window), the current one at 38
+const navCase = document.body.dataset.case ?? "";
+const navItems = (): NavItem[] => {
+  const plain = (count: number, current: number): NavItem[] =>
+    Array.from({ length: count }, (_, index) => ({
+      label: `Tabelle ${index + 1}`,
+      icon: "table",
+      href: `#t${index + 1}`,
+      current: index === current,
+    }));
+  if (navCase === "navshort") return plain(40, 37);
+  if (navCase !== "navfold") return plain(1000, 699);
+  const fold: NavItem = { label: "Archiv", items: plain(30, 29).map((item) => ({ ...item, label: `Archiv ${item.label}` })) };
+  const items = plain(500, -1);
+  items[300] = fold;
+  return items;
+};
+if (navCase.startsWith("nav"))
   render(
     () => (
       <Workspace
@@ -42,12 +60,7 @@ if (document.body.dataset.case === "nav")
             groups={[
               {
                 label: "Tabellen",
-                items: entries.map((entry, index) => ({
-                  label: `Tabelle ${index + 1}`,
-                  icon: "table",
-                  href: `#t${index + 1}`,
-                  current: index === 699,
-                })),
+                items: navItems(),
               },
             ]}
             foot={[{ label: "Papierkorb", icon: "trash", href: "#trash" }]}

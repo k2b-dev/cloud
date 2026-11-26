@@ -170,7 +170,9 @@ and do not count as one.
 What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
 finds only rows in the page, so a list people search in needs its own
 search; Shift+Tab from below the list (a foot) lands on the last row in the
-page, not the last item; a group head is no entry of the list for a screen
+page, not the last item; Tab out of a row that scrolled away looks at most
+20 entries further for the next stop (past 20 heads or rows without a
+control the browser decides); a group head is no entry of the list for a screen
 reader (as the group rows of a table on the phone), its rows say their place
 in the whole list; a `Nav` group that grows past 40 entries is made anew
 once (the focus in it is lost then), and its entries are known by their

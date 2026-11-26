@@ -192,6 +192,16 @@ const NavFold = (props: { item: NavItem; items: readonly NavItem[]; level: numbe
 const groupMenu = (action: NavGroup["action"]) => (action && "items" in action ? action : undefined);
 const groupDeed = (action: NavGroup["action"]) => (action && !("items" in action) ? action : undefined);
 
+/** Scrolls a sidebar's entries so its current page shows whole (the least scroll that does). */
+const showCurrent = (scroll: HTMLElement) => {
+  const current = scroll.querySelector<HTMLElement>('[aria-current="page"]');
+  if (!current) return;
+  const view = scroll.getBoundingClientRect();
+  const box = current.getBoundingClientRect();
+  if (box.top < view.top) scroll.scrollTop += box.top - view.top;
+  else if (box.bottom > view.bottom) scroll.scrollTop += box.bottom - view.bottom;
+};
+
 /**
  * The entries of a long group (a base with 1,000 tables): only those in view and a margin around them are in the
  * page, in the same window as a list of items (`createVirtualWindow`); the server renders the first of them.
@@ -214,16 +224,21 @@ const NavWindow = (props: { items: readonly NavItem[] }) => {
     if (!box) return;
     view.mount(box);
     const shown = current();
-    if (shown !== undefined) view.reveal(shown);
+    if (shown === undefined) return;
+    view.reveal(shown);
   });
   return (
     <div ref={box} class="k2-nav-window" style={custom({ "--k2-before": `${view.before()}px`, "--k2-after": `${view.after()}px` })}>
       <For each={view.shown()}>
         {(place) => {
-          const node = resolveChildren(() => <NavEntry item={props.items[place.index]!} />);
-          const element = node.toArray().find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
-          if (element) view.observe(element, place);
-          return node();
+          // each entry in a place of its own, so an open fold counts with its entries
+          const node = (
+            <div class="k2-nav-place">
+              <NavEntry item={props.items[place.index]!} />
+            </div>
+          );
+          if (typeof Element !== "undefined" && node instanceof Element) view.observe(node, place);
+          return node;
         }}
       </For>
     </div>
@@ -234,40 +249,50 @@ const NavWindow = (props: { items: readonly NavItem[] }) => {
  * The sidebar of an app: its name, groups of round entries with counts, entries at the foot. The groups scroll
  * between the name and the foot; a group longer than a screen keeps only the entries in view in the page.
  */
-export const Nav = (props: NavProps) => (
-  <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
-    <div class="k2-nav-title">
-      <Icon name={props.icon} />
-      {props.title}
-    </div>
-    <div class="k2-nav-scroll">
-      <Index each={props.groups}>
-        {(group) => (
-          <>
-            <Show when={group().label}>
-              <div class="k2-nav-label">
-                {group().label}
-                <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
-                <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
-              </div>
-            </Show>
-            <Show
-              when={group().items.length > SERVER_ROWS}
-              fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}
-            >
-              <NavWindow items={group().items} />
-            </Show>
-          </>
-        )}
-      </Index>
-    </div>
-    <Show when={props.foot?.length}>
-      <div class="k2-nav-foot">
-        <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+export const Nav = (props: NavProps) => {
+  let scroll: HTMLDivElement | undefined;
+  // the current page shows on load (a long group shows its own once its window stands, see `NavWindow`)
+  onMount(() => {
+    // after the first render settles: a long group has put its window at the current entry by then (`NavWindow`)
+    queueMicrotask(() => {
+      if (scroll) showCurrent(scroll);
+    });
+  });
+  return (
+    <nav class="k2-nav" data-k2-part="Nav" aria-label={props.title}>
+      <div class="k2-nav-title">
+        <Icon name={props.icon} />
+        {props.title}
       </div>
-    </Show>
-  </nav>
-);
+      <div class="k2-nav-scroll" ref={scroll}>
+        <Index each={props.groups}>
+          {(group) => (
+            <>
+              <Show when={group().label}>
+                <div class="k2-nav-label">
+                  {group().label}
+                  <Show when={groupMenu(group().action)}>{(menu) => <Menu label={menu().label} items={menu().items} />}</Show>
+                  <Show when={groupDeed(group().action)}>{(action) => <ActionButton action={action()} variant="ghost" iconOnly />}</Show>
+                </div>
+              </Show>
+              <Show
+                when={group().items.length > SERVER_ROWS}
+                fallback={<Index each={group().items}>{(item) => <NavEntry item={item()} />}</Index>}
+              >
+                <NavWindow items={group().items} />
+              </Show>
+            </>
+          )}
+        </Index>
+      </div>
+      <Show when={props.foot?.length}>
+        <div class="k2-nav-foot">
+          <Index each={props.foot}>{(item) => <NavEntry item={item()} />}</Index>
+        </div>
+      </Show>
+    </nav>
+  );
+};
 
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 

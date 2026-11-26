@@ -2463,6 +2463,13 @@
 .k2-ui .k2-nav-window > * {
   flex: none;
 }
+/* an entry of a long group with what it folds open: one place, measured whole by the window */
+.k2-ui .k2-nav-place {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 /* a long group keeps only the entries in view; its padding holds the place of the others */
 .k2-ui .k2-nav-window {
   --k2-before: 0px;
