@@ -15,7 +15,7 @@ const workflow = workflowSchema.parse(source);
 const step = gateStep(workflow);
 const jobs = workflow.jobs.gate?.needs ?? [];
 const pathFiltered = step?.env?.MAY_SKIP?.split(" ") ?? [];
-const draftFiltered = step?.env?.DRAFT_MAY_SKIP?.split(" ") ?? [];
+const draftFailure = { code: 1, stderr: "Draft: light checks only - the full gate runs after ready for review" };
 
 /** Runs the gate step of ci.yml with this RESULTS value, like the runner does. */
 const runGate = async (results: string, isDraft = false) => {
@@ -86,29 +86,24 @@ test("draft events run only the light jobs; ready PRs, merge groups, and dispatc
             ? [...jobs, "gate"]
             : ["changes", "mirror", "setup", "check", "unit", "integration", "gate"],
       );
-      expect(await gate(Object.fromEntries(jobs.filter((id) => !selected.includes(id)).map((id) => [id, "skipped"])), isDraft)).toEqual({
-        code: 0,
-        stderr: "",
-      });
+      expect(await gate(Object.fromEntries(jobs.filter((id) => !selected.includes(id)).map((id) => [id, "skipped"])), isDraft)).toEqual(
+        isDraft ? draftFailure : { code: 0, stderr: "" },
+      );
     }
   }
 });
 
-test("draft skips cannot pass the full gate and draft failures are still visible", async () => {
-  const skipped = Object.fromEntries([...pathFiltered, ...draftFiltered].map((id) => [id, "skipped"]));
-  expect(await gate(skipped, true)).toEqual({ code: 0, stderr: "" });
+test("a successful light run leaves a red required gate that cannot authorize the PR after it becomes ready", async () => {
+  const skipped = Object.fromEntries(jobs.filter((id) => !["changes", "setup", "check"].includes(id)).map((id) => [id, "skipped"]));
+  expect(workflow.jobs.gate?.if).toBe("always()");
+  expect(workflow.jobs.check?.if).toBeUndefined();
+  expect(await gate(skipped, true)).toEqual(draftFailure);
+  // Even success in every job must not publish a successful draft gate for the head SHA.
+  expect(await gate({}, true)).toEqual(draftFailure);
   expect(await gate(skipped)).toEqual({
     code: 1,
     stderr: "Jobs that did not pass: mirror (skipped), unit (skipped), integration (skipped)",
   });
-  for (const id of ["changes", "setup", "check"]) {
-    for (const result of ["failure", "cancelled", "skipped"]) {
-      expect(await gate({ ...skipped, [id]: result }, true)).toEqual({ code: 1, stderr: `Jobs that did not pass: ${id} (${result})` });
-    }
-  }
-  for (const id of [...pathFiltered, ...draftFiltered]) {
-    expect(await gate({ ...skipped, [id]: "failure" }, true)).toEqual({ code: 1, stderr: `Jobs that did not pass: ${id} (failure)` });
-  }
 });
 
 test("the gate passes when every job succeeded or a path-filtered job was skipped", async () => {
@@ -168,14 +163,19 @@ test("the rule rejects widening skip allowances or dropping draft guards", async
     for (const [before, after, message] of [
       ["MAY_SKIP: webkit", "MAY_SKIP: unit webkit", "MAY_SKIP lists unit, which it must not"],
       [
-        "DRAFT_MAY_SKIP: mirror unit integration",
-        "DRAFT_MAY_SKIP: mirror unit integration setup",
-        "DRAFT_MAY_SKIP lists setup, which it must not",
+        "needs.changes.outputs.webkit == 'true')",
+        "needs.changes.outputs.webkit == 'true' && github.event_name != 'merge_group')",
+        "webkit must use only the full-CI condition and an optional path filter",
+      ],
+      [
+        "needs.changes.outputs.webkit == 'true')",
+        "needs.changes.outputs.webkit == 'true') && (github.event_name != 'merge_group')",
+        "webkit must use only the full-CI condition and an optional path filter",
       ],
       [
         "  mirror:\n    if: github.event_name != 'pull_request' || github.event.pull_request.draft != true",
         "  mirror:",
-        "mirror must exclude draft PRs with the full-CI condition",
+        "mirror must use only the full-CI condition and an optional path filter",
       ],
       [
         "IS_DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft == true }}",
@@ -221,10 +221,10 @@ test("reports a gate that misses a job, allows a skip that is not a path filter,
       "jobs.gate.needs is missing ui",
       "check may be skipped only by a path filter: its `if:` must read needs.changes.outputs and it must need changes",
       "lint may be skipped only by a path filter: its `if:` must read needs.changes.outputs and it must need changes",
-      "lint must exclude draft PRs with the full-CI condition",
-      "docs must exclude draft PRs with the full-CI condition",
-      "ui must exclude draft PRs with the full-CI condition",
-      "site must exclude draft PRs with the full-CI condition",
+      "lint must use only the full-CI condition and an optional path filter",
+      "docs must use only the full-CI condition and an optional path filter",
+      "ui must use only the full-CI condition and an optional path filter",
+      "site must use only the full-CI condition and an optional path filter",
       "check must run for draft PRs too, without a job condition",
       "MAY_SKIP lists check, which it must not",
       "MAY_SKIP lists lint, which it must not",

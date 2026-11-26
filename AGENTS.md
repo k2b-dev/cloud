@@ -314,7 +314,10 @@ A fix pull request answers "How do we prevent this next time?" with a guard
 Follow [Add a lesson](docs-site/docs/en/contributing/lessons-learned.md#add-a-lesson);
 never insert entries into the shared page, which Fibel assembles at runtime.
 
-The `gate` check runs `bun run check`, `bun run test`, and the integration
+Draft pull requests run light checks in `check`; their required `gate` is red
+by design, even when those checks pass. After marking a PR ready for review,
+wait for the **new full gate run** to pass before merging or enabling auto-merge.
+The full `gate` check runs `bun run check`, `bun run test`, and the integration
 suites with `CLOUD_TEST_*`, plus path-filtered jobs such as Grids
 certification, WebKit browser tests, documentation checks, and an image boot
 smoke when their inputs changed. It runs on the pull request and again in the

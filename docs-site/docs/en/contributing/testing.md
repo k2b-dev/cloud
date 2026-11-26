@@ -1366,11 +1366,16 @@ Draft pull requests run only `changes`, the shared UI build in `setup`,
 `check` (`bun run check` and PR metadata checks), and `gate`. They skip all
 test shards and path-filtered jobs, including browser tests, integration,
 Grids certification, documentation builds, production bundles, images, and
-the image mirror. Run focused tests locally while the PR is a draft; its
-green gate confirms only the light checks.
+the image mirror. The `check` job reports the light checks. The required
+`gate` deliberately fails with "Draft: light checks only - the full gate
+runs after ready for review", even when all light checks pass. Run focused
+tests locally while the PR is a draft.
 
 Marking a PR ready for review (`ready_for_review`) starts the full gate,
-even without a new commit. Opening, reopening, or pushing to a non-draft PR
+even without a new commit. Wait for the **new full gate run** to pass before
+merging or enabling auto-merge: its `gate` job appears only after its
+dependencies finish, and the previous draft gate remains red until then.
+Opening, reopening, or pushing to a non-draft PR
 also runs the full gate. Every `merge_group` and manual workflow run uses
 the full gate, regardless of draft state. New PR runs cancel older runs of
 the same PR; merge queue runs each have a unique concurrency group and are
@@ -1386,12 +1391,13 @@ boot smoke, run when
 their inputs changed. The gate runs on the pull request and again in the merge
 queue, and its result is authoritative.
 
-`gate` always aggregates every job. Only actual draft PR events allow the
-additional `mirror`, `unit`, and `integration` skips; ready PRs and merge
-groups require those jobs to succeed. Existing path filters still control
-the other optional jobs. Failed or cancelled jobs fail the gate in either
-mode. The `ci-gate` rule and its tests check the job list, draft conditions,
-skip allowances, event triggers, and concurrency policy.
+`gate` runs with `always()` and rejects draft PR events before aggregation,
+so a light result for the same head SHA cannot authorize a PR after it becomes
+ready. Full runs aggregate every job and require `mirror`, `unit`, and
+`integration` to succeed. Existing path filters still control the other
+optional jobs; failed or cancelled jobs fail the full gate. The `ci-gate`
+rule and its tests check the job list, exact draft and path conditions,
+the red draft gate, skip allowances, event triggers, and concurrency policy.
 
 Unit tests run in thirteen shards, WebKit tests in twenty-two, and integration tests
 in six. Each mode uses its own measured seconds per suite in

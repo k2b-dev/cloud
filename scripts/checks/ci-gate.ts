@@ -23,28 +23,28 @@ const draftCondition = "github.event_name == 'pull_request' && github.event.pull
 const fullCiCondition = "github.event_name != 'pull_request' || github.event.pull_request.draft != true";
 const fullCiPrefix = `(${fullCiCondition}) && (`;
 const lightJobs = ["changes", "setup", "check"];
+const pathFilter =
+  /^(?:needs\.changes\.outputs\.[a-z]+ == 'true'(?: \|\| needs\.changes\.outputs\.[a-z]+ == 'true')*|needs\.changes\.outputs\.bundles != '')$/;
+const hasDraftPrefix = (condition: string) => condition.startsWith(fullCiPrefix) && condition.endsWith(")");
+const isPathFiltered = (job: Job) =>
+  job.needs.includes("changes") &&
+  typeof job.if === "string" &&
+  pathFilter.test(hasDraftPrefix(job.if) ? job.if.slice(fullCiPrefix.length, -1) : job.if);
 const isDraftFiltered = (job: Job) =>
-  typeof job.if === "string" && (job.if === fullCiCondition || (job.if.startsWith(fullCiPrefix) && job.if.endsWith(")")));
+  typeof job.if === "string" && (job.if === fullCiCondition || (hasDraftPrefix(job.if) && isPathFiltered(job)));
 
 const differences = (subject: string, expected: string[], actual: string[]): string[] => [
   ...expected.filter((id) => !actual.includes(id)).map((id) => `${subject} is missing ${id}`),
   ...actual.filter((id) => !expected.includes(id)).map((id) => `${subject} lists ${id}, which it must not`),
 ];
 
-/**
- * Outside draft PRs, a path-filtered job is skipped only when `changes` reports nothing for it.
- * The rule cannot prove that its `if:` reads nothing else; review keeps other
- * conditions out of it.
- */
-const isPathFiltered = (job: Job) =>
-  job.needs.includes("changes") && typeof job.if === "string" && job.if.includes("needs.changes.outputs.");
-
 /** The step that decides the required `gate` status check. */
 export const gateStep = (workflow: Workflow) => workflow.jobs.gate?.steps.find((step) => step.env?.MAY_SKIP !== undefined);
 
 /**
  * `gate` is the only required status check, so it must see every job and
- * accept a skip only where the job's own path filter or draft policy caused it. A skip that
+ * accept a skip only where the job's own path filter caused it. Draft gates
+ * always fail so a light result cannot authorize a PR after it becomes ready. A skip that
  * cascades from a failed or abandoned upstream job is then always visible as
  * that upstream job's result.
  */
@@ -62,7 +62,6 @@ export const rule: Rule = {
     if (!gate || !step?.env?.MAY_SKIP) return [{ file, message: "jobs.gate needs a step with a MAY_SKIP environment variable" }];
 
     const maySkip = step.env.MAY_SKIP.split(" ").filter(Boolean);
-    const draftMaySkip = (step.env.DRAFT_MAY_SKIP ?? "").split(" ").filter(Boolean);
     const messages = [
       ...(gate.if === "always()" ? [] : ["jobs.gate must run with `if: always()`"]),
       ...(step.env.RESULTS === "${{ toJSON(needs) }}" ? [] : ["the gate step must set RESULTS to `${{ toJSON(needs) }}`"]),
@@ -79,7 +78,7 @@ export const rule: Rule = {
         .map(([id]) => `${id} may be skipped only by a path filter: its \`if:\` must read needs.changes.outputs and it must need changes`),
       ...jobs
         .filter(([id, job]) => !lightJobs.includes(id) && !isDraftFiltered(job))
-        .map(([id]) => `${id} must exclude draft PRs with the full-CI condition`),
+        .map(([id]) => `${id} must use only the full-CI condition and an optional path filter`),
       ...jobs
         .filter(([id, job]) => lightJobs.includes(id) && job.if !== undefined)
         .map(([id]) => `${id} must run for draft PRs too, without a job condition`),
@@ -87,11 +86,6 @@ export const rule: Rule = {
         "MAY_SKIP",
         jobs.filter(([, job]) => isPathFiltered(job)).map(([id]) => id),
         maySkip,
-      ),
-      ...differences(
-        "DRAFT_MAY_SKIP",
-        jobs.filter(([, job]) => isDraftFiltered(job) && !isPathFiltered(job)).map(([id]) => id),
-        draftMaySkip,
       ),
       ...jobs
         .filter(([id]) => maySkip.includes(id))
