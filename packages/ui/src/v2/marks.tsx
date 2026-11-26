@@ -123,7 +123,7 @@ export type AvatarStackProps = {
 
 /**
  * People side by side, each over the one before it with a ring of the surface, and "+n" for the rest. The stack is
- * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
+ * one picture with one name; the avatars in it are decoration. 20 px everywhere, each over the one before by 2 px.
  */
 Avatar.Stack = (props: AvatarStackProps) => {
   // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
@@ -134,17 +134,17 @@ Avatar.Stack = (props: AvatarStackProps) => {
     shown()
       .map((_, index) => ({ visible: index + 1, rest: props.people.length - (index + 1) }))
       .filter((count) => count.rest > 0);
-  // The stack's room when nothing is narrow: its faces (24 px, each over the one before by 4 px) and a count of up to
-  // three signs, the measure the stylesheet hides faces by; one face alone needs no room for a count.
-  const room = () => (shown().length === 1 ? 24 + (props.people.length > 1 ? 30 : 0) : 54 + 20 * (shown().length - 1));
+  // everyone shows: the stack needs no room for a count while its faces fit (the stylesheet works out its width)
+  const all = () => props.people.length <= shown().length;
   return (
     <span
       class="k2-avs"
       data-k2-part="Avatar.Stack"
       data-k={String(shown().length)}
+      data-all={all() ? "" : undefined}
       role="img"
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
-      style={custom({ "--k2-avs-w": `${room()}px` })}
+      style={custom({ "--k2-avs-n": String(shown().length), "--k2-avs-rest": all() ? "0" : "1" })}
     >
       <For each={shown()}>{(person) => <Avatar {...person} decorative />}</For>
       <For each={counts()}>

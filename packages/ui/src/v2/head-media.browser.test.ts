@@ -28,8 +28,10 @@ type Case =
   | "path-chip"
   | "split-canvas"
   | "split-list-canvas"
+  | "selection"
   | "long"
-  | "areas";
+  | "areas"
+  | "empty-ways";
 
 let browser: Browser;
 let client: string;
@@ -147,6 +149,7 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
             mark: mark ? (mark.classList.contains("k2-mi-dot") ? "dot" : "icon") : "none",
             contrast: mark ? Math.round(ratio(rgb(getComputedStyle(mark).color), surface) * 10) / 10 : 0,
             style: lead.getAttribute("style") ?? "",
+            colored: lead.hasAttribute("data-color"),
           };
         });
       });
@@ -155,14 +158,15 @@ test("menu entries in their data colour: a dot or the symbol, readable on the me
         ["Kunden", "dot"],
         ["Einkauf", "icon"],
         ["Archiv", "dot"],
-        ["Ohne Farbe", "dot"],
+        ["Ohne Farbe", "none"],
       ]);
       // a hex colour keeps 3:1 on the menu, also the pale one
       for (const entry of found.slice(0, 3))
         expect({ theme, entry: entry.label, ok: entry.contrast >= 3 }).toEqual({ theme, entry: entry.label, ok: true });
-      // a value that is no colour reaches no style and stays neutral
+      // a value that is no colour reaches no style and stays neutral: no dot, no colour
       expect(found[4]!.style).not.toContain("position");
       expect(found[4]!.style).not.toContain("#008f4c");
+      expect(found[4]!.colored).toBe(false);
       await page.keyboard.press("Escape");
       await settled(page);
     }
@@ -203,6 +207,60 @@ test("the head has two full-width rows above list and detail: path and deeds, th
     expect(tail.results).toBe("13 Einträge · 186 MB");
     expect(tail.buttons.at(-1)).toBe("Liste");
   });
+});
+
+test("a selection with six deeds shows three and 'Mehr' with the rest in their order, its count in 14 px 600, and nothing leaves its bar (Files v3)", async () => {
+  for (const width of [1440, 1024, 390])
+    await withPage(
+      "selection",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const bar = document.querySelector(".k2-bar[data-selecting]")!;
+          const box = bar.getBoundingClientRect();
+          const lead = getComputedStyle(bar.querySelector(".k2-status-lead")!);
+          const deeds = [...bar.querySelectorAll<HTMLElement>(".k2-status-actions > .k2-btn")].map((button) => ({
+            name: button.getAttribute("aria-label") ?? button.textContent?.trim(),
+            rect: button.getBoundingClientRect(),
+          }));
+          const floating = getComputedStyle(bar.querySelector(".k2-status-actions")!).position === "fixed";
+          return {
+            count: [lead.fontSize, lead.fontWeight],
+            deeds: deeds.map((deed) => deed.name),
+            // in the bar's line, every deed inside the bar (on the phone they float at the bottom of the window)
+            inside: deeds.every((deed) => deed.rect.right <= (floating ? innerWidth : box.right) + 0.5 && deed.rect.left >= 0),
+          };
+        });
+        expect(found.count).toEqual(["14px", "600"]);
+        // on the phone the panes of the split stand one under the other: no room between them, the room for the
+        // floating deeds after the last (review r7)
+        if (width === 390)
+          expect(
+            await page.evaluate(() => [
+              ...[...document.querySelectorAll(".k2-split > .k2-pane > .k2-scroll")].map((scroll) => getComputedStyle(scroll).marginBottom),
+              getComputedStyle(document.querySelector(".k2-split")!).marginBottom,
+            ]),
+          ).toEqual(["0px", "0px", "80px"]);
+        expect(found.deeds.slice(0, 3)).toEqual(["Teilen", "Verschieben", "Als ZIP laden"]);
+        expect(found.deeds.length).toBe(4);
+        expect(found.deeds[3]).toBe("Mehr");
+        // where the bar shows symbols alone, "Mehr" names itself on hover as the deeds beside it do (review r8)
+        expect(await page.locator(".k2-status-actions > .k2-btn[data-menu]").getAttribute("title")).toBe("Mehr");
+        expect(found.inside).toBe(true);
+        // "Mehr" holds the rest in their order
+        await page.locator(".k2-status-actions > .k2-btn[data-menu]").click();
+        await settled(page);
+        expect(await page.getByRole("menu").getByRole("menuitem").allTextContents()).toEqual([
+          "Löschen",
+          "In Ordner kopieren",
+          "PDFs zusammenführen",
+        ]);
+        await page.keyboard.press("Escape");
+        await settled(page);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
 });
 
 test("a selection takes the bar's place at the same height, so the list does not move", async () => {
@@ -311,7 +369,7 @@ test("on the phone the actions of a selection float at the bottom, symbol over w
       expect(labels).toEqual([
         { text: "Teilen", visible: true },
         { text: "Verschieben", visible: true },
-        { text: "Laden", visible: true },
+        { text: "Als ZIP laden", visible: true },
         { text: "Löschen", visible: true },
       ]);
       expect(await page.locator(".k2-fab").evaluate((element) => getComputedStyle(element).display)).toBe("none");
@@ -603,10 +661,9 @@ for (const width of [1440, 1024])
       "path",
       async (page) => {
         const path = page.locator(".k2-path[aria-label='Ort']");
-        // the first place, the menu, the place before the page and the page: one line in the head
+        // the first place, the menu and the page: one line in the head
         expect(await path.locator(".k2-path-step, b").allTextContents()).toEqual([
           "Werkstatt",
-          "Abnahme mit der Kundin am Werktisch",
           "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
         ]);
         const lines = await path
@@ -617,21 +674,15 @@ for (const width of [1440, 1024])
         const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start:has(> .k2-path[aria-label='Ort'])");
         const end = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-end");
         expect(start.right).toBeLessThanOrEqual(end.left);
-        // where room runs out the place before the page shortens first; the page keeps its name while it can
-        const [near, shown] = await path
-          .locator(".k2-path-step[data-near], b")
+        // the page keeps its whole name while anything else can give way: here (a name of 470 px) the first place has
+        // shortened to its 48 px before the page shortens at all (Files v3: never "Entw…" beside a whole first place)
+        const [opening, here] = await path
+          .locator(".k2-path-step, b")
           .evaluateAll((steps) =>
             steps.map((step) => ({ cut: step.scrollWidth > step.clientWidth + 1, width: Math.round(step.getBoundingClientRect().width) })),
           );
-        // the page is cut only once the place before it has shortened to its 48 px
-        if (shown!.cut) expect(near).toEqual({ cut: true, width: 48 });
-        if (width === 1024) expect(near!.cut).toBe(true);
-        // the first place stays whole; the page keeps its whole name for those who hover or listen
-        const first = await path
-          .locator(".k2-path-step")
-          .first()
-          .evaluate((step) => step.scrollWidth <= step.clientWidth);
-        expect(first).toBe(true);
+        if (here!.cut) expect(opening!.width).toBe(48);
+        if (width === 1440) expect(here!.cut).toBe(false);
         const current = path.locator("b[aria-current='page']");
         expect(await current.getAttribute("title")).toBe("Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht");
         // the places between, in their order, as links in the menu; it opens from the keys, and Escape gives the focus
@@ -653,6 +704,7 @@ for (const width of [1440, 1024])
           "Fronten",
           "Eiche geölt",
           "Muster",
+          "Abnahme mit der Kundin am Werktisch",
         ]);
         expect(await entries.first().getAttribute("href")).toBe("#level-1");
         await page.keyboard.press("Escape");
@@ -688,13 +740,50 @@ test("a deep path with a chip after it gives way before the deeds; the chip is r
         const chip = document.querySelector<HTMLElement>("[data-slot='head'] .k2-inline > .k2-chip")!;
         const start = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-start")!.getBoundingClientRect();
         const end = document.querySelector("[data-slot='head'] > .k2-bar > .k2-bar-end")!.getBoundingClientRect();
-        return { chip: chip.scrollWidth <= chip.clientWidth + 1, apart: start.right <= end.left };
+        const current = document.querySelector<HTMLElement>("[data-slot='head'] .k2-path > b")!;
+        return {
+          chip: chip.scrollWidth <= chip.clientWidth + 1,
+          apart: start.right <= end.left,
+          page: current.scrollWidth <= current.clientWidth + 1,
+          // nothing up to the bar clips the 3 px focus ring of the first link or of the menu "…": every ancestor that
+          // clips holds the ring whole (review r8)
+          clipped: ["[data-slot='head'] .k2-path > a:first-child", "[data-slot='head'] .k2-path > .k2-btn"].flatMap((selector) => {
+            const element = document.querySelector<HTMLElement>(selector)!;
+            const ring = element.getBoundingClientRect();
+            const cut: string[] = [];
+            for (let box = element.parentElement; box && !box.matches("[data-slot='head']"); box = box.parentElement) {
+              const style = getComputedStyle(box);
+              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+              const room = box.getBoundingClientRect();
+              if (
+                ring.left - 3 < room.left - 0.5 ||
+                ring.right + 3 > room.right + 0.5 ||
+                ring.top - 3 < room.top - 0.5 ||
+                ring.bottom + 3 > room.bottom + 0.5
+              )
+                cut.push(`${selector} in ${box.className}`);
+            }
+            return cut;
+          }),
+        };
       });
-      expect(found).toEqual({ chip: true, apart: true });
+      // a folder of everyday names ("Entwürfe") keeps its whole name beside its chip
+      expect(found).toEqual({ chip: true, apart: true, page: true, clipped: [] });
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect(layout.problems).toEqual([]);
     },
     1024,
+  );
+  // on the phone the path gives way to the shell's bar, also beside a chip; the chip stays (Files v3: never "Ent")
+  await withPage(
+    "path-chip",
+    async (page) => {
+      expect(await page.locator("[data-slot='head'] .k2-inline > .k2-path").isVisible()).toBe(false);
+      expect(await page.locator("[data-slot='head'] .k2-inline > .k2-chip").isVisible()).toBe(true);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
   );
 });
 
@@ -724,3 +813,43 @@ for (const which of ["list", "grid", "selecting", "settings"] as const)
         width,
       );
     });
+
+test("an empty state with two ways out: the first a button, the second quiet text after it; the focus from „Erneut versuchen“ goes to the first", async () => {
+  for (const width of [1440, 1024, 390])
+    await withPage(
+      "empty-ways",
+      async (page) => {
+        await page.getByRole("button", { name: "Erneut versuchen" }).focus();
+        await page.keyboard.press("Enter");
+        await page.locator('[data-k2-part="Empty"]').waitFor();
+        await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Filter zurücksetzen");
+        const found = await page.evaluate(() => {
+          const state = document.querySelector('[data-k2-part="Empty"]')!;
+          const first = state.querySelector<HTMLElement>(".k2-state-ways > .k2-btn:nth-child(1)")!;
+          const second = state.querySelector<HTMLElement>(".k2-state-ways > .k2-btn:nth-child(2)")!;
+          const text = state.querySelector(".k2-state-text")!.getBoundingClientRect();
+          const a = first.getBoundingClientRect();
+          const b = second.getBoundingClientRect();
+          return {
+            variants: [first.dataset.variant, second.dataset.variant],
+            link: second.tagName === "A" ? second.getAttribute("href") : null,
+            heights: [a.height, b.height],
+            // both start on the text edge or stand beside each other in its line, never beyond the window
+            edge: Math.round(a.left - text.left),
+            beside: Math.abs(a.top - b.top) < 1 && b.left > a.right,
+            inside: b.right <= innerWidth + 0.5,
+          };
+        });
+        expect(found.variants).toEqual([undefined, "text"]);
+        expect(found.link).toBe("#notizbuch");
+        expect(found.heights[0]).toBe(found.heights[1]);
+        expect(found.edge).toBe(0);
+        expect(found.beside).toBe(true);
+        expect(found.inside).toBe(true);
+        // Tab goes on to the quiet way
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Ganzes Notizbuch zeigen");
+      },
+      width,
+    );
+});
