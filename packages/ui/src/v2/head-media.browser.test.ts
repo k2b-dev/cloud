@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "long";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "long" | "areas";
 
 let browser: Browser;
 let client: string;
@@ -105,6 +105,57 @@ test("at the length limit of the address the phone's 'Ansicht' locks a sort that
   );
 });
 
+test("menu entries in their data colour: a dot or the symbol, readable on the menu in light and dark, neutral without a colour", async () => {
+  await withPage("areas", async (page) => {
+    for (const theme of ["light", "dark"] as const) {
+      await page.evaluate((next) => document.body.setAttribute("data-theme", next), theme);
+      await page.getByRole("button", { name: /Bereich/ }).click();
+      await settled(page);
+      const found = await page.evaluate(() => {
+        const rgb = (value: string) => (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
+        const light = (channels: number[]) => {
+          const [r, g, b] = channels.map((channel) => {
+            const v = channel / 255;
+            return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+          }) as [number, number, number];
+          return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        const ratio = (a: number[], b: number[]) => {
+          const [hi, lo] = [light(a), light(b)].sort((x, y) => y - x) as [number, number];
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        const menu = document.querySelector<HTMLElement>(".k2-menu")!;
+        const surface = rgb(getComputedStyle(menu).backgroundColor);
+        return [...menu.querySelectorAll<HTMLElement>(".k2-mi")].map((entry) => {
+          const lead = entry.querySelector<HTMLElement>(".k2-mi-lead")!;
+          const mark = lead.querySelector<HTMLElement>(".k2-mi-dot, .k2-icon");
+          return {
+            label: entry.querySelector(".k2-mi-label")!.textContent,
+            mark: mark ? (mark.classList.contains("k2-mi-dot") ? "dot" : "icon") : "none",
+            contrast: mark ? Math.round(ratio(rgb(getComputedStyle(mark).color), surface) * 10) / 10 : 0,
+            style: lead.getAttribute("style") ?? "",
+          };
+        });
+      });
+      expect(found.map(({ label, mark }) => [label, mark])).toEqual([
+        ["Werkstatt", "dot"],
+        ["Kunden", "dot"],
+        ["Einkauf", "icon"],
+        ["Archiv", "dot"],
+        ["Ohne Farbe", "dot"],
+      ]);
+      // a hex colour keeps 3:1 on the menu, also the pale one
+      for (const entry of found.slice(0, 3))
+        expect({ theme, entry: entry.label, ok: entry.contrast >= 3 }).toEqual({ theme, entry: entry.label, ok: true });
+      // a value that is no colour reaches no style and stays neutral
+      expect(found[4]!.style).not.toContain("position");
+      expect(found[4]!.style).not.toContain("#008f4c");
+      await page.keyboard.press("Escape");
+      await settled(page);
+    }
+  });
+});
+
 test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
   await withPage("list", async (page) => {
     expect(await page.locator(".k2-fbar-view").isVisible()).toBe(false);
@@ -152,6 +203,29 @@ test("a selection takes the bar's place at the same height, so the list does not
     expect((await rect(page, ".k2-tiles")).top).toBe(before);
     expect(await page.locator(".k2-bar[data-selecting] .k2-status-lead").textContent()).toBe("3 ausgewählt");
   });
+});
+
+test("a media tile's name that does not fit ends in '…' and keeps its whole name for those who hover (DR #4229)", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "grid",
+      async (page) => {
+        const titles = await page.evaluate(() =>
+          [...document.querySelectorAll<HTMLElement>(".k2-tiles[data-variant='media'] .k2-tile-title")].map((title) => ({
+            name: title.textContent ?? "",
+            cut: title.scrollWidth > title.clientWidth + 1,
+            ellipsis: getComputedStyle(title).textOverflow,
+            hover: title.getAttribute("title"),
+          })),
+        );
+        // the recipe's long names do not fit a tile of the phone or of the desktop
+        expect(titles.some((title) => title.cut)).toBe(true);
+        for (const title of titles.filter((each) => each.cut))
+          expect({ name: title.name, ellipsis: title.ellipsis }).toEqual({ name: title.name, ellipsis: "ellipsis" });
+        for (const title of titles) expect(title.hover).toBe(title.name);
+      },
+      width,
+    );
 });
 
 test("media tiles: picture 4:3, a box that shows on hover and on every tile while one is selected", async () => {
@@ -325,19 +399,33 @@ test("a setting goes to one column by the width of its pane, so its name never r
   );
 });
 
-test("on the phone the end of the list stays above the floating actions of a selection (review #4223)", async () => {
+test("on the phone the floating actions of a selection cover nothing of the list, at rest and at its end (review #4223, DR #4229)", async () => {
   await withPage(
     "selecting",
     async (page) => {
-      const found = await page.evaluate(() => {
-        // scrolled to the very end: every column that scrolls, inner and outer
-        for (const scroller of document.querySelectorAll(".k2-scroll")) scroller.scrollTop = scroller.scrollHeight;
-        const titles = [...document.querySelectorAll(".k2-tile-title")].map((title) => title.getBoundingClientRect().bottom);
-        const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
-        return { last: Math.max(...titles), bar: bar.top };
-      });
-      // the last names stand above the bar, with room to breathe
-      expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+      // a tall phone and a short one (a picture in the host's frame, whose bar takes 52 px of it)
+      for (const height of [900, 700]) {
+        await page.setViewportSize({ width: 390, height });
+        await settled(page);
+        for (const at of ["rest", "end"] as const) {
+          const found = await page.evaluate((end) => {
+            const scrollers = [...document.querySelectorAll<HTMLElement>(".k2-scroll")].filter(
+              (scroller) => getComputedStyle(scroller).overflowY !== "visible",
+            );
+            for (const scroller of scrollers) scroller.scrollTop = end ? scroller.scrollHeight : 0;
+            const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+            // what each column shows: its box, cut by every column around it that scrolls
+            const shown = scrollers.map((scroller) =>
+              Math.min(...scrollers.filter((other) => other.contains(scroller)).map((other) => other.getBoundingClientRect().bottom)),
+            );
+            const titles = [...document.querySelectorAll(".k2-tile-title")].map((title) => title.getBoundingClientRect().bottom);
+            return { bar: bar.top, shown: Math.max(...shown), last: Math.max(...titles) };
+          }, at === "end");
+          // what a column shows ends above the bar, with room to breathe, so no mark or name lies under it
+          expect({ height, at, under: found.shown > found.bar - 8 }).toEqual({ height, at, under: false });
+          if (at === "end") expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+        }
+      }
     },
     390,
   );

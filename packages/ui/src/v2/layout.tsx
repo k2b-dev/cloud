@@ -821,7 +821,7 @@ const TileMedia = (props: { tile: Tile; select?: TilesProps["select"] }) => {
           )}
         </Show>
       </span>
-      <span class="k2-tile-title" id={title}>
+      <span class="k2-tile-title" id={title} title={props.tile.title}>
         <RowOpen href={props.tile.href} onNavigate={props.tile.onNavigate}>
           {props.tile.title}
         </RowOpen>

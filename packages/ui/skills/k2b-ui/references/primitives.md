@@ -470,7 +470,9 @@ lines instead of cutting a thing.
   quiet "…" (`dots`) named by `label` ("Weitere Aktionen" by default); in a
   head it stays on the phone. An entry: `label`, `icon`, `onClick` (a
   Promise keeps the menu open and the entry busy), `href`, `danger`,
-  `disabled`, `meta` (a quiet hint at the end, such as a key), `checked`
+  `disabled`, `color` (the data colour of what it stands for, such as an
+  area of a notebook: a dot in the symbol's place, or the symbol in that
+  colour, kept readable), `meta` (a quiet hint at the end, such as a key), `checked`
   (an entry that toggles; `onClick` flips it, the tick stands at the end),
   `items` (a submenu to the side); or `"separator"` between groups; or a
   section `{ title, items }` under a quiet heading. A section with
