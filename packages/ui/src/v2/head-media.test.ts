@@ -117,3 +117,14 @@ test("a deep path folds on the server already: first place, the menu, the last t
   // up to four places nothing folds
   expect(html(Path, { label: "Ort", items: items.slice(-4) })).not.toContain("Übergeordnete Ebenen");
 });
+
+test("among media the place to make one is the last tile: a dashed picture with a plus, then what it makes", () => {
+  const markup = html(Tiles, {
+    variant: "media",
+    label: "Ordner",
+    items: [{ icon: "folder", title: "Aufmaß", href: "#aufmass" }],
+    create: { title: "Neuer Ordner", meta: "oder Dateien hierher ziehen", onClick: () => {} },
+  });
+  expect(markup).toMatch(/data-create[^>]*>.*k2-tile-make.*Neuer Ordner.*oder Dateien hierher ziehen/s);
+  expect(markup.indexOf("Aufmaß")).toBeLessThan(markup.indexOf("Neuer Ordner"));
+});

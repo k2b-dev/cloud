@@ -125,6 +125,9 @@ at its end: "Felix · vor 2 Min") and `trend` (a `Spark` at the top end, in
 the card's colour). The whole card opens its `href`. `create` adds the last
 card that makes a new thing: dashed, `title`, `meta`, `href` or `onClick`,
 and `choices` as round chips (templates). Cards hold no box and no line.
+Among media, `create` is the last tile too: a dashed picture with a plus,
+then its `title` and `meta` ("Neuer Ordner", "oder Dateien hierher
+ziehen").
 
 ### Canvas
 
