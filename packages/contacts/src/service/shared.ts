@@ -8,7 +8,7 @@ export type SqlExecutor = typeof sql;
 export const isUuid = (value: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 
 // PG array helpers re-exported from the canonical cloud/services source so all
-// callers (oauth, faq, spaces, contacts) share one implementation.
+// callers (oauth, spaces, contacts) share one implementation.
 export { toPgUuidArray } from "@k2b/cloud/services";
 
 /**
