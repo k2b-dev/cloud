@@ -11,7 +11,7 @@ export default function AccountCategorySwitch(props: {
       options={props.options}
       value={props.value ?? ""}
       ariaLabel={props.ariaLabel}
-      class="w-full"
+      stretch
       onValueChange={(value) => {
         const option = props.options.find((candidate) => candidate.value === value);
         if (option && value !== props.value) window.location.assign(option.href);

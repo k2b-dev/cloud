@@ -2,6 +2,7 @@ import ts from "@typescript/typescript6";
 import { documentedOnlyUiCatalogExports, hiddenUiCatalogExports, uiCatalogEntries, uiCatalogSections } from "../src/ui/catalog";
 import { catalogContextFiles, catalogContexts, standaloneUiContextFiles } from "../src/ui/context";
 import { demoSectionLoaders } from "../src/ui/demo-sections";
+import { v1PageMarkdown } from "../src/ui/topics/v1-pointers";
 import { catalogDemoRenderers } from "../src/ui/UiCatalogPage";
 
 const sorted = (values: Iterable<string>) => [...values].sort();
@@ -244,7 +245,8 @@ if (smokeBaseUrl) {
         const markdown = await rawResponse.text();
         if (!rawResponse.ok) {
           smokeFailures.push(`${entry.id}: raw Markdown returned ${rawResponse.status}`);
-        } else if (markdown.trim() !== entry.context.trim()) {
+        } else if (markdown.trim() !== v1PageMarkdown(entry).trim()) {
+          // the page serves its canonical context after the one line that points to its v2 topic
           smokeFailures.push(`${entry.id}: raw Markdown differs from canonical context`);
         }
       } catch (error) {

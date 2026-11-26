@@ -55,9 +55,14 @@ const orders: Order[] = [
 const label = (status: Order["status"]) => STATUS.find((option) => option.value === status)?.label ?? status;
 const euro = (amount: number) => `${amount.toLocaleString("de-DE")} €`;
 
-export default function FilteredOrders() {
-  // the state the server parsed from the address `?status=open,work&amount=500..`
-  const [state, setState] = createSignal<ListQueryStateOf<typeof orderQuery>>(orderQuery.parse("status=open,work&amount=500..").state);
+type Props = { rows?: Order[]; loading?: boolean; address?: string };
+
+export default function FilteredOrders(props: Props) {
+  const rows = () => props.rows ?? orders;
+  // the state the server parsed from the address, here `?status=open,work&amount=500..`
+  const [state, setState] = createSignal<ListQueryStateOf<typeof orderQuery>>(
+    orderQuery.parse(props.address ?? "status=open,work&amount=500..").state,
+  );
   return (
     <Workspace
       head={
@@ -93,11 +98,11 @@ export default function FilteredOrders() {
               onChange={setState}
               icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
               names={{ customer: CUSTOMERS }}
-              results={`${orders.length} Aufträge`}
+              results={`${rows().length} Aufträge`}
             />
             <StatusRow
-              lead={`${orders.length} von 34 Aufträgen`}
-              facts={[{ before: "Summe", value: euro(orders.reduce((sum, order) => sum + order.amount, 0)) }]}
+              lead={props.loading ? "Wird geladen" : `${rows().length} von 34 Aufträgen`}
+              facts={props.loading ? [] : [{ before: "Summe", value: euro(rows().reduce((sum, order) => sum + order.amount, 0)) }]}
               filters={<ListOrder query={orderQuery} state={state()} onChange={setState} />}
             />
           </>
@@ -105,7 +110,8 @@ export default function FilteredOrders() {
       >
         <Table
           label="Aufträge"
-          rows={orders}
+          rows={rows()}
+          loading={props.loading && { rows: 3 }}
           open={(row) => ({ href: `#${row.number}` })}
           empty={{ icon: "filter-off", text: "Kein Auftrag passt zu diesen Filtern." }}
           phone={(row) => ({ lines: [row.title, `${row.number} · ${row.customer} · fällig ${row.due}`], time: euro(row.amount) })}
@@ -126,3 +132,11 @@ export default function FilteredOrders() {
     </Workspace>
   );
 }
+
+// The states Fibel's Example offers beside the default; the recipe test renders each one as well. `editor` opens the
+// editor of the status filter the way a person does, by pressing its statement.
+export const states = {
+  empty: () => <FilteredOrders rows={[]} address="status=done&amount=5000.." />,
+  loading: () => <FilteredOrders loading />,
+  editor: { render: () => <FilteredOrders />, press: "Filter Status ist Offen oder In Arbeit bearbeiten" },
+};

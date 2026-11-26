@@ -2,6 +2,7 @@ import { Link } from "@k2b/ssr/nav";
 import {
   createContext,
   createMemo,
+  createSignal,
   createUniqueId,
   For,
   type JSX,
@@ -14,11 +15,12 @@ import {
 import { Dynamic } from "solid-js/web";
 import { renderSafeMarkdown } from "../content/MarkdownView";
 import { useLocale } from "../intl/locale";
+import { useGrip } from "./behavior/resize";
 import { ActionButton, CopyButton } from "./button";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
 import { Avatar, custom, Dot, Icon } from "./marks";
-import { Empty, type EmptyProps, Loading, LoadingStatus } from "./states";
+import { Empty, type EmptyProps, Loading, LoadingStatus, PlaceholderValue } from "./states";
 import type { TypeRole } from "./tokens";
 import type { Action, OnNavigate, Person, Status } from "./types";
 
@@ -41,6 +43,7 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /** The words. */
   children: JSX.Element;
 };
 
@@ -77,7 +80,11 @@ export type ProseProps =
       markdown: string;
       children?: never;
     }
-  | { markdown?: never; children: JSX.Element };
+  | {
+      markdown?: never;
+      /** Reading text as elements, when it is not Markdown. */
+      children: JSX.Element;
+    };
 
 /** Reading text: 14/22, a measure of 720 px, headings at 16 and 18. It carries the text edge itself. */
 export const Prose = (props: ProseProps) => {
@@ -116,7 +123,9 @@ export const Inline = (props: InlineProps) => (
 // ── Facts ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Fact = {
+  /** The quiet label before the value. */
   label: string;
+  /** The value: words, a `Chip` or a link. */
   value: JSX.Element;
   /** A quiet word under the value, such as "Standard". */
   hint?: string;
@@ -130,11 +139,20 @@ export type Fact = {
 };
 
 export type FactsProps = {
+  /** The labels with their values, in their order. */
   items: readonly Fact[];
   /** All facts on one line, labels quiet before their values. */
   inline?: boolean;
   /** At the end of the inline line, such as "Print". */
   end?: JSX.Element;
+  /**
+   * The values are on their way: a quiet bar lies on each, while labels, hints and copy buttons (not yet usable) stay.
+   * A value that is there (a refresh) keeps its exact room unseen under the bar, its lines, chips and wrapping; a value
+   * not there yet (`""`, `undefined`) is a bar of one line. So nothing moves when they come. Assistive technology
+   * hears "Wird geladen…" at each value. Give the labels the values will have, and `copy` (an empty string is
+   * enough) where a value will have it.
+   */
+  loading?: boolean;
 };
 
 /**
@@ -144,19 +162,24 @@ export type FactsProps = {
 export const Facts = (props: FactsProps) => {
   // A list of pairs (dt, dd); a copy button stands inside its value, the end of an inline line beside the list.
   const list = (part?: string) => (
-    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined}>
+    <dl class="k2-facts" data-k2-part={part} data-inline={props.inline ? "" : undefined} aria-busy={props.loading ? "true" : undefined}>
       <For each={props.items}>
         {(item) => (
           <div class="k2-fact-pair">
             <dt>{item.label}</dt>
             <dd>
               <span class="k2-fact-value" data-mono={item.mono ? "" : undefined}>
-                {item.value}
+                <Show when={!props.loading} fallback={<PlaceholderValue>{item.value}</PlaceholderValue>}>
+                  {item.value}
+                </Show>
                 <Show when={item.hint}>
                   <small>{item.hint}</small>
                 </Show>
               </span>
-              <Show when={!props.inline && item.copy}>{(value) => <CopyButton label={item.label} value={value()} />}</Show>
+              {/* while the value is on its way its copy button stands, not yet usable, so nothing moves when it comes */}
+              <Show when={!props.inline && (props.loading ? item.copy !== undefined : item.copy)}>
+                <CopyButton label={item.label} value={item.copy ?? ""} disabled={props.loading} />
+              </Show>
             </dd>
           </div>
         )}
@@ -178,7 +201,12 @@ export const Facts = (props: FactsProps) => {
 
 const ListContext = createContext(false);
 
-export type ListProps = { children: JSX.Element; label?: string };
+export type ListProps = {
+  /** The entries, each a `Row`. */
+  children: JSX.Element;
+  /** A name for the list, for assistive technology. */
+  label?: string;
+};
 
 /**
  * Rows that come or go above the place someone works on (a new mail on top) leave that place where it was: the
@@ -434,7 +462,9 @@ export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
+  /** The head of the column. */
   title: string;
+  /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
   /** Numbers and amounts stand at the end. */
   align?: "start" | "end";
@@ -467,7 +497,9 @@ export type OpenTarget =
   | { href?: undefined; onNavigate?: undefined; onOpen: () => void };
 
 type TableBase<T> = {
+  /** The columns, in order; see `Column`. */
   columns: readonly Column<T>[];
+  /** The rows. */
   rows: readonly T[];
   /** A name for the table, for assistive technology. */
   label?: string;
@@ -520,6 +552,35 @@ export type TableProps<T> = TableBase<T> & (KeyedTable<T> | PlainTable);
 const SortArrow = (props: { sorted?: "ascending" | "descending" }) => (
   <Show when={props.sorted}>{(sorted) => <Icon name={sorted() === "descending" ? "arrow-down" : "arrow-up"} />}</Show>
 );
+
+/**
+ * The grip at the start of a column head: it moves the width of the column before it (`useGrip`). A column is at
+ * most as wide as the table's visible width; the table scrolls sideways when its columns need more.
+ */
+const ColumnGrip = (props: { label: string; width: { min: number; default: number }; value: number; onChange: (px: number) => void }) => {
+  const grip = useGrip({
+    label: () => props.label,
+    value: () => props.value,
+    onChange: (px) => props.onChange(px),
+    min: () => props.width.min,
+    reset: () => props.width.default,
+    direction: () => 1,
+    measure: (element) => {
+      const head = element.parentElement?.previousElementSibling;
+      const scroller = element.closest(".k2-table-scroll");
+      const now = head?.getBoundingClientRect().width;
+      if (!now || !scroller) return undefined;
+      return { now, max: scroller.clientWidth };
+    },
+    // the table's visible width and every column head
+    observe: (element) => {
+      const scroller = element.closest(".k2-table-scroll");
+      const heads = element.parentElement?.parentElement?.children ?? [];
+      return scroller ? [scroller, ...heads] : [...heads];
+    },
+  });
+  return <span class="k2-cgrip" {...grip} />;
+};
 
 /** Two lines only when they are named so: an array of two parts (a fragment) stays one line. */
 const isPair = (value: CellValue): value is CellLines =>
@@ -592,6 +653,10 @@ export const Table = <T,>(props: TableProps<T>) => {
     select.onChange(on ? [...select.selected, rowKey] : select.selected.filter((selectedKey) => selectedKey !== rowKey));
   };
   const span = () => props.columns.length + (props.select ? 1 : 0);
+  // The widths the grips gave columns, by index; a column keeps its default until then.
+  const [sizes, setSizes] = createSignal<Readonly<Record<number, number>>>({});
+  const columnWidth = (index: number) => sizes()[index] ?? props.columns[index]?.width?.default;
+  const sizeOf = (px: number | undefined) => (px === undefined ? undefined : { width: `${px}px` });
   // The sticky first data column stands after the box column (44 px).
   const stickyLeft = () => (props.select ? "44px" : "0px");
   const firstSticky = (index: number) => (props.sticky && index === 0 ? "last" : undefined);
@@ -643,13 +708,7 @@ export const Table = <T,>(props: TableProps<T>) => {
               </Show>
               {/* every column is its default wide; in a small table the last one takes the rest of the row */}
               <For each={props.columns}>
-                {(column, index) => (
-                  <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
-                  />
-                )}
+                {(column, index) => <col style={grid() || index() < props.columns.length - 1 ? sizeOf(columnWidth(index())) : undefined} />}
               </For>
             </colgroup>
           </Show>
@@ -673,15 +732,14 @@ export const Table = <T,>(props: TableProps<T>) => {
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
                   >
                     <Show when={index() > 0 && props.columns[index() - 1]?.width}>
-                      <span
-                        class="k2-cgrip"
-                        role="separator"
-                        aria-orientation="vertical"
-                        aria-label={props.columns[index() - 1]!.title}
-                        aria-valuemin={props.columns[index() - 1]!.width!.min}
-                        aria-valuenow={props.columns[index() - 1]!.width!.default}
-                        tabindex="0"
-                      />
+                      {(width) => (
+                        <ColumnGrip
+                          label={props.columns[index() - 1]?.title ?? ""}
+                          width={width()}
+                          value={columnWidth(index() - 1) ?? width().default}
+                          onChange={(px) => setSizes((sizes) => ({ ...sizes, [index() - 1]: px }))}
+                        />
+                      )}
                     </Show>
                     <Show
                       when={column.sort}

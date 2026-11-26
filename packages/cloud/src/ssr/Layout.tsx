@@ -474,6 +474,7 @@ export default function Layout(props: LayoutProps) {
               <LayoutHeader
                 panelOpen={panel ? panelState.open : undefined}
                 authenticated={showRail}
+                pageSearch={props.ui === "v2"}
                 title={props.headTitle === "page" ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
@@ -492,6 +493,8 @@ export default function Layout(props: LayoutProps) {
                     class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}${props.ui === "v2" ? " k2-ui" : ""}`}
                     data-scroll-preserve={swap ? "cloud-main" : undefined}
                     data-scroll-page={swap ? "" : undefined}
+                    // the phone bar's search opens the search of a v2 page's head, which then leaves that head
+                    data-k2-host-search={props.ui === "v2" && showRail ? "" : undefined}
                   >
                     <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
                   </main>
