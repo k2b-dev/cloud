@@ -1,3 +1,4 @@
+import { AppAccessEditor } from "@k2b/cloud/access/ui";
 import { apiClient } from "@k2b/cloud/clients/core";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { navigateTo } from "@k2b/ssr/nav";
@@ -5,15 +6,14 @@ import { useLocale } from "@k2b/ui";
 import { Bar, Button, Failed, Input, type NavProps, Notice, Pane, StatusRow, Table, Tabs, Text, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
 import { adminToasts } from "../_area/toasts";
-import Access from "./Access.island";
-import AddApp from "./AddApp.island";
+import AddApp from "./AddApp";
 import { AppOverview, ErrorsView, EventsView, RoutesView, RuntimeView, StatusChip, statusLabel } from "./app-views";
-import Domains from "./Domains.island";
-import DomainsAdd from "./DomainsAdd.island";
+import Domains from "./Domains";
+import DomainsAdd from "./DomainsAdd";
 import { appsFormat } from "./format";
 import { hintShort } from "./hints";
-import Keys from "./Keys.island";
-import KeysCreate from "./KeysCreate.island";
+import Keys from "./Keys";
+import KeysCreate from "./KeysCreate";
 import { type AppEntry, type AppView, appsHref, countStatuses, hasProblem, matchesSearch, routeSummary } from "./model";
 import { appsPageMessages } from "./page-messages";
 import type { AppsViewData } from "./view-data";
@@ -276,7 +276,7 @@ export default function AppsScreen(props: { nav: NavProps; data: AppsViewData })
                           </Notice>
                         </Show>
                         {/* k2b-ui gap: the access editor is not on v2 yet; the v1 editor stands in. */}
-                        <Access {...editor()} />
+                        <AppAccessEditor {...editor()} />
                       </>
                     )}
                   </Show>

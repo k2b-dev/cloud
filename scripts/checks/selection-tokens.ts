@@ -17,7 +17,7 @@ export const SELECTION_ALLOWLIST: readonly SelectionAllowance[] = [
       "Option: a card that is an option of a capability view's Choice is a radio or checkbox label, the same control state as ChoiceList and CheckboxCard, not a selected object row.",
   },
   {
-    file: "packages/core/src/pages/admin/apps/KeysCreate.island.tsx",
+    file: "packages/core/src/pages/admin/apps/KeysCreate.tsx",
     subject: 'variant={props.neverStarted ? "primary" : "secondary"}',
     reason: "Action: before an app's first start, creating its key is the page's one main action.",
   },

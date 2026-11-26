@@ -4,7 +4,7 @@
  */
 import type { AppDetails } from "@k2b/cloud/contracts";
 import type { AppDomainEntry } from "./domains-model";
-import type { StartRejection } from "./Keys.island";
+import type { StartRejection } from "./Keys";
 import type { KeyEntry } from "./keys-dialogs";
 import type { AppInput, ProviderNumbers } from "./model";
 

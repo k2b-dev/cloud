@@ -1,9 +1,9 @@
 import type { AppAccessEditorProps } from "@k2b/cloud/access/ui";
 import type { AppDetails } from "@k2b/cloud/contracts";
 import type { DateContext } from "@k2b/stdlib";
-import type { DomainsProps } from "./Domains.island";
+import type { DomainsProps } from "./Domains";
 import type { AppDomainEntry } from "./domains-model";
-import type { KeysProps } from "./Keys.island";
+import type { KeysProps } from "./Keys";
 import type { AppEntry, AppStatusWindow, AppsQuery } from "./model";
 
 // What the Apps page reads on the server and hands to its screen: plain data, worded in the browser with the same clock.
