@@ -295,6 +295,24 @@ test("image: while a picked image is still being read, the required field keeps 
   });
 });
 
+test("image: a second image picked while the first is still read wins; the first one's value never arrives", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => {
+      window.__k2Gate = new Promise((done) => {
+        Reflect.set(window, "__k2Open", done);
+      });
+    });
+    const picker = field(page, "Banner").locator('input[type="file"]');
+    await picker.setInputFiles({ name: "a.png", mimeType: "image/png", buffer: Buffer.from("a") });
+    await page.waitForFunction(() => document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    await picker.setInputFiles({ name: "b.png", mimeType: "image/png", buffer: Buffer.from("b") });
+    await page.evaluate(() => Reflect.get(window, "__k2Open")?.());
+    await field(page, "Banner").locator(".k2-image-preview > img").waitFor();
+    await page.waitForFunction(() => !document.querySelector('#sent [data-k2-part="ImageInput"] [aria-busy="true"]'));
+    expect(entriesOf((await sent(page)).entries, "banner")).toEqual(["data:text/plain,b"]);
+  });
+});
+
 test("slider held by the page: after a form reset the input, the number shown and the value sent all show the page's value", async () => {
   await withPage(async (page) => {
     const thumb = page.getByRole("slider", { name: "Zoom" });

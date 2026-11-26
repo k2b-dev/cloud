@@ -638,16 +638,21 @@ export const ImageInput = (props: ImageInputProps) => {
   const [busy, setBusy] = createSignal(false);
   const [failed, setFailed] = createSignal(false);
   const value = () => props.value || null;
+  // The last pick wins: a file picked while an earlier one is still read replaces it, and the earlier one's value is
+  // dropped when it arrives, so the image shown, the value sent and "Bild gewählt" all name the same file.
+  let picks = 0;
   const take = async (file: File | undefined) => {
-    if (!file || busy()) return;
+    if (!file) return;
+    const mine = ++picks;
     setBusy(true);
     setFailed(false);
     try {
-      props.onChange(await (props.transform ?? squareImage)(file));
+      const made = await (props.transform ?? squareImage)(file);
+      if (mine === picks) props.onChange(made);
     } catch {
-      setFailed(true);
+      if (mine === picks) setFailed(true);
     } finally {
-      setBusy(false);
+      if (mine === picks) setBusy(false);
     }
   };
   // The file input only picks: it has no name, so a form never sends the file itself, and it is required only while
@@ -655,7 +660,7 @@ export const ImageInput = (props: ImageInputProps) => {
   const pick = useFilePick(() => ({
     accept: props.accept ?? imageAccept,
     // not disabled while a picked file is read: a disabled input is left out of the form's checks, so a required
-    // field would let the form go without its image (`take` ignores a second pick meanwhile)
+    // field would let the form go without its image (a second pick meanwhile replaces the first, see `take`)
     disabled: props.disabled,
     required: (field?.required && !value()) || undefined,
     onValueChange: (files: File[]) => void take(files[0]),
@@ -864,7 +869,11 @@ export const ColorInput = (props: ColorInputProps) => {
  */
 const areaPercents = (attrs: Record<string, unknown>) => {
   const style = typeof attrs.style === "string" ? attrs.style : "";
-  const fraction = (axis: "x" | "y") => Number(new RegExp(`--area-${axis}:\\s*([\\d.]+)`).exec(style)?.[1] ?? 0);
+  // the whole value up to the next declaration, read as a number (core may write 1e-7)
+  const fraction = (axis: "x" | "y") => {
+    const value = Number(new RegExp(`--area-${axis}:([^;]+)`).exec(style)?.[1]?.trim());
+    return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+  };
   return { saturation: Math.round(fraction("x") * 100), brightness: Math.round(fraction("y") * 100) };
 };
 
