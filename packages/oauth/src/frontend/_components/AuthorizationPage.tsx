@@ -10,7 +10,7 @@ import type { JSX } from "solid-js";
 export function AuthorizationPage(props: { c: MinimalLayoutProps["c"]; title: string; heading?: string; children: JSX.Element }) {
   props.c.get("page").title = props.title;
   return (
-    <MinimalLayout c={props.c} ui="v2">
+    <MinimalLayout c={props.c} ui="v2" measure>
       <Workspace head={<Bar start={<RecordHead name={props.heading ?? props.title} />} />}>
         <Pane label={props.heading ?? props.title}>{props.children}</Pane>
       </Workspace>

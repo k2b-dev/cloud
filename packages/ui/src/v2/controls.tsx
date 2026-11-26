@@ -182,6 +182,11 @@ export type InputProps = {
   name?: string;
   /** The `id` of the form the value is sent with, when the field does not stand inside it (a form of the server). */
   form?: string;
+  /**
+   * The field takes the focus as the page opens, already in the server's markup: only for the one field a page is for,
+   * such as the code to enter on a page of its own; never in a dialog or beside other content.
+   */
+  autofocus?: boolean;
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
   /** Called with the new text on every change. */
@@ -244,6 +249,7 @@ export const Input = (props: InputProps) => {
     id: field?.control,
     name: props.name ?? field?.name,
     form: props.form,
+    autofocus: props.autofocus,
     placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,

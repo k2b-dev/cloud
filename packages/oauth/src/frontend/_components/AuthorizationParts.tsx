@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Notice, Row, Section, Text } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Empty, Notice, Row, Section, Text } from "@k2b/ui/v2";
 import { For, type JSX } from "solid-js";
 import { oauthMessages } from "../messages";
 import { consentScopeLabel } from "../scope-labels";
@@ -92,7 +92,23 @@ export function DecisionForm(props: { action: string; request: string; userCode?
   );
 }
 
-/** The final state of a decision: its sign, one sentence and, where there is one, the way on. */
+/** The final state of a decision: its sign, one sentence and, where there is one, the way on; read as a status. */
 export function Outcome(props: { icon: string; body: string; action?: { label: string; href: string } }) {
-  return <Empty icon={props.icon} text={props.body} action={props.action} />;
+  return <Empty icon={props.icon} text={props.body} action={props.action} live />;
+}
+
+/**
+ * The code a device shows, large and on its own: comparing it with the terminal is what keeps a person from approving
+ * someone else's sign-in. A drawing of its own (`Canvas`), so the app may set it large in the mono face.
+ */
+export function DeviceCode(props: { label: string; code: string }) {
+  return (
+    <Band>
+      <Canvas label={props.label}>
+        <p class="oauth-device-code" data-testid="device-user-code">
+          {props.code}
+        </p>
+      </Canvas>
+    </Band>
+  );
 }

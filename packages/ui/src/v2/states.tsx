@@ -15,11 +15,16 @@ export type EmptyProps = {
   text: string;
   /** The one way out, such as "Einlieferung erfassen" or "Filter zurücksetzen". */
   action?: Action;
+  /**
+   * The sentence is the result of what the person just did, such as "Gerät verbunden" at the end of a page of its own:
+   * assistive technology reads it as a status.
+   */
+  live?: boolean;
 };
 
 /** Nothing here: a round sign, one sentence, one way out, without a box (mockup: Notice · Empty). */
 export const Empty = (props: EmptyProps) => (
-  <div class="k2-state" data-k2-part="Empty">
+  <div class="k2-state" data-k2-part="Empty" role={props.live ? "status" : undefined}>
     <span class="k2-sign">
       <Icon name={props.icon} />
     </span>

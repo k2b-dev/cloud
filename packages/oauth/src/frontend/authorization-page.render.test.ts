@@ -91,7 +91,8 @@ describe("OAuth authorization pages", () => {
     const body = text(html);
     expect(html).toContain("<title>Connect a device");
     expect(body).toContain("Allow Cloud CLI to access your account?");
-    expect(body).toContain(`Code ${sample.code}`);
+    // the code stands large in a block of its own, where it is compared with the terminal
+    expect(html).toMatch(new RegExp(`data-testid="device-user-code"[^>]*>${sample.code}<`));
     expect(body).toContain("Check that this code matches the one on your device");
     expect(body).toContain(`Client ID ${sample.cli.clientId}`);
     for (const scope of [
@@ -191,6 +192,8 @@ describe("OAuth authorization pages", () => {
       // the field and the button send that form without standing in it
       expect(html).toMatch(/<input[^>]*name="user_code"[^>]*form="oauth-device-code"/);
       expect(html).toMatch(/<input[^>]*autocomplete="one-time-code"/);
+      // the one field of the page has the focus from the server's markup on
+      expect(html).toMatch(/<input[^>]*name="user_code"[^>]*autofocus/);
       expect(submitButtons(html, "oauth-device-code")).toHaveLength(1);
     }
   });
@@ -203,6 +206,8 @@ describe("OAuth authorization pages", () => {
       const html = await renderAuthorizationState("approved", locale);
       expect(heading(html)).toBe(title);
       expect(text(html)).toContain(body);
+      // the result is read as a status
+      expect(html).toMatch(/role="status"[^>]*>[\s\S]*?You can close this tab now|role="status"[^>]*>[\s\S]*?Du kannst diesen Tab/);
       expect(html).not.toContain("<form");
     }
   });

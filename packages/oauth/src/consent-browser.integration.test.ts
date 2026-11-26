@@ -186,7 +186,10 @@ suite("OAuth consent in a browser", () => {
       // Both fail before the request is used, so the person's own decision still counts.
       const requestId = new URL(page.url()).searchParams.get("request")!;
       for (const forgedOrigin of ["https://attacker.example", "null"]) {
-        expect(await forge(requestId, forgedOrigin)).toStartWith("/oauth/error?error=invalid_request");
+        const refused = new URL((await forge(requestId, forgedOrigin)) ?? "/", origin);
+        expect(`${refused.pathname}?error=${refused.searchParams.get("error")}`).toBe("/oauth/error?error=invalid_request");
+        // refused for its origin, not for anything else
+        expect(refused.searchParams.get("error_description")).toBe("Consent request origin is invalid");
       }
       const params = await decide(page, "Deny");
       expect(params.get("error")).toBe("access_denied");
@@ -233,7 +236,10 @@ suite("OAuth consent in a browser", () => {
           body: new URLSearchParams({ request: request!, decision: "approve" }),
           redirect: "manual",
         });
-        expect(forged.headers.get("location")).toStartWith("/oauth/error?error=access_denied");
+        const refused = new URL(forged.headers.get("location") ?? "/", origin);
+        expect(`${refused.pathname}?error=${refused.searchParams.get("error")}`).toBe("/oauth/error?error=access_denied");
+        // refused for its origin, not for anything else
+        expect(refused.searchParams.get("error_description")).toBe("Consent request origin is invalid");
       }
 
       deviceOrigins.length = 0;

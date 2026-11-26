@@ -31,12 +31,20 @@ export type MinimalLayoutProps = {
    * footer with the legal links and the language and theme settings stays as it is.
    */
   ui?: "v2";
+  /**
+   * With `ui="v2"`: the page is one task to read and decide, such as a consent or a code to enter. Its workspace stands
+   * as a column of 560 px, centred on the page background, so its words and its buttons stay together; on a phone it
+   * takes the whole width.
+   */
+  measure?: boolean;
 };
 
 /** A v2 page beside an older Core: the frame its sheet lacks, inline (the page fills the window above the footer). */
 const OLDER_CORE = {
   page: "display:flex;flex-direction:column;min-height:100dvh",
   main: "display:flex;flex:1 1 auto;min-height:0;min-width:0",
+  // the column of a page with a measure, without the card (its edge and the page background come with v2.css)
+  measure: "justify-content:center;align-items:flex-start",
 };
 
 export default function MinimalLayout(props: MinimalLayoutProps) {
@@ -57,9 +65,15 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
     !v2 ? (
       props.children
     ) : v2Sheet ? (
-      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"}>{props.children}</main>
+      <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"} data-measure={props.measure ? "" : undefined}>
+        {props.children}
+      </main>
     ) : (
-      <main class="k2-ui minimal-layout-main" style={kiosk ? `${OLDER_CORE.main};height:100dvh` : OLDER_CORE.main}>
+      <main
+        class="k2-ui minimal-layout-main"
+        data-measure={props.measure ? "" : undefined}
+        style={[OLDER_CORE.main, kiosk ? "height:100dvh" : "", props.measure ? OLDER_CORE.measure : ""].filter(Boolean).join(";")}
+      >
         {props.children}
       </main>
     );

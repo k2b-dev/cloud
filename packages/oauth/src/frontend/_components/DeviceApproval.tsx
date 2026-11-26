@@ -2,7 +2,7 @@ import { useLocale } from "@k2b/ui";
 import { Facts, Text } from "@k2b/ui/v2";
 import { Match, Show, Switch } from "solid-js";
 import { oauthMessages } from "../messages";
-import { CautionNote, DecisionForm, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
+import { CautionNote, DecisionForm, DeviceCode, Outcome, ReauthenticateNote, RequestedAccess } from "./AuthorizationParts";
 import DeviceCodeForm from "./DeviceCodeForm.island";
 
 type DeviceOutcome = "approved" | "denied" | "expired" | "blocked";
@@ -45,9 +45,9 @@ export function DeviceApproval(props: { view: DeviceApprovalView }) {
           <>
             <Text weight="strong">{t().deviceConfirmTitle({ name: view().client.name })}</Text>
             <Text>{t().deviceConfirmCode}</Text>
+            <DeviceCode label={t().deviceCodeLabel} code={view().code} />
             <Facts
               items={[
-                { label: t().deviceCodeLabel, value: view().code, mono: true },
                 { label: t().application, value: view().client.name },
                 { label: t().clientId, value: view().client.clientId, mono: true },
               ]}

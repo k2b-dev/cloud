@@ -232,6 +232,62 @@ describe("OAuth authorization pages in a browser", () => {
       }
     }, 60_000);
 
+    test(`a decision stands in a column of 560 px on the page background, on the phone across the whole width, at ${width} px`, async () => {
+      for (const state of ["consent", "confirm", "entry", "logout"] as const) {
+        const { context, tab } = await open(state, "de", width);
+        try {
+          const page = await tab.evaluate(() => {
+            const box = document.querySelector("[data-k2-workspace]")!.getBoundingClientRect();
+            const field = document.querySelector('input[name="user_code"]')?.getBoundingClientRect();
+            return { left: box.left, right: box.right, view: document.documentElement.clientWidth, field: field?.left ?? null };
+          });
+          const name = `${state} at ${width} px`;
+          if (width === 1440) {
+            expect(page.right - page.left, name).toBeLessThanOrEqual(560);
+            // centred: as much room on the left as on the right
+            expect(Math.abs(page.left - (page.view - page.right)), name).toBeLessThanOrEqual(1);
+          } else expect({ left: page.left, right: page.right }, name).toEqual({ left: 0, right: page.view });
+          // the code field stands on the text edge, not at the pane's border
+          if (page.field !== null) expect(page.field - page.left, name).toBeGreaterThanOrEqual(16);
+        } finally {
+          await context.close();
+        }
+      }
+    }, 60_000);
+
+    test(`the device code stands large in the mono face, in a block of its own, at ${width} px`, async () => {
+      const { context, tab } = await open("confirm", "de", width);
+      try {
+        const code = await tab.evaluate(() => {
+          const element = document.querySelector('[data-testid="device-user-code"]')!;
+          const look = getComputedStyle(element);
+          return { text: element.textContent, size: Number.parseFloat(look.fontSize), family: look.fontFamily, edge: look.borderTopWidth };
+        });
+        expect(code.text).toBe("WDJB-MJHT");
+        expect(code.size).toBeGreaterThanOrEqual(28);
+        expect(code.family).toContain("monospace");
+        expect(code.edge).toBe("1px");
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
+    test(`the code field has the focus, and Enter in it sends the code at ${width} px`, async () => {
+      const { context, tab } = await open("entry", "de", width);
+      try {
+        expect(await tab.evaluate(() => document.activeElement?.getAttribute("name"))).toBe("user_code");
+        await tab.keyboard.type("WDJB-MJHT");
+        const [request] = await Promise.all([
+          tab.waitForRequest((request) => new URL(request.url()).pathname === "/oauth/device"),
+          tab.keyboard.press("Enter"),
+        ]);
+        expect(request.method()).toBe("GET");
+        expect(new URL(request.url()).searchParams.get("user_code")).toBe("WDJB-MJHT");
+      } finally {
+        await context.close();
+      }
+    }, 60_000);
+
     test(`the approved page ends on the first screen with the words that the tab can be closed at ${width} px`, async () => {
       for (const [locale, title, body] of [
         ["en", "Device connected", "You can close this tab now."],

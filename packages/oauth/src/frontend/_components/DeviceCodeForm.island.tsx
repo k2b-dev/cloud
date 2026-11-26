@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Field, Input } from "@k2b/ui/v2";
+import { Band, Bar, Button, Field, Input } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { oauthMessages } from "../messages";
 
@@ -23,19 +23,22 @@ const DeviceCodeForm = (props: { code?: string; error?: string }) => {
   return (
     <>
       <form id={CODE_FORM} method="get" action="/oauth/device" hidden />
-      <Field label={t().deviceCodeLabel} error={props.error} required>
-        <Input
-          name="user_code"
-          form={CODE_FORM}
-          placeholder="XXXX-XXXX"
-          value={code()}
-          onInput={(value) => setCode(formatDeviceCodeInput(value))}
-          maxLength={16}
-          autocomplete="one-time-code"
-          autocapitalize="characters"
-          spellcheck={false}
-        />
-      </Field>
+      <Band>
+        <Field label={t().deviceCodeLabel} error={props.error} required>
+          <Input
+            name="user_code"
+            form={CODE_FORM}
+            placeholder="XXXX-XXXX"
+            value={code()}
+            onInput={(value) => setCode(formatDeviceCodeInput(value))}
+            maxLength={16}
+            autocomplete="one-time-code"
+            autocapitalize="characters"
+            spellcheck={false}
+            autofocus
+          />
+        </Field>
+      </Band>
       <Bar
         end={
           <Button variant="primary" icon="arrow-right" type="submit" form={CODE_FORM}>

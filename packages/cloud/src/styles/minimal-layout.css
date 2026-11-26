@@ -30,6 +30,40 @@
   color: var(--k2-text);
 }
 
+/* A page with a measure (`MinimalLayout ui="v2" measure`): one task to read and decide stands as a column of 560 px,
+   centred on the page background, as a card with the one hairline and the card radius. On a phone it takes the whole
+   width, flat on the surface, so the words keep every pixel. */
+.minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]) {
+  background: var(--k2-canvas);
+}
+.minimal-layout-main[data-measure] {
+  justify-content: center;
+  align-items: flex-start;
+  padding: 48px 16px 24px;
+}
+.minimal-layout-main[data-measure] > * {
+  flex: 0 1 560px;
+  min-width: 0;
+  height: auto;
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-card);
+  background: var(--k2-surface);
+  overflow: hidden;
+}
+@media (max-width: 767px) {
+  .minimal-layout[data-ui="v2"]:has(> .minimal-layout-main[data-measure]) {
+    background: var(--k2-surface);
+  }
+  .minimal-layout-main[data-measure] {
+    padding: 0;
+  }
+  .minimal-layout-main[data-measure] > * {
+    flex-basis: 100%;
+    border: 0;
+    border-radius: 0;
+  }
+}
+
 /* The visitor footer on v2: the legal links and the language and theme menus, quiet, centred, in v2's words and
    lines. On touch screens every control is at least 44 px tall. */
 .minimal-layout-footer[data-ui="v2"] {
