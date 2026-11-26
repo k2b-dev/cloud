@@ -79,6 +79,40 @@ test("ticks land on round wall times in the zone, not on decimal millisecond ste
   ]);
 });
 
+test("on the night the clocks go forward, minute ticks skip the missing hour and never repeat a time", () => {
+  // 29 March 2026 in Berlin: 02:00 becomes 03:00; the walls 02:00 to 02:45 map onto 03:00 to 03:45
+  const domain = [Date.parse("2026-03-29T00:00:00Z"), Date.parse("2026-03-29T03:00:00Z")] as const;
+  const ticks = chartTimeTicks(domain, berlin, { unit: "minute", size: 15 });
+  expect(local(ticks).map((tick) => tick.slice(6))).toEqual([
+    "01:00",
+    "01:15",
+    "01:30",
+    "01:45",
+    "03:00",
+    "03:15",
+    "03:30",
+    "03:45",
+    "04:00",
+    "04:15",
+    "04:30",
+    "04:45",
+    "05:00",
+  ]);
+  expect(ticks.every((tick, index) => index === 0 || tick > ticks[index - 1]!)).toBe(true);
+  // hour ticks of the short day: 03:00 follows 01:00, an hour later
+  const hours = chartTimeTicks(domain, berlin, { unit: "hour", size: 1 });
+  expect(local(hours).map((tick) => tick.slice(6))).toEqual(["01:00", "03:00", "04:00", "05:00"]);
+});
+
+test("on the night the clocks go back, the repeated hour has no ticks of its own: the time before the change is the one", () => {
+  // 25 October 2026 in Berlin: 03:00 summer time becomes 02:00 again; 02:xx happens twice, ticks take the first
+  const domain = [Date.parse("2026-10-24T23:00:00Z"), Date.parse("2026-10-25T03:00:00Z")] as const;
+  const ticks = chartTimeTicks(domain, berlin, { unit: "minute", size: 30 });
+  expect(local(ticks).map((tick) => tick.slice(6))).toEqual(["01:00", "01:30", "02:00", "02:30", "03:00", "03:30", "04:00"]);
+  // 02:30 summer time to 03:00 winter time: an hour and a half without a tick
+  expect(ticks[4]! - ticks[3]!).toBe(90 * 60_000);
+});
+
 test("day and week ticks stay on local midnight across the end of daylight saving time", () => {
   const domain = [Date.parse("2026-10-22T10:00:00Z"), Date.parse("2026-11-04T10:00:00Z")] as const;
   const days = chartTimeTicks(domain, berlin, { unit: "day", size: 1 });

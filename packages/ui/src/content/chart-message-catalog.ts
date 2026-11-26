@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import { durationWords } from "../intl/duration";
 
 export const chartMessages = i18n.define({
   baseLocale: "en",
@@ -27,6 +28,8 @@ export const chartMessages = i18n.define({
       chartLoadFailed: "The data could not be loaded.",
       chartLoadFailedKept: "Range and view stay as they are.",
       chartAsOf: ({ time }: { time: string }) => `As of ${time}`,
+      /** A span of time in the library's one wording (intl/duration.ts), as the calendar writes it. */
+      chartDuration: ({ milliseconds }: { milliseconds: number }) => durationWords.en(milliseconds),
       chartRefreshFailed: "Refresh failed",
       chartRowsShown: ({ shown, total }: { shown: string; total: string }) =>
         `Showing ${shown} of ${total} rows. Sort to see others; Copy data copies all of them.`,
@@ -114,6 +117,7 @@ export const chartMessages = i18n.define({
       chartLoadFailed: "Die Daten konnten nicht geladen werden.",
       chartLoadFailedKept: "Zeitraum und Ansicht bleiben, wie sie sind.",
       chartAsOf: ({ time }: { time: string }) => `Stand ${time}`,
+      chartDuration: ({ milliseconds }: { milliseconds: number }) => durationWords.de(milliseconds),
       chartRefreshFailed: "Aktualisieren fehlgeschlagen",
       chartRowsShown: ({ shown, total }: { shown: string; total: string }) =>
         `${shown} von ${total} Zeilen werden angezeigt. Sortiere, um andere zu sehen; „Daten kopieren“ kopiert alle.`,

@@ -1,4 +1,5 @@
 import { i18n } from "@k2b/stdlib";
+import { durationWords } from "../intl/duration";
 import { useLocale } from "../intl/locale";
 
 /**
@@ -31,12 +32,8 @@ const calendarMessages = i18n.define({
       calendarNothingPlanned: "Nothing planned.",
       calendarContinuesFrom: ({ day, month }: { day: number; month?: string }) => `from ${month ? `${month} ` : ""}${day}`,
       calendarContinuesUntil: ({ day, month }: { day: number; month?: string }) => `until ${month ? `${month} ` : ""}${day}`,
-      calendarDuration: ({ minutes }: { minutes: number }) => {
-        if (minutes < 60) return `${minutes} min`;
-        const hours = Math.floor(minutes / 60);
-        const rest = minutes % 60;
-        return `${hours} hr${rest ? ` ${rest} min` : hours === 1 ? "" : "s"}`;
-      },
+      // the library's one wording of a span (intl/duration.ts), also in charts
+      calendarDuration: ({ minutes }: { minutes: number }) => durationWords.en(minutes * 60_000),
       calendarFree: ({ duration }: { duration: string }) => `${duration} free`,
       calendarCreateAt: ({ start, end }: { start: string; end: string }) => `Create event ${start}–${end}`,
       calendarFreeAction: ({
@@ -134,12 +131,7 @@ const calendarMessages = i18n.define({
       calendarNothingPlanned: "Nichts geplant.",
       calendarContinuesFrom: ({ day, month }) => `seit ${day}.${month ? ` ${month}` : ""}`,
       calendarContinuesUntil: ({ day, month }) => `bis ${day}.${month ? ` ${month}` : ""}`,
-      calendarDuration: ({ minutes }) => {
-        if (minutes < 60) return `${minutes} Min`;
-        const hours = Math.floor(minutes / 60);
-        const rest = minutes % 60;
-        return rest ? `${hours} Std. ${rest}` : `${hours} Std.`;
-      },
+      calendarDuration: ({ minutes }) => durationWords.de(minutes * 60_000),
       calendarFree: ({ duration }) => `${duration} frei`,
       calendarCreateAt: ({ start, end }) => `Termin ${start}–${end} anlegen`,
       calendarFreeAction: ({ duration, from, to, start, end }) => `${duration} frei, ${from} bis ${to}. Termin ${start}–${end} anlegen`,

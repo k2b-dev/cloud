@@ -215,6 +215,22 @@ lane's accessible name.
   rows={[{ label: "worker:files:thumbnails", intervals: [{ from: 0, to: 60_000, state: "error" }] }]} />
 ```
 
+When the times are instants in Unix milliseconds, pass `timeAxis={{ timeZone }}`
+as on a line chart. The axis then steps on round wall times in that zone, for
+example every six hours across a day, with the date at midnight. Labels use
+24 hours in the page's language. The tooltip gives clock times. When the view
+or the run reaches into a second day, each time also names its day
+("26. Nov., 23:00"). A duration reads as the calendar writes one, from the
+chart's message catalog: "4 Sek.", "12 Min", "1 Std. 30", "1 Tag 2 Std."
+("4 sec", "12 min", "1 hr 30 min", "1 day 2 hr" in English).
+`xAxis.format` still labels the axis and the times. Without `timeAxis`, the
+times are plain numbers and the duration has no unit.
+
+On the night the clocks go forward, the missing hour has no ticks: 03:00
+follows 01:00. On the night they go back, the hour that happens twice gets
+ticks only the first time, so the axis jumps from the last 02:xx tick in
+summer time to 03:00 in winter time.
+
 ## Bar charts
 
 A bar chart labels every category; it never thins or drops category labels.
@@ -322,7 +338,7 @@ All kinds accept these wrapper props:
 | `style` | Solid `JSX.CSSProperties` or a CSS string on the wrapper. Set height here, not with a `height` prop. |
 | `labels` | Optional `ChartLabels` overrides. Keys: `empty`, `series`, `interactiveMap`, `interactiveTimeline`, `interactiveLine`, `interactiveChart`, `zoomIn`, `zoomOut`, `resetMap`, `resetTimeline`. Region names fall back to a nonblank chart `title` (or `label` for stat/gauge), then the inherited UI messages. Other omitted keys use the inherited UI messages. These do not rename tooltip fields; use `tooltip` for domain labels. |
 | `interactive` | Boolean, default `false`. Enables map and state-timeline navigation: pan, zoom and reset controls. Tooltips and keyboard inspection work without it, including with `interactive={false}`. |
-| `timeAxis` | Line charts only: `{ timeZone, locale? }` when X values are instants in Unix milliseconds. Ticks land on round wall times in `timeZone`: minutes (1, 2, 5, 10, 15, 30), hours (1, 2, 3, 6, 12), days (1, 2, 3), Monday weeks (1, 2), months, or years, the finest step that keeps about `xAxis.ticks` + 2 ticks; without `xAxis.ticks`, as many as fit along the drawing at about 56 px a date, at least five. Ticks follow the zone across daylight-saving changes. `xAxis.format` labels them; without it a tick shows its clock time, the day at local midnight, the month, or the year in `locale`. Without `xAxis.domain`, the axis spans the plotted instants. Snapshots for `ChartExplorer` take the same option. A drawing stretched to a box narrower than it was drawn hides every second date first, then every fourth, so dates never overlap; the first stays. |
+| `timeAxis` | Line charts only (a state timeline: see its row): `{ timeZone, locale? }` when X values are instants in Unix milliseconds. Ticks land on round wall times in `timeZone`: minutes (1, 2, 5, 10, 15, 30), hours (1, 2, 3, 6, 12), days (1, 2, 3), Monday weeks (1, 2), months, or years, the finest step that keeps about `xAxis.ticks` + 2 ticks; without `xAxis.ticks`, as many as fit along the drawing at about 56 px a date, at least five. Ticks follow the zone across daylight-saving changes. `xAxis.format` labels them; without it a tick shows its clock time, the day at local midnight, the month, or the year in `locale`. Without `xAxis.domain`, the axis spans the plotted instants. Snapshots for `ChartExplorer` take the same option. A drawing stretched to a box narrower than it was drawn hides every second date first, then every fourth, so dates never overlap; the first stays. |
 | `maxGap` | Line charts only: positive finite distance in numeric X units (milliseconds for epoch timestamps). Larger distances start a new line segment; isolated samples remain visible. Supports straight, smooth and step lines. Combining it with `area` or `errorBand` fills throws. Omit it to preserve continuous lines. |
 | `cursor` | Optional `ChartCursor` from `createChartCursor()`. Connects line charts by numeric X value; other kinds ignore it. Hover is independent of `selected` and does not reload data or rebuild SVG. |
 | `selected` | Optional `ChartDatumRef \| null`: `{ role, index, seriesIndex? }` using the current input snapshot. Highlights a datum without selecting it or opening a tooltip. Missing references paint nothing. Map stable application IDs to these indices after every data replacement. |
@@ -363,7 +379,7 @@ Solid signal. Boolean options default to `false` unless stated otherwise.
 | `stat` | `label: string`, `value: number \| string` | `unit`, `format`, `delta?: number \| string`, `deltaFormat?: (number) => string`, `trend?: "up" / "down" / "neutral"`, `sparkline?: number[] \| Point[]`. Trend derives from numeric delta; otherwise defaults to neutral. String values/deltas remain text; numeric delta gets a leading `+` when positive. |
 | `heatmap` | `data: { x: string; y: string; value: number }[]` | `xLabels?: string[]`, `yLabels?: string[]` control category order; otherwise first appearance. `min`/`max` default to the observed domain; `format`, `showValues=false`. Missing cells have no inspected datum; the last entry for a repeated X/Y pair wins. |
 | `map` | `series: { label?: string; data: { latitude: number; longitude: number; label?: string; size?: number }[] }[]` | `viewport?: { latitude: number; longitude: number; zoom: number }`, `sizeRange?: [number, number]` (default `[3, 12]` when sizes are present), `legend=false`. Use decimal degrees; zoom is normalized to 0–5. Omit viewport for the world view. `zoomFocus?: { latitude: number; longitude: number }` defaults to Europe (`{ latitude: 50, longitude: 10 }`) and sets the center only when zooming in from zoom 0. Coordinates are clamped to the bounds of the new zoom level. Further zooming preserves the current center, including after panning. Use `{ latitude: 0, longitude: 0 }` for a neutral target. Reset still restores `viewport` or the world view. No custom projection or map-layer prop. |
-| `stateTimeline` | `rows: StateTimelineRow[]` | `states?: StateTimelineState[]`, `domain?: readonly [number, number]`, `xAxis?: { format?: (number) => string; label?: string }`, `legend=true`. Height defaults to `max(160, 38 + 24 * rows.length + 28 + (legend ? 24 : 0))` pixels. |
+| `stateTimeline` | `rows: StateTimelineRow[]` | `states?: StateTimelineState[]`, `domain?: readonly [number, number]`, `xAxis?: { format?: (number) => string; label?: string }`, `timeAxis?: { timeZone, locale? }` (round wall-time ticks and durations with their unit), `legend=true`. Height defaults to `max(160, 38 + 24 * rows.length + 28 + (legend ? 24 : 0))` pixels. |
 
 `Series` is `{ label?: string; data: Point[]; marker?: MarkerShape; lineStyle?: LineStyle }`.
 `Point` requires numeric `x` and `y`. Optional fields are `size`, `errX`,

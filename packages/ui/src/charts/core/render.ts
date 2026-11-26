@@ -82,6 +82,8 @@ export const renderChartSvg = (
     return responsiveChartSvg(
       renderStateTimelineSvg({
         ...(opts as StateTimelineChartOptions),
+        // a timeline over instants keeps its time axis (the line chart's is applied below, after its renderer)
+        timeAxis: _timeAxis,
         width,
         height,
         viewport: timelineViewport,

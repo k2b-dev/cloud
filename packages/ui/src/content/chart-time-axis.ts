@@ -12,6 +12,22 @@ export const chartTimeTicks = (domain: readonly [number, number], timeZone: stri
 export const chartTimeLabel = (tick: number, step: ChartTimeStep, axis: ChartTimeAxis) =>
   calendarTimeLabel(tick, step, axis, instantToZonedInput(new Date(tick), axis.timeZone).endsWith("T00:00"));
 
+const dayOf = (instant: number, timeZone: string) => instantToZonedInput(new Date(instant), timeZone).slice(0, 10);
+
+/** Whether the span from `from` up to (not including) `to` reaches into a second day of the zone's calendar. */
+export const chartCrossesDay = (from: number, to: number, timeZone: string): boolean =>
+  dayOf(from, timeZone) !== dayOf(Math.max(from, to - 1), timeZone);
+
+/** A moment in the axis's zone, always 24 hours: "07:00", or with its day "26. Nov., 07:00". */
+export const chartClock = (instant: number, axis: ChartTimeAxis, withDay = false): string =>
+  new Intl.DateTimeFormat(axis.locale ?? "en", {
+    ...(withDay ? { day: "numeric", month: "short" } : {}),
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: axis.timeZone,
+  } as const).format(instant);
+
 const escapeText = (value: string) => value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 const xTickLabel = /<text class="stdlib-chart-tick-label" x="(-?[\d.]+)" y="(-?[\d.]+)" text-anchor="middle">[^<]*<\/text>/g;
 
