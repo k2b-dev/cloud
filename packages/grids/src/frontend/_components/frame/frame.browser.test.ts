@@ -353,12 +353,12 @@ describe("the records page on v2", () => {
     try {
       await tab.locator("[data-k2-part=Table] tbody tr:first-child").click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("record") === "record-0");
-      await tab.locator("[data-k2-part=Pane][aria-label=Datensatz]").waitFor();
+      await tab.locator("[data-k2-part=RecordHead]").waitFor();
       await shoot(tab, "grids-records-open-light-1440");
       // Back closes the record again: the address holds what is open
       await tab.goBack();
       await tab.waitForFunction(() => !new URL(location.href).searchParams.has("record"));
-      expect(await tab.locator("[data-k2-part=Pane][aria-label=Datensatz]").count()).toBe(0);
+      expect(await tab.locator("[data-k2-part=RecordHead]").count()).toBe(0);
 
       await tab.locator("[data-k2-part=Table] thead").getByRole("button", { name: "Fällig", exact: true }).click();
       await tab.waitForFunction(() => (new URL(location.href).searchParams.get("sort") ?? "").includes('"date"'));

@@ -1081,8 +1081,6 @@ export default function RecordsView(props: Props) {
       : { icon: "table", text: words().noRecordsYet, ...(primaryAction() ? { action: primaryAction() } : {}) };
   const allFieldsByTable = () => ({ ...props.fieldsByTable, [props.tableId]: fields() });
 
-  const detailLabel = () => (selectedGroup() ? words().groups : words().openRecord);
-
   return (
     <GridsFrame
       state={props.frame}
@@ -1231,45 +1229,41 @@ export default function RecordsView(props: Props) {
           </Show>
         </Pane>
         <Show when={hasOpenDetail()}>
-          <Pane detail label={detailLabel()} width={{ min: 400, default: 480 }} back={{ label: tableName(), href: listHref() }}>
-            {/* The record's own detail is rebuilt on v2 in its own part; until then its v1 surface keeps every deed. */}
-            <Canvas label={detailLabel()}>
-              <RecordsDetailSurface
-                baseId={props.baseId}
-                tableId={props.tableId}
-                tableName={tableName()}
-                fields={fields()}
-                tableFields={tableFields()}
-                auditPolicy={tableAuditPolicy()}
-                record={selectedRecord}
-                detail={selectedRecordDetail}
-                now={props.now}
-                recordFailure={selectedRecordFailure()}
-                selectedGroup={selectedGroup()}
-                query={queryWithSearch()}
-                groupBy={groupBy()}
-                aggregations={aggregations()}
-                documentTemplates={props.documentTemplates}
-                mode={detailMode}
-                canWrite={canDirectWrite()}
-                canRunWorkflows={canRunWorkflows()}
-                relationLabels={mergedRelationLabels()}
-                fieldsByTable={props.fieldsByTable}
-                viewColumns={effectiveViewColumns()}
-                dateConfig={props.dateConfig}
-                onCloseRecord={onCloseDetail}
-                onRetryRecord={retrySelectedRecord}
-                onRecordUpdated={onRecordUpdated}
-                onRecordRemoved={onRecordRemoved}
-                recordActionLaunchers={props.recordActionLaunchers}
-                onOpenRecord={(recordId) => openRecordById(recordId, false)}
-                onCloseGroup={onCloseGroupDetail}
-                onOpenGroupedRecord={onOpenGroupedRecord}
-                access={recordAccess}
-                currentUserId={props.currentUserId}
-              />
-            </Canvas>
-          </Pane>
+          <RecordsDetailSurface
+            baseId={props.baseId}
+            tableId={props.tableId}
+            tableName={tableName()}
+            fields={fields()}
+            tableFields={tableFields()}
+            auditPolicy={tableAuditPolicy()}
+            record={selectedRecord}
+            detail={selectedRecordDetail}
+            now={props.now}
+            recordFailure={selectedRecordFailure()}
+            selectedGroup={selectedGroup()}
+            query={queryWithSearch()}
+            groupBy={groupBy()}
+            aggregations={aggregations()}
+            documentTemplates={props.documentTemplates}
+            mode={detailMode}
+            canWrite={canDirectWrite()}
+            canRunWorkflows={canRunWorkflows()}
+            relationLabels={mergedRelationLabels()}
+            fieldsByTable={props.fieldsByTable}
+            viewColumns={effectiveViewColumns()}
+            dateConfig={props.dateConfig}
+            onCloseRecord={onCloseDetail}
+            onRetryRecord={retrySelectedRecord}
+            onRecordUpdated={onRecordUpdated}
+            onRecordRemoved={onRecordRemoved}
+            recordActionLaunchers={props.recordActionLaunchers}
+            onOpenRecord={(recordId) => openRecordById(recordId, false)}
+            onCloseGroup={onCloseGroupDetail}
+            onOpenGroupedRecord={onOpenGroupedRecord}
+            access={recordAccess}
+            currentUserId={props.currentUserId}
+            back={{ label: tableName(), href: listHref() }}
+          />
         </Show>
       </Pane.Split>
       <RecordsQueryDialog

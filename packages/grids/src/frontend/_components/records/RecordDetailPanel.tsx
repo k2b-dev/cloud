@@ -1,22 +1,10 @@
 import { accessMemberEntries } from "@k2b/cloud/access/ui";
+import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import {
-  Button,
-  DescriptionList,
-  DetailAccess,
-  Dropdown,
-  type DropdownItem,
-  IconButton,
-  NoticeCard,
-  Placeholder,
-  prompts,
-  Section,
-  Tooltip,
-  toast,
-  useLocale,
-} from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { DetailAccess, type DetailLinkItem, prompts, toast, useLocale } from "@k2b/ui";
+import { type Action, Bar, Button, Canvas, Facts, Menu, type MenuEntry, Notice, Pane, Prose, RecordHead, Section } from "@k2b/ui/v2";
+import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../../../api/record-finalization";
@@ -25,6 +13,9 @@ import { recordAuditRequirementFor } from "../../../record-audit-policy";
 import { type CorrectionDraftIntent, correctionDraftIntent } from "../../../workflows/contracts";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import { isUserEditable } from "../fields/field-prompt-schema";
+import { fieldTypeIcon } from "../fields/field-type-meta";
+import { FieldValue } from "../table/FieldValue";
+import { resolveFieldDisplay } from "../table/field-display";
 import { errorMessage } from "../utils/api-helpers";
 import { createRetryToasts } from "../utils/feedback";
 import type {
@@ -37,13 +28,13 @@ import RecordComments from "./RecordComments";
 import RecordDocumentsSection from "./RecordDocumentsSection";
 import RecordFileField from "./RecordFileField";
 import RecordHistorySection from "./RecordHistorySection";
-import RecordReadView from "./RecordReadView";
+import { hasRecordDetailValue } from "./RecordReadView";
 import { RecordLinks } from "./RecordReferencedBy";
 import { openRecordUpsertDialog, RecordSaveConflictError } from "./RecordUpsertDialog";
 import RecordVersions from "./RecordVersions";
 import type { RecordAccess } from "./record-access";
 import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-correction";
-import { recordDisplayTitle } from "./record-display";
+import { fieldDisplayFormatForView, recordDisplayTitle, recordTitleField } from "./record-display";
 
 type Props = {
   baseId: string;
@@ -82,6 +73,8 @@ type Props = {
   onRemoved: () => void;
   recordActionLaunchers: WorkspaceRecordLauncher[];
   onOpenRecord: (recordId: string) => void;
+  /** The way back to the list on the phone: the list's address without the open record. */
+  back: Action;
   /** Who has access to the base, read-only; it loads once the first record opens. */
   access?: RecordAccess;
   /** The viewer, marked as "You" among the people with access. */
@@ -555,47 +548,124 @@ export default function RecordDetailPanel(props: Props) {
   // While one of the menu's commands runs, its entries stay disabled.
   const menuBusy = () =>
     deleteMut.loading() || finalizeMut.loading() || requestFinalizationMut.loading() || rejectFinalizationMut.loading();
-  /** The rarer commands on the record; the one main action stands beside them. */
-  const recordMenu = (rec: GridRecord): DropdownItem[] => {
-    if (!editable(rec)) return [];
-    const finalizationEnabled = Boolean(finalization()?.enabled);
-    return [
-      ...(canResolveReview()
-        ? [
-            { label: t().edit, icon: "ti ti-pencil", disabled: menuBusy(), action: () => void handleEdit(rec) },
-            { label: t().reject, icon: "ti ti-x", disabled: menuBusy(), action: () => void resolveFinalizationRequest(rec, "reject") },
-          ]
-        : []),
-      ...(finalizationEnabled && !reviewPending()
-        ? [
-            {
-              label: fourEyes() ? t().requestFinalization : t().finalize,
-              icon: fourEyes() ? "ti ti-user-check" : "ti ti-lock",
-              disabled: menuBusy(),
-              action: () => void handleFinalize(rec),
-            },
-          ]
-        : []),
-      ...(finalizationEnabled && fourEyes() && !finalizationQuery.error()
-        ? [{ label: t().refreshFinalization, icon: "ti ti-refresh", action: () => void refreshFinalization(rec).catch(() => undefined) }]
-        : []),
-      {
-        sectionLabel: t().dangerZone,
-        items: [
-          {
-            label: t().moveToTrash,
-            icon: "ti ti-trash",
-            variant: "danger" as const,
-            disabled: menuBusy(),
-            action: () => void handleDelete(rec),
-          },
-        ],
-      },
-    ];
+  // ── v2 render ──────────────────────────────────────────────────────
+  const cloudId = useCloudIdCopy();
+  const cloudIdText = () => cloudIdMessages.resolve([locale()]).t;
+  const formatDate = (value: string) =>
+    new Intl.DateTimeFormat(props.dateConfig?.locale ?? locale(), {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: props.dateConfig?.timeZone,
+    }).format(new Date(value));
+  const shown = () => visibleFields();
+  const titleField = () => recordTitleField(shown());
+  const bodyFields = () => shown().filter((field) => field.id !== titleField()?.id);
+  const formatOf = (field: Field) => fieldDisplayFormatForView(field, props.viewColumns);
+  /** Fields whose value reads in a line beside its label. */
+  const factFields = () => bodyFields().filter((field) => !["longtext", "json", "object_list", "file", "relation"].includes(field.type));
+  /** Long values people read: they stand open in sections of their own. */
+  const longFields = (rec: GridRecord) =>
+    bodyFields().filter((field) => ["longtext", "json", "object_list"].includes(field.type) && hasRecordDetailValue(rec.data[field.id]));
+  const fileFields = () => bodyFields().filter((field) => field.type === "file");
+  const value = (field: Field, rec: GridRecord) => (
+    <FieldValue
+      field={field}
+      value={rec.data[field.id]}
+      record={rec}
+      allFields={props.fields}
+      baseId={props.baseId}
+      fieldsByTable={props.fieldsByTable}
+      relationLabels={props.relationLabels}
+      dateConfig={props.dateConfig}
+      format={formatOf(field)}
+      mode="detail"
+      empty="—"
+      linkLookup
+      showBarcodeOpenAction
+    />
+  );
+  const title = (rec: GridRecord) =>
+    recordDisplayTitle({
+      fields: props.fields,
+      record: rec,
+      fieldsByTable: props.fieldsByTable,
+      relationLabels: props.relationLabels,
+      dateConfig: props.dateConfig,
+      viewColumns: props.viewColumns,
+    });
+  /** The record's state as a word: in the bin, finalized, or a draft while finalization is on. */
+  const stateWord = (rec: GridRecord) =>
+    mode() === "trash" ? t().deleted : rec.finalizedAt ? t().finalized : finalization()?.enabled ? t().finalizationDraft : undefined;
+
+  /** Each relation value as a link row: the field, then the linked record; an empty relation stays a disabled row. */
+  const outgoingLinks = (rec: GridRecord): DetailLinkItem[] =>
+    bodyFields()
+      .filter((field) => field.type === "relation")
+      .flatMap((field): DetailLinkItem[] => {
+        const intent = resolveFieldDisplay({ field, value: rec.data[field.id], relationLabels: props.relationLabels, locale: locale() });
+        const items = intent.kind === "relation" ? intent.items : [];
+        const targetTableId = (field.config as { targetTableId?: string }).targetTableId;
+        const icon = fieldTypeIcon(field.type, field.icon);
+        if (items.length === 0 || !targetTableId)
+          return [{ id: field.id, title: `${field.name} · —`, description: field.description ?? undefined, icon, disabled: true }];
+        return items.map((item) => ({
+          id: `${field.id}:${item.id}`,
+          title: `${field.name} · ${item.label}`,
+          description: field.description ?? undefined,
+          icon,
+          href: `/app/grids/${encodeURIComponent(props.baseId)}/table/${encodeURIComponent(targetTableId)}?record=${encodeURIComponent(item.id)}`,
+        }));
+      });
+
+  /** The rarer commands on the record, as v1's "…" offered them, and the record's Cloud ID. */
+  const menuEntries = (rec: GridRecord): MenuEntry[] => {
+    const entries: MenuEntry[] = [];
+    if (editable(rec)) {
+      const finalizationEnabled = Boolean(finalization()?.enabled);
+      if (canResolveReview()) {
+        entries.push({ label: t().edit, icon: "pencil", disabled: menuBusy(), onClick: () => void handleEdit(rec) });
+        entries.push({ label: t().reject, icon: "x", disabled: menuBusy(), onClick: () => void resolveFinalizationRequest(rec, "reject") });
+      }
+      if (finalizationEnabled && !reviewPending())
+        entries.push({
+          label: fourEyes() ? t().requestFinalization : t().finalize,
+          icon: fourEyes() ? "user-check" : "lock",
+          disabled: menuBusy(),
+          onClick: () => void handleFinalize(rec),
+        });
+      if (finalizationEnabled && fourEyes() && !finalizationQuery.error())
+        entries.push({
+          label: t().refreshFinalization,
+          icon: "refresh",
+          onClick: () => void refreshFinalization(rec).catch(() => undefined),
+        });
+    }
+    if (mode() === "live" && cloudId.available())
+      entries.push({ label: cloudIdText().copy, icon: "link", onClick: () => cloudId.copy({ type: "grids.record", id: rec.id }) });
+    if (editable(rec))
+      entries.push({ label: t().moveToTrash, icon: "trash", danger: true, disabled: menuBusy(), onClick: () => void handleDelete(rec) });
+    return entries;
   };
 
+  const correctionEntries = (rec: GridRecord): MenuEntry[] =>
+    props.recordActionLaunchers.map((launcher) => ({
+      label: launcher.name,
+      icon: recordLauncherIntent(launcher) === "cancellation" ? "file-off" : "file-pencil",
+      meta:
+        launcher.correctionPrefillFieldCount === 0
+          ? t().emptyLinkedDraft({ intent: intentLabel(recordLauncherIntent(launcher)) })
+          : t().prefilledLinkedDraft({ intent: intentLabel(recordLauncherIntent(launcher)), count: launcher.correctionPrefillFieldCount }),
+      onClick: () => void handleCreateCorrection(rec, launcher),
+    }));
+  const correctionLabel = () =>
+    sharedRecordActionIntent() === "cancellation"
+      ? t().createCancellation
+      : sharedRecordActionIntent() === "correction"
+        ? t().createCorrection
+        : t().createFollowUp;
+
   return (
-    <Show when={record()} fallback={null} keyed>
+    <Show when={record()} keyed>
       {(rec) => (
         <RecordDocumentsSection
           tableId={props.tableId}
@@ -608,256 +678,222 @@ export default function RecordDetailPanel(props: Props) {
           initialSnapshots={props.detail()?.snapshots ?? []}
         >
           {(documents) => (
-            <RecordReadView
-              baseId={props.baseId}
-              tableId={props.tableId}
-              tableName={props.tableName}
-              fields={props.fields}
-              record={rec}
-              mode={mode()}
-              showFinalizationStatus={Boolean(rec.finalizedAt || finalization()?.enabled)}
-              relationLabels={props.relationLabels}
-              fieldsByTable={props.fieldsByTable}
-              viewColumns={props.viewColumns}
-              dateConfig={props.dateConfig}
-              scrollPreserveKey={`grids-record-detail-${props.tableId}-${rec.id}`}
-              renderFileField={(field, record) => (
-                <RecordFileField
-                  tableId={props.tableId}
-                  recordId={record.id}
-                  field={field}
-                  canWrite={props.canWrite && mode() === "live" && !record.finalizedAt}
-                  initialFiles={props.detail()?.filesByField[field.id] ?? []}
-                  onChanged={refreshAfterFinalizationMutation}
-                />
-              )}
-              closeAction={
-                <Tooltip.Anchor content={t().closeDetails}>
-                  <IconButton variant="ghost" size="sm" type="button" label={t().closePanel} onClick={() => props.onClose()}>
-                    <i class="ti ti-x" aria-hidden="true" />
-                  </IconButton>
-                </Tooltip.Anchor>
-              }
-              menuItems={recordMenu(rec)}
-              primaryAction={
-                <>
-                  <Show when={props.canRunWorkflows && mode() === "live" && rec.finalizedAt && props.recordActionLaunchers.length > 0}>
-                    <Dropdown.Root
-                      position="bottom-left"
-                      items={[
-                        {
-                          items: props.recordActionLaunchers.map((launcher) => ({
-                            label: launcher.name,
-                            icon: recordLauncherIntent(launcher) === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil",
-                            description:
-                              launcher.correctionPrefillFieldCount === 0
-                                ? t().emptyLinkedDraft({ intent: intentLabel(recordLauncherIntent(launcher)) })
-                                : t().prefilledLinkedDraft({
-                                    intent: intentLabel(recordLauncherIntent(launcher)),
-                                    count: launcher.correctionPrefillFieldCount,
-                                  }),
-                            action: () => void handleCreateCorrection(rec, launcher),
-                          })),
-                        },
-                      ]}
-                    >
-                      <Dropdown.Trigger
-                        variant="subtle"
-                        size="sm"
-                        type="button"
-                        class="grids-details-main"
-                        disabled={createCorrectionMut.loading()}
-                        loading={createCorrectionMut.loading()}
-                        loadingLabel={
-                          sharedRecordActionIntent() === "cancellation"
-                            ? t().creatingCancellationDraft
-                            : sharedRecordActionIntent() === "correction"
-                              ? t().creatingCorrectionDraft
-                              : t().creatingLinkedDraft
-                        }
-                      >
-                        <i
-                          class={sharedRecordActionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"}
-                          aria-hidden="true"
-                        />
-                        {sharedRecordActionIntent() === "cancellation"
-                          ? t().createCancellation
-                          : sharedRecordActionIntent() === "correction"
-                            ? t().createCorrection
-                            : t().createFollowUp}
-                      </Dropdown.Trigger>
-                    </Dropdown.Root>
-                  </Show>
-                  <Show when={editable(rec)}>
-                    <Show
-                      when={canResolveReview()}
-                      fallback={
-                        <Button
-                          variant="subtle"
-                          size="sm"
-                          type="button"
-                          class="grids-details-main"
-                          aria-label={t().editRecordLabel}
-                          onClick={() => handleEdit(rec)}
-                          disabled={updating()}
+            <Pane
+              detail
+              label={title(rec)}
+              width={{ min: 400, default: 480 }}
+              back={props.back}
+              scrollKey={`grids-record-detail-${props.tableId}-${rec.id}`}
+              head={
+                <Bar
+                  start={
+                    <RecordHead
+                      name={title(rec)}
+                      kinds={[props.tableName, ...(stateWord(rec) ? [stateWord(rec) as string] : [])]}
+                      ids={[{ label: t().versionSection, value: String(rec.version) }]}
+                    />
+                  }
+                  end={
+                    <>
+                      <Show when={props.canRunWorkflows && mode() === "live" && rec.finalizedAt && props.recordActionLaunchers.length > 0}>
+                        <Menu
+                          icon={sharedRecordActionIntent() === "cancellation" ? "file-off" : "file-pencil"}
+                          disabled={createCorrectionMut.loading()}
+                          items={correctionEntries(rec)}
                         >
-                          <i class="ti ti-pencil" aria-hidden="true" /> {t().edit}
+                          {correctionLabel()}
+                        </Menu>
+                      </Show>
+                      <Show when={editable(rec)}>
+                        <Show
+                          when={canResolveReview()}
+                          fallback={
+                            <Button icon="pencil" busy={updating()} onClick={() => void handleEdit(rec)}>
+                              {t().edit}
+                            </Button>
+                          }
+                        >
+                          <Button
+                            icon="lock-check"
+                            busy={approveFinalizationMut.loading()}
+                            disabled={resolutionLoading()}
+                            onClick={() => void resolveFinalizationRequest(rec, "approve")}
+                          >
+                            {t().approveFinalize}
+                          </Button>
+                        </Show>
+                      </Show>
+                      <Show when={props.canWrite && mode() === "trash"}>
+                        <Button icon="arrow-back-up" busy={restoreMut.loading()} onClick={() => void handleRestore(rec)}>
+                          {t().restore}
                         </Button>
-                      }
-                    >
-                      <Button
-                        variant="subtle"
-                        size="sm"
-                        type="button"
-                        class="grids-details-main"
-                        onClick={() => void resolveFinalizationRequest(rec, "approve")}
-                        loading={approveFinalizationMut.loading()}
-                        disabled={resolutionLoading()}
-                        loadingLabel={t().finalizingRecord}
-                      >
-                        <i class="ti ti-lock-check" aria-hidden="true" /> {t().approveFinalize}
-                      </Button>
-                    </Show>
-                  </Show>
-                  <Show when={props.canWrite && mode() === "trash"}>
-                    <Button
-                      variant="subtle"
-                      size="sm"
-                      type="button"
-                      class="grids-details-main"
-                      onClick={() => handleRestore(rec)}
-                      disabled={restoreMut.loading()}
-                    >
-                      <i class="ti ti-arrow-back-up" aria-hidden="true" /> {t().restore}
-                    </Button>
-                  </Show>
-                </>
+                      </Show>
+                      <Show when={menuEntries(rec).length > 0}>
+                        <Menu label={t().moreActions} items={menuEntries(rec)} />
+                      </Show>
+                      <Button variant="ghost" icon="x" label={t().closePanel} onClick={() => props.onClose()} />
+                    </>
+                  }
+                />
               }
-              notices={
-                <>
-                  <Show
-                    when={
-                      finalizationQueryEnabled() &&
-                      (finalizationQuery.loading() || finalizationQuery.stale()) &&
-                      !finalization() &&
-                      !finalizationQuery.error()
-                    }
+            >
+              <Show
+                when={
+                  finalizationQueryEnabled() &&
+                  (finalizationQuery.loading() || finalizationQuery.stale()) &&
+                  !finalization() &&
+                  !finalizationQuery.error()
+                }
+              >
+                <Notice tone="note" title={t().loadingFinalization}>
+                  {t().checkingFinalization}
+                </Notice>
+              </Show>
+              <Show when={finalizationQueryEnabled() && finalizationQuery.error()}>
+                {(error) => (
+                  <Notice
+                    tone="bad"
+                    title={t().finalizationUnavailable}
+                    actions={[{ label: t().retry, icon: "refresh", onClick: () => void refreshFinalization(rec).catch(() => undefined) }]}
                   >
-                    <NoticeCard tone="neutral" title={t().loadingFinalization} detail={t().checkingFinalization} />
-                  </Show>
-                  <Show when={finalizationQueryEnabled() && finalizationQuery.error()}>
-                    {(error) => (
-                      <Placeholder
-                        state="error"
-                        variant="compact"
-                        align="left"
-                        title={t().finalizationUnavailable}
-                        description={error().message}
-                        onRetry={() => void refreshFinalization(rec).catch(() => undefined)}
-                      />
-                    )}
-                  </Show>
-                  <Show when={reviewPending()}>
-                    <NoticeCard
-                      tone="info"
-                      title={t().finalizationRequested}
-                      detail={`${t().reviewRequested({ name: finalization()!.request!.requestedByDisplayName, date: formatDateTime(finalization()!.request!.requestedAt) })}${
-                        finalization()!.request!.requestComment ? ` ${finalization()!.request!.requestComment}` : ""
-                      }${finalization()!.resolutionDisabledReason ? ` ${finalization()!.resolutionDisabledReason}` : ""}`}
-                    />
-                  </Show>
-                  <Show when={finalization()?.request?.status === "rejected" || finalization()?.request?.status === "superseded"}>
-                    <NoticeCard
-                      tone="neutral"
-                      title={finalization()!.request!.status === "rejected" ? t().requestRejected : t().requestSuperseded}
-                      detail={`${t().requestResolved({ name: finalization()!.request!.resolvedByDisplayName ?? t().system, date: finalization()!.request!.resolvedAt ? formatDateTime(finalization()!.request!.resolvedAt!) : "" })}${finalization()!.request!.resolutionComment ? ` ${finalization()!.request!.resolutionComment}` : ""}`}
-                    />
-                  </Show>
-                </>
-              }
-              links={
-                mode() === "live" && !props.detail()?.combinedOrigin
-                  ? (outgoing) => (
-                      <RecordLinks
-                        baseId={props.baseId}
-                        tableId={props.tableId}
-                        recordId={rec.id}
-                        outgoing={outgoing()}
-                        ready={props.detail()?.recordId === rec.id}
-                        initialPage={props.detail()?.referencedBy}
-                        revision={props.detail()}
-                      />
-                    )
-                  : undefined
-              }
-              attachmentsAfter={documents.documents}
-              discussion={
-                <Show when={mode() === "live"}>
+                    {error().message}
+                  </Notice>
+                )}
+              </Show>
+              <Show when={reviewPending() ? finalization()?.request : undefined}>
+                {(request) => (
+                  <Notice tone="warn" icon="user-check" title={t().finalizationRequested}>
+                    {`${t().reviewRequested({ name: request().requestedByDisplayName, date: formatDateTime(request().requestedAt) })}${
+                      request().requestComment ? ` ${request().requestComment}` : ""
+                    }${finalization()?.resolutionDisabledReason ? ` ${finalization()?.resolutionDisabledReason}` : ""}`}
+                  </Notice>
+                )}
+              </Show>
+              <Show
+                when={
+                  finalization()?.request?.status === "rejected" || finalization()?.request?.status === "superseded"
+                    ? finalization()?.request
+                    : undefined
+                }
+              >
+                {(request) => (
+                  <Notice tone="note" title={request().status === "rejected" ? t().requestRejected : t().requestSuperseded}>
+                    {`${t().requestResolved({ name: request().resolvedByDisplayName ?? t().system, date: request().resolvedAt ? formatDateTime(request().resolvedAt as string) : "" })}${request().resolutionComment ? ` ${request().resolutionComment}` : ""}`}
+                  </Notice>
+                )}
+              </Show>
+
+              <Section icon="list-details" title={t().fieldsSection}>
+                <Facts items={factFields().map((field) => ({ label: field.name, value: value(field, rec) }))} />
+              </Section>
+              <For each={longFields(rec)}>
+                {(field) =>
+                  field.type === "longtext" && typeof rec.data[field.id] === "string" ? (
+                    <Section icon="align-left" title={field.name}>
+                      <Prose markdown={rec.data[field.id] as string} />
+                    </Section>
+                  ) : (
+                    // k2b-ui gap: JSON and object lists have no v2 reader yet; their own drawing stays.
+                    <Section icon="braces" title={field.name}>
+                      <Canvas label={field.name}>{value(field, rec)}</Canvas>
+                    </Section>
+                  )
+                }
+              </For>
+              <Show when={fileFields().length > 0 || props.documentTemplates.length > 0}>
+                {/* k2b-ui gap: files with previews, upload by dropping and documents wait for Tiles media (lane DP/Y2);
+                    they keep their own drawing and every deed. */}
+                <Section icon="paperclip" title={t().filesSection}>
+                  <Canvas label={t().filesSection}>
+                    <For each={fileFields()}>
+                      {(field) => (
+                        <RecordFileField
+                          tableId={props.tableId}
+                          recordId={rec.id}
+                          field={field}
+                          canWrite={props.canWrite && mode() === "live" && !rec.finalizedAt}
+                          initialFiles={props.detail()?.filesByField[field.id] ?? []}
+                          onChanged={refreshAfterFinalizationMutation}
+                        />
+                      )}
+                    </For>
+                    {documents.documents}
+                  </Canvas>
+                </Section>
+              </Show>
+              <Show when={mode() === "live" && !props.detail()?.combinedOrigin}>
+                {/* k2b-ui gap: linked and referencing records as rows with load more come with v2 list virtualization
+                    (lane MW); the shared links section keeps its pages meanwhile. */}
+                <Canvas label={t().linksSection}>
+                  <RecordLinks
+                    baseId={props.baseId}
+                    tableId={props.tableId}
+                    recordId={rec.id}
+                    outgoing={outgoingLinks(rec)}
+                    ready={props.detail()?.recordId === rec.id}
+                    initialPage={props.detail()?.referencedBy}
+                    revision={props.detail()}
+                  />
+                </Canvas>
+                {/* The comment composer is a rich inner component: it keeps its own behaviour. */}
+                <Canvas label={t().commentsSection}>
                   <RecordComments
                     endpoint={`/api/grids/records/${encodeURIComponent(props.tableId)}/${encodeURIComponent(rec.id)}/comments`}
                     dateConfig={props.dateConfig}
                   />
+                </Canvas>
+              </Show>
+              <Show when={props.detail()?.combinedOrigin}>
+                {(origin) => (
+                  <Section icon="git-merge" title={t().combinedSource}>
+                    <Facts
+                      items={[
+                        { label: t().publishedFromLabel, value: `${origin().source.baseName} · ${origin().source.tableName}` },
+                        ...(origin().deletedAt ? [{ label: t().deleted, value: formatDate(origin().deletedAt as string) }] : []),
+                        { label: t().access, value: t().readonlyPublication },
+                      ]}
+                    />
+                  </Section>
+                )}
+              </Show>
+              <Section icon="info-circle" title={t().technicalSection}>
+                <Facts
+                  items={[
+                    { label: t().table, value: props.tableName },
+                    { label: t().recordId, value: rec.id, mono: true, copy: rec.id },
+                    { label: t().versionSection, value: String(rec.version) },
+                    { label: t().created, value: formatDate(rec.createdAt) },
+                    { label: t().updated, value: formatDate(rec.updatedAt) },
+                  ]}
+                />
+              </Section>
+              {/* k2b-ui gap: versions, history (activity with people) and access (people with avatars) wait for Digest
+                  with people and Avatar.Stack (lane DP); their shared sections stay meanwhile. */}
+              <Canvas label={t().historySection}>
+                <Show when={mode() === "live" && !props.detail()?.combinedOrigin}>
+                  <RecordVersions tableId={props.tableId} recordId={rec.id} />
                 </Show>
-              }
-              more={
-                <>
-                  {/* Read-only for everyone who reads the base. */}
-                  <Show when={props.access}>
-                    {(access) => (
-                      <DetailAccess
-                        entries={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}
-                        state={access().state}
-                        onRetry={access().retry}
-                        note={t().accessWholeBase}
-                      />
-                    )}
-                  </Show>
-                  <Show when={props.detail()?.combinedOrigin}>
-                    {(origin) => (
-                      <Section
-                        title={t().combinedSource}
-                        icon="ti ti-git-merge"
-                        collapsible
-                        summary={`${origin().source.baseName} · ${origin().source.tableName}`}
-                      >
-                        <DescriptionList
-                          layout="rows"
-                          size="sm"
-                          items={[
-                            {
-                              term: t().publishedFromLabel,
-                              description: `${origin().source.baseName} · ${origin().source.tableName}`,
-                            },
-                            ...(origin().deletedAt
-                              ? [
-                                  {
-                                    term: t().deleted,
-                                    description: <time dateTime={origin().deletedAt!}>{formatDateTime(origin().deletedAt!)}</time>,
-                                  },
-                                ]
-                              : []),
-                            {
-                              term: t().access,
-                              description: t().readonlyPublication,
-                            },
-                          ]}
-                        />
-                      </Section>
-                    )}
-                  </Show>
-                  <Show when={mode() === "live" && !props.detail()?.combinedOrigin}>
-                    <RecordVersions tableId={props.tableId} recordId={rec.id} />
-                  </Show>
-                  <RecordHistorySection
-                    entries={props.detail()?.auditEntries ?? []}
-                    fields={props.fields}
-                    dateConfig={props.dateConfig}
-                    now={props.now}
-                  />
-                  {documents.snapshots}
-                </>
-              }
-            />
+                <RecordHistorySection
+                  entries={props.detail()?.auditEntries ?? []}
+                  fields={props.fields}
+                  dateConfig={props.dateConfig}
+                  now={props.now}
+                />
+                {documents.snapshots}
+              </Canvas>
+              <Show when={props.access}>
+                {(access) => (
+                  <Canvas label={t().access}>
+                    <DetailAccess
+                      entries={accessMemberEntries(access().members, { currentUserId: props.currentUserId, locale: locale() })}
+                      state={access().state}
+                      onRetry={access().retry}
+                      note={t().accessWholeBase}
+                    />
+                  </Canvas>
+                )}
+              </Show>
+            </Pane>
           )}
         </RecordDocumentsSection>
       )}
