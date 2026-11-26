@@ -156,7 +156,7 @@ export default function VenueOverviewScreen(props: VenueOverviewProps) {
                     end={
                       venue.publicEnabled ? (
                         <Text tone="ok" weight="medium">
-                          <Icon name="world" /> {t().publicPageActive}
+                          <Icon name="world" /> {words().publicShort}
                         </Text>
                       ) : undefined
                     }
