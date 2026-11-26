@@ -2,7 +2,7 @@ import { LocaleProvider } from "@k2b/ui";
 import type { NavProps } from "@k2b/ui/v2";
 import { parseRunsAddress, runsQuery } from "../query";
 import RunsScreen from "./RunsScreen";
-import { FIXTURE_APPS, fixtureJobRecord, fixtureParts, fixtureSchedules } from "./runs-fixture-data";
+import { FIXTURE_APPS, type FixtureData, fixtureJobRecord, fixtureParts, fixtureSchedules } from "./runs-fixture-data";
 
 const nav: NavProps = {
   title: "Administration",
@@ -11,7 +11,7 @@ const nav: NavProps = {
 };
 
 /** The screen for one address, as the page renders it. */
-export const RunsScreenFixture = (props: { search: string; locale?: string }) => {
+export const RunsScreenFixture = (props: { search: string; locale?: string; data?: FixtureData }) => {
   const query = runsQuery(props.locale ?? "de", FIXTURE_APPS);
   const address = parseRunsAddress(query, new URLSearchParams(props.search));
   return (
@@ -26,7 +26,7 @@ export const RunsScreenFixture = (props: { search: string; locale?: string }) =>
         run={address.run}
         tab={address.tab}
         ignored={address.issues.length ? address.issues.map((issue) => `${issue.param}=${issue.value}`).join(", ") : null}
-        parts={address.tab === "runs" ? fixtureParts(props.search, address.page) : []}
+        parts={address.tab === "runs" ? fixtureParts(props.search, address.page, props.data) : []}
         record={address.run ? { record: address.run.kind === "job" ? fixtureJobRecord : null, error: null } : null}
         names={
           address.state.filters.workflow

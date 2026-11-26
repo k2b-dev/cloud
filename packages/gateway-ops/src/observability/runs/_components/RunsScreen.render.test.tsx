@@ -34,7 +34,7 @@ describe("the runs list on the server", () => {
     expect(text).toContain("Postfach abgleichen");
     // a run's state in colour, symbol and word; its app with the app's symbol
     expect(text).toContain("Fehlgeschlagen");
-    expect(body.querySelector('[data-name="alert-circle"]')).not.toBeNull();
+    expect(body.querySelector('[data-name="player-play"]')).not.toBeNull();
     expect(text).toContain("Notizbücher");
     // workflow runs and dead letters open their own records
     const links = [...body.querySelectorAll("a")].map((link) => link.getAttribute("href"));

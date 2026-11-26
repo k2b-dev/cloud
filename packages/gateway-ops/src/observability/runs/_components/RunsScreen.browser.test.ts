@@ -75,9 +75,15 @@ const document = (locale: string, state: string) =>
   `<body class="k2b-ui k2-ui"><div id="root"></div><script src="/harness.js"></script></body></html>`;
 
 /** The runs API as the server answers it: the invented runs for the address's filters. */
-const answerList = (url: URL) => ({
+const answerList = (url: URL, state = "normal") => ({
   status: 200,
-  json: { parts: fixtureParts(url.search.slice(1), Number(url.searchParams.get("page") ?? 1)) },
+  json: {
+    parts: fixtureParts(
+      url.search.slice(1),
+      Number(url.searchParams.get("page") ?? 1),
+      state === "worst" || state === "huge" ? state : "normal",
+    ),
+  },
 });
 
 type View = { width: number; height: number; touch: boolean };
@@ -113,7 +119,7 @@ const open = async (view: View, address: string, options: { locale?: string; sta
       const how = options.answer?.(calls.length) ?? {};
       if (how.delay) await new Promise((done) => setTimeout(done, how.delay));
       if (how.status) return route.fulfill({ status: how.status, json: { message: "Unavailable" } });
-      const answer = answerList(url);
+      const answer = answerList(url, options.state);
       return route.fulfill({ status: answer.status, json: answer.json });
     }
     return route.fulfill({ status: 404, json: { message: "Not found" } });
@@ -210,4 +216,44 @@ describe("the runs list on v2", () => {
       }
     }
   }, 180_000);
+
+  test("the worst real data keeps the v2 rules and reads right at 1440 and 390 px", async () => {
+    for (const view of [desktop, { width: 390, height: 844, touch: true }]) {
+      const { context, tab, errors } = await open(view, "/admin/observability/runs", { locale: "de", state: "worst" });
+      try {
+        const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+        expect({ width: view.width, problems: layout.problems }).toEqual({ width: view.width, problems: [] });
+        const text = await tab.locator("#root").innerText();
+        expect(text).not.toContain("1 Läufe");
+        if (view === desktop) {
+          expect(text).toContain("Alle 12.345 Jobs zeigen");
+          expect(text).toContain("1 Tg. 3 Std.");
+          expect(text).toContain("legacy-crm");
+          expect(text).toContain("Kunden & Aufträge (Werkstatt Nord)");
+        }
+        await shoot(tab, `runs-worst-${view.width}`);
+        expect(errors).toEqual([]);
+      } finally {
+        await context.close();
+      }
+    }
+  }, 60_000);
+
+  test("1,000 job runs: the page holds one page of 100 rows, pages through all, and is ready fast", async () => {
+    const started = performance.now();
+    const { context, tab, errors } = await open(desktop, "/admin/observability/runs?kind=job", { locale: "de", state: "huge" });
+    try {
+      const ready = performance.now() - started;
+      expect(await tab.getByText("100 von 1.000 Läufen").isVisible()).toBe(true);
+      expect(await tab.getByText("Seite 1 von 10").isVisible()).toBe(true);
+      expect(await tab.locator('[data-k2-part="Table"] tbody tr').count()).toBeLessThanOrEqual(101);
+      expect(await tab.locator("#root *").count()).toBeLessThan(6000);
+      // from a fresh browser context to a settled page, including the harness's own setup
+      expect(ready).toBeLessThan(4500);
+      await shoot(tab, "runs-huge-1440");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 });

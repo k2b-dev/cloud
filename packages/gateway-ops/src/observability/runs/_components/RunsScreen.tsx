@@ -8,6 +8,7 @@ import {
   Empty,
   Failed,
   FilterBar,
+  Icon,
   Input,
   ListOrder,
   Menu,
@@ -39,6 +40,7 @@ import {
   runsQuery,
 } from "../query";
 import type { RunRecord, RunRow, RunsPart } from "../service";
+import { runDurationFormatter } from "./duration";
 import RunRecordPane from "./RunRecordPane";
 
 export type RunsScreenProps = {
@@ -120,12 +122,7 @@ export default function RunsScreen(props: RunsScreenProps) {
     const date = new Date(iso);
     return Number.isNaN(date.getTime()) ? iso : clock().format(date);
   };
-  const duration = (ms: number | null) => {
-    if (ms === null) return "—";
-    if (ms < 1000) return `${number(Math.round(ms))} ms`;
-    if (ms < 60_000) return `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(ms / 1000)} s`;
-    return `${number(Math.round(ms / 60_000))} min`;
-  };
+  const duration = createMemo(() => runDurationFormatter(locale()));
 
   const kinds = () => kindsOf(state());
   const single = () => kinds().length === 1;
@@ -209,7 +206,9 @@ export default function RunsScreen(props: RunsScreenProps) {
     const all = total();
     if (single() && all !== null) return t().runsOf({ count: number(rows().length), total: number(all) });
     const shown = rows().length;
-    return t().runsCount({ count: all === null || parts().some((part) => part.more) ? `${number(shown)}+` : number(shown) });
+    const more = all === null || parts().some((part) => part.more);
+    // "1+" is more than one: the plural
+    return t().runsCount({ count: more ? `${number(shown)}+` : number(shown), n: more ? shown + 1 : shown });
   };
   const singlePart = () => (single() ? parts()[0] : undefined);
   const pages = () => {
@@ -224,17 +223,18 @@ export default function RunsScreen(props: RunsScreenProps) {
   const appChip = (appId: string | null) => {
     if (!appId) return "—";
     const app = props.apps.find((candidate) => candidate.id === appId);
-    return <Chip icon={app?.icon ?? "apps"}>{app?.label ?? appId}</Chip>;
+    // k2b-ui gap: a table cell has no mark (object symbol in its colour) beside text that may be cut; the symbol
+    // stands before the name, which a narrow column cuts with "…" (a chip may not cut its word).
+    return (
+      <>
+        <Icon name={app?.icon ?? "apps"} /> {app?.label ?? appId}
+      </>
+    );
   };
   const statusChip = (status: RunStatus) => {
     const tone = STATUS_CHIP[status];
-    return tone ? (
-      <Chip status={tone} icon={STATUS_ICON[status]}>
-        {statusLabel(status)}
-      </Chip>
-    ) : (
-      <Chip icon={STATUS_ICON[status]}>{statusLabel(status)}</Chip>
-    );
+    // a toned state's dot is its sign; a state without a tone (running, waiting, canceled) carries its symbol
+    return tone ? <Chip status={tone}>{statusLabel(status)}</Chip> : <Chip icon={STATUS_ICON[status]}>{statusLabel(status)}</Chip>;
   };
 
   const runsPane = () => (
@@ -319,7 +319,13 @@ export default function RunsScreen(props: RunsScreenProps) {
             { title: t().status, width: { min: 150, default: 160 }, cell: (row) => statusChip(row.status) },
             { title: t().app, width: { min: 100, default: 130 }, cell: (row) => appChip(row.appId), drop: true },
             { title: t().started, width: { min: 120, default: 140 }, cell: (row) => at(row.at) },
-            { title: t().duration, width: { min: 80, default: 100 }, align: "end", cell: (row) => duration(row.durationMs), drop: true },
+            {
+              title: t().duration,
+              width: { min: 110, default: 130 },
+              align: "end",
+              cell: (row) => (row.durationMs === null ? "—" : (duration()(row.durationMs) ?? "—")),
+              drop: true,
+            },
           ]}
         />
         {/* each kind beside others shows its newest; its own list pages through all of it */}
@@ -364,7 +370,7 @@ export default function RunsScreen(props: RunsScreenProps) {
       <Pane
         label={t().schedules}
         scrollKey="gateway-ops-schedules"
-        status={<StatusRow lead={t().schedulesCount({ count: number(list.length) })} />}
+        status={<StatusRow lead={t().schedulesCount({ count: number(list.length), n: list.length })} />}
       >
         <For each={data?.warnings ?? []}>{(warning) => <Notice tone="warn">{warning}</Notice>}</For>
         <Show when={!data?.error} fallback={<Failed text={t().schedulesUnavailable} onRetry={() => location.reload()} />}>
