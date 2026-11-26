@@ -1,14 +1,12 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, on, onMount, Show } from "solid-js";
-import { addDaysToKey } from "../inputs/date-input";
 import { dateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
-import { dayOfWeekOfKey } from "../intl/weekend";
 import { useCalendar } from "./behavior/calendar";
 import { type TimeSegment, useTimeInput } from "./behavior/time-input";
 import { hourCycleOf, timeExample } from "./behavior/time-text";
 import { Button } from "./button";
 import { useDateMessages } from "./date-messages";
-import { firstDayOfWeek, weekStartOf, windowDays, windowEnd, windowShowing } from "./date-weeks";
+import { WeekWindow } from "./date-week-window";
 import { Icon } from "./marks";
 
 export type DatePickerProps = {
@@ -37,10 +35,11 @@ export type DatePickerProps = {
   /** Moves the focus to the chosen day (else today) once the picker shows, as an opened calendar does. */
   autoFocus?: boolean;
   /**
-   * `months` (the default) shows whole months. `weeks` shows six weeks from the week of `min` (else today) onward, over
+   * `months` (the default) shows whole months. `weeks` shows six weeks from the week of `min` onward, as one grid over
    * the ends of months, for a picker of a moment ahead ("Später", an expiry): no month of days that lie behind. The
-   * first day of a month carries its short name; the arrows, PageUp and PageDown move the six weeks by whole weeks, and
-   * the buttons by six.
+   * first day of a month carries its short name; the keys move the six weeks by whole weeks, the buttons by six. Give
+   * `min` (usually today in the person's zone): without it the weeks start with today in `timeZone` ("UTC" by
+   * default), the same on the server and in the browser.
    */
   view?: "months" | "weeks";
 };
@@ -149,49 +148,15 @@ export const DatePicker = (props: DatePickerProps) => {
     setUnreadableTime(false);
   };
   const timeLabel = createUniqueId();
-  // `view="weeks"`: six weeks from the first day of a week. Core holds three months, so every day of the window lies in
-  // one of its grids (and has its keys); the picker shows only the window's days, as one grid of seven columns.
   const weeks = () => props.view === "weeks";
-  const firstDay = createMemo(() => firstDayOfWeek(locale()));
-  const anchor = () => props.min ?? today();
-  const firstWindow = () => {
-    const from = anchor();
-    const key = day();
-    return weekStartOf(key && key > from ? key : from, firstDay());
-  };
-  const [windowStart, setWindowStart] = createSignal(firstWindow());
-  const inWindow = (key: string) => key >= windowStart() && key <= windowEnd(windowStart());
-  /** Six weeks back or ahead; never back past the week of `min`, never ahead past `max`. */
-  const page = (direction: -1 | 1) => {
-    const next = addDaysToKey(windowStart(), direction * windowDays);
-    const first = weekStartOf(anchor(), firstDay());
-    if (direction < 0) setWindowStart(next < first ? first : next);
-    else if (!props.max || next <= props.max) setWindowStart(next);
-  };
-  const pageBlocked = (direction: -1 | 1) =>
-    direction < 0
-      ? windowStart() <= weekStartOf(anchor(), firstDay())
-      : Boolean(props.max && addDaysToKey(windowStart(), windowDays) > props.max);
-  const rangeLabel = createMemo(() => {
-    const at = (key: string) => Date.parse(`${key}T12:00:00Z`);
-    return new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" }).formatRange(
-      at(windowStart()),
-      at(windowEnd(windowStart())),
-    );
-  });
-  const shortMonth = (key: string) =>
-    new Intl.DateTimeFormat(locale(), { month: "short", timeZone: "UTC" }).format(Date.parse(`${key}T12:00:00Z`)).replace(/\.$/, "");
   const calendar = useCalendar(() => ({
     value: chosen() ?? null,
-    month: weeks() ? monthOf(windowStart()) : month(),
-    months: weeks() ? 3 : 1,
+    month: month(),
     min: props.min,
     max: props.max,
     locale: locale(),
     timeZone: props.timeZone,
-    onMonthChange: (next) => (weeks() ? undefined : setMonth(next)),
-    // a day the keys reach outside the six weeks moves them by whole weeks until it shows
-    onFocusedChange: (date) => weeks() && setWindowStart(windowShowing(windowStart(), date, firstDay())),
+    onMonthChange: setMonth,
     onValueChange: (next) => {
       if (!next) return;
       setChosen(next);
@@ -210,50 +175,17 @@ export const DatePicker = (props: DatePickerProps) => {
     props.onPick(`${key}T${hhmm}`);
   };
   onMount(() => {
-    if (!props.autoFocus) return;
+    if (!props.autoFocus || weeks()) return;
     // core moves the focus into a popup first; the day follows
     setTimeout(() => calendar.focus(chosen()));
   });
-  const weekdayRow = (state: GridState) => (
-    <calendar.Weekdays class={weeks() ? "k2-cal-flow" : "k2-cal-row"} data-head="">
-      <For each={state.weekdays ?? []}>
-        {(_, index) => (
-          <calendar.Weekday index={index()} class="k2-cal-wd">
-            {(head: { label?: string }) => head.label}
-          </calendar.Weekday>
-        )}
-      </For>
-    </calendar.Weekdays>
-  );
-  /** One day; in the six weeks it names its column, and the first of a month shows the month's short name. */
-  const dayCell = (date: string, flow = false, offset = 0) => (
-    <calendar.Day
-      value={date}
-      // the grid a day belongs to: with several months core lets only a grid's own days take the focus
-      offset={offset}
-      class="k2-cal-day"
-      style={flow ? { "grid-column": String(((dayOfWeekOfKey(date) - firstDay() + 7) % 7) + 1) } : undefined}
-      data-month-start={flow && date.endsWith("-01") ? "" : undefined}
-      // a day is no submit button: in a form a press on it would send the form
-      type="button"
-      // the chosen day again changes nothing in core, but it is a pick all the same: it closes
-      onClick={() => !props.time && date === chosen() && pickDay(date)}
-      onKeyDown={(event: KeyboardEvent) =>
-        !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && pickDay(date)
-      }
-    >
-      {(cell: { label?: string }) => (flow && date.endsWith("-01") ? shortMonth(date) : cell.label)}
-    </calendar.Day>
-  );
   return (
     <div class="k2-dpick" data-k2-part="DatePicker">
-      <calendar.Root class="k2-cal" role="group" aria-label={props.label ?? t().calendar}>
-        <div class="k2-cal-h">
-          {/* With `view="weeks"` the arrows move the six weeks by six: buttons of their own, since core's step turns a
-              month and core keeps their state (`aria-disabled` is core's to set on its parts). */}
-          <Show
-            when={weeks()}
-            fallback={
+      <Show
+        when={weeks()}
+        fallback={
+          <calendar.Root class="k2-cal" role="group" aria-label={props.label ?? t().calendar}>
+            <div class="k2-cal-h">
               <calendar.Previous
                 class="k2-btn"
                 data-variant="ghost"
@@ -263,74 +195,66 @@ export const DatePicker = (props: DatePickerProps) => {
               >
                 <Icon name="chevron-left" />
               </calendar.Previous>
-            }
-          >
-            <Button variant="ghost" icon="chevron-left" label={t().previousWeeks} disabled={pageBlocked(-1)} onClick={() => page(-1)} />
-          </Show>
-          <calendar.Heading class="k2-cal-t">{(state: { label?: string }) => (weeks() ? rangeLabel() : state.label)}</calendar.Heading>
-          <Show
-            when={weeks()}
-            fallback={
+              <calendar.Heading class="k2-cal-t">{(state: { label?: string }) => state.label}</calendar.Heading>
               <calendar.Next class="k2-btn" data-variant="ghost" data-icon-only="" aria-label={t().nextMonth} title={t().nextMonth}>
                 <Icon name="chevron-right" />
               </calendar.Next>
-            }
-          >
-            <Button variant="ghost" icon="chevron-right" label={t().nextWeeks} disabled={pageBlocked(1)} onClick={() => page(1)} />
-          </Show>
-        </div>
-        <Show
-          when={weeks()}
-          fallback={
+            </div>
             <calendar.Grid class="k2-cal-grid">
               {(state: GridState) => (
                 <>
-                  {weekdayRow(state)}
+                  <calendar.Weekdays class="k2-cal-row" data-head="">
+                    <For each={state.weekdays ?? []}>
+                      {(_, index) => (
+                        <calendar.Weekday index={index()} class="k2-cal-wd">
+                          {(head: { label?: string }) => head.label}
+                        </calendar.Weekday>
+                      )}
+                    </For>
+                  </calendar.Weekdays>
                   <For each={(state.weeks ?? []).map((week) => week.map((cell) => cell.date).join(" "))}>
                     {(week) => (
                       <calendar.Week class="k2-cal-row">
-                        <For each={week.split(" ")}>{(date) => dayCell(date)}</For>
+                        <For each={week.split(" ")}>
+                          {(date) => (
+                            <calendar.Day
+                              value={date}
+                              class="k2-cal-day"
+                              // a day is no submit button: in a form a press on it would send the form
+                              type="button"
+                              // the chosen day again changes nothing in core, but it is a pick all the same: it closes
+                              onClick={() => !props.time && date === chosen() && pickDay(date)}
+                              onKeyDown={(event: KeyboardEvent) =>
+                                !props.time && (event.key === "Enter" || event.key === " ") && date === chosen() && pickDay(date)
+                              }
+                            >
+                              {(cell: { label?: string }) => cell.label}
+                            </calendar.Day>
+                          )}
+                        </For>
                       </calendar.Week>
                     )}
                   </For>
                 </>
               )}
             </calendar.Grid>
-          }
-        >
-          {/* Six weeks as one grid of seven columns: core's three month grids flow into it (`display: contents`), each
-              day of the window from the grid of its own month, so a week over the end of a month is one row. */}
-          <div class="k2-cal-weeks">
-            <For each={[0, 1, 2]}>
-              {(offset) => (
-                <calendar.Grid offset={offset} class="k2-cal-flow">
-                  {(state: GridState) => (
-                    <>
-                      <Show when={offset === 0}>{weekdayRow(state)}</Show>
-                      <For
-                        each={(state.weeks ?? [])
-                          .map((week) =>
-                            week
-                              .filter((cell) => !cell.outside && inWindow(cell.date))
-                              .map((cell) => cell.date)
-                              .join(" "),
-                          )
-                          .filter(Boolean)}
-                      >
-                        {(week) => (
-                          <calendar.Week class="k2-cal-flow">
-                            <For each={week.split(" ")}>{(date) => dayCell(date, true, offset)}</For>
-                          </calendar.Week>
-                        )}
-                      </For>
-                    </>
-                  )}
-                </calendar.Grid>
-              )}
-            </For>
-          </div>
-        </Show>
-      </calendar.Root>
+          </calendar.Root>
+        }
+      >
+        {/* six weeks ahead: core's calendar shows months only, so the weeks are one grid of their own */}
+        <WeekWindow
+          chosen={chosen()}
+          min={props.min}
+          max={props.max}
+          timeZone={props.timeZone}
+          label={props.label ?? t().calendar}
+          autoFocus={props.autoFocus}
+          onChoose={(key) => {
+            setChosen(key);
+            if (!props.time) pickDay(key);
+          }}
+        />
+      </Show>
       <Show when={props.time}>
         <div class="k2-dpick-time">
           <span class="k2-dpick-label" id={timeLabel}>

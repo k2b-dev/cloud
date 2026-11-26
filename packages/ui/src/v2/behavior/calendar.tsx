@@ -21,10 +21,6 @@ export type CalendarOptions = {
   locale?: string;
   /** The zone that says which day today is. */
   timeZone?: string;
-  /** How many months core holds side by side, each its own grid; 1 by default. */
-  months?: number;
-  /** Runs before keys, a press or `focus()` move the focus to another day, with that day. */
-  onFocusedChange?: (date: string) => void;
 };
 
 export type CalendarParts = {
@@ -48,7 +44,7 @@ export type CalendarParts = {
 /** A calendar of one month that always shows six weeks, so turning the month never changes its height. */
 export function useCalendar(options: () => CalendarOptions = () => ({})): CalendarParts {
   const handle = usePrimitive(calendarPrimitive, () => {
-    const { onValueChange, onMonthChange, onFocusedChange, ...given } = options();
+    const { onValueChange, onMonthChange, ...given } = options();
     return {
       ...given,
       mode: "single",
@@ -56,7 +52,6 @@ export function useCalendar(options: () => CalendarOptions = () => ({})): Calend
       weekdayFormat: "short",
       onValueChange: onValueChange && ((value: unknown) => onValueChange(typeof value === "string" ? value : null)),
       onMonthChange: onMonthChange && ((month: unknown) => onMonthChange(String(month))),
-      onFocusedChange: onFocusedChange && ((date: unknown) => onFocusedChange(String(date))),
     };
   });
   return {

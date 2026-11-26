@@ -55,11 +55,12 @@ const withPage = async (
     touch = false,
     timezoneId,
     lang = "de",
-  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: "de" | "en-US" | "en-GB" } = {},
+    at = now,
+  }: { width?: number; height?: number; touch?: boolean; timezoneId?: string; lang?: string; at?: Date } = {},
 ) => {
   const page = await browser.newPage({ viewport: { width, height }, hasTouch: touch, isMobile: touch, timezoneId });
   page.setDefaultTimeout(2000);
-  await page.addInitScript(pinDate, now.getTime());
+  await page.addInitScript(pinDate, at.getTime());
   const errors = pageErrors(page);
   await page.route(`${origin}/**`, (route) =>
     route.fulfill({
@@ -448,10 +449,12 @@ test("Shift+Enter is Enter: it takes what was typed, inside a form too, and send
 
 // ── view="weeks": six weeks ahead ───────────────────────────────────────────────────────────────────────────────
 
-/** The days the six weeks show, in order, with the row and column they stand in. */
-const shownDays = (page: Page) =>
-  page.getByTestId("weeks").evaluate((section) => {
-    const cells = [...section.querySelectorAll<HTMLElement>(".k2-cal-weeks [data-value]")];
+const axeSource = readFileSync(Bun.resolveSync("axe-core/axe.min.js", import.meta.dir), "utf8");
+
+/** The days the six weeks of a demo section show, in order, with the row and column they stand in. */
+const shownDays = (page: Page, testId = "weeks") =>
+  page.getByTestId(testId).evaluate((section) => {
+    const cells = [...section.querySelectorAll<HTMLElement>("[data-weeks] [data-value]")];
     const tops = [...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().top)))].sort((a, b) => a - b);
     const lefts = [...new Set(cells.map((cell) => Math.round(cell.getBoundingClientRect().left)))].sort((a, b) => a - b);
     return cells.map((cell) => ({
@@ -461,6 +464,9 @@ const shownDays = (page: Page) =>
       text: cell.textContent ?? "",
     }));
   });
+/** The first day a demo section's six weeks show, by the order of the days (no geometry). */
+const firstShown = (page: Page, testId = "weeks") =>
+  page.getByTestId(testId).locator("[data-weeks] [data-value]").first().getAttribute("data-value");
 
 for (const width of [1440, 390])
   test(`${width} px: late in a month the weeks start with this week and go on into the next months, one row per week`, async () => {
@@ -484,16 +490,60 @@ for (const width of [1440, 390])
         // where a month starts, its name stands; screen readers hear the whole date
         expect(first?.text).toBe("Dez");
         expect(days.find((day) => day.date === "2027-01-01")?.text).toBe("Jan");
-        expect(await weeks.locator('[data-value="2026-12-01"]').getAttribute("aria-label")).toContain("1. Dezember 2026");
+        expect(await weeks.locator('[data-value="2026-12-01"]').getAttribute("aria-label")).toBe("Dienstag, 1. Dezember 2026");
         expect(await weeks.locator(".k2-cal-t").textContent()).toBe("November 2026 – Januar 2027");
-        // days before `min` in this week are there but cannot be picked; screen readers hear the months as grids
         expect(await weeks.locator('[data-value="2026-11-24"]').getAttribute("aria-disabled")).toBe("true");
-        expect(await weeks.getByRole("grid").count()).toBe(3);
+        // ONE grid for screen readers: a row of seven column heads and six rows of seven days
+        const grid = weeks.getByRole("grid");
+        expect(await grid.count()).toBe(1);
+        expect(await grid.getByRole("row").count()).toBe(7);
+        expect(await grid.getByRole("columnheader").count()).toBe(7);
+        expect(await grid.getByRole("columnheader").first().getAttribute("aria-label")).toBe("Montag");
+        expect(await grid.getByRole("gridcell").count()).toBe(42);
         // the picker fits the window
         const picker = await box(page, '[data-testid="weeks"] .k2-dpick');
         expect(picker.x + picker.width).toBeLessThanOrEqual(width);
       },
       { width },
+    );
+  });
+
+test("the six weeks pass axe", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      await page.addScriptTag({ content: axeSource });
+      const violations = await page.evaluate(async () => {
+        const axe = (
+          window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: { id: string }[] }> } }
+        ).axe;
+        const result = await axe.run(
+          { include: [['[data-testid="weeks"]'], ['[data-testid="weeks-max"]']] },
+          { resultTypes: ["violations"] },
+        );
+        return result.violations.map((violation) => violation.id);
+      });
+      expect(violations).toEqual([]);
+    },
+  );
+});
+
+for (const lang of ["en-US", "de-u-fw-sun"])
+  test(`${lang}: the week starts on Sunday in the heads and in the days alike`, async () => {
+    await withPage(
+      () => dates,
+      "/dates",
+      async (page) => {
+        const grid = page.getByTestId("weeks").getByRole("grid");
+        expect(await grid.getByRole("columnheader").first().getAttribute("aria-label")).toBe(lang === "en-US" ? "Sunday" : "Sonntag");
+        expect(await firstShown(page)).toBe("2026-11-22");
+        // Home goes to the start of the week the heads show
+        await page.getByTestId("weeks").locator('[data-value="2026-11-25"]').focus();
+        await page.keyboard.press("Home");
+        expect(await focusedDay(page)).toBe("2026-11-22");
+      },
+      { lang },
     );
   });
 
@@ -503,42 +553,95 @@ test("the keys move the six weeks by whole weeks, never their height; the button
     "/dates",
     async (page) => {
       const weeks = page.getByTestId("weeks");
-      const height = (await box(page, '[data-testid="weeks"] .k2-cal-weeks')).height;
-      // the first day the six weeks show, by the order of the days (no geometry)
-      const first = () => weeks.locator(".k2-cal-weeks [data-value]").first().getAttribute("data-value");
+      const height = (await box(page, '[data-testid="weeks"] [data-weeks]')).height;
       await weeks.locator('[data-value="2026-11-25"]').focus();
       // a month ahead is still in the six weeks: nothing moves
       await page.keyboard.press("PageDown");
       expect(await focusedDay(page)).toBe("2026-12-25");
-      expect(await first()).toBe("2026-11-23");
+      expect(await firstShown(page)).toBe("2026-11-23");
       // another month ahead lies behind them: they move until its week is the last
       await page.keyboard.press("PageDown");
       expect(await focusedDay(page)).toBe("2027-01-25");
-      expect(await first()).toBe("2026-12-21");
+      expect(await firstShown(page)).toBe("2026-12-21");
       await page.keyboard.press("ArrowDown");
       expect(await focusedDay(page)).toBe("2027-02-01");
-      expect(await first()).toBe("2026-12-28");
-      // back up: the first week follows the focus
+      expect(await firstShown(page)).toBe("2026-12-28");
+      // back up: the first week follows the focus; never before `min`
       await page.keyboard.press("PageUp");
       await page.keyboard.press("PageUp");
       expect(await focusedDay(page)).toBe("2026-12-01");
-      expect(await first()).toBe("2026-11-30");
+      expect(await firstShown(page)).toBe("2026-11-30");
+      await page.keyboard.press("PageUp");
+      expect(await focusedDay(page)).toBe("2026-11-25");
+      expect(await firstShown(page)).toBe("2026-11-23");
       await settled(page);
-      expect((await box(page, '[data-testid="weeks"] .k2-cal-weeks')).height).toBe(height);
+      expect((await box(page, '[data-testid="weeks"] [data-weeks]')).height).toBe(height);
       // Enter picks the focused day
       await page.keyboard.press("Enter");
-      expect(await page.getByTestId("weeks-value").textContent()).toBe("2026-12-01");
-      // the buttons: six weeks on, and back, never before the week of `min`
+      expect(await page.getByTestId("weeks-value").textContent()).toBe("2026-11-25");
+      // the buttons: six weeks on, and back, never before the week of `min`; a blocked button keeps the focus
+      const back = weeks.getByRole("button", { name: "Sechs Wochen zurück" });
+      expect(await back.getAttribute("aria-disabled")).toBe("true");
       await weeks.getByRole("button", { name: "Sechs Wochen weiter" }).click();
-      expect(await first()).toBe("2027-01-11");
-      await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).click();
-      await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).click();
-      expect(await first()).toBe("2026-11-23");
-      expect(await weeks.getByRole("button", { name: "Sechs Wochen zurück" }).isDisabled()).toBe(true);
+      expect(await firstShown(page)).toBe("2027-01-04");
+      await back.click();
+      expect(await firstShown(page)).toBe("2026-11-23");
+      expect(await back.getAttribute("aria-disabled")).toBe("true");
+      await back.click();
+      expect(await firstShown(page)).toBe("2026-11-23");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Sechs Wochen zurück");
     },
   );
 });
 
+test("`max` ends the weeks: the next six are blocked and the keys stop at its day", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const weeks = page.getByTestId("weeks-max");
+      const next = weeks.getByRole("button", { name: "Sechs Wochen weiter" });
+      expect(await next.getAttribute("aria-disabled")).toBe("true");
+      await next.click();
+      expect(await firstShown(page, "weeks-max")).toBe("2026-11-23");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Sechs Wochen weiter");
+      await weeks.locator('[data-value="2026-12-25"]').focus();
+      await page.keyboard.press("PageDown");
+      expect(await focusedDay(page)).toBe("2026-12-31");
+      expect(await weeks.locator('[data-value="2027-01-01"]').getAttribute("aria-disabled")).toBe("true");
+    },
+  );
+});
+
+test("the weeks follow a value set from elsewhere and a change of the locale, with six rows always", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      await page.getByRole("button", { name: "Auf 1. März setzen" }).click();
+      expect(await page.getByTestId("weeks").locator('[data-value="2027-03-01"]').getAttribute("aria-selected")).toBe("true");
+      await page.getByRole("button", { name: "Wochen-Sprache wechseln" }).click();
+      const days = await shownDays(page, "weeks-switch");
+      expect(days[0]?.date).toBe("2026-11-22");
+      expect(days.length).toBe(42);
+      expect(new Set(days.map((day) => day.row)).size).toBe(6);
+      expect(await page.getByTestId("weeks-switch").getByRole("columnheader").first().getAttribute("aria-label")).toBe("Sunday");
+    },
+  );
+});
+
+test("without `min` the weeks start with today in the picker's zone, never the zone of the browser or the server", async () => {
+  // Sunday 29 November, 12:00 UTC: already Monday 30 November in Kiritimati (UTC+14), still Sunday in New York
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      expect(await firstShown(page, "weeks-zone")).toBe("2026-11-30");
+      expect(await firstShown(page, "weeks-utc")).toBe("2026-11-23");
+    },
+    { timezoneId: "America/New_York", at: new Date("2026-11-29T12:00:00Z") },
+  );
+});
 // ── DateInput ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("DateInput: a typed date applies on Enter, text that is no date marks the field, and the form sends the date key", async () => {
