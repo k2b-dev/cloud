@@ -105,3 +105,10 @@ test("a fixed width keeps a column and a table column without a grip", async () 
   expect(table({ ...fixed, fixed: false })).toContain("k2-cgrip");
   expect(table(fixed)).toContain("width:360px");
 });
+
+// A meter near or at its limit says so in colour too, as the chip beside it says it in words.
+test("a meter carries its state only when it has one", async () => {
+  const { Progress } = await import("./marks");
+  expect(renderToString(() => createComponent(Progress, { value: 120, of: 120, status: "bad" }))).toContain('data-status="bad"');
+  expect(renderToString(() => createComponent(Progress, { value: 9, of: 12 }))).not.toContain("data-status");
+});

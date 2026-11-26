@@ -145,6 +145,10 @@ const seatsChip = (seats: Seats) =>
 type Listed = Event & { day: "Heute" | "Diese Woche"; key: string };
 const listed = (events: Event[], day: Listed["day"]): Listed[] => events.map((event, index) => ({ ...event, day, key: `${day}-${index}` }));
 const taken = (seats: Seats) => seats.of - seats.free;
+/** The state of a meter of seats, as its chip says it: almost full, booked out. */
+const load = (seats: Seats) => (seats.free === 0 ? ("bad" as const) : few(seats) ? ("warn" as const) : undefined);
+/** Today's rooms in the order of the day, each with what runs there and its seats. */
+const halls = (events: Event[]) => events.map((event) => ({ room: event.room, title: event.title, seats: event.seats }));
 
 /**
  * The programme as one table grouped by day: the event with when and where, its type as a tag in its colour, who
@@ -164,7 +168,6 @@ const programme = (events: Listed[]) => (
     columns={[
       {
         title: "Veranstaltung",
-        width: { min: 240, default: 340, fixed: true },
         cell: (event) => ({ lines: [event.title, `${event.time} · ${event.room}`] }),
       },
       {
@@ -187,7 +190,14 @@ const programme = (events: Listed[]) => (
         title: "Belegt",
         width: { min: 172, default: 196, fixed: true },
         drop: true,
-        cell: (event) => <Progress value={taken(event.seats)} of={event.seats.of} label={`${taken(event.seats)}/${event.seats.of}`} />,
+        cell: (event) => (
+          <Progress
+            value={taken(event.seats)}
+            of={event.seats.of}
+            label={`${taken(event.seats)}/${event.seats.of}`}
+            status={load(event.seats)}
+          />
+        ),
       },
       { title: "Plätze", align: "end", cell: (event) => seatsChip(event.seats) },
     ]}
@@ -259,8 +269,6 @@ export default function VenueProgramme(props: Props) {
         <Pane side label="Ihr Besuch" width={{ min: 280, default: 360, fixed: true }}>
           <Section icon="armchair" color={brand.color} title="Plätze heute">
             <Row
-              icon="armchair"
-              color={brand.color}
               lines={[`${free()} von ${seats()} frei`, "über alle Veranstaltungen"]}
               end={<Progress value={seats() - free()} of={seats() || 1} label={`${seats() - free()}/${seats()}`} />}
             />
@@ -274,30 +282,28 @@ export default function VenueProgramme(props: Props) {
               ]}
             />
           </Section>
+          {/* the side column keeps one text edge: its section heads carry the marks, its rows and facts start alike */}
           <Section icon="building" color={brand.color} title="Säle">
-            <Row
-              icon="building"
-              color={brand.color}
-              lines={["Großer Saal", "Kammermusik · 120 Plätze"]}
-              end={<Progress value={120} of={120} label="120/120" />}
-            />
-            <Row
-              icon="building"
-              color={brand.color}
-              lines={["Saal 2", "Stadtgeschichten · 40 Plätze"]}
-              end={<Progress value={28} of={40} label="28/40" />}
-            />
-            <Row
-              icon="building"
-              color={brand.color}
-              lines={["Werkraum", "Holzwerkstatt · 12 Plätze"]}
-              end={<Progress value={9} of={12} label="9/12" />}
-            />
+            <For each={halls(events())}>
+              {(hall) => (
+                <Row
+                  lines={[hall.room, `${hall.title} · ${hall.seats.of} Plätze`]}
+                  end={
+                    <Progress
+                      value={taken(hall.seats)}
+                      of={hall.seats.of}
+                      label={`${taken(hall.seats)}/${hall.seats.of}`}
+                      status={load(hall.seats)}
+                    />
+                  }
+                />
+              )}
+            </For>
           </Section>
           <Show when={props.kiosk}>
             <Section icon="clock" color={brand.color} title="Als Nächstes">
               <For each={next}>
-                {(event) => <Row avatar={event.host} lines={[event.title, `${event.time} · ${event.room}`]} end={seatsChip(event.seats)} />}
+                {(event) => <Row lines={[event.title, `${event.time} · ${event.room}`]} end={seatsChip(event.seats)} />}
               </For>
             </Section>
           </Show>
