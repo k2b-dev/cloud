@@ -115,6 +115,11 @@ describe("the runs list on the server", () => {
     expect(tab?.getAttribute("aria-current")).toBe("page");
   });
 
+  test("a delivered notification whose mail bounced afterwards says so beside its delivery", () => {
+    const { text } = render("kind=delivery");
+    expect(text).toContain("Mia Muster · E-Mail · E-Mail: unzustellbar");
+  });
+
   test("a parameter the list cannot apply is named, not dropped", () => {
     expect(render("window=2d").text).toContain("window=2d");
   });

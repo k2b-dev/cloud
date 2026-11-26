@@ -27,6 +27,11 @@ export type RunRow = {
   durationMs: number | null;
   /** The kind's record outside this list (workflow run, dead letter); absent when the list opens the record itself. */
   recordHref?: string;
+  /**
+   * The mail behind an e-mail delivery, when its state says more than the delivery's: queued, sending, failed, bounced
+   * or cancelled. A delivered notification can still bounce later.
+   */
+  mail?: "queued" | "sending" | "failed" | "bounced" | "cancelled";
 };
 
 /** One kind's part of the list: its rows, how many there are when the store counts, and whether more follow. */
@@ -209,6 +214,7 @@ const deliveries = async (state: RunsState, paging: Paging, now: Date): Promise<
       appId: item.appId,
       name: item.title || item.label,
       detail: [item.recipientLabel, item.channel].filter(Boolean).join(" · "),
+      ...(item.outgoingMailStatus && item.outgoingMailStatus !== "sent" ? { mail: item.outgoingMailStatus } : {}),
       status: deliveryStatus(item.status),
       state: item.status,
       at: new Date(item.createdAt).toISOString(),
