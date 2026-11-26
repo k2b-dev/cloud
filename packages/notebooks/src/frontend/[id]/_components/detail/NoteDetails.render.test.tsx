@@ -80,20 +80,22 @@ describe("the note's details on v2", () => {
       const head = pane?.querySelector('[data-slot="head"]');
       expect(head?.querySelector('[data-k2-part="Mark"]')).not.toBeNull();
       expect(text(head?.querySelector(".k2-t-lead"))).toBe("Wareneingang");
-      expect(text(pane?.querySelector('[data-k2-part="Band"] .k2-t-meta'))).toBe("Erstellt am 13. Okt. 2026 von Paul Wagner");
+      expect(text(pane?.querySelector('[data-k2-part="Band"] .k2-t-meta'))).toMatch(/^Bearbeitet vor 12 .* von Jana Berger$/);
       const facts = pane?.querySelector('[data-k2-part="Band"]');
-      expect([...(facts?.querySelectorAll("dt") ?? [])].map((term) => text(term))).toEqual(["Bearbeitet", "Umfang", "Kommentare"]);
+      expect([...(facts?.querySelectorAll("dt") ?? [])].map((term) => text(term))).toEqual(["Erstellt", "Umfang", "Kommentare"]);
       const values = [...(facts?.querySelectorAll("dd") ?? [])].map((value) => text(value));
-      expect(values[0]).toMatch(/^Jana Berger · .*12/);
+      expect(values[0]).toBe("Paul Wagner · 13. Okt. 2026");
       expect(values[1]).toMatch(/^1 Wort · /);
       expect(values[2]).toBe("3");
     });
     inspect({}, (document) => expect(text(document.querySelectorAll('[data-k2-part="Band"] dd')[2])).toBe("Noch keine"));
   });
   test("calls the current editor and creator Du", () => {
-    inspect({ currentUserId: jana.id }, (document) => expect(text(document.querySelector('[data-k2-part="Band"] dd'))).toMatch(/^Du · /));
-    inspect({ currentUserId: creator.id }, (document) =>
+    inspect({ currentUserId: jana.id }, (document) =>
       expect(text(document.querySelector('[data-k2-part="Band"] .k2-t-meta'))).toMatch(/von dir$/),
+    );
+    inspect({ currentUserId: creator.id }, (document) =>
+      expect(text(document.querySelector('[data-k2-part="Band"] dd'))).toMatch(/^Du · /),
     );
   });
   test("AI only for writers in Write on an unlocked note; locked and read-only say so in the state line", () => {
