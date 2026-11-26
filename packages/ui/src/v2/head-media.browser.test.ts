@@ -242,6 +242,9 @@ test("a selection with six deeds shows three and 'Mehr' with the rest in their o
           ).toEqual(["0px", "0px", "80px"]);
         expect(found.deeds.slice(0, 3)).toEqual(["Teilen", "Verschieben", "Als ZIP laden"]);
         expect(found.deeds.length).toBe(4);
+        expect(found.deeds[3]).toBe("Mehr");
+        // where the bar shows symbols alone, "Mehr" names itself on hover as the deeds beside it do (review r8)
+        expect(await page.locator(".k2-status-actions > .k2-btn[data-menu]").getAttribute("title")).toBe("Mehr");
         expect(found.inside).toBe(true);
         // "Mehr" holds the rest in their order
         await page.locator(".k2-status-actions > .k2-btn[data-menu]").click();
@@ -742,12 +745,30 @@ test("a deep path with a chip after it gives way before the deeds; the chip is r
           chip: chip.scrollWidth <= chip.clientWidth + 1,
           apart: start.right <= end.left,
           page: current.scrollWidth <= current.clientWidth + 1,
-          // nothing between the path's links and the bar clips their focus ring
-          clip: getComputedStyle(document.querySelector("[data-slot='head'] .k2-inline > .k2-path")!).overflowX,
+          // nothing up to the bar clips the 3 px focus ring of the first link or of the menu "…": every ancestor that
+          // clips holds the ring whole (review r8)
+          clipped: ["[data-slot='head'] .k2-path > a:first-child", "[data-slot='head'] .k2-path > .k2-btn"].flatMap((selector) => {
+            const element = document.querySelector<HTMLElement>(selector)!;
+            const ring = element.getBoundingClientRect();
+            const cut: string[] = [];
+            for (let box = element.parentElement; box && !box.matches("[data-slot='head']"); box = box.parentElement) {
+              const style = getComputedStyle(box);
+              if (style.overflowX === "visible" && style.overflowY === "visible") continue;
+              const room = box.getBoundingClientRect();
+              if (
+                ring.left - 3 < room.left - 0.5 ||
+                ring.right + 3 > room.right + 0.5 ||
+                ring.top - 3 < room.top - 0.5 ||
+                ring.bottom + 3 > room.bottom + 0.5
+              )
+                cut.push(`${selector} in ${box.className}`);
+            }
+            return cut;
+          }),
         };
       });
       // a folder of everyday names ("Entwürfe") keeps its whole name beside its chip
-      expect(found).toEqual({ chip: true, apart: true, page: true, clip: "visible" });
+      expect(found).toEqual({ chip: true, apart: true, page: true, clipped: [] });
       const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
       expect(layout.problems).toEqual([]);
     },

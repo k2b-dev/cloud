@@ -90,6 +90,8 @@ export type TriggerProps = {
 export type MenuProps = TriggerProps & {
   /** The entries: items, sections under a heading, and `"separator"` between groups. */
   items: readonly MenuEntry[];
+  /** The words also show as a hint, where a narrow place shows the symbol alone (as among the deeds of a selection). */
+  titled?: boolean;
 };
 
 /**
@@ -354,6 +356,10 @@ const MenuRoot = (props: MenuProps) => {
   const words = resolveChildren(() => props.children);
   const iconOnly = () => words() === undefined;
   const name = () => props.label ?? t().moreActions;
+  const hint = () => {
+    const shown = words();
+    return typeof shown === "string" ? shown : undefined;
+  };
   let trigger: HTMLElement | undefined;
   const [align, setAlign] = createSignal<"start" | "end">("end");
   const level = useMenuLevels(() => ({
@@ -376,7 +382,7 @@ const MenuRoot = (props: MenuProps) => {
         // the "…" of a head stays on the phone, where the other buttons give way, so their deeds stay reachable
         data-keep={iconOnly() ? "" : undefined}
         aria-label={iconOnly() ? name() : undefined}
-        title={iconOnly() ? name() : undefined}
+        title={iconOnly() ? name() : props.titled ? hint() : undefined}
       >
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
