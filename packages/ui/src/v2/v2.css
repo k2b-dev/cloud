@@ -771,8 +771,8 @@
 }
 .k2-ui .k2-cell-value {
   grid-column: 2 / -1;
-  font: var(--k2-t-body);
-  font-weight: 600;
+  /* the cell's statement in the type of a statement (18), as large as the page's lead */
+  font: var(--k2-t-lead);
   /* a value is read whole: words wrap, a number (an amount chip) stays one */
   overflow-wrap: anywhere;
   margin-top: 4px;
