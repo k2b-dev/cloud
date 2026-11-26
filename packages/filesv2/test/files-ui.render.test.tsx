@@ -156,6 +156,20 @@ describe("Filesv2 server-rendered feedback", () => {
     expect(shares).not.toContain('data-k2-part="Loading"');
   });
 
+  test("a vanished item's batched step says it checks the batch in the first picture, as the browser's does", () => {
+    const moved = entry({
+      action: "item.move",
+      batchId: "batch-1",
+      before: gone("vertrieb/Kunden/Angebote 2025"),
+      after: current("vertrieb/Archiv/Angebote 2025", { itemId: "f1" }),
+    });
+    const html = screen("/app/filesv2?view=activity&q=Angebote+2025", {
+      activity: { filters: { q: "Angebote 2025" }, page: page([moved]) },
+    });
+    expect(html).toContain("Angebote 2025");
+    expect(html).toContain("Checking the other items");
+  });
+
   test("all inventory states have readable localized labels independent of color", () => {
     const html = renderToString(() => (
       <LocaleProvider locale="de">

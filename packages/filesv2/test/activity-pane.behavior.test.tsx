@@ -605,6 +605,30 @@ describe("Activity on UI v2", () => {
     expect(glance.textContent!.split("Team Vertrieb › Kunden")).toHaveLength(2);
   });
 
+  test("a search has no reset of its own, and a filter added to it is taken back to the plain search", async () => {
+    const moved = entry({ action: "item.move", before: gone("vertrieb/Kunden/Angebote 2025"), after: hidden });
+    await search([moved]);
+    expect(dom.root.querySelector(".k2-fbar-reset")).toBeNull();
+    cleanup();
+    dom = createDomTestHarness();
+    await pane([moved], { filters: { q: "Angebote 2025", action: "item.move" }, bases: [] });
+    expect(dom.root.querySelector(".k2-fbar-reset")).not.toBeNull();
+  });
+
+  test("the summary leaves out what it cannot say: one change each by different people, places and kinds", async () => {
+    await pane([
+      entry({ action: "file.upload", actor: valentin, after: live("vertrieb/Kunden/Angebot.pdf", { directory: false }) }),
+      entry({ action: "file.edit", after: live("vertrieb/Archiv/Plan.xlsx", { directory: false }) }),
+      entry({
+        action: "item.trash",
+        actor: { kind: "user", userId: "jana", name: "Jana Berger" },
+        before: live("vertrieb/Eingang/Alt.pdf", { directory: false }),
+      }),
+    ]);
+    expect(rows()).toHaveLength(3);
+    expect(dom.root.querySelector('[data-k2-part="List"][aria-label="Im Überblick"]')).toBeNull();
+  });
+
   /** A hop of the chain past `moved`, by Jana, at `time`. */
   const hop = (time: string) => ({
     activityId: `hop-${time}`,

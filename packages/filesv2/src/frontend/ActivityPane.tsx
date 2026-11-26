@@ -214,9 +214,12 @@ export default function ActivityPane(props: ActivityPaneProps) {
             query={props.query}
             state={props.state}
             onChange={props.onChange}
-            // "Zurücksetzen" leads back to where Activity starts: "Me".
-            // a search has no reset of its own: the search field's × takes it back
-            base={props.filters.q ? props.state : props.query.parse("view=activity&who=me").state}
+            // "Zurücksetzen" leads back to where Activity starts: "Me". A search starts at itself: it has no reset of its
+            // own (its field's × takes it back), and a filter added to it is taken back to the plain search
+            base={
+              props.query.parse(props.filters.q ? new URLSearchParams({ view: "activity", q: props.filters.q }) : "view=activity&who=me")
+                .state
+            }
             icons={FILTER_ICONS}
             names={props.who ? { who: [props.who] } : undefined}
             timeZone={props.env.timeZone}
