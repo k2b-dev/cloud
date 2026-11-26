@@ -492,6 +492,8 @@ describe("Pulse on v2", () => {
       "/app/pulse",
       `/app/pulse/${baseId}`,
       `/app/pulse/${baseId}/sources/s4Cc5Dd6`,
+      // the failing source open: its cause, hour and fetches at every width
+      `/app/pulse/${baseId}/sources/s7Ee8Ff9`,
       `/app/pulse/${baseId}/sql/q1Ab2Cd3`,
       `/app/pulse/${baseId}/queries`,
       `/app/pulse/${baseId}/settings`,
