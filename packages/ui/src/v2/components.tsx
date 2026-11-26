@@ -441,11 +441,7 @@ export const Path = (props: PathProps) => {
               fallback={
                 <Show when={item.href !== undefined} fallback={<span class="k2-path-step">{item.label}</span>}>
                   {/* a step to the page itself is no link (the first render stays the server's) */}
-                  <a
-                    class="k2-path-step"
-                    href={itself(item.href) ? undefined : item.href}
-                    title={item.label}
-                  >
+                  <a class="k2-path-step" href={itself(item.href) ? undefined : item.href} title={item.label}>
                     {item.label}
                   </a>
                 </Show>

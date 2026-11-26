@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
-import { markBarCreate, markBarPlace } from "./bar-place";
+import { BarPlaceContext, markBarCreate, markBarPlace } from "./bar-place";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
 import { Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
@@ -59,6 +59,8 @@ const isSection = (entry: MenuEntry): entry is MenuSection => entry !== "separat
 
 /** A menu's button carries its entries, so the "…" of its head can show them while the menu gives way. */
 const itemsKey = Symbol.for("k2b.ui.v2.menuItems");
+/** A link button carries its `onNavigate` (`Button`), so its entry in the "…" opens in place as the link does. */
+const navigateKey = Symbol.for("k2b.ui.v2.onNavigate");
 
 /** The element a part stands in, past the wrappers of islands, which draw no box. */
 const placeOf = (node: Element) => {
@@ -99,7 +101,13 @@ const foldedActions = (trigger: HTMLElement): MenuEntry[] => {
     const disabled = node.matches(":disabled, [aria-disabled='true']");
     const pressed = node.getAttribute("aria-pressed");
     const items: unknown = Reflect.get(node, itemsKey);
+    const href = node.getAttribute("href");
+    const onNavigate: unknown = Reflect.get(node, navigateKey);
     if (typeof items === "function") entries.push({ label, icon, disabled, items: items() });
+    // a link stays a link (its role, a click with Ctrl or the middle button), and opens in place as it does
+    else if (href !== null)
+      entries.push({ label, icon, href, ...(typeof onNavigate === "function" ? { onNavigate: onNavigate as OnNavigate } : {}) });
+    else if (node.localName === "a") entries.push({ label, icon, disabled: true });
     else entries.push({ label, icon, disabled, ...(pressed === null ? {} : { checked: pressed === "true" }), onClick: () => node.click() });
   };
   for (const child of end.children) visit(child);
@@ -429,7 +437,10 @@ const MenuRoot = (props: MenuProps) => {
         <TriggerFace icon={props.icon ?? (iconOnly() ? "dots" : undefined)} label={words()} iconOnly={iconOnly()} chevron={!iconOnly()} />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={entries()} />
+        {/* a menu's entries belong to the menu, not to the bar its button stands in */}
+        <BarPlaceContext.Provider value={undefined}>
+          <Entries level={level} entries={entries()} />
+        </BarPlaceContext.Provider>
       </level.Popup>
     </>
   );
@@ -461,7 +472,10 @@ export const MenuTab = (props: { items: readonly MenuEntry[]; current?: boolean;
         <Icon name="chevron-down" />
       </level.Trigger>
       <level.Popup class="k2-menu" data-k2-part="Menu" side="bottom" align={align()} sideOffset={4} collisionPadding={8}>
-        <Entries level={level} entries={props.items} />
+        {/* a menu's entries belong to the menu, not to the bar its button stands in */}
+        <BarPlaceContext.Provider value={undefined}>
+          <Entries level={level} entries={props.items} />
+        </BarPlaceContext.Provider>
       </level.Popup>
     </>
   );

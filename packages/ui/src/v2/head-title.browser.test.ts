@@ -204,10 +204,15 @@ for (const width of [1024, 390])
       await menu.getByRole("menuitem", { name: "Teilen" }).click();
       await settled(page);
       expect(await page.evaluate(() => window.__shared)).toBe(1);
-      // a link runs its own click, so it opens as the link does (its way of opening kept)
+      // a link stays a link there and opens in place as the link does: its onNavigate runs, and no page loads
+      const loads = await page.evaluate(() => performance.getEntriesByType("navigation").length);
       await page.getByRole("button", { name: "Space-Menü" }).click();
-      await page.locator('[data-k2-part="Menu"]:visible').getByRole("menuitem", { name: "Exportieren" }).click();
-      await page.waitForFunction(() => location.hash === "#export");
+      const link = page.locator('[data-k2-part="Menu"]:visible').getByRole("menuitem", { name: "Exportieren" });
+      expect(await link.getAttribute("href")).toBe("#export");
+      await link.click();
+      await settled(page);
+      expect(await page.evaluate(() => window.__exported)).toBe(1);
+      expect(await page.evaluate(() => performance.getEntriesByType("navigation").length)).toBe(loads);
     } finally {
       await page.close();
     }
