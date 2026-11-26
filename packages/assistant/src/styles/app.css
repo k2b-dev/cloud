@@ -118,12 +118,14 @@
 }
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol:not([data-empty])) {
     --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-head { display: none; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol:not([data-empty])) > .assistant-context-head {
+    display: none;
+  }
   /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol:not([data-empty]) {
     display: block;
     position: relative;
     z-index: 1;
@@ -576,6 +578,8 @@
 .k2b-ui .artifact-pane__body > .k2b-content-file-view[data-variant] > .k2b-content-code-display > .k2b-content-code-display__header { justify-content: flex-end; padding-inline: 0; }
 .k2b-ui .artifact-pane__body > .assistant-context-tab { margin: 0 -1rem -1rem; }
 .k2b-ui .artifact-pane[data-kind="web"] > .artifact-pane__body { padding: 0; }
+/* The v2 page's context tab holds v2 sections, which keep their own text edge: the v1 pane adds none of its own. */
+.k2b-ui .artifact-pane[data-kind="context"] > .artifact-pane__body:has(> [data-k2-part="Section"], > [data-k2-part="List"]) { padding: 0; }
 
 /* A web page in the reading view (concept 3l, stage 1): the address bar is the pane's head. */
 .web-reader { display: flex; flex: 1; flex-direction: column; min-height: 0; }

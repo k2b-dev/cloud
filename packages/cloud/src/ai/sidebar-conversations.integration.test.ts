@@ -64,4 +64,27 @@ suite("the sidebar's open chats", () => {
       await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
     }
   });
+
+  test("the counts say whether the person has archived chats, in their one statement", async () => {
+    const userId = await insertUser();
+    try {
+      const chat = await aiConversations.createConversation({ ownerUserId: userId, title: "Archived later" });
+      expect((await aiConversations.getConversationCounts({ ownerUserId: userId })).hasArchived).toBe(false);
+      await sql`UPDATE ai.conversations SET archived_at = now() WHERE id = ${chat.id}::uuid`;
+      const meter = await meterSql();
+      let counts: Awaited<ReturnType<typeof aiConversations.getConversationCounts>> | undefined;
+      try {
+        const statements = await meter.during(async () => {
+          counts = await aiConversations.getConversationCounts({ ownerUserId: userId });
+        });
+        expect(statements).toHaveLength(1);
+      } finally {
+        await meter.close();
+      }
+      expect(counts?.hasArchived).toBe(true);
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE created_by_user_id = ${userId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
 });

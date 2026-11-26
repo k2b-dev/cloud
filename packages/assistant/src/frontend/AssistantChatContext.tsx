@@ -16,7 +16,7 @@ import {
   useLocale,
 } from "@k2b/ui";
 import type { JSX } from "solid-js";
-import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, lazy, onCleanup, Show, Suspense } from "solid-js";
 import { assistantApi } from "../api/client";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -54,6 +54,9 @@ import { type AssistantLiveHub, type AssistantLiveInvalidation, matchesAssistant
 import { chatSidebarMessages } from "./chat-sidebar-messages";
 import { formatDictationTimestamp } from "./dictation-files";
 import { assistantBrowserCopy, useAssistantCopy, useAssistantText } from "./ui-copy";
+
+/** The v2 page's context tab loads its v2 rows on demand, so v1's panel never carries @k2b/ui/v2. */
+const ChatContextDetailsV2 = lazy(() => import("./v2/ChatContextDetailsV2"));
 
 export { splitAssistantConversationSources } from "./assistant-context";
 
@@ -717,6 +720,8 @@ export function AssistantChatContextContent(
     /** Jumps to a message in the chat; the Files tab offers it for results. */
     onJump?: (target: ChatSidebarJump) => void;
     onOpenSecrets?: () => void;
+    /** The v2 page: the tab "Kontext" shows its sections in v2's rows instead of v1's details. */
+    v2?: boolean;
   },
 ) {
   const state = createAssistantChatContextState(props);
@@ -733,6 +738,21 @@ export function AssistantChatContextContent(
       onOpenWebPage: props.onOpenWebPage,
     });
   // The tab "Context": what the chat works with, open, with its secrets.
+  if (props.category === "context" && props.v2)
+    return (
+      <Show when={state.snapshot()}>
+        {(snapshot) => (
+          <Suspense>
+            <ChatContextDetailsV2
+              snapshot={snapshot()}
+              project={props.project ?? null}
+              state={state}
+              actions={actions(props.onOpenView ?? (() => undefined))}
+            />
+          </Suspense>
+        )}
+      </Show>
+    );
   if (props.category === "context")
     return (
       <div class="assistant-context-tab">

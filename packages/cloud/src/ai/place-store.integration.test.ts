@@ -64,6 +64,7 @@ suite("personal place conversations", () => {
         unread: 0,
         needsAttention: 0,
         places: { total: 0, unread: 0, needsAttention: 0 },
+        hasArchived: false,
       });
       const { turn } = await aiConversations.submitChatTurn({
         conversationId: chat.id,

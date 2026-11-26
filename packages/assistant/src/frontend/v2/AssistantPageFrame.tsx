@@ -20,6 +20,8 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
   w.setContextHead(false);
   // The tabs' pane has the one way back on the phone; v1's own button above the tabs stays away.
   w.setTabsBackToChat(false);
+  // The tabs say each title once (on the chip) and show the chat's context in v2's rows.
+  w.setV2Tabs(true);
   const deeds = createAssistantChatDeeds({
     basePath: w.basePath,
     locale: w.locale,
@@ -65,6 +67,16 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         waitingCount: () => w.waiting().total,
         hasPersonalCode: () => Boolean(w.props.code?.has),
         placeChats: () => w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats ?? null,
+        anyChats: () => {
+          const counts = w.sidebar.data()?.counts ?? w.props.initialCounts;
+          const places = w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats;
+          return (
+            w.conversations().length > 0 ||
+            (w.sidebar.data()?.doneCount ?? w.props.initialDoneCount) > 0 ||
+            (places?.total ?? 0) > 0 ||
+            Boolean(counts?.hasArchived)
+          );
+        },
         moreConversations: () => w.sidebar.data()?.moreConversations ?? w.props.initialMoreConversations ?? false,
         openConversation: w.openAndFocusConversation,
         openProject: w.openProject,

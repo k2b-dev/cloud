@@ -373,6 +373,10 @@ export function AssistantChatContextPlaces(props: {
 }) {
   const copy = useCopy();
   const host = createChatContextHost({ onSheet: () => props.onSheet() });
+  const contextEmpty = () => {
+    const snapshot = props.state.snapshot();
+    return Boolean(snapshot && snapshot.results.length === 0 && snapshot.sourceCount === 0 && snapshot.fileCount === 0);
+  };
   createEffect(on(() => props.chatId, host.close, { defer: true }));
   const freeze = createReadingFreeze();
   /** In the popover, every action leaves the box: it closes first. */
@@ -417,7 +421,10 @@ export function AssistantChatContextPlaces(props: {
           </Button>
         </div>
       </Show>
-      <div class="assistant-context-boxcol">
+      {/* On the v2 page (no head row here) the column stands beside the timeline only with something to show: results,
+          sources or files; the chat's Project is named by the page's head. v1 keeps its column as it was, so its head
+          row and column never swap places while a chat streams. */}
+      <div class="assistant-context-boxcol" data-empty={props.head === false && contextEmpty() ? "" : undefined}>
         <AssistantChatContextBox
           variant="island"
           state={props.state}

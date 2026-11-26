@@ -20,6 +20,15 @@ import { assistantV2Messages } from "./assistant-v2-messages";
 /** A Tabler class as v1 stores it ("ti ti-folder") as the v2 name ("folder"). */
 export const iconName = (icon: string | null | undefined, fallback: string): string => icon?.trim().replace(/^ti\s+ti-/, "") || fallback;
 
+/**
+ * Where the list of every chat is offered: at the top while the sidebar holds every open chat, as "Weitere Chats …" at
+ * the list's end when it does not, and nowhere while the person has no chat at all (open, done, at a place or archived).
+ */
+export const chatListEntries = (state: { more: boolean; anyChats: boolean }) => ({
+  allChats: !state.more && state.anyChats,
+  moreChats: state.more,
+});
+
 export type AssistantNavOptions = {
   basePath: string;
   conversations: Accessor<AiConversation[]>;
@@ -35,6 +44,8 @@ export type AssistantNavOptions = {
   placeChats: Accessor<{ total: number; items: AiConversation[] } | null>;
   /** More open chats exist than the list holds; the last entry leads to the list of every chat. */
   moreConversations: Accessor<boolean>;
+  /** The person has any chat at all: open, done, at a place or archived. Without one, "Alle Chats" has nothing to list. */
+  anyChats: Accessor<boolean>;
   /** Opens a chat in place; false when it could not, and the address then loads as a page. */
   openConversation: (conversationId: string) => Promise<boolean>;
   openProject: (projectId: string) => Promise<boolean>;
@@ -219,6 +230,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
     () =>
       open();
 
+  const entries = () => chatListEntries({ more: options.moreConversations(), anyChats: options.anyChats() });
   const groups = createMemo((): NavGroup[] => {
     const view = options.activeView();
     const base = options.basePath;
@@ -243,11 +255,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
             } satisfies NavItem,
           ]
         : []),
-      // Every chat is one entry: here while the sidebar holds them all, as "Weitere Chats …" at the list's end when not,
-      // and none while there is no chat at all.
-      ...(options.moreConversations() || options.conversations().length === 0
-        ? []
-        : [{ label: t().allChats, icon: "messages", onClick: options.openAllChats }]),
+      ...(entries().allChats ? [{ label: t().allChats, icon: "messages", onClick: options.openAllChats }] : []),
     ];
     const projects: NavGroup = {
       label: t().projects,
@@ -300,7 +308,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
         : []),
     ];
     // The sidebar lists a bounded page of open chats; the older ones are one step away in the list of every chat.
-    const more: NavGroup[] = options.moreConversations()
+    const more: NavGroup[] = entries().moreChats
       ? [{ items: [{ label: v2().moreChats, icon: "dots", onClick: options.openAllChats }] }]
       : [];
     return [{ items: top }, projects, ...chats, ...more, ...(folded.length > 0 ? [{ items: folded }] : [])];

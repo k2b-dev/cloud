@@ -2275,7 +2275,7 @@
   column-gap: 12px;
 }
 /* in a selection the box stands before the thing's mark: a file keeps its thumbnail beside its box */
-.k2-ui .k2-row-lead:has(> .k2-mark + .k2-mk) {
+.k2-ui .k2-row-lead[data-pair] {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -2335,7 +2335,7 @@
    20 + (j - 1) × 18 + 30 px. A stack whose people all show
    (data-all) needs no count while its faces fit; narrower, a count takes the place of the faces that go. */
 @container k2-avs (max-width: 121.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2346,7 +2346,7 @@
   }
 }
 @container k2-avs (max-width: 103.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2357,7 +2357,7 @@
   }
 }
 @container k2-avs (max-width: 91.98px) {
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 5) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="4"] {
@@ -2366,7 +2366,7 @@
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest:not([data-visible="4"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="3"] {
@@ -2377,7 +2377,7 @@
   }
 }
 @container k2-avs (max-width: 85.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2386,7 +2386,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="2"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="2"] {
@@ -2397,7 +2397,7 @@
   }
 }
 @container k2-avs (max-width: 73.98px) {
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 4) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="3"] {
@@ -2406,7 +2406,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="3"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="2"] {
@@ -2417,7 +2417,7 @@
   }
 }
 @container k2-avs (max-width: 67.98px) {
-  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible] {
@@ -2426,7 +2426,7 @@
   .k2-ui .k2-avs:not([data-all]):is([data-k="2"], [data-k="3"], [data-k="4"], [data-k="5"]) > .k2-avs-rest[data-visible="1"] {
     display: inline;
   }
-  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="4"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest[data-visible="1"] {
@@ -2435,7 +2435,7 @@
   .k2-ui .k2-avs[data-all][data-k="4"] > .k2-avs-rest:not([data-visible="1"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="5"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="5"] > .k2-avs-rest[data-visible="1"] {
@@ -2446,7 +2446,7 @@
   }
 }
 @container k2-avs (max-width: 55.98px) {
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 3) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="2"] {
@@ -2455,7 +2455,7 @@
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest:not([data-visible="2"]) {
     display: none;
   }
-  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="3"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="3"] > .k2-avs-rest[data-visible="1"] {
@@ -2466,7 +2466,7 @@
   }
 }
 @container k2-avs (max-width: 37.98px) {
-  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:nth-of-type(n + 2) {
+  .k2-ui .k2-avs[data-all][data-k="2"] > .k2-av:is([data-place="2"], [data-place="3"], [data-place="4"], [data-place="5"]) {
     display: none;
   }
   .k2-ui .k2-avs[data-all][data-k="2"] > .k2-avs-rest[data-visible="1"] {

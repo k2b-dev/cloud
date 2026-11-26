@@ -161,6 +161,8 @@ export type AiConversationCounts = {
   unread: number;
   needsAttention: number;
   places: { total: number; unread: number; needsAttention: number };
+  /** The person has archived chats, which every other count leaves out. */
+  hasArchived: boolean;
 };
 export type AiConversationPlaceFilter = "none" | "any" | `${string}:${string}`;
 

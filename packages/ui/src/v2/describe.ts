@@ -168,7 +168,9 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       return `RecordHead ${quote(element.textContent)}${ids.length ? ` ids: ${ids.join(" · ")}` : ""}`;
     }
     if (name === "Path")
-      return `Path: ${[...element.querySelectorAll(":scope > a, :scope > span, :scope > b, :scope > button")].map((step) => (step.tagName === "BUTTON" ? "…" : clip(step.textContent ?? "", 24))).join(" › ")}`;
+      return `Path: ${kidsMatching(element, "a, span, b, button")
+        .map((step) => (step.tagName === "BUTTON" ? "…" : clip(step.textContent ?? "", 24)))
+        .join(" › ")}`;
     if (name === "Steps")
       return `Steps ${quote(element.getAttribute("aria-label"))}: ${[...element.querySelectorAll(".k2-step")]
         .map((step) => `${clip(step.querySelector(".k2-step-label")?.textContent ?? "", 20)} ${step.getAttribute("data-state")}`)
@@ -413,7 +415,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       case "Digest.Entry": {
         const text = (selector: string) => clip(element.querySelector(selector)?.textContent ?? "", 50);
         if (element.hasAttribute("data-activity"))
-          return `Entry @${element.querySelector(":scope > .k2-row-lead > .k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
+          return `Entry @${kid(kid(element, ".k2-row-lead"), ".k2-av")?.getAttribute("aria-label") ?? ""} ${quote(text(".k2-row-l1"))} · ${text(".k2-row-l2")}`;
         return `Entry ${text(".k2-digest-date")} ${quote(text(".k2-row-l1"))} (${text(".k2-digest-state")}): ${quote(text(".k2-digest-text"))}${element.tagName === "A" ? " opens link" : ""}`;
       }
       default:

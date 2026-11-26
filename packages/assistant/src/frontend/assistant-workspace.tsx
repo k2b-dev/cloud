@@ -357,6 +357,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
           onOpenView={openContextView}
           onJump={(target) => void jumpTo(target)}
           onOpenSecrets={openChatSecrets}
+          v2={v2Tabs()}
         />
       ),
     });
@@ -401,7 +402,12 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     initial: {
       source: "/api/assistant/workspace/sidebar",
       data: {
-        counts: props.initialCounts ?? { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+        counts: props.initialCounts ?? {
+          unread: 0,
+          needsAttention: 0,
+          places: { total: 0, unread: 0, needsAttention: 0 },
+          hasArchived: false,
+        },
         conversations: props.initialConversations,
         projects: props.projects,
         doneCount: props.initialDoneCount,
@@ -1907,6 +1913,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
   const [contextHead, setContextHead] = createSignal(true);
   // v1's "back to the chat" above the tabs on the phone; the v2 page's pane has its own way back.
   const [tabsBackToChat, setTabsBackToChat] = createSignal(true);
+  // The v2 page's tabs: the pane's head leaves the title to the tab chip, and "Kontext" shows v2's rows.
+  const [v2Tabs, setV2Tabs] = createSignal(false);
   const openContextSheet = () =>
     // The phone sheet loads when it opens.
     void import("./AssistantChatContextSheet")
@@ -3658,6 +3666,8 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
       >
         <ChatWorkspace
           backToChat={tabsBackToChat()}
+          paneTitles={!v2Tabs()}
+          contextV2={v2Tabs()}
           onOpenView={openContextView}
           project={activeConversationProject()}
           conversationId={chat.activeConversationId()}
@@ -3714,6 +3724,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     openContextSheet,
     setContextHead,
     setTabsBackToChat,
+    setV2Tabs,
     focusComposer,
     /** What belongs to the open chat (files, results, sources) as a tab beside it, "In diesem Chat". */
     openChatContext: (title: string) => openContextOverview("context", title),
