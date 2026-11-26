@@ -419,10 +419,19 @@ lines instead of cutting a thing.
   and "Mehr", which opens a sheet with the others and their counts and is
   the current tab while one of them is open (Escape and a place that opens in
   place close the sheet; the focus returns to "Mehr"). From
-  768 px it leaves and the app's `Nav` holds the places. `hidden` (or the
+  768 px it leaves and the app's `Nav` or `Rail` holds the places. `hidden` (or the
   `hidden` attribute on `.k2-tabbar`) steps it aside for a screen of its own,
   such as one chat with its composer at the bottom edge; floating notices
   then stand above the safe area alone.
+- `Rail`: `label`, `logo?`, `items` and `foot?` (`{ label, icon, href,
+  onNavigate?, current?, unread?, tone?: { light, dark } }[]`); the places of
+  an app from 768 px on the canvas beside its page, in the measures of
+  Cloud's app bar: 56 px, a 20 px symbol per place as a 44 px target, the
+  open one filled, the count on the symbol's corner, the `foot` (Settings)
+  always in view while the places scroll. Each place is a link in the tab
+  order, named by its words, which show as a hint to its right. Below
+  768 px it leaves; give the `TabBar` the same places. The platform sets its
+  colours (`--k2-rail-*`); Cloud sets the shell's.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
