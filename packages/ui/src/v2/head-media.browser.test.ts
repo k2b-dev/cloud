@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas";
 
 let browser: Browser;
 let client: string;
@@ -31,10 +31,15 @@ const withPage = async (which: Case, run: (page: Page) => Promise<void>, width =
   const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: touch });
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
+  // a real address, so a sort or filter chosen in the bar can write it
+  await page.route("http://head-media.test/**", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
+    }),
+  );
   try {
-    await page.setContent(
-      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style><style>${testCss}</style><script>window.__k2Case = ${JSON.stringify(which)};</script></head><body class="k2-ui"><div id="root"></div></body></html>`,
-    );
+    await page.goto("http://head-media.test/dateien");
     await page.addScriptTag({ content: client });
     await page.waitForFunction(() => window.__k2Mounted === true);
     await page.waitForFunction(() =>
@@ -56,6 +61,40 @@ const rect = (page: Page, selector: string) =>
       const box = element.getBoundingClientRect();
       return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, width: box.width, height: box.height };
     });
+
+test("on the phone how the list shows stays in reach: sort, grouping and display in one menu 'Ansicht'", async () => {
+  await withPage(
+    "closed",
+    async (page) => {
+      const button = page.locator(".k2-fbar-view").getByRole("button", { name: "Ansicht" });
+      expect(await button.isVisible()).toBe(true);
+      // at the end of the bar, inside the window
+      const box = (await button.boundingBox())!;
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      await button.click();
+      await settled(page);
+      const menu = page.getByRole("menu");
+      for (const title of ["Sortierung", "Darstellung"]) expect(await menu.getByText(title, { exact: true }).count()).toBe(1);
+      expect(await menu.getByRole("menuitemradio", { name: "Raster" }).count()).toBe(1);
+      // a sort chosen here writes the list's address, as the sort of the desktop does
+      await menu
+        .getByRole("menuitemradio", { name: /Geändert/ })
+        .first()
+        .click();
+      await settled(page);
+      expect(await page.evaluate(() => new URL(location.href).searchParams.get("sort"))).toMatch(/^changed\./);
+    },
+    390,
+  );
+  // a page, a menu and a sort that writes the address: about 4 s in WebKit, too close to the default 5 s
+}, 10_000);
+
+test("on the desktop the display is a menu of its own beside the order, and the phone's menu stays away", async () => {
+  await withPage("list", async (page) => {
+    expect(await page.locator(".k2-fbar-view").isVisible()).toBe(false);
+    expect(await page.locator(".k2-fbar-display").getByRole("button", { name: /Liste/ }).isVisible()).toBe(true);
+  });
+});
 
 test("the head has two full-width rows above list and detail: path and deeds, then the filter bar", async () => {
   await withPage("list", async (page) => {
@@ -106,6 +145,7 @@ test("media tiles: picture 4:3, a box that shows on hover and on every tile whil
     });
     expect(shape).toEqual({ wide: true, ratio: 1.33, box: "0" });
     await tile.hover();
+    await settled(page);
     expect(await tile.locator(".k2-tile-check").evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
     // the box is named by the tile's title and selects it
     await page.getByRole("checkbox", { name: "Ansicht Front Eiche.jpg" }).check();

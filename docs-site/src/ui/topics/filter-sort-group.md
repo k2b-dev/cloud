@@ -33,6 +33,7 @@ A page head has at most two full-width rows above its list and its detail: the p
 - **"+ Filter"** lists the fields, the common ones first. A field without a value is a dashed statement that applies once it has one. **"Zurücksetzen"** returns to the current view in one step.
 - **Sort and group** stand in words in the status row: "⇅ Fällig ↑" and "Nach Status", each a menu with one choice.
 - **On the phone** the bar is one line that scrolls sideways. Every tap opens the filter sheet: every field with its value, sort and group, and "Zurücksetzen" and "9 Aufträge zeigen" at the foot.
+- **How the list shows** goes to `display` as menu sections, such as list or grid. On the desktop each section is a menu at the bar's end; on the phone sort, grouping and display fold into one menu "Ansicht" at the end of the bar, so no choice is lost.
 - **Values that load.** A `lookup` field opens `Lookup`: a search that waits 200 ms, aborts an older search, shows placeholder rows while it loads, and says "Erneut versuchen" when it fails. `Lookup` also works in a form.
 
 The field kinds: `choice` (a listbox with ticks, counts with `counts: true`), `lookup`, `numberRange` ("Preis ab 500 €"), `dateRange` and `timeRange` ("Eingang letzte 30 Tage", read in the `timeZone` you pass, "UTC" by default), `bool` and `text`.
