@@ -1886,6 +1886,21 @@
 .k2-ui .k2-progress[data-status="bad"] .k2-progress-track > i {
   background: var(--k2-bad);
 }
+/* Forced colours drop fills: the track is a well of Canvas with a GrayText edge, the bar CanvasText, a state the
+   Highlight. The edge is an outline, so the track keeps its 4 px. */
+@media (forced-colors: active) {
+  .k2-ui .k2-progress-track {
+    forced-color-adjust: none;
+    background: Canvas;
+    outline: 1px solid GrayText;
+  }
+  .k2-ui .k2-progress .k2-progress-track > i {
+    background: CanvasText;
+  }
+  .k2-ui .k2-progress[data-status] .k2-progress-track > i {
+    background: Highlight;
+  }
+}
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
 .k2-ui .k2-btn {
@@ -2147,6 +2162,12 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
   font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+/* far from the limit the count keeps its room and shows nothing */
+.k2-ui .k2-input-count > [aria-hidden]:not([data-shown]) {
+  visibility: hidden;
 }
 .k2-ui .k2-input[data-multiline] > .k2-input-count {
   align-self: flex-end;

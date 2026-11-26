@@ -325,22 +325,48 @@ export const Input = (props: InputProps) => {
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const t = useControlMessages();
-  // the length of the text, for the count near the limit: the given value, then each change in the field
+  // The length of the text, for the count near the limit: the given value, each change in the field, a value a script
+  // sets and a form's reset. A count needs a limit of 5 or more; below, the limit says enough.
   const [length, setLength] = createSignal((props.value ?? "").length);
   createRenderEffect(() => setLength((props.value ?? "").length));
   const counted = (event: { currentTarget: { value: string } }) => setLength(event.currentTarget.value.length);
-  const near = () => {
-    const max = props.maxLength;
-    return props.count === true && max !== undefined && length() >= max - Math.max(1, Math.ceil(max / 5));
-  };
+  const counting = () => props.count === true && props.maxLength !== undefined && props.maxLength >= 5;
+  const max = () => props.maxLength ?? 0;
+  const near = () => counting() && length() >= max() - Math.ceil(max() / 5);
+  // a value over the limit (one the server sent): the count shows it, and the field says it is wrong
+  const over = () => counting() && length() > max();
   const countId = createUniqueId();
+  const followValue = (element: HTMLInputElement | HTMLTextAreaElement) => {
+    if (!counting()) return;
+    // a value a script sets fires no input event: the field's own value setter tells the count
+    const own = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value");
+    if (own?.get && own.set) {
+      const { get, set } = own;
+      Object.defineProperty(element, "value", {
+        configurable: true,
+        get() {
+          return get.call(this);
+        },
+        set(next: string) {
+          set.call(this, next);
+          setLength(String(get.call(this)).length);
+        },
+      });
+    }
+    // a form's reset puts the value back without an event of the field
+    const reset = (event: Event) => {
+      if (event.target instanceof HTMLFormElement && event.target.contains(element)) setTimeout(() => setLength(element.value.length));
+    };
+    document.addEventListener("reset", reset);
+    onCleanup(() => document.removeEventListener("reset", reset));
+  };
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,
     placeholder: props.placeholder,
     value: props.value ?? "",
     "aria-label": field ? undefined : props.label,
-    "aria-invalid": field?.invalid ? ("true" as const) : undefined,
+    "aria-invalid": field?.invalid || over() ? ("true" as const) : undefined,
     "aria-describedby": [field?.described, near() ? countId : undefined].filter(Boolean).join(" ") || undefined,
     required: field?.required || undefined,
     disabled: props.disabled,
@@ -373,7 +399,7 @@ export const Input = (props: InputProps) => {
       }}
       class="k2-input"
       data-k2-part="Input"
-      data-invalid={field?.invalid ? "" : undefined}
+      data-invalid={field?.invalid || over() ? "" : undefined}
       data-disabled={props.disabled ? "" : undefined}
       data-multiline={props.multiline ? "" : undefined}
       data-search={props.type === "search" ? "" : undefined}
@@ -387,6 +413,7 @@ export const Input = (props: InputProps) => {
             {...shared()}
             ref={(element) => {
               input = element;
+              followValue(element);
               forwardRef(props.ref, element);
             }}
             tabIndex={hosted() ? -1 : undefined}
@@ -409,7 +436,10 @@ export const Input = (props: InputProps) => {
             one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
-          ref={(element) => forwardRef(props.ref, element)}
+          ref={(element) => {
+            followValue(element);
+            forwardRef(props.ref, element);
+          }}
           onInput={(event) => {
             counted(event);
             props.onInput?.(event.currentTarget.value);
@@ -419,13 +449,16 @@ export const Input = (props: InputProps) => {
           {isServer ? `\n${props.value ?? ""}` : undefined}
         </textarea>
       </Show>
-      {/* the count near the limit: seen as "18 / 20", heard as "18 von 20 Zeichen" */}
-      <Show when={near()}>
-        <span class="k2-input-count" id={countId}>
-          <span aria-hidden="true">
-            {length()} / {props.maxLength}
+      {/* The count near the limit: seen as "18 / 20", described as "18 von 20 Zeichen". Its room is kept from the start
+          (as wide as the largest count), so the text never changes its width while someone types. */}
+      <Show when={counting()}>
+        <span class="k2-input-count" id={countId} style={{ "inline-size": `${2 * String(max()).length + 3}ch` }}>
+          <span aria-hidden="true" data-shown={near() ? "" : undefined}>
+            {length()} / {max()}
           </span>
-          <span class="k2-hidden-text">{t().characters({ count: length(), max: props.maxLength ?? 0 })}</span>
+          <Show when={near()}>
+            <span class="k2-hidden-text">{t().characters({ count: length(), max: max() })}</span>
+          </Show>
         </span>
       </Show>
       <Show when={end() !== undefined}>

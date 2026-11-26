@@ -31,6 +31,38 @@ afterAll(async () => {
   await browser?.close();
 });
 
+test("progress in forced colours: the track a Canvas well with a GrayText edge, the bar CanvasText, a state Highlight", async () => {
+  const page = await browser.newPage();
+  try {
+    await page.emulateMedia({ forcedColors: "active" });
+    await page.setContent(`<!doctype html><html lang="de"><head><style>${css}</style></head><body class="k2-ui">${bars}</body></html>`);
+    await settled(page);
+    const found = await page.evaluate(() => {
+      const system = (value: string) => {
+        const probe = document.createElement("i");
+        probe.style.color = value;
+        document.body.append(probe);
+        const out = getComputedStyle(probe).color;
+        probe.remove();
+        return out;
+      };
+      const track = getComputedStyle(document.querySelector(".k2-progress-track")!);
+      const fills = [...document.querySelectorAll(".k2-progress-track > i")].map((bar) => getComputedStyle(bar).backgroundColor);
+      return {
+        track: [track.backgroundColor, `${track.outlineStyle} ${track.outlineWidth} ${track.outlineColor}`],
+        fills,
+        expected: {
+          track: [system("Canvas"), `solid 1px ${system("GrayText")}`],
+          fills: [system("CanvasText"), system("CanvasText"), system("Highlight"), system("Highlight")],
+        },
+      };
+    });
+    expect({ track: found.track, fills: found.fills }).toEqual(found.expected);
+  } finally {
+    await page.close();
+  }
+});
+
 test("progress: a data bar in the soft colour of its app (its own `color` for another app), green and red only as named states", async () => {
   for (const theme of [undefined, "dark"] as const) {
     const page = await browser.newPage();

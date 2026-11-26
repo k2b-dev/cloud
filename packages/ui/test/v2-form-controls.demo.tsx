@@ -115,6 +115,13 @@ export function Demo() {
         {/* a form that sends what it holds: uncontrolled tags, a locked list, a required image, a slider and a colour */}
         <form id="sent" onSubmit={(event) => event.preventDefault()}>
           <Band>
+            {/* a value from the server that is longer than the limit, and a limit too short for a count */}
+            <Field name="short" label="Kurzname">
+              <Input maxLength={10} count value="Lager Nord-West" />
+            </Field>
+            <Field name="code" label="Kürzel">
+              <Input maxLength={3} count value="AB" />
+            </Field>
             <Field name="hosts" label="Server">
               <TagsInput value={["mx1.example"]} />
             </Field>

@@ -61,13 +61,19 @@ test("text with a limit: the count shows once the text nears it, a screen reader
   await withPage(async (page) => {
     const input = page.getByRole("textbox", { name: "Titel der Seite" });
     const count = page.locator('[data-k2-part="Input"]:has(input[name="title"]) .k2-input-count');
-    // far from the limit: no count, nothing described
-    expect(await count.count()).toBe(0);
+    const shown = () => count.locator('[aria-hidden="true"]').evaluate((numbers) => getComputedStyle(numbers).visibility);
+    const width = () => input.evaluate((element) => element.getBoundingClientRect().width);
+    // far from the limit: the count keeps its room but shows nothing, and describes nothing
+    expect(await shown()).toBe("hidden");
     expect(await input.getAttribute("aria-describedby")).toBeNull();
+    const before = await width();
     // in the last fifth (16 of 20): the count shows, and the field is described by it
     await input.fill("Anmeldung per Code");
     await settled(page);
+    expect(await shown()).toBe("visible");
     expect(await count.locator('[aria-hidden="true"]').textContent()).toBe("18 / 20");
+    // the text keeps its width when the count shows: nothing moves while someone types
+    expect(await width()).toBe(before);
     const described = await input.getAttribute("aria-describedby");
     expect(await page.evaluate((id) => document.getElementById(id ?? "")?.textContent, described)).toContain("18 von 20 Zeichen");
     // the browser takes no more than the limit
@@ -80,6 +86,36 @@ test("text with a limit: the count shows once the text nears it, a screen reader
     expect(
       await page.locator('[data-k2-part="Input"]:has(input[name="title"])').evaluate((field) => field.getBoundingClientRect().height),
     ).toBe(36);
+  });
+});
+
+test("text with a limit: a value over it is marked, a count needs a limit of 5 or more, reset and script keep it right", async () => {
+  await withPage(async (page) => {
+    const short = page.getByRole("textbox", { name: "Kurzname" });
+    const numbers = page.locator('[data-k2-part="Input"]:has(input[name="short"]) .k2-input-count [aria-hidden="true"]');
+    // a value from the server over the limit: its count shows it, and the field says it is wrong
+    expect(await numbers.textContent()).toBe("15 / 10");
+    expect(await short.getAttribute("aria-invalid")).toBe("true");
+    // a limit of 3 is no place for a count
+    expect(await page.locator('[data-k2-part="Input"]:has(input[name="code"]) .k2-input-count').count()).toBe(0);
+    // shortened by a person: no longer wrong, and far from the limit
+    await short.fill("Lager");
+    await settled(page);
+    expect(await short.getAttribute("aria-invalid")).toBeNull();
+    expect(await numbers.evaluate((element) => getComputedStyle(element).visibility)).toBe("hidden");
+    // a form's reset brings the value back, and its count with it
+    await page.evaluate(() => (document.getElementById("sent") as HTMLFormElement).reset());
+    await settled(page);
+    const back = await short.inputValue();
+    expect(back).not.toBe("Lager");
+    expect(await numbers.textContent()).toBe(`${back.length} / 10`);
+    // a value a script sets counts too
+    await short.evaluate((element) => {
+      (element as HTMLInputElement).value = "Lager Nord";
+    });
+    await settled(page);
+    expect(await numbers.textContent()).toBe("10 / 10");
+    expect(await short.getAttribute("aria-invalid")).toBeNull();
   });
 });
 
