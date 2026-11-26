@@ -11,9 +11,6 @@ export default function NeighborhoodDisplay(
   props: GraphDisplayProps & {
     depth: 1 | 2;
     onCentre: (id: string) => void;
-    onNetwork: () => void;
-    onResetFilters: () => void;
-    noteHref: (id: string) => string;
     /** Hands the focus to the frame's way out when the new centre has no visible links. */
     focusEmpty: () => void;
     /** The frame's way out, which stands here instead of the canvas while the centre has no visible links. */

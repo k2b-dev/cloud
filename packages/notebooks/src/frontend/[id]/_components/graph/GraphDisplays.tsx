@@ -15,8 +15,6 @@ import { DEFAULT_GRAPH_DISPLAY, PHONE_GRAPH_DISPLAY } from "./view-state";
 export default function GraphDisplays(props: {
   graph: GraphProps;
   view: GraphView;
-  /** What stands over the drawing without moving it, such as Book's live-update notice. */
-  overlay?: JSX.Element;
   /** Hands the focus to the way out that replaces Umgebung when a new centre has no visible links. */
   focusEmpty: () => void;
   /** What stands in Umgebung's place around a note without visible links: the frame's way out. */
@@ -75,20 +73,24 @@ export default function GraphDisplays(props: {
       displayName={graphDisplayLabel("neighborhood", t())}
       depth={g().state().depth}
       onCentre={g().recenter}
-      onNetwork={() => g().leaveEmpty({ display: "network" })}
-      onResetFilters={g().resetFilters}
-      noteHref={g().noteHref}
       focusEmpty={props.focusEmpty}
       empty={props.neighborhoodEmpty}
     />
   );
   return (
     <div class="notebook-graph" data-display={g().display() ?? undefined}>
-      {props.overlay}
       {/* A large notebook draws the pages around one page; the line says so from the first paint, so nothing moves. */}
       <Show when={props.graph.graph.scope}>
         {(scope) => (
-          <p class="notebook-graph__scope" role="note">
+          <p
+            class="notebook-graph__scope"
+            role="note"
+            title={t().graphScopeHelp({
+              shown: g().model.notes.length,
+              total: scope().total,
+              title: g().model.byId.get(scope().around)?.title || t().untitled,
+            })}
+          >
             <i class="ti ti-zoom-in-area" aria-hidden="true" />
             <span>
               {t().graphScope({

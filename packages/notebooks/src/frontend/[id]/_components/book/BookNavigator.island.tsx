@@ -6,7 +6,7 @@ import BookNavigatorBody, { type BookNavigatorProps, useBookNavigator } from "./
 
 export type { BookNavigatorProps, BookTreeNode } from "./BookNavigatorBody";
 
-/** Book's navigation in the v1 frame (Book's graph, until it runs on v2): the body in a resizable sidebar. */
+/** Book's navigation in the v1 frame: only test harnesses still use it, until the v1 sidebars' cleanup. */
 export default function BookNavigator(props: BookNavigatorProps) {
   const navigator = useBookNavigator(props);
   const { workspaceText, state, navigationHidden, mobileNavigation } = navigator;

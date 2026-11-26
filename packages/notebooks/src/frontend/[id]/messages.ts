@@ -185,11 +185,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphFixedPointerHints: "Click opens · Drag background pans · Scroll zooms",
       graphLocalEmpty: ({ title }: { title: string }) => `“${title}” is not linked yet`,
       graphLocalFilteredTitle: ({ title }: { title: string }) => `No link of “${title}” matches the filters`,
-      graphLocalDescription: "No other note links here, and this note does not link anywhere yet. Insert links in the editor with",
-      graphLocalFiltered: "The current filters hide all links of this note.",
       graphShowWholeNotebook: "Show whole notebook",
       graphUnavailable: "The graph could not be loaded.",
-      graphGoToNote: "Go to note",
       graphFind: "Find note",
       graphFindLabel: "Find a note in the graph",
       graphHits: ({ count }: { count: number }) => (count === 1 ? "1 match" : `${count} matches`),
@@ -201,6 +198,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphAreas: "Areas",
       graphTopLevel: "Top level",
       graphScope: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
+        `${shown.toLocaleString("en")} of ${total.toLocaleString("en")} pages, around “${title}”`,
+      graphScopeHelp: ({ shown, total, title }: { shown: number; total: number; title: string }) =>
         `This notebook has ${total.toLocaleString("en")} pages. The graph shows the ${shown.toLocaleString("en")} around “${title}”: its links, their links, its sub-pages and their places in the notebook. To see the pages around another page, move it to the center in Neighborhood or open the graph from there.`,
       graphNoteCount: ({ notes, links }: { notes: number; links: number }) =>
         `${notes === 1 ? "1 note" : `${notes} notes`} · ${links === 1 ? "1 link" : `${links} links`}`,
@@ -766,12 +765,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphFixedPointerHints: "Klicken öffnet · Hintergrund ziehen verschiebt · Mausrad zoomt",
       graphLocalEmpty: ({ title }) => `„${title}“ ist noch nicht verknüpft`,
       graphLocalFilteredTitle: ({ title }) => `Keine Verknüpfung von „${title}“ passt zu den Filtern`,
-      graphLocalDescription:
-        "Keine andere Notiz verweist hierher, und diese Notiz verweist noch nirgendwohin. Verweise fügst du im Editor mit",
-      graphLocalFiltered: "Die aktuellen Filter blenden alle Verknüpfungen dieser Notiz aus.",
       graphShowWholeNotebook: "Ganzes Notizbuch zeigen",
       graphUnavailable: "Der Graph konnte nicht geladen werden.",
-      graphGoToNote: "Zur Notiz",
       graphFind: "Notiz finden",
       graphFindLabel: "Notiz im Graph finden",
       graphHits: ({ count }) => `${count} Treffer`,
@@ -782,7 +777,8 @@ export const notebookWorkspaceMessages = i18n.define({
       graphLinksUnlinked: "Nur ohne Verknüpfung",
       graphAreas: "Bereiche",
       graphTopLevel: "Oberste Ebene",
-      graphScope: ({ shown, total, title }) =>
+      graphScope: ({ shown, total, title }) => `${shown.toLocaleString("de")} von ${total.toLocaleString("de")} Seiten rund um „${title}“`,
+      graphScopeHelp: ({ shown, total, title }) =>
         `Dieses Notizbuch hat ${total.toLocaleString("de")} Seiten. Der Graph zeigt die ${shown.toLocaleString("de")} rund um „${title}“: ihre Links, deren Links, ihre Unterseiten und deren Orte im Notizbuch. Um die Seiten um eine andere Seite zu sehen, bringe sie in Umgebung in die Mitte oder öffne den Graphen von dort.`,
       graphNoteCount: ({ notes, links }) =>
         `${notes === 1 ? "1 Notiz" : `${notes} Notizen`} · ${links === 1 ? "1 Verknüpfung" : `${links} Verknüpfungen`}`,

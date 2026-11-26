@@ -353,8 +353,10 @@ describe("version history restore", () => {
       await flush();
       menu = await openMenu();
       expect(radios(menu)).toHaveLength(2);
-      radios(menu)[0]!.click();
-      await flush();
+      // the version Retry brought in can be compared with
+      radios(menu)[1]!.click();
+      await waitFor(() => dom.root.textContent?.includes("Old line") ?? false);
+      expect(dom.root.textContent).toContain("+1 −1");
     });
 
     test("switching between Content and Changes loads the 100 once", async () => {

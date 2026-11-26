@@ -72,10 +72,10 @@ export default function BookGraphLive(props: Props) {
       window.removeEventListener(NOTE_SOFT_NAVIGATED_EVENT, onSoftNavigated);
     });
   });
-  // Over the graph, not in its flow, so the notice moves nothing when it appears. It starts below the graph's two
-  // toolbar rows, so it never covers Close, the search or the filters.
+  // Over the page, not in its flow, so the notice moves nothing when it appears. It starts below the workspace head and
+  // the pane head, so it never covers Close, the search or the filters.
   return (
-    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none absolute inset-x-0 z-20 flex justify-center px-12">
+    <div aria-live="polite" class="notebook-graph-live-notice pointer-events-none fixed inset-x-0 z-20 flex justify-center px-12">
       <Show when={failed()}>
         <NoticeCard role="alert" tone="danger" title={t().updateLoadFailed} class="pointer-events-auto max-w-md">
           <Button variant="secondary" size="xs" loading={retrying()} onClick={retry}>
