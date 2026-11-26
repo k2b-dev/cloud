@@ -17,7 +17,6 @@ import {
   ListOrder,
   Menu,
   Nav,
-  type NavGroup,
   Notice,
   Pane,
   Row,
@@ -101,7 +100,6 @@ export default function VenueScreen(props: VenueWorkspaceProps) {
     actions.abortAll();
   });
   const canJoinShifts = () => canWrite(venue()) && venue().signupMode !== "free";
-  const viewHref = (next: VenueView) => `/app/venue/${venue().id}/${next}`;
 
   const reconcileDashboard = async (success?: string): Promise<boolean> => {
     try {

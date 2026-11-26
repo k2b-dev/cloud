@@ -18,7 +18,6 @@ import {
   Nav,
   Notice,
   Pane,
-  Path,
   Row,
   Section,
   Select,
@@ -39,7 +38,7 @@ import { PublicLinkDialog } from "./LinkDialogs";
 import { useVenueWords } from "./messages";
 import { iconName } from "./VenueOverviewScreen";
 import type { VenueSettingsTab } from "./venue-nav";
-import { venueNav, venueSettingsHref, venueViewHref } from "./venue-nav";
+import { venueNav, venueSettingsHref } from "./venue-nav";
 
 export type VenueSettingsContext = Pick<VenueDashboard, "venue" | "openingRules" | "overrides" | "templates"> & {
   accessEntries: AccessEntry[];
