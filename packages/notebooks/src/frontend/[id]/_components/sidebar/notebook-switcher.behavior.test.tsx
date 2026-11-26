@@ -218,6 +218,32 @@ describe("notebooks container switcher loader", () => {
     }
   });
 
+  test("templates that cannot be read, or none, say so instead of an empty form", async () => {
+    const { prompts } = await import("@k2b/ui");
+    const form = spyOn(prompts, "form");
+    const error = spyOn(prompts, "error").mockResolvedValue(undefined);
+    const view = await mount(true);
+    try {
+      for (const answer of [
+        { ok: true, json: async () => Promise.reject(new SyntaxError("Unexpected token <")) },
+        { ok: true, json: async () => [] },
+        { ok: false, json: async () => ({}) },
+      ]) {
+        listTemplates.mockImplementationOnce(async () => answer as Awaited<ReturnType<typeof listTemplates>>);
+        view.switcher().actions?.[1]?.action?.();
+        for (let attempt = 0; attempt < 30 && view.switcher().actions?.[1]?.disabled; attempt++) await settle();
+        expect(view.switcher().actions?.[1]?.disabled).toBe(false);
+      }
+      expect(error.mock.calls.map((call) => call[0])).toEqual(Array(3).fill("The templates could not be loaded."));
+      expect(form).not.toHaveBeenCalled();
+      expect(postTemplate).not.toHaveBeenCalled();
+    } finally {
+      error.mockRestore();
+      form.mockRestore();
+      view.dispose();
+    }
+  });
+
   test("cancelling creation makes no request and enables the action again", async () => {
     const { prompts } = await import("@k2b/ui");
     const form = spyOn(prompts, "form").mockResolvedValue(null);

@@ -4,17 +4,14 @@ import {
   parseFullWidth,
   parseLastNotebookId,
   parseNavigationHidden,
-  parsePinnedNotebookIds,
   parseSettings,
   readFullWidth,
   readNavigationHidden,
-  readPinnedNotebookIds,
   readSettings,
   readTabMovesFocus,
   setDetailPanelOpen,
   setFullWidth,
   setLastNotebookId,
-  setPinnedNotebookIds,
   setTabMovesFocus,
   writeNavigationHidden,
   writeSettings,
@@ -65,8 +62,6 @@ describe("NotebookSettingsStore", () => {
     )}`;
     const expectDefaults = () => {
       expect(parseLastNotebookId(cookieHeader())).toBeNull();
-      expect(readPinnedNotebookIds()).toEqual([]);
-      expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
       expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
       expect(readNavigationHidden()).toBe(false);
       expect(parseNavigationHidden(cookieHeader())).toBe(false);
@@ -85,13 +80,11 @@ describe("NotebookSettingsStore", () => {
     writeNavigationHidden(true);
     setTabMovesFocus(true);
     setFullWidth(true);
-    setPinnedNotebookIds(["Book01"]);
     writeSettings("first", { richMode: "source" });
     setDetailPanelOpen(false);
     writeNavigationHidden(false);
     setTabMovesFocus(false);
     setFullWidth(false);
-    setPinnedNotebookIds([]);
     writeSettings("first", { richMode: "rich" });
     expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({});
     expectDefaults();
@@ -139,7 +132,6 @@ describe("NotebookSettingsStore", () => {
     writeSettings("second", { treeSort: "created" });
     writeNavigationHidden(false);
     setDetailPanelOpen(true);
-    setPinnedNotebookIds(["Book01"]);
     setLastNotebookId("second");
     expect(readFullWidth()).toBe(true);
     expect(parseFullWidth(cookieHeader())).toBe(true);
@@ -191,11 +183,10 @@ describe("NotebookSettingsStore", () => {
     expect(decodeURIComponent(cookie)).toContain(COOKIE_NAME);
   });
 
-  test("persists a bounded, unique pinned notebook order for server rendering", () => {
-    setPinnedNotebookIds(["Book02", "Book01", "Book02", "invalid-id"]);
-
-    expect(readPinnedNotebookIds()).toEqual(["Book02", "Book01"]);
-    expect(parsePinnedNotebookIds(cookieHeader())).toEqual(["Book02", "Book01"]);
+  test("drops the pinned notebooks of the former overview on the next write", () => {
+    cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify({ lastNotebookId: "Book01", pinnedNotebookIds: ["Book02"] }))}`;
+    setFullWidth(true);
+    expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({ lastNotebookId: "Book01", fullWidth: true });
   });
 
   test("keeps the hidden navigation for every notebook and for server rendering", () => {
@@ -224,7 +215,6 @@ describe("NotebookSettingsStore", () => {
     expect(readSettings("first")).toEqual({ lastNoteId: null, richMode: "rich", treeSort: "title" });
     expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
     expect(parseNavigationHidden(cookieHeader())).toBe(false);
-    expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
   });
 
   test("a cookie from the Navigator layout keeps every other preference and drops the removed ones on the next write", () => {
@@ -251,7 +241,6 @@ describe("NotebookSettingsStore", () => {
 
     expect(JSON.parse(decodeURIComponent(cookie.slice(COOKIE_NAME.length + 1)))).toEqual({
       lastNotebookId: "Book02",
-      pinnedNotebookIds: ["Book02"],
       detailPanelOpen: true,
       navigationHidden: true,
       tabMovesFocus: true,

@@ -57,12 +57,15 @@ export function createNotebookCreation(t: Accessor<ReturnType<typeof notebooksPa
 
   /** The built-in templates, then the name; an empty name takes the template's. */
   const createFromTemplate = async () => {
-    const response = await apiClient.templates.$get().catch(() => null);
-    if (!response?.ok) {
+    // a failed request, an answer that is no list, and no template at all end the same way: no form, one notice
+    const templates = await apiClient.templates
+      .$get()
+      .then((response) => (response.ok ? response.json() : []))
+      .catch(() => []);
+    if (templates.length === 0) {
       await prompts.error(t().templatesLoadFailed);
       return;
     }
-    const templates = await response.json();
     const result = await prompts.form({
       title: t().newNotebookFromTemplate,
       icon: "ti ti-template",

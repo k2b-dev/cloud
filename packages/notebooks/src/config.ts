@@ -36,7 +36,7 @@ export const app = defineApp({
   skills: SKILLS,
   adminHref: "/admin/notebooks",
   nav: {
-    href: "/app/notebooks?recent=true",
+    href: "/app/notebooks",
     match: "/app/notebooks",
     section: "primary",
     requiresAuth: true,

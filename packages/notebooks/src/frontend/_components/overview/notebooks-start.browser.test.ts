@@ -10,6 +10,8 @@ import { launchBrowser, pageErrors, settled } from "../../../../../ui/test/brows
 // notebook from a template) and records what the page asked.
 const ui = `${resolve(import.meta.dir, "../../../../../ui")}/`;
 const created: { path: string; body: unknown }[] = [];
+// the next creation answers 201 with a body that is no JSON, as a proxy page or a cut connection would
+const server = { garbled: false };
 let httpServer: ReturnType<typeof Bun.serve>;
 let browser: Browser;
 
@@ -64,6 +66,7 @@ beforeAll(async () => {
         return new Response(Bun.file(resolve(ui, "dist", url.pathname.slice(1))));
       if (request.method === "POST" && (url.pathname === "/api/notebooks" || url.pathname.startsWith("/api/notebooks/templates/"))) {
         created.push({ path: url.pathname, body: await request.json() });
+        if (server.garbled) return new Response("<html>gateway</html>", { status: 201, headers: { "content-type": "text/html" } });
         return Response.json({ id: url.pathname === "/api/notebooks" ? "newbook" : "fromtemplate" });
       }
       if (url.pathname.startsWith("/api/")) return new Response("Not found", { status: 404 });
@@ -92,6 +95,7 @@ afterEach(() => {
       .filter((message) => !message.includes("ViewTransition")),
   ).toEqual([]);
   created.length = 0;
+  server.garbled = false;
 });
 const open = async (width = 1440): Promise<Page> => {
   const page = await browser.newPage({
@@ -155,6 +159,23 @@ test("the one + makes a notebook from a template, under the template's name when
     await dialog.getByRole("button", { name: "Erstellen" }).click();
     await page.waitForURL((url) => url.pathname === "/app/notebooks/fromtemplate");
     expect(created).toEqual([{ path: "/api/notebooks/templates/meeting", body: {} }]);
+  } finally {
+    await page.close();
+  }
+}, 60_000);
+
+test("an answer that is no notebook says so in the dialog, which stays usable and closes", async () => {
+  const page = await open();
+  try {
+    server.garbled = true;
+    await plus(page).click();
+    await page.getByRole("menuitem", { name: /Besprechungen/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Besprechungen" });
+    await dialog.getByRole("button", { name: "Erstellen" }).click();
+    await dialog.getByText("Das Notizbuch konnte nicht aus der Vorlage erstellt werden").waitFor();
+    expect(new URL(page.url()).pathname).toBe("/app/notebooks");
+    await dialog.getByRole("button", { name: "Abbrechen" }).click();
+    await dialog.waitFor({ state: "hidden" });
   } finally {
     await page.close();
   }

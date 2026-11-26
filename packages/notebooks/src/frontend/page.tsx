@@ -21,7 +21,7 @@ export default ssr<AuthContext>(async (c) => {
     const lastId = parseLastNotebookId(c.req.raw.headers.get("Cookie") ?? undefined);
     const target = lastId && notebooks.some((notebook) => notebook.shortId === lastId) ? lastId : first.shortId;
     // A command link ("New note" from another app) lands here; the notebook page takes it over. `recent` is the
-    // rail's older link and means what this redirect does anyway.
+    // rail's former link, still in bookmarks, and means what this redirect does anyway.
     const query = new URL(c.req.url).searchParams;
     query.delete("recent");
     return c.redirect(`/app/notebooks/${target}${query.size > 0 ? `?${query}` : ""}`);

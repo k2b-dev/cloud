@@ -40,6 +40,9 @@ export default function NotebooksStart(props: { templates: TemplateSummary[] }) 
       <Workspace head={<Bar end={<Menu icon="plus" variant="primary" label={t().newNotebook} items={createItems()} />} />}>
         <Pane label={t().notebooks}>
           {/* one way to the first notebook: the head's "+" (a symbol, so the phone keeps it) */}
+          {/* k2b-ui gap: a page-wide Empty stands on the text edge like a list's, so 1440 shows a small sentence in a
+              wide white page; Tiles only open links, so the ways to start (blank, each template) cannot stand as
+              tiles that open the dialog. Reported to the coordinator. */}
           <Empty icon="notebook" text={t().noNotebooksYet} />
         </Pane>
       </Workspace>

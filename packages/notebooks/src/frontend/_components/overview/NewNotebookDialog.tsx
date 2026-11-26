@@ -40,20 +40,21 @@ export default function NewNotebookDialog(props: { source: NewNotebookSource | n
     }
     setBusy(true);
     setFailed(null);
-    const response = await (source.kind === "blank"
+    // a failed request and an answer that is no notebook end the same way: the dialog says so and stays usable
+    const created = await (source.kind === "blank"
       ? apiClient.index.$post({ json: { name: name().trim(), description: description().trim() || undefined } })
       : apiClient.templates[":templateId"].$post({
           param: { templateId: source.template.id },
           json: { name: name().trim() || undefined },
         })
-    ).catch(() => null);
-    if (!response?.ok) {
-      setBusy(false);
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .catch(() => null);
+    setBusy(false);
+    if (!created) {
       setFailed(source.kind === "blank" ? t().createFailed : t().createFromTemplateFailed);
       return;
     }
-    const created = await response.json();
-    setBusy(false);
     props.onClose();
     navigateTo(`/app/notebooks/${created.id}`);
   };

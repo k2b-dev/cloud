@@ -58,7 +58,6 @@ beforeEach(() => {
   );
   spies.push(spyOn(notebooksService.note, "recentForUser").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.activity, "list").mockResolvedValue({ items: [], nextCursor: null }));
-  spies.push(spyOn(notebooksService.notebook, "overviewStats").mockResolvedValue([]));
 });
 afterEach(() => {
   for (const spy of spies.splice(0)) spy.mockRestore();
