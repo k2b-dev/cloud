@@ -580,7 +580,12 @@ test("390 px: in a split only the pane in front stands; a closed detail waits ou
 test("1440 px: a closed detail stands beside the chat as its column", async () => {
   const page = await open(1440, "chat");
   try {
-    expect((await split(page)).panes).toEqual(["Chat", "Tabs"])
+    expect((await split(page)).panes).toEqual(["Chat", "Tabs"]);
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
 test("390 px: an open item after a path keeps its way back, its title and its action in one row, and the first row free", async () => {
   const page = await open(390, "item");
   try {
