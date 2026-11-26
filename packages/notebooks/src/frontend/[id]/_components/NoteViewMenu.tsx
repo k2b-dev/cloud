@@ -1,14 +1,15 @@
 import { useLocale, watchAppHostWidth } from "@k2b/ui";
 import { Menu, type MenuEntry } from "@k2b/ui/v2";
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, onCleanup, onMount } from "solid-js";
 import { notebookWorkspaceMessages } from "../messages";
 import { RICH_MODE_CHANGED_EVENT, TOGGLE_RICH_MODE_EVENT } from "./detail/events";
 import { changeFullWidth, createFullWidth } from "./full-width";
 
 /**
- * "Ansicht" in the head of a note: how the editor shows its text (Write only) and the personal full-width preference,
- * which a host narrower than 64 rem does not offer (the column fills it anyway). The views themselves are the head's
- * tabs.
+ * "Ansicht" in the head of a note: how the editor shows its text (Write only) and the personal full-width preference.
+ * The menu stands from the server's first frame, so nothing moves when the browser takes over. Full width is a personal
+ * choice, so it can always be made; a host narrower than 64 rem says that it takes effect in a wider window (the column
+ * fills the host anyway). The views themselves are the head's tabs.
  */
 export default function NoteViewMenu(props: {
   mode: "edit" | "read";
@@ -46,15 +47,16 @@ export default function NoteViewMenu(props: {
           },
         ]
       : []),
-    ...(wide()
-      ? [{ label: t().fullWidth, meta: t().fullWidthHint, checked: fullWidth(), onClick: () => changeFullWidth(!fullWidth()) }]
-      : []),
+    {
+      label: t().fullWidth,
+      meta: wide() ? t().fullWidthHint : t().fullWidthNarrow,
+      checked: fullWidth(),
+      onClick: () => changeFullWidth(!fullWidth()),
+    },
   ];
   return (
-    <Show when={items().length > 0}>
-      <Menu label={t().view} icon="adjustments-horizontal" items={items()}>
-        {t().view}
-      </Menu>
-    </Show>
+    <Menu label={t().view} icon="adjustments-horizontal" items={items()}>
+      {t().view}
+    </Menu>
   );
 }
