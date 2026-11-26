@@ -273,7 +273,9 @@ no rows and nothing loading, the empty state stands in place of the table.
 `items: { label, value, hint?, copy?, mono? }[]`: label 12 quiet, value 13, 32 px
 per row; the label column is as wide as the longest label of that list
 (80–160 px), so two `Facts` lists may start their values at different
-edges.
+edges. On the phone each pair is one line, the label on the left and a short
+value at the end; a value longer than the rest of the line goes under its
+label.
 `copy` adds a copy button with that text; `mono` shows a value read sign by
 sign (a token, a key, an ID) in monospace, broken at any sign and selected
 whole by one click. `inline` puts all on one

@@ -7,6 +7,7 @@ import {
   Chip,
   Digest,
   Empty,
+  Facts,
   Failed,
   FilterBar,
   Group,
@@ -502,6 +503,25 @@ export const SectionFootScreen = () => (
         <List label="Zuletzt">
           <Row lines={["Angebot Lindqvist"]} time="09:40" />
         </List>
+      </Section>
+    </Pane>
+  </Workspace>
+);
+
+// The facts of a space on the phone: short values beside their labels, a long one, an ID and one with a hint under them.
+export const FactsScreen = () => (
+  <Workspace>
+    <Pane label="Space">
+      <Section title="Über diesen Space">
+        <Facts
+          items={[
+            { label: "Mitglieder", value: "12" },
+            { label: "Erstellt", value: "03.11.2026" },
+            { label: "Ablage", value: "Werkstatt / Projekte / 2026 / Kunden / Lindqvist / Küche / Angebote und Aufmaß" },
+            { label: "Kennung", value: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C", mono: true, copy: "spc_01JD8QK4V7T2M9X3B6N5R0WZ4E7Q2F9K3H8M1P6Y5C" },
+            { label: "Sichtbar", value: "Alle im Team", hint: "Standard" },
+          ]}
+        />
       </Section>
     </Pane>
   </Workspace>

@@ -38,7 +38,8 @@ type Case =
   | "split-list-canvas"
   | "empty-ways"
   | "view-statement"
-  | "section-foot";
+  | "section-foot"
+  | "facts";
 
 let browser: Browser;
 let client: string;
@@ -1364,4 +1365,34 @@ test("a bar that ends a section draws no line of its own: one line parts it from
       },
       width,
     );
+});
+
+test("on the phone a fact is one line, its label left and a short value at the end; a long value goes whole under its label", async () => {
+  await withPage(
+    "facts",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const pane = document.querySelector(".k2-pane")!.getBoundingClientRect();
+        return [...document.querySelectorAll(".k2-fact-pair")].map((pair) => {
+          const label = pair.querySelector("dt")!.getBoundingClientRect();
+          const value = pair.querySelector(".k2-fact-value")!.getBoundingClientRect();
+          return {
+            name: pair.querySelector("dt")!.textContent,
+            beside: Math.abs(label.top - value.top) < 1,
+            // beside its label a value ends on the text edge (or before its copy button); under it, it starts there
+            end: Math.round(pane.right - value.right),
+            start: Math.round(value.left - pane.left),
+          };
+        });
+      });
+      const by = Object.fromEntries(found.map((fact) => [fact.name, fact]));
+      for (const name of ["Mitglieder", "Erstellt"])
+        expect({ name, beside: by[name]!.beside, end: by[name]!.end }).toEqual({ name, beside: true, end: 16 });
+      for (const name of ["Ablage", "Kennung"])
+        expect({ name, beside: by[name]!.beside, start: by[name]!.start }).toEqual({ name, beside: false, start: 16 });
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
 });

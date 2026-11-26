@@ -4917,17 +4917,36 @@
   .k2-ui .k2-pane:not([data-side]) .k2-sh .k2-btn-label {
     display: none;
   }
+  /* On the phone each pair is one line: the label on the left, a short value at the end of the line. A value longer
+     than the rest of the line goes whole under its label and starts on the text edge (no measuring: the line wraps). */
   .k2-ui .k2-facts {
     grid-template-columns: minmax(0, 1fr);
   }
-  .k2-ui .k2-fact-pair > dt {
-    padding-bottom: 0;
+  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    column-gap: 16px;
+    padding: 6px 0;
+    min-width: 0;
   }
-  .k2-ui .k2-fact-pair > dd {
-    padding-top: 0;
+  /* the label takes the room the value leaves, so a value beside it stands at the end and one under it at the start */
+  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dt {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    padding: 0;
+  }
+  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd {
+    flex: 0 1 auto;
+    padding: 0;
+  }
+  /* a value not there yet holds a short place of its own at the end, as in an inline line */
+  .k2-ui .k2-facts:not([data-inline]) > .k2-fact-pair > dd > .k2-fact-value > .k2-skel:not([data-over]) {
+    width: 48px;
   }
   .k2-ui .k2-fact-pair > dd > .k2-btn {
-    margin: 2px -6px -6px 0;
+    margin: -4px -6px -4px 0;
   }
   .k2-ui .k2-facts[data-inline] > .k2-fact-pair > :is(dt, dd) {
     padding: 6px 0;
