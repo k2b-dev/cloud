@@ -253,7 +253,7 @@ export default function HostsScreen(props: HostsScreenProps) {
   const PALETTE = ["#2563eb", "#0d9488", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#0891b2", "#ca8a04"];
   const groupColor = (cn: string) => PALETTE[[...cn].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) >>> 0, 7) % PALETTE.length];
   /** A row marks only the exception: a host whose client stored no SSH keys yet (symbol and word). */
-  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip icon="key-off">{t().noKeys}</Chip> : undefined);
+  const hostState = (host: IpaHost) => (host.sshFingerprints.length === 0 ? <Chip status="warn" icon="key-off">{t().noKeys}</Chip> : undefined);
   /** The second line of a host: only what the mirror holds. */
   const hostLine = (host: IpaHost) =>
     [place(host), host.description, host.osVersion].filter(Boolean).join(" · ") || (host.macAddress[0] ?? host.platform ?? "");
@@ -449,7 +449,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Pane
         detail
         label={host.fqdn}
-        back={{ label: openGroup() ?? t().ungroupedHosts, href: back }}
+        back={{ label: openGroup() ?? (props.tab === "groups" ? t().hostgroups : t().ungroupedHosts), href: back }}
         head={
           <Bar
             start={<Text weight="strong">{host.fqdn}</Text>}
