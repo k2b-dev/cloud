@@ -34,8 +34,8 @@ const user = {
   provider: "local",
   profile: "user",
   givenname: "Ada",
-  sn: "Admin",
-  displayName: "Ada Admin",
+  sn: "Renz",
+  displayName: "Ada Renz",
   mail: "admin@example.test",
   avatarHash: null,
   ipa: null,
@@ -194,7 +194,7 @@ describe("OAuth in the Cloud shell", () => {
               body: JSON.stringify({
                 // enough people and groups that the picker has hits beside what is chosen
                 items: [
-                  ...["Ada Renz", "Ben Okafor", "Clara Weiß", "David Nguyen", "Elif Yılmaz"].map((name, index) => ({
+                  ...["Ben Okafor", "Clara Weiß", "David Nguyen", "Elif Yılmaz", "Farid Haddad"].map((name, index) => ({
                     kind: "user",
                     user: { id: `11111111-1111-4111-8111-00000000000${index}`, uid: name.split(" ")[0]!.toLowerCase(), displayName: name },
                   })),
@@ -232,7 +232,7 @@ describe("OAuth in the Cloud shell", () => {
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
         await dialog.getByRole("checkbox", { name: "Nur bestimmte Benutzer und Gruppen" }).check();
         await dialog.getByRole("searchbox").fill("a");
-        await dialog.getByRole("option", { name: /Ada Renz/ }).click();
+        await dialog.getByRole("option", { name: /Ben Okafor/ }).click();
         await settled(tab);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-zugriff-${width}.png`) });
         await dialog.getByRole("button", { name: "Erstellen" }).click();

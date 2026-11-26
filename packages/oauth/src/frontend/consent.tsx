@@ -7,7 +7,7 @@ import type { Context, Env } from "hono";
 import { ssr } from "../config";
 import { oauth } from "../service/oauth";
 import { isConfirmedBrowserSignIn } from "../service/sign-in";
-import { AuthorizationPage } from "./_components/AuthorizationPage";
+import { AuthorizationPage, signedInName } from "./_components/AuthorizationPage";
 import { ConsentDecision } from "./_components/ConsentDecision";
 import { type ErrorReason, errorPageHref } from "./error-reasons";
 import { oauthMessages } from "./messages";
@@ -36,7 +36,12 @@ export default ssr<AuthContext>(async (c) => {
       : null;
 
   return () => (
-    <AuthorizationPage c={c} title={t.authorizeApplication} heading={t.authorize({ name: client.name })}>
+    <AuthorizationPage
+      c={c}
+      person={signedInName(c.get("actor"))}
+      title={t.authorizeApplication}
+      heading={t.authorize({ name: client.name })}
+    >
       <ConsentDecision
         view={{
           request: requestId,

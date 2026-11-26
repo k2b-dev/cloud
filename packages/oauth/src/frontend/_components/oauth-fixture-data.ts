@@ -6,7 +6,8 @@ import type { ClientRow } from "./OAuthScreen";
 // whole page of clients.
 
 /** What a test or a picture shows as a freshly made secret: plainly not a real one. */
-export const FAKE_SECRET = "FAKE-secret-nur-fuer-Tests-und-Bilder-0000000000";
+// invented for tests and pictures; it opens nothing
+export const FAKE_SECRET = "oc_sk_7Kp2Vx9mQ4rT8wL3sB6dF1hJ5yC0zN2eG4aR8uW";
 
 const id = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 

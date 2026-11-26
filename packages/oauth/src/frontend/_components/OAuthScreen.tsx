@@ -11,6 +11,7 @@ import {
   Empty,
   Facts,
   Field,
+  Icon,
   Input,
   Lookup,
   Menu,
@@ -147,7 +148,7 @@ export default function OAuthScreen(props: OAuthScreenProps) {
    * What sets a client apart from the usual one (managed here, with a secret), in colour, sign and word: registered by
    * itself, brought by Cloud, or public. The usual client carries no mark.
    */
-  const kindChips = (client: OAuthClient) => (
+  const _kindChips = (client: OAuthClient) => (
     <>
       <Show when={client.registrationKind === "dynamic"}>
         <Chip status="warn" icon="world">
@@ -162,6 +163,35 @@ export default function OAuthScreen(props: OAuthScreenProps) {
       </Show>
     </>
   );
+  /** A client's sign in the colour of its kind: brought by Cloud, set up here, or registered by itself. */
+  const ClientName = (mark: { client: OAuthClient }) => (
+    <>
+      <Icon
+        name={mark.client.registrationKind === "first_party" ? "cloud" : mark.client.registrationKind === "dynamic" ? "world" : "key"}
+        tone={mark.client.registrationKind === "first_party" ? "app" : mark.client.registrationKind === "dynamic" ? "warn" : "ok"}
+      />{" "}
+      {mark.client.name}
+    </>
+  );
+  /** The kind as words; only a client that registered itself is the exception with a chip. */
+  const kindWords = (client: OAuthClient) =>
+    client.registrationKind === "dynamic" ? (
+      <Chip status="warn" icon="world">
+        {kind(client)}
+      </Chip>
+    ) : (
+      [client.registrationKind === "first_party" ? kind(client) : undefined, client.isPublic ? t().public : t().confidential]
+        .filter(Boolean)
+        .join(" · ")
+    );
+  /** Who may sign in as words; access for chosen people only, or for nobody, is the exception with a chip. */
+  const accessWords = (client: OAuthClient) => {
+    const chip = accessChip(client);
+    if (client.accessMode === "specific" || profileChoice(client.allowedProfiles) === "none") return chip;
+    return ({ user: t().profileUsers, everybody: t().profileEverybody, guest: t().profileGuests, none: t().profileNobody } as const)[
+      profileChoice(client.allowedProfiles)
+    ];
+  };
   /** Who may sign in, where it is not the usual full users: only chosen people and groups, or other profiles. */
   const accessChip = (client: OAuthClient) =>
     client.accessMode !== "specific" && profileChoice(client.allowedProfiles) === "user" ? undefined : client.accessMode === "specific" ? (
@@ -313,8 +343,6 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     });
   };
 
-  const dynamicClients = () => rows().filter((client) => client.registrationKind === "dynamic");
-
   // ── Deeds on an open client ───────────────────────────────────────────────────────────────────────────────────
   // A retry repeats what the person already agreed to; it does not ask again.
   const remove = async (client: ClientRow) => {
@@ -411,9 +439,24 @@ export default function OAuthScreen(props: OAuthScreenProps) {
           { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
           { label: t().type, value: `${kind(client)} · ${client.isPublic ? t().public : t().confidential}` },
           ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          ...(client.redirectUris.length === 0
-            ? [{ label: t().redirectUri, value: t().noRedirect }]
-            : client.redirectUris.map((uri) => ({ label: t().redirectUriOne, value: uri, mono: true, copy: uri }))),
+          // the addresses under one label, one per line
+          client.redirectUris.length === 0
+            ? { label: t().redirectUri, value: t().noRedirect }
+            : {
+                label: t().redirectUri,
+                value: (
+                  <For each={client.redirectUris}>
+                    {(uri, index) => (
+                      <>
+                        {index() > 0 ? <br /> : null}
+                        {uri}
+                      </>
+                    )}
+                  </For>
+                ),
+                mono: true,
+                copy: client.redirectUris.join("\n"),
+              },
           ...(client.logoutUri ? [{ label: t().logoutUri, value: client.logoutUri, mono: true, copy: client.logoutUri }] : []),
           { label: t().scopes, value: <>{scopeChips(client)}</> },
           { label: t().whoCanUse, value: profileLabel(client) },
@@ -443,19 +486,23 @@ export default function OAuthScreen(props: OAuthScreenProps) {
     <Pane
       label={t().clients}
       scrollKey="oauth-clients"
-      status={<StatusRow lead={total() === 0 ? t().emptyLead : t().clientCount({ count: total() })} />}
+      // the first row says what matters with its number; the list's count and the search are quiet facts
+      status={
+        <StatusRow
+          lead={
+            total() === 0 && !props.search
+              ? t().emptyLead
+              : props.figures.dynamic > 0
+                ? t().dynamicLead({ count: props.figures.dynamic })
+                : t().managedLead({ count: total() })
+          }
+          facts={[
+            ...(props.search ? [{ before: t().searchFact, value: props.search }] : []),
+            ...(total() > 0 ? [{ value: t().clientCount({ count: total() }) }] : []),
+          ]}
+        />
+      }
     >
-      {/* clients that registered themselves are the ones to check: said once, with their colour and sign; while a
-          client is open, its own head says what it is */}
-      <Show when={props.figures.dynamic > 0 && !props.open && !props.search}>
-        <Notice
-          tone="warn"
-          icon="world"
-          actions={dynamicClients().length === 1 ? [{ label: t().openClient, href: href({ client: dynamicClients()[0]!.id }) }] : undefined}
-        >
-          {t().dynamicLead({ count: props.figures.dynamic })}
-        </Notice>
-      </Show>
       <Table
         label={t().clients}
         rows={rows()}
@@ -470,11 +517,10 @@ export default function OAuthScreen(props: OAuthScreenProps) {
                 text: t().noMatch({ query: props.search }),
                 action: { label: t().resetSearch, href: href({ search: "" }) },
               }
-            : // "Neuer Client" stands in the head (on the phone it floats): the empty state does not repeat it
-              { icon: "key", text: t().noClients }
+            : { icon: "key", text: t().noClients, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
         }
         phone={(client) => ({
-          lines: [client.name, client.description || client.clientId],
+          lines: [<ClientName client={client} />, client.description || client.clientId],
           time: client.created,
           marks:
             client.registrationKind === "dynamic" ? (
@@ -488,13 +534,14 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         columns={[
           {
             title: t().client,
-            width: { min: 200, default: 300 },
-            cell: (client) => (client.description ? { lines: [client.name, client.description] } : client.name),
+            width: { min: 180, default: 220 },
+            cell: (client) =>
+              client.description ? { lines: [<ClientName client={client} />, client.description] } : <ClientName client={client} />,
           },
-          { title: t().type, width: { min: 190, default: 220 }, cell: (client) => <>{kindChips(client)}</>, drop: true },
-          { title: t().access, width: { min: 150, default: 180 }, cell: (client) => accessChip(client), drop: true },
-          { title: t().scopes, width: { min: 170, default: 220 }, cell: (client) => <>{scopeChips(client, true)}</>, drop: true },
-          { title: t().created, width: { min: 110, default: 130 }, cell: (client) => client.created, drop: true },
+          // words, with a chip only for what is not the usual: registered by itself, or access for chosen people only
+          { title: t().type, width: { min: 130, default: 150 }, cell: (client) => <>{kindWords(client)}</>, drop: true },
+          { title: t().access, width: { min: 150, default: 150 }, cell: (client) => accessWords(client), drop: true },
+          { title: t().created, width: { min: 110, default: 110 }, cell: (client) => client.created, drop: true },
         ]}
       />
       <Show when={props.paging.pages > 1}>
@@ -769,6 +816,11 @@ export default function OAuthScreen(props: OAuthScreenProps) {
         dismissible={false}
         foot={<Button onClick={closeSecret}>{t().close}</Button>}
       >
+        <Show when={secret()?.reload}>
+          <Text>
+            <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().createdReady}
+          </Text>
+        </Show>
         <Show when={secret()?.value} fallback={<Text>{t().publicNoSecret}</Text>}>
           <Notice tone="warn" icon="alert-triangle">
             {t().saveSecretNow}

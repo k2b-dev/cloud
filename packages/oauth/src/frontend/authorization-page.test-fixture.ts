@@ -37,6 +37,7 @@ export const sample = {
   cli: { name: "Cloud CLI", clientId: "cloud-cli" },
   dynamic: { name: "Example Assistant", clientId: "dyn_3f9c2a7e5b1d4c8a" },
   terminal: { name: "Drucker-Terminal", clientId: "drucker-terminal" },
+  kiosk: { name: "Empfangs-Kiosk", clientId: "empfangs-kiosk" },
 } as const;
 
 // the connected page reads the application's registered name by its client ID
@@ -47,21 +48,40 @@ const registered: Record<string, object> = {
   [sample.cli.clientId]: { ...sample.cli, registrationKind: "first_party", isPublic: true, allowDeviceGrant: true },
   [sample.terminal.clientId]: { ...sample.terminal, registrationKind: "managed", isPublic: true, allowDeviceGrant: true },
   [sample.dynamic.clientId]: { ...sample.dynamic, registrationKind: "dynamic", isPublic: true, allowDeviceGrant: true },
+  [sample.kiosk.clientId]: { ...sample.kiosk, registrationKind: "managed", isPublic: true, allowDeviceGrant: true },
 };
 spyOn(oauth.clients, "getByClientId").mockImplementation(async ({ clientId }) => (registered[clientId] ?? null) as never);
 /** Device requests Ada approved, by the client each was for; any other request was not hers to name. */
+/** Open device requests a person was refused for, by the client each is for; Ada may use the kiosk, not the terminal. */
+export const refusedRequests = {
+  terminal: "55555555-5555-4555-8555-555555555551",
+  dynamic: "55555555-5555-4555-8555-555555555552",
+  kiosk: "55555555-5555-4555-8555-555555555553",
+} as const;
+const refusedClients: Record<string, string> = {
+  [refusedRequests.terminal]: sample.terminal.clientId,
+  [refusedRequests.dynamic]: sample.dynamic.clientId,
+  [refusedRequests.kiosk]: sample.kiosk.clientId,
+};
+spyOn(oauth.device, "getPending").mockImplementation(async (id) =>
+  refusedClients[id] ? ({ id, clientId: refusedClients[id] } as never) : null,
+);
+spyOn(oauth.clients, "canAuthorizeUser").mockImplementation(async ({ client }) => client.clientId === sample.kiosk.clientId);
 export const approvedRequests = {
+  cli: "33333333-3333-4333-8333-333333333330",
   terminal: "33333333-3333-4333-8333-333333333331",
   dynamic: "33333333-3333-4333-8333-333333333332",
 } as const;
 spyOn(oauth.device, "approvedClientId").mockImplementation(async ({ id, userId }) =>
   userId !== "22222222-2222-4222-8222-222222222222"
     ? null
-    : id === approvedRequests.terminal
-      ? sample.terminal.clientId
-      : id === approvedRequests.dynamic
-        ? sample.dynamic.clientId
-        : null,
+    : id === approvedRequests.cli
+      ? sample.cli.clientId
+      : id === approvedRequests.terminal
+        ? sample.terminal.clientId
+        : id === approvedRequests.dynamic
+          ? sample.dynamic.clientId
+          : null,
 );
 
 // Core's legal links, so the footer looks as it does in a running Cloud.
@@ -94,7 +114,7 @@ const signedIn: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("actor", {
     kind: "user",
     sessionKind: "web",
-    user: { id: "22222222-2222-4222-8222-222222222222", uid: "ada", displayName: "Ada Admin" },
+    user: { id: "22222222-2222-4222-8222-222222222222", uid: "ada", displayName: "Ada Renz" },
   } as never);
   await next();
 };
@@ -112,6 +132,7 @@ const confirmPage = (reauthenticate: boolean) =>
   ssr<AuthContext>(
     async (c) => () =>
       createComponent(AuthorizationPage, {
+        person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.deviceTitle,
         heading: oauthMessages.resolve([getLocale(c)]).t.deviceConfirmTitle({ name: sample.cli.name }),
@@ -134,6 +155,7 @@ const consentPage = (client: "dynamic" | "cli", reauthenticate: boolean) =>
   ssr<AuthContext>(
     async (c) => () =>
       createComponent(AuthorizationPage, {
+        person: "Ada Renz",
         c,
         title: oauthMessages.resolve([getLocale(c)]).t.authorizeApplication,
         heading: oauthMessages.resolve([getLocale(c)]).t.authorize({ name: sample[client].name }),
@@ -175,7 +197,8 @@ export const authorizationStates = {
   consent: "/fixture/consent",
   consentCli: "/fixture/consent-cli",
   consentReauthenticate: "/fixture/consent-reauthenticate",
-  approved: "/oauth/device?result=approved&request=33333333-3333-4333-8333-333333333331",
+  // the device flow of the pictures is one: Cloud CLI asks, Ada confirms its code, Cloud CLI signs in
+  approved: "/oauth/device?result=approved&request=33333333-3333-4333-8333-333333333330",
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",
