@@ -8,13 +8,16 @@ import { Bar, Button, Pane, RecordHead, Section, Workspace } from "../src/v2";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2SwapHead?: (which: "record" | "bar") => void;
+    __k2SwapHead?: (which: "record" | "bar" | "first") => void;
   }
 }
 
 const [record, setRecord] = createSignal(true);
 const [firstBar, setFirstBar] = createSignal(true);
-window.__k2SwapHead = (which) => (which === "record" ? setRecord((now) => !now) : setFirstBar((now) => !now));
+// a head with two bars at once, the first of them coming and going
+const [lead, setLead] = createSignal(true);
+window.__k2SwapHead = (which) =>
+  which === "record" ? setRecord((now) => !now) : which === "bar" ? setFirstBar((now) => !now) : setLead((now) => !now);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("page-title: #root is missing");
@@ -61,6 +64,23 @@ render(
         >
           <Pane label="Berichte">
             <Section title="Liste" />
+          </Pane>
+        </Workspace>
+      </div>
+      <div id="pair">
+        <Workspace
+          title="Lager"
+          head={
+            <>
+              <Show when={lead()}>
+                <Bar end={<Button>Einlagern</Button>} />
+              </Show>
+              <Bar end={<Button>Umlagern</Button>} />
+            </>
+          }
+        >
+          <Pane label="Lager">
+            <Section title="Plätze" />
           </Pane>
         </Workspace>
       </div>

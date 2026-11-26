@@ -40,7 +40,7 @@ const withPage = async (run: (page: Page) => Promise<void>) => {
 };
 
 /** The headings of one Workspace: their words, and whether each is seen or only heard. */
-const headings = (page: Page, workspace: "records" | "bars") =>
+const headings = (page: Page, workspace: "records" | "bars" | "pair") =>
   page.evaluate(
     (id) =>
       [...document.querySelectorAll(`#${id} h1`)].map(
@@ -49,7 +49,7 @@ const headings = (page: Page, workspace: "records" | "bars") =>
     workspace,
   );
 
-const swap = async (page: Page, which: "record" | "bar") => {
+const swap = async (page: Page, which: "record" | "bar" | "first") => {
   await page.evaluate((part) => window.__k2SwapHead!(part), which);
   await settled(page);
 };
@@ -79,5 +79,18 @@ test("a head that swaps its Bar, there and back in both directions, shows the pa
     expect(await shown()).toEqual({ headings: ["Berichte"], bar: "BerichteNeu" });
     await swap(page, "bar");
     expect(await shown()).toEqual({ headings: ["Berichte"], bar: "BerichteTeilen" });
+  });
+});
+
+test("in a head with two bars at once, the first bar that stands shows the page's name, also after the first went and came back", async () => {
+  await withPage(async (page) => {
+    const shown = () => page.locator("#pair [data-slot='head'] .k2-bar").evaluateAll((bars) => bars.map((bar) => bar.textContent));
+    expect(await shown()).toEqual(["LagerEinlagern", "Umlagern"]);
+    await swap(page, "first");
+    expect(await shown()).toEqual(["LagerUmlagern"]);
+    await swap(page, "first");
+    // as a reload would draw it: the name in the first bar
+    expect(await shown()).toEqual(["LagerEinlagern", "Umlagern"]);
+    expect(await headings(page, "pair")).toEqual(["Lager"]);
   });
 });

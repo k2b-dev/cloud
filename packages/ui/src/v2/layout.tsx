@@ -194,16 +194,23 @@ export const Workspace = (props: WorkspaceProps) => {
   const sidebar = resolveChildren(() => <NavCurrentContext.Provider value={setNavCurrent}>{props.sidebar}</NavCurrentContext.Provider>);
   const title = () => props.title ?? navCurrent();
   // the first Bar in the head that still stands shows the page's name; a title alone makes that Bar
-  const [claims, setClaims] = createSignal<readonly object[]>([]);
+  const [claims, setClaims] = createSignal<readonly (() => Element | undefined)[]>([]);
+  // The first in the page among the claims whose bar stands in it; before any stands (on the server, in the first
+  // render), the first made. So a bar that comes back takes the name in the order of the page, as a reload draws it.
+  // (A function, not a memo: a memo on the server is computed once, before any bar claims.)
+  const holder = () => {
+    const placed = claims().filter((element) => element()?.isConnected);
+    if (placed.length === 0) return claims()[0];
+    return placed.reduce((first, next) => (first()!.compareDocumentPosition(next()!) & Node.DOCUMENT_POSITION_PRECEDING ? next : first));
+  };
   // a RecordHead in the head is the page's one heading: then neither the Bar nor the Workspace adds another
   const [named, setNamed] = createSignal(0);
   const page = {
     title,
-    claim: () => {
-      const claim = {};
-      setClaims((list) => [...list, claim]);
-      onCleanup(() => setClaims((list) => list.filter((other) => other !== claim)));
-      return () => claims()[0] === claim;
+    claim: (element: () => Element | undefined) => {
+      setClaims((list) => [...list, element]);
+      onCleanup(() => setClaims((list) => list.filter((other) => other !== element)));
+      return () => holder() === element;
     },
     claimed: () => claims().length > 0,
     nameItself: () => {
@@ -585,13 +592,17 @@ export type BarProps = {
 export const Bar = (props: BarProps) => {
   // in the Workspace's head the bar shows the page's name, before what its start holds (claimed before the parts are made)
   const page = useContext(PageTitleContext);
-  const holds = page?.claim();
+  // the bar's element joins its claim once it stands in the page (a ref comes before that)
+  const [element, setElement] = createSignal<Element>();
+  let bar: HTMLDivElement | undefined;
+  onMount(() => setElement(bar));
+  const holds = page?.claim(element);
   const start = resolveChildren(() => props.start);
   // read after the start is made: a RecordHead in it names the page itself
   const title = () => (holds?.() && !page?.namedItself() ? page?.title() : undefined);
   const end = resolveChildren(() => props.end);
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div ref={bar} class="k2-bar" data-k2-part="Bar">
       <Show when={start() !== undefined || title() !== undefined}>
         <div class="k2-bar-start">
           {/* the page's one heading: seen where the start holds nothing else, else only heard beside tabs or a path */}
