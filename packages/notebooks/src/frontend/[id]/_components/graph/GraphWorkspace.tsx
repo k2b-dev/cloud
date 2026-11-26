@@ -280,9 +280,8 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
               <For each={g.model.notes}>
                 {(note) => (
                   <Row
-                    icon="file-text"
                     // the note in its area's colour, as the graph draws it; the area's name only where there are several
-                    color={`var(--notebook-graph-area-${note.area.slot})`}
+                    mark={{ icon: "file-text", color: `var(--notebook-graph-area-${note.area.slot})` }}
                     lines={[note.title || t().untitled]}
                     meta={g.model.areas.filter((area) => area.count > 0).length > 1 ? g.areaName(note.area) : undefined}
                     strong={!!g.query().trim() && matchesQuery(note, g.query())}
