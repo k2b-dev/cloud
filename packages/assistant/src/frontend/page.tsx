@@ -258,6 +258,8 @@ export default ssr<AuthContext>(async (c) => {
     initialProjectContext: projectContext,
     approvals: { ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen },
     initialPrefsTab: prefsTab,
+    // A Project's settings are its administrators' page on v2; the panel and everyone else get the Project.
+    initialProjectSettings: !embedded && activeProject?.permission === "admin" && url.searchParams.get("settings") === "1",
     code: {
       has: hasCode,
       open: codeOpen,

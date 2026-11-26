@@ -144,6 +144,8 @@ import {
   assistantPrefsTabFromHref,
   assistantProjectHref,
   assistantProjectIdFromHref,
+  assistantProjectSettingsFromHref,
+  assistantProjectSettingsHref,
   assistantQuestionAnchorFromHref,
   assistantQuestionHref,
 } from "./assistant-navigation";
@@ -276,6 +278,8 @@ export type AssistantWorkspaceProps = {
   approvals: { page?: ApprovalPage; open: boolean };
   /** Gustav's settings at `?prefs=<tab>`, a view of v2's page (null in the panel). */
   initialPrefsTab?: AssistantPrefsTab | null;
+  /** The open Project's settings, a page of v2 at `?project=<id>&settings=1`. */
+  initialProjectSettings?: boolean;
   /**
    * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
    * page opened on its list, and the list's first page when it did (null when Core could not list it).
@@ -1447,6 +1451,19 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     if (current()) await waitingFocus.focus(anchor, current);
   };
+  const [projectSettings, setProjectSettings] = createSignal(Boolean(props.initialProjectSettings));
+  /** The open Project's settings page, and the way back to the Project after a save or a press on its name. */
+  const openProjectSettings = () => {
+    const projectId = projectView()?.projectId;
+    if (!projectId || projectSettings()) return;
+    setProjectSettings(true);
+    navigate(assistantProjectSettingsHref(window.location.href, projectId), { scroll: "manual", viewTransition: false });
+  };
+  const closeProjectSettings = () => {
+    const projectId = projectView()?.projectId;
+    setProjectSettings(false);
+    if (projectId) navigate(assistantProjectHref(window.location.href, projectId), { scroll: "manual", viewTransition: false });
+  };
   const openProject = async (projectId: string) => {
     const project = projects().find((item) => item.id === projectId);
     if (!project) throw new Error(t().projectNotFound);
@@ -1556,6 +1573,7 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
         return;
       }
       setMainView(null);
+      setProjectSettings(!props.embedded && assistantProjectSettingsFromHref(window.location.href));
       if (projectId) {
         void openProject(projectId).catch(() => navigateTo(basePath));
         return;
@@ -3725,6 +3743,9 @@ export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
     mainView,
     openPrefs,
     prefsTab,
+    projectSettings,
+    openProjectSettings,
+    closeProjectSettings,
     projectView,
     ProjectContent,
     codeRendered,
