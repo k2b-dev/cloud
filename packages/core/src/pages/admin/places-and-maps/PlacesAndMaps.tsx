@@ -252,6 +252,7 @@ export default function PlacesAndMaps(props: { nav: NavProps; documentationHref?
     void loadUsage();
   };
   const removeKey = async () => {
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!(await Dialog.confirm({ title: t().removeQuestionFull, description: t().removeWhy, confirm: t().removeConfirm }))) return;
     setKeyPhase({ kind: "removing" });
     let next: GeoAdminStatus | null = null;

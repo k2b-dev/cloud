@@ -166,6 +166,7 @@ export const OnceDialog = (props: { app: App; t: KeysMessages; created: CreatedK
   const leave = async () => {
     if (
       saved() ||
+      // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
       (await Dialog.confirm({ title: t().unsavedTitle, description: t().unsavedText, confirm: t().closeAnyway, cancel: t().backToKey }))
     ) {
       setSaved(false);

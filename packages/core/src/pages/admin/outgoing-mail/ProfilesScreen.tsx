@@ -107,6 +107,7 @@ export default function ProfilesScreen(props: { nav: NavProps; profiles: Profile
     navigateTo(`${PATH}?profile=${profile.key}`);
   };
   const remove = async (profile: AdminMailProfile) => {
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!(await Dialog.confirm({ title: t().deleteTitle, description: t().deleteConfirm({ name: profile.name }), confirm: t().delete })))
       return;
     const response = await api.profiles[":key"].$delete({ param: { key: profile.key } });

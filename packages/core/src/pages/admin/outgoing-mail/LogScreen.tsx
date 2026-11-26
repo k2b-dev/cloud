@@ -155,6 +155,7 @@ export default function LogScreen(props: LogScreenProps) {
   };
   const cancel = async () => {
     const current = record();
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!current || !(await Dialog.confirm({ title: t().cancelTitle, description: t().cancelConfirm, confirm: t().cancelMail }))) return;
     setBusy(true);
     try {
@@ -171,6 +172,7 @@ export default function LogScreen(props: LogScreenProps) {
   };
   const [batchCancelled, setBatchCancelled] = createSignal(false);
   const cancelBatch = async (batchId: string) => {
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!(await Dialog.confirm({ title: t().cancelBatch, description: t().cancelBatchConfirm, confirm: t().cancelBatch }))) return;
     setBusy(true);
     try {

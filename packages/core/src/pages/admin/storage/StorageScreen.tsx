@@ -286,6 +286,7 @@ const BucketForm = (props: { t: StorageAreaMessages; bucket: AdminStorageBucket 
         : known.packages.length
           ? t().removeUsage({ list: known.packages.join(", ") + (known.truncated ? `, ${t().usageMore}` : "") })
           : t().removeUsageNone;
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const confirmed = await Dialog.confirm({
       title: t().removeTitle({ name: stored.name }),
       description: [t().removeLead, where, t().removeLimits, t().removeReserved].join(" "),

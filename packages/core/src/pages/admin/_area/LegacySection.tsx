@@ -25,6 +25,7 @@ export default function LegacySection(props: { items: LegacyRow[] }) {
 
   const cleanUp = async () => {
     const count = items().length;
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!(await Dialog.confirm({ title: t().cleanUpConfirm({ count }), confirm: t().cleanUp }))) return;
     setBusy(true);
     try {

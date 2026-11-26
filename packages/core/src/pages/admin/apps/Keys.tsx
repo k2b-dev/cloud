@@ -170,6 +170,7 @@ export default function Keys(props: KeysProps) {
   const [revokeProblem, setRevokeProblem] = createSignal<{ unclear: boolean } | null>(null);
   const revoke = async (key: KeyEntry) => {
     const last = active().length === 1 && key.status === "active";
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const asked = await Dialog.confirm({
       title: t().revokeTitle({ name: key.name }),
       description: `${t().revokeText({ app: props.app.name })}${last ? ` ${t().lastKeyLead} ${t().lastKeyText({ app: props.app.name })}` : ""}`,
@@ -186,6 +187,7 @@ export default function Keys(props: KeysProps) {
   const [creatingToken, setCreatingToken] = createSignal(false);
   const [tokenProblem, setTokenProblem] = createSignal<string | null>(null);
   const revokeToken = async (token: TokenEntry) => {
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const asked = await Dialog.confirm({
       title: t().revokeTitle({ name: token.name }),
       description: `${token.tokenPrefix} · ${t().tokenRevokeConfirm}`,

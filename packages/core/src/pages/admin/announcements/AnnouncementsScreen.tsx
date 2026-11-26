@@ -116,6 +116,7 @@ export default function AnnouncementsScreen(props: AnnouncementsScreenProps) {
   const remove = async () => {
     const current = entry();
     if (!current) return;
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!(await Dialog.confirm({ title: t().deleteConfirm({ title: current.title }), confirm: t().delete }))) return;
     setBusy(true);
     try {

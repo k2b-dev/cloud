@@ -241,6 +241,7 @@ export default function SignInLocations(props: {
 
   const reset = async (database: GeoIpAdminDatabase) => {
     const type = typeName(database.kind);
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const confirmed = await Dialog.confirm({
       title: t().resetTitle({ type }),
       description: database.bundled ? t().resetBody : t().resetBodyNoSnapshot,

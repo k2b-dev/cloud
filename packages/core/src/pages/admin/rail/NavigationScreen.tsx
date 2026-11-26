@@ -132,6 +132,7 @@ export default function NavigationScreen(props: NavigationScreenProps) {
   };
   const remove = async () => {
     const current = entry();
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     if (!current || !(await Dialog.confirm({ title: t().deleteConfirm, confirm: t().remove }))) return;
     await write({ ...state(), entries: state().entries.filter((item) => item.shortcut.id !== current.shortcut.id) }, true);
   };

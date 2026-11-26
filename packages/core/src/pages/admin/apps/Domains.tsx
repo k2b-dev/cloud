@@ -105,6 +105,7 @@ export default function Domains(props: DomainsProps) {
   /** Asks, then removes; a refusal shows above the list, and an old list is read again. */
   const remove = async (host: string) => {
     if (busy()) return;
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const asked = await Dialog.confirm({
       title: t().removeTitle({ host }),
       description: t().removeText({ host, app: props.app.name }),

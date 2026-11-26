@@ -148,6 +148,7 @@ export function AppOverview(props: Ctx & { app: AppPageData }) {
   /** Asks, then hides the app from the list; a refusal keeps the app listed and says why above its facts. */
   const remove = async () => {
     if (removing()) return;
+    // k2b-ui gap: a destructive question asks with a red button once #4275 lands (danger: true).
     const asked = await Dialog.confirm({
       title: t.removeTitle({ name: entry.name }),
       description: t.removeText({ name: entry.name }),
