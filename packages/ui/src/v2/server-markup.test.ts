@@ -104,3 +104,35 @@ test("an empty state that is a result is a status region with a toned sign; a pl
   const plain = renderToString(() => createComponent(Empty, { icon: "inbox", text: "Noch nichts." }));
   expect(plain).toContain('<div class="k2-state" data-k2-part="Empty"><span class="k2-sign"><');
 });
+
+// A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.
+test("a fixed width keeps a column and a table column without a grip", async () => {
+  const { Table } = await import("./content");
+  const fixed = { min: 280, default: 360, fixed: true };
+  const panes = renderToString(() =>
+    createComponent(Pane.Split, {
+      get children() {
+        return [
+          createComponent(Pane, { label: "Liste", children: "Liste" }),
+          createComponent(Pane, { side: true, label: "Seite", width: fixed, children: "Seite" }),
+        ];
+      },
+    }),
+  );
+  expect(panes).toContain('class="k2-seam"');
+  expect(panes).not.toContain("data-k2-grip");
+  const table = (width: typeof fixed) =>
+    renderToString(() =>
+      createComponent(Table<{ name: string }>, {
+        label: "Programm",
+        rows: [{ name: "Lesung" }],
+        columns: [
+          { title: "Name", width, cell: (row: { name: string }) => row.name },
+          { title: "Ort", cell: () => "Saal 2" },
+        ],
+      }),
+    );
+  expect(table(fixed)).not.toContain("k2-cgrip");
+  expect(table({ ...fixed, fixed: false })).toContain("k2-cgrip");
+  expect(table(fixed)).toContain("width:360px");
+});
