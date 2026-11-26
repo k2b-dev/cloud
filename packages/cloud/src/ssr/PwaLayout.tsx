@@ -25,6 +25,11 @@ export type PwaLayoutProps = {
   /** At most two icon buttons at the header end. */
   actions?: JSX.Element;
   /**
+   * Header-end buttons only the phone needs, because beside the sidebar it already leads there, such as the way to
+   * Settings on Start: they stand after `actions` below 48rem and leave the head beside the sidebar.
+   */
+  phoneActions?: JSX.Element;
+  /**
    * The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; the frame keeps only its
    * navigation. `title` still names the document.
    */
@@ -123,7 +128,23 @@ export default function PwaLayout(props: PwaLayoutProps) {
       {/* Pages without a person show no times. Their pairing link lives only in memory, and a reload would lose it. */}
       <TimezoneCookie reload={!!user} />
       <MobileShell
-        header={<MobileShell.Header title={props.title} sidebarTitle={props.sidebarTitle} back={props.back} actions={props.actions} />}
+        header={
+          <MobileShell.Header
+            title={props.title}
+            sidebarTitle={props.sidebarTitle}
+            back={props.back}
+            actions={
+              props.phoneActions === undefined ? (
+                props.actions
+              ) : (
+                <>
+                  {props.actions}
+                  {props.phoneActions}
+                </>
+              )
+            }
+          />
+        }
         scroll={!props.bare}
         screen={props.screen}
         footer={user && parts.length > 0 ? <TabBar label={t.tabs} items={items} /> : undefined}

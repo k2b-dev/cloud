@@ -114,6 +114,10 @@ const pageOf = (variant: Variant) =>
         bare: variant !== "framed",
         screen: variant === "screen",
         get actions() {
+          return createComponent(Button, { variant: "ghost", icon: "search", label: "Search", href: "/pwa/inventory/search" });
+        },
+        // beside the sidebar, its foot already leads to Settings
+        get phoneActions() {
           return createComponent(Button, { variant: "ghost", icon: "settings", label: "Settings", href: "/pwa/settings" });
         },
         get children() {
@@ -229,7 +233,8 @@ describe("PwaLayout ui v2 in a browser", () => {
               main: box(".pwa-v2-main"),
               nav: box(".pwa-v2-nav"),
               tabs: box(".k2-tabbar"),
-              actions: box(".pwa-v2-actions a"),
+              actions: box('.pwa-v2-actions a[href="/pwa/inventory/search"]'),
+              phoneActions: box('.pwa-v2-actions a[href="/pwa/settings"]'),
               // a slot shows its contents only; the bar is the head's box
               head: box(".pwa-v2-main .k2-bar"),
               scrollWidth: document.documentElement.scrollWidth,
@@ -243,6 +248,9 @@ describe("PwaLayout ui v2 in a browser", () => {
           expect(result.paneScrolls).toBe(true);
           // The page's actions stay in the frame's head at every width; a bare page has its own head.
           if (variant === "framed") expect(result.actions?.width).toBeGreaterThan(0);
+          // A deed the sidebar already offers shows only on the phone: never twice beside the sidebar.
+          if (variant === "framed" && width < 768) expect(result.phoneActions?.width).toBeGreaterThan(0);
+          if (variant === "framed" && width >= 768) expect(result.phoneActions).toBeUndefined();
           expect(Math.round(result.frame!.height)).toBe(width < 768 ? 844 : 900);
           // The page's head starts below the status bar and the notch.
           expect(result.head!.top).toBeGreaterThanOrEqual(width < 768 ? insets.top : 0);

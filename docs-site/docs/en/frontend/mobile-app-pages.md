@@ -187,6 +187,7 @@ pages. Declare `/public/<app-id>` when the part has its own styles.
 | `sidebarTitle` | Optional heading beside the sidebar, where the sidebar already names the installation; `title` by default |
 | `back` | Optional `{ href, label, withSidebar }` for going up inside the part, for example from a detail to its list; `withSidebar: false` hides it beside the sidebar |
 | `actions` | At most two icon buttons at the end of the header |
+| `phoneActions` | Header buttons only the phone needs, because beside the sidebar it already leads there, such as the way to Settings on Start; they leave the header from 48 rem |
 | `bare` | The page brings its own heads and scroll areas, such as `AppWorkspace.Main` levels; `title` still names the document |
 | `screen` | Below 48 rem, the page opens as a screen of its own without the tab bar, such as one chat with its composer at the bottom edge; a part that opens or leaves such a screen in place calls [`MobileShell.setScreen`](/en/ui/layout/mobile-shell) |
 | `ui` | `"v2"` (provisional) for a page built with `@k2b/ui/v2`; see [The v2 frame](#the-v2-frame) |
@@ -252,14 +253,15 @@ no v1 shell code: no `MobileShell`, no `TabBar`, and no v1 toasts.
   and Settings at its foot stands beside the page. A part's badge is a count
   that calls for attention, its summary a quiet count beside it.
 - Without `bare`, the frame puts the content in a `Workspace` whose head holds
-  `back`, the title (`sidebarTitle` from 48 rem), and `actions` (kept on the
-  phone, where the app has no shell bar to take them), with one
+  `back`, the title (`sidebarTitle` from 48 rem), `actions` (kept on the
+  phone, where the app has no shell bar to take them) and `phoneActions` (on
+  the phone only, never twice beside the sidebar), with one
   scrolling `Pane` and its `status` row. Write the content from v2 bands,
   sections, and rows. Give each row one signal, such as a count chip, not a
   bold title, a chip, and a number in its second line at once.
 - With `bare`, the page's island returns its own `Workspace` without a
   sidebar, with its panes and heads. Only the panes scroll; the document
-  never does. The frame then shows no `back`, `actions`, `sidebarTitle`, or
+  never does. The frame then shows no `back`, `actions`, `phoneActions`, `sidebarTitle`, or
   `status`; in development the server warns when a bare page passes them.
 - Offline (with what follows: what was loaded stays visible, and loading and
   saving work again once the device is online), Chrome signed in to another account, and a new version show in a

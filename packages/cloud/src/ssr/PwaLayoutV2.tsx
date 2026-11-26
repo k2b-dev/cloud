@@ -10,10 +10,11 @@ import { pwaFrame } from "./pwa-frame";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 /** The props of the frame's head that a bare page leaves out. */
-export const bareDrops = (props: Pick<PwaLayoutProps, "back" | "actions" | "sidebarTitle" | "status">): string[] =>
+export const bareDrops = (props: Pick<PwaLayoutProps, "back" | "actions" | "phoneActions" | "sidebarTitle" | "status">): string[] =>
   [
     props.back && "back",
     props.actions !== undefined && "actions",
+    props.phoneActions !== undefined && "phoneActions",
     props.sidebarTitle !== undefined && "sidebarTitle",
     props.status !== undefined && "status",
   ].filter((name): name is string => typeof name === "string");
@@ -84,9 +85,13 @@ export default function PwaLayoutV2(props: PwaLayoutProps) {
       }
       // The app has no phone bar of the shell, where a v2 head's end goes below 768 px: the page's actions stay.
       end={
-        props.actions === undefined ? undefined : (
+        props.actions === undefined && props.phoneActions === undefined ? undefined : (
           <span class="pwa-v2-actions" data-keep="">
             {props.actions}
+            {/* beside the sidebar it already leads there */}
+            <Show when={props.phoneActions !== undefined}>
+              <span class="pwa-v2-phone-only">{props.phoneActions}</span>
+            </Show>
           </span>
         )
       }
