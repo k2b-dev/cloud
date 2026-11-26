@@ -54,9 +54,16 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
   puts `k2-ui` on the page's main area and loads v2.css with the app's accent
   tokens. Outside Cloud, the page template puts `class="k2-ui"` on `<body>`
   and loads `@k2b/ui/v2.css`.
-- A screen is a component that returns one `Workspace`.
+- A screen is a component that returns one `Workspace`. It renders on the
+  server; only the parts that need the browser are islands (`.island.tsx`):
+  a button with its action, a field, a row's actions, a filter bar. An island
+  stands wherever its primitive stands. v2.css and `describeV2` look through
+  the `<solid-island>` and `<solid-client>` wrappers, so the layout stays the
+  same. Never make the whole screen one island to keep its layout.
 - Strings come from the app's message catalog; recipes inline German sample
   text only to look like the real thing.
+- A v2 island imports only from `@k2b/ui/v2`, including `useLocale` for the
+  page's language: the `@k2b/ui` entry belongs to v1.
 
 ## What to use for what
 
@@ -96,7 +103,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | a free drawing (map, plan) | `Canvas` inside a primitive | `content.tsx`, `record.tsx` |
 | a chart in a v2 screen | `Chart` from `@k2b/ui` (data types in `@k2b/ui/charts`) with `style={{ height: "100%" }}` in a `Canvas` with `height`, directly in its `Section`; no data: `Empty` in place of the `Canvas` | – |
 | nothing to show (yet) | `Empty` where the data would stand; a table takes `empty` | `states.tsx`, `table.tsx` |
-| data still loading | `Loading` where the list will stand; a table takes `loading` | `states.tsx` |
+| data still loading | `Loading` where the list will stand; a table, `Facts` and `Cells.Cell` take `loading` | `states.tsx` |
 | data that failed to load once | `Failed` with "Erneut versuchen", in place of the data only | `states.tsx` |
 | a search in a head or status row | `Input type="search"` with `icon`, `onKeyDown`, `ref`, `end` | – |
 | a link that opens in place | `href` plus `onNavigate` on rows, tabs, nav entries, actions, buttons, chips | – |
@@ -161,7 +168,7 @@ a `Notice` that names the deed.
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
   `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `Check`, `Choice`.
+  `DateInput`, `DatePicker`, `Check`, `Choice`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
