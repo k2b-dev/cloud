@@ -1,4 +1,5 @@
 import { resolveUiMessages } from "../intl/messages";
+import { keyboardPlatform } from "../intl/shortcut";
 import type { Live } from "./attach-live";
 import type { ConfirmOptions } from "./overlays";
 import type { ToastOptions } from "./toast";
@@ -117,7 +118,8 @@ let toastCount = 0;
 
 /** Where a person types: a shortcut there would take a letter from the text. */
 const editable = (target: EventTarget | null) =>
-  target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+  target instanceof Element &&
+  target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]') !== null;
 
 /**
  * Brings one Workspace the server rendered alive (see the top of this module); returns the function that stops it.
@@ -170,53 +172,106 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
     );
     return live;
   };
-  let failure: HTMLElement | undefined;
-  const failed = (retry: () => void) => {
-    failure?.remove();
-    // the shape of a toast, without the toaster that did not load
-    const notice = document.createElement("section");
-    notice.className = "k2-toasts";
-    notice.dataset.k2Part = "Toast";
-    notice.dataset.k2WsFailed = "";
-    notice.setAttribute("role", "alert");
-    const list = notice.appendChild(document.createElement("ol"));
-    const item = list.appendChild(document.createElement("li"));
+  // The uses waiting for live parts that did not load, and the one notice that says so. "Retry" loads once and runs
+  // them all; when that fails as well (the page is likely from an older release), the notice offers to reload the page
+  // and can be closed, which answers every waiting question "no". The notice stands in the top layer of the page, so it
+  // is above an open dialog, and a lasting layer of @ui-sdk/core's (its layer registry), so a press on it reaches it.
+  const pending = new Set<{ run: () => void; drop: () => void }>();
+  let notice: HTMLElement | undefined;
+  let releaseLayer: (() => void) | undefined;
+  let retried = false;
+  const button = (text: string, press: () => void) => {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.className = "k2-btn";
+    element.dataset.variant = "text";
+    const label = element.appendChild(document.createElement("span"));
+    label.className = "k2-btn-label";
+    label.textContent = text;
+    element.addEventListener("click", press);
+    return element;
+  };
+  const closeNotice = () => {
+    releaseLayer?.();
+    releaseLayer = undefined;
+    notice?.remove();
+    notice = undefined;
+  };
+  const showNotice = () => {
+    if (notice?.dataset.retried === String(retried)) return;
+    closeNotice();
+    // the v2 scope of the workspace, beside the page's other content
+    const scope = document.createElement("div");
+    scope.className = "k2-ui";
+    scope.dataset.k2WsFailed = "";
+    scope.dataset.retried = String(retried);
+    scope.style.display = "contents";
+    const region = scope.appendChild(document.createElement("section"));
+    region.className = "k2-toasts";
+    region.dataset.k2Part = "Toast";
+    region.setAttribute("role", "alert");
+    region.popover = "manual";
+    const item = region.appendChild(document.createElement("ol")).appendChild(document.createElement("li"));
     item.className = "k2-toast";
     item.dataset.type = "error";
     const text = item.appendChild(document.createElement("span"));
     text.className = "k2-toast-text";
     text.textContent = t.controlsFailed;
-    const button = item.appendChild(document.createElement("button"));
-    button.type = "button";
-    button.className = "k2-btn";
-    button.dataset.variant = "text";
-    const label = button.appendChild(document.createElement("span"));
-    label.className = "k2-btn-label";
-    label.textContent = t.retry;
-    button.addEventListener("click", () => {
-      notice.remove();
-      if (failure === notice) failure = undefined;
-      retry();
-    });
-    host.append(notice);
-    failure = notice;
+    if (!retried)
+      item.append(
+        button(t.retry, () => {
+          retried = true;
+          closeNotice();
+          const waiting = [...pending];
+          pending.clear();
+          for (const use of waiting) use.run();
+        }),
+      );
+    else
+      item.append(
+        button(t.reloadPage, () => window.location.reload()),
+        button(t.close, () => {
+          closeNotice();
+          const waiting = [...pending];
+          pending.clear();
+          for (const use of waiting) use.drop();
+        }),
+      );
+    document.body.append(scope);
+    region.showPopover?.();
+    // A layer that stays, as the toaster is: a press on it neither closes an open dialog nor is taken by it. The registry
+    // loads with the notice; should it not load either, the notice still shows and is pressed, and a first press on it
+    // closes a dialog that closes on a press outside.
+    void import("./behavior/layer").then(
+      ({ bindPersistentLayer }) => {
+        if (notice !== scope) return;
+        releaseLayer = bindPersistentLayer(region);
+        region.dataset.lasting = "";
+      },
+      () => {},
+    );
+    notice = scope;
   };
   // Questions still waiting when the workspace goes (a navigation during the load) are answered "no".
   const waiting = new Set<(answer: boolean) => void>();
   /** Runs `use` with the live parts, once they are there; until the workspace goes, a failed load offers a retry. */
   const withLive = <T,>(use: (parts: Live) => T | Promise<T>): Promise<T> =>
     new Promise<T>((resolve, reject) => {
-      const attempt = () => {
-        if (stopped) return reject(new Error("detached"));
-        load().then(
-          (parts) => resolve(use(parts)),
-          () => {
-            if (stopped) reject(new Error("detached"));
-            else failed(attempt);
-          },
-        );
+      const entry = {
+        run: () => {
+          if (stopped) return reject(new Error("detached"));
+          load().then(
+            (parts) => resolve(use(parts)),
+            () => {
+              if (stopped) return reject(new Error("detached"));
+              pending.add(entry);
+              showNotice();
+            },
+          );
+        },
+        drop: () => reject(new Error("closed")),
       };
-      attempt();
+      entry.run();
     });
 
   // a press before the drawer has loaded opens it once it is there
@@ -262,7 +317,13 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
       if (!(event instanceof KeyboardEvent)) return;
       if (event.defaultPrevented || !event.altKey || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.code !== "KeyS") return;
       // AltGr (Ctrl+Alt on Windows) writes letters such as "ś"; typing and composing text is never a shortcut
-      if (event.getModifierState("AltGraph") || event.isComposing || editable(event.target)) return;
+      // (macOS has no AltGr, and Gecko reports its Option as AltGraph); with Command a field types nothing
+      if (
+        (keyboardPlatform() !== "apple" && event.getModifierState("AltGraph")) ||
+        event.isComposing ||
+        (editable(event.target) && !event.metaKey)
+      )
+        return;
       // in a narrow window the sidebar is a drawer, and the same keys open and close it
       if (toggle && toggle.getClientRects().length > 0) void withLive((parts) => parts.toggleDrawer()).catch(() => {});
       else if (collapse.getClientRects().length > 0) set(!element.hasAttribute("data-collapsed"));
@@ -279,6 +340,8 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
 
   return () => {
     stopped = true;
+    closeNotice();
+    pending.clear();
     for (const answer of waiting) answer(false);
     waiting.clear();
     for (const stop of stops.splice(0).reverse()) stop();

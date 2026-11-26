@@ -9,6 +9,8 @@ declare global {
     __more: (visible: boolean) => void;
     /** Shows or hides the whole sidebar: its column and its drawer's button come and go. */
     __sidebar: (visible: boolean) => void;
+    /** Makes the sidebar collapsible, or not: the collapse button comes and goes. */
+    __collapsible: (collapsible: boolean) => void;
   }
 }
 
@@ -16,6 +18,8 @@ declare global {
 // drawer holds it.
 const [more, setMore] = createSignal(true);
 const [sidebar, setSidebar] = createSignal(true);
+const [collapsible, setCollapsible] = createSignal(false);
+window.__collapsible = setCollapsible;
 window.__more = setMore;
 window.__sidebar = setSidebar;
 const root = document.getElementById("root");
@@ -25,6 +29,7 @@ render(
   () => (
     <div class="k2-ui" style={{ position: "fixed", inset: "0", display: "flex" }}>
       <Workspace
+        collapsible={collapsible()}
         sidebar={
           <Show when={sidebar()}>
             <Nav

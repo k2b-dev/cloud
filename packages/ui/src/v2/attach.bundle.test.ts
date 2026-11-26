@@ -1,5 +1,6 @@
 // Guard of the frame entry's weight: what a page with a server-rendered Workspace loads at once is the small core of
-// `attachWorkspaces`; @ui-sdk/core (drawer, alert dialog, toaster) loads only on first use.
+// `attachWorkspaces`; @ui-sdk/core (drawer, alert dialog, toaster, and the layer registry of the failure notice) loads
+// only on first use.
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

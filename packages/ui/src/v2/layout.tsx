@@ -184,12 +184,12 @@ export const Workspace = (props: WorkspaceProps) => {
     `.k2-ui [data-k2-ws="${id}"] > :is(.k2-ws-side, .k2-ws-side + .k2-seam) { display: none; } ` +
     `.k2-ui [data-k2-ws="${id}"] > .k2-ws-main > [data-slot="head"] { --k2-ws-toggle: inline-flex; --k2-ws-collapse: none; --k2-ws-drawer: 1; } } }`;
   let element: HTMLDivElement | undefined;
-  // In an island the Workspace is alive itself; on the server's page the frame entry attaches it. A sidebar that comes
-  // or goes renders its column and its drawer's button anew, so the workspace attaches again to the new ones.
-  const hasSidebar = createMemo(() => Boolean(sidebar()));
+  // In an island the Workspace is alive itself; on the server's page the frame entry attaches it. A sidebar or a collapse
+  // button that comes or goes renders its elements anew, so the workspace attaches again to the new ones.
+  const bound = createMemo(() => `${Boolean(sidebar())}:${collapsible()}`);
   onMount(() => {
     createEffect(
-      on(hasSidebar, () => {
+      on(bound, () => {
         if (element) onCleanup(attachWorkspace(element));
       }),
     );

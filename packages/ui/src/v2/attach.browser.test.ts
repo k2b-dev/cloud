@@ -106,8 +106,9 @@ const boxes = (page: Page) =>
       }),
   );
 
-const withPage = async (width: number, run: (page: Page) => Promise<void>) => {
+const withPage = async (width: number, run: (page: Page) => Promise<void>, prepare?: (page: Page) => Promise<void>) => {
   const page = await browser.newPage({ viewport: { width, height: 800 } });
+  await prepare?.(page);
   page.setDefaultTimeout(2000);
   const errors = pageErrors(page);
   try {
@@ -305,4 +306,125 @@ test("Mod+Alt+S is no shortcut while typing: not in a field, not with AltGr, not
     await page.keyboard.press("Control+Alt+KeyS");
     expect(await page.evaluate(() => window.__collapsed)).toEqual([true]);
   });
+});
+
+test("two uses waiting on one failed load share one notice, and Retry loads once and runs both", async () => {
+  let tries = 0;
+  await withSplitPage(
+    (fulfil, abort) => (++tries === 1 ? abort() : fulfil()),
+    async (page) => {
+      await page.evaluate(() => {
+        Reflect.set(window, "__answer", window.__confirm());
+        window.__toast("Gespeichert");
+      });
+      const failure = page.getByRole("alert").filter({ hasText: "Dieser Teil der Seite konnte nicht geladen werden." });
+      await failure.waitFor();
+      expect(await failure.count()).toBe(1);
+      await failure.getByRole("button", { name: "Erneut versuchen" }).click();
+      // both run: the toast shows and the question opens, and it answers
+      await page.locator('[data-k2-toaster] [data-slot="toast"]').getByText("Gespeichert").waitFor();
+      const dialog = page.getByRole("alertdialog");
+      await dialog.waitFor();
+      await dialog.getByRole("button", { name: "Verwerfen" }).click();
+      expect(await page.evaluate(() => Reflect.get(window, "__answer"))).toBe(true);
+      expect(tries).toBe(2);
+    },
+  );
+});
+
+test("when Retry fails too, the notice offers to reload the page and to close it, which answers waiting questions no", async () => {
+  let tries = 0;
+  await withSplitPage(
+    async (_fulfil, abort) => {
+      tries++;
+      await abort();
+    },
+    async (page) => {
+      await page.evaluate(() => {
+        Reflect.set(window, "__answer", window.__confirm());
+      });
+      const failure = page.getByRole("alert").filter({ hasText: "Dieser Teil der Seite konnte nicht geladen werden." });
+      await failure.getByRole("button", { name: "Erneut versuchen" }).click();
+      await failure.getByRole("button", { name: "Seite neu laden" }).waitFor();
+      await failure.getByRole("button", { name: "Schließen" }).click();
+      await failure.waitFor({ state: "detached" });
+      expect(await page.evaluate(() => Reflect.get(window, "__answer"))).toBe(false);
+      expect(tries).toBe(2);
+    },
+  );
+});
+
+test("the notice stands above an open modal dialog and can be pressed there", async () => {
+  let tries = 0;
+  await withSplitPage(
+    (fulfil, abort) => (++tries === 1 ? abort() : fulfil()),
+    async (page) => {
+      await page.evaluate(() => window.__openDialog());
+      await page.getByRole("dialog", { name: "Auftrag" }).waitFor();
+      await page.evaluate(() => window.__toast("Gespeichert"));
+      const retry = page.getByRole("alert").getByRole("button", { name: "Erneut versuchen" });
+      await retry.waitFor();
+      // the notice is a lasting layer once the registry has loaded
+      await page.locator("[data-k2-ws-failed] [data-lasting]").waitFor({ state: "attached" });
+      // what a press there would reach is the button itself, not the dialog's backdrop
+      expect(
+        await retry.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return element.contains(document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2));
+        }),
+      ).toBe(true);
+      await retry.click();
+      await page.locator('[data-k2-toaster] [data-slot="toast"]').getByText("Gespeichert").waitFor();
+    },
+  );
+});
+
+test("on a Mac, Cmd+Option+S works also where Gecko reports Option as AltGr, and in a field; a textbox role is a field", async () => {
+  await withPage(
+    1440,
+    async (page) => {
+      await page.evaluate(() => {
+        const press = (target: EventTarget, init: KeyboardEventInit) =>
+          target.dispatchEvent(
+            new KeyboardEvent("keydown", { code: "KeyS", key: "s", altKey: true, bubbles: true, cancelable: true, ...init }),
+          );
+        press(document.body, { metaKey: true, modifierAltGraph: true });
+        const field = document.querySelector('input[aria-label="Notiz"]');
+        if (field) press(field, { metaKey: true });
+        // Ctrl+Alt in a textbox could type a letter there: no shortcut
+        const box = document.createElement("div");
+        box.setAttribute("role", "textbox");
+        document.body.append(box);
+        press(box, { ctrlKey: true });
+      });
+      expect(await page.evaluate(() => window.__collapsed)).toEqual([true, false]);
+    },
+    async (page) => {
+      // a navigation runs the script, and the page's content then stands in that window
+      await page.addInitScript(() => Object.defineProperty(navigator, "platform", { get: () => "MacIntel" }));
+      await page.goto("about:blank");
+    },
+  );
+});
+
+test("a collapse button that comes later works: the island's Workspace attaches again", async () => {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 800 } });
+  page.setDefaultTimeout(2000);
+  const errors = pageErrors(page);
+  try {
+    await page.setContent(
+      `<!doctype html><html lang="de"><head><meta charset="utf-8"><style>${css}</style></head><body><div id="root"></div></body></html>`,
+    );
+    await page.addScriptTag({ content: live });
+    await page.waitForFunction(() => window.__mounted === true);
+    await page.evaluate(() => window.__collapsible(true));
+    const collapse = page.locator(".k2-ws-collapse");
+    await collapse.waitFor();
+    await collapse.click();
+    await page.locator(".k2-ws-side").waitFor({ state: "hidden" });
+    expect(await collapse.getAttribute("aria-expanded")).toBe("false");
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+  }
 });
