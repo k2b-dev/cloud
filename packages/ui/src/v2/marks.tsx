@@ -206,6 +206,11 @@ export type ProgressProps = {
   of: number;
   /** The words next to the bar, such as "Arbeitstag 5 von 22". */
   label?: string;
+  /**
+   * A bar near or at its limit says so in colour too: `warn` (almost full), `bad` (full, over). The words that say
+   * why stand beside it (a chip, a hint); never a colour alone.
+   */
+  status?: "warn" | "bad";
 };
 
 /** A thin bar with its value. */
@@ -215,6 +220,7 @@ export const Progress = (props: ProgressProps) => {
     <span
       class="k2-progress"
       data-k2-part="Progress"
+      data-status={props.status}
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={props.of}

@@ -310,7 +310,9 @@ lines instead of cutting a thing.
   plain; `icon`; `onClick` or `href` makes it a control, `pressed` marks an
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
-- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
+- `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22"), `status`
+  (`warn` almost full, `bad` full: the bar says it in colour too, beside the
+  chip or words that say why).
 
 ## Controls
 
