@@ -402,8 +402,8 @@ export type StatusFact = { before?: string; value?: string | number; after?: str
 
 export type StatusRowProps = {
   /**
-   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…" (about a
-   * word stays), so it never runs under them.
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with filters that can fold to their symbols, about a word stays down to a row of 320 px.
    */
   lead: string;
   /**
@@ -424,7 +424,7 @@ export type StatusRowProps = {
   /**
    * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
    * narrower than 480 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
-   * symbol, so it can fold.
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
    */
   filters?: JSX.Element;
   /**

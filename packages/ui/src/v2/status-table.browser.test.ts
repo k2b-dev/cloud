@@ -91,7 +91,8 @@ const statusRow = () => {
     gaps: [before, ...seen.map((figure) => figure.shape)].flatMap((shape, index, shapes) =>
       index === 0 ? [] : [Math.round(shape.left - shapes[index - 1]!.right)],
     ),
-    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => ({
+    // the buttons and the switches at the end (a switch is a `Check` in a `.k2-choice`)
+    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end :is(.k2-btn, .k2-choice)")].map((button) => ({
       name: button.textContent?.trim(),
       inside: button.getBoundingClientRect().right <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
@@ -120,12 +121,12 @@ const statusRow = () => {
  * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls stay whole within
  * the row and clear of the lead; a lead that does not fit is cut with "…".
  */
-const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>) => {
+const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>, word = true) => {
   expect(found.wrong).toBe(0);
   expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
   for (const gap of found.gaps) expect(gap).toBe(16);
   for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
-  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: true });
+  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: word || found.lead.word });
 };
 
 // Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
@@ -179,6 +180,27 @@ for (const long of [false, true])
         { column },
       );
     });
+
+// The operations log (break-ui finding 21): large counts, the live switch and sort and grouping as framed menus in
+// words. At every width, also the narrow list column beside an open entry, the figures give way before they reach the
+// switch, the lead is cut before a control, and no control is cut or pushed past the row's edge.
+for (const column of [1440, 1024, 760, 600, 520, 400, 320])
+  test(`a status row ${column} px wide as the operations log draws it: figures, lead and controls never overlap`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2Logs?.());
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        expect(found.width).toBe(column);
+        // at 320 px the switch, which has no symbol to fold to, and two menus leave the lead less than a word
+        expectHeld(found, column > 320);
+        expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
+        expect(found.words).toEqual(column < 500 ? [false, false] : [true, true]);
+        if (column >= 1024) expect(found.shown).toEqual([true, true]);
+      },
+      { column },
+    );
+  });
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {

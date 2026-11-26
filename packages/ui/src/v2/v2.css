@@ -2561,10 +2561,10 @@
 .k2-ui .k2-bar[data-status-row] > .k2-bar-start {
   flex: 1 1 0;
 }
-/* about a word stays, never a letter and "…" alone */
+/* the lead gives way before a control is cut or covered; with controls that fold it keeps about a word down to 320 px */
 .k2-ui .k2-bar-start > .k2-status-lead {
   flex: 0 1 auto;
-  min-width: min(4.5em, max-content);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

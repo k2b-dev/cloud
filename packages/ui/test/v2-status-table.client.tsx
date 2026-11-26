@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { Bar, Button, Chip, Input, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import { Bar, Button, Check, Chip, Input, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
 
 // A filtered list as an operations log draws it: a head with views, a search and "…"; a status row with the result,
 // key figures, a loading mark and the order controls, above a large table with a sticky first column, group rows of
@@ -17,6 +17,9 @@ declare global {
     __k2NoFilters?: () => void;
     /** Gives the status row a lead longer than fits beside its worded filters in a column below 760 px. */
     __k2LongLead?: () => void;
+    /** Draws the status row as the operations log does: its result, figures with large counts, the live switch, and
+     * sort and grouping as framed menus in words (break-ui finding 21). */
+    __k2Logs?: () => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -74,6 +77,8 @@ const [filters, setFilters] = createSignal(true);
 window.__k2NoFilters = () => setFilters(false);
 const [longLead, setLongLead] = createSignal(false);
 window.__k2LongLead = () => setLongLead(true);
+const [logs, setLogs] = createSignal(false);
+window.__k2Logs = () => setLogs(true);
 
 const root = document.getElementById("root");
 if (!root) throw new Error("status-table: #root is missing");
@@ -114,11 +119,26 @@ render(
         label="Protokolle"
         status={
           <StatusRow
-            lead={longLead() ? "11 von 11 Einträgen aus Gateway, Mail und Zustellung" : filters() ? "11 von 11 Einträgen" : "4 neu"}
+            lead={
+              logs()
+                ? "300 von 12.345 Einträgen"
+                : longLead()
+                  ? "11 von 11 Einträgen aus Gateway, Mail und Zustellung"
+                  : filters()
+                    ? "11 von 11 Einträgen"
+                    : "4 neu"
+            }
             loading={loading()}
             facts={[
-              { value: 6, after: "Fehler" },
-              { value: 5, after: "Warnungen" },
+              ...(logs()
+                ? [
+                    { value: "1.204", after: "Fehler" },
+                    { value: 321, after: "Warnungen" },
+                  ]
+                : [
+                    { value: 6, after: "Fehler" },
+                    { value: 5, after: "Warnungen" },
+                  ]),
               ...(more()
                 ? [
                     { before: "zuletzt", value: "10:43:48", after: "aus dem Gateway" },
@@ -127,7 +147,17 @@ render(
                 : []),
             ]}
             filters={
-              filters() ? (
+              logs() ? (
+                <>
+                  <Check switch label="Live" checked onChange={() => {}} />
+                  <Button icon="arrows-sort" menu>
+                    Eingang ↓
+                  </Button>
+                  <Button icon="stack-2" menu>
+                    Keine Gruppen
+                  </Button>
+                </>
+              ) : filters() ? (
                 <>
                   <Button variant="text" icon="arrows-sort">
                     Neueste zuerst
