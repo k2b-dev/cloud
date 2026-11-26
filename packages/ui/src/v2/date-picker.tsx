@@ -70,11 +70,12 @@ const TimeField = (props: {
       aria-labelledby={props.labelledBy}
       // Enter applies what the segments hold once core has taken what was typed: a native listener on the group runs
       // after core's on the segment (also in a panel that stops keys) and before the form around it would be sent.
-      // With Ctrl, Cmd or Alt core takes nothing, so nothing applies; Shift+Enter is Enter.
+      // With Ctrl, Cmd or Alt core takes nothing, so nothing applies, and the form around is not sent either (core
+      // would send it with the time from before); Shift+Enter is Enter.
       on:keydown={(event: KeyboardEvent) => {
-        if (event.key !== "Enter" || event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
+        if (event.key !== "Enter" || event.isComposing) return;
         event.preventDefault();
-        props.onEnter();
+        if (!event.ctrlKey && !event.metaKey && !event.altKey) props.onEnter();
       }}
       // what is typed into a segment comes as `beforeinput`, which core takes over (no `input` follows)
       on:beforeinput={() => props.onRead()}
@@ -197,6 +198,8 @@ export const DatePicker = (props: DatePickerProps) => {
                         <calendar.Day
                           value={date}
                           class="k2-cal-day"
+                          // a day is no submit button: in a form a press on it would send the form
+                          type="button"
                           // the chosen day again changes nothing in core, but it is a pick all the same: it closes
                           onClick={() => !props.time && date === chosen() && pickDay(date)}
                           onKeyDown={(event: KeyboardEvent) =>

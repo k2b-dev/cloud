@@ -6,6 +6,7 @@ describe("a time read from text", () => {
     ["14:30", "de", "14:30"],
     ["1430", "de", "14:30"],
     ["930", "de", "09:30"],
+    ["0930", "de", "09:30"],
     ["9", "de", "09:00"],
     ["9:30", "de", "09:30"],
     ["9.30", "de", "09:30"],
@@ -26,6 +27,13 @@ describe("a time read from text", () => {
     // a day period is unambiguous on a 24-hour clock too
     ["2:30 PM", "en-GB", "14:30"],
     ["2:30 PM", "de", "14:30"],
+    // digits of other scripts, as a locale may write them
+    ["٢:٣٠ م", "ar-EG", "14:30"],
+    ["۱۴:۳۰", "fa", "14:30"],
+    // a pasted date is no time: seconds come only after colons
+    ["12.11.26", "de", undefined],
+    ["12.11.2026", "de", undefined],
+    ["14.30.00", "de", undefined],
     ["", "de", undefined],
     ["   ", "de", undefined],
     ["abends", "de", undefined],
@@ -46,6 +54,10 @@ describe("a time read from text", () => {
 describe("the clock and the example of a locale", () => {
   test("German and British English count 24 hours, American English twelve", () => {
     expect([hourCycleOf("de"), hourCycleOf("en-GB"), hourCycleOf("en-US")]).toEqual([24, 24, 12]);
+  });
+  test("the example of every locale is read back as 14:30", () => {
+    for (const locale of ["de", "en-GB", "en-US", "ar-EG", "fa", "hi-IN", "ja"])
+      expect(readTime(timeExample(locale), locale)).toBe("14:30");
   });
   test("the example is 14:30 in the locale's own form", () => {
     expect(timeExample("de")).toBe("14:30");

@@ -416,10 +416,32 @@ test("Enter with Ctrl, Cmd or Alt applies nothing, as core takes nothing then", 
       // a new day is chosen, so a pick would show: with a modifier Enter gives nothing
       const picker = page.getByTestId("switch");
       await picker.locator('[data-value="2026-11-26"]').click();
+      // a day is no submit button of the form around the picker
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
       const minute = picker.getByRole("spinbutton", { name: "Minute" });
       await minute.focus();
       for (const chord of ["Control+Enter", "Meta+Enter", "Alt+Enter"]) await page.keyboard.press(chord);
       expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:00");
+      // nor does it send the form around the picker with the time it held before
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
+    },
+  );
+});
+
+test("Shift+Enter is Enter: it takes what was typed, inside a form too, and sends nothing", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      const minute = page.getByTestId("switch").getByRole("spinbutton", { name: "Minute" });
+      await minute.focus();
+      await page.keyboard.type("1");
+      await page.keyboard.press("Shift+Enter");
+      expect(await page.getByTestId("switch-value").textContent()).toBe("2026-11-24T09:01");
+      await settled(page);
+      expect(await page.evaluate(() => window.__dates ?? [])).toEqual([]);
     },
   );
 });
