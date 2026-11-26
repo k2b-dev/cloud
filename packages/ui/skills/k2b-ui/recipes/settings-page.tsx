@@ -127,13 +127,13 @@ export default function SigninSettings(props: Props) {
             color="#7c3aed"
             label="FreeIPA"
             value={<Chip status="ok">Verbunden</Chip>}
-            meta="ipa.kolb.internal · 18 ms · geprüft 09:40"
+            meta="ipa.example.internal · 18 ms · geprüft 09:40"
             href="#freeipa"
           />
           <Cells.Cell
             icon="alert-triangle"
             label="Fehlgeschlagen, 24 Std."
-            value={<Chip status="warn">7</Chip>}
+            value={<Chip status="warn">7 Anmeldungen</Chip>}
             meta="1 Konto gesperrt · 5 × Passwort falsch"
           />
         </Cells>
@@ -191,7 +191,7 @@ export default function SigninSettings(props: Props) {
                 <Check switch label="An" checked />
               </Setting>
               <Setting label="Adresse" hint="Von hier aus wird die Freigabe angefragt.">
-                <Input type="url" value="https://cloud.kolb-antik.de" />
+                <Input type="url" value="https://cloud.example.org" />
               </Setting>
               <Setting label="Admins koppeln direkt" hint="Ohne Bestätigung durch die Person.">
                 <Check switch label="Aus" />

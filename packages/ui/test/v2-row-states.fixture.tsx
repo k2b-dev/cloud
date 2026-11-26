@@ -33,10 +33,10 @@ export const RowStatesScreen = () => (
     <Pane label="Domains" status={<StatusRow lead="4 Domains" facts={[{ value: 2, after: "mit Lücken" }]} />}>
       <Section title="Domains" count={4}>
         <List label="Domains">
-          <Row mark={domain} lines={["kolb-antik.de"]} time="geprüft 09:40" />
+          <Row mark={domain} lines={["example.org"]} time="geprüft 09:40" />
           <Row
             mark={domain}
-            lines={["mail.kolb-antik.de"]}
+            lines={["mail.example.org"]}
             time="geprüft 09:40"
             states={
               <>
@@ -51,15 +51,15 @@ export const RowStatesScreen = () => (
           />
           <Row
             mark={domain}
-            lines={["werkstatt.kolb-antik-handwerk-und-restaurierung.example", "Weiterleitung auf kolb-antik.de"]}
+            lines={["werkstatt.handwerk-und-restaurierung-am-alten-markt.example.org", "Weiterleitung auf example.org"]}
             states={
               <>
-                <Chip status="bad">Zertifikat läuft in 3 Tagen ab: werkstatt.kolb-antik-handwerk-und-restaurierung.example, erneuern</Chip>
+                <Chip status="bad">Zertifikat läuft in 3 Tagen ab: werkstatt.handwerk-und-restaurierung-am-alten-markt.example.org, erneuern</Chip>
                 <Chip status="ok">SPF gültig</Chip>
               </>
             }
           />
-          <Row mark={domain} lines={["alt.kolb-antik.de", "stillgelegt seit 01.10.2026"]} />
+          <Row mark={domain} lines={["alt.example.org", "stillgelegt seit 01.10.2026"]} />
         </List>
       </Section>
     </Pane>

@@ -72,6 +72,16 @@ const sharing = {
   private: { icon: "lock", label: "Nur ich" },
 };
 
+/** "4,2 MB", "312 KB": the size in bytes, for the sum of a selection. */
+const sizeInBytes = (size: string) => {
+  const match = /^([\d,]+) (KB|MB|GB)$/.exec(size);
+  if (!match) return 0;
+  const unit = { KB: 1e3, MB: 1e6, GB: 1e9 }[match[2] as "KB" | "MB" | "GB"];
+  return Number.parseFloat(match[1]!.replace(",", ".")) * unit;
+};
+const formatSize = (bytes: number) =>
+  bytes >= 1e6 ? `${(bytes / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 1 })} MB` : `${Math.round(bytes / 1e3)} KB`;
+
 type Entry = {
   key: string;
   name: string;
@@ -240,6 +250,26 @@ export default function Folder(props: Props) {
   const [grid, setGrid] = createSignal(props.grid ?? false);
   const toggle = (key: string, on: boolean) => setSelected((now) => (on ? [...now, key] : now.filter((each) => each !== key)));
   const files = entries.filter((entry) => !entry.folder);
+  const folders = entries.filter((entry) => entry.folder);
+  // what is selected, in a quiet word after the count: "12,9 MB · 3 Bilder"
+  const chosen = () => entries.filter((entry) => selected().includes(entry.key));
+  const chosenMeta = () => {
+    const bytes = chosen().reduce((sum, entry) => sum + sizeInBytes(entry.size), 0);
+    const all = chosen().every((entry) => entry.kind === "photo");
+    const one = chosen().length === 1;
+    return `${formatSize(bytes)} · ${chosen().length} ${all ? (one ? "Bild" : "Bilder") : one ? "Eintrag" : "Einträge"}`;
+  };
+  const tile = (entry: Entry) => ({
+    key: entry.key,
+    ...type[entry.kind],
+    title: entry.name,
+    image: entry.image,
+    kind: entry.badge,
+    meta: entry.folder ? `${entry.size} · ${entry.changed}` : entry.changed,
+    people: [entry.owner],
+    sign: sharing[entry.sharing],
+    href: `#${entry.key}`,
+  });
   return (
     <Workspace
       sidebar={
@@ -300,6 +330,7 @@ export default function Folder(props: Props) {
               select={{ label: "Alle auswählen", checked: "mixed" }}
               selection={{
                 count: `${selected().length} ausgewählt`,
+                meta: chosenMeta(),
                 actions: [
                   { label: "Teilen", icon: "share" },
                   { label: "Verschieben", icon: "folder-symlink" },
@@ -335,22 +366,15 @@ export default function Folder(props: Props) {
       >
         {grid() ? (
           <Pane label="Dateien">
+            {/* the folders first, with the place to make one, then the files: as the approved mockup */}
             <Tiles
               variant="media"
-              label="Dateien"
+              label="Ordner"
               select={{ selected: selected(), onChange: toggle }}
-              items={files.map((entry) => ({
-                key: entry.key,
-                ...type[entry.kind],
-                title: entry.name,
-                image: entry.image,
-                kind: entry.badge,
-                meta: entry.changed,
-                people: [entry.owner],
-                sign: sharing[entry.sharing],
-                href: `#${entry.key}`,
-              }))}
+              items={folders.map(tile)}
+              create={{ title: "Neuer Ordner", meta: "oder Dateien hierher ziehen", onClick: () => {} }}
             />
+            <Tiles variant="media" label="Dateien" select={{ selected: selected(), onChange: toggle }} items={files.map(tile)} />
           </Pane>
         ) : (
           <Pane.Split>

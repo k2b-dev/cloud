@@ -3398,6 +3398,16 @@
   height: 1lh;
   overflow: hidden;
 }
+/* what is selected, quiet after the count ("12,9 MB · 3 Bilder"); it gives way first where the actions need the room */
+.k2-ui .k2-status-meta {
+  flex: 0 1000 auto;
+  min-width: 0;
+  font: var(--k2-t-row);
+  color: var(--k2-subtle);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .k2-ui .k2-status-facts::before {
   content: "";
   height: 1lh;

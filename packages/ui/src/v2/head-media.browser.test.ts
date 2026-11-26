@@ -181,7 +181,8 @@ test("on the desktop the display is a menu of its own beside the order, and the 
     await settled(page);
     await page.getByRole("menu").getByRole("menuitemradio", { name: "Raster" }).click();
     await settled(page);
-    expect(await page.locator(".k2-tiles").count()).toBe(1);
+    // the folders with the place to make one, then the files
+    expect(await page.locator(".k2-tiles").count()).toBe(2);
   });
 });
 
@@ -246,7 +247,8 @@ test("a media tile's name that does not fit ends in '…' and keeps its whole na
 
 test("media tiles: picture 4:3, a box that shows on hover and on every tile while one is selected", async () => {
   await withPage("grid", async (page) => {
-    const tile = page.locator(".k2-tiles[data-variant='media'] > .k2-tile").first();
+    // the first file (the folders and the place to make one stand before the files)
+    const tile = page.locator(".k2-tiles[data-variant='media'][aria-label='Dateien'] > .k2-tile").first();
     const shape = await tile.evaluate((element) => {
       const picture = element.querySelector(".k2-tile-media > .k2-mk")!.getBoundingClientRect();
       return {
@@ -276,6 +278,8 @@ test("media tiles: picture 4:3, a box that shows on hover and on every tile whil
       .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).opacity));
     expect(new Set(boxes)).toEqual(new Set(["1"]));
     expect(await page.locator(".k2-bar[data-selecting] .k2-status-lead").textContent()).toBe("1 ausgewählt");
+    // and says what is selected, quiet after the count
+    expect(await page.locator(".k2-bar[data-selecting] .k2-status-meta").textContent()).toBe("4,2 MB · 1 Bild");
   });
 });
 
@@ -289,7 +293,7 @@ test("on touch every box shows, and the tile still opens its file", async () => 
           .first()
           .evaluate((element) => getComputedStyle(element).opacity),
       ).toBe("1");
-      expect(await page.locator(".k2-tile-title a").first().getAttribute("href")).toBe("#front");
+      expect(await page.locator(".k2-tile-title a").first().getAttribute("href")).toBe("#aufmass");
     },
     390,
     true,

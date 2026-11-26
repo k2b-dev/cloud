@@ -534,6 +534,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       problems.push(
         `${primaries.length} primary buttons ${surface === root ? "" : `in ${surfaceName(surface)} `}(${primaries.map((button) => quote(button.textContent, 24)).join(", ")}): one primary action per ${surface === root ? "page" : "dialog"}; make the others secondary`,
       );
+  // A state is never a colour without a word: a state chip of a number alone ("7") does not say what the number is.
+  for (const chip of root.querySelectorAll(".k2-chip[data-status]"))
+    if (!/\p{L}/u.test(chip.textContent ?? ""))
+      problems.push(`state chip ${quote(chip.textContent, 24)} has no word: say what it counts, such as "7 Anmeldungen"`);
   // Cut text a person sees: a control's label that does not fit its control, a line of a three-line row that wraps.
   if (options.layout) {
     for (const control of root.querySelectorAll(".k2-btn, .k2-chip, .k2-tab")) {

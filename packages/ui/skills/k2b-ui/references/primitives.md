@@ -404,8 +404,9 @@ lines instead of cutting a thing.
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`; leave on the phone),
-  `selection: { count, actions, clear }` (while rows are selected the row
-  becomes the bar of what can be done with them).
+  `selection: { count, meta?, actions, clear }` (while rows are selected the
+  row becomes the bar of what can be done with them; `meta` says quietly
+  what is selected after the count, such as "12,9 MB · 3 Bilder").
 - `Path`: `label`, `items: { label, href? }[]`; where a page stands, in the
   head `Bar start` instead of `Tabs`. The last item is the page itself. On
   the phone the path gives way and the shell's phone bar names the page; the

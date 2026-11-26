@@ -527,9 +527,9 @@ export type StatusRowProps = {
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
-   * actions, and the way out.
+   * actions, and the way out. `meta`: a quiet word on what is selected after the count, such as "12,9 MB · 3 Bilder".
    */
-  selection?: { count: string; actions: readonly Action[]; clear: Action };
+  selection?: { count: string; meta?: string; actions: readonly Action[]; clear: Action };
 };
 
 /** The status row of a pane (52 px): the one lead statement, its loading mark, key figures, filters on the right. */
@@ -587,6 +587,7 @@ export const StatusRow = (props: StatusRowProps) => {
             <span class="k2-status-lead" aria-live="polite">
               {selection().count}
             </span>
+            <Show when={selection().meta}>{(meta) => <span class="k2-status-meta">{meta()}</span>}</Show>
             {/* in a narrow column the actions keep only their symbols, the way out its ×; the words stay their names.
                 On the phone they float at the bottom, in reach of the thumb, each with its symbol over its word. */}
             <span class="k2-status-actions">
