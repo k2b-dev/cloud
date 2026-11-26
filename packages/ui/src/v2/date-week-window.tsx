@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, on, onMount } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Index, on, onMount } from "solid-js";
 import { useLocale } from "../intl/locale";
 import { addDays, addMonths, firstDayOfWeek, formatDate, formatDateRange, startOfWeek, todayDate, weekdayNames } from "./behavior/dates";
 import { useDateMessages } from "./date-messages";
@@ -8,10 +8,11 @@ import { Icon } from "./marks";
 export type WeekWindowProps = {
   /** The chosen day, a date key. */
   chosen?: string;
-  /** The earliest and the latest day that can be picked; the window starts with the week of `min`. */
-  min?: string;
+  /** The earliest day that can be picked: the window starts with its week. */
+  min: string;
+  /** The latest day that can be picked. */
   max?: string;
-  /** The zone that says which day today is, the same on the server and in the browser; "UTC" by default. */
+  /** The zone that says which day today is; the browser's by default, as in the month view. */
   timeZone?: string;
   label: string;
   autoFocus?: boolean;
@@ -30,23 +31,24 @@ export const WeekWindow = (props: WeekWindowProps) => {
   const t = useDateMessages();
   const locale = useLocale();
   const weekStartsOn = createMemo(() => firstDayOfWeek(locale()));
-  const today = () => todayDate(props.timeZone ?? "UTC");
-  const anchor = () => props.min ?? today();
-  const home = () => startOfWeek(props.chosen && props.chosen > anchor() ? props.chosen : anchor(), weekStartsOn());
+  // today in the picker's zone, else the browser's, as the month view marks it; read once per render
+  const today = createMemo(() => todayDate(props.timeZone));
+  const home = () => startOfWeek(props.chosen && props.chosen > props.min ? props.chosen : props.min, weekStartsOn());
   const [start, setStart] = createSignal(home());
   // the window follows a new week start (another locale) and a new `min`, and shows a value set from elsewhere
   createEffect(on([weekStartsOn, () => props.min], () => setStart(home()), { defer: true }));
   createEffect(
     on(
       () => props.chosen,
-      (key) => key && setStart((current) => windowShowing(current, key, weekStartsOn())),
+      // a value before `min` never takes the weeks back past it
+      (key) => key && setStart((current) => windowShowing(current, key < props.min ? props.min : key, weekStartsOn())),
       { defer: true },
     ),
   );
   const weeks = createMemo(() => windowWeeks(start()));
   const inWindow = (key: string) => key >= start() && key <= windowEnd(start());
-  const pickable = (key: string) => !(props.min && key < props.min) && !(props.max && key > props.max);
-  const clamp = (key: string) => (props.min && key < props.min ? props.min : props.max && key > props.max ? props.max : key);
+  const pickable = (key: string) => key >= props.min && !(props.max && key > props.max);
+  const clamp = (key: string) => (key < props.min ? props.min : props.max && key > props.max ? props.max : key);
   const [focused, setFocused] = createSignal<string>();
   /** The one day Tab reaches: the focused day, else the chosen one, else the first day that can be picked. */
   const tabStop = createMemo(() => {
@@ -54,8 +56,12 @@ export const WeekWindow = (props: WeekWindowProps) => {
     return candidates[0] ?? weeks().flat().find(pickable) ?? start();
   });
   let grid: HTMLDivElement | undefined;
-  const focusDay = (key: string) => queueMicrotask(() => grid?.querySelector<HTMLElement>(`[data-value="${key}"]`)?.focus());
-  /** Moves the focus to a day, within `min` and `max`; the window moves by whole weeks until it shows it. */
+  const focusDay = (key: string) => grid?.querySelector<HTMLElement>(`[data-value="${key}"]`)?.focus();
+  /**
+   * Moves the focus to a day, within `min` and `max`; the window moves by whole weeks until it shows it. The days keep
+   * their buttons (`Index`) and only change their date, and the focus moves in the same turn, so it never falls to the
+   * page on a jump that changes every day of the window.
+   */
   const move = (key: string) => {
     const target = clamp(key);
     setFocused(target);
@@ -64,9 +70,11 @@ export const WeekWindow = (props: WeekWindowProps) => {
   };
   const keydown = (event: KeyboardEvent, key: string) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
+    // right to left, the arrows turn round, as core's grids do
+    const back = event.currentTarget instanceof Element && getComputedStyle(event.currentTarget).direction === "rtl" ? 1 : -1;
     const steps: Partial<Record<string, () => string>> = {
-      ArrowLeft: () => addDays(key, -1),
-      ArrowRight: () => addDays(key, 1),
+      ArrowLeft: () => addDays(key, back),
+      ArrowRight: () => addDays(key, -back),
       ArrowUp: () => addDays(key, -7),
       ArrowDown: () => addDays(key, 7),
       PageUp: () => addMonths(key, event.shiftKey ? -12 : -1),
@@ -88,14 +96,12 @@ export const WeekWindow = (props: WeekWindowProps) => {
   // Six weeks back or ahead: never back past the week of `min`, never ahead past `max`. A blocked button keeps the focus
   // (`aria-disabled`, not `disabled`), so the focus never falls to the page.
   const pageBlocked = (direction: -1 | 1) =>
-    direction < 0
-      ? Boolean(props.min && start() <= startOfWeek(props.min, weekStartsOn()))
-      : Boolean(props.max && addDays(start(), windowDays) > props.max);
+    direction < 0 ? start() <= startOfWeek(props.min, weekStartsOn()) : Boolean(props.max && addDays(start(), windowDays) > props.max);
   const page = (direction: -1 | 1) => {
     if (pageBlocked(direction)) return;
     const next = addDays(start(), direction * windowDays);
-    const first = props.min ? startOfWeek(props.min, weekStartsOn()) : undefined;
-    setStart(first && next < first ? first : next);
+    const first = startOfWeek(props.min, weekStartsOn());
+    setStart(next < first ? first : next);
   };
   const rangeLabel = createMemo(() => formatDateRange(start(), windowEnd(start()), locale(), { month: "long", year: "numeric" }));
   const shortMonth = (key: string) => formatDate(key, locale(), { month: "short" }).replace(/\.$/, "");
@@ -155,43 +161,43 @@ export const WeekWindow = (props: WeekWindowProps) => {
             )}
           </For>
         </div>
-        <For each={weeks().map((week) => week.join(" "))}>
+        <Index each={weeks()}>
           {(week) => (
             <div class="k2-cal-row" role="row">
-              <For each={week.split(" ")}>
-                {(key) => {
-                  const monthStart = key.endsWith("-01");
+              <Index each={week()}>
+                {(day) => {
+                  const monthStart = () => day().endsWith("-01");
                   return (
                     <button
                       type="button"
                       role="gridcell"
                       class="k2-cal-day"
-                      data-value={key}
-                      data-selected={props.chosen === key ? "" : undefined}
-                      data-today={today() === key ? "" : undefined}
-                      data-disabled={pickable(key) ? undefined : ""}
-                      data-month-start={monthStart ? "" : undefined}
-                      aria-selected={props.chosen === key ? "true" : "false"}
-                      aria-current={today() === key ? "date" : undefined}
-                      aria-disabled={pickable(key) ? undefined : "true"}
-                      aria-label={dayLabel(key)}
-                      tabIndex={tabStop() === key ? 0 : -1}
-                      onFocus={() => setFocused(key)}
+                      data-value={day()}
+                      data-selected={props.chosen === day() ? "" : undefined}
+                      data-today={today() === day() ? "" : undefined}
+                      data-disabled={pickable(day()) ? undefined : ""}
+                      data-month-start={monthStart() ? "" : undefined}
+                      aria-selected={props.chosen === day() ? "true" : "false"}
+                      aria-current={today() === day() ? "date" : undefined}
+                      aria-disabled={pickable(day()) ? undefined : "true"}
+                      aria-label={dayLabel(day())}
+                      tabIndex={tabStop() === day() ? 0 : -1}
+                      onFocus={() => setFocused(day())}
                       onClick={() => {
-                        if (!pickable(key)) return;
-                        setFocused(key);
-                        props.onChoose(key);
+                        if (!pickable(day())) return;
+                        setFocused(day());
+                        props.onChoose(day());
                       }}
-                      onKeyDown={(event) => keydown(event, key)}
+                      onKeyDown={(event) => keydown(event, day())}
                     >
-                      {monthStart ? shortMonth(key) : formatDate(key, locale(), { day: "numeric" })}
+                      {monthStart() ? shortMonth(day()) : formatDate(day(), locale(), { day: "numeric" })}
                     </button>
                   );
                 }}
-              </For>
+              </Index>
             </div>
           )}
-        </For>
+        </Index>
       </div>
     </div>
   );

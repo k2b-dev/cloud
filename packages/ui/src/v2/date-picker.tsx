@@ -9,7 +9,7 @@ import { useDateMessages } from "./date-messages";
 import { WeekWindow } from "./date-week-window";
 import { Icon } from "./marks";
 
-export type DatePickerProps = {
+type DatePickerBase = {
   /** The chosen day as a date key ("2026-11-24"); with `time` the wall time of a minute ("2026-11-24T09:00"). */
   value?: string;
   /**
@@ -34,15 +34,25 @@ export type DatePickerProps = {
   onClear?: () => void;
   /** Moves the focus to the chosen day (else today) once the picker shows, as an opened calendar does. */
   autoFocus?: boolean;
-  /**
-   * `months` (the default) shows whole months. `weeks` shows six weeks from the week of `min` onward, as one grid over
-   * the ends of months, for a picker of a moment ahead ("Später", an expiry): no month of days that lie behind. The
-   * first day of a month carries its short name; the keys move the six weeks by whole weeks, the buttons by six. Give
-   * `min` (usually today in the person's zone): without it the weeks start with today in `timeZone` ("UTC" by
-   * default), the same on the server and in the browser.
-   */
-  view?: "months" | "weeks";
 };
+
+export type DatePickerProps = DatePickerBase &
+  (
+    | {
+        /** Whole months, the default. */
+        view?: "months";
+      }
+    | {
+        /**
+         * Six weeks from the week of `min` onward, as one grid over the ends of months, for a picker of a moment ahead
+         * ("Später", an expiry): no month of days that lie behind. The first day of a month carries its short name; the
+         * keys move the six weeks by whole weeks, the buttons by six.
+         */
+        view: "weeks";
+        /** Required with `weeks`: where the weeks start, usually today in the person's zone, the same on server and browser. */
+        min: string;
+      }
+  );
 
 const monthOf = (key: string) => key.slice(0, 7);
 
@@ -182,7 +192,7 @@ export const DatePicker = (props: DatePickerProps) => {
   return (
     <div class="k2-dpick" data-k2-part="DatePicker">
       <Show
-        when={weeks()}
+        when={props.view === "weeks" ? props.min : undefined}
         fallback={
           <calendar.Root class="k2-cal" role="group" aria-label={props.label ?? t().calendar}>
             <div class="k2-cal-h">
@@ -242,18 +252,20 @@ export const DatePicker = (props: DatePickerProps) => {
         }
       >
         {/* six weeks ahead: core's calendar shows months only, so the weeks are one grid of their own */}
-        <WeekWindow
-          chosen={chosen()}
-          min={props.min}
-          max={props.max}
-          timeZone={props.timeZone}
-          label={props.label ?? t().calendar}
-          autoFocus={props.autoFocus}
-          onChoose={(key) => {
-            setChosen(key);
-            if (!props.time) pickDay(key);
-          }}
-        />
+        {(min) => (
+          <WeekWindow
+            chosen={chosen()}
+            min={min()}
+            max={props.max}
+            timeZone={props.timeZone}
+            label={props.label ?? t().calendar}
+            autoFocus={props.autoFocus}
+            onChoose={(key) => {
+              setChosen(key);
+              if (!props.time) pickDay(key);
+            }}
+          />
+        )}
       </Show>
       <Show when={props.time}>
         <div class="k2-dpick-time">

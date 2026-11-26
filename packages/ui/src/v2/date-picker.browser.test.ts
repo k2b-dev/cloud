@@ -636,18 +636,99 @@ test("the weeks follow a value set from elsewhere and a change of the locale, wi
   );
 });
 
-test("without `min` the weeks start with today in the picker's zone, never the zone of the browser or the server", async () => {
-  // Sunday 29 November, 12:00 UTC: already Monday 30 November in Kiritimati (UTC+14), still Sunday in New York
+test("today is marked in the browser's zone in the weeks and in the month alike: 00:30 in Berlin is the next day", async () => {
+  // 23:30 UTC on 25 November is 00:30 on 26 November in Berlin
   await withPage(
     () => dates,
     "/dates",
     async (page) => {
-      expect(await firstShown(page, "weeks-zone")).toBe("2026-11-30");
-      expect(await firstShown(page, "weeks-utc")).toBe("2026-11-23");
+      expect(await page.getByTestId("weeks-today").locator('[aria-current="date"]').getAttribute("data-value")).toBe("2026-11-26");
+      expect(await page.getByTestId("day").locator('[aria-current="date"]').getAttribute("data-value")).toBe("2026-11-26");
     },
-    { timezoneId: "America/New_York", at: new Date("2026-11-29T12:00:00Z") },
+    { timezoneId: "Europe/Berlin", at: new Date("2026-11-25T23:30:00Z") },
   );
 });
+
+test("big jumps keep the focus on a day: it never falls to the page, not even for a moment", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      await page.getByTestId("weeks").locator('[data-value="2026-11-25"]').focus();
+      // a day that takes the focus from nothing (`relatedTarget` null) got it back from the page: the day before it was
+      // gone, so for a moment the page had it
+      await page.evaluate(() => {
+        const state = { dropped: 0 };
+        Object.assign(window, { __focus: state });
+        document.addEventListener("focusin", (event) => {
+          if (event.relatedTarget === null && (event.target as Element).matches("[data-weeks] [data-value]")) state.dropped += 1;
+        });
+      });
+      for (const [key, day] of [
+        ["Shift+PageDown", "2027-11-25"],
+        ["PageDown", "2027-12-25"],
+        ["End", "2027-12-26"],
+        ["Shift+PageUp", "2026-12-26"],
+        ["ArrowDown", "2027-01-02"],
+      ] as const) {
+        await page.keyboard.press(key);
+        expect(await focusedDay(page)).toBe(day);
+      }
+      expect(await page.evaluate(() => (window as unknown as { __focus: { dropped: number } }).__focus.dropped)).toBe(0);
+    },
+  );
+});
+
+test("Space picks the focused day; right to left the arrows turn round; a value before `min` keeps the weeks at `min`", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      await page.getByTestId("weeks").locator('[data-value="2026-11-27"]').focus();
+      await page.keyboard.press(" ");
+      expect(await page.getByTestId("weeks-value").textContent()).toBe("2026-11-27");
+      // right to left, ArrowRight goes back a day and ArrowLeft on
+      await page.getByTestId("weeks-rtl").locator('[data-value="2026-11-26"]').focus();
+      await page.keyboard.press("ArrowRight");
+      expect(await focusedDay(page)).toBe("2026-11-25");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      expect(await focusedDay(page)).toBe("2026-11-27");
+      // a value set before `min` never takes the weeks back past it
+      await page.getByRole("button", { name: "Auf 1. Oktober setzen" }).click();
+      expect(await firstShown(page)).toBe("2026-11-23");
+    },
+  );
+});
+
+test("the six weeks pass axe after a move and after a change to a Sunday-first locale", async () => {
+  await withPage(
+    () => dates,
+    "/dates",
+    async (page) => {
+      await page.addScriptTag({ content: axeSource });
+      const audit = () =>
+        page.evaluate(async () => {
+          const axe = (
+            window as unknown as { axe: { run: (context: unknown, options: unknown) => Promise<{ violations: { id: string }[] }> } }
+          ).axe;
+          const result = await axe.run(
+            { include: [['[data-testid="weeks"]'], ['[data-testid="weeks-switch"]']] },
+            { resultTypes: ["violations"] },
+          );
+          return result.violations.map((violation) => violation.id);
+        });
+      await page.getByTestId("weeks").locator('[data-value="2026-11-25"]').focus();
+      await page.keyboard.press("Shift+PageDown");
+      await settled(page);
+      expect(await audit()).toEqual([]);
+      await page.getByRole("button", { name: "Wochensprache umstellen" }).click();
+      await settled(page);
+      expect(await audit()).toEqual([]);
+    },
+  );
+});
+
 // ── DateInput ──────────────────────────────────────────────────────────────────────────────────────────────────
 
 test("DateInput: a typed date applies on Enter, text that is no date marks the field, and the form sends the date key", async () => {

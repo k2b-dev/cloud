@@ -307,9 +307,8 @@ lines instead of cutting a thing.
   and minute as spinbuttons in the locale's clock (24 hours in German, AM/PM
   in American English; typing, arrows, Backspace; never the browser's time
   field), applied
-  with "Übernehmen". `view="weeks"` shows six weeks from the week of `min`
-  (else today in `timeZone`, "UTC" by default) as one grid instead of whole
-  months, for a moment ahead ("Später", an
+  with "Übernehmen". `view="weeks"` (with a required `min`, usually today) shows six
+  weeks from the week of `min` as one grid instead of whole months, for a moment ahead ("Später", an
   expiry): one row per week over the ends of months, the 1st shows the
   month's short name, keys move the weeks, the arrows by six. Use it inside a
   popover or sheet; a form field is `DateInput`.

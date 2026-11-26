@@ -77,6 +77,7 @@ export function Demo() {
           <DatePicker view="weeks" min="2026-11-25" value={ahead() || undefined} label="Später" onPick={setAhead} />
           <output data-testid="weeks-value">{ahead()}</output>
           <Button onClick={() => setAhead("2027-03-01")}>Auf 1. März setzen</Button>
+          <Button onClick={() => setAhead("2026-10-01")}>Auf 1. Oktober setzen</Button>
         </section>
         <section data-testid="weeks-max">
           <DatePicker view="weeks" min="2026-11-25" max="2026-12-31" label="Bis Jahresende" onPick={record} />
@@ -87,12 +88,12 @@ export function Demo() {
           </LocaleProvider>
           <Button onClick={() => setWeeksLang(weeksLang() === "de" ? "en-US" : "de")}>Wochensprache umstellen</Button>
         </section>
-        {/* without `min`: today in the picker's zone, never the zone of the server or the browser */}
-        <section data-testid="weeks-zone">
-          <DatePicker view="weeks" timeZone="Pacific/Kiritimati" label="Kiritimati" onPick={record} />
+        {/* today is marked in the browser's zone, as in the month view */}
+        <section data-testid="weeks-today">
+          <DatePicker view="weeks" min="2026-11-20" label="Heute" onPick={record} />
         </section>
-        <section data-testid="weeks-utc">
-          <DatePicker view="weeks" label="UTC" onPick={record} />
+        <section data-testid="weeks-rtl" dir="rtl">
+          <DatePicker view="weeks" min="2026-11-20" label="Rechts nach links" onPick={record} />
         </section>
         <section data-testid="switch">
           {/* inside a form: Enter in the time applies the picker and never sends the form */}
