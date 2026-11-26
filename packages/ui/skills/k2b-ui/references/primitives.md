@@ -38,7 +38,7 @@ The working surface of an app: one per screen.
   a head with `Tabs` the open view never gives way: buttons with words that
   `keep` fold into the head's own "…" (each runs as its button would), and
   the open tab keeps its whole name. A column with a `width` fills the
-  screen; its minimum is the desktop's.
+  screen; its minimum counts only on the desktop.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape. A host that offers the
@@ -190,7 +190,7 @@ inside it.
 when more exist than are loaded. Use it by default for every list whose
 length you do not control: only the rows in view and a margin around them
 are in the page, the server renders the first rows (no shift on hydration),
-the focused row stays while it scrolls away, and each row says where it
+a list of at most 40 entries stays whole as the server sent it, the focused row stays while it scrolls away, and each row says where it
 stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
 with a text `Button` after the list. Write rows out only for a few fixed
 ones. A row that is not in the page now (the row to give the focus back
@@ -204,7 +204,9 @@ and do not count as one.
 What a window cannot do (known, decided 26.11.): the browser's find (Ctrl+F)
 finds only rows in the page, so a list people search in needs its own
 search; Shift+Tab from below the list (a foot) lands on the last row in the
-page, not the last item; a group head is no entry of the list for a screen
+page, not the last item; Tab out of a row that scrolled away looks at most
+20 entries further for the next stop (past 20 heads or rows without a
+control the browser decides); a group head is no entry of the list for a screen
 reader (as the group rows of a table on the phone), its rows say their place
 in the whole list; a `Nav` group that grows past 40 entries is made anew
 once (the focus in it is lost then), and its entries are known by their
@@ -215,6 +217,9 @@ A `Row`:
 
 - `lines`: 1–3 texts. 1 line 40 px, 2 lines 52 px (second quiet), 3 lines
   72 px (mail: sender, subject, preview).
+  The second line of two or three is one line, cut with "…" before what
+  stands beside it (an address or JSON without a break never runs under the
+  marks or a deed); a cut line of words says all of it on hover.
 - lead: `mark` (the thing's `Mark`: a base, a file with its thumbnail, a
   table; 24 px on one line, 32 px on two or three), or `avatar`, or a
   quiet `icon` for a plain place or deed, or a dot when `unread`.
@@ -229,7 +234,10 @@ A `Row`:
   this order: a tag chip is cut to about 12 letters first, then lone `Icon`s
   leave (they stand last), then the marks at the end. So pass them in the
   order of their weight: words of a state (as `Text`, never loose text),
-  then the tag, then the person, then symbols.
+  then the tag, then the person, then symbols. Marks are things to see,
+  never to press: a mark that leaves is out of view but still in the page,
+  so a button or link there would be reached by Tab unseen. Put a deed in
+  `action` or `end`.
 - A line of three is cut with "…" and says its words on hover. An address
   or a file name as a line: `<Cut text={address} keep="domain" />` cuts it in
   the middle, so the domain or extension stays readable.
@@ -281,9 +289,11 @@ tinted), `sticky` (first column stays while scrolling sideways), `group(row)
 => { key, head: () => JSX, meta?, count? }` (a group head as text in 600 with
 its count, no band; no line under it, none under the last row), `sort: { column,
 direction }` (the column sorted now: an arrow and darker words in its head,
-`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?
+`aria-sort` on it), `phone(row) => { lines, avatar?, time?, marks?, end?
 }` (on the phone each row becomes a two-line row instead: `time` top right,
-`marks` at the end of the second line, such as the entry's state chip).
+`marks` at the end of the second line, such as the entry's state chip, `end`
+the row's deeds as on a `Row`, such as its "…": give it whatever a column of
+deeds offers on the desktop, or the phone loses them).
 
 Give every table whose column widths add up to more than a phone (about
 350 px after the dropped ones) a `phone(row)`; otherwise its last columns
