@@ -1,6 +1,6 @@
 // Contract test for a Workspace the server rendered without an island: `attachWorkspaces` brings its drawer, the
-// collapse of its sidebar, the toaster, `Dialog.confirm`, its grips and the folds of its Nav alive, and nothing moves
-// when it attaches. Runs in Chromium and in WebKit.
+// collapse of its sidebar, the toaster, `Dialog.confirm`, its grips (their place and their columns) and the folds of
+// its Nav alive, and nothing moves when it attaches. Runs in Chromium and in WebKit.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -262,6 +262,111 @@ test("the grip of a line stands in the middle of the line in sight", async () =>
       [...document.querySelectorAll<HTMLElement>("[data-k2-grip]")].every((grip) => grip.style.getPropertyValue("--k2-grip-top") !== ""),
     );
   });
+});
+
+/** The rendered width of `selector`, whole px. */
+const widthOf = (page: Page, selector: string) => page.$eval(selector, (element) => Math.round(element.getBoundingClientRect().width));
+/** Waits until `selector` is `px` wide. */
+const becomes = (page: Page, selector: string, px: number) =>
+  page.waitForFunction(({ selector, px }) => Math.round(document.querySelector(selector)?.getBoundingClientRect().width ?? -1) === px, {
+    selector,
+    px,
+  });
+
+// Guard for a focusable control without behaviour (#4217) on the server's markup: its grips move their columns as an
+// island's do, once @ui-sdk/core is there.
+test("a grip of the server's markup moves its column by keys and by pointer, and says its values once it has the focus", async () => {
+  await withPage(1440, async (page) => {
+    const side = page.locator('.k2-grip[aria-label="Sidebar"]');
+    const list = page.locator('.k2-grip[aria-label="Liste"]');
+    const column = page.locator('.k2-cgrip[aria-label="Artikel"]');
+    expect(await side.getAttribute("aria-valuemax")).toBeNull();
+    await side.focus();
+    await page.waitForFunction(() => document.querySelector('.k2-grip[aria-label="Sidebar"]')?.hasAttribute("aria-valuemax"));
+    // the most leaves the list 300 and the reader 400 (the room of 950 px the server wrote, with the lines)
+    expect(await page.$eval("[data-k2-workspace]", (element) => element.getAttribute("data-k2-room"))).toBe("950");
+    const most = await page.$eval("[data-k2-workspace]", (element) => element.clientWidth - 950 + 248);
+    expect(await side.getAttribute("aria-valuemax")).toBe(String(most));
+    await page.keyboard.press("ArrowRight");
+    await becomes(page, ".k2-ws-side", 256);
+    // the grip says the width once it has measured it
+    await page.waitForFunction(() => document.querySelector('.k2-grip[aria-label="Sidebar"]')?.getAttribute("aria-valuenow") === "256");
+    await page.keyboard.press("Enter");
+    await becomes(page, ".k2-ws-side", 248);
+    // a drag of the list's grip: the list grows the way the pointer goes
+    const before = await widthOf(page, 'section[aria-label="Liste"]');
+    const box = await list.boundingBox();
+    if (!box) throw new Error("no grip of the list");
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 40, box.y + box.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await becomes(page, 'section[aria-label="Liste"]', before + 40);
+    // a column of the table, by its grip in the next column's head
+    const head = ".k2-table th:nth-child(1)";
+    const first = await widthOf(page, head);
+    await column.focus();
+    await page.keyboard.press("Shift+ArrowRight");
+    await becomes(page, head, first + 64);
+  });
+});
+
+test("a key on a grip before the live parts are there moves the column once they are", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await withSplitPage(
+    async (fulfil) => {
+      await held;
+      await fulfil();
+    },
+    async (page) => {
+      await page.setViewportSize({ width: 1440, height: 800 });
+      await page.locator('.k2-grip[aria-label="Sidebar"]').focus();
+      await page.keyboard.press("ArrowRight");
+      expect(await widthOf(page, ".k2-ws-side")).toBe(248);
+      release();
+      await becomes(page, ".k2-ws-side", 256);
+      // once, not again a frame later
+      await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(await widthOf(page, ".k2-ws-side")).toBe(256);
+    },
+  );
+});
+
+test("of two presses on a grip before the live parts are there, only the one that still holds moves the column", async () => {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await withSplitPage(
+    async (fulfil) => {
+      await held;
+      await fulfil();
+    },
+    async (page) => {
+      await page.setViewportSize({ width: 1440, height: 800 });
+      await settled(page);
+      const box = await page.locator('.k2-grip[aria-label="Sidebar"]').boundingBox();
+      if (!box) throw new Error("no grip of the sidebar");
+      const y = box.y + box.height / 2;
+      const left = box.x + 1;
+      const right = box.x + box.width - 1;
+      // a press let go at the grip's left edge, then a press that holds at its right edge
+      await page.mouse.move(left, y);
+      await page.mouse.down();
+      await page.mouse.up();
+      await page.mouse.move(right, y);
+      await page.mouse.down();
+      release();
+      await page.waitForFunction(() => document.querySelector(".k2-grip[data-dragging]") !== null);
+      await page.mouse.move(right + 40, y, { steps: 4 });
+      await page.mouse.up();
+      // the drag counts from where the press that held began: 40 px, not from the press let go
+      await becomes(page, ".k2-ws-side", 288);
+    },
+  );
 });
 
 test("a live part that fails to load says so with Retry, and Retry loads it and does what was asked", async () => {

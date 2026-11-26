@@ -1,9 +1,9 @@
-import { Bar, Nav, Pane, Text, Workspace } from "../../src/v2";
+import { Bar, Nav, Pane, Table, Text, Workspace } from "../../src/v2";
 
 /**
  * A Workspace as a server renders it, with no island: a Nav with a fold as the sidebar, a head and a list beside its
- * reader. The list keeps 300 px and the reader 400, so the sidebar is a column from 950 px of workspace on and a
- * drawer below.
+ * reader with a table. The list keeps 300 px and the reader 400, so the sidebar is a column from 950 px of workspace on
+ * and a drawer below.
  */
 export function Demo() {
   return (
@@ -34,6 +34,15 @@ export function Demo() {
             <Text type="body">Inhalt</Text>
             {/* where a person types: Mod+Alt+S there is a letter, not the shortcut */}
             <input aria-label="Notiz" />
+            {/* a column with a width has a grip in the head of the column after it */}
+            <Table
+              label="Positionen"
+              rows={[{ name: "Eichenplatte", count: "2" }]}
+              columns={[
+                { title: "Artikel", width: { min: 120, default: 200 }, cell: (row) => row.name },
+                { title: "Menge", cell: (row) => row.count },
+              ]}
+            />
           </Pane>
         </Pane.Split>
       </Workspace>

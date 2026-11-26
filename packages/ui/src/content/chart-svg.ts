@@ -81,9 +81,16 @@ export function selectedChartSvg(
     if (!matches) return attribute;
     const children = svg.slice(offset, svg.indexOf("</g>", offset));
     const palette = (Number(children.match(/stdlib-chart-series-(\d+)/)?.[1] ?? matches.seriesIndex ?? 0) % 8) + 1;
+    // The mark the browser reads its paint from (chart-inspection-core `highlightColor`): a gauge's fill, else the
+    // first shape. A mark with its own colour (a state, a threshold) has no series class and paints with its `fill`.
+    const mark =
+      children.match(/<[a-z]+\b[^>]*class="[^"]*\bstdlib-chart-(?:bar-gauge-fill|gauge-fill|stat-value)\b[^>]*>/)?.[0] ??
+      children.match(/<(?:rect|path|circle)\b(?![^>]*k2b-chart-category-band)[^>]*>/)?.[0];
+    const ownPaint = mark && !/stdlib-chart-series-\d/.test(mark) ? mark.match(/\sfill="([^"]+)"/)?.[1] : undefined;
     const markPaint =
       (svg.includes('data-balance-flow-svg="true"') ? children.match(/<rect[^>]*fill="([^"]+)"/)?.[1] : undefined) ??
       children.match(/class="k2b-waterfall-bar"[^>]* fill="([^"]+)"/)?.[1] ??
+      (ownPaint && ownPaint !== "none" && !ownPaint.startsWith("url(") ? ownPaint : undefined) ??
       `var(--stdlib-chart-c${palette})`;
     const paint = `--k2b-chart-selection-color:color-mix(in srgb,${markPaint} 72%,var(--k2b-chart-highlight-mix))`;
     const opening = attribute.includes('style="')

@@ -66,9 +66,12 @@ descendant.
 A v2 `Workspace` renders on the server as plain markup: its frame, columns,
 heads and bars load no script. On a `Layout ui="v2"` page, Cloud adds one
 frame entry that attaches every Workspace outside an island: the sidebar's
-drawer and its collapse, the grips, the folds of the `Nav`, `Dialog.confirm`
-and `useToast`. The drawer, the alert dialog and the toaster load on their
-first use. A Workspace with `collapsible` keeps a hidden sidebar in the app's
+drawer and its collapse, the grips of its seams and of its tables' columns,
+the folds of the `Nav`, `Dialog.confirm` and `useToast`. The drawer, the alert
+dialog and the toaster load on their first use; a grip loads its behavior when
+the pointer or the focus reaches it, and a press or a key before that takes
+effect once it has loaded. Only a Workspace wakes a server-rendered `Table`'s
+column grips: render a `Table` with column widths inside one. A Workspace with `collapsible` keeps a hidden sidebar in the app's
 workspace cookie, so the next page renders it hidden from the server. Make
 only the parts with browser behavior islands, such as a table whose rows open
 on a press or a sidebar entry with `onClick`; a Workspace inside an island
@@ -356,17 +359,18 @@ the child is mounted catches it.
 Each island and client component instance mounts inside its own error
 boundary. When it throws while it mounts, while its props are read, or during a
 later update, for example a list row that cannot render new query data, Cloud
-replaces only that instance with a short notice: "This section could not be
-displayed." and a **Try again** button, in the reader's language. Every other
+replaces only that instance with the v2 `Failed` state: "This section could not
+be displayed." and a **Retry** button, in the reader's language. Every other
 island on the page keeps working, including islands updated by the same signal
 write.
 
-**Try again** mounts the island again from its original props, as on page
-load. The error still appears in the browser console, reported through
+**Retry** mounts the island again from its original props, as on page load.
+The error still appears in the browser console, reported through
 `reportError()` like any uncaught error.
 
-The notice has the same compact size wherever it appears, so a failing small
-island, such as a control in the header, takes more room than the control did.
+The notice has the same size wherever it appears, so a failing small island,
+such as a control in the header, takes more room than the control did. It loads
+no v1 code, so a v2 island carries none for it.
 
 `defineApp` sets this for every application. Do not wrap an island's root in an
 `ErrorBoundary` for protection. Add one inside an island only when a part of it

@@ -1,7 +1,8 @@
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createRenderEffect, createRoot, createSignal, onCleanup, Show } from "solid-js";
 import { render } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
+import { type GripOptions, useGrip } from "./behavior/resize";
 import { custom } from "./marks";
 import { ConfirmDialog, type ConfirmOptions } from "./overlays";
 import { type ToastOptions, Toasts } from "./toast";
@@ -13,7 +14,12 @@ import { type ToastOptions, Toasts } from "./toast";
 const confirmKey = Symbol.for("k2b.ui.v2.confirm");
 const toasterKey = Symbol.for("k2b.ui.v2.toaster");
 
+/** A grip the server rendered, alive: what a press or a key that came before it was do now, and its end. */
+export type GripHandle = { press: (event: PointerEvent) => void; key: (event: KeyboardEvent) => void; stop: () => void };
+
 export type Live = {
+  /** Brings a grip of the server's workspace alive; nothing when the page holds no column for it. */
+  bindGrip: (grip: HTMLElement) => GripHandle | undefined;
   /** Opens the drawer, or closes it when it is open. */
   toggleDrawer: () => void;
   openDrawer: () => void;
@@ -101,6 +107,125 @@ const Parts = (props: {
   );
 };
 
+// ── Grips ────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Where a grip the server rendered moves its column: the width it reads and writes in the page, and how the column
+ * measures beside the others. The same as the grips of an island (`Seam` in layout.tsx, the column grip in
+ * content.tsx), read from the page instead of from props.
+ */
+type GripPlace = Pick<GripOptions, "measure" | "observe"> & { value: () => number; write: (px: number) => void; direction: 1 | -1 };
+
+const pixels = (value: string | null | undefined) => Number.parseFloat(value ?? "") || 0;
+/** How much `element` can give: its rendered width above its own minimum. */
+const slackOf = (element: Element) =>
+  Math.max(0, element.getBoundingClientRect().width - (Number.parseFloat(getComputedStyle(element).minWidth) || 0));
+/** A width the page keeps in a custom property of `element`. */
+const property = (element: HTMLElement, name: string) => ({
+  value: () => pixels(element.style.getPropertyValue(name)),
+  write: (px: number) => element.style.setProperty(name, `${px}px`),
+});
+
+const placeOf = (grip: HTMLElement): GripPlace | undefined => {
+  // a table's column grip, at the start of a column head: it moves the column before it, whose <col> holds its width
+  if (grip.classList.contains("k2-cgrip")) {
+    const cell = grip.parentElement;
+    const head = cell?.previousElementSibling;
+    const index = head && cell?.parentElement ? [...cell.parentElement.children].indexOf(head) : -1;
+    const col = grip.closest("table")?.querySelector(":scope > colgroup")?.children[index];
+    const scroller = grip.closest(".k2-table-scroll");
+    if (!(col instanceof HTMLElement) || !head || !scroller) return undefined;
+    return {
+      value: () => pixels(col.style.width),
+      write: (px) => {
+        col.style.width = `${px}px`;
+      },
+      direction: 1,
+      // at most the table's visible width; the table scrolls sideways when its columns need more
+      measure: () => {
+        const now = head.getBoundingClientRect().width;
+        return now ? { now, max: scroller.clientWidth } : undefined;
+      },
+      observe: () => [scroller, ...(cell?.parentElement?.children ?? [])],
+    };
+  }
+  const seam = grip.parentElement;
+  const row = seam?.parentElement;
+  if (!seam || !row) return undefined;
+  const observe = () => [row, ...row.children];
+  const before = seam.previousElementSibling;
+  const after = seam.nextElementSibling;
+  // the sidebar's grip: it leaves every column its minimum (the room the workspace names)
+  if (before instanceof HTMLElement && before.classList.contains("k2-ws-side"))
+    return {
+      ...property(row, "--k2-ws-side"),
+      direction: 1,
+      measure: () => {
+        const now = before.getBoundingClientRect().width;
+        return now ? { now, max: row.clientWidth - pixels(row.dataset.k2Room) + pixels(grip.dataset.reset) } : undefined;
+      },
+      observe,
+    };
+  // a seam of a split: the pane on its right moves it if it has a width, else the pane on its left
+  const moving = after?.matches(".k2-pane[data-width]") ? after : before?.matches(".k2-pane[data-width]") ? before : undefined;
+  if (!(moving instanceof HTMLElement)) return undefined;
+  return {
+    ...property(moving, "--k2-pane-w"),
+    direction: moving === after ? -1 : 1,
+    measure: () => {
+      const rendered = moving.getBoundingClientRect().width;
+      if (!rendered) return undefined;
+      // a fixed pane after a line includes it in its width (v2.css)
+      const now = rendered + (moving.previousElementSibling?.classList.contains("k2-seam") ? 1 : 0);
+      // the flexible panes beside it give way down to their minimum (a pane with a width keeps it)
+      let slack = 0;
+      for (const other of row.children) if (other.matches(".k2-pane:not([data-width])")) slack += slackOf(other);
+      return { now, max: now + slack };
+    },
+    observe,
+  };
+};
+
+/** A grip of the server's markup with the behaviour of an island's (`useGrip`): its values follow on the element. */
+const bindGrip = (grip: HTMLElement): GripHandle | undefined => {
+  const place = placeOf(grip);
+  if (!place) return undefined;
+  return createRoot((dispose) => {
+    const [value, setValue] = createSignal(place.value());
+    const handle = useGrip({
+      label: () => grip.getAttribute("aria-label") ?? "",
+      value,
+      onChange: (px) => {
+        setValue(px);
+        place.write(px);
+      },
+      min: () => pixels(grip.getAttribute("aria-valuemin")),
+      reset: () => pixels(grip.dataset.reset),
+      direction: () => place.direction,
+      measure: place.measure,
+      observe: place.observe,
+    });
+    handle.ref(grip);
+    const attribute = (name: string, read: () => string | number | undefined) =>
+      createRenderEffect(() => {
+        const next = read();
+        if (next === undefined) grip.removeAttribute(name);
+        else grip.setAttribute(name, String(next));
+      });
+    attribute("aria-valuenow", () => handle["aria-valuenow"]);
+    attribute("aria-valuemax", () => handle["aria-valuemax"]);
+    attribute("aria-valuetext", () => handle["aria-valuetext"]);
+    attribute("data-dragging", () => handle["data-dragging"]);
+    grip.addEventListener("pointerdown", handle.onPointerDown);
+    grip.addEventListener("keydown", handle.onKeyDown);
+    onCleanup(() => {
+      grip.removeEventListener("pointerdown", handle.onPointerDown);
+      grip.removeEventListener("keydown", handle.onKeyDown);
+    });
+    return { press: handle.onPointerDown, key: handle.onKeyDown, stop: dispose };
+  });
+};
+
 /** Renders the live parts of one workspace into `host`, at the workspace's end (internal; see `attachWorkspace`). */
 export const mountLive = (element: HTMLElement, host: HTMLElement): Live => {
   const toggle = element.querySelector<HTMLElement>(':scope > .k2-ws-main > [data-slot="head"] > .k2-ws-toggle') ?? undefined;
@@ -112,6 +237,7 @@ export const mountLive = (element: HTMLElement, host: HTMLElement): Live => {
   );
   const region = host.querySelector("[data-k2-toaster]");
   return {
+    bindGrip,
     toggleDrawer: () => setDrawer((was) => !was),
     openDrawer: () => setDrawer(() => true),
     // a question or a toast after `stop` finds no dialog or toaster: it is not asked (false) and not shown

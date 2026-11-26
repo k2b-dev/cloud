@@ -1,14 +1,14 @@
 import { resolveUiMessages } from "../intl/messages";
 import { keyboardPlatform } from "../intl/shortcut";
-import type { Live } from "./attach-live";
+import type { GripHandle, Live } from "./attach-live";
 import type { ConfirmOptions } from "./overlays";
 import type { ToastOptions } from "./toast";
 import { resolveWorkspaceMessages } from "./workspace-messages";
 
 // A `Workspace` renders on the server as plain markup: the frame, its columns, heads and bars need no script. What
 // needs the browser comes from `attachWorkspace`: the drawer of the sidebar, the collapse of the sidebar, the alert
-// dialog of `Dialog.confirm`, the toaster of `useToast`, the grips in the middle of their lines and the folds of the
-// `Nav`. A Workspace inside an island attaches itself when it mounts; `attachWorkspaces` attaches every other one.
+// dialog of `Dialog.confirm`, the toaster of `useToast`, the grips (in the middle of their lines, and moving their
+// columns by pointer and keys) and the folds of the `Nav`. A Workspace inside an island attaches itself when it mounts; `attachWorkspaces` attaches every other one.
 
 export type AttachOptions = {
   /**
@@ -220,11 +220,22 @@ const editable = (target: EventTarget | null) =>
  * Brings one Workspace the server rendered alive (see the top of this module); returns the function that stops it.
  * Attaching it again does nothing. A Workspace inside an island calls it itself when it mounts.
  *
- * What it does at once needs no library: the grips, the folds of the `Nav`, the collapse of the sidebar and its keys.
- * The drawer, `Dialog.confirm` and `useToast` need @ui-sdk/core, which loads on their first use (a press on the
- * drawer's button, a question, a toast) and is fetched ahead when the pointer or the focus reaches the button.
+ * What it does at once needs no library: the grips' places, the folds of the `Nav`, the collapse of the sidebar and its
+ * keys. The drawer, `Dialog.confirm`, `useToast` and moving a grip need @ui-sdk/core, which loads on their first use
+ * (a press on the drawer's button, a question, a toast, a grip's press or key) and is fetched ahead when the pointer or
+ * the focus reaches the button or a grip.
  */
-export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {}): (() => void) => {
+export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {}): (() => void) =>
+  attach(element, options, element.closest(island) !== null);
+
+/**
+ * Attaches a Workspace that Solid renders in the browser, in an island or in a page that renders itself (internal: the
+ * Workspace calls it when it mounts). It keeps its grips and the folds of its `Nav` itself.
+ */
+export const attachRenderedWorkspace = (element: HTMLElement): (() => void) => attach(element, {}, true);
+
+/** `rendered`: Solid renders the workspace's grips and folds, which then need nothing from here. */
+const attach = (element: HTMLElement, options: AttachOptions, rendered: boolean): (() => void) => {
   if (Reflect.get(element, attached)) return () => {};
   Reflect.set(element, attached, true);
   const stops: (() => void)[] = [];
@@ -354,9 +365,53 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
     });
   }
 
-  // A workspace an island renders keeps its grips and folds itself; the server's need them from here.
-  if (!element.closest(island)) {
-    for (const grip of own<HTMLElement>(element, "[data-k2-grip]")) stops.push(trackGrip(grip));
+  // A grip of the server's markup moves its column as an island's does (`useGrip`), which needs @ui-sdk/core: it comes
+  // alive when the pointer or the focus reaches it. A press or a key before that runs once it is there, if the press
+  // still holds or the grip still has the focus; a load that fails on a press or a key says so, with "Retry".
+  const bindGrip = (grip: HTMLElement) => {
+    let handle: GripHandle | undefined;
+    // the press that still holds; a press that was let go before the load is not run, nor one a later press replaced
+    let held: PointerEvent | undefined;
+    const bind = (parts: Live) => (handle ??= parts.bindGrip(grip));
+    const ahead = () => void load().then(bind, () => {});
+    listen(grip, "pointerenter", ahead);
+    listen(grip, "focus", ahead);
+    listen(grip, "pointerdown", (event) => {
+      if (handle || !(event instanceof PointerEvent) || event.button !== 0 || !event.isPrimary) return;
+      // no text selection while it loads; the grip keeps the pointer, so its release comes here wherever it happens
+      event.preventDefault();
+      held = event;
+      grip.setPointerCapture?.(event.pointerId);
+      void withLive(bind)
+        .then((live) => {
+          if (held === event) live?.press(event);
+        })
+        .catch(() => {});
+    });
+    const release = (event: Event) => {
+      if (event instanceof PointerEvent && event.pointerId === held?.pointerId) held = undefined;
+    };
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) listen(grip, type, release);
+    listen(grip, "keydown", (event) => {
+      if (handle || !(event instanceof KeyboardEvent) || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End", "Enter"].includes(event.key)) return;
+      event.preventDefault();
+      void withLive(bind)
+        .then((live) => {
+          if (document.activeElement === grip) live?.key(event);
+        })
+        .catch(() => {});
+    });
+    stops.push(() => handle?.stop());
+  };
+
+  // A workspace Solid renders keeps its grips and folds itself; the server's need them from here.
+  if (!rendered) {
+    for (const grip of own<HTMLElement>(element, "[data-k2-grip]")) {
+      stops.push(trackGrip(grip));
+      bindGrip(grip);
+    }
+    for (const grip of own<HTMLElement>(element, ".k2-cgrip")) bindGrip(grip);
     for (const button of own<HTMLElement>(element, ".k2-nav [data-fold][aria-controls]")) stops.push(bindFold(button));
   }
 
@@ -373,11 +428,6 @@ export const attachWorkspace = (element: HTMLElement, options: AttachOptions = {
 };
 
 /**
- * Attaches every Workspace of the page that is not inside an island (those attach themselves). The frame entry of a
- * page calls it once, after the page is there: in Cloud the `ui: "v2"` layout does; a standalone app writes a
- * `.client.tsx` with `onMount(() => onCleanup(attachWorkspaces()))` and renders it once on the page.
- */
-/**
  * Hides or shows the sidebar of the page's first workspace that has the collapse (`collapsible`), as its button and
  * Mod+Alt+S do: on a wide screen it collapses or expands it, and `onSidebarCollapsedChange` hears the change; where
  * the sidebar is a drawer, it opens or closes the drawer. For a command of the page, such as "Hide navigation" in a
@@ -392,6 +442,11 @@ export const toggleWorkspaceSidebar = (root?: ParentNode): boolean => {
   return false;
 };
 
+/**
+ * Attaches every Workspace of the page that is not inside an island (those attach themselves). The frame entry of a
+ * page calls it once, after the page is there: in Cloud the `ui: "v2"` layout does; a standalone app writes a
+ * `.client.tsx` with `onMount(() => onCleanup(attachWorkspaces()))` and renders it once on the page.
+ */
 export const attachWorkspaces = (options: AttachOptions = {}, root: ParentNode = document): (() => void) => {
   const stops = [...root.querySelectorAll<HTMLElement>("[data-k2-workspace]")]
     .filter((element) => !element.closest(island))
