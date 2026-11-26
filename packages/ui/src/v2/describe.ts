@@ -47,6 +47,7 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "Setting",
     "QrCode",
     "CodeDisplay",
+    "Disclosure",
     "Toast",
     "Empty",
     "Loading",
@@ -62,6 +63,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     "k2-split": "Pane.Split",
     "k2-list": "List",
     "k2-group": "Group",
+    "k2-group-body": "Group",
+    "k2-disc-body": "Disclosure",
     "k2-sec": "Section",
     "k2-band": "Band",
   };
@@ -87,6 +90,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const parent = element.parentElement;
     if (!parent) return false;
     if (parent.classList.contains("k2-scroll") || parent.classList.contains("k2-ws-main") || parent.hasAttribute("data-slot")) return true;
+    // the content of an open folded group, and of an open disclosure, stands in their flow
+    if (parent.classList.contains("k2-group-body") || parent.classList.contains("k2-disc-body")) return true;
     return flow.has(part(parent));
   };
   const isLine = (element: Element) => {
@@ -171,6 +176,31 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
           : ((control as HTMLInputElement | null)?.value ?? control?.getAttribute("value"));
       const placeholder = name === "Select" ? shownValue?.textContent : control?.getAttribute("placeholder");
       return `${name}${value ? ` ${quote(value, 40)}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "CodeInput") {
+      const control = element.querySelector("input") as HTMLInputElement | null;
+      const value = control?.value ?? control?.getAttribute("value") ?? "";
+      return `CodeInput ${value.length}/${control?.getAttribute("maxlength") ?? "?"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "TagsInput") {
+      const tags = [...element.querySelectorAll(":scope > .k2-chip")].map((chip) => clip(chip.textContent ?? "", 24));
+      const placeholder = element.querySelector("input")?.getAttribute("placeholder");
+      return `TagsInput${tags.length ? `: ${tags.join(", ")}` : placeholder ? ` placeholder ${quote(placeholder, 40)}` : " empty"}${element.hasAttribute("data-invalid") ? " invalid" : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "Slider") {
+      const value =
+        element.querySelector(".k2-slider-value")?.textContent ||
+        (element.querySelector("input[type=range]") as HTMLInputElement | null)?.value;
+      return `Slider ${quote(value ?? "", 20)}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ColorInput") {
+      const code = element.querySelector(".k2-color-head input") as HTMLInputElement | null;
+      const swatches = element.querySelectorAll(".k2-color-preset").length;
+      return `ColorInput ${quote(code?.value ?? code?.getAttribute("value") ?? "", 20)}${swatches ? ` · ${swatches} swatches` : ""}${element.hasAttribute("data-disabled") ? " disabled" : ""}`;
+    }
+    if (name === "ImageInput") {
+      const button = element.querySelector(".k2-image-end > .k2-btn .k2-btn-label");
+      return `ImageInput ${element.querySelector(".k2-image-preview > img") ? "picture" : "empty"} [${clip(button?.textContent ?? "", 30)}]`;
     }
     if (name === "Progress")
       return `Progress ${element.getAttribute("aria-valuenow")}/${element.getAttribute("aria-valuemax")}${element.getAttribute("aria-label") ? ` ${quote(element.getAttribute("aria-label"))}` : ""}`;
@@ -396,6 +426,10 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
         return `QrCode ${quote(element.querySelector("img")?.getAttribute("alt"))}`;
       case "CodeDisplay":
         return `CodeDisplay ${quote(element.textContent)}`;
+      case "Disclosure": {
+        const head = element.querySelector(":scope > .k2-disc-head");
+        return `Disclosure ${quote(head?.textContent)} ${head?.getAttribute("aria-expanded") === "true" ? "open" : "closed"}`;
+      }
       // The three states of a place that shows data, where the data will stand.
       case "Empty":
       case "Failed": {

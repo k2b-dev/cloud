@@ -172,7 +172,11 @@ export type ComboboxParts = SelectParts & {
 
 /** A combobox: a search field that filters its list. Several values show as chips. */
 export function useCombobox(
-  options: () => (SelectOptions | MultiSelectOptions) & { onQueryChange?: (query: string) => void },
+  options: () => (SelectOptions | MultiSelectOptions) & {
+    onQueryChange?: (query: string) => void;
+    /** Text that matches no item becomes a value on Enter (with `multiple`, a new chip): the value is the text. */
+    allowCustomValue?: boolean;
+  },
 ): ComboboxParts {
   const announcement = listAnnouncement(useBehaviorMessages());
   const handle = usePrimitive(comboboxPrimitive, () => ({ ...options(), announcement }));

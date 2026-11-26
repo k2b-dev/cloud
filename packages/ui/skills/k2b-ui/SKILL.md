@@ -140,6 +140,10 @@ import { Workspace, Pane, Bar, List, Row, Mark, Avatar } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
+| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
+| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
+| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |

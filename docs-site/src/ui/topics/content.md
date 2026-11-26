@@ -84,6 +84,12 @@ A code a person compares between two devices or reads aloud, in large figures; h
 
 <Props of="CodeDisplay" />
 
+### Disclosure
+
+Something that opens in place, such as the answer to a question; a closed one is still found by the browser's find in page.
+
+<Props of="Disclosure" />
+
 ## Not in v2 yet
 
 - Writing Markdown in place: the editor of `@k2b/editor` has no v2 form yet. Open it behind the deed "Bearbeiten".

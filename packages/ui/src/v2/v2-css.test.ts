@@ -140,8 +140,19 @@ test("the namespace guard catches a tag beside a primitive and a tag after a pse
 // The positioning of the behaviour layer writes these on an open popup (and `--keyboard-inset`, the height of an open
 // on-screen keyboard, on the toast region, so a toast stays above the keyboard); the page or the platform sets the one
 // colour of its app, and the platform may set its readable ink; core's tree writes the level of each item
-// (`--tree-level`). v2.css may read them, never define them.
-const foreignVariables = new Set(["--anchor-width", "--available-height", "--keyboard-inset", "--k2-app", "--k2-app-ink", "--tree-level"]);
+// (`--tree-level`), and the ui-sdk core writes the colour of a colour picker and the gradients of its surface and
+// slider on their parts. v2.css may read them, never define them.
+const foreignVariables = new Set([
+  "--anchor-width",
+  "--available-height",
+  "--keyboard-inset",
+  "--k2-app",
+  "--k2-app-ink",
+  "--tree-level",
+  "--color-picker-color",
+  "--color-area-background",
+  "--color-slider-background",
+]);
 
 test("v2.css stays in its namespace below .k2-ui, beside v1", () => {
   const problems: string[] = [];

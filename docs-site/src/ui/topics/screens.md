@@ -54,6 +54,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="form-detail" height="640" default="Filled" />
 
+## Settings with more than text
+
+<Example recipe="settings" height="760" />
+
 ## Deeds and menus
 
 <Example recipe="actions" height="560" default="Open" />
