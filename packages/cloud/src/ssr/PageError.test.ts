@@ -154,7 +154,8 @@ describe("shared page access and error responses", () => {
         expect(response.headers.get("cache-control")).toBe("private, no-store");
         expect(body).toContain(`lang="${locale}" class="${theme}"`);
         expect(body).toContain(locale === "en" ? "Access denied" : "Zugriff verweigert");
-        expect(body).toContain("k2b-not-found");
+        // the Cloud shell's error page is a v2 screen: its state, in the page's words
+        expect(body).toContain('data-k2-part="Empty"');
         expect(body).not.toContain("authorized handler");
         expect(body).not.toContain("admin-sidebar");
       });

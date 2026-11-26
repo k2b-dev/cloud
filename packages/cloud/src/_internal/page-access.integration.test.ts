@@ -112,7 +112,8 @@ describe.skipIf(!origin)("live Cloud document boundaries", () => {
       const response = await request(`${prefix}/not-a-real-page/unknown/deeply-nested`);
       expect(response.status).toBe(404);
       expect(response.headers.get("content-type")).toContain("text/html");
-      expect(await response.text()).toContain("k2b-not-found");
+      // the shared error page is a v2 screen: its state stands where the content would
+      expect(await response.text()).toContain('data-k2-part="Empty"');
     }, 20_000);
 
   for (const path of ["/faq", "/tools", "/app/api-docs"])

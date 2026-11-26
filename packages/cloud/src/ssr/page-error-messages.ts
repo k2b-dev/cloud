@@ -11,6 +11,7 @@ export const pageErrorMessages = i18n.define({
       failed: "Could not open this page",
       failedDescription: "Please try again later.",
       home: "Go to home page",
+      code: ({ status }: { status: number }) => `Error ${status}`,
     },
     de: {
       forbidden: "Zugriff verweigert",
@@ -20,6 +21,7 @@ export const pageErrorMessages = i18n.define({
       failed: "Seite konnte nicht geöffnet werden",
       failedDescription: "Bitte versuche es später erneut.",
       home: "Zur Startseite",
+      code: ({ status }) => `Fehler ${status}`,
     },
   },
 });

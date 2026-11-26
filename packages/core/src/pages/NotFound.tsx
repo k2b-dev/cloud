@@ -1,16 +1,9 @@
 import { getLocale } from "@k2b/cloud/server";
-import { Layout } from "@k2b/cloud/ssr";
-import { NotFoundState } from "@k2b/ui";
 import { ssr } from "../config";
 import { corePageMessages } from "./messages";
 
-/** 404 Not Found page. */
+/** 404 for every address Core does not know: the shared error page, in Core's words, with its way home. */
 export default ssr((c) => {
   const t = corePageMessages.resolve([getLocale(c)]).t;
-  c.status(404);
-  return () => (
-    <Layout c={c} title={t.pageNotFound}>
-      <NotFoundState code="404" title={t.nothingHere} description={t.wrongTurn} action={{ label: t.goHome, href: "/" }} />
-    </Layout>
-  );
+  return ssr.error(c, 404, { title: t.pageNotFound, description: t.wrongTurn, action: { label: t.goHome, href: "/" } });
 });

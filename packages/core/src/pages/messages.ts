@@ -5,7 +5,6 @@ export const corePageMessages = i18n.define({
   messages: {
     en: {
       pageNotFound: "Page not found",
-      nothingHere: "Nothing here",
       wrongTurn: "This page does not exist or is no longer available.",
       goHome: "Go to start",
       help: "Help",
@@ -18,7 +17,6 @@ export const corePageMessages = i18n.define({
     },
     de: {
       pageNotFound: "Seite nicht gefunden",
-      nothingHere: "Diese Seite gibt es nicht",
       wrongTurn: "Die Seite ist nicht vorhanden oder nicht mehr verfügbar.",
       goHome: "Zur Startseite",
       help: "Hilfe",
