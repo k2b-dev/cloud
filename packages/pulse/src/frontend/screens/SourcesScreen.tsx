@@ -270,7 +270,8 @@ export default function SourcesScreen(props: SourcesScreenProps) {
       // A detail stands beside the list only while a source is open; without one the list has the whole width.
       detail={selected() ? 420 : undefined}
       more={[{ label: t().sqlAskAssistant, icon: "sparkles", disabled: assistantPending(), onClick: () => void askAssistant() }]}
-      primary={{ label: t().newSource, icon: "plus", onClick: openAdd, disabled: loading() }}
+      // an open source is its own page on the phone, without the list's floating "Neue Quelle"
+      primary={selected() ? undefined : { label: t().newSource, icon: "plus", onClick: openAdd, disabled: loading() }}
       end={
         <>
           <Input

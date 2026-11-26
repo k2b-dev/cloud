@@ -19,6 +19,7 @@ import {
   Nav,
   Notice,
   Pane,
+  Progress,
   Row,
   Section,
   Select,
@@ -556,7 +557,16 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
               ? `${bytes(props.base.store.usage.bytes)} / ${bytes(props.base.store.limits.storageBytes)}`
               : store().notMeasured
           }
-          meta={props.base.store.usage ? share(props.base.store.usage.bytes, props.base.store.limits.storageBytes) : undefined}
+          // a value with a limit shows how full it is as a bar
+          meta={
+            props.base.store.usage ? (
+              <Progress
+                value={props.base.store.usage.bytes}
+                of={props.base.store.limits.storageBytes}
+                label={share(props.base.store.usage.bytes, props.base.store.limits.storageBytes)}
+              />
+            ) : undefined
+          }
         />
         <Cells.Cell
           icon="activity"
@@ -568,7 +578,17 @@ function Usage(props: { base: PulseBase; limits: SqlLimits | null; canAdmin: boo
           icon="code"
           label={t().settingsQueriesPerHour}
           value={props.limits ? `${number(props.limits.queriesUsed)} / ${number(props.limits.queriesPerHour)}` : "—"}
-          meta={props.limits ? share(props.limits.queriesUsed, props.limits.queriesPerHour) : t().settingsSqlFailed}
+          meta={
+            props.limits ? (
+              <Progress
+                value={props.limits.queriesUsed}
+                of={props.limits.queriesPerHour}
+                label={share(props.limits.queriesUsed, props.limits.queriesPerHour)}
+              />
+            ) : (
+              t().settingsSqlFailed
+            )
+          }
         />
       </Cells>
       <Show when={notice()}>
