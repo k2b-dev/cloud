@@ -253,6 +253,9 @@ describe("the user list on v2", () => {
       expect(await names(tab)).toEqual(expectedNames(`member-of=${FIXTURE_GROUPS.sales.id}`));
       await tab.locator(".k2-stmt-b").first().click();
       await tab.getByRole("searchbox", { name: /Gruppe/ }).fill("lag");
+      // "Lager" already stands in the list before the search; press it once the matches for "lag" have replaced the
+      // list, not while the lookup renders them (a WebKit run pressed the outgoing entry)
+      await tab.getByText("Treffer für „lag“").waitFor();
       await tab.getByRole("option", { name: /Lager/ }).click();
       await tab.waitForFunction(
         (ids) => new URL(location.href).searchParams.get("member-of") === ids,
