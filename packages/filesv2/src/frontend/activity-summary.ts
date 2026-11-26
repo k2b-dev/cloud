@@ -53,8 +53,11 @@ export function activitySummary(
     if (side) {
       // the storage and its first folder: a place a person knows, not every subfolder; keyed by where it is
       const label = placeOf(env, { kind: "side", side }).slice(0, 2).join(" › ");
-      const folder = (side.relativePath ?? side.path).split("/").filter(Boolean).slice(0, -1).slice(0, 1).join("/");
-      const placeKey = `${side.publicBaseId ?? label}/${folder}`;
+      // by its storage and first folder where the side says where it lies in its storage; else by the words shown
+      const placeKey =
+        side.publicBaseId && side.relativePath != null
+          ? `${side.publicBaseId}/${side.relativePath.split("/").filter(Boolean).slice(0, -1).slice(0, 1).join("/")}`
+          : `label:${label}`;
       if (label) add(places, placeKey, () => ({ key: placeKey, label, count: 0 }));
     }
     const kind = changeKind(entry.action);

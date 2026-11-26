@@ -678,9 +678,15 @@ export default function FilesScreen(props: {
     if (words === (activityFilters().q ?? "")) return;
     void go(activityUrl({ ...activityFilters(), q: words || undefined }));
   };
-  // The editor's way back: its folder with the file open beside it.
-  // the open Markdown editor's draft state and save, shown in the head beside its path
+  // the open Markdown editor's draft state, shown in the head beside the file's name
   const [editorHead, setEditorHead] = createSignal<EditorHead | null>(null);
+  // The editor's way back: its folder with the file open beside it ("‹ Werkstatt" on the phone, as the open detail's).
+  const editorBackAction = () => {
+    const launch = snapshot().editor;
+    if (!launch) return undefined;
+    const folderPath = parentPath(launch.entry.path);
+    return { label: folderName(folderPath), href: filesUrl(launch.base.id, folderPath, null, launch.entry.path), onNavigate };
+  };
   const editorBack = () => {
     const launch = snapshot().editor;
     if (launch) void go(filesUrl(launch.base.id, parentPath(launch.entry.path), null, launch.entry.path));
@@ -939,6 +945,8 @@ export default function FilesScreen(props: {
           href: filesUrl(base.id),
           onNavigate,
           current: open && ((screen() === "folder" && !folder() && !searching()) || (!!editing() && !navFolder())),
+          // a storage that is not there says so where it is listed: a dot and its state's word, read with its name
+          ...(base.status !== "existing" ? { dot: "warn" as const, count: t()[base.status] } : {}),
           ...(base.area === "cloud"
             ? { menu: [{ label: b().activityOfStorage, icon: "history", href: activityUrl({ baseId: base.id }), onNavigate }] }
             : {}),
@@ -1054,8 +1062,7 @@ export default function FilesScreen(props: {
             }
             end={
               <>
-                {/* the draft's state beside the file's name in the one head row; saving and closing are in the
-                    editor's own bar, which every width shows */}
+                {/* the draft's state beside the file's name in the one head row; saving ends the editor's own bar */}
                 <Show when={screen() === "edit" && editorHead()}>
                   {(head) => <Chip status={head().dirty() ? "warn" : "ok"}>{head().state()}</Chip>}
                 </Show>
@@ -1152,13 +1159,14 @@ export default function FilesScreen(props: {
               launch.kind === "markdown" ? (
                 <MarkdownPane
                   launch={launch}
+                  back={editorBackAction()}
                   onGuard={(guard) => {
                     editorGuard = guard;
                   }}
                   onHead={(head) => setEditorHead(() => head)}
                 />
               ) : (
-                <OfficePane launch={launch} onBack={editorBack} />
+                <OfficePane launch={launch} onBack={editorBack} back={editorBackAction()} />
               )
             ) : (
               <Pane label={b().editorFailed}>
@@ -1243,7 +1251,7 @@ export default function FilesScreen(props: {
                               base={folderBase()}
                               icons={FILTER_ICONS}
                               timeZone={timeZone()}
-                              results={lead()}
+                              results={rows().length || directory()?.next ? lead() : undefined}
                               end={
                                 <>
                                   <ListOrder query={queries().folder} state={state()} onChange={changeFolder} />
@@ -1263,7 +1271,7 @@ export default function FilesScreen(props: {
                               onChange={changeSearch}
                               icons={FILTER_ICONS}
                               timeZone={timeZone()}
-                              results={lead()}
+                              results={rows().length || directory()?.next ? lead() : undefined}
                               end={<ListOrder query={queries().search} state={state()} onChange={changeSearch} />}
                             />
                           )}
@@ -1502,16 +1510,9 @@ export default function FilesScreen(props: {
           onNavigate,
         },
       };
-    // an empty folder says how its first files come: dropped anywhere on the page, or with the one "Hochladen" of the
-    // head (the phone's button), so the page offers it once
-    // an empty folder offers its first files right where the person looks: dropped on the page or chosen here
-    return canCreate()
-      ? {
-          icon: "upload",
-          text: `${b().emptyTitle}. ${b().v2EmptyDrop}`,
-          action: { label: b().upload, icon: "upload", onClick: actions.pickFiles },
-        }
-      : { icon: "folder", text: b().emptyTitle };
+    // ONE create action (Valentin 26.11.): the empty folder says how its first files come, by dropping them on the page
+    // or with the head's "+", and offers no button of its own
+    return canCreate() ? { icon: "upload", text: `${b().emptyTitle}. ${b().v2EmptyDrop}` } : { icon: "folder", text: b().emptyTitle };
   }
 
   /** A search waits in its shape while it runs, so the old results never stand under new words. */

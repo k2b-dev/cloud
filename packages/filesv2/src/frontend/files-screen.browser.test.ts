@@ -524,6 +524,9 @@ describe("a folder of Files on v2", () => {
         await path.getByText("Alte Stände").waitFor();
         // the places between fold into one "…" menu; the first place and the last two stand
         if (view !== phone) expect(await path.getByRole("button", { name: "Übergeordnete Ebenen" }).count()).toBe(1);
+        // the empty folder says it once and offers no button of its own: "+" is the one create action
+        expect(await tab.locator("[data-k2-part=FilterBar]").innerText()).not.toContain("0 Einträge");
+        expect(await tab.locator("[data-k2-part=Empty]").getByRole("button").count()).toBe(0);
         await shoot(tab, `22-deep-folder-${view.name}`);
         await expectClean(tab);
         expect(errors).toEqual([]);
@@ -713,9 +716,9 @@ describe("the views beside the folders on v2", () => {
 
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
+      // the storages, compact: the page's job, also where the sidebar is a drawer
+      await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
       await tab.locator("[data-k2-part=List][aria-label='Zuletzt geöffnet'] [data-k2-part=Row]").first().waitFor();
-      // the storages are the sidebar's; the page does not list them a second time (Valentin 26.11.)
-      expect(await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
       // beside the storages, the viewer's own last changes in the row design of Activity, under their day
       const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
       expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
@@ -806,7 +809,7 @@ describe("the views beside the folders on v2", () => {
       expect((await tab.locator("[data-slot=head] [data-k2-part=Path]").innerText()).trim()).toBe("Notizen.md");
       expect(await tab.locator("[data-slot=head] [data-k2-part=Chip]").innerText()).toBe("Alles gespeichert");
       expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
-      // saving and closing end the editor's own bar, which every width shows; saving waits for a change
+      // saving ends the editor's own bar, which every width shows; saving waits for a change
       const save = tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" });
       expect(await save.isDisabled()).toBe(true);
       // no close of its own: the sidebar marks the file's place and leads back there
@@ -862,8 +865,15 @@ describe("the views beside the folders on v2", () => {
       try {
         await shoot(tab, `18-${new URL(address, origin).searchParams.get("view") ?? "overview"}-390`);
         if (address.includes("view=edit")) {
-          // the phone's head keeps only its search: saving and closing are in the editor's own bar there too
+          // the phone's head keeps only its search: saving is in the editor's own bar, the way back above it, as the
+          // open detail's
           expect(await tab.locator("[role=toolbar]").getByRole("button", { name: "Speichern" }).isVisible()).toBe(true);
+          expect(
+            await tab
+              .locator("[data-k2-part=Back]")
+              .getByRole("link", { name: /Werkstatt/ })
+              .isVisible(),
+          ).toBe(true);
           expect(await tab.locator("[data-k2-part=Pane] [data-slot=status]").count()).toBe(0);
         }
         await expectClean(tab);
@@ -884,6 +894,15 @@ describe("the views beside the folders on v2", () => {
         const { context, tab, errors } = await open(view, address, "worst");
         try {
           await shoot(tab, `19-worst-${new URL(address, origin).searchParams.get("view") ?? "overview"}-${view.name}`);
+          // a storage that is not there says so in the sidebar too: its state's word beside its name
+          // (at 1440: below 970 px of workspace the sidebar is a drawer)
+          if (view === wide && !new URL(address, origin).searchParams.get("view"))
+            expect(
+              await tab
+                .locator("[data-k2-part=Nav]")
+                .getByRole("link", { name: /Archiv 2019/ })
+                .innerText(),
+            ).toContain("Fehlt");
           await expectClean(tab);
           expect(errors).toEqual([]);
         } finally {
@@ -911,8 +930,10 @@ describe("the views beside the folders on v2", () => {
     const { context, tab, errors } = await open(wide, "/app/filesv2", "huge");
     try {
       const ready = performance.now() - started;
-      // the storages are the sidebar's: the page lists none of them, so 200 cost it nothing
-      expect(await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen']").count()).toBe(0);
+      // the storages are one list that keeps only its rows in view; it says how many it holds
+      const storages = tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]");
+      expect(await storages.first().getAttribute("aria-setsize")).toBe("201");
+      expect(await storages.count()).toBeLessThan(80);
       console.info(`overview of 200 storages ready in ${Math.round(ready)} ms`);
       await expectClean(tab);
       expect(ready).toBeLessThan(5000);

@@ -1,5 +1,5 @@
 import { MarkdownEditor, prompts, toast } from "@k2b/ui";
-import { Canvas, Failed, Loading, Notice, Pane } from "@k2b/ui/v2";
+import { type Action, Canvas, Failed, Loading, Notice, Pane } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkdownLaunch } from "../contracts";
@@ -25,6 +25,8 @@ export default function MarkdownPane(props: {
   /** The workspace asks this before it leaves the editor; `false` stays. */
   onGuard: (guard: (() => Promise<boolean>) | null) => void;
   /** The draft's state for the workspace's head, beside the file's name (no title row of its own, Valentin 26.11.). */
+  /** The way back to the file's folder: on the phone, where the head gives way, as "‹ Werkstatt" above the editor. */
+  back?: Action;
   onHead: (head: EditorHead | null) => void;
 }) {
   const t = useAssetMessages();
@@ -204,7 +206,7 @@ export default function MarkdownPane(props: {
   props.onHead({ state, dirty });
   onCleanup(() => props.onHead(null));
   return (
-    <Pane label={props.launch.entry.name}>
+    <Pane label={props.launch.entry.name} back={props.back}>
       <Show when={error() && ready()}>
         <Notice
           tone="warn"

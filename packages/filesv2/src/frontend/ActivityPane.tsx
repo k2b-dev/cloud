@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Bar, Button, Empty, Failed, FilterBar, List, ListOrder, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
+import { Bar, Button, Empty, Failed, FilterBar, List, ListOrder, type MarkProps, Notice, Pane, Row, Section, Text } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry, ActivityPage } from "../activity-contracts";
 import type { MarkedEntry } from "../contracts";
@@ -14,6 +14,9 @@ import { useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, activityRequest } from "./history-requests";
 import { ActivityLineRow } from "./history-v2";
 import { activityUrl } from "./urls";
+
+/** A line of the summary under Activity: who, where or what kind of change, and how often. */
+type SummaryLine = { group: string; key: string; label: string; count: number; avatar?: { name: string }; mark?: MarkProps; icon?: string };
 
 const FILTER_ICONS = { who: "user", base: "folders", what: "activity", when: "calendar" } as const;
 
@@ -151,6 +154,35 @@ export default function ActivityPane(props: ActivityPaneProps) {
   const KIND_ICONS = { added: "plus", changed: "pencil", moved: "arrows-move", removed: "trash", shared: "world-share", other: "dots" };
   const showSummary = () => !!props.initial && !props.filters.q && !unavailable() && entries().length > 0;
   const count = (value: number) => new Intl.NumberFormat(locale()).format(value);
+  // the summary as one list: who (not under "Ich", where every change is the person's own), where, what kind
+  const summaryLines = createMemo((): SummaryLine[] => {
+    const shown = summary();
+    return [
+      ...(mine()
+        ? []
+        : shown.people.map((person) => ({
+            group: h().v2SummaryWho,
+            key: `who:${person.key}`,
+            label: person.label,
+            count: person.count,
+            avatar: { name: person.label },
+          }))),
+      ...shown.places.map((place) => ({
+        group: h().v2SummaryWhere,
+        key: `where:${place.key}`,
+        label: place.label,
+        count: place.count,
+        mark: entryMark({ name: place.label, directory: true }),
+      })),
+      ...shown.kinds.map((kind) => ({
+        group: h().v2SummaryWhat,
+        key: `what:${kind.key}`,
+        label: kind.label,
+        count: kind.count,
+        icon: KIND_ICONS[kind.kind],
+      })),
+    ];
+  });
   return (
     <Pane
       label={h().activity}
@@ -242,6 +274,19 @@ export default function ActivityPane(props: ActivityPaneProps) {
           />
         </Match>
       </Switch>
+      {/* Under the list and above its older pages (Valentin 26.11.: give the page structure; beside it, it squeezed the
+          list at 1024): one quiet section, its lines under the heads who, where and what kind of change */}
+      <Show when={showSummary()}>
+        <Section title={h().v2Summary}>
+          <List
+            label={h().v2Summary}
+            items={summaryLines()}
+            rowKey={(line) => line.key}
+            group={(line) => ({ key: line.group, label: line.group })}
+            row={(line) => <Row avatar={line.avatar} mark={line.mark} icon={line.icon} lines={[line.label]} time={count(line.count)} />}
+          />
+        </Section>
+      </Show>
       <Show when={props.initial && !props.filters.q && !unavailable()}>
         <Show when={olderFailed()}>
           <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void more() }]}>
@@ -261,33 +306,6 @@ export default function ActivityPane(props: ActivityPaneProps) {
         <Show when={limited()}>
           <Notice tone="note">{h().searchLimit}</Notice>
         </Show>
-      </Show>
-      {/* Under the list, in its column (Valentin 26.11.: give the page structure; beside it, it squeezed the list at
-          1024): who changed most, where and what kind of change, over the changes shown */}
-      <Show when={showSummary()}>
-        <Show when={!mine()}>
-          <Section title={h().v2SummaryWho}>
-            <List label={h().v2SummaryWho}>
-              {summary().people.map((person) => (
-                <Row avatar={{ name: person.label }} lines={[person.label]} time={count(person.count)} />
-              ))}
-            </List>
-          </Section>
-        </Show>
-        <Section title={h().v2SummaryWhere}>
-          <List label={h().v2SummaryWhere}>
-            {summary().places.map((place) => (
-              <Row mark={entryMark({ name: place.label, directory: true })} lines={[place.label]} time={count(place.count)} />
-            ))}
-          </List>
-        </Section>
-        <Section title={h().v2SummaryWhat}>
-          <List label={h().v2SummaryWhat}>
-            {summary().kinds.map((kind) => (
-              <Row icon={KIND_ICONS[kind.kind]} lines={[kind.label]} time={count(kind.count)} />
-            ))}
-          </List>
-        </Section>
       </Show>
     </Pane>
   );

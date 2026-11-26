@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { Canvas, Empty, Loading, Notice, Pane } from "@k2b/ui/v2";
+import { type Action, Canvas, Empty, Loading, Notice, Pane } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { OfficeEditorLaunch } from "../contracts";
 import { useBrowserMessages } from "./browser-messages";
@@ -71,7 +71,12 @@ const acknowledgeExternalWrites = () => {
 };
 
 /** A document, spreadsheet or presentation in Collabora, on a v2 frame. */
-export default function OfficePane(props: { launch: OfficeEditorLaunch; onBack: () => void }) {
+export default function OfficePane(props: {
+  launch: OfficeEditorLaunch;
+  onBack: () => void;
+  /** The way back to the file's folder on the phone, as the open detail has it. */
+  back?: Action;
+}) {
   const b = useBrowserMessages();
   const locale = useLocale();
   const fill = createEditorFill();
@@ -122,7 +127,7 @@ export default function OfficePane(props: { launch: OfficeEditorLaunch; onBack: 
   return (
     // the file's name stands small at the end of the workspace's path, never as a title row of its own; Collabora
     // brings its own close
-    <Pane label={props.launch.entry.name}>
+    <Pane label={props.launch.entry.name} back={props.back}>
       <Show when={external()}>
         <Notice
           tone="warn"

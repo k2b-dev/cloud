@@ -73,7 +73,7 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
   expect(editor).not.toBeNull();
   expect(editor.value).toBe("hello");
-  // no title row of its own: saving and closing end the editor's own bar, which every width shows
+  // no title row of its own: saving ends the editor's own bar, which every width shows
   const tools = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')];
   // "Speichern" ends it; no close of its own, the sidebar leads back
   expect(tools.at(-1)!.getAttribute("aria-label")).toBe("Save");

@@ -1,12 +1,12 @@
 import { useLocale } from "@k2b/ui";
-import { Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
+import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
-import { entryMark, FILES_COLOR } from "./entry-mark";
+import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
@@ -14,7 +14,7 @@ import { formatWhen, type HistoryEnvironment, historyRows, runDestination } from
 import { useHistoryMessages } from "./history-messages";
 import { ActivityLineRow } from "./history-v2";
 import { useFilesMessages } from "./messages";
-import { activityUrl } from "./urls";
+import { activityUrl, filesUrl } from "./urls";
 
 /** The overview shows this many favorites; the page lists all of them. */
 export const FAVORITES_PREVIEW = 6;
@@ -88,8 +88,25 @@ export default function OverviewPane(props: {
             {issueText(t(), issue.code, b().v2AreaUnread({ area: t()[issue.area] }))}
           </Notice>
         ))}
-        {/* no list of the storages: the sidebar names them; the dense table with usage, people and last change comes with
-            its data (Valentin 26.11.) */}
+        {/* The storages, compact: the page's job (below 970 px the sidebar is a drawer). One line each with its kind;
+            a storage that is not there says so. The dense table with usage, people and last change follows with its data. */}
+        <Section icon="folders" color={FILES_COLOR} title={t().storage} count={props.bases.length}>
+          <List
+            label={b().allStorage}
+            items={props.bases}
+            rowKey={(base) => base.id}
+            row={(base) => (
+              <Row
+                mark={storageMark(base)}
+                lines={[baseLabel(base, b(), locale())]}
+                meta={base.kind === "users" ? b().onlyYou : t().group}
+                href={filesUrl(base.id)}
+                onNavigate={props.onNavigate}
+                end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
+              />
+            )}
+          />
+        </Section>
         <Section
           icon="star"
           color="#ca8a04"

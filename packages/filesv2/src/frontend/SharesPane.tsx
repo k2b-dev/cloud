@@ -135,7 +135,7 @@ export default function SharesPane(props: {
               })}
               columns={[
                 {
-                  // the name takes the rest of the width: it is what a person looks for in the list
+                  // the name and the place share the rest: neither is cut while room stands empty, neither vanishes at 1024
                   title: b().shareName,
                   mark: (share) => ({ ...KIND_MARK[share.kind], label: share.kind === "inbox" ? b().inboxShare : b().downloadShare }),
                   cell: (share) => (
@@ -150,7 +150,7 @@ export default function SharesPane(props: {
                 },
                 {
                   title: b().v2From,
-                  width: { min: 110, default: 120 },
+                  width: { min: 130, default: 150 },
                   drop: true,
                   avatar: (share) => ({ name: share.createdBy }),
                   cell: (share) => (share.createdByKind ? `${share.createdBy} (${machines().agent})` : share.createdBy),
@@ -172,7 +172,7 @@ export default function SharesPane(props: {
                   cell: (share) => String(share.accessCount),
                 },
                 // the place has its own width and gives the rest to the name
-                { title: b().v2Place, width: { min: 110, default: 130 }, drop: true, cell: place },
+                { title: b().v2Place, drop: true, cell: place },
                 {
                   // the deeds of a link stand behind its "…", at the row's end
                   title: b().v2Deeds,

@@ -1,13 +1,15 @@
 import { query } from "@k2b/stdlib/solid";
 import { toast, useLocale } from "@k2b/ui";
 import { type Action, Bar, Button, Chip, Empty, List, Notice, type OnNavigate, Row, Section, Text } from "@k2b/ui/v2";
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, mapArray, Show } from "solid-js";
 import type { ActivityBatchContext, ActivityChain, ActivityEntry } from "../activity-contracts";
 import { entryMark } from "./entry-mark";
 import {
   actorOf,
   actorParts,
   byParts,
+  dayHeading,
+  dayKey,
   fill,
   formatDate,
   formatTime,
@@ -455,6 +457,11 @@ function MissingHit(props: {
   const known = createMemo(() => new Set(props.hit.entries.map((entry) => entry.id)));
   const hops = createMemo(() => (chain.data()?.hops ?? []).filter((hop) => !known().has(hop.activityId) && visible(hop.after)).reverse());
   const rows = createMemo(() => historyRows(props.hit.entries, { batches: false }));
+  // later hops first, then the item's own steps: newest first, each under its day. One object per step for as long as
+  // the step stands, so a hop arriving later does not make the item's steps anew (each would read its batch again).
+  const hopSteps = createMemo(mapArray(hops, (hop) => ({ kind: "hop" as const, key: `hop:${hop.activityId}`, time: hop.time, hop })));
+  const rowSteps = createMemo(mapArray(rows, (row) => ({ kind: "row" as const, key: `row:${row.key}`, time: row.lead.time, row })));
+  const steps = createMemo(() => [...hopSteps(), ...rowSteps()]);
   const mark = () => entryMark({ name: itemName(), directory: directory() !== false });
 
   return (
@@ -503,28 +510,34 @@ function MissingHit(props: {
             </Notice>
           )}
         </Show>
-        {/* its history in the same section, so one line ends the hit and its steps (no second line 8 px below) */}
-        <List label={kind() === "Folder" ? h().folderHistory : kind() === "File" ? h().fileHistory : h().itemHistory}>
-          <For each={hops()}>
-            {(hop) => (
+        {/* its history in the same section, so one line ends the hit and its steps (no second line 8 px below); the
+            steps stand under their days, as Activity's do */}
+        <List
+          label={kind() === "Folder" ? h().folderHistory : kind() === "File" ? h().fileHistory : h().itemHistory}
+          items={steps()}
+          rowKey={(step) => step.key}
+          group={(step) => {
+            const day = dayHeading(step.time, locale(), h(), props.env);
+            return { key: dayKey(step.time, props.env.timeZone), label: day.detail ? `${day.label} · ${day.detail}` : day.label };
+          }}
+          row={(step) =>
+            step.kind === "hop" ? (
               <Row
-                avatar={personOf(actorOf(hopEntry(hop), h(), props.env))}
-                lines={[<SentenceText parts={hopSentence(hop, h(), props.env)} />, formatWhen(hop.time, locale(), h(), props.env)]}
+                avatar={personOf(actorOf(hopEntry(step.hop), h(), props.env))}
+                lines={[<SentenceText parts={hopSentence(step.hop, h(), props.env)} />]}
+                time={formatTime(step.time, locale(), props.env)}
               />
-            )}
-          </For>
-          <For each={rows()}>
-            {(row) => (
+            ) : (
               <ChainRow
-                row={row}
+                row={step.row}
                 env={props.env}
                 actions={props.actions}
-                loadedOthers={props.batchOthers(row)}
+                loadedOthers={props.batchOthers(step.row)}
                 loadBatch={props.loadBatch}
               />
-            )}
-          </For>
-        </List>
+            )
+          }
+        />
       </Section>
     </>
   );
