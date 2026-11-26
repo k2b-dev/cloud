@@ -81,8 +81,9 @@ export const CellsScreen = () => (
   </Workspace>
 );
 
-export const CanvasFillScreen = () => (
-  <Workspace>
+// `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
+export const CanvasFillScreen = (props: { split?: boolean }) => {
+  const pane = () => (
     <Pane
       label="Vorlage"
       head={
@@ -102,8 +103,9 @@ export const CanvasFillScreen = () => (
         </div>
       </Canvas>
     </Pane>
-  </Workspace>
-);
+  );
+  return <Workspace>{props.split ? <Pane.Split>{pane()}</Pane.Split> : pane()}</Workspace>;
+};
 
 // A folder twelve levels deep, the last two with long names, in a head that also has a search and its deeds.
 const levels = [

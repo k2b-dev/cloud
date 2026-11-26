@@ -10,7 +10,7 @@ import { CanvasFillScreen, CellsScreen, DeepPathScreen, RowStatesScreen } from "
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path";
+    __k2Case?: "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path" | "split-canvas";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -29,8 +29,8 @@ render(
         <RowStatesScreen />
       ) : which === "path" ? (
         <DeepPathScreen />
-      ) : which === "canvas" ? (
-        <CanvasFillScreen />
+      ) : which === "canvas" || which === "split-canvas" ? (
+        <CanvasFillScreen split={which === "split-canvas"} />
       ) : which === "cells" ? (
         <CellsScreen />
       ) : (

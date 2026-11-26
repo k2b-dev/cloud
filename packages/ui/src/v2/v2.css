@@ -4017,6 +4017,16 @@
   .k2-ui .k2-split > .k2-pane[data-detail] > .k2-scroll {
     overflow-y: auto;
   }
+  /* a pane whose drawing is the whole pane (a board, a calendar) is the page too: it takes the height that is left, so
+     the drawing fills it as it does beside other panes (W3 #4197) */
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .k2-ui .k2-split > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) > .k2-scroll {
+    overflow-y: auto;
+  }
   .k2-ui .k2-split:has(> .k2-pane[data-detail]) > :is(.k2-pane:not([data-detail]), .k2-seam) {
     display: none;
   }

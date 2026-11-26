@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "cells" | "path" | "split-canvas";
 
 let browser: Browser;
 let client: string;
@@ -498,25 +498,32 @@ test("key numbers stand two by two on the phone, a third alone across; big numbe
       width,
     );
 });
-
-test("a drawing that is the whole pane has its final height from the first render, and keeps it", async () => {
-  for (const width of [1440, 390])
-    await withPage(
-      "canvas",
-      async (page) => {
-        const found = await page.evaluate(() => {
-          const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
-          const scroll = document.querySelector(".k2-canvas[data-fill]")!.parentElement!.getBoundingClientRect();
-          return { first: window.__k2FirstCanvas, now: canvas.height, bottom: Math.round(scroll.bottom - canvas.bottom) };
-        });
-        expect(found.first).toBe(found.now);
-        expect(found.now).toBeGreaterThan(240);
-        // it reaches the bottom of its pane: nothing is left under it
-        expect(found.bottom).toBe(0);
-      },
-      width,
-    );
-});
+for (const which of ["canvas", "split-canvas"] as const)
+  test(`a drawing that is the whole pane has its final height from the first render, and keeps it (${which})`, async () => {
+    for (const width of [1440, 390])
+      await withPage(
+        which,
+        async (page) => {
+          const found = await page.evaluate(() => {
+            const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
+            const scroll = document.querySelector(".k2-canvas[data-fill]")!.parentElement!.getBoundingClientRect();
+            return {
+              first: window.__k2FirstCanvas,
+              now: canvas.height,
+              bottom: Math.round(scroll.bottom - canvas.bottom),
+              window: Math.round(innerHeight - canvas.bottom),
+            };
+          });
+          expect(found.first).toBe(found.now);
+          expect(found.now).toBeGreaterThan(240);
+          // it reaches the bottom of its pane, and the pane the bottom of the window (inside the page's 8 px and the
+          // workspace's 1 px edge): also in a split on the phone, where the panes stand one under the other
+          expect(found.bottom).toBe(0);
+          expect(found.window).toBeLessThanOrEqual(9);
+        },
+        width,
+      );
+  });
 
 for (const width of [1440, 1024])
   test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
