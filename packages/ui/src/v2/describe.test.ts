@@ -30,6 +30,22 @@ const outline = (markup: string) => {
 const fixture = (name: keyof typeof fixtures) => outline(renderToString(() => createComponent(fixtures[name], {})));
 
 describe("describeV2", () => {
+  test("names the tinted chips of a status row's statement", async () => {
+    const { Chip, StatusRow } = await import("./index");
+    const text = outline(
+      renderToString(() =>
+        createComponent(StatusRow, {
+          lead: "12 Notizbücher",
+          get marks() {
+            return createComponent(Chip, { status: "bad", children: "1 ohne Zugriff" });
+          },
+          facts: [{ value: 3, after: "geteilt" }],
+        }),
+      ),
+    );
+    expect(text).toContain('StatusRow "12 Notizbücher" [bad "1 ohne Zugriff"] · 3 geteilt');
+  });
+
   test("outlines the mail fixture part by part", () => {
     const text = fixture("layout");
     expect(text).toContain('Workspace (sidebar, head) primary "Neu"');

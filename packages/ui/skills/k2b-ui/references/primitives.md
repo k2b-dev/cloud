@@ -349,6 +349,10 @@ lines instead of cutting a thing.
   below 600 px, where the controls fold) and the later figures give way
   whole, so the filters keep their words; they go on the phone; put what must
   stay in `lead`),
+  `marks` (tinted chips of the statement, an exception such as
+  `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
+  width while the lead is cut, stay on the phone, and give way whole only
+  where about a word of the lead no longer fits),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row

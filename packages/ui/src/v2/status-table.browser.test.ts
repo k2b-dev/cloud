@@ -340,6 +340,66 @@ for (const column of [432, 520])
     );
   });
 
+// Tinted chips of the statement (W2, Notebooks admin; rule 2): an exception "1 ohne Zugriff" stands as a red chip after
+// the lead, also on the phone. A chip is in sight whole or not at all, the first ones stay, none runs under the lead or
+// a control; the lead keeps about a word beside them. In a desktop row of 320 px beside two folded controls, chips
+// that do not fit give way whole.
+for (const [width, column] of [
+  [1440, 1440],
+  [390, 390],
+  [1440, 320],
+] as const)
+  test(`a row of ${column} px in a window of ${width} px: the statement carries its tinted chips, whole or not at all`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2Marks?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(() => {
+          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+          const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
+          const group = row.querySelector(".k2-status-marks")!.getBoundingClientRect();
+          const end = row.querySelector(".k2-bar-end");
+          const endLeft = end && getComputedStyle(end).display !== "none" ? end.getBoundingClientRect().left : Infinity;
+          const style = getComputedStyle(lead);
+          return {
+            chips: [...row.querySelectorAll<HTMLElement>(".k2-status-marks .k2-chip")].map((chip) => {
+              const box = chip.getBoundingClientRect();
+              const inside =
+                box.left >= group.left - 0.5 &&
+                box.right <= group.right + 0.5 &&
+                box.top >= group.top - 0.5 &&
+                box.bottom <= group.bottom + 0.5;
+              const outside = box.top >= group.bottom - 0.5 || box.left >= group.right - 0.5;
+              return {
+                name: chip.textContent?.trim(),
+                seen: inside,
+                whole: inside || outside,
+                clear: !inside || (box.left >= lead.getBoundingClientRect().right && box.right <= endLeft),
+              };
+            }),
+            lead: {
+              cut: lead.scrollWidth > lead.clientWidth + 0.5,
+              ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+              word: lead.clientWidth >= Math.min(4.5 * Number.parseFloat(style.fontSize), lead.scrollWidth) - 0.5,
+            },
+          };
+        });
+        expect(found.chips.map((chip) => chip.name)).toEqual(["1 ohne Zugriff", "2 laufen ab"]);
+        for (const chip of found.chips) expect({ ...chip, seen: true }).toEqual({ name: chip.name, seen: true, whole: true, clear: true });
+        const seen = found.chips.map((chip) => chip.seen);
+        // the first ones stay
+        expect(seen).toEqual(seen.map((_, index) => index < seen.filter(Boolean).length));
+        if (column === 1440 || width < 768) expect(seen).toEqual([true, true]);
+        // at 320 px chips, figures and two folded controls leave the lead less than a word; it is still cut with "…"
+        if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: column === 320 ? found.lead.word : true });
+      },
+      { width, column },
+    );
+  });
+
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
   await withPage(

@@ -29,6 +29,8 @@ declare global {
     __k2ThreeFacts?: () => void;
     /** Mail's list column: a select box, a short lead, one long figure and no filters. */
     __k2MailFact?: () => void;
+    /** Tinted chips of the statement: an exception "1 ohne Zugriff" and a warning "2 laufen ab". */
+    __k2Marks?: () => void;
     /** The search of the head takes Escape itself (its onKeyDown calls preventDefault) and counts it. */
     __k2TakeEscape?: boolean;
     __k2Escapes?: number;
@@ -97,6 +99,8 @@ window.__k2MailFact = () => {
   setFilters(false);
   setMail(true);
 };
+const [chips, setChips] = createSignal(false);
+window.__k2Marks = () => setChips(true);
 const liveBlocked = () =>
   logs() === "until-now" ? "Live nur mit Zeitraum bis jetzt" : logs() === "first-page" ? "Live nur auf der ersten Seite" : undefined;
 
@@ -168,6 +172,14 @@ render(
                           : "4 neu"
               }
               loading={loading()}
+              marks={
+                chips() ? (
+                  <>
+                    <Chip status="bad">1 ohne Zugriff</Chip>
+                    <Chip status="warn">2 laufen ab</Chip>
+                  </>
+                ) : undefined
+              }
               facts={[
                 ...(mail()
                   ? [{ before: "Heute", value: 12, after: "erledigt · 5 davon automatisch" }]

@@ -447,6 +447,12 @@ export type StatusRowProps = {
    * go. Put what must stay in `lead`.
    */
   facts?: readonly StatusFact[];
+  /**
+   * Tinted chips that belong to the statement, such as an exception: `<Chip status="bad">1 ohne Zugriff</Chip>`
+   * (rule 2). They stand after the lead, keep their width while the lead is cut with "…", stay on the phone, and give
+   * way whole, the later ones first, only where about a word of the lead would no longer fit beside them.
+   */
+  marks?: JSX.Element;
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
   /**
@@ -466,6 +472,7 @@ export type StatusRowProps = {
 export const StatusRow = (props: StatusRowProps) => {
   const t = useUiMessages();
   const filters = resolveChildren(() => props.filters);
+  const marks = resolveChildren(() => props.marks);
   return (
     <div class="k2-bar" data-k2-part="StatusRow" data-status-row="" data-selecting={props.selection ? "" : undefined}>
       <Show
@@ -488,6 +495,9 @@ export const StatusRow = (props: StatusRowProps) => {
                     <span class="k2-hidden-text">{t().loading}</span>
                   </Show>
                 </span>
+              </Show>
+              <Show when={marks() !== undefined}>
+                <span class="k2-status-marks">{marks()}</span>
               </Show>
               <Show when={props.facts?.length}>
                 <span class="k2-status-facts">
