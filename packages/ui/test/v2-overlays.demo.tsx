@@ -3,7 +3,8 @@ import { Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspa
 
 // The v2 dialog in the place the mockup puts it: it asks before something is discarded, opened from a button in the
 // head that stays on the phone. `<html data-long>` gives the dialog more content than fits, so it scrolls.
-// `__k2Shorten()` takes that content away again, so the open dialog gets shorter. `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
+// `<html data-to-end>` adds a button whose press scrolls the dialog's host, as a scroll into view does.
+// `__k2Shorten()` takes that content away again, so the open dialog gets shorter; `__k2Lengthen()` brings it. `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
 // `Dialog.confirm` from outside both and writes the answer to `<body data-answer>`. `<html data-opened>` has the dialog
 // "Neuer Zugang" open from the start, as a page whose address names the dialog ("…/keys/new").
 
@@ -16,6 +17,7 @@ declare global {
     __k2Shorten?: () => void;
     /** Asks "Erste?" and "Zweite?" at once and writes the answers to `<body data-first>` and `<body data-second>`. */
     __k2AskTwo?: () => void;
+    __k2Lengthen?: () => void;
   }
 }
 
@@ -75,6 +77,7 @@ function Order() {
     );
   const [long, setLong] = createSignal(document.documentElement.dataset.long !== undefined);
   window.__k2Shorten = () => setLong(false);
+  window.__k2Lengthen = () => setLong(true);
   return (
     <Workspace
       head={
@@ -131,6 +134,14 @@ function Order() {
         }
       >
         <Text>Die Angaben gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.</Text>
+        {/* `<html data-to-end>`: a button whose press scrolls the dialog's host, as a calendar's step that scrolls its day
+            into view does where the host does not snap back at once (iOS, #4167); the browsers of the tests snap a
+            script's `scrollIntoView` back themselves, so the press scrolls the host as that scroll would */}
+        {document.documentElement.dataset.toEnd !== undefined ? (
+          <Button onClick={(event) => event.currentTarget.closest(".k2-dialog")?.parentElement?.scrollBy({ top: -240 })}>
+            Zur ersten Zeile
+          </Button>
+        ) : null}
         <For each={long() ? Array.from({ length: 24 }, (_, index) => index + 1) : []}>
           {(line) => <Text>Position {line}: Korpus, Front und Beschläge.</Text>}
         </For>
