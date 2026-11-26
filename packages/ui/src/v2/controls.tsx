@@ -5,13 +5,21 @@ import {
   createUniqueId,
   For,
   type JSX,
+  onCleanup,
+  onMount,
   children as resolveChildren,
   Show,
   useContext,
 } from "solid-js";
 import { isServer } from "solid-js/web";
+import { formatDateInput, parseDateInput } from "../inputs/date-input";
+import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
+import { useLocale } from "../intl/locale";
+import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { ActionButton } from "./button";
+import { useDateMessages } from "./date-messages";
+import { DatePicker } from "./date-picker";
 import { Chip, Icon } from "./marks";
 import { useSettingMessages } from "./setting-messages";
 import { textEdge } from "./tokens";
@@ -245,7 +253,10 @@ export type InputProps = {
    * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
    * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
    * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
-   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`).
+   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). Where a host offers the
+   * page's search in a bar of its own (`data-k2-host-search` on the v2 scope, as the Cloud shell's phone bar does),
+   * the folded search leaves the head and the order of the Tab key on the phone, and the host focuses it; a head with
+   * a path then opens it over the content's first row.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
@@ -277,6 +288,19 @@ export type InputProps = {
   end?: JSX.Element;
   /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
   disabled?: boolean;
+  /**
+   * What the browser and a password manager may fill in, such as `username`, `current-password`, `new-password`,
+   * `one-time-code` or `off`. It stands in the server's markup, where a password manager reads it.
+   */
+  autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
+  /** The most characters the field takes. */
+  maxLength?: number;
+  /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
+  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
+  spellcheck?: boolean;
+  /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
+  autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -298,9 +322,33 @@ const foldHeadSearch = (event: KeyboardEvent & { currentTarget: HTMLInputElement
   event.currentTarget.blur();
 };
 
+/**
+ * Whether a search is the head's search that a host's bar opens on the phone (`data-k2-host-search`): folded away,
+ * it leaves the order of the Tab key, so the bar's button is its one way in; the host still focuses it. Known in the
+ * browser only, after the first render, which stays the server's.
+ */
+const useHostedHeadSearch = (input: () => HTMLInputElement | undefined, search: () => boolean) => {
+  const [hosted, setHosted] = createSignal(false);
+  onMount(() => {
+    const place = input()?.parentElement?.parentElement;
+    if (!search() || !place?.matches('[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end')) return;
+    const phone = matchMedia(`not all and (min-width: ${textEdge.phoneBelow}px)`);
+    const update = () => setHosted(phone.matches);
+    update();
+    phone.addEventListener("change", update);
+    onCleanup(() => phone.removeEventListener("change", update));
+  });
+  return hosted;
+};
+
 /** A round text field: 36 px, 1 px edge, a blue ring on focus. In a field it takes its name and error. */
 export const Input = (props: InputProps) => {
   const field = useField();
+  let input: HTMLInputElement | undefined;
+  const hosted = useHostedHeadSearch(
+    () => input,
+    () => props.type === "search",
+  );
   // the end is made once, here (reading the prop twice would make its JSX twice)
   const end = resolveChildren(() => props.end);
   const shared = () => ({
@@ -313,6 +361,12 @@ export const Input = (props: InputProps) => {
     "aria-describedby": field?.described,
     required: field?.required || undefined,
     disabled: props.disabled,
+    // written as attributes, so the first markup from the server already carries them (password managers read it)
+    autocomplete: props.autocomplete,
+    maxlength: props.maxLength,
+    inputmode: props.inputMode,
+    spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
+    autocapitalize: props.autocapitalize,
   });
   return (
     <span
@@ -329,7 +383,11 @@ export const Input = (props: InputProps) => {
         fallback={
           <input
             {...shared()}
-            ref={(element) => forwardRef(props.ref, element)}
+            ref={(element) => {
+              input = element;
+              forwardRef(props.ref, element);
+            }}
+            tabIndex={hosted() ? -1 : undefined}
             type={props.type ?? "text"}
             min={props.min}
             max={props.max}
@@ -452,37 +510,134 @@ export const Select = (props: SelectProps) => {
 };
 
 export type DateInputProps = {
-  /** The date as the person reads it, such as "27.11.2026". */
+  /** The date as a date key ("2026-12-15") or as the locale writes it ("15.12.2026"); the field shows the second. */
   value?: string;
-  /** Called with the new text on every change. */
+  /**
+   * A picked or typed date as a date key ("2026-12-15"), or "" when the field was emptied. Typed text applies on Enter
+   * or when the field is left; text that is no date marks the field and applies nothing.
+   */
   onInput?: (value: string) => void;
   /** A quiet example date while the field is empty. */
   placeholder?: string;
-  /** The name the value is sent under in a form; the field's name by default. */
+  /** The name a form sends the date key under; the field's name by default. */
   name?: string;
   /** A name when the date stands without a Field. */
   label?: string;
+  /**
+   * The zone that says which day today is, for words such as "heute" or "+3" and the calendar's today; "UTC" by
+   * default. Give the person's zone, the same on the server and in the island, as for `FilterBar`.
+   */
+  timeZone?: string;
 };
 
-/** The shape of a date field: the date and a calendar symbol. (The picker opens with the behaviour layer.) */
+/**
+ * A date field: the date typed in the order of the locale ("24.11.2026", also "heute", "+3", "Mi"), and the calendar
+ * symbol at its end opens `DatePicker` below it. Picking a day fills the field and gives the focus back to it.
+ */
 export const DateInput = (props: DateInputProps) => {
   const field = useField();
+  const locale = useLocale();
+  const t = useDateMessages();
+  // today in one zone on the server and in the browser, so "heute" names the same day on both sides
+  const today = () => dateKey(new Date(), { timeZone: props.timeZone ?? "UTC" });
+  /** A date key for a value, or `undefined` when it is no readable date (also a key of a day that does not exist). */
+  const keyOf = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+    if (isDateKey(value)) return isCalendarDay(value) ? value : undefined;
+    const read = parseDateInput(value, { today: today(), locale: locale() });
+    return read.kind === "date" ? read.date : undefined;
+  };
+  const shown = (value: string | undefined) => (value && isCalendarDay(value) ? formatDateInput(value, locale()) : (value ?? ""));
+  // Without `onInput` the field keeps what was picked or typed itself, so it always shows the date it holds.
+  const [own, setOwn] = createSignal(props.value);
+  createRenderEffect(() => setOwn(props.value));
+  const [text, setText] = createSignal(shown(props.value));
+  createRenderEffect(() => setText(shown(own())));
+  const [unreadable, setUnreadable] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
+  let input: HTMLInputElement | undefined;
+  const take = (key: string) => {
+    setUnreadable(false);
+    setOwn(key);
+    setText(shown(key));
+    props.onInput?.(key);
+  };
+  const commit = (typed: string) => {
+    if (!typed.trim()) {
+      if (keyOf(own()) !== undefined || own()) take("");
+      setUnreadable(false);
+      return;
+    }
+    const key = keyOf(typed);
+    if (key === undefined) {
+      setUnreadable(true);
+      return;
+    }
+    if (key !== keyOf(own())) take(key);
+    else {
+      setUnreadable(false);
+      setText(shown(key));
+    }
+  };
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
+  const invalid = () => field?.invalid || unreadable();
+  // text that is no date makes the form invalid too, so it never sends the date the field held before
+  // (the message is read before the element is there, so the effect follows it from the start)
+  createRenderEffect(() => {
+    const message = unreadable() ? t().unreadable : "";
+    input?.setCustomValidity(message);
+  });
   return (
-    <span class="k2-input" data-k2-part="DateInput" data-invalid={field?.invalid ? "" : undefined}>
+    <span class="k2-input" data-k2-part="DateInput" data-invalid={invalid() ? "" : undefined}>
       <input
+        ref={input}
         id={field?.control}
-        name={props.name ?? field?.name}
         type="text"
         inputmode="numeric"
-        value={props.value ?? ""}
+        autocomplete="off"
+        value={text()}
         placeholder={props.placeholder}
         aria-label={field ? undefined : props.label}
-        aria-invalid={field?.invalid ? "true" : undefined}
+        aria-invalid={invalid() ? "true" : undefined}
         aria-describedby={field?.described}
+        title={unreadable() ? t().unreadable : undefined}
         required={field?.required || undefined}
-        onInput={(event) => props.onInput?.(event.currentTarget.value)}
+        onInput={(event) => setText(event.currentTarget.value)}
+        onChange={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.isComposing) commit(event.currentTarget.value);
+          if (event.key === "ArrowDown" && event.altKey) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       />
-      <Icon name="calendar" />
+      <Show when={props.name ?? field?.name}>{(name) => <input type="hidden" name={name()} value={keyOf(own()) ?? own() ?? ""} />}</Show>
+      <span class="k2-input-end">
+        <popover.Trigger
+          class="k2-btn"
+          data-k2-part="Button"
+          data-variant="ghost"
+          data-icon-only=""
+          aria-label={t().openCalendar}
+          title={t().openCalendar}
+        >
+          <Icon name="calendar" />
+        </popover.Trigger>
+      </span>
+      <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="bottom" align="end" sideOffset={4} collisionPadding={8}>
+        <DatePicker
+          value={keyOf(own())}
+          timeZone={props.timeZone ?? "UTC"}
+          label={props.label}
+          autoFocus
+          onPick={(key) => {
+            take(key);
+            setOpen(false);
+            input?.focus({ preventScroll: true });
+          }}
+        />
+      </popover.Popup>
     </span>
   );
 };
