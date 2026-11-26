@@ -11,7 +11,7 @@ const noteMark = (note: GraphNote): MarkProps => ({ icon: "file-text", color: `v
 
 /**
  * The same notes, links and filters as the graph, as a table as wide as the pane: the note opens from its row, and
- * "Geändert" sorts. One column carries the data: how many shown notes each note links to and is linked from.
+ * "Geändert" sorts. One column carries the data: how many shown notes each note is linked with.
  */
 export default function GraphTable(props: { view: GraphView; now: string }) {
   const locale = useLocale();
@@ -44,9 +44,11 @@ export default function GraphTable(props: { view: GraphView; now: string }) {
       cell: (note) => (note.area.index === 0 ? t().graphTopLevel : note.area.title || t().untitled),
       drop: true,
     },
-    // k2b-ui gap: Ticks (G) – the note's links as a small bar in the soft app colour beside the counts; the counts
-    // stand alone meanwhile.
-    { title: t().graphColumnLinks, cell: linkCounts },
+    // The one data column: how many shown notes this one links to and is linked from, as one number at the end (the
+    // directions stand in the drawing's status line and on the phone's second line).
+    // k2b-ui gap: Ticks (G) – a small bar of the count in the soft area colour beside it; the number stands alone
+    // meanwhile.
+    { title: t().graphColumnLinks, cell: (note) => String(shownCount(note.out) + shownCount(note.in)), align: "end" },
     {
       title: t().graphColumnChanged,
       cell: (note) => changed(note),

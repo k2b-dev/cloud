@@ -753,11 +753,11 @@ for (const [locale, line] of [
 ]) {
   test(`a large notebook's graph list says in the server's markup that it holds the pages around one page (${locale})`, async () => {
     const html = await renderLinkedNotebook("write", "graph&list=1", locale, "write", { around: "note01", total: 20_000 });
-    // the server renders the count, so it is there before the island and nothing moves when the island renders
-    const [pane] = await select(html, '[data-k2-part="Pane"]');
-    expect(pane?.text).toContain(line);
+    // the server renders the count in the head, so it is there before the island and nothing moves when the island renders
+    const [head] = await select(html, '[data-k2-workspace] [data-k2-part="Bar"]');
+    expect(head?.text).toContain(line);
     const whole = await renderLinkedNotebook("write", "graph", locale);
-    expect((await select(whole, '[data-k2-part="Pane"]'))[0]?.text).not.toContain(line!.slice(0, 20));
+    expect((await select(whole, '[data-k2-workspace] [data-k2-part="Bar"]'))[0]?.text).not.toContain(line!.slice(0, 20));
   });
 }
 

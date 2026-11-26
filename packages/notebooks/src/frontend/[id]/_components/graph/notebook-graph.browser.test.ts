@@ -44,10 +44,8 @@ const nodeCenter = async (page: Page, id: string) => {
 const search = (page: Page) => new URL(page.url()).searchParams;
 /** The workspace head: title, search, As list and close. */
 const head = (page: Page) => page.locator('[data-k2-workspace] [data-k2-part="Bar"]').first();
-/** The pane head: the displays, depth, which notes and areas, and zoom. */
-const filters = (page: Page) => page.locator('[data-k2-part="Pane"] [data-k2-part="Bar"]').first();
-/** The figure above the content: the notebook's links, notes and the notes without a link. */
-const figure = (page: Page) => page.locator('[data-k2-part="Pane"] [data-k2-part="Band"]').first();
+/** The displays, depth, which notes and areas, and zoom: in the one head row (head as one block). */
+const filters = (page: Page) => head(page);
 /** A display's tab. */
 const display = (page: Page, name: string) => page.locator('[data-k2-part="Tabs"]').getByRole("button", { name, exact: true });
 /** The filter menu's button, a symbol the phone keeps: which notes, Umgebung's depth and the areas. */
@@ -114,8 +112,8 @@ for (const [notebook, notes] of [
             expect(overlap).toBe(false);
           }
         }
-        // The figure above the drawing counts every note, also those without a label.
-        expect(await figure(page).textContent()).toContain(`${notes} notes`);
+        // The status line counts every note, also those without a label.
+        expect(await page.locator(".notebook-graph__status").textContent()).toContain(`${notes} notes`);
         if (notebook === "hand01") expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
         if (notebook === "big001")
           console.info(`${browserName} ${viewport.width}px: ${await page.locator(".notebook-graph__label").count()} of 300 notes labelled`);
@@ -126,7 +124,7 @@ for (const [notebook, notes] of [
   }
 }
 
-test(`${browserName}: Close lives in the head and zoom in the pane head, not in corners`, async () => {
+test(`${browserName}: Close and zoom live in the one head row, not in corners`, async () => {
   const page = await open(graphPath("hand01"));
   try {
     expect(await head(page).getByRole("link", { name: "Close graph", exact: true }).isVisible()).toBe(true);
@@ -138,14 +136,14 @@ test(`${browserName}: Close lives in the head and zoom in the pane head, not in 
       ),
     );
     expect(placement.every((position) => position !== "absolute" && position !== "fixed")).toBe(true);
-    // two rows above the drawing: the workspace head and the pane head
+    // one row above the drawing: the head holds the displays and the tools (head as one block)
     const rows = await page.evaluate(() => {
       const canvas = document.querySelector('[data-k2-part="Canvas"]')!.getBoundingClientRect().top;
       return [...document.querySelectorAll('[data-k2-workspace] [data-k2-part="Bar"]')].filter(
         (bar) => bar.getBoundingClientRect().bottom <= canvas,
       ).length;
     });
-    expect(rows).toBe(2);
+    expect(rows).toBe(1);
   } finally {
     await close(page);
   }
@@ -155,7 +153,7 @@ for (const viewport of [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
 ])
-  test(`${browserName}: the Book update notice stays below the head and the pane head at ${viewport.width}`, async () => {
+  test(`${browserName}: the Book update notice stays below the head at ${viewport.width}`, async () => {
     const page = await open(graphPath("hand01"), viewport);
     try {
       await page.evaluate((notebookId) => {
@@ -295,8 +293,8 @@ test(`${browserName}: the graph is one tab stop with arrows, Home and Enter insi
   const page = await open(graphPath("hand01"));
   try {
     const activeNode = () => page.evaluate(() => document.activeElement?.getAttribute("data-node") ?? null);
-    // the figure above the drawing is the last stop before it (its exception shows the notes without a link)
-    await figure(page).getByRole("button").focus();
+    // Close ends the head; the drawing is the next stop
+    await head(page).getByRole("link", { name: "Close graph", exact: true }).focus();
     await page.keyboard.press("Tab");
     expect(await activeNode()).toBe(WAREHOUSE);
     expect(await page.locator(`[data-node="${WAREHOUSE}"]`).getAttribute("aria-label")).toBe(
@@ -665,12 +663,7 @@ test(`${browserName}: the server render and mounted defaults share controls and 
           const visible = (element: Element) => element.getClientRects().length > 0;
           return {
             checked: [...document.querySelectorAll('[aria-label="Display"] [aria-current="page"]')].find(visible)?.textContent,
-            boxes: [
-              '[data-k2-workspace] [data-k2-part="Bar"]',
-              '[data-k2-part="Pane"] [data-k2-part="Bar"]',
-              ".notebook-graph__body",
-              '[data-k2-part="Table"] table',
-            ].map((selector) => {
+            boxes: ['[data-k2-workspace] [data-k2-part="Bar"]', ".notebook-graph__body", '[data-k2-part="Table"] table'].map((selector) => {
               const box = document.querySelector(selector)?.getBoundingClientRect();
               return box ? [box.x, box.y, box.width, box.height].map(Math.round) : null;
             }),
@@ -869,7 +862,7 @@ for (const viewport of [
     try {
       const expected = viewport.width < 768 ? "neighborhood" : "network";
       expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe(expected);
-      // the displays are the pane head's tabs
+      // the displays are the head's tabs
       const tabs = filters(page).locator('[data-k2-part="Tabs"][aria-label="Display"]');
       expect(await tabs.count()).toBe(1);
       expect(await tabs.locator('[aria-current="page"]').first().textContent()).toContain(
@@ -985,12 +978,10 @@ test(`${browserName}: depth changes ring two without moving the head rows`, asyn
   try {
     const boxes = () =>
       page.evaluate(() =>
-        ['[data-k2-workspace] [data-k2-part="Bar"]', '[data-k2-part="Pane"] [data-k2-part="Bar"]', ".notebook-graph__body"].map(
-          (selector) => {
-            const r = document.querySelector(selector)!.getBoundingClientRect();
-            return [r.x, r.y, r.width, r.height];
-          },
-        ),
+        ['[data-k2-workspace] [data-k2-part="Bar"]', ".notebook-graph__body"].map((selector) => {
+          const r = document.querySelector(selector)!.getBoundingClientRect();
+          return [r.x, r.y, r.width, r.height];
+        }),
       );
     const before = await boxes();
     expect(await page.locator('[data-node][data-ring="2"]').count()).toBeGreaterThan(0);
@@ -1079,7 +1070,7 @@ test(`${browserName}: Circle places all 49 notes on one ring with a band for eve
   try {
     expect(await nodes(page).count()).toBe(49);
     expect(await page.locator(".notebook-graph__svg").getAttribute("data-display")).toBe("circle");
-    expect(await figure(page).textContent()).toContain("49 notes");
+    expect(await page.locator(".notebook-graph__status").textContent()).toContain("49 notes");
     const { ring, cx, cy, radius } = await circleGeometry(page);
     for (const p of ring) expect(Math.abs(Math.hypot(p.x - cx, p.y - cy) - radius)).toBeLessThan(1.5);
     const areas = await (await areaEntry(page, "")).count();
@@ -1172,7 +1163,7 @@ test(`${browserName}: Circle arrow keys walk the full ring and wrap from the cur
   try {
     const { ring } = await circleGeometry(page);
     const current = ring.findIndex((note) => note.id === WAREHOUSE);
-    await figure(page).getByRole("button").focus();
+    await head(page).getByRole("link", { name: "Close graph", exact: true }).focus();
     await page.keyboard.press("Tab");
     expect(await focusedNode(page)).toBe(WAREHOUSE);
     expect(await page.locator('[data-node][tabindex="0"]').count()).toBe(1);
@@ -1286,8 +1277,8 @@ for (const notebook of ["hand01", "big001"]) {
             if (other.owner !== quad.owner) expect(labelQuadsOverlap(quad.points, other.points)).toBe(false);
         }
         if (notebook === "hand01") expect(await page.locator(`[data-label="${WAREHOUSE}"]`).getAttribute("data-kind")).toBe("current");
-        // The figure keeps the true totals, also for the notes whose titles found no room.
-        expect(await figure(page).textContent()).toContain(notebook === "big001" ? "300 notes" : "49 notes");
+        // The status line keeps the true totals, also for the notes whose titles found no room.
+        expect(await page.locator(".notebook-graph__status").textContent()).toContain(notebook === "big001" ? "300 notes" : "49 notes");
         if (notebook === "big001") console.info(`${browserName} Circle ${viewport.width}px: ${count} of 300 notes labelled`);
       } finally {
         await close(page);
@@ -1484,8 +1475,8 @@ test(`${browserName}: Timeline has one tab stop, scrolls with arrows, and opens 
   try {
     const ids = changedOrder("desc").map((note) => note.id);
     const current = ids.indexOf(WAREHOUSE);
-    // the figure above the timeline is the last stop before it
-    await figure(page).getByRole("button").focus();
+    // Close ends the head; the timeline is the next stop
+    await head(page).getByRole("link", { name: "Close graph", exact: true }).focus();
     await page.keyboard.press("Tab");
     expect(await focusedRow(page)).toBe(WAREHOUSE);
     const inside = () =>
@@ -1578,12 +1569,10 @@ test(`${browserName}: Timeline disables zoom without moving the head rows`, asyn
   try {
     const boxes = () =>
       page.evaluate(() =>
-        ['[data-k2-workspace] [data-k2-part="Bar"]', '[data-k2-part="Pane"] [data-k2-part="Bar"]', ".notebook-graph__body"].map(
-          (selector) => {
-            const box = document.querySelector(selector)!.getBoundingClientRect();
-            return [box.x, box.y, box.width, box.height];
-          },
-        ),
+        ['[data-k2-workspace] [data-k2-part="Bar"]', ".notebook-graph__body"].map((selector) => {
+          const box = document.querySelector(selector)!.getBoundingClientRect();
+          return [box.x, box.y, box.width, box.height];
+        }),
       );
     const before = await boxes();
     const zoom = () =>
@@ -1691,7 +1680,7 @@ test(`${browserName}: Reset filters into a scrolled Timeline keeps the focused r
 }, 30_000);
 
 test(`${browserName}: a list sorted by Changed shows when each note changed on a phone, without horizontal overflow`, async () => {
-  const page = await open(graphPath("hand01", "&list=1&sort=changed&links=linked"), { width: 390, height: 844 });
+  const page = await open(graphPath("hand01", "&list=1&sort=changed"), { width: 390, height: 844 });
   try {
     // the table's phone form: a row per note, with when it changed
     const rows = page.locator('[data-k2-part="Row"]').filter({ visible: true });
@@ -1701,12 +1690,11 @@ test(`${browserName}: a list sorted by Changed shows when each note changed on a
     const first = rows.first();
     expect(await first.locator('[data-k2-part="Mark"]').count()).toBe(1);
     expect(await first.textContent()).toMatch(/links to \d+ · linked from \d+/);
-    // a filtered list counts its rows whole in the pane head, where the list replaces the display tabs (the figure
-    // above the content counts the whole notebook); each row names its links
+    // the list's count stands whole in the head, where the list replaces the display tabs; each row names its links
     const count = filters(page).locator('[data-k2-part="Text"]', { hasText: "notes" });
-    expect((await count.textContent())?.trim()).toBe("45 notes");
+    expect((await count.textContent())?.trim()).toBe("49 notes");
     expect(await count.evaluate((text) => text.scrollWidth <= text.clientWidth)).toBe(true);
-    // the order is the pane head's menu, which the phone keeps
+    // the order is the head's menu, which the phone keeps
     await filters(page).getByRole("button", { name: "Order" }).click();
     expect(await page.getByRole("menuitemradio", { name: "Changed, newest first" }).getAttribute("aria-checked")).toBe("true");
     await page.getByRole("menuitemradio", { name: "Changed, oldest first" }).click();
@@ -1717,14 +1705,14 @@ test(`${browserName}: a list sorted by Changed shows when each note changed on a
 }, 30_000);
 
 for (const display of ["network", "neighborhood", "timeline"]) {
-  test(`${browserName}: a narrow desktop keeps every ${display} control inside the two head rows`, async () => {
+  test(`${browserName}: a narrow desktop keeps every ${display} control inside the head row`, async () => {
     const page = await open(graphPath("hand01", `&display=${display}`), { width: 1024, height: 800 });
     try {
       for (const width of [1024, 900]) {
         await page.setViewportSize({ width, height: 800 });
         await settled(page);
         const overflow = await page.evaluate(() =>
-          ['[data-k2-workspace] [data-k2-part="Bar"]', '[data-k2-part="Pane"] [data-k2-part="Bar"]'].map((selector) => {
+          ['[data-k2-workspace] [data-k2-part="Bar"]'].map((selector) => {
             const bar = document.querySelector(selector)!;
             const right = Math.max(
               ...[...bar.querySelectorAll("button, a, input")]

@@ -66,7 +66,8 @@ const mount = () => {
           notebookId={match[1]!}
           notebookName={notebook.name}
           selectedNoteId={match[2] ?? params.get("note") ?? notebook.current ?? graph.nodes[0]?.id ?? null}
-          graph={graph}
+          // `?unavailable=1`: the page could not load the graph
+          graph={params.get("unavailable") === "1" ? null : graph}
           view={parseGraphViewState(params)}
           now={FIXTURE_NOW}
           timeZone="Europe/Berlin"
