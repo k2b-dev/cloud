@@ -29,8 +29,9 @@ for (const name of recipes) {
     renderToString(() => createComponent(screen.default, {})),
   );
 }
-const { DetailBack, longSpace, PathAndSearch } = await import("../../test/v2-phone-head.fixture");
+const { DetailBack, DetailWithSearch, longSpace, PathAndSearch } = await import("../../test/v2-phone-head.fixture");
 const pathAndSearch = renderToString(() => createComponent(PathAndSearch, {}));
+const detailWithSearch = renderToString(() => createComponent(DetailWithSearch, {}));
 const detailBack = (back: string) => renderToString(() => createComponent(DetailBack, { back }));
 const hostScript = await (async () => {
   const build = await Bun.build({
@@ -81,7 +82,7 @@ const open = async (screen: string) => {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await page.setContent(
     `<!doctype html><html lang="de"><head><style>${css}</style><style>${hostCss}</style></head><body>` +
-      `<div class="host" data-k2-host-search><div class="host-bar"><button type="button" aria-label="Suche">S</button></div>` +
+      `<div class="host" data-k2-host-search><div class="host-bar"><button type="button" aria-label="Suche" data-k2-host-search-button>S</button></div>` +
       `<div class="frame k2-ui">${screen}</div></div></body></html>`,
   );
   await settled(page);
@@ -170,4 +171,41 @@ test("a way back that names a Space of a hundred characters stays short, keeps i
   expect(long.cut).toBe(true);
   expect(long.name).toBe(`${longSpace}|${longSpace}`);
   expect(long.title).toBe(short.title);
+}, 30_000);
+
+test("with a detail open the head and its search give way: the host's search is its own", async () => {
+  const page = await open(detailWithSearch);
+  try {
+    await page.addScriptTag({ content: hostScript });
+    expect(await page.evaluate(() => window.__focusPageSearch())).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.closest(".k2-input") ?? null)).toBeNull();
+  } finally {
+    await page.close();
+  }
+}, 30_000);
+
+test("Escape gives the focus back to the host's search, and a folded search with words marks the host's button", async () => {
+  const page = await open(pathAndSearch);
+  try {
+    await page.addScriptTag({ content: hostScript });
+    const dot = () => page.evaluate(() => getComputedStyle(document.querySelector("[data-k2-host-search-button]")!, "::after").content);
+    expect(await dot()).toBe("none");
+    // a search without a placeholder of its own shows its name while empty
+    expect(await page.locator('[data-slot="head"] .k2-input[data-search] input').getAttribute("placeholder")).toBe("In Verträgen suchen");
+    await page.locator("[data-k2-host-search-button]").focus();
+    expect(await page.evaluate(() => window.__focusPageSearch())).toBe(true);
+    await page.keyboard.type("Miet");
+    await page.keyboard.press("Escape");
+    // the field folds (its island blurs it on Escape)
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined));
+    await page.waitForFunction(() => document.activeElement?.hasAttribute("data-k2-host-search-button") === true);
+    // the folded search keeps its words (its island keeps Escape from clearing them; this page has no island)
+    await page.evaluate(() => {
+      const field = document.querySelector<HTMLInputElement>('[data-slot="head"] .k2-input[data-search] input');
+      if (field) field.value = "Miet";
+    });
+    expect(await dot()).not.toBe("none");
+  } finally {
+    await page.close();
+  }
 }, 30_000);

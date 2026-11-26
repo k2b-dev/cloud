@@ -10,7 +10,8 @@ export function PathAndSearch() {
       head={
         <Bar
           start={<Path label="Ort" items={[{ label: "Ablage", href: "#" }, { label: "Verträge" }]} />}
-          end={<Input type="search" icon="search" label="In Verträgen suchen" placeholder="In Verträgen suchen" />}
+          // no placeholder: a search shows its name while empty
+          end={<Input type="search" icon="search" label="In Verträgen suchen" />}
         />
       }
     >
@@ -44,6 +45,32 @@ export function DetailBack(props: { back: string }) {
           head={<Bar start={<Text type="lead">Protokoll 12. November</Text>} />}
         >
           <Text type="body">Beschlüsse und Aufgaben.</Text>
+        </Pane>
+      </Pane.Split>
+    </Workspace>
+  );
+}
+
+/** A page with a head search whose detail is open: on the phone the detail is the page and the head gives way. */
+export function DetailWithSearch() {
+  return (
+    <Workspace
+      detail
+      head={<Bar start={<Text type="lead">Verträge</Text>} end={<Input type="search" icon="search" label="In Verträgen suchen" />} />}
+    >
+      <Pane.Split>
+        <Pane label="Verträge">
+          <List label="Verträge">
+            <Row icon="file-text" lines={["Mietvertrag Halle 3"]} />
+          </List>
+        </Pane>
+        <Pane
+          detail
+          label="Mietvertrag"
+          back={{ label: "Verträge", href: "#" }}
+          head={<Bar start={<Text type="lead">Mietvertrag Halle 3</Text>} />}
+        >
+          <Text type="body">Laufzeit bis 2029.</Text>
         </Pane>
       </Pane.Split>
     </Workspace>

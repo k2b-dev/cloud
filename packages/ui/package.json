@@ -78,6 +78,11 @@
       "import": "./dist/ssr/v2/index.js",
       "default": "./dist/ssr/v2/index.js"
     },
+    "./v2/host": {
+      "types": "./dist/types/v2/host.d.ts",
+      "import": "./dist/ssr/v2/host.js",
+      "default": "./dist/ssr/v2/host.js"
+    },
     "./v2/list-query": {
       "types": "./dist/types/v2/list-query.d.ts",
       "import": "./dist/ssr/v2/list-query.js",

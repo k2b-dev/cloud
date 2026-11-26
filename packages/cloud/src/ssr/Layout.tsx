@@ -336,6 +336,8 @@ export default function Layout(props: LayoutProps) {
         theme: c.get("page").theme,
         build: swapBuild,
         shell: {
+          // A v2 page's shell is the host of its search (`data-k2-host-search`): between v1 and v2 the document loads.
+          ...(props.ui === "v2" ? { ui: "v2" } : {}),
           // The document's <html> theme and the profile menu keep this preference.
           themePreference: theme,
           providers,
