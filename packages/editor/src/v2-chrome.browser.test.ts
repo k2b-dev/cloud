@@ -283,7 +283,7 @@ const ringsCut = async (page: Page, bar: string) => {
       for (const point of points) {
         const over = document.elementFromPoint(point.x, point.y);
         if (!over) return { name, cut: "outside the window" };
-        for (let box = over; box && !box.contains(button); box = box.parentElement) {
+        for (let box: Element | null = over; box && !box.contains(button); box = box.parentElement) {
           const style = getComputedStyle(box);
           if (style.backgroundColor !== "rgba(0, 0, 0, 0)" || style.backgroundImage !== "none")
             return { name, cut: `covered by ${box.getAttribute("aria-label") ?? box.className}` };
