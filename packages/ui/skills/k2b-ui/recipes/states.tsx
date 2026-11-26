@@ -333,7 +333,7 @@ export default function IncomingGoods(props: Props) {
             columns={[
               { title: "Lieferant", width: { min: 145, default: 220 }, mark: (row) => goods[row.goods], cell: (row) => row.supplier },
               { title: "Tor", width: { min: 56, default: 90 }, cell: (row) => row.gate },
-              { title: "Menge", width: { min: 80, default: 130 }, drop: true, cell: (row) => row.amount },
+              { title: "Menge", width: { min: 96, default: 130 }, drop: true, cell: (row) => row.amount },
               { title: "Wert", width: { min: 90, default: 140 }, align: "end", cell: (row) => row.value },
               {
                 title: "Geprüft von",
