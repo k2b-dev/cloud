@@ -352,7 +352,8 @@ lines instead of cutting a thing.
   `marks` (tinted chips of the statement, an exception such as
   `<Chip status="bad">1 ohne Zugriff</Chip>`: after the lead, they keep their
   width while the lead is cut, stay on the phone, and give way whole only
-  where about a word of the lead no longer fits),
+  where about a word of the lead no longer fits; a chip that must never leave
+  belongs in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row

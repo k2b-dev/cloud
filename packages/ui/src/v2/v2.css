@@ -2604,8 +2604,8 @@
 }
 /* Chips of the statement (an exception in a tinted chip, rule 2): after the lead, one line that hides what wraps, so
    a chip that does not fit goes whole, the later ones first. They keep their width while the lead is cut and the
-   figures share what is left, and stay on the phone; they give way only where about a word of the lead and its
-   loading mark (7.5 rem) would no longer fit beside them. The empty first item lets even the first chip go whole. */
+   figures share what is left, and stay on the phone; they give way only where about a word of the lead would no
+   longer fit beside them (see the lead below). The empty first item lets even the first chip go whole. */
 .k2-ui .k2-bar-start > .k2-status-marks {
   display: flex;
   flex-wrap: wrap;
@@ -2613,9 +2613,15 @@
   flex: 0 1 auto;
   column-gap: 4px;
   min-width: 0;
-  max-width: calc(100% - 7.5rem);
   height: 24px;
   overflow: hidden;
+}
+/* Beside chips the lead starts from about a word (4.5 em, or its own width where it is shorter: `max-width` holds it
+   to that) and never shrinks below it, so the chips are what gives way; never more than half the row's start, so the
+   lead never pushes into the controls of a very narrow row. */
+.k2-ui .k2-bar-start:has(> .k2-status-marks) > .k2-status-lead {
+  flex-shrink: 0;
+  flex-basis: min(4.5em, 50%);
 }
 .k2-ui .k2-status-marks::before {
   content: "";

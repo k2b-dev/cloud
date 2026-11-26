@@ -450,7 +450,8 @@ export type StatusRowProps = {
   /**
    * Tinted chips that belong to the statement, such as an exception: `<Chip status="bad">1 ohne Zugriff</Chip>`
    * (rule 2). They stand after the lead, keep their width while the lead is cut with "…", stay on the phone, and give
-   * way whole, the later ones first, only where about a word of the lead would no longer fit beside them.
+   * way whole, the later ones first, only where about a word of the lead would no longer fit beside them. A chip that
+   * must never leave belongs in `lead` itself.
    */
   marks?: JSX.Element;
   /** A box at the start that selects all entries. */

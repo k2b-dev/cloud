@@ -5,7 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-status-table.client";
-import { measureV2Layout } from "./testing";
+import { describeV2Page, measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
@@ -340,10 +340,58 @@ for (const column of [432, 520])
     );
   });
 
+/**
+ * The chips of a status row's statement and its lead: each chip in sight whole or not at all, after the lead and clear
+ * of the controls; whether the lead keeps about a word (4.5 em, or all of it); and whether the lead stands at that
+ * floor, as it does when the chips have given way. Self-contained (Playwright sends its source).
+ */
+const statusMarks = () => {
+  const row = document.querySelector('[data-k2-part="StatusRow"]')!;
+  const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
+  const group = row.querySelector(".k2-status-marks")!.getBoundingClientRect();
+  const end = row.querySelector(".k2-bar-end");
+  const endLeft = end && getComputedStyle(end).display !== "none" ? end.getBoundingClientRect().left : Number.POSITIVE_INFINITY;
+  const style = getComputedStyle(lead);
+  const floor = Math.min(4.5 * Number.parseFloat(style.fontSize), lead.scrollWidth);
+  return {
+    chips: [...row.querySelectorAll<HTMLElement>(".k2-status-marks .k2-chip")].map((chip) => {
+      const box = chip.getBoundingClientRect();
+      const inside =
+        box.left >= group.left - 0.5 && box.right <= group.right + 0.5 && box.top >= group.top - 0.5 && box.bottom <= group.bottom + 0.5;
+      const outside = box.top >= group.bottom - 0.5 || box.left >= group.right - 0.5;
+      return {
+        name: chip.textContent?.trim(),
+        seen: inside,
+        whole: inside || outside,
+        clear: !inside || (box.left >= lead.getBoundingClientRect().right && box.right <= endLeft),
+      };
+    }),
+    lead: {
+      cut: lead.scrollWidth > lead.clientWidth + 0.5,
+      ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
+      word: lead.clientWidth >= floor - 0.5,
+      atFloor: Math.abs(lead.getBoundingClientRect().width - floor) <= 1,
+    },
+  };
+};
+
+/** Every chip whole or not at all, the first ones stay, none under the lead or a control; the lead keeps a word. */
+const expectMarksHeld = (found: ReturnType<typeof statusMarks>) => {
+  expect(found.chips.map((chip) => chip.name)).toEqual(["1 ohne Zugriff", "2 laufen ab"]);
+  for (const chip of found.chips) expect({ ...chip, seen: true }).toEqual({ name: chip.name, seen: true, whole: true, clear: true });
+  const seen = found.chips.map((chip) => chip.seen);
+  expect(seen).toEqual(seen.map((_, index) => index < seen.filter(Boolean).length));
+  // about a word of the lead stays beside the chips, at every width
+  expect(found.lead.word).toBe(true);
+  if (found.lead.cut) expect(found.lead.ellipsis).toBe(true);
+  // the chips are what gives way: a chip leaves only where the lead stands at its floor
+  if (seen.includes(false)) expect(found.lead.atFloor).toBe(true);
+};
+
 // Tinted chips of the statement (W2, Notebooks admin; rule 2): an exception "1 ohne Zugriff" stands as a red chip after
-// the lead, also on the phone. A chip is in sight whole or not at all, the first ones stay, none runs under the lead or
-// a control; the lead keeps about a word beside them. In a desktop row of 320 px beside two folded controls, chips
-// that do not fit give way whole.
+// the lead, also on the phone, beside a long lead, figures and the filters. Both chips are in sight at 1440 px and on the
+// phone at 390 px; in a desktop row of 320 px beside two folded controls a chip gives way, whole, and the lead keeps
+// about a word.
 for (const [width, column] of [
   [1440, 1440],
   [390, 390],
@@ -357,48 +405,42 @@ for (const [width, column] of [
           window.__k2Marks?.();
         });
         await settled(page);
-        const found = await page.evaluate(() => {
-          const row = document.querySelector('[data-k2-part="StatusRow"]')!;
-          const lead = row.querySelector<HTMLElement>(".k2-status-lead")!;
-          const group = row.querySelector(".k2-status-marks")!.getBoundingClientRect();
-          const end = row.querySelector(".k2-bar-end");
-          const endLeft = end && getComputedStyle(end).display !== "none" ? end.getBoundingClientRect().left : Infinity;
-          const style = getComputedStyle(lead);
-          return {
-            chips: [...row.querySelectorAll<HTMLElement>(".k2-status-marks .k2-chip")].map((chip) => {
-              const box = chip.getBoundingClientRect();
-              const inside =
-                box.left >= group.left - 0.5 &&
-                box.right <= group.right + 0.5 &&
-                box.top >= group.top - 0.5 &&
-                box.bottom <= group.bottom + 0.5;
-              const outside = box.top >= group.bottom - 0.5 || box.left >= group.right - 0.5;
-              return {
-                name: chip.textContent?.trim(),
-                seen: inside,
-                whole: inside || outside,
-                clear: !inside || (box.left >= lead.getBoundingClientRect().right && box.right <= endLeft),
-              };
-            }),
-            lead: {
-              cut: lead.scrollWidth > lead.clientWidth + 0.5,
-              ellipsis: style.textOverflow === "ellipsis" && style.overflow === "hidden",
-              word: lead.clientWidth >= Math.min(4.5 * Number.parseFloat(style.fontSize), lead.scrollWidth) - 0.5,
-            },
-          };
-        });
-        expect(found.chips.map((chip) => chip.name)).toEqual(["1 ohne Zugriff", "2 laufen ab"]);
-        for (const chip of found.chips) expect({ ...chip, seen: true }).toEqual({ name: chip.name, seen: true, whole: true, clear: true });
+        const found = await page.evaluate(statusMarks);
+        expectMarksHeld(found);
         const seen = found.chips.map((chip) => chip.seen);
-        // the first ones stay
-        expect(seen).toEqual(seen.map((_, index) => index < seen.filter(Boolean).length));
         if (column === 1440 || width < 768) expect(seen).toEqual([true, true]);
-        // at 320 px chips, figures and two folded controls leave the lead less than a word; it is still cut with "…"
-        if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: column === 320 ? found.lead.word : true });
+        if (column === 320) expect(seen.includes(false)).toBe(true);
+        // the outline names the chips a person sees, not one that gave way
+        const outline = await describeV2Page(page);
+        for (const chip of found.chips) expect(outline.includes(`"${chip.name}"]`)).toBe(chip.seen);
       },
       { width, column },
     );
   });
+
+// Just above and below the points where a chip gives way: rows from 480 down to 320 px in steps of 20. At each width the
+// rule holds; as the row narrows the chips in sight only get fewer, and both steps (two to one, one to none or a chip
+// less) happen in this span, so the series passes over the threshold rather than beside it.
+test("rows from 480 to 320 px: the chips give way one by one, whole, and the lead keeps about a word at every step", async () => {
+  const counts: number[] = [];
+  for (const column of [480, 460, 440, 420, 400, 380, 360, 340, 320])
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => {
+          window.__k2LongLead?.();
+          window.__k2Marks?.();
+        });
+        await settled(page);
+        const found = await page.evaluate(statusMarks);
+        expectMarksHeld(found);
+        counts.push(found.chips.filter((chip) => chip.seen).length);
+      },
+      { column },
+    );
+  // never more chips in a narrower row, and the series crosses a threshold
+  expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  expect(new Set(counts).size).toBeGreaterThan(1);
+}, 60_000);
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
