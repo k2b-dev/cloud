@@ -12,9 +12,11 @@
   boxes cannot see; and a give-way order between parts that does not depend on what each part needs (a part that
   starts from nothing, or a fixed cap).
 - **Guard:** The lead and the figures now share the room, each up to its own width; where both are long the lead
-  keeps 40 % (60 % below 480 px). `measureV2Layout`
-  reports a text that runs out of a box that does not clip it ("runs N px out of …"), but not text that scrolls in its
-  own box or is moved on purpose; both are tested in `measure-v2-layout.browser.test.ts`. `status-table.browser.test.ts`
+  keeps 40 % (60 % below 600 px, where the controls fold). `measureV2Layout` reports a text that runs out of a box
+  that does not clip it ("runs N px out of …"). A box that scrolls its text counts as cut at its own edges, and a box
+  moved on purpose (a transform, a negative margin, a hanging indent) may stand out only as far as it was moved; both
+  are tested red and green in `measure-v2-layout.browser.test.ts`. `status-table.browser.test.ts`
   opens an entry beside the list at 1440 and 1024 px, measures a long lead beside three figures and the filters at
-  rows of 1440, 1024, 700 and 390 px (the lead is cut first; at 700 px it keeps 40 % and the later figures fold), and
+  rows of 1440, 1024, 700, 560 and 390 px (the lead is cut first; at 700 px it keeps 40 % and the later figures fold,
+  at 560 px 60 %), and
   Mail's row at 432 and 520 px, where its one long figure takes all the rest.

@@ -740,6 +740,31 @@ describe("measureV2Layout", () => {
     TEST_TIMEOUT,
   );
 
+  // A small move is no licence to run far out: a long word shifted by 4 px still runs out by much more than 4 px, and a
+  // box that scrolls its text still must stand in its place.
+  test(
+    "red: a long word moved by 4 px still runs out of its row, and a scroller wider than its row sticks out",
+    async () => {
+      const word = "Protokolleintragszusammenfassungsübersichtsseitenkopfzeilenbeschriftungstextfeld";
+      const page = await open(
+        columns(
+          `<div class="row" style="width:240px"><span class="k2-t-row" data-probe="shifted" style="display:inline-block; white-space:nowrap; transform:translateX(-4px)">${word}</span></div>` +
+            '<div class="row" style="width:240px"><div class="k2-t-row" data-probe="wide" style="width:400px; overflow-x:auto; white-space:nowrap">Alle · Fehler · Warnungen · Hinweise · Gateway · Mail · Zustellung</div></div>',
+        ),
+      );
+      try {
+        const runs = (await measureV2Layout(page)).cut.filter((line) => line.includes(" runs "));
+        expect(runs).toEqual([
+          expect.stringMatching(/^\[data-probe="shifted"\] "Protokoll\S*" runs \d+ px out of/),
+          expect.stringMatching(/^\[data-probe="wide"\] "Alle · Fehler[^"]*" runs \d+ px out of/),
+        ]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
   test(
     "free drawing in Canvas is never measured",
     async () => {

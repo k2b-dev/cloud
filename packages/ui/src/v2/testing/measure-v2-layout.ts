@@ -612,23 +612,33 @@ function measureInPage(options: InPage): DomResult {
       if (!Array.from(element.childNodes).some((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim())) continue;
       const own = getComputedStyle(element);
       if (["absolute", "fixed"].includes(own.position)) continue;
-      // A box that scrolls its own text (code, a scrolling bar of words) shows the rest on scroll; a box moved on purpose
-      // (a transform, a negative margin, an indent) may stand out of its place.
-      if (["auto", "scroll"].includes(own.overflowX)) continue;
-      if (own.transform !== "none" || Number.parseFloat(own.textIndent) !== 0) continue;
-      if (Number.parseFloat(own.marginLeft) < 0 || Number.parseFloat(own.marginRight) < 0) continue;
       let parent = element.parentElement;
       while (parent && getComputedStyle(parent).display === "contents") parent = parent.parentElement;
       if (!parent || !root.contains(parent) || getComputedStyle(parent).overflowX !== "visible") continue;
       const place = parent.getBoundingClientRect();
-      // only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says
+      // Only what is in sight: a box that clips its own text (with "…") keeps it inside, whatever the text's range says,
+      // and a box that scrolls its own text (code, a scrolling bar of words) shows it within its own edges; the box
+      // itself must still stand in its place.
       const clip = hardClipX(element);
+      if (["auto", "scroll"].includes(own.overflowX)) {
+        const edges = element.getBoundingClientRect();
+        clip.left = Math.max(clip.left, edges.left);
+        clip.right = Math.min(clip.right, edges.right);
+      }
+      // A box moved on purpose may stand out by as much as it was moved, never more: its own shift sideways, a negative
+      // margin, a negative (hanging) indent.
+      const shift = own.transform === "none" ? 0 : Math.abs(new DOMMatrixReadOnly(own.transform).m41);
+      const allowance =
+        shift +
+        Math.max(0, -Number.parseFloat(own.marginLeft)) +
+        Math.max(0, -Number.parseFloat(own.marginRight)) +
+        Math.max(0, -Number.parseFloat(own.textIndent));
       const boxes = textBoxes(element, (node) => node.parentElement !== element);
       const out = Math.max(
         0,
         ...boxes.map((box) => Math.max(Math.min(box.right, clip.right) - place.right, place.left - Math.max(box.left, clip.left))),
       );
-      if (out > 1)
+      if (out > allowance + 1)
         cut.push(
           `${name(element)} "${labelOf(element)}" runs ${Math.round(out)} px out of ${name(parent)} and under what stands beside it; it is cut with "…" in its own box`,
         );

@@ -258,12 +258,14 @@ for (const width of [1440, 1024])
 
 // The order of giving way (Tools, U3): the lead and the figures share the room before the filters, each up to its own
 // width. In rows of 1440 and 1024 px the figures keep their width and only the lead gives way (cut with "…" at 1024 px);
-// in a row of 700 px both are long for their part: the lead is cut and keeps 40 %, the later figures fold. On the phone
-// the figures and filters leave and the lead takes the row.
+// in a row of 700 px both are long for their part: the lead is cut and keeps 40 %, the later figures fold; below 600 px
+// (560), where the controls fold, the lead keeps 60 %. On the phone the figures and filters leave and the lead takes
+// the row.
 for (const [width, column] of [
   [1440, 1440],
   [1440, 1024],
   [1440, 700],
+  [1440, 560],
   [390, 390],
 ] as const)
   test(`a row of ${column} px, a long lead, three figures and filters: the lead gives way first, then the figures`, async () => {
@@ -297,6 +299,12 @@ for (const [width, column] of [
           expect(found.shown[0]).toBe(true);
           expect(found.shown.filter(Boolean).length).toBeLessThan(3);
           expect(Math.abs(room.lead / (room.lead + room.facts) - 0.4)).toBeLessThanOrEqual(0.02);
+        }
+        if (column === 560) {
+          // below 600 px, where the controls fold, the lead keeps 60 % (about a word beside them)
+          expect(found.lead.cut).toBe(true);
+          expect(found.shown.filter(Boolean).length).toBeLessThan(3);
+          expect(Math.abs(room.lead / (room.lead + room.facts) - 0.6)).toBeLessThanOrEqual(0.02);
         }
       },
       { width, column },

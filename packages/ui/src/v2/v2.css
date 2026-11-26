@@ -2564,8 +2564,8 @@
 /* The lead gives way before a control is cut or covered. The lead and the figures share the room before the filters,
    each up to its own width, so what one does not need goes to the other: a short lead leaves the figures all the rest
    (the row's room without filters); a long lead is cut with "…" while short figures keep their width; where both are
-   long, the lead keeps 40 % and the later figures fold. In a row narrower than 480 px the lead keeps 60 %, about a
-   word beside two folded controls. */
+   long, the lead keeps 40 % and the later figures fold. In a row narrower than 600 px, where the controls fold, the
+   lead keeps 60 %, about a word beside two folded controls. */
 .k2-ui .k2-bar-start > .k2-status-lead {
   flex: 2 1 0;
   min-width: 0;
@@ -2602,8 +2602,9 @@
   content: "";
   height: 1lh;
 }
-/* a narrow row: the lead keeps 60 % where both are long, about a word beside two folded controls */
-@container k2-status (max-width: 479px) {
+/* a narrow row (below 600 px, where the controls fold): the lead keeps 60 % where both are long, about a word beside two
+   folded controls */
+@container k2-status (max-width: 599px) {
   .k2-ui .k2-bar-start > .k2-status-lead {
     flex-grow: 3;
   }

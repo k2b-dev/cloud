@@ -346,8 +346,9 @@ lines instead of cutting a thing.
   share the room before the filters with the lead, each up to its own width:
   beside a short lead they take the rest, beside a long lead they keep their
   width and the lead is cut; where both are long the lead keeps 40 % (60 %
-  below 480 px) and the later figures give way whole, so the filters keep
-  their words; they go on the phone; put what must stay in `lead`),
+  below 600 px, where the controls fold) and the later figures give way
+  whole, so the filters keep their words; they go on the phone; put what must
+  stay in `lead`),
   `select: { label, checked?, onChange? }` (select-all box), `filters` (end:
   `ListOrder` with the sort and the grouping of a list query, or a quiet
   `Button variant="ghost" menu`, each with an `icon`; below 600 px of row
