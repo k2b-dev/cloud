@@ -1,11 +1,13 @@
 import {
   createComputed,
+  createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   For,
   Index,
   type JSX,
+  on,
   onCleanup,
   onMount,
   children as resolveChildren,
@@ -363,6 +365,8 @@ export const Tabs = (props: TabsProps) => {
     });
     watchAll();
     parts.observe(row, { childList: true });
+    // Another tab becoming the open one changes no size: the place of the open tab is measured again for it.
+    createEffect(on(() => plain().findIndex((tab) => tab.current), later, { defer: true }));
     onCleanup(() => {
       cancelAnimationFrame(frame);
       sizes.disconnect();
@@ -595,10 +599,16 @@ export const Notice = (props: NoticeProps) => {
     const measure = () => {
       if (text && !open()) setLong(text.scrollHeight > text.clientHeight + 1);
     };
+    // its box keeps the height of its lines while new words come in (a summary that grows): what it holds is watched too
     const sizes = new ResizeObserver(measure);
     sizes.observe(text);
+    const words = new MutationObserver(measure);
+    words.observe(text, { childList: true, subtree: true, characterData: true });
     measure();
-    onCleanup(() => sizes.disconnect());
+    onCleanup(() => {
+      sizes.disconnect();
+      words.disconnect();
+    });
   });
   return (
     <div
