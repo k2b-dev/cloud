@@ -362,25 +362,6 @@ packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | er
 packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error instanceof Error ? error.message : t.updateFailed
 packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/calendar/index.tsx | untitled | t.taskScheduled({ title: item.title, when: `${day}, ${time(slot.start)}–${time(slot.end)}` })
-packages/spaces/src/frontend/[id]/_components/detail/CommentsSection.tsx | untitled | err.message
-packages/spaces/src/frontend/[id]/_components/detail/EventInvitations.tsx | untitled | props.method === "cancel" ? t.cancellationOpened : t.invitationOpened
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | err.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemDetailPanel.tsx | untitled | message
-packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/ItemLinksSection.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | error instanceof Error ? error.message : t.uploadMediaFilesFailed
-packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | t.addMediaFileFailed({ filename: firstFailure.filename, message: firstFailure.message })
-packages/spaces/src/frontend/[id]/_components/detail/TaskAttachmentsSection.tsx | untitled | t.addMediaFilesFailed({ count: failures.length })
-packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/detail/TaskChecklistSection.tsx | untitled | error.message
-packages/spaces/src/frontend/[id]/_components/edit/TemplateDialog.tsx | untitled | t.templateSaved({ name: template.name })
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | ctx.gatheredBy === "blocked" ? t.movedStaysBlocked({ status: ctx.targetLabel }) : t.movedStaysOverdue({ status: ctx.targetLabel })
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled | error.message
@@ -391,9 +372,6 @@ packages/spaces/src/frontend/[id]/_components/kanban/KanbanBoard.tsx | untitled 
 packages/spaces/src/frontend/[id]/_components/shared/completion.ts | untitled | error.message
 packages/spaces/src/frontend/[id]/_components/shared/completion.ts | untitled | t.listRefreshFailed
 packages/spaces/src/frontend/[id]/_components/shared/reactions/ItemReactions.tsx | untitled | t.reactionLimitReached({ count: MAX_ITEM_REACTION_EMOJI })
-packages/spaces/src/frontend/[id]/_components/sidebar/CreateItemButton.tsx | untitled | t.templateGone
-packages/spaces/src/frontend/[id]/_components/workspace/SpaceHeadActions.island.tsx | untitled | t.headCopyFailed
-packages/spaces/src/frontend/[id]/_components/workspace/SpaceLiveEvents.island.tsx | untitled | t.liveUpdatesUnavailable
 packages/spaces/src/frontend/lib/feedback.ts | untitled | message
 packages/spaces/src/pwa/SpacesPwa.island.tsx | untitled | t().createdHidden
 packages/spaces/src/pwa/SpacesPwa.island.tsx | untitled | t().linkCopyFailed

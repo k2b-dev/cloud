@@ -23,7 +23,7 @@ export const spaceMessages = i18n.define({
             : shortcuts
               ? "Space settings and keyboard shortcuts are now under “…”."
               : "Space settings are now under “…”.",
-      headCopyFailed: "Could not copy the iCal URL. Open the menu and try again.",
+      headCopyFailed: "Could not copy the iCal URL.",
       cancel: "Cancel",
       all: "All",
       none: "None",
@@ -917,7 +917,7 @@ export const spaceMessages = i18n.define({
             : shortcuts
               ? "Space-Einstellungen und Tastenkürzel findest du jetzt unter „…“."
               : "Die Space-Einstellungen findest du jetzt unter „…“.",
-      headCopyFailed: "Die iCal-Adresse konnte nicht kopiert werden. Öffne das Menü und versuche es erneut.",
+      headCopyFailed: "Die iCal-Adresse konnte nicht kopiert werden.",
       cancel: "Abbrechen",
       all: "Alle",
       none: "Keine",
