@@ -367,7 +367,8 @@ lines instead of cutting a thing.
   buttons of your own.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`, or `activity`:
-  who did what, `{ person, text, time, place?, href? }[]`. The sentence
+  who did what, `{ person, text, time, place?, href?, onNavigate? }[]`
+  (`onNavigate` opens the thing in place, as on rows). The sentence
   names the person in `<Text weight="strong">` and the thing with its
   `Mark` and name; place and time stand quiet under it. A form or a
   workflow that did something is a person with its name ("Webformular").
