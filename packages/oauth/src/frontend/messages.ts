@@ -146,8 +146,7 @@ export const oauthMessages = i18n.define({
       deviceApprovedTitle: "Device connected",
       deviceApprovedBody: "You can close this tab now.",
       deviceApprovedFor: ({ app, account }: { app: string; account: string }) =>
-        `${app} is now connected to your account ${account}. You can close this tab now.`,
-      deviceApprovedApp: ({ app }: { app: string }) => `${app} is now connected to your account. You can close this tab now.`,
+        `${app} now signs in as ${account}. You can close this tab now.`,
       deviceDeniedTitle: "Access denied",
       deviceDeniedBody: "The device was not connected. You can close this tab now.",
       deviceExpiredTitle: "Request no longer valid",
@@ -331,9 +330,8 @@ export const oauthMessages = i18n.define({
         "Fahre nur fort, wenn du diese Anmeldung selbst gestartet hast. Gib niemals einen Code ein, den dir jemand geschickt hat oder um dessen Eingabe du gebeten wurdest.",
       deviceApprovedTitle: "Gerät verbunden",
       deviceApprovedBody: "Du kannst diesen Tab jetzt schließen.",
-      deviceApprovedFor: ({ app, account }) =>
-        `${app} ist jetzt mit deinem Konto ${account} verbunden. Du kannst diesen Tab jetzt schließen.`,
-      deviceApprovedApp: ({ app }) => `${app} ist jetzt mit deinem Konto verbunden. Du kannst diesen Tab jetzt schließen.`,
+      deviceApprovedFor: ({ app, account }) => `${app} meldet sich jetzt als ${account} an. Du kannst diesen Tab jetzt schließen.`,
+
       deviceDeniedTitle: "Zugriff abgelehnt",
       deviceDeniedBody: "Das Gerät wurde nicht verbunden. Du kannst diesen Tab jetzt schließen.",
       deviceExpiredTitle: "Anfrage nicht mehr gültig",

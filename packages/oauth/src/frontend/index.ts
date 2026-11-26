@@ -47,4 +47,4 @@ export default new Hono<AuthContext>()
   .get("/oauth/logout", decisionPageHeaders, auth.requireRole("*", ssr.access), ...logoutPage)
   .route("/", oauthRoutes)
   .get("/admin/oauth", auth.requireRole("admin", ssr.access), ...oauthPage)
-  .get("/oauth/error", auth.requireRole("*"), ...oauthErrorPage);
+  .get("/oauth/error", rateLimit(), auth.requireRole("*"), ...oauthErrorPage);

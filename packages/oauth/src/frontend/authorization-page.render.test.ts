@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import {
   type AuthorizationState,
+  approvedRequests,
   authorizationStates,
   renderAuthorizationState,
+  renderConnected,
   renderErrorPage,
   sample,
 } from "./authorization-page.test-fixture";
@@ -215,11 +217,9 @@ describe("OAuth authorization pages", () => {
       const html = await renderAuthorizationState("approved", locale);
       expect(heading(html)).toBe(title);
       expect(text(html)).toContain(body);
-      // it names what was connected, and to whom
+      // it names what was connected, and to whom, without saying "connected" a second time
       expect(text(html)).toContain(
-        locale === "de"
-          ? "Cloud CLI ist jetzt mit deinem Konto Ada Admin verbunden."
-          : "Cloud CLI is now connected to your account Ada Admin.",
+        locale === "de" ? "Drucker-Terminal meldet sich jetzt als Ada Admin an." : "Drucker-Terminal now signs in as Ada Admin.",
       );
       // the result is read as a status
       expect(html).toMatch(/role="status"[^>]*>[\s\S]*?You can close this tab now|role="status"[^>]*>[\s\S]*?Du kannst diesen Tab/);
@@ -269,6 +269,22 @@ describe("OAuth authorization pages", () => {
       expect(page).not.toContain("Der Zugriff wurde nicht erlaubt.");
     }
 
+    // the application is named only to a signed-in person, and only one an administrator set up for devices
+    const refused = { error: "account_not_allowed" };
+    expect(text(await renderErrorPage({ ...refused, client: sample.terminal.clientId }, "de"))).toContain(
+      "Dein Konto darf Drucker-Terminal nicht verwenden.",
+    );
+    for (const [client, visitor] of [
+      [sample.terminal.clientId, "anonymous"],
+      [sample.dynamic.clientId, "signed-in"],
+      ["unbekannt", "signed-in"],
+    ] as const) {
+      const page = text(await renderErrorPage({ ...refused, client }, "de", visitor));
+      expect(page, `${client} ${visitor}`).toContain("Dein Konto darf diese Anwendung nicht verwenden.");
+      expect(page).not.toContain(sample.terminal.name);
+      expect(page).not.toContain(sample.dynamic.name);
+    }
+
     const blocked = await renderAuthorizationState("blocked", "en");
     expect(heading(blocked)).toBe("Authorization failed");
     expect(text(blocked)).toContain("The Cloud app cannot grant access to other applications.");
@@ -286,4 +302,16 @@ describe("OAuth authorization pages", () => {
       }
     }
   });
+});
+
+// The connected page names what this person approved, by the decision's request, never by a name in the address: a
+// request of someone else, a self-registered application or a made-up request says the generic sentence.
+test("the connected page names only an application this person approved and an administrator set up", async () => {
+  expect(text(await renderConnected(approvedRequests.terminal, "de"))).toContain("Drucker-Terminal meldet sich jetzt als Ada Admin an.");
+  for (const request of [approvedRequests.dynamic, "44444444-4444-4444-8444-444444444444", "kein-uuid"]) {
+    const page = text(await renderConnected(request, "de"));
+    expect(page, request).toContain("Du kannst diesen Tab jetzt schließen.");
+    expect(page, request).not.toContain(sample.dynamic.name);
+    expect(page, request).not.toContain("meldet sich jetzt als");
+  }
 });

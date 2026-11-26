@@ -36,12 +36,32 @@ export const sample = {
   scopes: ["openid", "read", "write", "offline_access"],
   cli: { name: "Cloud CLI", clientId: "cloud-cli" },
   dynamic: { name: "Example Assistant", clientId: "dyn_3f9c2a7e5b1d4c8a" },
+  terminal: { name: "Drucker-Terminal", clientId: "drucker-terminal" },
 } as const;
 
 // the connected page reads the application's registered name by its client ID
 const { oauth } = await import("../service/oauth");
-spyOn(oauth.clients, "getByClientId").mockImplementation(async ({ clientId }) =>
-  clientId === sample.cli.clientId ? ({ ...sample.cli } as never) : null,
+// Three registered applications: one an administrator set up for device sign-in, one that registered itself (with
+// any name it likes), and the CLI. Only the first may be named on a page.
+const registered: Record<string, object> = {
+  [sample.cli.clientId]: { ...sample.cli, registrationKind: "first_party", isPublic: true, allowDeviceGrant: true },
+  [sample.terminal.clientId]: { ...sample.terminal, registrationKind: "managed", isPublic: true, allowDeviceGrant: true },
+  [sample.dynamic.clientId]: { ...sample.dynamic, registrationKind: "dynamic", isPublic: true, allowDeviceGrant: true },
+};
+spyOn(oauth.clients, "getByClientId").mockImplementation(async ({ clientId }) => (registered[clientId] ?? null) as never);
+/** Device requests Ada approved, by the client each was for; any other request was not hers to name. */
+export const approvedRequests = {
+  terminal: "33333333-3333-4333-8333-333333333331",
+  dynamic: "33333333-3333-4333-8333-333333333332",
+} as const;
+spyOn(oauth.device, "approvedClientId").mockImplementation(async ({ id, userId }) =>
+  userId !== "22222222-2222-4222-8222-222222222222"
+    ? null
+    : id === approvedRequests.terminal
+      ? sample.terminal.clientId
+      : id === approvedRequests.dynamic
+        ? sample.dynamic.clientId
+        : null,
 );
 
 // Core's legal links, so the footer looks as it does in a running Cloud.
@@ -66,6 +86,11 @@ const signedIn: MiddlewareHandler<AuthContext> = async (c, next) => {
   c.set("runtime" as never, { apps: [legalApp] } as never);
   c.set("credentialKind", "session" as never);
   c.set("sessionKind", "web" as never);
+  // a visitor who is not signed in (the error page is open to anyone)
+  if (c.req.header("x-fixture-visitor") === "anonymous") {
+    await next();
+    return;
+  }
   c.set("actor", {
     kind: "user",
     sessionKind: "web",
@@ -149,7 +174,7 @@ export const authorizationStates = {
   consent: "/fixture/consent",
   consentCli: "/fixture/consent-cli",
   consentReauthenticate: "/fixture/consent-reauthenticate",
-  approved: "/oauth/device?result=approved&client=cloud-cli",
+  approved: "/oauth/device?result=approved&request=33333333-3333-4333-8333-333333333331",
   denied: "/oauth/device?result=denied",
   expired: "/oauth/device?result=expired",
   blocked: "/fixture/app-session/oauth/device",
@@ -159,8 +184,24 @@ export const authorizationStates = {
 export type AuthorizationState = keyof typeof authorizationStates;
 
 /** The error page for an address a sender (or anyone) wrote, in one language. */
-export const renderErrorPage = async (query: Record<string, string>, locale: "en" | "de"): Promise<string> =>
-  (await pages.request(`https://cloud.test/oauth/error?${new URLSearchParams(query)}`, { headers: { "Accept-Language": locale } })).text();
+export const renderErrorPage = async (
+  query: Record<string, string>,
+  locale: "en" | "de",
+  visitor: "signed-in" | "anonymous" = "signed-in",
+) =>
+  (
+    await pages.request(`https://cloud.test/oauth/error?${new URLSearchParams(query)}`, {
+      headers: { "Accept-Language": locale, ...(visitor === "anonymous" ? { "x-fixture-visitor": "anonymous" } : {}) },
+    })
+  ).text();
+
+/** The device page after a decision, for a request by its id. */
+export const renderConnected = async (request: string, locale: "en" | "de") =>
+  (
+    await pages.request(`https://cloud.test/oauth/device?${new URLSearchParams({ result: "approved", request })}`, {
+      headers: { "Accept-Language": locale },
+    })
+  ).text();
 
 /** The complete HTML document of one state in one language and theme. */
 export const renderAuthorizationState = async (
