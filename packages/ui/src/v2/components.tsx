@@ -428,7 +428,7 @@ export type StatusFact = {
 export type StatusRowProps = {
   /**
    * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
-   * never runs under them; with filters that can fold to their symbols, about a word stays down to a row of 320 px.
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
    */
   lead: string;
   /**

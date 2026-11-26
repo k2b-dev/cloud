@@ -126,7 +126,7 @@ const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>, word = true) =
   expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
   for (const gap of found.gaps) expect(gap).toBe(16);
   for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
-  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: word || found.lead.word });
+  if (found.lead.cut) expect(found.lead).toEqual({ cut: true, ellipsis: true, word: word ? true : found.lead.word });
 };
 
 // Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
@@ -181,35 +181,41 @@ for (const long of [false, true])
       );
     });
 
-// The operations log (break-ui finding 21): large counts, the live switch and sort and grouping as framed menus in
-// words. At every width, also the narrow list column beside an open entry, the figures give way before they reach the
-// switch, the lead is cut before a control, and no control is cut or pushed past the row's edge. In a window of 1024
-// px, where the finding was seen, the list column is about 760 px beside the sidebar and 520 px with an entry open.
-for (const [width, column] of [
-  [1440, 1440],
-  [1440, 1024],
-  [1024, 760],
-  [1024, 520],
-  [1440, 600],
-  [1440, 400],
-  [1440, 320],
-] as const)
-  test(`a status row ${column} px wide in a window of ${width} px as the operations log draws it: nothing overlaps`, async () => {
-    await withPage(
-      async (page) => {
-        await page.evaluate(() => window.__k2Logs?.());
-        await settled(page);
-        const found = await page.evaluate(statusRow);
-        expect(found.width).toBe(column);
-        // at 320 px the switch, which has no symbol to fold to, and two menus leave the lead less than a word
-        expectHeld(found, column > 320);
-        expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
-        expect(found.words).toEqual(column <= 600 ? [false, false] : [true, true]);
-        if (column >= 1024) expect(found.shown).toEqual([true, true]);
-      },
-      { width, column },
-    );
-  });
+// The operations log (break-ui finding 21): large counts, live as a toggle with a symbol and the short label "Live",
+// and sort and grouping as framed menus in words. Live is on, or blocked (until now, first page): then the toggle is
+// disabled and the reason is a figure. At every width, also the narrow list column beside an open entry, the figures
+// give way before they reach a control, the lead keeps about a word and is cut before a control, and no control is cut
+// or pushed past the row's edge. In a window of 1024 px, where the finding was seen, the list column is about 760 px
+// beside the sidebar and 520 px with an entry open.
+for (const live of ["on", "until-now", "first-page"] as const)
+  for (const [width, column] of [
+    [1440, 1440],
+    [1440, 1024],
+    [1024, 760],
+    [1024, 520],
+    [1440, 600],
+    [1440, 400],
+    [1440, 320],
+  ] as const)
+    test(`a status row ${column} px wide in a window of ${width} px as the operations log draws it, live ${live}: nothing overlaps`, async () => {
+      await withPage(
+        async (page) => {
+          await page.evaluate((state) => window.__k2Logs?.(state), live);
+          await settled(page);
+          const found = await page.evaluate(statusRow);
+          expect(found.width).toBe(column);
+          // at 320 px three folded controls (two of them menus with their chevron) leave the lead less than a word
+          expectHeld(found, column > 320);
+          expect(found.controls.map((control) => control.name)).toEqual(["Live", "Eingang ↓", "Keine Gruppen"]);
+          expect(found.words).toEqual(column <= 600 ? [false, false, false] : [true, true, true]);
+          if (column >= 1024) expect(found.shown.slice(0, 2)).toEqual([true, true]);
+          const toggle = page.getByRole("button", { name: "Live", exact: true });
+          expect(await toggle.isDisabled()).toBe(live !== "on");
+          expect(await toggle.getAttribute("aria-pressed")).toBe(live === "on" ? "true" : "false");
+        },
+        { width, column },
+      );
+    });
 
 // A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
 test("a status row 432 px wide without filters keeps its figures", async () => {
