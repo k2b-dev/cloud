@@ -134,6 +134,9 @@ test("without a notebook, Notebooks offers the ways to start as rows, read from 
   expect(await selectHtml(html, "[data-k2-workspace]")).toHaveLength(1);
   const [section] = await selectHtml(html, '[data-k2-part="Section"]');
   expect(section?.text).toContain("Erstes Notizbuch anlegen");
+  // what a notebook is for, said once under the title and not again in the rows
+  const purpose = "Ein Notizbuch sammelt Notizen zu einem Thema, mit eigenem Zugriff und eigenen Einstellungen.";
+  expect(section?.text.split(purpose)).toHaveLength(2);
   // a blank notebook first, then every template with what it holds, each a row that opens
   const rows = await selectHtml(html, '[data-k2-part="Row"]');
   const templates = notebooksService.template.list("de");

@@ -17,7 +17,12 @@ const sign = (icon: string) => icon.replace(/^ti ti-/, "");
  * they used last.
  *
  * No head: the rows are the ways to start, so a "+" there would only repeat them, and v2 has no head that leaves the
- * phone (k2b-ui gap: a head on wide screens only). On the phone the main action floats, as everywhere in v2.
+ * phone. On the phone the main action floats, as everywhere in v2.
+ *
+ * k2b-ui gap (with DP): a `Row` has no tinted sign tile (the `k2-stile` of `Section` and `Group`), so the ways to
+ * start carry a line icon in the app's ink; `Tiles` cannot open an action and have no colour, so they cannot be the
+ * start cards yet; and no primitive holds rows to a readable measure in a wide pane, so at 1440 they stand on the
+ * left of a wide page. Once DP's Tiles take a colour and an action, the ways to start become those cards.
  */
 export default function NotebooksStart(props: { templates: TemplateSummary[] }) {
   createNoteCommands();
@@ -28,7 +33,7 @@ export default function NotebooksStart(props: { templates: TemplateSummary[] }) 
     <>
       <Workspace primary={{ label: t().newNotebook, icon: "plus", onClick: () => setCreating({ kind: "blank" }) }}>
         <Pane label={t().notebooks}>
-          <Section icon="notebook" title={t().firstNotebook}>
+          <Section icon="notebook" title={t().firstNotebook} summary={t().firstNotebookPurpose}>
             <List label={t().firstNotebook}>
               <Row
                 lines={[t().blankNotebook, t().blankNotebookHint]}
