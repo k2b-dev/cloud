@@ -275,5 +275,4 @@ export const standaloneUiContextFiles = {
   "primary-scope.md": "AI primary actions, selection, focus, and inherited portal scopes in light and dark themes.",
   "focus.md": "Focus ring placement inside clipping containers, focus tokens, and the k2b-focus-inset class.",
   "overview.md": "Catalog landing-page context rendered by the collection root.",
-  "v2-filters.md": "The one way to filter, sort and group v2 lists: defineListQuery, FilterBar, ListOrder, Lookup and ViewStore.",
 } as const satisfies Record<string, string>;

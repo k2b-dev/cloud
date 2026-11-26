@@ -96,6 +96,12 @@ const app = new Hono<AuthContext>()
         ...SearchQuerySchema.shape,
         scope: z.enum(["managed", "member", "all"]).optional(),
         provider: z.enum(["local", "ipa"]).optional(),
+        ids: z
+          .string()
+          .optional()
+          .transform((value) => (value ? value.split(",") : undefined))
+          .pipe(z.array(z.uuid()).max(100).optional())
+          .describe("Only these groups, comma-separated IDs (at most 100), such as to name the groups a filter holds"),
       }),
     ),
     async (c) => {
@@ -110,6 +116,7 @@ const app = new Hono<AuthContext>()
           userId: query.scope === "all" ? undefined : user.id,
           mode: query.scope ?? "member",
           provider: query.provider,
+          ids: query.ids,
         },
       });
 

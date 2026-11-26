@@ -13,6 +13,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
@@ -48,6 +49,7 @@ type FieldIds = {
 const FieldContext = createContext<FieldIds>();
 
 export type FieldProps = {
+  /** The question of the field, above the control. */
   label: string;
   /** The name the value is sent under; the control inside takes it. */
   name?: string;
@@ -62,6 +64,7 @@ export type FieldProps = {
    * label line shows nothing for it; the fields that may stay empty say "optional" instead (as the mockup does).
    */
   required?: boolean;
+  /** The one control: `Input`, `Select`, `DateInput` or `Choice`. */
   children: JSX.Element;
 };
 
@@ -155,7 +158,10 @@ export const Field = (props: FieldProps) => {
 };
 
 /** Fields side by side on one grid; one column on the phone. */
-Field.Row = (props: { children: JSX.Element }) => (
+Field.Row = (props: {
+  /** The `Field`s side by side. */
+  children: JSX.Element;
+}) => (
   <div class="k2-frow" data-k2-part="Field.Row">
     {props.children}
   </div>
@@ -165,27 +171,34 @@ Field.Row = (props: { children: JSX.Element }) => (
 export const useField = () => useContext(FieldContext);
 
 export type InputProps = {
+  /** The text in the field. */
   value?: string;
+  /** A quiet example while the field is empty. */
   placeholder?: string;
   /**
-   * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
-   * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
-   * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
-   * itself with `preventDefault`). A `number` is a text field with the decimal keyboard and no spinner that reads and
-   * shows numbers in the locale of @k2b/ui ("1.500,5" in German): `value` and `onInput` carry the plain number
-   * ("1500.5"), "" when empty, or the text as typed when it is no number, and a form sends the plain number. `min` and
-   * `max` stop a form that is sent outside them, with a short message at the field.
+   * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
+   * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
+   * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
+   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`). A `number` is a text
+   * field with the decimal keyboard and no spinner that reads and shows numbers in the locale of @k2b/ui ("1.500,5" in
+   * German): `value` and `onInput` carry the plain number ("1500.5"), "" when empty, or the text as typed when it is
+   * no number, and a form sends the plain number. `min` and `max` stop a form that is sent outside them, with a short
+   * message at the field.
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
   /** A text of several lines (80 px). */
   multiline?: boolean;
+  /** The smallest number a `number` field takes. */
   min?: number;
+  /** The largest number a `number` field takes. */
   max?: number;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
+  /** Called with the new text on every change. */
   onInput?: (value: string) => void;
   /**
    * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
@@ -297,12 +310,17 @@ export const Input = (props: InputProps) => {
           </Show>
         }
       >
+        {/* A textarea's value is its text: the server sends it there, so the first render already shows it; in the browser
+            the value property holds it. HTML drops one newline at the start of a textarea's text, so the server sends
+            one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
           ref={(element) => forwardRef(props.ref, element)}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
-        />
+        >
+          {isServer ? `\n${props.value ?? ""}` : undefined}
+        </textarea>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>
@@ -396,13 +414,23 @@ const useNumberText = (props: InputProps) => {
   };
 };
 
-export type SelectOption = { value: string; label: string; disabled?: boolean };
+export type SelectOption = {
+  /** The value that is sent. */
+  value: string;
+  /** The words shown for it. */
+  label: string;
+  /** The option cannot be chosen now. */
+  disabled?: boolean;
+};
 
 export type SelectProps = {
+  /** The options: words, or a value with its words. */
   options: readonly (string | SelectOption)[];
   /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
+  /** The words while nothing is chosen, such as "Kunde wählen". */
   placeholder?: string;
   /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
@@ -489,9 +517,11 @@ export type DateInputProps = {
    * or when the field is left; text that is no date marks the field and applies nothing.
    */
   onInput?: (value: string) => void;
+  /** A quiet example date while the field is empty. */
   placeholder?: string;
   /** The name a form sends the date key under. */
   name?: string;
+  /** A name when the date stands without a Field. */
   label?: string;
 };
 
@@ -603,13 +633,17 @@ export const DateInput = (props: DateInputProps) => {
 };
 
 export type CheckProps = {
+  /** The words beside the box; they say what is turned on. */
   label: JSX.Element;
+  /** The name the box is sent under in a form. */
   name?: string;
   /** Set, not set, or mixed (some of a group). */
   checked?: boolean | "mixed";
   /** A switch instead of a box: on and off take effect at once. */
   switch?: boolean;
+  /** The box cannot be changed now: dimmed; its words say why. */
   disabled?: boolean;
+  /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
 };
 
@@ -704,15 +738,18 @@ export const MarkCheck = (
 );
 
 export type ChoiceProps = {
+  /** The name the choice is sent under in a form. */
   name: string;
   /**
    * The options; one may carry a quiet `hint` under its words (what choosing it means) and be `disabled` alone (it
    * stays readable, with the reason in its hint).
    */
   options: readonly (string | { value: string; label: string; hint?: string; disabled?: boolean })[];
+  /** The chosen value. */
   value?: string;
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
   /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
   disabled?: boolean;

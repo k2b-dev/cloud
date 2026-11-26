@@ -28,7 +28,9 @@ export type SectionProps = {
   icon?: string;
   /** The data colour of the section's area, such as the colour of deliveries. */
   color?: string;
+  /** The title of the section. */
   title: string;
+  /** A quiet count after the title. */
   count?: number | string;
   /** At most two text buttons in the head; on the phone they keep only their symbol. */
   actions?: TwoActions;
@@ -36,6 +38,7 @@ export type SectionProps = {
   summary?: JSX.Element;
   /** The way to all of it, at the end ("All deliveries ›"). */
   more?: Action;
+  /** `Row`s, a `Digest`, `Facts` or `Group`s. */
   children?: JSX.Element;
 };
 
@@ -100,9 +103,13 @@ export const Section = (props: SectionProps) => {
 };
 
 export type GroupProps = {
+  /** A Tabler icon before the title. */
   icon?: string;
+  /** The data colour of the group's area. */
   color?: string;
+  /** The title of the group, such as a number. */
   title: string;
+  /** A quiet count after the title. */
   count?: number | string;
   /** A quiet line under the title; the head grows from 40 to 56 px. */
   meta?: JSX.Element;
@@ -117,6 +124,7 @@ export type GroupProps = {
    * behaviour layer.)
    */
   folded?: boolean;
+  /** What belongs together: text, `Steps`, a small `Table`, `Facts`, rows; never another group. */
   children?: JSX.Element;
 };
 

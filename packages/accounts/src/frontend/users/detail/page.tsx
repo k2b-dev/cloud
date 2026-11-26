@@ -35,9 +35,9 @@ import AccountsFactGrid from "../../AccountsFactGrid";
 import AccountsWorkspace from "../../AccountsWorkspace";
 import RemoveMember from "../../groups/detail/RemoveMember.island";
 import { getSupplementalRoles } from "../../lib/account-badges";
-import { buildUserDetailUrl, buildUsersUrl, parseUsersListState } from "../../lib/url-state";
 import { accountsMessages } from "../../messages";
 import ServiceAccountCredentialActions from "../../service-accounts/ServiceAccountCredentialActions.island";
+import { userDetailHref, usersListContext, usersListHref, usersQuery } from "../query";
 import AddToGroup from "./AddToGroup.island";
 import AppDevicesSection from "./AppDevicesSection";
 import LinuxIdentity from "./LinuxIdentity.island";
@@ -72,16 +72,13 @@ export default ssr<AuthContext>(async (c) => {
   const cloudName = (await coreSettings.get<string>("app.name")) || "Cloud";
   const approvalConfig = await appApproval.config().catch(() => null);
 
-  const listState = parseUsersListState({
-    search: c.req.query("search"),
-    page: c.req.query("page"),
-    provider: c.req.query("provider"),
-    profile: c.req.query("profile"),
-  });
+  // The list this page was opened from, so its links lead back to the same filtered list.
+  const listContext = usersListContext(usersQuery(locale), new URL(c.req.url).searchParams);
+  const listHref = usersListHref(listContext);
 
   const user = await accountsService.user.get({ id });
 
-  if (!user) return ssr.error(c, 404, { action: { label: t.backToUsers, href: buildUsersUrl(listState) } });
+  if (!user) return ssr.error(c, 404, { action: { label: t.backToUsers, href: listHref } });
   const linux = await linuxIdentities.get(sessionUser, id);
 
   const isIpaUser = user.provider === "ipa";
@@ -232,7 +229,7 @@ export default ssr<AuthContext>(async (c) => {
     facts.push({ label: t.address, value: <span>{formatAddress(ipa.address)}</span> });
   }
 
-  const detailHref = buildUserDetailUrl(id, listState);
+  const detailHref = userDetailHref(id, listContext);
   const toggleUrl = recursive ? detailHref : `${detailHref}${detailHref.includes("?") ? "&" : "?"}recursive=true`;
   const memberGroupColumns: DataTableColumn<BaseGroup>[] = [
     { id: "group", header: t.group, value: (group) => group.name },
@@ -268,7 +265,7 @@ export default ssr<AuthContext>(async (c) => {
         { title: t.start, href: "/" },
         { title: t.accounts, href: "/app/accounts" },
         // The way up keeps the list's filters this detail was opened from.
-        { title: t.users, href: buildUsersUrl(listState) },
+        { title: t.users, href: listHref },
         { title: user.uid },
       ]}
     >
@@ -294,12 +291,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
             </div>
             <div class="flex flex-wrap items-center justify-end gap-2">
-              <UserActions
-                user={user}
-                listHref={buildUsersUrl(listState)}
-                freeIpaEnabled={freeIpaEnabled}
-                localEmailOptional={localEmailOptional}
-              />
+              <UserActions user={user} listHref={listHref} freeIpaEnabled={freeIpaEnabled} localEmailOptional={localEmailOptional} />
               {approvalConfig?.enabled && approvalConfig.adminPairing && !isExpired && categoryPolicy[accountCategory(user)].enabled && (
                 <ButtonLink href={`/me/security/pair?userId=${user.id}`} variant="secondary" size="sm">
                   <i class="ti ti-device-mobile" />

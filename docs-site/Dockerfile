@@ -21,6 +21,7 @@ COPY packages/stdlib/src packages/stdlib/src
 COPY packages/editor/src packages/editor/src
 COPY packages/ui/src packages/ui/src
 COPY packages/ui/scripts packages/ui/scripts
+COPY packages/ui/skills packages/ui/skills
 COPY docs-site docs-site
 # The image ships no tests, so it typechecks the site without them; their helpers in
 # packages/ui/test stay outside this context. The PR docs job typechecks the tests.
@@ -43,6 +44,7 @@ ENV CLOUD_DOCS_SITE_URL=$CLOUD_DOCS_SITE_URL
 
 COPY --from=build /workspace/docs-site/dist/server.js ./server.js
 COPY --from=build /workspace/docs-site/dist/server.js.map ./server.js.map
+COPY --from=build /workspace/docs-site/dist/ui-v2-reference.json ./ui-v2-reference.json
 COPY --from=build /workspace/docs-site/dist/_ssr ./_ssr
 COPY --from=build /workspace/docs-site/dist/.fibel ./.fibel
 COPY --from=build /workspace/docs-site/dist/agent-skills ./agent-skills

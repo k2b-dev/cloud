@@ -3,156 +3,86 @@ import { expectUserBackedActor, getLocale } from "@k2b/cloud/server";
 import { accountsAppService as accountsService, coreSettings, linuxIdentities } from "@k2b/cloud/services";
 import { getDefaultGroupScope, groupDisplayName, isAdminUser } from "@k2b/cloud/shared";
 import { Layout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { DataTable, type DataTableColumn, Pagination, Paper, Placeholder, Tag } from "@k2b/ui";
 import { ssr } from "../../config";
-import AccountsWorkspace from "../AccountsWorkspace";
-
-import { buildGroupDetailUrl, buildGroupsPageBaseUrl, buildGroupsUrl, parseGroupsListState } from "../lib/url-state";
+import AccountsNavigation from "../AccountsNavigation.island";
+import { accountsNavigationItems } from "../accounts-nav";
+import { buildGroupDetailUrl } from "../lib/url-state";
+import { listMessages } from "../list-messages";
 import { accountsMessages } from "../messages";
-import GroupsScopeFilter from "./GroupsScopeFilter.island";
-import GroupsViewTabs from "./GroupsViewTabs";
-import NewGroup from "./NewGroup.island";
+import GroupsScreen from "./GroupsScreen.island";
+import { GROUPS_PER_PAGE, groupsHref, groupsListState, groupsQuery, legacyGroupsHref, parseGroupsAddress } from "./query";
 
-/** Groups page - nav sidebar + full-page list. */
+/** The groups on v2. The address is the whole list state: the declaration in `query.ts` reads it, the service filters. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = accountsMessages.resolve([locale]);
   const sessionUser = expectUserBackedActor(c);
   const isAdmin = isAdminUser(sessionUser);
-  const freeIpaEnabled = Boolean(await coreSettings.get<boolean>("freeipa.enable"));
-  const linuxEnabled = isAdmin && (await linuxIdentities.configuration(sessionUser)).enabled;
-  const perPage = 100;
   const defaultScope = getDefaultGroupScope(sessionUser);
-  const listState = parseGroupsListState(
-    {
-      search: c.req.query("search"),
-      page: c.req.query("page"),
-      provider: c.req.query("provider"),
-      scope: c.req.query("scope"),
-    },
-    { defaultScope },
-  );
-  const groupsPage = await accountsService.group.list({
-    pagination: { page: listState.page, perPage },
-    filter: { search: listState.search || undefined },
-    scope: {
-      userId: listState.scope === "all" ? undefined : sessionUser.id,
-      mode: listState.scope,
-      provider: listState.provider || undefined,
-    },
-  });
-  const pendingRequests = isAdmin ? await accountsService.accountRequest.countPending() : 0;
-  const totalPages = Math.max(1, Math.ceil(groupsPage.total / perPage));
+  const query = groupsQuery(locale, defaultScope);
+  const url = new URL(c.req.url);
+  // Addresses from before v2 (`search`, the former `personal` filter) lead to the same list in the v2 address.
+  const legacy = legacyGroupsHref(query, url.searchParams);
+  if (legacy) return c.redirect(legacy);
+
+  const address = parseGroupsAddress(query, url.searchParams);
+  const listState = groupsListState(address.state, address.page);
+  const [freeIpaEnabled, linuxEnabled, groupsPage, pendingRequests] = await Promise.all([
+    coreSettings.get<boolean>("freeipa.enable").then(Boolean),
+    isAdmin ? linuxIdentities.configuration(sessionUser).then((config) => config.enabled) : false,
+    accountsService.group.list({
+      pagination: { page: address.page, perPage: GROUPS_PER_PAGE },
+      filter: { search: address.state.search },
+      scope: {
+        userId: listState.scope === "all" ? undefined : sessionUser.id,
+        mode: listState.scope,
+        provider: listState.provider || undefined,
+      },
+    }),
+    isAdmin ? accountsService.accountRequest.countPending() : 0,
+  ]);
+  const pages = Math.max(1, Math.ceil(groupsPage.total / GROUPS_PER_PAGE));
   // Deleting a group, or an old link, can leave the requested page past the end; open the last page instead.
-  if (listState.page > totalPages) return c.redirect(buildGroupsUrl({ ...listState, page: totalPages }, { defaultScope }));
-  const paginationBaseUrl = buildGroupsPageBaseUrl(
-    { search: listState.search, provider: listState.provider, scope: listState.scope },
-    { defaultScope },
-  );
-  type GroupRow = (typeof groupsPage.items)[number];
-  const columns: DataTableColumn<GroupRow>[] = [
-    { id: "group", header: t.group, value: (group) => group.name },
-    { id: "description", header: t.description, value: (group) => group.description, cellClass: "max-w-[22rem]" },
-    { id: "managedBy", header: t.managedBy, value: (group) => (group.provider === "ipa" ? "FreeIPA" : t.local) },
-    { id: "flags", header: t.flags, value: (group) => group.gidnumber },
-  ];
+  if (address.page > pages) return c.redirect(groupsHref(query, address.state, pages));
+
+  const words = listMessages.resolve([locale]).t;
+  const ignored =
+    address.issues.length > 0
+      ? words.ignoredPartsDetail({
+          params: address.issues.map((issue) => (issue.param ? `${issue.param}=${issue.value}` : issue.code)).join(", "),
+        })
+      : null;
+  const groups = groupsPage.items.map((group) => ({
+    id: group.id,
+    name: groupDisplayName(group.name, locale),
+    description: group.description,
+    provider: group.provider,
+    posix: Boolean(group.gidnumber),
+    managed: sessionUser.managesGroupIds.includes(group.id),
+    href: buildGroupDetailUrl(group.id, listState, { defaultScope }),
+  }));
 
   return () => (
-    <Layout c={c} fullWidth title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.groups }]}>
-      <AccountsWorkspace active="groups" isAdmin={isAdmin} pendingRequests={pendingRequests} scrollPreserveKey="accounts-groups">
-        <div class="flex flex-col gap-2">
-          <div class="min-w-0" style="view-transition-name: accounts-groups-title">
-            <h1 class="text-base font-semibold text-primary">{t.groups}</h1>
-            <p class="mt-1 text-xs text-dimmed">
-              {listState.search ? t.resultCount({ count: groupsPage.total }) : t.groupCount({ count: groupsPage.total })}
-            </p>
-          </div>
-
-          {isAdmin ? <GroupsViewTabs current="list" locale={locale} /> : null}
-
-          <div style="view-transition-name: accounts-groups-search">
-            <SearchBar action={buildGroupsUrl({ ...listState, page: 1 }, { defaultScope })} value={listState.search} />
-          </div>
-
-          <div class="flex flex-wrap items-center gap-2">
-            <GroupsScopeFilter state={listState} defaultScope={defaultScope} />
-            {isAdmin ? (
-              <div class="ml-auto shrink-0">
-                <NewGroup freeIpaEnabled={freeIpaEnabled} linuxEnabled={linuxEnabled} />
-              </div>
-            ) : null}
-          </div>
-
-          {groupsPage.items.length === 0 ? (
-            <Placeholder
-              surface="paper"
-              description={
-                <>
-                  {listState.scope === "managed" && !listState.search
-                    ? t.groupsEmptyManaged
-                    : listState.search
-                      ? t.groupsEmptySearch
-                      : t.groupsEmptyView}
-                </>
-              }
-            />
-          ) : (
-            <Paper class="overflow-hidden" style="view-transition-name: accounts-groups-table">
-              <DataTable
-                rows={groupsPage.items}
-                columns={columns}
-                getRowId={(group) => group.id}
-                hoverRows
-                class="overflow-x-auto"
-                scrollPreserveKey="accounts-groups-table"
-                renderCell={({ row: group, col }) => {
-                  const isManaged = sessionUser.managesGroupIds.includes(group.id);
-                  const href = buildGroupDetailUrl(group.id, listState, { defaultScope });
-                  if (col.id === "group") {
-                    return (
-                      <a href={href} class="group flex items-center gap-2 truncate font-medium text-primary">
-                        <i class={`ti shrink-0 text-sm ${isManaged ? "ti-user-edit app-accent-text" : "ti-users-group text-dimmed"}`} />
-                        <span class="truncate transition-colors group-hover:app-accent-text">{groupDisplayName(group.name, locale)}</span>
-                      </a>
-                    );
-                  }
-                  if (col.id === "description") {
-                    return (
-                      <a href={href} class="block truncate text-dimmed" title={group.description || t.noDescription} tabindex={-1}>
-                        {group.description || <span class="italic">{t.noDescription}</span>}
-                      </a>
-                    );
-                  }
-                  if (col.id === "managedBy") {
-                    return (
-                      <a href={href} class="block" tabindex={-1}>
-                        <Tag>{group.provider === "ipa" ? "FreeIPA" : t.local}</Tag>
-                      </a>
-                    );
-                  }
-                  if (col.id === "flags") {
-                    return (
-                      <div class="flex flex-wrap items-center gap-1">
-                        <a href={href} class="flex flex-wrap gap-1" tabindex={-1}>
-                          {isManaged ? <Tag>{t.managed}</Tag> : null}
-                          {group.gidnumber ? <Tag>POSIX</Tag> : null}
-                          {!isManaged && !group.gidnumber ? <span class="text-dimmed">-</span> : null}
-                        </a>
-                      </div>
-                    );
-                  }
-                  return "";
-                }}
-              />
-            </Paper>
-          )}
-
-          <div class="pt-1">
-            <Pagination currentPage={listState.page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-          </div>
-        </div>
-      </AccountsWorkspace>
+    <Layout
+      c={c}
+      fullWidth
+      ui="v2"
+      title={[{ title: t.start, href: "/" }, { title: t.accounts, href: "/app/accounts" }, { title: t.groups }]}
+    >
+      <AccountsNavigation items={accountsNavigationItems(t, { active: "groups", pendingRequests, isAdmin })} />
+      <GroupsScreen
+        state={address.state}
+        defaultScope={defaultScope}
+        page={address.page}
+        pages={pages}
+        total={groupsPage.total}
+        groups={groups}
+        isAdmin={isAdmin}
+        freeIpaEnabled={freeIpaEnabled}
+        linuxEnabled={linuxEnabled}
+        pendingRequests={pendingRequests}
+        ignored={ignored}
+      />
     </Layout>
   );
 });
