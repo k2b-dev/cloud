@@ -141,14 +141,14 @@ export default function OverviewPane(props: {
               {
                 // who belongs to it; one that is not there says so here, in a column with room for its chip
                 title: b().v2People,
-                width: { min: 130, default: 160 },
+                width: { min: 96, default: 112 },
                 drop: true,
                 cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : kind(base)),
               },
-              { title: b().v2Used, width: { min: 90, default: 100 }, align: "end", drop: true, cell: (base) => used(base) },
+              { title: b().v2Used, width: { min: 80, default: 88 }, align: "end", drop: true, cell: (base) => used(base) },
               {
                 title: b().v2LastChange,
-                width: { min: 200, default: 260 },
+                width: { min: 180, default: 220 },
                 drop: true,
                 avatar: (base) => {
                   const actor = lastBy(base);
