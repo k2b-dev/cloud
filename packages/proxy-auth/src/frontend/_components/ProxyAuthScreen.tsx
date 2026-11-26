@@ -2,6 +2,7 @@ import { groupDisplayName } from "@k2b/cloud/shared";
 import { AdminWorkspace } from "@k2b/cloud/ssr/islands";
 import { useLocale } from "@k2b/ui";
 import {
+  Band,
   Bar,
   Button,
   Cells,
@@ -11,7 +12,7 @@ import {
   Empty,
   Facts,
   Field,
-  Icon,
+  Inline,
   Input,
   Lookup,
   Menu,
@@ -21,6 +22,7 @@ import {
   Prose,
   Row,
   Section,
+  Steps,
   Table,
   Tabs,
   Text,
@@ -98,7 +100,10 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const [created, setCreated] = createSignal<string | null>(null);
   // a client just created stands in the list behind its dialog; the next page load brings it from the server
   const [added, setAdded] = createSignal<ClientRow[]>([]);
-  const rows = () => [...props.clients, ...added()].sort((a, b) => a.name.localeCompare(b.name, locale()));
+  const rows = () =>
+    [...props.clients, ...added()].sort(
+      (a, b) => Number(a.groups.length > 0) - Number(b.groups.length > 0) || a.name.localeCompare(b.name, locale()),
+    );
   /** No client yet and no search: the empty state is the one way to the first client, and there is nothing to search. */
   const nothingYet = () => props.figures.total === 0 && added().length === 0 && !props.search;
   const clientsHref = (client: ClientRow) =>
@@ -157,8 +162,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     location.assign(LIST);
   };
 
-  /** A client without groups lets nobody through until it has one: the state as dot and word. */
-  const blocked = () => <Chip status="warn">{t().blockedState}</Chip>;
+  /** A client without groups lets nobody through until it has one: the state as dot and word, no pill. */
+  const blocked = () => <Text tone="bad">{`● ${t().blockedState}`}</Text>;
   /** The groups that get through, as words; a client without one says so quietly (its state says the rest). */
   const groupLine = (client: ClientRow) =>
     client.groups.length === 0 ? t().noGroups : client.groups.map((group) => group.label).join(", ");
@@ -216,14 +221,22 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         />
       }
     >
-      {/* three key facts as a strip; the tinted object head of @k2b/ui takes them over in one step */}
+      {/* the one problem a proxy client can have, right under its name, with its cause and the way out */}
+      <Show when={client.groups.length === 0}>
+        <Notice tone="bad" title={t().nobodyThroughTitle} actions={[{ label: t().chooseGroupsAction, onClick: () => start(client) }]}>
+          {t().nobodyThroughCause}
+        </Notice>
+      </Show>
+      {/* what it is for, quietly under its name; the tinted object head of @k2b/ui takes it over in one step */}
+      <Show when={client.description}>
+        {(text) => (
+          <Band>
+            <Text muted>{text()}</Text>
+          </Band>
+        )}
+      </Show>
+      {/* two key facts as a strip: each fact is said once */}
       <Cells>
-        <Cells.Cell
-          icon="shield-check"
-          label={t().state}
-          value={client.groups.length === 0 ? blocked() : t().activeState}
-          meta={client.groups.length === 0 ? t().nobodyThrough : t().groupsThrough}
-        />
         <Cells.Cell
           icon="users-group"
           label={t().allowedGroups}
@@ -232,27 +245,17 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         />
         <Cells.Cell icon="calendar" label={t().created} value={client.created} />
       </Cells>
-      <Section icon="link" title={t().verifyUrl} summary={t().verifySummary}>
-        <Row
-          icon="link"
-          lines={[verifyUrl(client.clientId)]}
-          end={<Button variant="ghost" icon="copy" label={t().copyUrl} onClick={() => copy(verifyUrl(client.clientId))} />}
-        />
+      <Section title={t().verifyUrl} summary={t().verifySummary}>
+        <Facts items={[{ label: t().address, value: verifyUrl(client.clientId), mono: true, copy: verifyUrl(client.clientId) }]} />
       </Section>
-      <Section icon="users-group" title={t().allowedGroups} count={client.groups.length}>
+      <Section title={t().allowedGroups} count={client.groups.length}>
         <Show when={client.groups.length > 0} fallback={<Text muted>{t().noGroups}</Text>}>
           <For each={client.groups}>{(group) => <Row icon="users-group" lines={[group.label]} />}</For>
         </Show>
       </Section>
-      {/* what Traefik and an administrator need to copy; created and description stand in the strip above */}
-      <Section icon="code" title={t().technique}>
-        <Facts
-          items={[
-            { label: t().clientId, value: client.clientId, mono: true, copy: client.clientId },
-            // the description in full, where it has room
-            ...(client.description ? [{ label: t().description, value: client.description }] : []),
-          ]}
-        />
+      {/* what an administrator needs to copy; the description stands under the name, created in the strip */}
+      <Section title={t().technique}>
+        <Facts items={[{ label: t().clientId, value: client.clientId, mono: true, copy: client.clientId }]} />
       </Section>
     </Pane>
   );
@@ -277,14 +280,19 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           meta={
             props.search
               ? t().shownOf({ shown: rows().length, total: props.figures.total })
-              : [t().clientCount({ count: props.figures.total }), ...(blockedCount > 0 ? [names.join(", ")] : [])]
-                  .filter(Boolean)
-                  .join(" · ")
+              : blockedCount > 0
+                ? t().blockedWho({ names: clip(names[0] ?? "", NAME_IN_LINE), more: Math.max(0, names.length - 1) })
+                : t().groupsInUse({ count: groupsInUse() })
           }
         />
       </Cells>
     );
   };
+
+  /** The groups that get through any client, counted once. */
+  const groupsInUse = () => new Set(rows().flatMap((client) => client.groups.map((group) => group.id))).size;
+  /** The room of a name in a quiet line beside other words. */
+  const NAME_IN_LINE = 32;
 
   /** The clients with their figures, one open beside them. */
   const list = () => (
@@ -312,11 +320,15 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           })}
           // one line per client; colour only for the state that needs a look
           columns={[
-            { title: t().client, width: { min: 150, default: 180 }, cell: (client) => client.name },
             {
-              title: t().state,
-              width: { min: 110, default: 110 },
-              cell: (client: ClientRow) => (client.groups.length === 0 ? blocked() : ""),
+              title: t().client,
+              width: { min: 180, default: 240 },
+              cell: (client) => (
+                <Inline>
+                  <Text weight="strong">{client.groups.length === 0 ? clip(client.name, NAME_IN_LINE) : client.name}</Text>
+                  <Show when={client.groups.length === 0}>{blocked()}</Show>
+                </Inline>
+              ),
             },
             { title: t().allowedGroups, width: { min: 140, default: 180 }, cell: (client) => groupLine(client), drop: true },
             ...(props.open
@@ -324,6 +336,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
               : [{ title: t().created, width: { min: 110, default: 120 }, cell: (client: ClientRow) => client.created, drop: true }]),
           ]}
         />
+        <Show when={nothingYet()}>
+          <Section title={t().howItWorks}>
+            {/* k2b-ui gap: a code block of its own; Prose code has no ground and runs out of a narrow place, so the
+                piece of configuration stays in the setup tab */}
+            <Steps label={t().howItWorks} items={firstSteps("next")} />
+          </Section>
+        </Show>
       </Pane>
       <Show when={props.tab === "clients" && props.open}>
         <Show
@@ -340,31 +359,39 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     </Pane.Split>
   );
 
+  /** The piece of Traefik configuration for a client, as a code block. */
+  const traefikExample = () =>
+    [
+      "```yaml",
+      "http:",
+      "  middlewares:",
+      "    my-proxy-auth:",
+      "      forwardAuth:",
+      `        address: "${props.baseUrl}/proxy-auth/verify/<client-id>"`,
+      "        authResponseHeaders:",
+      '          - "X-Forwarded-User"',
+      '          - "X-Forwarded-Email"',
+      '          - "X-Forwarded-Groups"',
+      "        trustForwardHeader: true",
+      "```",
+    ].join("\n");
+  /** The way to a protected app in three steps; `first` is the state of the first one. */
+  const firstSteps = (first: "done" | "next") => [
+    { label: t().stepCreate, state: first },
+    { label: t().stepTraefik, state: first === "done" ? ("now" as const) : ("next" as const) },
+    { label: t().stepTry, state: "next" as const },
+  ];
+
   /** The Traefik setup: the verify address of a client, an example and the headers the app receives. */
   const setup = () => (
     <Pane label={t().setupTitle} scrollKey="proxy-auth-setup">
-      <Section icon="link" title={t().verifyUrl} summary={t().setupDescription}>
+      <Section title={t().verifyUrl} summary={t().setupDescription}>
         <Facts items={[{ label: t().pattern, value: `${props.baseUrl}/proxy-auth/verify/<client-id>`, mono: true }]} />
       </Section>
-      <Section icon="file-code" title={t().exampleConfiguration}>
-        <Prose
-          markdown={[
-            "```yaml",
-            "http:",
-            "  middlewares:",
-            "    my-proxy-auth:",
-            "      forwardAuth:",
-            `        address: "${props.baseUrl}/proxy-auth/verify/<client-id>"`,
-            "        authResponseHeaders:",
-            '          - "X-Forwarded-User"',
-            '          - "X-Forwarded-Email"',
-            '          - "X-Forwarded-Groups"',
-            "        trustForwardHeader: true",
-            "```",
-          ].join("\n")}
-        />
+      <Section title={t().exampleConfiguration}>
+        <Prose markdown={traefikExample()} />
       </Section>
-      <Section icon="list-details" title={t().responseHeaders}>
+      <Section title={t().responseHeaders}>
         <Facts
           items={[
             { label: "X-Forwarded-User", value: t().username },
@@ -474,9 +501,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           </>
         }
       >
-        <Text>
-          <Icon name="circle-check" tone="ok" label={t().clientCreated} /> {t().nextStep}
-        </Text>
+        <Steps label={t().howItWorks} items={firstSteps("done")} />
+        <Text>{t().nextStep}</Text>
         <Facts items={[{ label: t().verifyUrl, value: verifyUrl(created() ?? ""), mono: true, copy: verifyUrl(created() ?? "") }]} />
       </Dialog>
     </AdminWorkspace>

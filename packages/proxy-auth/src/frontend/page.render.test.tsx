@@ -84,11 +84,10 @@ test("the clients render on v2 with their figures, one open beside the list, and
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
     // the first row says what matters with its number; the list's count is a quiet fact beside it
-    // the hero: how many let nobody through, with all clients and the blocked one by name
-    expect(text).toContain("Gesperrte Clients 1 2 Clients · Uptime Kuma");
-    // one line per client: its name, a state only where nobody gets through, its groups as words
-    expect(text).toContain("Client Zustand Zulässige Gruppen Grafana Ops");
-    expect(text).toContain("Uptime Kuma Gesperrt Ohne Gruppen");
+    // the hero: how many let nobody through, with the blocked one by name (the tab counts all clients)
+    expect(text).toContain("Gesperrte Clients 1 Uptime Kuma");
+    // one line per client, the blocked ones first: its name, its state right after it, its groups as words
+    expect(text).toContain("Client Zulässige Gruppen Uptime Kuma ● Gesperrt Ohne Gruppen Grafana Ops");
     // the open client names its verify address with this Cloud's public address
     expect(text).toContain("https://cloud.example.test/proxy-auth/verify/pa_grafana");
     const setup = read(await (await app.request("/admin/proxy-auth?tab=setup", { headers: { "Accept-Language": "de" } })).text());

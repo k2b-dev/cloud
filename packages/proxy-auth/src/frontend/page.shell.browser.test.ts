@@ -157,7 +157,7 @@ describe("Proxy Auth in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await pages(data).html(search);
-      for (const width of [1440, 1024, 390]) {
+      for (const width of [1920, 1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/proxy-auth${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
@@ -218,7 +218,7 @@ describe("Proxy Auth in the Cloud shell", () => {
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
         await dialog.getByRole("button", { name: "Erstellen" }).click();
         const done = tab.getByRole("dialog", { name: "Client erstellt" });
-        await done.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki").waitFor();
+        await done.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki", { exact: true }).waitFor();
         await settled(tab);
         // the new client stands in the list behind its dialog, opened by its id like every other row
         expect(await tab.locator("[data-k2-workspace]").getByText("Wiki", { exact: true }).count()).toBeGreaterThan(0);

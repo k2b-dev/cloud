@@ -181,7 +181,7 @@ describe("Proxy Auth on v2", () => {
       await dialog.getByRole("option", { name: "Betrieb" }).click();
       await shoot(tab, "neuer-client-dialog-1440");
       await dialog.getByRole("button", { name: "Erstellen" }).click();
-      await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_new").waitFor();
+      await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_new", { exact: true }).waitFor();
       await shoot(tab, "client-angelegt-1440");
       expect(calls).toEqual(["POST /api/proxy-auth"]);
       expect(errors).toEqual([]);
@@ -196,7 +196,7 @@ describe("Proxy Auth on v2", () => {
       await tab.getByRole("link", { name: /Grafana/ }).click();
       await tab.waitForURL(/client=/);
       await tab.waitForSelector('body[data-ready="true"]');
-      expect(await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_grafana").isVisible()).toBe(true);
+      expect(await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_grafana", { exact: true }).isVisible()).toBe(true);
       // answering no sends nothing; deleting waits in the head's "…"
       await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
       await tab.getByRole("menuitem", { name: "Löschen" }).click();
