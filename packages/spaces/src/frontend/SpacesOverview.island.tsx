@@ -8,6 +8,7 @@ import {
   Band,
   Bar,
   Button,
+  Cells,
   Chip,
   Digest,
   Empty,
@@ -18,8 +19,6 @@ import {
   Pane,
   Row,
   Section,
-  type StatusFact,
-  StatusRow,
   Tabs,
   Text,
   Tiles,
@@ -233,33 +232,12 @@ export default function SpacesOverview(props: Props) {
   const agenda = () => day()?.agenda ?? [];
   const overdueCount = () => day()?.overdue ?? 0;
   const nextUp = () => day()?.next ?? undefined;
-  /** The first row says what counts today: the work for this person, what is overdue, and what comes next. */
-  const statement = (): StatusFact[] => {
-    const next = nextUp();
-    // "in 15 min" counts from the moment the day was read: the page's time for the SSR day, the answer's for a later one.
-    return [
-      ...(next?.startsAt
-        ? [
-            {
-              before: t().nextUp,
-              value: `${next.title} ${dates.formatTime(next.startsAt, props.dateConfig)}`,
-              after: t().inTime({
-                duration: duration(Math.round((Date.parse(next.startsAt) - Date.parse(day()?.at ?? props.now)) / 60_000)),
-              }),
-            },
-          ]
-        : []),
-    ];
-  };
-  /**
-   * The first row says only what to act on: what is overdue, else what comes next. The tab already counts the work, so
-   * the row does not; with nothing overdue and nothing next there is no row.
-   */
-  const lead = () => {
-    const next = nextUp();
-    if (overdueCount() > 0) return `${number(overdueCount())} ${t().overdue}`;
-    return next?.startsAt ? t().nextLead({ title: next.title, time: dates.formatTime(next.startsAt, props.dateConfig) }) : undefined;
-  };
+  /** Tasks this person finished per day over the last 14 days, today last: the hero figure and its trend. */
+  const done = () => day()?.done ?? [];
+  const doneTotal = () => done().reduce((sum, value) => sum + value, 0);
+  /** "in 15 min" counts from the moment the day was read: the page's time for the SSR day, the answer's for a later one. */
+  const untilNext = (startsAt: string) =>
+    t().inTime({ duration: duration(Math.round((Date.parse(startsAt) - Date.parse(day()?.at ?? props.now)) / 60_000)) });
   const agendaTime = (item: WorkItem) =>
     item.startsAt
       ? `${dates.formatTime(item.startsAt, props.dateConfig)}${item.endsAt ? `–${dates.formatTime(item.endsAt, props.dateConfig)}` : ""}`
@@ -330,17 +308,39 @@ export default function SpacesOverview(props: Props) {
       primary={{ label: t().newTask, icon: "plus", onClick: () => void composeTask() }}
     >
       <Pane.Split>
-        <Pane
-          label={t().myWork}
-          scrollKey="spaces-overview-work"
-          // The lead keeps what is overdue, as the phone shows no facts; the next entry follows as a fact.
-          status={(() => {
-            const text = lead();
-            if (!text) return undefined;
-            // Overdue leads, and the next entry follows as a fact; a next entry that leads keeps only how long until it.
-            return <StatusRow lead={text} facts={overdueCount() > 0 ? statement() : statement().map(({ after }) => ({ after }))} />;
-          })()}
-        >
+        <Pane label={t().myWork} scrollKey="spaces-overview-work">
+          {/* The one hero of the screen (identity B): how much this person got done, with its real trend, what is late,
+              and what comes next. The tab already counts the open work, so the band does not.
+              k2b-ui gap (DP, hero band): the study's band (oauth-b) sets the figure in --t-figure 600 30/34 in the
+              owner's ink, its label 500 14/20 under it, the chart 56 px high beside it with a 12 px caption, and the
+              exceptions as one line "● 1 overdue" under a 1 px n100 rule, padding 18 20 14, gaps 14/32; Cells set
+              the value in 600 18/24 and the spark 20 px high at the value's end. */}
+          <Show when={day()}>
+            <Cells>
+              <Cells.Cell
+                icon="circle-check"
+                label={t().doneLabel}
+                value={number(doneTotal())}
+                trend={{
+                  values: done(),
+                  label: t().doneTrend({ total: number(doneTotal()), today: number(done().at(-1) ?? 0) }),
+                }}
+                meta={overdueCount() > 0 ? <Chip status="bad">{`${number(overdueCount())} ${t().overdue}`}</Chip> : undefined}
+              />
+              <Cells.Cell
+                icon="clock"
+                label={t().nextLabel}
+                value={(() => {
+                  const next = nextUp();
+                  return next?.startsAt ? `${next.title} · ${dates.formatTime(next.startsAt, props.dateConfig)}` : t().nothingNext;
+                })()}
+                meta={(() => {
+                  const next = nextUp();
+                  return next?.startsAt ? `${untilNext(next.startsAt)} · ${next.spaceName}` : undefined;
+                })()}
+              />
+            </Cells>
+          </Show>
           <Show when={view() === "mine" && agenda().length > 0}>
             <Band label={t().agenda}>
               {/* k2b-ui gap: on the phone Tiles stand one per row; the rules want two compact tiles side by side. */}

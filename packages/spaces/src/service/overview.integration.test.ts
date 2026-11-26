@@ -5,7 +5,7 @@ import { testFor } from "../../../../scripts/fixtures/test-infra";
 import { newShortId } from "../lib/short-id";
 import { OverviewWorkSchema } from "../overview-contracts";
 import { dashboardSnapshot } from "./items";
-import { loadOverviewCounts, loadOverviewWork, loadSpaceOverviewStats, loadSpacesSidebar } from "./overview";
+import { loadOverviewCounts, loadOverviewWork, loadSpaceOverviewStats, loadSpacePulse, loadSpacesSidebar } from "./overview";
 
 testFor("database")("selected overview views preserve counts, filters and access revocation", async () => {
   const [user] = await sql<{ id: string }[]>`INSERT INTO auth.users (uid, provider, profile, display_name)
@@ -25,6 +25,11 @@ testFor("database")("selected overview views preserve counts, filters and access
         (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Overdue fixture', CURRENT_TIMESTAMP - INTERVAL '3 days') RETURNING id`;
       await sql`INSERT INTO spaces.item_assignees (item_id, user_id)
         VALUES (${rows[0]!.id}::uuid, ${user!.id}::uuid), (${rows[2]!.id}::uuid, ${user!.id}::uuid)`;
+      // A task of the reader finished just now, and one nobody finished for them: the trend counts the first only.
+      const done = await sql<{ id: string }[]>`INSERT INTO spaces.items (short_id, space_id, column_id, title, completed_at)
+        VALUES (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Done fixture', CURRENT_TIMESTAMP),
+        (${newShortId()}, ${space!.id}::uuid, ${column!.id}::uuid, 'Done by others fixture', CURRENT_TIMESTAMP) RETURNING id`;
+      await sql`INSERT INTO spaces.item_assignees (item_id, user_id) VALUES (${done[0]!.id}::uuid, ${user!.id}::uuid)`;
     }
     const [access] = await sql<{ id: string }[]>`INSERT INTO auth.access (user_id, permission)
       VALUES (${user!.id}::uuid, 'read') RETURNING id`;
@@ -50,8 +55,20 @@ testFor("database")("selected overview views preserve counts, filters and access
       expect(withDay.day?.agenda.some((item) => item.spaceName === "Accessible overview fixture")).toBe(true);
       expect(withDay.day?.agenda.some((item) => item.spaceName === "Private overview fixture")).toBe(false);
       expect(withDay.day?.overdue).toBe(1);
+      // Done per day: 14 days, today last, plain numbers as the contract says (a typed array would reach JSON as an
+      // object); the private Space's finished task never counts.
+      expect(OverviewWorkSchema.safeParse(JSON.parse(JSON.stringify(withDay))).success).toBe(true);
+      expect(withDay.day?.done).toEqual([...Array(13).fill(0), 1]);
       expect(selected.items.some((item) => item.spaceName === "Accessible overview fixture")).toBe(true);
     }
+    // A Space's pulse keeps the overview's access condition: its own work for the reachable Space, nothing for the
+    // private one, however much is done or open there.
+    expect(await loadSpacePulse({ ...params, spaceId: spaceIds[0]! })).toEqual({
+      done: [...Array(13).fill(0), 2],
+      overdue: 1,
+      unassigned: 1,
+    });
+    expect(await loadSpacePulse({ ...params, spaceId: spaceIds[1]! })).toEqual({ done: Array(14).fill(0), overdue: 0, unassigned: 0 });
     // The Cloud app's summary counts the same work without loading any list.
     expect(await loadOverviewCounts(params)).toEqual({
       mine: full.assignedToMeCount,
@@ -77,7 +94,7 @@ testFor("database")("selected overview views preserve counts, filters and access
       const selected = await loadOverviewWork({ ...params, view, day: { now: new Date() } });
       expect(selected.items.some((item) => item.spaceName.endsWith("overview fixture"))).toBe(false);
       // A revoked grant takes the day with it: no agenda, nothing next, nothing overdue.
-      expect(selected.day).toEqual({ at: expect.any(String), agenda: [], next: null, overdue: 0 });
+      expect(selected.day).toEqual({ at: expect.any(String), agenda: [], next: null, overdue: 0, done: Array(14).fill(0) });
     }
   } finally {
     for (const id of spaceIds) await sql`DELETE FROM spaces.spaces WHERE id = ${id}::uuid`;
@@ -155,7 +172,10 @@ testFor("database")("each overview view reads a pinned number of statements", as
     }
     // Without the day: the counts, the view's list and the writable Spaces. The day adds the next entry, and today's
     // agenda where the view does not read it already.
+    // The trend of done tasks rides the counts statement, so the day costs what it did before it carried a trend.
     expect(cost).toEqual({ mine: 3, "mine with day": 5, today: 3, "today with day": 4, upcoming: 3, "upcoming with day": 5 });
+    // A Space's pulse is that one aggregate statement, limited to the Space.
+    expect((await meter.during(() => loadSpacePulse({ ...params, spaceId: space!.id }))).length).toBe(1);
   } finally {
     await meter.close();
     await sql`DELETE FROM spaces.spaces WHERE id = ${space!.id}::uuid`;

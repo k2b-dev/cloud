@@ -161,8 +161,18 @@ describe("Spaces overview", () => {
     expect(search).not.toContain("data-keep");
   });
 
-  test("with nothing overdue and nothing next, the work has no first row", () => {
-    const html = render(null, "en", { day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next: null, overdue: 0 } });
+  test("the hero is the work done in 14 days with its real trend, and a good day stays neutral", () => {
+    const done = [0, 1, 0, 2, 3, 0, 0, 1, 2, 0, 1, 0, 2, 3];
+    const html = render(null, "en", { day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next: null, overdue: 0, done } });
+    const text = textOf(html);
+    // One figure: the sum of the 14 days the server counted, and the spark draws exactly those days.
+    expect(text).toContain("Done in 14 days");
+    expect(text).toContain("15");
+    expect(html).toContain('aria-label="Tasks you finished per day over 14 days: 15 in all, 3 today"');
+    expect(html.match(/data-k2-part="Spark"[^>]*>(.*?)<\/span>/s)?.[1]?.match(/<i /g)).toHaveLength(14);
+    // Nothing overdue is no exception: no red, no "0 overdue"; nothing next says so in plain words.
+    expect(text).not.toContain("overdue");
+    expect(text).toContain("Nothing else today");
     expect(html).not.toContain('data-k2-part="StatusRow"');
   });
 
@@ -182,7 +192,10 @@ describe("Spaces overview", () => {
     };
     // Opened on Today, whose rows hold no assigned task: the overdue count still comes from the day.
     const text = textOf(
-      render(null, "en", { initialView: "today", day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next, overdue: 2 } }),
+      render(null, "en", {
+        initialView: "today",
+        day: { at: "2026-08-20T12:00:00.000Z", agenda: [], next, overdue: 2, done: Array(14).fill(0) },
+      }),
     );
     // The tab already counts the work for this person ("For me 1"); the row says only what to act on.
     expect(text).toContain("2 overdue");
@@ -191,7 +204,10 @@ describe("Spaces overview", () => {
     expect(text).toContain("in 3 hr");
     // A day read later (after a view switch) counts from its own moment, not from when the page loaded.
     const later = textOf(
-      render(null, "en", { initialView: "today", day: { at: "2026-08-20T14:30:00.000Z", agenda: [], next, overdue: 2 } }),
+      render(null, "en", {
+        initialView: "today",
+        day: { at: "2026-08-20T14:30:00.000Z", agenda: [], next, overdue: 2, done: Array(14).fill(0) },
+      }),
     );
     expect(later).toContain("in 30 min");
   });

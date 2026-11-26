@@ -25,9 +25,15 @@ export const OverviewWorkSchema = z.object({
       agenda: z.array(OverviewWorkItemSchema).describe("Today's first events and due items across the reader's Spaces"),
       next: OverviewWorkItemSchema.nullable().describe("The first entry of today that starts after now"),
       overdue: z.number().describe("Open tasks assigned to the reader whose due day has passed"),
+      done: z
+        .array(z.number())
+        .describe("Tasks assigned to the reader that were completed on each of the last 14 days, oldest first, today last"),
     })
     .optional(),
   counts: z.object({ mine: z.number(), today: z.number(), upcoming: z.number() }),
 });
 export type OverviewView = z.infer<typeof OverviewViewSchema>;
 export type OverviewWork = z.infer<typeof OverviewWorkSchema>;
+
+/** What the first band of a Space says: tasks done per day of the last 14 days (today last), and the open tasks that need someone. */
+export type SpacePulse = { done: number[]; overdue: number; unassigned: number };

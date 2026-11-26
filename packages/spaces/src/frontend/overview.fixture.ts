@@ -78,6 +78,8 @@ export const overviewWork: OverviewWork = {
       endsAt: "2026-10-15T09:30:00+02:00",
     }),
     overdue: 1,
+    // Tasks the reader finished per day over 14 days, today last (invented).
+    done: [2, 0, 3, 1, 4, 0, 0, 2, 5, 3, 1, 0, 0, 2],
   },
 };
 
@@ -158,6 +160,8 @@ export const overviewWorstWork: OverviewWork = {
       endsAt: "2026-10-15T17:45:00+02:00",
     }),
     overdue: 4_321,
+    // A huge, uneven history: 14 days with one burst of a bulk close.
+    done: [0, 0, 12_345, 1, 0, 0, 0, 98_765, 0, 0, 3, 0, 0, 1_234_567],
   },
   items: [
     task({ shortId: "Item01", title: longName, spaceName: longName, priority: "urgent", deadline: "2026-10-01", deadlineAllDay: true }),

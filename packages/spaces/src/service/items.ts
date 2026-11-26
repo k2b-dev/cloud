@@ -933,6 +933,9 @@ export type DashboardItem = {
   deadlineAllDay: boolean;
 };
 
+/** How many days the "done per day" trend of the overview and a Space spans, today included. */
+export const DONE_TREND_DAYS = 14;
+
 export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
@@ -951,6 +954,14 @@ export const dashboardSnapshot = async (params: {
   urgentCount: number;
   todayCount: number;
   upcomingCount: number;
+  /** Open tasks whose due day has passed, whoever holds them (isTaskOverdue). */
+  overdueCount: number;
+  /** Open tasks nobody is assigned to. */
+  unassignedCount: number;
+  /** Tasks completed per day of the last 14 days, today last, in the caller's time zone. */
+  doneByDay: number[];
+  /** The same, only tasks assigned to the reader. */
+  myDoneByDay: number[];
   events: DashboardItem[];
   todos: DashboardItem[];
   /** Only with `nextAfter`; null when nothing starts later today. */
@@ -959,6 +970,22 @@ export const dashboardSnapshot = async (params: {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
   const spaceFilter = params.spaceId ? sql`AND i.space_id = ${params.spaceId}::uuid` : sql``;
+  const assignedToReader = sql`EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)`;
+  // A task has no time span (an event has both ends); the trend counts finished tasks only.
+  const isTask = sql`(i.starts_at IS NULL OR i.ends_at IS NULL)`;
+  // The days of the trend as 15 boundaries in the caller's zone: one aggregate per day in the same statement, so the
+  // trend adds no read and stays bounded at 14 values whatever the Space holds.
+  const dayStarts = Array.from({ length: DONE_TREND_DAYS + 1 }, (_, index) =>
+    dates.addDays(dates.today(params.dateConfig), index - DONE_TREND_DAYS + 1, params.dateConfig).toISOString(),
+  );
+  const doneDays = (scope: typeof isTask) =>
+    dayStarts
+      .slice(0, -1)
+      .map(
+        (start, index) =>
+          sql`COUNT(*) FILTER (WHERE ${isTask} AND ${scope} AND i.completed_at >= ${start}::timestamptz AND i.completed_at < ${dayStarts[index + 1]!}::timestamptz)::int`,
+      )
+      .reduce((acc, count) => sql`${acc}, ${count}`);
 
   // Counts and lists retain the same access checks when limited to one Space.
   const [agg] = await sql<
@@ -969,6 +996,10 @@ export const dashboardSnapshot = async (params: {
       urgent_count: number;
       today_count: number;
       upcoming_count: number;
+      overdue_count: number;
+      unassigned_count: number;
+      done_by_day: number[];
+      my_done_by_day: number[];
     }[]
   >`
     SELECT
@@ -991,7 +1022,14 @@ export const dashboardSnapshot = async (params: {
       COUNT(*) FILTER (
         WHERE i.completed_at IS NULL AND c.is_done = false
           AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
-      )::int AS upcoming_count
+      )::int AS upcoming_count,
+      COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND ${overdueMatch(params.dateConfig)})::int AS overdue_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false AND ${isTask}
+          AND NOT EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id)
+      )::int AS unassigned_count,
+      ARRAY[${doneDays(sql`true`)}] AS done_by_day,
+      ARRAY[${doneDays(assignedToReader)}] AS my_done_by_day
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
@@ -1120,6 +1158,11 @@ export const dashboardSnapshot = async (params: {
     urgentCount: agg?.urgent_count ?? 0,
     todayCount: agg?.today_count ?? 0,
     upcomingCount: agg?.upcoming_count ?? 0,
+    overdueCount: agg?.overdue_count ?? 0,
+    unassignedCount: agg?.unassigned_count ?? 0,
+    // Postgres arrays arrive as typed arrays, which JSON would write as objects; the contract carries plain numbers.
+    doneByDay: Array.from(agg?.done_by_day ?? Array(DONE_TREND_DAYS).fill(0), Number),
+    myDoneByDay: Array.from(agg?.my_done_by_day ?? Array(DONE_TREND_DAYS).fill(0), Number),
     events: eventRows.map(map),
     todos: todoRows.map(map),
     next: nextRow ? map(nextRow) : null,

@@ -3,7 +3,7 @@ import { toPgUuidArray } from "@k2b/cloud/services";
 import type { DateContext } from "@k2b/stdlib";
 import { parsePinnedSpaceIds } from "../frontend/[id]/_components/settings/SpaceSettingsStore";
 import type { SpacesSidebarData } from "../frontend/[id]/_components/sidebar/spaces-navigation";
-import type { OverviewView, OverviewWork } from "../overview-contracts";
+import type { OverviewView, OverviewWork, SpacePulse } from "../overview-contracts";
 import { spacesService } from "./index";
 import { dashboardSnapshot, listMyTasks } from "./items";
 import { spacesPublicResources } from "./public-resources";
@@ -53,10 +53,20 @@ export async function loadOverviewWork(params: {
             agenda: dashboard.events.map(row),
             next: dashboard.next ? row(dashboard.next) : null,
             overdue: dashboard.assignedOverdueCount,
+            done: dashboard.myDoneByDay,
           },
         }
       : {}),
   };
+}
+
+/**
+ * The pulse of one Space for its reader: the overview's aggregate statement limited to the Space, so it keeps the
+ * same access condition (a Space the reader cannot reach counts nothing) and costs one bounded read.
+ */
+export async function loadSpacePulse(params: { userId: string; spaceId: string; dateConfig?: DateContext }): Promise<SpacePulse> {
+  const snapshot = await dashboardSnapshot({ ...params, view: "counts", todoLimit: 0 });
+  return { done: snapshot.doneByDay, overdue: snapshot.overdueCount, unassigned: snapshot.unassignedCount };
 }
 
 /** The counts of the overview's views alone, for a line about the reader's work, such as the Cloud app's Start. */
