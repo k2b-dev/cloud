@@ -81,7 +81,7 @@ export default ssr<AuthContext>(async (c) => {
         title={data.notebook.name}
       >
         <RememberNotebook notebookId={data.notebook.id} />
-        <NoteComposeCommand />
+        <NoteComposeCommand notebookId={data.notebook.id} canWrite={data.canWrite} />
         <BookSurface
           userId={data.ctx.userId}
           notebookId={data.notebook.id}

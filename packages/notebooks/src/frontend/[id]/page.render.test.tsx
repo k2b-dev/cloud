@@ -290,9 +290,8 @@ test.each(["write", "book"] as const)("a notebook shown in %s mode owns the new-
     ...(await select(html, 'solid-island[data-file="NoteComposeCommand.island.tsx"]')),
   ];
   expect(owners).toHaveLength(1);
-  // writing takes this notebook; reading asks which notebook, so a book that others read gets no empty note unasked
-  if (mode === "write") expect(islandProps(owners[0]?.attributes["data-props"])).toMatchObject({ notebookId: "book01", canWrite: true });
-  else expect(islandProps(owners[0]?.attributes["data-props"])).toEqual({});
+  // reading asks which notebook too, with this one first when it may be written
+  expect(islandProps(owners[0]?.attributes["data-props"])).toMatchObject({ notebookId: "book01", canWrite: true });
 });
 
 test.each([

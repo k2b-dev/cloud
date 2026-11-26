@@ -90,7 +90,7 @@ for (const query of ["", "?recent=true"])
 
 test("a command link to Notebooks reaches the notebook it opens, with its query", async () => {
   // what openCommand follows for "New note" from another app, as resolveCommand builds it
-  const query = `?command=notebooks.note.compose&input=${encodeURIComponent(JSON.stringify({ notebookId: "bookAA" }))}`;
+  const query = `?command=notebooks.note.compose&commandInput=${encodeURIComponent(JSON.stringify({ notebookId: "bookAA" }))}`;
   const response = await openNotebooks("bookBB", `${query}&recent=true`);
   expect(response.status).toBe(302);
   expect(response.headers.get("location")).toBe(`/app/notebooks/bookBB${query}`);
