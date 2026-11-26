@@ -35,7 +35,7 @@ The one way to let people filter, sort or group a list or table. Recipe:
 | `choice` | "Status ist Eingeliefert oder Fotografiert" | listbox with checks (one tick with `multiple: false`), counts with `counts: true` |
 | `lookup` | "Einlieferer ist Haus Bergmann" | `Lookup`: search, 200 ms wait, abort, placeholders, empty, failed with retry |
 | `numberRange` | "Preis ab 500 €", "500 € bis 2.000 €" | presets and two fields, applied on Enter or leaving the field |
-| `dateRange`, `timeRange` | "Eingang letzte 30 Tage" | presets and a custom from–to |
+| `dateRange`, `timeRange` | "Eingang letzte 30 Tage" | presets, then "Von …" and "Bis …" with their values; each opens a `DatePicker` beside the editor like a submenu (to the left where the right has no room; a sheet step on the phone). `timeRange` adds hour and minute, applied with "Übernehmen" |
 | `bool` | "2FA ist aus" | yes or no |
 | `text` | "Request-ID ist 7f3a9c" | one field |
 
@@ -60,7 +60,8 @@ no × at its default; changed, it is tinted and × returns it to the default.
 - `timeZone` (default "UTC") is the zone points in time are read and entered
   in. Give the person's zone, the same on the server and in the island.
   Around a change of the clocks an unchanged bound keeps its instant, a typed
-  time that occurs twice means its first occurrence, a skipped one is refused.
+  time that occurs twice means its first occurrence, a skipped one is refused
+  at its calendar.
 - `views.current` carries the query the view holds: renaming keeps it,
   updating replaces it with the state shown.
 - `@k2b/ui` filters nothing and stores nothing. The server filters; saved
