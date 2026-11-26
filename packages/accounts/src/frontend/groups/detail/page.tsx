@@ -97,14 +97,18 @@ const named = (item: EntityListItem, locale: string): [string, Named] =>
         ];
 
 /**
- * The group's last changes (administrators, who may read the audit log), newest first: one read of the audit log, of
- * which only the group's own changes stay. A failure leaves the activity out.
- * One statement: `audit.latest` reads the rows only, without a count.
+ * The group's last changes (administrators, who may read the audit log), newest first: one statement, rows only, of the
+ * group itself and the changes the side column tells, so the newest five show even when other events came after them.
+ * A failure leaves the activity out.
  */
 const readEvents = async (groupId: string): Promise<AuditEvents> => {
   try {
-    const events = await audit.latest({ filter: { target: groupId, outcome: "allowed" }, limit: ACTIVITY_SIZE * 2 });
-    return events.filter((event) => event.target.id === groupId && ACTIVITY_ACTIONS[event.action]).slice(0, ACTIVITY_SIZE);
+    return await audit.latest({
+      target: { type: "group", id: groupId },
+      actions: Object.keys(ACTIVITY_ACTIONS),
+      outcome: "allowed",
+      limit: ACTIVITY_SIZE,
+    });
   } catch {
     return [];
   }

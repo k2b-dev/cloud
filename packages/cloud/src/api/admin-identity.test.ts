@@ -280,6 +280,38 @@ describe("identity key administration", () => {
     expect(own.status).toBe(200);
     expect(revoked).toEqual([CREDENTIAL_ID]);
   });
+  test("lists a resource-bound account's keys for its record; a person's delegated account stays out", async () => {
+    const base = dependencies();
+    type Account = NonNullable<Awaited<ReturnType<Dependencies["serviceAccounts"]["get"]>>>;
+    const kinds: Record<string, Account> = {
+      [SERVICE_ACCOUNT_ID]: {
+        ...standaloneAccount(),
+        id: SERVICE_ACCOUNT_ID,
+        name: "Postfach Einkauf",
+        kind: "resource_bound",
+        appId: "mail",
+      },
+      [CREDENTIAL_ID]: { ...standaloneAccount(), id: CREDENTIAL_ID, kind: "user_delegated", delegatedUserId: ADMIN_ID },
+    };
+    const filters: unknown[] = [];
+    const routes = createAdminIdentityRoutes(
+      authenticateAdmin,
+      dependencies({
+        serviceAccounts: { ...base.serviceAccounts, get: async ({ id }) => kinds[id] ?? null },
+        credentials: {
+          ...base.credentials,
+          listOverview: async (input) => {
+            filters.push(input?.filter);
+            return { items: [], page: 1, perPage: 50, total: 0, hasNext: false };
+          },
+        },
+      }),
+    );
+    const listed = await routes.request(`/service-accounts/${SERVICE_ACCOUNT_ID}/api-keys?page=2&perPage=50`);
+    expect(listed.status).toBe(200);
+    expect(filters).toEqual([{ serviceAccountId: SERVICE_ACCOUNT_ID, serviceAccountKind: "resource_bound" }]);
+    expect((await routes.request(`/service-accounts/${CREDENTIAL_ID}/api-keys`)).status).toBe(404);
+  });
   test("OpenAPI deprecates explicit standalone key scopes", async () => {
     const spec = await generateSpecs(createAdminIdentityRoutes(authenticateAdmin, dependencies()));
     expect(spec.paths?.["/service-accounts/{id}/api-keys"]?.post?.requestBody).toMatchObject({

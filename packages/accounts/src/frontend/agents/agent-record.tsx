@@ -33,7 +33,7 @@ export const renderAgentRecord = async <E extends AuthContext>(c: Context<E>, ac
     account.createdBy ? accountsService.user.get({ id: account.createdBy }) : Promise.resolve(null),
     coreSettings.get<boolean>("ai.openai_api_enabled"),
     // A failed read shows "could not be loaded" in the section; the head and the picture stay.
-    firstKeyPage({ kind: "agent", id: account.id }, { locale, timeZone, now }),
+    firstKeyPage({ kind: "agent", id: account.id }, { locale, timeZone, now }, c.req.query("key")),
     firstDirectoryPage(actor, account.id),
   ]);
 

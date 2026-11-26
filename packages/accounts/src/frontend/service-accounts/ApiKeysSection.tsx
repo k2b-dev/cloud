@@ -17,7 +17,10 @@ import { shortName } from "./short-name";
 /** The account a key section belongs to, as the record's server passes it. */
 export type KeyAccount = KeyOwner & {
   name: string;
-  /** An agent gets new keys only while active; a person's own keys come from that person. */
+  /**
+   * An agent gets new keys only while active; a person's own keys come from that person, and an API key account's from
+   * the app or resource it belongs to: those keys are only revoked here.
+   */
   active: boolean;
 };
 
@@ -31,8 +34,9 @@ export type ApiKeysSectionProps = {
   timeZone: string;
   /**
    * What the address opens (`?key=`): a key's id opens that key, `new` the dialog for a new key. Without it the
-   * section reads `key` from the address itself. A key that is gone (revoked, or not among the first page) leaves the
-   * list with a short notice.
+   * section reads `key` from the address itself. The key is found on the first page or as `first.open`, which the
+   * server looked up by its id (`firstKeyPage(owner, context, key)`); a key that is gone (revoked, or no key of this
+   * account) leaves the list with a short notice.
    */
   open?: string;
 };
@@ -87,7 +91,7 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
     load: async (number, { abortSignal }) => {
       const owner = props.account;
       const context = { locale: locale(), timeZone: props.timeZone, now: new Date() };
-      if (owner.kind === "agent") {
+      if (owner.kind === "agent" || owner.kind === "resource") {
         const response = await coreClient.admin.identity["service-accounts"][":id"]["api-keys"].$get(
           { param: { id: owner.id }, query: { page: String(number), perPage: String(KEYS_PER_PAGE) } },
           { init: { signal: abortSignal } },
@@ -124,7 +128,10 @@ export default function ApiKeysSection(props: ApiKeysSectionProps) {
     const wanted = props.open ?? new URLSearchParams(location.search).get("key");
     if (!wanted) return;
     if (wanted === "new") return creatable() ? show("new") : keepInAddress(null);
-    const entry = props.first?.keys.find((key) => key.id === wanted && key.active);
+    // the first page, else the key the server looked up by its id wherever it stands
+    const entry = [...(props.first?.keys ?? []), ...(props.first?.open ? [props.first.open] : [])].find(
+      (key) => key.id === wanted && key.active,
+    );
     if (entry) setOpened(entry);
     else setGone(true);
   });

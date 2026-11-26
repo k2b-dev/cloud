@@ -26,6 +26,7 @@ import { getSupplementalRoles } from "../../lib/account-badges";
 import { accountsMessages } from "../../messages";
 import { firstKeyPage } from "../../service-accounts/account-keys.server";
 import { usersListContext, usersListHref, usersQuery } from "../query";
+import { isResourceRecordKind, renderResourceRecord } from "./resource-record";
 import UserScreen from "./UserScreen.island";
 import type { UserFact, UserGroupView, UserRecordView } from "./user-view";
 import { userTabFrom } from "./user-view";
@@ -70,11 +71,12 @@ export default ssr<AuthContext>(async (c) => {
 
   const user = await accountsService.user.get({ id });
   if (!user) {
-    // Not a person: the record opens the service accounts the agent page opened, through the same service; any other
-    // kind (code, resource-bound, a person's own keys) and an unknown id stay the 404 of before.
+    // Not a person: the record opens an agent (as the agent page did) or an app's API key account (as the API key page
+    // did), both through the same service read on this administrators' route; any other kind (code, a person's own
+    // keys) and an unknown id stay the 404 of before.
     const account = await serviceAccounts.get({ id });
-    // Kind slot: lane C's service-account sections (ApiKeysSection, DirectoryAccessSection) join the agent kind here.
     if (account && isAgentRecordKind(account)) return renderAgentRecord(c, account);
+    if (account && isResourceRecordKind(account)) return renderResourceRecord(c, account);
     return ssr.error(c, 404, { action: { label: t.backToUsers, href: listHref } });
   }
   const linux = await linuxIdentities.get(sessionUser, id);
@@ -96,13 +98,13 @@ export default ssr<AuthContext>(async (c) => {
       accountsService.group.list({ pagination: { page: 1, perPage: GROUPS_PER_PAGE }, scope: { userId: id, mode: "managed" } }),
       accountsService.user.groupId.list({ userId: id, recursive: false }),
       // the person's own keys: the first page the key section pages on from, through the same service as before
-      firstKeyPage({ kind: "person", userId: id }, { locale, timeZone, now }),
+      firstKeyPage({ kind: "person", userId: id }, { locale, timeZone, now }, c.req.query("key")),
       // Null shows "could not be loaded" instead of hiding a device an administrator may need to revoke.
       appApproval.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
       pwaDevices.listUserDevices({ userId: sessionUser.id, admin }, id).catch(() => null),
       // the newest things done to the account, as the audit log lists them for it
       // one statement, no count: the section shows the newest few and links on to the log
-      audit.latest({ filter: { target: id }, limit: ACTIVITY_ROWS }).catch(() => null),
+      audit.latest({ target: { type: "user", id }, limit: ACTIVITY_ROWS }).catch(() => null),
     ],
   );
   const directGroupsPage =

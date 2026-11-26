@@ -108,9 +108,10 @@ const serviceAccount = (kind: NonNullable<Options["account"]>["kind"]) => ({
   kind,
   status: "active" as const,
   delegatedUserId: null,
-  appId: null,
-  resourceType: null,
-  resourceId: null,
+  // an app's API key account names its app and resource; the other kinds have none
+  appId: kind === "resource_bound" ? "pulse" : null,
+  resourceType: kind === "resource_bound" ? "base" : null,
+  resourceId: kind === "resource_bound" ? "inventar-2026" : null,
   createdBy: admin.id,
   createdAt: "2026-10-01T09:00:00.000Z",
 });
@@ -267,8 +268,17 @@ test("an agent or standalone account opens as the agent kind of the same record"
   }
 });
 
-test("kinds the agent page refused and unknown ids stay a 404", async () => {
-  for (const account of [{ kind: "code" as const }, { kind: "resource_bound" as const }, { kind: "user_delegated" as const }, null]) {
+test("an app's API key account opens with its app, its resource and its keys alone", async () => {
+  const { status, html } = await render(`/app/accounts/users/${AGENT}`, { account: { kind: "resource_bound" } });
+  expect(status, html).toBe(200);
+  for (const text of ["Wochenbericht", "API-Key-Konto", "pulse", "inventar-2026", "Backup-Skript"]) expect(html).toContain(text);
+  // no person's areas and no agent's directory access
+  for (const text of ["Überblick", "Verzeichniszugriff", "Linux-Identität"]) expect(html).not.toContain(text);
+  expect(measure(html).loaders).toBe(0);
+});
+
+test("kinds no page opened and unknown ids stay a 404", async () => {
+  for (const account of [{ kind: "code" as const }, { kind: "user_delegated" as const }, null]) {
     const { status } = await render(`/app/accounts/users/${AGENT}`, { account });
     expect(status).toBe(404);
   }

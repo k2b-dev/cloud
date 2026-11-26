@@ -112,7 +112,16 @@ const withGroup = async (
   },
   run: (
     app: Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>,
-    calls: { pages: number[]; entity: unknown[]; relations: unknown[]; audit: number; names: unknown[]; faces: number; counts: number },
+    calls: {
+      pages: number[];
+      entity: unknown[];
+      relations: unknown[];
+      audit: number;
+      auditAsked: Parameters<typeof audit.latest>[0][];
+      names: unknown[];
+      faces: number;
+      counts: number;
+    },
   ) => Promise<void>,
 ) => {
   const calls = {
@@ -122,6 +131,7 @@ const withGroup = async (
     faces: 0,
     counts: 0,
     audit: 0,
+    auditAsked: [] as Parameters<typeof audit.latest>[0][],
     names: [] as unknown[],
   };
   const viewer = options.viewer ?? admin;
@@ -140,9 +150,19 @@ const withGroup = async (
     spyOn(accountsAppService.group.parent, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.managedGroup, "list").mockResolvedValue(empty),
     spyOn(accountsAppService.group.member, "list").mockResolvedValue({ ...empty, items: options.direct ?? [] } as never),
-    spyOn(audit, "latest").mockImplementation(async () => {
+    // like the service: the exact target, the asked actions and outcome, newest first, at most the limit
+    spyOn(audit, "latest").mockImplementation(async (config) => {
       calls.audit += 1;
-      return options.audit ?? [];
+      calls.auditAsked.push(config);
+      return (options.audit ?? [])
+        .filter(
+          (entry) =>
+            entry.target.type === config.target?.type &&
+            entry.target.id === config.target?.id &&
+            (!config.actions || config.actions.includes(entry.action)) &&
+            (!config.outcome || entry.outcome === config.outcome),
+        )
+        .slice(0, config.limit);
     }),
     spyOn(accountsAppService.group.manager, "list").mockResolvedValue({ ...empty, items: options.managers ?? [] } as never),
     // Like the service: a page past the end is empty, but the total still counts every entry.
@@ -450,9 +470,22 @@ test("administrators read the group's last changes as sentences; others never re
     // the event of another group with a similar name stays out
     expect(html.match(/changed the description|added /g)?.length).toBe(3);
     expect(calls.audit).toBe(1);
+    // the log is asked exactly: this group, the changes the side column tells, at most five
+    expect(calls.auditAsked[0]).toMatchObject({ target: { type: "group", id: groupId }, outcome: "allowed", limit: 5 });
+    expect(calls.auditAsked[0]?.actions).toContain("accounts.group.member.add");
+    expect(calls.auditAsked[0]?.actions).not.toContain("accounts.group.relations");
     // Ada is one of the managers whose faces the page reads; only the one nobody on the page names costs a read
     expect(calls.names).toHaveLength(1);
     expect(calls.names[0]).toMatchObject({ userIds: ["11111111-1111-4111-8111-00000000beef"], kinds: ["user"] });
+  });
+  // newer events the column does not tell never push older changes out: five show while five exist
+  const crowded = [
+    ...[20, 19, 18].map((id) => event(id, "accounts.group.relations", groupId)),
+    ...[10, 9, 8, 7, 6, 5].map((id) => event(id, "accounts.group.update", groupId)),
+  ];
+  await withGroup({ total: 3, audit: crowded }, async (app) => {
+    const html = await (await open(app, "")).text();
+    expect(html.match(/changed the description/g)?.length).toBe(5);
   });
   await withGroup({ viewer: person, total: 3, audit: audited }, async (app, calls) => {
     const html = await (await open(app, "")).text();

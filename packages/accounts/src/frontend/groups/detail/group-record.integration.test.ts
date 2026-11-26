@@ -190,7 +190,7 @@ suite("a group record's statements per tab (integration)", () => {
               {
                 purpose: "activity (audit)",
                 v1: false,
-                run: () => audit.latest({ filter: { target: teamId, outcome: "allowed" }, limit: 10 }),
+                run: () => audit.latest({ target: { type: "group", id: teamId }, outcome: "allowed", limit: 5 }),
               },
             ]
           : []),

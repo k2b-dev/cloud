@@ -9,7 +9,18 @@ import tailwind from "bun-plugin-tailwind";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import "../../../../ui/test/solid-ssr-preload";
-import { AGENT_ID, accountRequest, HUGE_TOTAL, hugeSources, KEY_IDS, PERSON_ID, TOKEN } from "./keys-and-new-user.fixture";
+import {
+  AGENT_ID,
+  accountRequest,
+  HUGE_TOTAL,
+  hugeSources,
+  KEY_IDS,
+  PERSON_ID,
+  RESOURCE_ID,
+  RESOURCE_TOTAL,
+  resourceSources,
+  TOKEN,
+} from "./keys-and-new-user.fixture";
 
 // An administrator works with an account's API keys and directory access as sections of its record, with the list of
 // all keys while it still has its route, and creates a person's account (also from a request). The screens render from
@@ -19,7 +30,13 @@ const origin = "https://cloud.example.test";
 const shots = process.env.CLOUD_ACCOUNTS_V2_SHOTS;
 
 type State =
-  | { screen: "record"; keys?: "sample" | "worst" | "huge" | "empty" | "failed"; active?: boolean; open?: string }
+  | {
+      screen: "record";
+      keys?: "sample" | "worst" | "huge" | "empty" | "failed";
+      active?: boolean;
+      open?: string;
+      owner?: "agent" | "resource";
+    }
   | { screen: "new-user"; request?: boolean; emailOptional?: boolean };
 
 const buildHarness = async (): Promise<string> => {
@@ -134,6 +151,11 @@ const api = (patch: Partial<Api> = {}): Api => ({
 const routes: Record<string, (url: URL) => State> = {
   // as the record's server: `?key=` is what the key section opens
   [`/app/accounts/users/${AGENT_ID}`]: (url) => ({ screen: "record", open: url.searchParams.get("key") ?? undefined }),
+  [`/app/accounts/users/${RESOURCE_ID}`]: (url) => ({
+    screen: "record",
+    owner: "resource",
+    open: url.searchParams.get("key") ?? undefined,
+  }),
   "/app/accounts/users/new": (url) => ({ screen: "new-user", request: url.searchParams.has("request") }),
   // the requests list stands in as the place a denied request leads to
   "/app/accounts/requests": () => ({ screen: "new-user" }),
@@ -163,6 +185,20 @@ const open = async (view: View, address: string, answers: Api, state?: State) =>
     if (url.pathname === "/harness.js") return route.fulfill({ contentType: "text/javascript; charset=utf-8", body: harness });
     if (url.pathname === "/tabler-icons.css") return route.fulfill({ contentType: "text/css", body: icons.css });
     if (url.pathname === "/tabler-icons.woff2") return route.fulfill({ path: icons.font });
+    if (url.pathname === `/api/admin/identity/service-accounts/${RESOURCE_ID}/api-keys` && method === "GET") {
+      const pageNumber = Number(url.searchParams.get("page") ?? 1);
+      const perPage = Number(url.searchParams.get("perPage") ?? 100);
+      answers.keyPages.push(pageNumber);
+      return route.fulfill({
+        json: {
+          items: resourceSources(pageNumber, perPage),
+          page: pageNumber,
+          perPage,
+          total: RESOURCE_TOTAL,
+          hasNext: pageNumber * perPage < RESOURCE_TOTAL,
+        },
+      });
+    }
     if (url.pathname === `/api/admin/identity/service-accounts/${AGENT_ID}/api-keys` && method === "GET") {
       const pageNumber = Number(url.searchParams.get("page") ?? 1);
       const perPage = Number(url.searchParams.get("perPage") ?? 100);
@@ -338,6 +374,58 @@ describe("an account's API keys and directory access as record sections", () => 
       await tab.goto(`${origin}${record}?key=new`);
       await settled(tab);
       await dialog(tab).getByRole("heading", { name: "Neuer API Key für Wochenbericht" }).waitFor();
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("an API key account shows its true count and pages through the API; its keys are revoked, never made or replaced here", async () => {
+    const answers = api();
+    const { context, tab, errors } = await open(wide, `/app/accounts/users/${RESOURCE_ID}`, answers);
+    try {
+      const keys = tab.locator("[data-k2-part=Section]").first();
+      await keys.getByRole("button", { name: "Postfach Einkauf · Schlüssel 1", exact: true }).waitFor();
+      expect(await keys.textContent()).toContain(String(RESOURCE_TOTAL));
+      expect(await keys.locator("[data-k2-part=Row]").count()).toBe(50);
+      expect(await tab.getByRole("button", { name: "API Key erstellen" }).count()).toBe(0);
+      await expectClean(tab);
+      await shoot(tab, "record-resource-light-1440");
+      await tab.getByRole("button", { name: "Aktionen für Postfach Einkauf · Schlüssel 1", exact: true }).click();
+      expect(await tab.getByRole("menuitem", { name: "Ersetzen" }).count()).toBe(0);
+      await tab.getByRole("menuitem", { name: "Widerrufen", exact: true }).click();
+      await tab.getByRole("alertdialog").getByRole("button", { name: "Widerrufen" }).click();
+      await tab.waitForFunction(() => !document.querySelector("[role=alertdialog]"));
+      expect(answers.deletes).toEqual([`/api/accounts/service-accounts/credentials/${resourceSources(1, 1)[0]!.id}`]);
+      await tab.getByRole("button", { name: "Weiter" }).first().click();
+      await tab.getByRole("button", { name: "Postfach Einkauf · Schlüssel 51", exact: true }).waitFor();
+      expect(answers.keyPages).toEqual([2]);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
+
+  test("an old link opens a key beyond the first page; a revoked one says it is gone", async () => {
+    const deep = hugeSources(3, 50)[20]!; // Gerät 121, on the third page
+    const revoked = hugeSources(1, 50)[6]!; // Gerät 7, revoked
+    const answers = api();
+    const { context, tab, errors } = await open(wide, `${record}?key=${deep.id}`, answers, {
+      screen: "record",
+      keys: "huge",
+      open: deep.id,
+    });
+    try {
+      await dialog(tab).getByRole("heading", { name: "API Key Gerät 121" }).waitFor();
+      // the server found it by its id; the section asked the API for no other page
+      expect(answers.keyPages).toEqual([]);
+      expect(new URL(tab.url()).searchParams.get("key")).toBe(deep.id);
+      await context.close();
+      const again = await open(wide, `${record}?key=${revoked.id}`, answers, { screen: "record", keys: "huge", open: revoked.id });
+      await again.tab.getByText("Diesen API Key gibt es nicht mehr.").waitFor();
+      expect(await again.tab.locator("[data-k2-part=Dialog]").count()).toBe(0);
+      expect(again.errors).toEqual([]);
+      await again.context.close();
       expect(errors).toEqual([]);
     } finally {
       await context.close();

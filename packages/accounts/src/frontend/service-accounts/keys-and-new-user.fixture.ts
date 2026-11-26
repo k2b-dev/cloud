@@ -92,6 +92,27 @@ export const hugeSources = (page: number, perPage: number) =>
     };
   });
 
+/** An API key account (resource-bound): a mailbox's keys, which its app rotates; 60 of them, one API page and a bit. */
+export const RESOURCE_ID = "5a1b0000-0000-4000-8000-0000000000aa";
+export const RESOURCE_TOTAL = 60;
+
+/** One page of the API key account's keys as the service's overview items. */
+export const resourceSources = (page: number, perPage: number) =>
+  Array.from({ length: Math.max(0, Math.min(perPage, RESOURCE_TOTAL - (page - 1) * perPage)) }, (_, offset) => {
+    const index = (page - 1) * perPage + offset;
+    return {
+      id: `4e3f0000-0000-4000-8000-3${String(index).padStart(11, "0")}`,
+      name: `Postfach Einkauf · Schlüssel ${index + 1}`,
+      status: index % 5 === 4 ? ("revoked" as const) : ("active" as const),
+      tokenPrefix: (index + 4096).toString(16).padStart(4, "0"),
+      scopes: ["read", "write", "admin"],
+      expiresAt: null,
+      lastUsedAt: index % 2 ? "2026-11-24T06:00:00.000Z" : null,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      serviceAccount: { id: RESOURCE_ID, kind: "resource_bound" },
+    };
+  });
+
 export const directoryPage: DirectoryPage = {
   items: [
     {
