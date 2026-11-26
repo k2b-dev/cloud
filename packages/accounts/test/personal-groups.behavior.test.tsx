@@ -25,7 +25,6 @@ const copy = {
   },
 } as const;
 const owner = { id: "11111111-1111-4111-8111-111111111111", uid: "qdt", displayName: "Quinn Doe" };
-const listState = { search: "", page: 1, provider: "" as const, scope: "all" as const };
 
 describe("personal Linux groups in Accounts", () => {
   if (isServer) {
@@ -59,17 +58,17 @@ describe("personal Linux groups in Accounts", () => {
   };
 
   for (const locale of ["en", "de"] as const) {
-    test(`${locale}: the View menu offers membership and origin without personal groups`, async () => {
-      dom.document.documentElement.lang = locale;
-      const { default: GroupsScopeFilter } = await import("../src/frontend/groups/GroupsScopeFilter.island");
-      mount(() => createComponent(GroupsScopeFilter, { state: listState, defaultScope: "member" }));
-      const items = await openMenu();
-      expect(items.some((item) => item.textContent?.includes(copy[locale].toggle))).toBe(false);
-      const origin = items.find((item) => item.textContent?.includes("FreeIPA"));
-      expect(origin).toBeDefined();
-      origin!.click();
-      await flush();
-      expect(navigated).toHaveBeenCalledWith("/app/accounts/groups?provider=ipa&scope=all");
+    test(`${locale}: the group list's filters offer membership and origin without personal groups`, async () => {
+      const { groupsHref, groupsQuery } = await import("../src/frontend/groups/query");
+      const query = groupsQuery(locale, "member");
+      const words = Object.values(query.fields).flatMap((field) =>
+        "options" in field ? [field.label, ...field.options.map((option) => option.label)] : [field.label],
+      );
+      expect(words.some((word) => word.includes(copy[locale].toggle))).toBe(false);
+      expect(Object.keys(query.fields)).toEqual(["scope", "provider"]);
+      const all = query.set(query.reset(), "scope", "all");
+      const ipa = all && query.set(all, "provider", "ipa");
+      expect(ipa && groupsHref(query, ipa)).toBe("/app/accounts/groups?scope=all&provider=ipa");
     });
 
     test(`${locale}: a personal group's delete action is disabled with an explanation`, async () => {

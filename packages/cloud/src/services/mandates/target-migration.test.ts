@@ -143,7 +143,6 @@ describe("legacy target migration", () => {
       ["assistant", "chat.search", "query"],
       ["assistant", "project.search", "query"],
       ["accounts", "search", "query"],
-      ["capabilities", "search", "query"],
       ["gateway-ops", "app-status.summary", "query"],
       ["gateway-ops", "app-status.detail", "query"],
       ["gateway-ops", "app-status.forget", "action"],

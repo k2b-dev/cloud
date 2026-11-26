@@ -13,6 +13,7 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
@@ -28,7 +29,9 @@ import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
 // ── Nav ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 type NavEntryBase = {
+  /** The words of the entry. */
   label: string;
+  /** A count at the end, such as unread mails: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The open one. */
   current?: boolean;
@@ -46,10 +49,13 @@ type NavEntryBase = {
 export type NavItem = NavEntryBase &
   (
     | {
+        /** A Tabler icon before the words. */
         icon: string;
+        /** The page the entry leads to. */
         href?: string;
         /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
         onNavigate?: OnNavigate;
+        /** A deed instead of a page, for what has no address. */
         onClick?: () => void;
         /**
          * The deeds of this entry, such as "Anheften" and "Ausblenden" of a mailbox: a "…" at its end that shows
@@ -70,36 +76,49 @@ export type NavItem = NavEntryBase &
   );
 
 export type NavGroup = {
+  /** A quiet heading over the group, such as "Postfächer". */
   label?: string;
   /**
    * The group's one deed as a quiet icon button, or, with `items`, a "…" with the group's deeds, such as "Neues
    * Postfach" and "Gelöschte Postfächer"; `label` names the button.
    */
   action?: Action | { label: string; items: readonly MenuEntry[] };
+  /** The entries of the group. */
   items: readonly NavItem[];
 };
 
 export type NavProps = {
   /** The app's name and symbol at the top. */
   title: string;
+  /** A Tabler icon beside the app's name. */
   icon: string;
+  /** The app's places in groups, each with an optional heading and deed. */
   groups: readonly NavGroup[];
   /** Entries at the foot, such as "Hidden (2)". */
   foot?: readonly NavItem[];
 };
 
+/**
+ * A count as the page says it: a number in the page's language and whole (12.345 in German, 12,345 in English, never
+ * "9.999+"), words such as "99+" as the app gives them.
+ */
+const countIn = (count: number | string, locale: string) => (typeof count === "number" ? count.toLocaleString(locale) : count);
+
 /** The level of an entry: a top entry 1, `nested` 2; the entries of a folding entry one further in. */
 const levelOf = (item: NavItem, within?: number) => within ?? (item.nested ? 2 : 1);
 
-const NavEnd = (props: { item: NavItem }) => (
-  <>
-    <span class="k2-ni-name">{props.item.label}</span>
-    <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
-    <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
-    </Show>
-  </>
-);
+const NavEnd = (props: { item: NavItem }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <span class="k2-ni-name">{props.item.label}</span>
+      <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
+      <Show when={props.item.count !== undefined}>
+        <span class="k2-ni-count">{countIn(props.item.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 const NavEntry = (props: { item: NavItem; level?: number }): JSX.Element => (
   <Show when={props.item.items} fallback={<NavPlace item={props.item} level={levelOf(props.item, props.level)} />}>
@@ -211,8 +230,11 @@ export const Nav = (props: NavProps) => (
 // ── Tabs ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Tab = {
+  /** The name of the view. */
   label: string;
+  /** A Tabler icon before the name. */
   icon?: string;
+  /** A quiet count after the name: a number in the page's language and in full (12.345, never cut to "9.999+"); words such as "99+" stay as given. */
   count?: number | string;
   /** The tab leads to this page … */
   href?: string;
@@ -220,6 +242,7 @@ export type Tab = {
   onNavigate?: OnNavigate;
   /** … or switches the view in place. */
   onClick?: () => void;
+  /** The view shown now. */
   current?: boolean;
   /**
    * The tab opens a menu of further views, such as "Weitere +8": the entries of a `Menu` (links with `href` and
@@ -229,24 +252,32 @@ export type Tab = {
   menu?: readonly MenuEntry[];
 };
 
-export type TabsProps = { items: readonly Tab[]; label: string };
+export type TabsProps = {
+  /** The tabs in their order; a tab with `menu` stands at the end. */
+  items: readonly Tab[];
+  /** The name of the tab list, such as "Ansichten", for assistive technology. */
+  label: string;
+};
 
 /** The words of a tab: its symbol, its name and its count. */
-const TabFace = (props: { tab: Tab }) => (
-  <>
-    <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
-    {props.tab.label}
-    <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
-    </Show>
-  </>
-);
+const TabFace = (props: { tab: Tab }) => {
+  const locale = useLocale();
+  return (
+    <>
+      <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
+      {props.tab.label}
+      <Show when={props.tab.count !== undefined}>
+        <span class="k2-tab-count">{countIn(props.tab.count ?? "", locale())}</span>
+      </Show>
+    </>
+  );
+};
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, locale: string): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : countIn(tab.count, locale),
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -275,6 +306,7 @@ const countWith = (count: Tab["count"], hidden: number): Tab["count"] => {
  */
 export const Tabs = (props: TabsProps) => {
   const t = useUiMessages();
+  const locale = useLocale();
   const plain = createMemo(() => props.items.filter((tab) => !tab.menu));
   const withMenu = createMemo(() => props.items.filter((tab) => tab.menu));
   // How many plain tabs have room, from the start; the rest wrap below the line of the tabs, where nothing shows.
@@ -319,7 +351,7 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const more = () => hidden().map((tab) => asEntry(tab, locale()));
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -398,10 +430,20 @@ export const Path = (props: PathProps) => (
 // ── StatusRow ────────────────────────────────────────────────────────────────────────────────────────────────────
 
 /** A key figure: words before and after, the value itself in 600 (leave it out for words alone, such as "12 offen"). */
-export type StatusFact = { before?: string; value?: string | number; after?: string };
+export type StatusFact = {
+  /** Words before the value, such as "Summe". */
+  before?: string;
+  /** The value itself, in 600. */
+  value?: string | number;
+  /** Words after the value, such as "überfällig". */
+  after?: string;
+};
 
 export type StatusRowProps = {
-  /** The one main statement, such as "7 unread". */
+  /**
+   * The one main statement, such as "7 unread". Where it does not fit before the filters it is cut with "…", so it
+   * never runs under them; with two filters that fold to their symbols, about a word stays down to a row of 320 px.
+   */
   lead: string;
   /**
    * The results refresh in place, such as after a filter changed: `true` shows a quiet turning mark after the lead
@@ -418,7 +460,11 @@ export type StatusRowProps = {
   facts?: readonly StatusFact[];
   /** A box at the start that selects all entries. */
   select?: { label: string; checked?: boolean | "mixed"; onChange?: (checked: boolean) => void };
-  /** Filters or a segment at the end; they leave on the phone. */
+  /**
+   * Filters or a segment at the end; they leave on the phone. They keep their words while the lead gives way; in a row
+   * narrower than 600 px a button with a symbol keeps only the symbol, and its words stay its name. Give each one a
+   * symbol, so it can fold; a toggle is a `Button pressed` with an `icon`, which folds, not a switch.
+   */
   filters?: JSX.Element;
   /**
    * While entries are selected the row becomes the bar of what can be done with them (rule 6): the count, the
@@ -494,7 +540,7 @@ export const StatusRow = (props: StatusRowProps) => {
 
 // ── Notice ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type NoticeProps = {
+type NoticeBase = {
   /** What it is: a note of a person, a summary by AI, something wrong, something waiting. */
   tone: "note" | "ai" | "bad" | "warn";
   /** A symbol other than the one of the tone, such as a pin for a pinned note. */
@@ -503,10 +549,28 @@ export type NoticeProps = {
   title?: string;
   /** Quiet words after the title: who and when. */
   meta?: string;
-  /** Text buttons at the end; at most two. */
-  actions?: TwoActions;
+  /** The sentence and its consequence: what is the matter, and what follows from it. */
   children: JSX.Element;
 };
+
+/** At most two deeds in all: two quiet text buttons, or the one thing to do and one quiet deed beside it. */
+export type NoticeProps = NoticeBase &
+  (
+    | {
+        /** Text buttons at the end; at most two. */
+        actions?: TwoActions;
+        primary?: undefined;
+      }
+    | {
+        /** One quiet text button before the primary deed. */
+        actions?: readonly [Action];
+        /**
+         * The one thing to do, such as "Neu laden" when the page is offline: a framed button at the end, after the
+         * quiet deed. It is no primary of the page; the page keeps its own one.
+         */
+        primary: Action;
+      }
+  );
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
@@ -530,9 +594,10 @@ export const Notice = (props: NoticeProps) => (
       </span>
     </Show>
     <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length}>
+    <Show when={props.actions?.length || props.primary}>
       <span class="k2-notice-end">
         <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
+        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
       </span>
     </Show>
   </div>
@@ -541,7 +606,9 @@ export const Notice = (props: NoticeProps) => (
 // ── Digest ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type DigestEntry = {
+  /** A Tabler icon for the kind of thing. */
   icon: string;
+  /** The data colour of its area. */
   color?: string;
   /** A short date, such as "17. Nov.". */
   date: string;
@@ -551,12 +618,25 @@ export type DigestEntry = {
   state: { icon: string; label: string; tone?: Status };
   /** One sentence about it; `<Text weight="strong">` stresses a word. */
   text: JSX.Element;
+  /** The page of the thing: its number becomes a link. */
   href?: string;
 };
 
 export type DigestProps =
-  | { items: readonly DigestEntry[]; children?: never; label?: string }
-  | { items?: never; children: JSX.Element; label?: string };
+  | {
+      /** The dated entries, newest first. */
+      items: readonly DigestEntry[];
+      children?: never;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    }
+  | {
+      items?: never;
+      /** Plain `Row`s whose second line is a sentence, instead of dated entries. */
+      children: JSX.Element;
+      /** The name of the list, for assistive technology. */
+      label?: string;
+    };
 
 /**
  * The newest few on a first page, without lines (decided 22.11.): dated entries in a grid of date, number with state
@@ -606,6 +686,7 @@ export const Digest = (props: DigestProps) => {
 // ── Steps ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Step = {
+  /** The name of the step, such as "Angekommen". */
   label: string;
   /** A quiet line under the step, such as a date or "10 von 18". */
   meta?: string;
@@ -614,7 +695,12 @@ export type Step = {
 };
 
 /** A way of a few steps: done ones grey with a tick, the running one a blue ring, the coming ones empty. */
-export type StepsProps = { items: readonly Step[]; label: string };
+export type StepsProps = {
+  /** The steps in their order. */
+  items: readonly Step[];
+  /** The name of the way, such as "Weg der Einlieferung", for assistive technology. */
+  label: string;
+};
 
 export const Steps = (props: StepsProps) => (
   <ol
@@ -644,10 +730,21 @@ export const Steps = (props: StepsProps) => (
 
 // ── RecordHead ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-export type RecordId = { label?: string; value: string; icon?: string; copy?: boolean };
+export type RecordId = {
+  /** A quiet word before the value, such as "Kunde". */
+  label?: string;
+  /** The identifier itself. */
+  value: string;
+  /** A Tabler icon instead of the label, such as `phone`. */
+  icon?: string;
+  /** Offers a copy button for the value. */
+  copy?: boolean;
+};
 
 export type RecordHeadProps = {
+  /** The name of the record, the page's heading. */
   name: string;
+  /** The picture or initials before the name. */
   avatar?: Person;
   /** Kinds of the record, such as "Private". */
   kinds?: readonly string[];

@@ -35,6 +35,12 @@ type Props = {
   contentClass?: string;
   /** The page renders its own `AppWorkspace.Main`, such as one in level mode. */
   ownMain?: boolean;
+  /**
+   * The page is built with `@k2b/ui/v2`: its island renders one `Workspace` with `adminNavigation(c)` as its `Nav` (and as
+   * `V2WorkspaceNavigation` for the phone). The v1 workspace and admin sidebar stay away; `scroll`, `contentClass`
+   * and `ownMain` do not apply.
+   */
+  ui?: "v2";
 };
 export default function AdminLayout(props: Props) {
   // Keep children lazy so Layout installs the request locale before rendering them.
@@ -48,6 +54,12 @@ export default function AdminLayout(props: Props) {
   // above an admin page, and every admin page shows its title alone, whichever app owns it.
   const overview = title === "Overview" || title === t.overview;
   const breadcrumbs: Breadcrumb[] = [{ title: t.start, href: "/" }, { title: overview ? t.admin : title }];
+  if (props.ui === "v2")
+    return (
+      <Layout c={c} fullWidth fullPage ui="v2" title={breadcrumbs}>
+        {props.children}
+      </Layout>
+    );
   return (
     <Layout c={c} fullWidth fullPage title={breadcrumbs}>
       {/* Settings and administration are quiet: flat, only charts, dashboard frames, and key figures lift. */}

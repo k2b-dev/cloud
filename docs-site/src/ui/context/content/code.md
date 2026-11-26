@@ -123,10 +123,12 @@ type CodeDiffLineAction = {
   onSelect: (location: CodeDiffLocation) => void;
 };
 
-// Further CodeDiffProps
-lineAction?: CodeDiffLineAction;
-slotLines?: readonly CodeDiffLocation[]; // lines of the new version with content below them
-lineSlot?: (location: CodeDiffLocation) => JSX.Element;
+type CodeDiffProps = {
+  // further props, beside the ones above
+  lineAction?: CodeDiffLineAction;
+  slotLines?: readonly CodeDiffLocation[]; // lines of the new version with content below them
+  lineSlot?: (location: CodeDiffLocation) => JSX.Element;
+};
 ```
 
 - **Place:** with `lineAction` or `lineSlot`, every line gets a fixed place between the line number and the code
