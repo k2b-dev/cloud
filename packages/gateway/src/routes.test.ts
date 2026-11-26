@@ -12,6 +12,21 @@ const app = (id: string, routes: string[]): AppRegistryEntry => ({
   startedAt: 0,
 });
 
+test("withdrawing an unknown application removes only its routes after registry withdrawal", () => {
+  const retired = app("retired-app", ["/app/retired-app", "/public/retired-app"]);
+  const providers = [app("core", ["/", "/api/capabilities"]), app("mail", ["/app/mail", "/api/mail"])];
+  const before = buildAppRoutesDetailed([...providers, retired]);
+  expect(before.warnings).toEqual([]);
+  expect(before.routes.filter((route) => route.appId === "retired-app").map((route) => route.prefix)).toEqual([
+    "/app/retired-app",
+    "/public/retired-app",
+  ]);
+  const after = buildAppRoutesDetailed(providers);
+  expect(after.warnings).toEqual([]);
+  expect(after.routes).toEqual(before.routes.filter((route) => route.appId !== "retired-app"));
+  expect(after.routes.some((route) => route.prefix === "/api/capabilities" && route.appId === "core")).toBe(true);
+});
+
 describe("reserved /pwa prefix", () => {
   test("routes the shell, Core's identity endpoints and each app's own part", () => {
     const { routes, warnings } = buildAppRoutesDetailed([
