@@ -911,5 +911,7 @@ test.each(["write", "readonly"] as const)("%s: the head holds the views and the 
   const tabs = await select(html, '[data-k2-part="Tabs"] a');
   expect(tabs.map((tab) => tab.text.trim())).toEqual(["Bearbeiten", "Lesen", "Buch"]);
   expect(await select(html, 'button[aria-label="Detailbereich"][aria-pressed]')).toHaveLength(1);
+  // the view menu stands in the server's frame too, so nothing moves into the head when the browser takes over
+  expect((await select(html, 'button[data-slot="menu-trigger"]')).filter((button) => button.text.trim() === "Ansicht")).toHaveLength(1);
   expect(await select(html, ".k2b-app-workspace__head")).toEqual([]);
 });
