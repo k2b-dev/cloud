@@ -155,6 +155,14 @@ function Received(props: { data: WebhookTesterData }) {
     setState(next);
   };
   const filterTo = (endpoint: Endpoint) => query().set(state(), "endpoint", endpoint.id);
+  /** A press on an endpoint shows its requests (as v1 did): the filter goes into the address, in place. */
+  const applyFilter =
+    (next: ListQueryStateOf<ReturnType<typeof receivedQuery>>): OnNavigate =>
+    (navigation) => {
+      history.pushState(history.state, "", navigation.href);
+      setRequest(null);
+      setState(next);
+    };
 
   // ── Writes ──
   const [creating, setCreating] = createSignal(false);
@@ -296,6 +304,8 @@ function Received(props: { data: WebhookTesterData }) {
                         meta={t().requestCount({ count: endpoint.requestCount })}
                         time={endpoint.lastRequestAt ? t().lastRequest({ time: when()(endpoint.lastRequestAt) }) : t().noRequestYet}
                         current={state().filters.endpoint === endpoint.id}
+                        href={filterTo(endpoint) ? addressOf("receive", query().serialize(filterTo(endpoint)!), null) : undefined}
+                        onNavigate={filterTo(endpoint) ? applyFilter(filterTo(endpoint)!) : undefined}
                         action={{ label: t().copyUrl, icon: "copy", onClick: () => copy(urlOf(endpoint)) }}
                         end={<Menu label={t().endpointActions({ name: endpoint.name })} items={deeds(endpoint)} />}
                       />

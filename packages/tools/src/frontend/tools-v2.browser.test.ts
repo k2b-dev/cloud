@@ -203,6 +203,10 @@ test("a filter from the address and the search narrow the requests, and an empty
     await page.getByRole("link", { name: "Filter zurücksetzen" }).click();
     await page.waitForURL((url) => !url.searchParams.has("q") && !url.searchParams.has("method"));
     await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"]')?.textContent?.includes("24 Anfragen"));
+    // a press on an endpoint shows its requests, in the address
+    await page.getByRole("link", { name: "Shopify Bestellungen" }).first().click();
+    await page.waitForURL((url) => url.searchParams.get("endpoint") === "00000000-0000-4000-8000-000000000002");
+    await page.waitForFunction(() => document.querySelector('[data-k2-part="StatusRow"]')?.textContent?.includes("7 Anfragen"));
   } finally {
     await page.close();
   }
