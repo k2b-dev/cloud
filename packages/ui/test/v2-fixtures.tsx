@@ -483,7 +483,7 @@ export const SplitWideTableFixture = () =>
           ]}
         />
       </Pane>
-      <Pane label="Quelle" detail>
+      <Pane label="Quelle" detail back={{ label: "Quellen", href: "#quellen" }}>
         <Band>
           <Text type="lead">Werkstatt Nord</Text>
         </Band>
