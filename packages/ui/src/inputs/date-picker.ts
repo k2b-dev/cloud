@@ -72,6 +72,15 @@ export const msUntilNextDay = (now: Date, context?: DateContext): number => {
 /** Whether `value` is a date key such as `2026-10-24`, a date without a time. */
 export const isDateKey = (value: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
+/** Whether a date key names a day of the calendar: no 30 February, 29 February only in a leap year. */
+export const isCalendarDay = (key: string): boolean => {
+  if (!isDateKey(key)) return false;
+  const [year = 0, month = 0, day = 0] = key.split("-").map(Number);
+  const date = new Date(Date.UTC(2000, month - 1, day));
+  date.setUTCFullYear(year);
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+};
+
 export const parseDateValue = (value: string | null | undefined, context?: DateContext): Date => {
   if (!value) return dates.today(pickerContext(context));
   return dates.parseCalendarDate(value.slice(0, 10), pickerContext(context));
