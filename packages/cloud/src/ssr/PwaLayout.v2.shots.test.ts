@@ -203,7 +203,7 @@ const start = () =>
         createComponent(Pane, {
           side: true,
           label: "Aktivität",
-          width: { min: 280, default: 320, fixed: true },
+          width: { fixed: 320 },
           get children() {
             return section({ icon: "activity", color: "#64748b", title: "Aktivität" }, () => [activity()]);
           },
@@ -324,7 +324,7 @@ const settings = () =>
         createComponent(Pane, {
           side: true,
           label: "Geräte und Daten",
-          width: { min: 280, default: 320, fixed: true },
+          width: { fixed: 320 },
           get children() {
             return settingsSide();
           },
