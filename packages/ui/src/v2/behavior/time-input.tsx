@@ -5,7 +5,8 @@
  * this module's exports.
  */
 import { timeInput as timeInputPrimitive } from "@ui-sdk/core/time-input";
-import { type SlotComponent, slotComponent, usePrimitive } from "./adapter";
+import { splitProps } from "solid-js";
+import { type PartProps, part, partId, type SlotComponent, slotComponent, usePrimitive } from "./adapter";
 
 export type TimeInputOptions = {
   /** The time as `HH:MM` on the 24-hour clock, or `null` while empty or partly typed. */
@@ -40,9 +41,22 @@ export function useTimeInput(options: () => TimeInputOptions = () => ({})): Time
       onValueChange: onValueChange && ((value: unknown) => onValueChange(typeof value === "string" ? value : null)),
     };
   });
+  // Core finds a part by its `id` (or `value`); a segment has neither, so every segment would be the one part of the
+  // last segment rendered, and the hour would show the minute. Each segment is its own part, keyed by its type.
+  const base = partId();
+  const segment =
+    (tag: "input" | "span"): SlotComponent =>
+    (props: PartProps) => {
+      const [own, element] = splitProps(props, ["segment"]);
+      const key = () => {
+        const given = own.segment;
+        return typeof given === "object" && given !== null && "key" in given ? String(given.key) : "";
+      };
+      return part(handle, "segment", () => ({ segment: own.segment, id: `${base}-${key()}` }), element, tag);
+    };
   return {
     Root: slotComponent(handle, "root", "div"),
-    Segment: slotComponent(handle, "segment", "input"),
-    Literal: slotComponent(handle, "segment", "span"),
+    Segment: segment("input"),
+    Literal: segment("span"),
   };
 }
