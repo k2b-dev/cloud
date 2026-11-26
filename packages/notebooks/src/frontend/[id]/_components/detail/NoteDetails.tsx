@@ -349,8 +349,11 @@ export default function NoteDetails(props: NoteDetailsProps) {
       });
       navigateTo(launch.href);
     },
-    // k2b-ui gap: a v2 toast has no description, so the server's reason cannot stand under the short outcome.
-    onError: () => void toast(t().assistantLaunchFailed, { status: "bad" }),
+    // one sentence: the outcome and, when the server gives one, its reason
+    onError: (error) =>
+      void toast(error.message ? t().assistantLaunchFailedBecause({ reason: error.message }) : t().assistantLaunchFailed, {
+        status: "bad",
+      }),
   });
 
   const downloadFilename = () => `${(noteTitle() || "note").trim() || "note"}.md`;
