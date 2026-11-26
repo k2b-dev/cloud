@@ -350,6 +350,17 @@ describe("account pages on v2", () => {
     expect(html).not.toContain("Phones with the app");
   });
 
+  test("the shared workstation switch is named by its setting, not by its state", async () => {
+    const tab = await open(desktop, "/me", "de");
+    try {
+      const named = tab.getByRole("switch", { name: "Gemeinsam genutzter Arbeitsplatz", exact: true });
+      expect(await named.count()).toBe(1);
+      expect(await tab.getByRole("switch", { name: /^(An|Aus)$/ }).count()).toBe(0);
+    } finally {
+      await tab.close();
+    }
+  }, 30_000);
+
   test("warn about the account expiry only when it is close; a far one is a fact of the first row", async () => {
     const tone = async (days: number) => {
       user = { ...localUser, accountExpires: new Date(Date.now() + days * 86_400_000).toISOString() };
