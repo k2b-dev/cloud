@@ -2472,8 +2472,6 @@
   padding-inline: 12px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  /* a thin bar says how long the group is (a sidebar has no fade cue like a column) */
-  scrollbar-width: thin;
 }
 .k2-ui .k2-nav-scroll > *,
 .k2-ui .k2-nav-window > * {
