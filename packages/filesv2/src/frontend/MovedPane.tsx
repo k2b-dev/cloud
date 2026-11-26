@@ -2,7 +2,17 @@ import { useLocale } from "@k2b/ui";
 import { type Action, Button, List, Notice, type OnNavigate, Pane, Row } from "@k2b/ui/v2";
 import { createMemo, type JSX } from "solid-js";
 import { entryMark } from "./entry-mark";
-import { actorOf, actorParts, fill, formatWhen, type HistoryEnvironment, type HistoryTarget, type Part, placeOf } from "./history-actions";
+import {
+  actorOf,
+  actorParts,
+  fill,
+  formatWhen,
+  type HistoryEnvironment,
+  type HistoryTarget,
+  type Part,
+  placeOf,
+  plain,
+} from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
 import { SentenceText } from "./history-v2";
 import type { MovedSnapshot } from "./workspace-state";
@@ -36,7 +46,8 @@ export default function MovedPane(props: {
   // who and when as the folder's entries below say it: "Jana Krüger, heute, 13:00"
   const why = () =>
     fill(h().v2MovedWhen, {
-      actor: actorParts(actor(), h()),
+      // plain, as the entries below name their authors
+      actor: plain(actorParts(actor(), h())),
       when: formatWhen(props.moved.entry.time, locale(), h(), props.env),
     });
   const history = (): Action => ({ label: h().viewHistory, icon: "history", href: props.historyHref, onNavigate: props.onNavigate });
