@@ -26,10 +26,25 @@ state that shows an open menu, panel, dialog or toast is `{ render, press }`:
 the screen, and the names of the buttons and menu entries a person presses,
 in order, to open it.
 
+Each recipe starts with its screen brief, as every new screen does (its pull
+request carries the same): who uses it for what, the three most important
+pieces of information in order, the hero (where the eye lands first), and
+the layout at 390, 1024, 1440 and 1920 px. Copy the brief with the recipe
+and rewrite it for your screen before you build anything. A 1920 line that
+says "not built yet" names a gap: a large screen deserves a deliberate
+further column, never a wider list.
+
 ## frame.tsx: the frame of an app
 
 ![frame at 1440 px](../images/frame-1440.png)
 ![frame at 390 px](../images/frame-390.png)
+
+**Brief.** A workshop lead plans today's orders. 1: what is due today and
+what is late; 2: the open order's figures, parts and history; 3: the
+other views. Hero: the open order's figures. 390: the list, an order as
+its own page. 1024: list beside the detail, the sidebar a drawer. 1440:
+sidebar, list, detail. 1920: not built yet (a third column with the
+order's parts and history beside its figures).
 
 `Workspace` with `detail` and `detailEmpty`; a `Nav` with two groups
 (a group `action`, a `dot`, a folding "Mehr", a `foot`); a head `Bar`
@@ -54,6 +69,13 @@ state that is not "in plan" speaks up as a chip in `marks`.
 ![folders as a tree at 1440 px](../images/tree-1440.png)
 ![folders as a tree at 390 px](../images/tree-390.png)
 
+**Brief.** Someone files and finds project files. 1: what in this folder
+waits (an offer to sign); 2: its files with kind, owner and sharing; 3:
+where it lies (path, tree). Hero: the statement of what waits. 390: the
+top level as two-line rows, the tree in the drawer. 1024: the table drops
+owner and sharing as room runs out. 1440: tree beside the full table.
+1920: not built yet (a preview of the open file beside the table).
+
 `Nav` with a plain group ("Zuletzt", "Favoriten", "Freigaben") and a
 group with `tree`: the storages with their `color` (so each leads with its
 `Mark`), their folders with counts and a `dot` ("Küche Lindqvist" is
@@ -76,15 +98,27 @@ its folder starts open.
 
 ![list with detail at 1440 px](../images/list-detail-1440.png)
 ![list with detail at 390 px](../images/list-detail-390.png)
+![with no source open, a dense table at 1440 px](../images/list-detail-closed-1440.png)
+![with no source open at 390 px](../images/list-detail-closed-390.png)
+
+**Brief.** Someone keeps data sources running. 1: which source is broken
+and why; 2: its figures and latest events; 3: how the others are. Hero:
+the broken source's notice and figures. 390: two-line rows, a source as
+its own page. 1024 and 1440: with none open a dense table across the
+page; with one open, rows beside its detail. 1920: not built yet (the
+open source's event log as a third column).
 
 `Workspace` with `Nav`, a head `Bar` with `Tabs` and the main action;
 `Pane.Split` with the list (`StatusRow` with the count; the troubled ones
-are counted once, in the `Tabs`; `List` of two-line `Row`s with the mark of their kind, a state
-chip only where something is wrong, the open one `current`) and a
-`Pane detail` (head `Bar` with mark, name and actions, `Notice tone="bad"`
-with a way out, `Cells` with a `trend`, `Facts` with the person in
-charge, the latest events as rows with marks, and who changed it as
-`Digest activity`).
+are counted once, in the `Tabs`; `List` of two-line `Row`s with the mark
+of their kind, a state chip only where something is wrong, the open one
+`current`) and a `Pane detail` (head `Bar` with mark, name and actions,
+`Notice tone="bad"` with a way out, `Cells` with a `trend`, `Facts` with
+the person in charge, the latest events as rows with marks, and who
+changed it as `Digest activity`). With no entry open (state `closed`) the
+`Workspace` has no `detail`, and the sources stand as a dense `Table`
+across the page: one line each, the same marks, a chip only where
+something is wrong; its `phone(row)` gives the same two-line rows.
 
 - On the phone the detail pane leaves. Open an entry as its own route there.
 - An error of the open entry is a `Notice` at the top of the detail, not a
@@ -94,6 +128,13 @@ charge, the latest events as rows with marks, and who changed it as
 
 ![form at 1440 px](../images/form-1440.png)
 ![form at 390 px](../images/form-390.png)
+
+**Brief.** Someone changes how a source connects. 1: what blocks saving
+(the conflict, a field in error); 2: the fields; 3: what the source feeds
+and who changed it. Hero: the conflict notice, then the field in error.
+390: one column, the deeds at the form's end. 1024 and 1440: the form
+beside a side column of what it feeds. 1920: not built yet (the fields of
+the last delivery beside the form instead of under it).
 
 A `Path` with the thing's mark in the head; `Notice tone="warn"` for a
 conflict that blocks saving; `Section`s of `Field`s (`Field.Row` for
@@ -118,6 +159,12 @@ and who changed it (`Digest activity`).
 ![form beside a list at 1440 px](../images/form-detail-1440.png)
 ![form beside a list at 390 px](../images/form-detail-390.png)
 
+**Brief.** Someone books an appointment while the week stays in view. 1:
+the fields to fill; 2: clashes in the week; 3: how many are today. Hero:
+the open form. 390: the form is the page, its way back leads to the week.
+1024 and 1440: the week's list beside the form. 1920: not built yet (the
+chosen fitter's day beside the form).
+
 "Neuer Termin" in the head opened the form; the list shows each
 appointment with the mark of its kind and the fitter in its second line,
 and a clash as a chip; the form is a `Pane detail` beside the list, so the
@@ -136,6 +183,12 @@ reason in its words. Its footer `Bar` holds the page's one primary,
 
 ![pairing at 1440 px](../images/pairing-1440.png)
 ![pairing at 390 px](../images/pairing-390.png)
+
+**Brief.** An admin connects a device. 1: the code to scan and the code
+to compare; 2: whether the other device answered; 3: the paired devices
+and the one that went quiet. Hero: the QR code. 390: the pairing as its
+own page. 1024 and 1440: the devices' table beside the pairing while it
+runs, the table alone after. 1920: not built yet.
 
 The head holds the views as `Tabs` (the place is the open `Nav` entry);
 the paired devices as a `Table`: the device with the mark of its kind,
@@ -159,6 +212,13 @@ as `Digest activity`.
 ![settings at 1440 px](../images/settings-1440.png)
 ![settings at 390 px](../images/settings-390.png)
 
+**Brief.** An admin shapes the sign-in page. 1: what is not saved yet; 2:
+each setting's value; 3: who changed what. Hero: the page's title with
+its changes. 390: one column, each label over its value. 1024 and 1440:
+label and hint on the left, the values in one column, the history beside
+them. 1920: not built yet (a live preview of the sign-in page as a third
+column).
+
 The sign-in page of an administration as `Setting` rows in `Section`s:
 a `Select` with `was` (the value before the unsaved change), a `Select`
 the operator fixed (`disabled`, the reason in the hint), allowed domains
@@ -180,6 +240,12 @@ shows who changed what (`Digest activity`).
 
 ![record at 1440 px](../images/record-1440.png)
 ![record at 390 px](../images/record-390.png)
+
+**Brief.** A dealer at the counter with a customer. 1: money and
+deliveries today; 2: what is coming (pickups, deadlines); 3: the history
+and who looks after the customer. Hero: the key figures under the
+customer's name. 390: the figures two to a row, then the sections. 1024
+and 1440: a main and a side column. 1920: not built yet.
 
 `RecordHead` in the head `Bar`; `Tabs` as the head of the record's `Pane`.
 Across both columns: a pinned `Notice tone="note"` and `Cells` with the key
@@ -206,9 +272,15 @@ avatars, and `Digest activity`.
 ![record groups at 1440 px](../images/record-groups-1440.png)
 ![record groups at 390 px](../images/record-groups-390.png)
 
-A `Notice tone="note"` with its icon and the one statement of the tab; one `Section` for
-the area with a `summary`; one `Group` per delivery with
-`meta`, a `state` chip and actions. Inside a group: a strong sentence, its
+**Brief.** The same dealer on the customer's deliveries. 1: the delivery
+that waits for this person; 2: each delivery's step and state; 3: the
+done ones, folded. Hero: the delivery that waits. 390: the groups one
+under the other. 1024 and 1440: the groups with their steps across. 1920:
+not built yet.
+
+A `Notice tone="note"` with its icon and the one statement of the tab;
+one `Section` for the area with a `summary`; one `Group` per delivery
+with `meta`, a `state` chip and actions. Inside a group: a strong sentence, its
 way as `Steps`, its articles as rows with their marks and a state chip, a
 `Table` with two-line cells and `Progress`, `Facts inline` with a print
 button. A finished group is `folded`. The sidebar holds the app's places
@@ -223,6 +295,12 @@ and lists with their marks.
 
 ![mail at 1440 px](../images/mail-1440.png)
 ![mail at 390 px](../images/mail-390.png)
+
+**Brief.** Someone works their inbox. 1: what is unread and needs an
+answer; 2: the open message and its summary; 3: its files. Hero: the open
+message. 390: the list, a message as its own page. 1024 and 1440: the
+list beside the reader. 1920: not built yet (the sender's other threads
+and contact as a third column).
 
 Three-line `Row`s (sender, subject, preview) with the sender's `avatar`,
 `unread`, `meta` count, `time` and `marks`; mailboxes and shared mailboxes
@@ -245,6 +323,12 @@ colour of each file type.
 ![overview at 1440 px](../images/overview-1440.png)
 ![overview at 390 px](../images/overview-390.png)
 
+**Brief.** Someone comes back to their bases. 1: what failed or needs
+them; 2: the recently used bases with their activity; 3: the recently
+opened tables. Hero: the base cards with their sparks. 390: the cards in
+one column. 1024 and 1440: cards in rows, the activity beside them. 1920:
+not built yet.
+
 The bases of Grids. `Nav` entries with `color`, so each base leads with its
 `Mark`; a `StatusRow` whose lead says what counts today, with chips for
 what lets a person act; `Tiles variant="card"` with `stats`, `people`,
@@ -265,6 +349,11 @@ entries, who changed it with an avatar, when); a
 ![home at 1440 px](../images/home-1440.png)
 ![home at 390 px](../images/home-390.png)
 
+**Brief.** Someone opens one place to see how it stands. 1: its key
+figures; 2: its parts and what changed in them; 3: who did what. Hero:
+the key figures. 390: the figures two to a row, then the sections. 1024
+and 1440: sections side by side. 1920: not built yet.
+
 One base: four `Cells` (a `trend` on the first; a number with a tinted
 chip beside it, never inside), the groups as `Section`s side by side in
 `Section.Columns`, each of strong `Row`s with `mark`, their figures in the
@@ -279,6 +368,12 @@ under "Zuletzt geändert", each time at the end of its sentence.
 
 ![files at 1440 px](../images/files-1440.png)
 ![files at 390 px](../images/files-390.png)
+
+**Brief.** Someone works in a project folder. 1: its files with
+thumbnails and kinds; 2: the open file (preview, sharing, versions); 3:
+the filters and a selection. Hero: the open file's preview. 390: the
+list, a file as its own page. 1024 and 1440: the list beside the open
+file. 1920: not built yet.
 
 Two full-width rows above list and detail: a head `Bar` with `Path`, a
 sharing `Chip`, the search, "Neuer Ordner" and the primary "Hochladen";
@@ -298,6 +393,12 @@ the storage's `quota`.
 ![settings-page at 1440 px](../images/settings-page-1440.png)
 ![settings-page at 390 px](../images/settings-page-390.png)
 
+**Brief.** An admin checks how people sign in. 1: the state at a glance
+(sign-ins, sessions, the directory, failures); 2: the kinds of account as
+a table; 3: the settings and methods. Hero: the strip of key figures.
+390: the figures two to a row, then the settings. 1024 and 1440: the
+page beside a side column of methods and history. 1920: not built yet.
+
 The state first as `Cells` (a `trend`, chips with tone); a `Table` for the
 one setting with a value per kind (a switch per row); `Setting` rows for
 everything else, one `Section` per topic; a `Pane side` with the methods
@@ -310,6 +411,12 @@ The head says "1 Änderung" and saves the page as a whole.
 
 ![table at 1440 px](../images/table-1440.png)
 ![table at 390 px](../images/table-390.png)
+
+**Brief.** A bookkeeper on the morning round. 1: what is overdue and how
+much; 2: which reminders go out today; 3: what is open in all. Hero: the
+strip of key figures. 390: the strip, then two-line rows. 1024: the table
+drops due date and person as room runs out. 1440: all columns. 1920: not
+built yet (the overdue customers' last contact beside the table).
 
 A `Nav` with the app's places and accounts; the key figures as one strip
 of `Cells` above the table (open, overdue, reminders due, each with one
@@ -335,12 +442,18 @@ too); `empty` says "Keine offenen Rechnungen." in place of the table, and
 ![filtered table at 1440 px](../images/filtered-table-1440.png)
 ![filtered table at 390 px](../images/filtered-table-390.png)
 
+**Brief.** A workshop lead narrows the orders down. 1: which orders match
+and how many; 2: the late ones; 3: team, due date and amount. Hero: the
+filter row with its count. 390: one scrolling filter line, two-line rows.
+1024 and 1440: one filter row above the full table. 1920: not built yet.
+
 `defineListQuery` declares the fields (`choice`, `numberRange`, `lookup`),
 the search, the sorts and the grouping once; `FilterBar` shows the active
 filters as statements in `Pane status`, with the count and sum in
 `results` and `ListOrder` (sort and grouping in words) at its `end`, so
 the page head has two rows. The `Table` shows what the server found for
-the address: each order with the mark of its kind (`Column mark`), the team as `Avatar` or `Avatar.Stack`, the state as a chip.
+the address: each order with the mark of its kind (`Column mark`), the
+team as `Avatar` or `Avatar.Stack`, the state as a chip.
 
 - The server reads the same address with `orderQuery.parse(...)` and filters
   its own data; `@k2b/ui` filters nothing.
@@ -353,6 +466,11 @@ the address: each order with the mark of its kind (`Column mark`), the team as `
 
 ![actions at 1440 px](../images/actions-1440.png)
 ![actions at 390 px](../images/actions-390.png)
+
+**Brief.** A salesperson works through offers. 1: the open offer and its
+next deed; 2: offers about to expire; 3: the others. Hero: the open offer
+with its deeds. 390: the list, an offer as its own page. 1024 and 1440:
+the list beside the offer. 1920: not built yet.
 
 The head `Bar` holds `Tabs`, a `Popover tip` on the refresh button, a
 `Menu` "Filter" with ticked entries (a `Popover` in the head leaves on the phone),
@@ -373,11 +491,18 @@ star and a "…" `Menu` with the same entries in its `end`. The offer the addres
 ![the invitation dialog open at 1440 px](../images/dialogs-dialog-1440.png)
 ![the invitation dialog open at 390 px](../images/dialogs-dialog-390.png)
 
+**Brief.** A space's admin looks after its members. 1: who is in and
+with which role; 2: the invitation that does not arrive; 3: the open
+invitations. Hero: the members; while it is open, the dialog. 390: rows
+with their menu, the dialog a sheet. 1024 and 1440: the same rows across
+the page. 1920: not built yet.
+
 Members of a space (the spaces with their marks in the `Nav`, the open
-one current; the space's views as `Tabs` in the head) as rows with avatars, the role and the last activity in the
-second line and a "…" menu at the end (on the phone too); open
-invitations as rows with the initials of the address. "Einladen" opens a `Dialog` with
-`Field`s and its own primary in the foot (a sheet on the phone);
+one current; the space's views as `Tabs` in the head) as rows with
+avatars, the role and the last activity in the second line and a "…"
+menu at the end (on the phone too); open invitations as rows with the
+initials of the address. "Einladen" opens a `Dialog` with `Field`s and
+its own primary in the foot (a sheet on the phone);
 `Workspace primary` opens the same dialog. Removing a member asks with
 `Dialog.confirm`, then a toast offers "Rückgängig"; "Erneut senden"
 answers with a toast with `status` `ok` or `bad`.
@@ -391,6 +516,11 @@ answers with a toast with `status` `ok` or `bad`.
 
 ![states at 1440 px](../images/states-1440.png)
 ![states at 390 px](../images/states-390.png)
+
+**Brief.** Staff at the goods-in. 1: what arrived today; 2: the damaged
+delivery; 3: a fault at a gate. Hero: the arrivals; in a state, its one
+sentence. 390: two-line rows. 1024 and 1440: the full table. 1920: not
+built yet.
 
 A table of deliveries (supplier with the mark of its goods, gate,
 amount, value, who checked it with an avatar, its state as a word and a
@@ -408,6 +538,11 @@ the `StatusRow` facts.
 
 ![content at 1440 px](../images/content-1440.png)
 ![content at 390 px](../images/content-390.png)
+
+**Brief.** A worker reads a page of the handbook. 1: the text; 2: the
+yard plan; 3: the files and the key for the scale. Hero: the text column.
+390: one column. 1024 and 1440: the text beside its side column. 1920:
+not built yet.
 
 A `Nav` with the areas of the handbook and their marks; a head `Bar`
 with the page's `Mark` and its title as `Text type="lead"` in `Inline`, a
