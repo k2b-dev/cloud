@@ -8,12 +8,13 @@ const E = ":where(solid-island:empty,solid-client:empty)";
 
 describe("transparentIslands", () => {
   test("a child relation also holds through one wrapper", () => {
-    expect(transparentIslands(".k2-ui .a > .b{x:1}")).toBe(`.k2-ui :is(.a>.b,.a>${W}>.b){x:1}`);
+    // a list of whole selectors, one per way: a browser sorts each by its subject, which one `:is()` around them hides
+    expect(transparentIslands(".k2-ui .a > .b{x:1}")).toBe(`.k2-ui .a>.b,\n.k2-ui .a>${W}>.b{x:1}`);
   });
 
   test("a sibling relation holds with either side, or both, in a wrapper", () => {
     const later = [`.a~.b`, `.a~${W}>.b`, `${W}:has(>.a)~.b`, `${W}:has(>.a)~${W}>.b`];
-    expect(transparentIslands(".a ~ .b{x:1}")).toBe(`:is(${later.join(",")}){x:1}`);
+    expect(transparentIslands(".a ~ .b{x:1}")).toBe(`${later.join(",\n")}{x:1}`);
     // `+` keeps first and last in the wrapper, and steps over up to MAX_EMPTY empty wrappers, never over content
     const pairs = [
       [".a", ".b"],
@@ -23,12 +24,10 @@ describe("transparentIslands", () => {
     ];
     const next = pairs.flatMap(([left, right]) => [0, 1, 2, 3].map((gap) => `${left}+${`${E}+`.repeat(gap)}${right}`));
     expect(MAX_EMPTY).toBe(3);
-    expect(transparentIslands(".a + .b{x:1}")).toBe(`:is(${next.join(",")}){x:1}`);
+    expect(transparentIslands(".a + .b{x:1}")).toBe(`${next.join(",\n")}{x:1}`);
     // two parts of one primitive, marked as such, step over none
     const marked = pairs.map(([left, right]) => `${left}+${right}`);
-    expect(transparentIslands("/* one primitive: a and b */.a + .b{x:1}")).toBe(
-      `/* one primitive: a and b */:is(${marked.join(",")}){x:1}`,
-    );
+    expect(transparentIslands("/* one primitive: a and b */.a + .b{x:1}")).toBe(`/* one primitive: a and b */${marked.join(",\n")}{x:1}`);
   });
 
   test("two sibling relations in a row fail the build", () => {
@@ -43,9 +42,15 @@ describe("transparentIslands", () => {
 
   test("a compound without a class never matches the wrapper itself, an argument's subject is left to its compound", () => {
     expect(transparentIslands(".a > *{x:1}")).toBe(
-      ":is(.a>*:where(:not(solid-island):not(solid-client)),.a>:where(solid-island,solid-client)>*:where(:not(solid-island):not(solid-client))){x:1}",
+      ".a>*:where(:not(solid-island):not(solid-client)),\n.a>:where(solid-island,solid-client)>*:where(:not(solid-island):not(solid-client)){x:1}",
     );
     expect(transparentIslands(".a:not(:hover){x:1}")).toBe(".a:not(:hover){x:1}");
+  });
+
+  test("inside :has() first and last child count the wrapper's place, but skip no empty wrapper", () => {
+    // skipping would make WebKit check the :has() again on every change of the page (island-css-cost.browser.test.ts)
+    const first = `:first-child:where(:not(${W}>*),${W}:first-child>*)`;
+    expect(transparentIslands(".p:has(> .i:first-child){x:1}")).toBe(`.p:has(>.i${first},>${W}>.i${first}){x:1}`);
   });
 
   test(":has() looks through a wrapper below its anchor", () => {
@@ -57,7 +62,7 @@ describe("transparentIslands", () => {
   test("the last of some siblings counts like the last child: the wrapper's place, and empty wrappers count as none", () => {
     const last = `:nth-last-child(1 of :is(:not([popover])):not(${E}))`;
     expect(transparentIslands(".a > .b:nth-last-child(1 of :not([popover])){x:1}")).toBe(
-      `:is(.a>.b${last}:where(:not(${W}>*),${W}${last}>*),.a>${W}>.b${last}:where(:not(${W}>*),${W}${last}>*)){x:1}`,
+      `.a>.b${last}:where(:not(${W}>*),${W}${last}>*),\n.a>${W}>.b${last}:where(:not(${W}>*),${W}${last}>*){x:1}`,
     );
   });
 
