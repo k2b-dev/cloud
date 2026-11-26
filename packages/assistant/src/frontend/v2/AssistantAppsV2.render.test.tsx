@@ -67,7 +67,7 @@ describe("My apps & automations on v2", () => {
     expect(html).toMatch(/data-k2-part="Chip"[^>]*>[\s\S]*?Letzter Lauf fehlgeschlagen/);
     expect(html).toMatch(/data-k2-part="Chip"[^>]*>[\s\S]*?Pausiert/);
     expect(html).not.toMatch(/data-k2-part="Chip"[^>]*>[^<]*Eingeschaltet/);
-    for (const part of ["Montags um 07:00", "Zuletzt: Preisliste von stoffe-nord.example nicht erreichbar", "nächster Lauf Mo, 16.11."])
+    for (const part of ["Montags um 07:00", "Preisliste von stoffe-nord.example nicht erreichbar", "nächster Lauf Mo, 16.11."])
       expect(text).toContain(part);
     // What the old head and foot said stays: the purpose, the create action, where other Code lives.
     for (const part of ["Dein Code läuft als du, mit deinen Rechten und nicht mehr.", "Im Chat erstellen", "unter „Code“"])

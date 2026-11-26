@@ -115,20 +115,25 @@ export const cardDescription = (item: CodeOverviewItem, t: Messages, locale: str
   return `${schedule} · ${chat.state === "bound" ? t.appsInChat({ title: chat.title }) : t.appsChatMissing}`;
 };
 
-/** "Last: …": why the last run failed, else its newest confirmed effect, else the newest run itself. */
-export const cardLast = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, locale: string, timeZone: string, now: Date) => {
+/** What happened last: why the last run failed, else its newest confirmed effect, else the newest run itself. */
+export const cardLastText = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, locale: string, timeZone: string, now: Date) => {
   const extras = item.extras;
   if (extras?.chat?.state === "missing")
-    return t.appsLast({ text: extras.chat.archivedTitle ? t.appsChatArchived({ title: extras.chat.archivedTitle }) : t.appsChatGone });
-  if (status === "failed" && extras?.failure) return t.appsLast({ text: extras.failure });
+    return extras.chat.archivedTitle ? t.appsChatArchived({ title: extras.chat.archivedTitle }) : t.appsChatGone;
+  if (status === "failed" && extras?.failure) return extras.failure;
   const effect = extras?.activity?.recent[0];
-  if (effect) return t.appsLast({ text: effect.text });
+  if (effect) return effect.text;
   const run = extras?.runs?.[0] ?? item.lastRun;
-  if (run === undefined) return t.codeRunUnknown;
+  if (run === undefined) return null;
   if (!run) return t.appsNoRun;
-  return t.appsLast({
-    text: t.appsLastRun({ state: runWord(run.state, t), when: dayOrTime(run.endedAt ?? run.createdAt, t, locale, timeZone, now) }),
-  });
+  return t.appsLastRun({ state: runWord(run.state, t), when: dayOrTime(run.endedAt ?? run.createdAt, t, locale, timeZone, now) });
+};
+
+/** "Last: …" for a card, where no column head says it already. */
+export const cardLast = (item: CodeOverviewItem, status: CodeCardStatus, t: Messages, locale: string, timeZone: string, now: Date) => {
+  const text = cardLastText(item, status, t, locale, timeZone, now);
+  if (text === null) return t.codeRunUnknown;
+  return text === t.appsNoRun ? text : t.appsLast({ text });
 };
 
 /** The next run, how long a run has been going, or when the last run failed. */
