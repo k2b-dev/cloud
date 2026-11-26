@@ -118,7 +118,8 @@ const open = async (view: View, address: string, variant: FixtureVariant = "plai
   // the fixtures' dates are relative to FIXTURE_NOW: the page's Date starts there, so no picture depends on the day
   await context.addInitScript(pinPageClock, Date.parse(FIXTURE_NOW));
   const tab = await context.newPage();
-  tab.setDefaultTimeout(10_000);
+  // a thousand rows take WebKit longer than a page of them, until the table is virtualized (lane MW)
+  tab.setDefaultTimeout(variant === "huge" ? 30_000 : 10_000);
   const errors = pageErrors(tab);
   const seen: Seen = { created: [] };
   // the live channel stays quiet: no change arrives while the test runs
