@@ -296,9 +296,21 @@ const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) 
 const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Record<string, unknown>; lead: boolean }) => {
   const t = useOverlayMessages();
   const phone = usePhone();
-  const [open, setOpen] = createSignal(false);
-  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
+  const [open, setOpenState] = createSignal(false);
   const [entry, setEntry] = createSignal<HTMLElement>();
+  // Closing gives the menu its place back at once, before the focus returns to the entry in it (a hidden entry takes
+  // no focus); the focus then stands on the entry unless something else took it.
+  const setOpen = (next: boolean) => {
+    if (!next && open()) {
+      entry()?.closest(".k2-menu")?.removeAttribute("data-covered");
+      requestAnimationFrame(() => {
+        const at = document.activeElement;
+        if (!at || at === document.body) entry()?.focus();
+      });
+    }
+    setOpenState(next);
+  };
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen, modal: true, presentation: phone() ? "sheet" : "popover" }));
   createEffect(() => {
     const element = entry();
     if (!element) return;
@@ -349,8 +361,25 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
       document.removeEventListener("keydown", escape, true);
     });
   });
-  // beside the entry on the side its menu opened to, so it never covers the way it came
-  const side = () => (entry()?.closest(".k2-menu")?.getAttribute("data-side") === "left" ? "left" : "right");
+  // On a wide screen the panel takes the place of the menu its entry stands in (at most two layers show): that menu
+  // gives way while the panel is open, and the panel stands where it stood, against the same button or entry, on the
+  // same side. The panel's head leads back to it.
+  const holder = () => entry()?.closest<HTMLElement>(".k2-menu") ?? undefined;
+  createEffect(() => {
+    const menu = holder();
+    if (!open() || phone() || !menu) return;
+    menu.setAttribute("data-covered", "");
+    onCleanup(() => menu.removeAttribute("data-covered"));
+  });
+  const anchor = () => {
+    const trigger = holder()?.getAttribute("aria-labelledby");
+    return trigger ? `#${CSS.escape(trigger)}` : undefined;
+  };
+  const side = () => {
+    const placed = holder()?.getAttribute("data-side");
+    return placed === "left" || placed === "right" || placed === "top" ? placed : "bottom";
+  };
+  const align = () => (holder()?.getAttribute("data-align") === "end" ? "end" : "start");
   const close = () => {
     setOpen(false);
     props.level.close();
@@ -368,26 +397,25 @@ const PanelEntry = (props: { level: MenuLevelParts; item: MenuItem; keyed: Recor
           class="k2-pop k2-dpop"
           data-k2-part="Popover"
           aria-label={props.item.label}
+          {...(anchor() ? { anchor: anchor() } : {})}
           side={side()}
-          align="start"
+          align={align()}
           sideOffset={4}
           collisionPadding={8}
         >
-          {/* on the phone the sheet names its step and leads back to the entries, as a submenu's step does */}
-          <Show when={phone()}>
-            <button
-              type="button"
-              class="k2-mi k2-panel-back"
-              aria-label={t().backTo({ name: props.item.label })}
-              onClick={() => {
-                setOpen(false);
-                entry()?.focus();
-              }}
-            >
-              <Icon name="chevron-left" />
-              <span class="k2-mi-label">{props.item.label}</span>
-            </button>
-          </Show>
+          {/* the panel names its step and leads back to the entries it took the place of, as a submenu's step does */}
+          <button
+            type="button"
+            class="k2-mi k2-panel-back"
+            aria-label={t().backTo({ name: props.item.label })}
+            onClick={() => {
+              setOpen(false);
+              entry()?.focus();
+            }}
+          >
+            <Icon name="chevron-left" />
+            <span class="k2-mi-label">{props.item.label}</span>
+          </button>
           {/* made once while open: new data for the menu keeps what was typed in the panel */}
           {untrack(() => props.item.panel?.(close))}
         </popover.Popup>

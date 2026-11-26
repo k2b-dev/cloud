@@ -160,7 +160,7 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
     }
   }, 60_000);
 
-  test("Datum und Uhrzeit … opens the calendar beside the times; a past time is refused, a later one sets the reminder", async () => {
+  test("Datum und Uhrzeit … opens the calendar in the times' place; a past time is refused, a later one sets the reminder", async () => {
     const { page, errors, sent } = await open();
     try {
       await head(page).getByRole("button", { name: "Später" }).click();
@@ -168,13 +168,10 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
       const calendar = page.locator('[data-k2-part="DatePicker"]');
       await calendar.waitFor();
-      // beside the times, as a submenu: the head's button stands on the right, so the times open to the left and the
-      // calendar goes on to the left, never back over the menu it came from
-      const [later, times, beside] = await Promise.all(
-        [menus(page).nth(0), menus(page).nth(1), panel(page)].map((part) => part.boundingBox()),
-      );
-      expect(!!later && !!times && times.x + times.width <= later.x + 1).toBe(true);
-      expect(!!times && !!beside && beside.x + beside.width <= times.x + 1).toBe(true);
+      // in the place of the times, which give way: two layers, "Später" and the calendar beside it to the left
+      expect(await menus(page).nth(1).isVisible()).toBe(false);
+      const [later, beside] = await Promise.all([menus(page).nth(0), panel(page)].map((part) => part.boundingBox()));
+      expect(!!later && !!beside && beside.x + beside.width <= later.x + 1).toBe(true);
       // the days before today cannot be picked (Friday, 27 November, in the fixture's UTC)
       expect(await calendar.locator('[data-value="2026-11-26"]').getAttribute("aria-disabled")).toBe("true");
       // today at 8:00 has passed: refused under the calendar, the menu stays
@@ -397,6 +394,34 @@ describe("Mail v2: Später and Erinnere mich offer times", () => {
       await head(page).getByRole("button", { name: "Weitere Aktionen" }).tap();
       await sheetAtRest(page);
       expect(await page.getByRole("menuitem", { name: "Später anzeigen" }).getAttribute("aria-haspopup")).toBe("menu");
+      expect(errors).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  // Design review of #4157: the calendar starts at an offered time, so its month shows what matters and "Übernehmen"
+  // works at once; its head leads back to the times on a wide screen too.
+  test("the calendar starts at tomorrow's 8:00, ready to apply; its head leads back to the times", async () => {
+    const { page, errors, sent } = await open();
+    try {
+      await head(page).getByRole("button", { name: "Später" }).click();
+      await page.getByRole("menuitem", { name: "Erinnere mich" }).hover();
+      await page.getByRole("menuitem", { name: "Datum und Uhrzeit …" }).click();
+      await panel(page).waitFor();
+      expect(await panel(page).locator('[data-value="2026-11-28"]').getAttribute("aria-selected")).toBe("true");
+      expect(await panel(page).getByRole("textbox", { name: "Uhrzeit" }).inputValue()).toBe("08:00");
+      // back: the calendar gives the place back to the times
+      await panel(page).getByRole("button", { name: "Zurück zu Datum und Uhrzeit …" }).click();
+      await panel(page).waitFor({ state: "detached" });
+      expect(await menus(page).nth(1).isVisible()).toBe(true);
+      expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Datum und Uhrzeit …");
+      // again, and "Übernehmen" applies the offered time as it stands
+      await page.keyboard.press("Enter");
+      await panel(page).getByRole("button", { name: "Übernehmen" }).click();
+      await openMenus(page, 0);
+      await calls(sent, 1);
+      expect(sent[0]).toMatchObject({ method: "PUT", body: { dueAt: "2026-11-28T08:00:00.000Z" } });
       expect(errors).toEqual([]);
     } finally {
       await page.close();
