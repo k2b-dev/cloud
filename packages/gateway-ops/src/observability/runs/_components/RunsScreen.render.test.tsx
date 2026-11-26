@@ -11,6 +11,8 @@ const root = mkdtempSync(resolve(tmpdir(), "gateway-ops-runs-screen-"));
 registerSsrTestPlugin({ dev: true, rootDir: root });
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { RunsScreenFixture } = await import("./runs-fixture");
+const { default: RunRecordPane } = await import("./RunRecordPane");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const dom = createDomTestHarness();
 dom.cleanup();
@@ -122,5 +124,56 @@ describe("the runs list on the server", () => {
 
   test("a parameter the list cannot apply is named, not dropped", () => {
     expect(render("window=2d").text).toContain("window=2d");
+  });
+});
+
+describe("a delivery's record", () => {
+  const record = (outgoingMailStatus: string | null) => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          return createComponent(RunRecordPane, {
+            ref: { kind: "delivery", id: "22222222-0000-4000-8000-000000000001" },
+            record: {
+              record: {
+                kind: "delivery",
+                item: {
+                  id: "22222222-0000-4000-8000-000000000001",
+                  appId: "mail",
+                  title: "Neue Nachricht",
+                  label: "Nachricht",
+                  status: "delivered",
+                  recipientLabel: "Mia Muster",
+                  channel: "email",
+                  destinationLabel: "m***@example.test",
+                  attemptCount: 1,
+                  outgoingMailStatus,
+                  errorMessage: null,
+                  targetHref: null,
+                  createdAt: new Date("2026-11-24T09:00:00Z"),
+                  deliveredAt: new Date("2026-11-24T09:00:01Z"),
+                } as never,
+              },
+              error: null,
+            },
+            timeZone: "Europe/Berlin",
+            closeHref: "/admin/observability/runs",
+            kindLabel: "Zustellung",
+          });
+        },
+      }),
+    );
+    const body = parser.parseFromString(html, "text/html").body;
+    for (const element of body.querySelectorAll("*")) element.after(" ");
+    return body.textContent?.replace(/\s+/g, " ") ?? "";
+  };
+
+  test("names its mail's state only where it says more than the delivery, once and without a prefix", () => {
+    const bounced = record("bounced");
+    expect(bounced).toContain("E-Mail Unzustellbar");
+    expect(bounced).not.toContain("E-Mail: ");
+    expect(record("sent")).not.toContain("Gesendet");
+    expect(record(null)).not.toContain("Unzustellbar");
   });
 });

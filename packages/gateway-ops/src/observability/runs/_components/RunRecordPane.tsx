@@ -125,7 +125,10 @@ export default function RunRecordPane(props: Props) {
                     { label: t().recipient, value: item.recipientLabel ?? "—" },
                     { label: t().channel, value: [item.channel, item.destinationLabel].filter(Boolean).join(" · ") },
                     { label: t().attempts, value: String(item.attemptCount) },
-                    ...(item.outgoingMailStatus ? [{ label: t().mail, value: t().mailStatus({ status: item.outgoingMailStatus }) }] : []),
+                    // only where the mail says more than the delivery, as in the list
+                    ...(item.outgoingMailStatus && item.outgoingMailStatus !== "sent"
+                      ? [{ label: t().mail, value: t().mailState({ status: item.outgoingMailStatus }) }]
+                      : []),
                     { label: t().started, value: when(item.createdAt) },
                     { label: t().ended, value: when(item.deliveredAt) },
                     { label: "ID", value: item.id, mono: true, copy: item.id },
