@@ -5,9 +5,9 @@ import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT, RECONNECT_EVENT, SYNC_STATE_EVENT, TOC_UPDATE_EVENT } from "./events";
 
 const now = "2026-10-16T19:30:00.000Z";
+/** Waits for a condition; the test's own timeout bounds it. */
 const until = async (predicate: () => boolean) => {
-  for (let attempt = 0; attempt < 50 && !predicate(); attempt++) await Bun.sleep(10);
-  expect(predicate()).toBe(true);
+  while (!predicate()) await Bun.sleep(10);
 };
 const activity = (index: number) => ({
   id: `activity${index}`,

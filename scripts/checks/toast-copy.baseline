@@ -275,25 +275,16 @@ packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
 packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
-packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
-packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopyFailed
 packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | error instanceof CommentRequestError ? error.message : options.t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().undoFailed
 packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | error.message
 packages/notebooks/src/frontend/[id]/_components/detail/NoteCommentsSection.tsx | untitled | t().commentSavedReloadFailed
-packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().contentCopied
-packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().contentCopyFailed
-packages/notebooks/src/frontend/[id]/_components/detail/NotebookDetailPanel.island.tsx | untitled | t().noteLinkCopyFailed
 packages/notebooks/src/frontend/[id]/_components/detail/duplicate-note.ts | untitled | err.message
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateReplaced({ name: saved.name })
 packages/notebooks/src/frontend/[id]/_components/detail/save-as-template.tsx | untitled | t().templateSaved({ name: saved.name })
-packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | untitled | t().contentCopied
-packages/notebooks/src/frontend/[id]/_components/editor/NoteEditor.client.tsx | untitled | t().contentCopyFailed
 packages/notebooks/src/frontend/[id]/_components/editor/page-templates.ts | untitled | error instanceof Error ? error.message : messages(locale).failedApplyTemplate
-packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopied
-packages/notebooks/src/frontend/[id]/_components/editor/sync-ended.tsx | untitled | t().contentCopyFailed
 packages/notebooks/src/frontend/[id]/_components/settings/DangerZone.tsx | untitled | t().nameMismatch
 packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
 packages/notebooks/src/frontend/[id]/_components/settings/TemplatesSection.tsx | untitled | error.message
