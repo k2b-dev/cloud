@@ -275,7 +275,7 @@
   border-radius: 0.75rem;
   color: var(--k2b-text);
   background: var(--k2b-surface-elevated, var(--k2b-surface));
-  box-shadow: 0 12px 32px -12px rgb(0 0 0 / 0.25);
+  box-shadow: var(--k2b-shadow-float);
 }
 
 .k2b-ui .k2b-calendar-view-menu__item {
