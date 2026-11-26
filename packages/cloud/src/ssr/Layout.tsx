@@ -68,12 +68,6 @@ type LayoutProps = {
    */
   headTitle?: "app" | "page";
   /**
-   * The page above this one on a phone, such as the admin overview above an admin page: the header then leads with a
-   * way back to it beside the page's own title, in place of the app's name and its menu (one phone head for every v2
-   * page; the apps menu at the end still reaches the rest).
-   */
-  up?: LayoutBreadcrumb;
-  /**
    * The page's content is built with `@k2b/ui/v2` (provisional): the content area becomes the v2 scope, in the app's
    * colour. The shell around it stays v1.
    */
@@ -281,6 +275,9 @@ export default function Layout(props: LayoutProps) {
       .filter(Boolean)
       .join(";") || undefined;
   const appLabel = currentApp?.name ?? (pathname.startsWith("/admin") ? t.admin : undefined);
+  // One phone head for every v2 page: a v2 admin page below the overview names itself and leads back to the overview,
+  // in place of Admin and its menu (the rail and the apps menu still reach the rest).
+  const up = props.ui === "v2" && /^\/admin\/./.test(pathname) ? { title: t.admin, href: "/admin" } : undefined;
   const helpIds = new Set(registeredHelp?.documents.map((topic) => topic.id));
   const viewHelp = [...new Set(props.help)]
     .filter((id) => helpIds.has(id) && id.length <= PANEL_HELP_ID_MAX_LENGTH)
@@ -484,8 +481,8 @@ export default function Layout(props: LayoutProps) {
               <LayoutHeader
                 panelOpen={panel ? panelState.open : undefined}
                 authenticated={showRail}
-                title={props.headTitle === "page" || props.up ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
-                up={props.up}
+                title={props.headTitle === "page" || up ? breadcrumbs.at(-1)?.title : (appLabel ?? breadcrumbs.at(-1)?.title)}
+                up={up}
                 launchpad={!!(user || appLabel)}
                 breadcrumbs={user ? undefined : breadcrumbs}
                 loginHref={user ? undefined : createLoginRedirectUrl(c.req.raw.url)}

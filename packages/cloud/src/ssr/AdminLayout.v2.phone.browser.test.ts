@@ -88,8 +88,15 @@ const page = (title: string, detail = false) =>
                       detail: true,
                       label: "host-1",
                       back: { label: title, href: "/admin/hosts" },
+                      get head() {
+                        return createComponent(Bar, {
+                          get start() {
+                            return createComponent(Text, { type: "lead", children: "host-1.example" });
+                          },
+                        });
+                      },
                       get children() {
-                        return createComponent(Text, { children: "host-1.example" });
+                        return createComponent(Text, { children: "Zuletzt gesehen vor 2 Minuten" });
                       },
                     }),
                   ];
@@ -182,7 +189,7 @@ test("the admin overview keeps its title, with nothing above it", async () => {
   }
 }, 30_000);
 
-test("an open detail on an admin page has one way back, its own, and the shell's way up gives way", async () => {
+test("an open detail on an admin page has one way back, its own, with its title right below it; the shell's way up gives way", async () => {
   const page = await open("/admin/hosts/host-1");
   try {
     const { row } = await head(page);
@@ -193,6 +200,25 @@ test("an open detail on an admin page has one way back, its own, and the shell's
         .map((element) => element.getAttribute("href")),
     );
     expect(backs).toEqual(["/admin/hosts"]);
+    // the detail's title stands right below its way back, on the text edge, whole
+    const { back, title } = await page.evaluate(() => {
+      const box = (element: Element) => {
+        const { left, top, bottom, width } = element.getBoundingClientRect();
+        return { left: Math.round(left), top: Math.round(top), bottom: Math.round(bottom), width: Math.round(width) };
+      };
+      return {
+        back: box(document.querySelector('[data-k2-part="Back"] a')!),
+        title: box(
+          [...document.querySelectorAll('.k2-pane[data-detail] > [data-slot="head"] .k2-bar-start > .k2-text')].find(
+            (text) => text.textContent === "host-1.example",
+          )!,
+        ),
+      };
+    });
+    expect(title.width).toBeGreaterThan(2);
+    expect(title.top).toBeGreaterThanOrEqual(back.bottom);
+    expect(title.top - back.bottom).toBeLessThan(24);
+    expect(Math.abs(title.left - back.left)).toBeLessThanOrEqual(12);
   } finally {
     await page.close();
   }
