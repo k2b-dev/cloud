@@ -1,20 +1,18 @@
 import { type AuthContext, getDateConfig, getLocale } from "@k2b/cloud/server";
-import { AdminLayout } from "@k2b/cloud/ssr";
-import { ButtonLink, Placeholder } from "@k2b/ui";
-import { Show } from "solid-js";
+import { AdminLayout, adminNavigation } from "@k2b/cloud/ssr";
 import { ssr } from "../config";
 import type { MailRequestContext } from "../service";
 import { localizeMailError } from "../service/error-messages";
-import { getKeptConversation, type KeepHistoryEntry } from "../service/kept-conversations";
+import { getKeptConversation } from "../service/kept-conversations";
 import { resolveMailboxPublicId, resolvePublicId } from "../service/public-resources";
-import MailAdminKeptDetail from "./_components/MailAdminKeptDetail";
-import { MailAdminTabs } from "./admin-tabs";
+import MailAdminKeptRecord from "./_components/v2/MailAdminKeptRecord.island";
+import { mailAdminSections } from "./admin-sections";
 import { mailKeptAdminMessages } from "./kept-admin-messages";
 
+/** One kept conversation in Cloud administration › Mail › Kept on v2. Opening it is logged by the service. */
 export default ssr<AuthContext>(async (c) => {
   const locale = getLocale(c);
   const { t } = mailKeptAdminMessages.resolve([locale]);
-  const dateConfig = getDateConfig(c);
   const context: MailRequestContext = {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
@@ -27,33 +25,22 @@ export default ssr<AuthContext>(async (c) => {
   const result = mailboxId && conversationId ? await getKeptConversation(context, { mailboxId, conversationId }) : null;
   if (result && !result.ok && result.error.code === "FORBIDDEN") return ssr.error(c, 403);
   const conversation = result?.ok ? result.data.document.conversations[0] : undefined;
-  const history: KeepHistoryEntry[] = result?.ok ? result.data.history : [];
-  const messageCount = result?.ok ? result.data.messageCount : 0;
-  const notFound = !result || (!result.ok && result.error.code === "NOT_FOUND");
+  const notFound = !result || (!result.ok && result.error.code === "NOT_FOUND") || (result.ok && !conversation);
 
   return () => (
-    <AdminLayout c={c} title="Mail">
-      <div class="app-rows" data-scroll-preserve="mail-admin-kept-detail">
-        <MailAdminTabs locale={locale} current="kept" />
-        <Show
-          when={conversation}
-          fallback={
-            <Placeholder
-              state="error"
-              variant="panel"
-              title={notFound ? t.detailNotFound : t.detailLoadFailed}
-              description={result && !result.ok && !notFound ? localizeMailError(result.error, locale).message : undefined}
-              action={
-                <ButtonLink variant="secondary" size="sm" href={notFound ? "/admin/mail/kept" : c.req.path}>
-                  {notFound ? t.backToList : t.tryAgain}
-                </ButtonLink>
-              }
-            />
-          }
-        >
-          {(kept) => <MailAdminKeptDetail conversation={kept()} history={history} messageCount={messageCount} dateConfig={dateConfig} />}
-        </Show>
-      </div>
+    <AdminLayout c={c} title="Mail" ui="v2">
+      <MailAdminKeptRecord
+        nav={adminNavigation(c, mailAdminSections(locale, "kept"))}
+        record={result?.ok && conversation ? { conversation, history: result.data.history, messageCount: result.data.messageCount } : undefined}
+        missing={
+          conversation
+            ? undefined
+            : notFound || !result || result.ok
+              ? { notFound: true }
+              : { notFound: false, text: `${t.detailLoadFailed}: ${localizeMailError(result.error, locale).message}` }
+        }
+        dateConfig={getDateConfig(c)}
+      />
     </AdminLayout>
   );
 });

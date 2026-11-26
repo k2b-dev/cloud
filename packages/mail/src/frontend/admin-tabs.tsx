@@ -1,7 +1,6 @@
 import { ViewTabs } from "@k2b/ui";
+import type { MailAdminView } from "./admin-sections";
 import { mailKeptAdminMessages } from "./kept-admin-messages";
-
-export type MailAdminView = "mailboxes" | "security" | "kept";
 
 /** The views of Cloud administration › Mail. Each one is its own page, so a tab is a link. */
 export function MailAdminTabs(props: { locale: string; current: MailAdminView; keptCount?: number }) {
