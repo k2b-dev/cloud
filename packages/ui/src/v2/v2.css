@@ -1156,6 +1156,10 @@
 .k2-ui .k2-sec > * {
   flex: none;
 }
+/* no line under the last section of a column: the space under it ends the page, as under a list's last row (rule 4) */
+.k2-ui :is(.k2-scroll, .k2-dialog-body) > .k2-sec:last-child {
+  border-bottom: 0;
+}
 /* sections side by side: two columns where both get 360 px, else one; no line between the columns */
 .k2-ui .k2-sec-cols {
   display: grid;

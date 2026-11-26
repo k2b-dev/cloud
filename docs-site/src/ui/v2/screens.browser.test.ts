@@ -86,10 +86,11 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
   },
   // akte-einlieferungen.html. Changed from the mockup (26.11., Valentin's rules "no box in a box", "no double lines"):
   // a Group inside a Section draws no frame, stands on the section's edges and one line parts it from the group before.
-  // At 1440 the group moves from x 270 to 250 and is 40 px wider; the section is 892 px high instead of 945.
+  // At 1440 the group moves from x 270 to 250 and is 40 px wider; the section is 891 px high instead of 945: it is the
+  // last of its column and draws no line under it (look rule 4).
   deliveries: {
     1440: {
-      section: [".k2-sec", "250,101 1125x892"],
+      section: [".k2-sec", "250,101 1125x891"],
       group: [".k2-group", "250,185 1125x252"],
       groupHead: [".k2-gh", "250,185 1125x56"],
       steps: [".k2-steps", "250,285 1125x72"],
@@ -101,7 +102,7 @@ const mockup: Record<keyof typeof screens, Record<number, Record<string, [string
     },
     390: {
       // mockup v17: the steps stand 12 px apart on the phone; the group stands on the section's edges (see above)
-      section: [".k2-sec", "0,101 390x1352"],
+      section: [".k2-sec", "0,101 390x1351"],
       group: [".k2-group", "0,205 390x380"],
       groupHead: [".k2-gh", "0,205 390x84"],
       steps: [".k2-steps", "0,353 390x148"],
