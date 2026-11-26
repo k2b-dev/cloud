@@ -125,6 +125,10 @@ test("initials come from the first and the last word of a name, skip suffixes, a
   expect(of("Ölaf Ärger Jr.")).toBe("ÖÄ");
   expect(of("José María García")).toBe("JG");
   expect(of("Mira")).toBe("M");
+  // Jun and Sen are surnames; only "jun." and "sen." with their dot are suffixes
+  expect(of("Li Jun")).toBe("LJ");
+  expect(of("Amartya Sen")).toBe("AS");
+  expect(of("Karl Weber sen.")).toBe("KW");
   // an emoji first is one character, not half of one
   expect(of("🦊 Fuchs Bau")).toBe("🦊B");
   expect(of("👩‍🔧 Jana Berger")).toBe("👩‍🔧B");
