@@ -3,7 +3,6 @@ import { Layout } from "@k2b/cloud/ssr";
 import type { JSX } from "solid-js";
 import { readSpeedtestConfig } from "../../api/speedtest";
 import { ssr } from "../../config";
-import { ToolsWorkspace } from "../ToolsWorkspace";
 import ColorConverter from "../tools/ColorConverter.island";
 import DocumentMarkdown from "../tools/DocumentMarkdown.island";
 import EncodingTool from "../tools/EncodingTool.island";
@@ -27,8 +26,7 @@ type ToolProps = {
   webhookData?: WebhookTesterData;
 };
 
-
-/** The tools on v2; each island renders the whole Tools screen with its own panes. */
+/** Every tool on v2; each island renders the whole Tools screen with its own panes. */
 const v2Tools: Partial<Record<string, (props: ToolProps) => JSX.Element>> = {
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
@@ -56,45 +54,15 @@ export default ssr<AuthContext>(async (c) => {
 
   if (!tool) return ssr.error(c, 404);
 
-  const renderTool = toolComponents[tool.id];
   const speedtestConfig = tool.id === "speedtest" ? await readSpeedtestConfig() : undefined;
   const webhookData = tool.id === "webhooks" ? await loadWebhookTester(c, new URL(c.req.url)) : undefined;
   const breadcrumbs = [{ title: labels.home, href: "/" }, { title: labels.appName, href: "/tools" }, { title: tool.name }];
-  const regionLayout = false;
-  // A tool rebuilt on v2 is its own whole screen (the Tools frame comes with it); the others keep the v1 frame until
-  // they move too.
-  const v2 = v2Tools[tool.id];
-  if (v2)
-    return () => (
-      <Layout c={c} fullWidth ui="v2" title={breadcrumbs}>
-        {v2({ speedtestConfig, webhookData })}
-      </Layout>
-    );
-
+  // Every tool is its own whole v2 screen: the Tools frame comes with its island.
+  const render = v2Tools[tool.id];
+  if (!render) return ssr.error(c, 404);
   return () => (
-    <Layout c={c} fullPage workspaceSidebarCollapsible title={breadcrumbs}>
-      <ToolsWorkspace activeToolId={tool.id} layout={regionLayout ? "regions" : "main"}>
-        {regionLayout ? (
-          renderTool?.({})
-        ) : (
-          <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">
-            <ShowToolHeader icon={tool.icon} name={tool.name} description={tool.description} />
-            {renderTool?.({})}
-          </div>
-        )}
-      </ToolsWorkspace>
+    <Layout c={c} fullWidth ui="v2" title={breadcrumbs}>
+      {render({ speedtestConfig, webhookData })}
     </Layout>
   );
 });
-
-const ShowToolHeader = (props: { icon: string; name: string; description: string }) => (
-  <header class="tools-tool-header flex items-center gap-3" style="view-transition-name: tool-heading">
-    <div class="k2b-icon-tile app-accent-text h-10 w-10">
-      <i class={`${props.icon} text-xl`} />
-    </div>
-    <div class="min-w-0">
-      <h1 class="text-xl font-semibold text-primary">{props.name}</h1>
-      <p class="text-sm text-dimmed">{props.description}</p>
-    </div>
-  </header>
-);

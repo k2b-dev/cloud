@@ -15,7 +15,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { categoryOrder, registryMessages, resolveRegistry } = await import("./registry");
 const { default: ToolCatalog, toolCatalogMessages } = await import("../ToolCatalog.island.tsx");
-const { toolSearchMessages } = await import("../ToolSearchButton.island.tsx");
+const { toolSearchMessages } = await import("../tool-search");
 const { toolsWorkspaceMessages } = await import("../tools-messages");
 const { LocaleProvider } = await import("@k2b/ui");
 

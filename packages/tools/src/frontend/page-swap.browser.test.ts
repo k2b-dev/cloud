@@ -68,7 +68,7 @@ pageSwapContract(
     withState: "/tools?q=hash",
     // The tools that hold listeners, intervals, workers, sockets and object URLs while they show.
     tour: ["/tools", "/tools/speedtest", "/tools/image", "/tools/webhooks", "/tools/image-converter", "/tools/markdown-pdf", "/tools/hash"],
-    regions: [".tools-tool-header"],
+    regions: ['[data-k2-part="Workspace"]'],
   },
   failurePath,
 );
