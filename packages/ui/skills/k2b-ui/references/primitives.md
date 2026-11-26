@@ -155,7 +155,10 @@ are in the page, the server renders the first rows (no shift on hydration),
 the focused row stays while it scrolls away, and each row says where it
 stands (`aria-posinset`, `aria-setsize`). "Weitere laden" stays a `Band`
 with a text `Button` after the list. Write rows out only for a few fixed
-ones.
+ones. A row that is not in the page now (the row to give the focus back
+to after a detail closes) is reached through `controller`: its `reveal(key)`
+brings the row into view and gives it back. Tab out of a focused row that
+scrolled away goes to its neighbour in the list.
 
 A `Row`:
 

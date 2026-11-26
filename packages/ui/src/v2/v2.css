@@ -808,29 +808,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* Words cut in the middle: the start gives way with "…", the end (a domain, an extension) stays whole while it fits */
-.k2-ui .k2-cut {
+/* Words cut in the middle: the start gives way with "…", the end (a domain, an extension) stays whole while it fits;
+   the whole stays inside its place, so once the start is down to a few letters the end is cut with "…" too */
+.k2-ui .k2-midcut {
   display: inline-flex;
   max-width: 100%;
   min-width: 0;
+  overflow: hidden;
   vertical-align: top;
   white-space: nowrap;
 }
-.k2-ui .k2-cut > span {
+.k2-ui .k2-midcut > span {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* the start keeps a few letters (a start of four or fewer stays whole); only then the end gives way too */
-.k2-ui .k2-cut > span:first-child:not(:last-child) {
+/* the start gives way a thousand times faster than the end (shrink factors below 1 would hand on only a part of the
+   lack of room), down to a few letters; a start of four or fewer stays whole */
+.k2-ui .k2-midcut > span:first-child:not(:last-child) {
+  flex-shrink: 1000;
   min-width: 4ch;
 }
-.k2-ui .k2-cut > span[data-whole] {
+.k2-ui .k2-midcut > span[data-whole]:first-child {
   flex: none;
   min-width: auto;
-}
-.k2-ui .k2-cut > span + span {
-  flex-shrink: 0.001;
 }
 
 /* ── Section: head with symbol, title, count, at most two text buttons; rule 9 inside ───────────────────────── */
@@ -1174,8 +1176,17 @@
 }
 .k2-ui .k2-row-marks > * {
   flex: none;
-  max-width: 100%;
   white-space: nowrap;
+}
+/* the first line of the marks starts with an empty item, so even the first mark leaves whole when it has no room (a line
+   always holds its first item); its margin takes back the gap after it */
+.k2-ui .k2-row-marks::before {
+  content: "";
+  flex: none;
+  width: 0;
+  /* as high as the marks' line, so a mark that wraps lands below what shows */
+  height: 20px;
+  margin-right: -8px;
 }
 .k2-ui .k2-row-marks > .k2-icon {
   order: 1;
@@ -1820,8 +1831,9 @@
 .k2-ui .k2-chip > .k2-icon {
   font-size: 13px;
 }
-/* where a chip has less room than its words, they are cut with "…" (a tag says all of them on hover) */
-.k2-ui .k2-chip-text {
+/* only a tag (words someone typed) is cut with "…" where it has less room than its words, and says all of them on
+   hover; a state, an amount or a count is never cut: where it has no room it leaves whole (as among a row's marks) */
+.k2-ui .k2-chip[data-kind="tag"] > .k2-chip-text {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
