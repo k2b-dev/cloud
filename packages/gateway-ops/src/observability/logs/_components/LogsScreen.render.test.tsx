@@ -80,9 +80,25 @@ describe("the log list on the server", () => {
     expect(failed.text).toContain("Der Protokollspeicher war nicht lesbar.");
   });
 
+  test("live is a toggle with a symbol, so a narrow status row folds it to the symbol", () => {
+    const toggle = (search: string) => {
+      const { html } = render(search);
+      const body = parser.parseFromString(html, "text/html").body;
+      return [...body.querySelectorAll('[data-k2-part="StatusRow"] button')].find((button) => button.textContent?.trim() === "Live");
+    };
+    const on = toggle("time=last-15m");
+    expect(on?.getAttribute("aria-pressed")).toBe("true");
+    expect(on?.firstElementChild?.getAttribute("data-name")).toBe("broadcast");
+    expect(toggle("time=last-15m&live=off")?.getAttribute("aria-pressed")).toBe("false");
+    // a range that has ended cannot be live: the toggle is off and cannot be pressed
+    const ended = toggle("time=2026-11-24T08:00Z..2026-11-24T09:30Z");
+    expect(ended?.getAttribute("aria-pressed")).toBe("false");
+    expect(ended?.hasAttribute("disabled")).toBe(true);
+  });
+
   test("a range that has ended turns live off and says why; parts that did not apply are named", () => {
     const { text } = render("time=2026-11-24T08:00Z..2026-11-24T09:30Z&colour=red");
-    expect(text).toContain("nur mit Zeitraum bis jetzt");
+    expect(text).toContain("Live nur mit Zeitraum bis jetzt");
     expect(text).toContain("Ein Teil der Adresse galt nicht");
     expect(text).toContain("colour=red");
   });

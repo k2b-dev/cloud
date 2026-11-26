@@ -3,7 +3,6 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Check,
   Chip,
   Dialog,
   Failed,
@@ -276,23 +275,8 @@ export default function LogsScreen(props: LogsScreenProps) {
     }),
   });
 
-  const liveLabel = () => (
-    <>
-      {t().live}
-      <Show when={!endsNow(state())}>
-        {" "}
-        <Text type="meta" muted>
-          – {t().liveOnlyUntilNow}
-        </Text>
-      </Show>
-      <Show when={endsNow(state()) && page() > 1}>
-        {" "}
-        <Text type="meta" muted>
-          – {t().liveOnlyFirstPage}
-        </Text>
-      </Show>
-    </>
-  );
+  /** Why live cannot be turned on here, or null where it can. */
+  const liveBlocked = () => (!endsNow(state()) ? t().liveOnlyUntilNow : page() > 1 ? t().liveOnlyFirstPage : null);
 
   const nav = () => (
     <Nav
@@ -383,12 +367,28 @@ export default function LogsScreen(props: LogsScreenProps) {
                         { value: number(data()?.levels.error ?? 0), after: t().errors },
                         { value: number(data()?.levels.warn ?? 0), after: t().warnings },
                       ]),
-                  // The switch says live is on; a sentence only when live cannot refresh (it retries on its own).
-                  ...(live() && !online() ? [{ after: t().liveOffline }] : live() && liveFailed() ? [{ after: t().liveRetrying }] : []),
+                  // The toggle says live is on; a sentence only when live cannot refresh (it retries on its own) or
+                  // cannot be turned on here.
+                  ...(live() && !online()
+                    ? [{ after: t().liveOffline }]
+                    : live() && liveFailed()
+                      ? [{ after: t().liveRetrying }]
+                      : liveBlocked()
+                        ? [{ after: liveBlocked() ?? "" }]
+                        : []),
                 ]}
                 filters={
                   <>
-                    <Check switch label={liveLabel()} checked={live()} disabled={!endsNow(state()) || page() > 1} onChange={setLive} />
+                    {/* a toggle with a symbol, so a narrow row keeps the symbol and the lead keeps its words */}
+                    <Button
+                      icon="broadcast"
+                      pressed={live()}
+                      disabled={liveBlocked() !== null}
+                      title={liveBlocked() ?? undefined}
+                      onClick={() => setLive(!live())}
+                    >
+                      {t().live}
+                    </Button>
                     <ListOrder query={query()} state={state()} onChange={change} />
                   </>
                 }
