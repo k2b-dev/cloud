@@ -165,8 +165,8 @@ a `Notice` that names the deed.
   body, lead), `Prose`, `Inline`, `Icon`, `Avatar`, `Chip`, `Progress`,
   `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Input`, `Select`,
-  `DateInput`, `Check`, `Choice`, `TagsInput`, `ImageInput`, `CodeInput`,
-  `Slider`, `ColorInput`.
+  `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`, `ImageInput`,
+  `CodeInput`, `Slider`, `ColorInput`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,

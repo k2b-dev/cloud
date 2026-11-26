@@ -62,7 +62,7 @@ The one place for a drawing of its own: a plan, a map, a chart. Inside it CSS is
 
 ### Disclosure
 
-Something that opens in place, such as the answer to a question; its content is made only while it is open.
+Something that opens in place, such as the answer to a question. Its content is made only while it is open: a closed answer is not in the page, so the browser's find in page does not reach it.
 
 <Props of="Disclosure" />
 
