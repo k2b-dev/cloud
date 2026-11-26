@@ -1,6 +1,6 @@
 import { createEffect, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { isServer, render } from "solid-js/web";
-import { holdDialogHistory } from "../feedback/dialog-core";
+import { sharedDialogHistory } from "../internal/dialog-history";
 import { useUiMessages } from "../intl/messages";
 import { createQuestion, type Question, quietFocus, useDialog } from "./behavior/overlays";
 import { Icon } from "./marks";
@@ -179,21 +179,13 @@ export type ConfirmOptions = {
  * the shape of `Dialog`, without a close button: Escape and the other button answer no, focus starts on the other
  * button, a press outside does nothing, and it is never a sheet. The first `Workspace` on the page answers, also for
  * code in another island; without one, the question brings its own dialog to the end of the page until it is
- * answered. A question whose dialog leaves the page while it asks is answered no. While it asks it holds one entry in
- * the history: Back (the phone's, the browser's) answers no and leaves the page where it is, and any answer takes the
- * entry out again (the history of the dialogs of `@k2b/ui`, which page navigation knows).
+ * answered. A question whose dialog leaves the page while it asks is answered no. Questions asked together show one
+ * after the other. While one shows it holds one entry in the history: Back (the phone's, the browser's) answers that
+ * question no and leaves the page where it is, and any answer takes the entry out again (the history of the dialogs
+ * of `@k2b/ui`, which page navigation knows). A reload while it asks leaves that entry behind: the reloaded page
+ * shows no question, and the first Back stays on it.
  */
 export const confirm = (options: ConfirmOptions): Promise<boolean> => {
-  // Back answers no: Escape on the question, which every way of asking hears, also a Workspace of another island
-  const release = holdDialogHistory(() =>
-    document
-      .querySelector('[role="alertdialog"][data-k2-part="Dialog"]')
-      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })),
-  );
-  return ask(options).finally(release);
-};
-
-const ask = (options: ConfirmOptions): Promise<boolean> => {
   const page = pageAnswer();
   if (page) return page(options);
   // no Workspace answers: a dialog of its own, in a v2 scope of its own, for as long as the question is open
@@ -246,9 +238,34 @@ export const ConfirmDialog = (props: { host: () => HTMLElement | undefined }) =>
 
 const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
   const t = useUiMessages();
-  const parts = props.question.useDialog();
+  let shown: HTMLElement | undefined;
+  /** Back came before the question's element was there: it answers no as soon as it is. */
+  let backed = false;
+  // Back answers the question that shows no, as Escape does (focus returns to where it was asked)
+  const answerNo = () => {
+    if (!shown?.isConnected) backed = true;
+    else shown.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  };
+  let release: (() => void) | undefined;
+  const free = () => {
+    release?.();
+    release = undefined;
+    backed = false;
+  };
+  // one entry for the question that shows, from its opening to its answer; a question still waiting holds none
+  const parts = props.question.useDialog(() => ({
+    onOpenChange: (open) => {
+      free();
+      if (open) release = sharedDialogHistory.hold(answerNo);
+    },
+  }));
+  onCleanup(free);
+  const mounted = (element: HTMLElement) => {
+    shown = element;
+    if (backed) queueMicrotask(answerNo);
+  };
   return (
-    <parts.Popup class="k2-dialog" data-k2-part="Dialog" data-alert="" backdrop={{ class: "k2-backdrop" }}>
+    <parts.Popup ref={mounted} class="k2-dialog" data-k2-part="Dialog" data-alert="" backdrop={{ class: "k2-backdrop" }}>
       <div class="k2-slot" data-slot="head">
         <div class="k2-bar">
           <div class="k2-bar-start">

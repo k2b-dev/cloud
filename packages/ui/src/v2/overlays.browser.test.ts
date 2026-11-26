@@ -406,6 +406,34 @@ for (const touch of [false, true])
         await page.keyboard.press("Escape");
         expect(await answerOf(page, "page")).toBe("false");
         await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+        // Back hands the focus back to the button that asked, as Escape does
+        const trigger = page.getByRole("button", { name: "Löschen", exact: true });
+        await trigger.focus();
+        await page.keyboard.press("Enter");
+        await page.getByRole("alertdialog", { name: "Auftrag löschen?" }).waitFor();
+        await settled(page);
+        await page.evaluate(() => history.back());
+        await page.getByText("Antwort: nein").waitFor();
+        await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Löschen");
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+        // two questions at once: they ask one after the other, and each Back answers the one that shows
+        await page.evaluate(() => window.__k2AskTwo?.());
+        await page.getByRole("alertdialog", { name: "Erste?" }).waitFor();
+        await settled(page);
+        const asked = await where();
+        expect(asked).not.toBe(before);
+        await page.evaluate(() => history.back());
+        await page.getByRole("alertdialog", { name: "Zweite?" }).waitFor();
+        await settled(page);
+        expect(await page.evaluate(() => [document.body.dataset.first, document.body.dataset.second])).toEqual(["false", undefined]);
+        // the second one holds an entry of its own, where the first one stood
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href !== was, before);
+        await page.evaluate(() => history.back());
+        await page.waitForFunction(() => document.body.dataset.second !== undefined);
+        expect(await page.evaluate(() => document.body.dataset.second)).toBe("false");
+        await page.waitForFunction(() => !document.querySelector(".k2-dialog[data-alert]"));
+        await page.waitForFunction((was) => JSON.stringify(history.state ?? null) + " " + location.href === was, before);
+        expect(await page.evaluate(() => document.body.dataset.first)).toBe("false");
       },
       touch ? { width: 390, touch, address: true } : { address: true },
     );

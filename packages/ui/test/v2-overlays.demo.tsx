@@ -14,6 +14,8 @@ declare global {
     /** Asks a dangerous question ("Gerät entfernen?") from the page. */
     __k2AskDanger?: () => void;
     __k2Shorten?: () => void;
+    /** Asks "Erste?" and "Zweite?" at once and writes the answers to `<body data-first>` and `<body data-second>`. */
+    __k2AskTwo?: () => void;
   }
 }
 
@@ -25,6 +27,14 @@ export function Demo() {
     void Dialog.confirm({ title: "Gerät entfernen?", confirm: "Entfernen", danger: true }).then((answer) => {
       document.body.dataset.answer = String(answer);
     });
+  window.__k2AskTwo = () => {
+    void Dialog.confirm({ title: "Erste?", confirm: "Ja" }).then((answer) => {
+      document.body.dataset.first = String(answer);
+    });
+    void Dialog.confirm({ title: "Zweite?", confirm: "Ja" }).then((answer) => {
+      document.body.dataset.second = String(answer);
+    });
+  };
   window.__k2Ask = () =>
     void Dialog.confirm({ title: "Weiter?", confirm: "Ja" }).then((answer) => {
       document.body.dataset.answer = String(answer);

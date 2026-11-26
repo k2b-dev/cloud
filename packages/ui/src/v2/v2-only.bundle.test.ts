@@ -21,6 +21,7 @@ const allowed: Record<string, number> = {
   "content/markdown-reference-messages.ts": 700,
   "inputs/date-input.ts": 6_600, // formatDateInput, parseDateInput
   "inputs/date-picker.ts": 450, // dateKey, isCalendarDay, isDateKey
+  "internal/dialog-history.ts": 3_800, // the history entry of `Dialog.confirm`, shared with the dialogs of v1 (3,042)
   "surfaces/notice-card-classes.ts": 370, // the notice classes of Markdown's info blocks
   "surfaces/person-color.ts": 270, // personColor for `Avatar`
 };

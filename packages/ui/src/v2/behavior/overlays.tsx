@@ -222,8 +222,11 @@ export type QuestionParts<Payload> = Omit<DialogParts, "Trigger"> & {
 export type Question<Payload> = {
   /** Asks and resolves `true` when the Close part with `value="confirm"` answers, `false` on any other close. */
   ask: (payload: Payload) => Promise<boolean>;
-  /** The alert dialog that answers: render it once. Never a sheet; an outside press does not close it. */
-  useDialog: () => QuestionParts<Payload>;
+  /**
+   * The alert dialog that answers: render it once. Never a sheet; an outside press does not close it. `onOpenChange`
+   * hears each question show and leave: questions asked together show one after the other.
+   */
+  useDialog: (options?: () => Pick<OverlayOptions, "onOpenChange">) => QuestionParts<Payload>;
 };
 
 /**
@@ -234,9 +237,13 @@ export function createQuestion<Payload>(): Question<Payload> {
   const confirm = createConfirm<Payload>();
   return {
     ask: (payload) => confirm(payload),
-    useDialog: () => {
+    useDialog: (options = () => ({})) => {
       const t = useBehaviorMessages();
-      const handle = usePrimitive(alertDialogPrimitive, () => ({ controller: confirm.controller, pendingAnnouncement: t().loading }));
+      const handle = usePrimitive(alertDialogPrimitive, () => ({
+        controller: confirm.controller,
+        pendingAnnouncement: t().loading,
+        onOpenChange: options().onOpenChange,
+      }));
       const Backdrop = popupComponent(handle, "backdrop");
       const Content = popupComponent(handle, "content");
       return {
