@@ -5,6 +5,7 @@ import {
   createUniqueId,
   For,
   type JSX,
+  mergeProps,
   onCleanup,
   children as resolveChildren,
   Show,
@@ -296,13 +297,14 @@ const Entry = (props: { level: MenuLevelParts; kind: EntryKind; item: MenuItem; 
       return props.item.disabled;
     },
   };
-  const keyed = {
-    ...shared,
+  // mergeProps keeps the getters: a spread would read them once, and an entry would keep its first description,
+  // danger and disabled while the menu is open
+  const keyed = mergeProps(shared, {
     value: props.value,
     get label() {
       return props.item.label;
     },
-  };
+  });
   const kind = props.kind;
   if (kind === "submenu") {
     const sub = props.level.useSubmenu();

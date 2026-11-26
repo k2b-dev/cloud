@@ -3065,10 +3065,13 @@
   display: flex;
   flex-direction: column;
 }
+/* one line under the label: longer words are cut with "…"; assistive technology hears the whole description */
 .k2-ui .k2-mi-desc {
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
-  white-space: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-mi-meta {
   flex: none;

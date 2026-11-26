@@ -160,6 +160,56 @@ test("menu: a tick flips in place (the same element) and stands at the end of it
   });
 });
 
+// A description that comes and goes while the menu is open: every kind of entry follows it, in its words, its
+// description reference and its height, and leaves no reference to a description that is gone.
+test("menu: a description added and removed while open: deed, toggle and link follow it in words, reference and height", async () => {
+  await withPage(async (page) => {
+    await headMenu(page).click();
+    await page.locator(menu).waitFor();
+    await page.evaluate(() => window.__k2Describe?.(true));
+    const entries = [
+      [page.getByRole("menuitem", { name: "Als Vorlage speichern" }), "Felder und Positionen ohne Kunde"],
+      [page.getByRole("menuitemcheckbox", { name: "Nur offene zeigen" }), "Erledigte Aufträge ausblenden"],
+      [page.getByRole("menuitem", { name: "Im Archiv ansehen" }), "Ältere Fassungen dieses Auftrags"],
+    ] as const;
+    await entries[2][0].waitFor();
+    await settled(page);
+    for (const [entry, text] of entries) {
+      expect(await entry.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent)).toBe(text);
+      expect((await box(entry)).height).toBe(48);
+    }
+    await page.evaluate(() => window.__k2Describe?.(false));
+    await settled(page);
+    for (const [entry] of entries) {
+      expect(await entry.getAttribute("aria-describedby")).toBeNull();
+      expect((await box(entry)).height).toBe(32);
+    }
+  });
+});
+
+// One line under the label, also when the words are long on a phone: the rest is cut with "…" and stays the full
+// description for assistive technology.
+test("menu: a long description stays one line at 390 px and is heard in full", async () => {
+  await withPage(
+    async (page) => {
+      await headMenu(page).click();
+      await page.locator(menu).waitFor();
+      await page.evaluate(() => window.__k2Describe?.(true));
+      await settled(page);
+      const entry = page.getByRole("menuitem", { name: "Im Archiv ansehen" });
+      await entry.evaluate((el) => {
+        const line = el.querySelector(".k2-mi-desc");
+        if (line) line.textContent = "Ältere Fassungen dieses Auftrags mit allen Positionen, Notizen und Anhängen der letzten zwölf Monate";
+      });
+      expect((await box(entry)).height).toBe(48);
+      expect(await entry.evaluate((el) => document.getElementById(el.getAttribute("aria-describedby") ?? "")?.textContent)).toContain(
+        "der letzten zwölf Monate",
+      );
+    },
+    { width: 390 },
+  );
+});
+
 test("menu: an option with a description shows it under its label; it describes the option and is no part of its name", async () => {
   await withPage(async (page) => {
     await page.getByRole("button", { name: "Antwort" }).click();
