@@ -102,7 +102,7 @@ export default function OverviewPane(props: {
     return ago === 0
       ? formatTime(change.time, locale(), props.env)
       : ago === 1
-        ? h().yesterday
+        ? h().yesterday.toLocaleLowerCase(locale())
         : formatDate(change.time, locale(), props.env);
   };
   // runs this page opened; opening is presentation only, so a reload starts closed
@@ -167,18 +167,20 @@ export default function OverviewPane(props: {
             })}
             columns={[
               {
+                // a width of its own: the table gives the rest of the row to its last column, the last change
                 title: t().storage,
+                width: { min: 120, default: 150 },
                 mark: (base) => storageMark(base),
                 cell: (base) => baseLabel(base, b(), locale()),
               },
               {
                 // who belongs to it; one that is not there says so here, in a column with room for its chip
                 title: b().v2People,
-                width: { min: 96, default: 112 },
+                width: { min: 96, default: 104 },
                 drop: true,
                 cell: (base) => (base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : kind(base)),
               },
-              { title: b().v2Used, width: { min: 80, default: 88 }, align: "end", drop: true, cell: (base) => used(base) },
+              { title: b().v2Used, width: { min: 84, default: 92 }, align: "end", drop: true, cell: (base) => used(base) },
               {
                 title: b().v2LastChange,
                 width: { min: 180, default: 220 },
