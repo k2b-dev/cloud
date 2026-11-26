@@ -296,6 +296,33 @@ export function Demo() {
     setState(next);
     if (!slow) setFetched(next);
   };
+  // `_bare`: the bar lives in a host's toolbar, as the calendar of a Space puts it in its head
+  const bare = !isServer && new URLSearchParams(location.search).has("_bare");
+  const filterBar = () => (
+    <FilterBar
+      bare={bare}
+      query={inventoryQuery}
+      state={state()}
+      onChange={change}
+      icons={{
+        status: "circle-dashed",
+        title: "letter-case",
+        price: "currency-euro",
+        estimate: "scale",
+        received: "calendar",
+        due: "calendar-due",
+        seen: "eye",
+        consignor: "user",
+        origin: "map-pin",
+        era: "hourglass",
+        location: "building-warehouse",
+        shelf: "layout-rows",
+        photographed: "camera",
+      }}
+      names={{ consignor: CONSIGNORS }}
+      results={`${rows().length} Artikel`}
+    />
+  );
   return (
     <Workspace
       head={
@@ -325,28 +352,7 @@ export function Demo() {
         busy={busy()}
         status={
           <>
-            <FilterBar
-              query={inventoryQuery}
-              state={state()}
-              onChange={change}
-              icons={{
-                status: "circle-dashed",
-                title: "letter-case",
-                price: "currency-euro",
-                estimate: "scale",
-                received: "calendar",
-                due: "calendar-due",
-                seen: "eye",
-                consignor: "user",
-                origin: "map-pin",
-                era: "hourglass",
-                location: "building-warehouse",
-                shelf: "layout-rows",
-                photographed: "camera",
-              }}
-              names={{ consignor: CONSIGNORS }}
-              results={`${rows().length} Artikel`}
-            />
+            {bare ? <Bar start={filterBar()} end={<span>{rows().length} Artikel</span>} /> : filterBar()}
             <StatusRow
               lead={`${rows().length} von ${items.length} Artikeln`}
               filters={<ListOrder query={inventoryQuery} state={state()} onChange={change} />}

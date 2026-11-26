@@ -3924,6 +3924,13 @@
   min-width: 0;
   flex: none;
 }
+/* inside another toolbar (`bare`, or any v2 Bar): the host gives the line and the side edge, so there is one of each */
+.k2-ui :is(.k2-fbar[data-bare], .k2-bar .k2-fbar) {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-inline: 0;
+  border-bottom: 0;
+}
 .k2-ui .k2-fbar-flow {
   display: flex;
   flex-wrap: wrap;

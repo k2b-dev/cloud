@@ -383,3 +383,45 @@ test("onChange says where a change came from: the person in the bar, or back and
     expect(address(page)).toBe("era=baroque&ordnung=price.desc");
   });
 });
+
+test("in a host's toolbar (`bare`) the bar has no line and no side edge of its own: one line, statements on the text edge", async () => {
+  for (const width of [1440, 390]) {
+    await withPage(
+      "_bare=1&title=Vitrine",
+      async (page) => {
+        await settled(page);
+        const look = await page.evaluate(() => {
+          const filterBar = document.querySelector<HTMLElement>('[data-k2-part="FilterBar"]')!;
+          const host = filterBar.closest<HTMLElement>(".k2-bar")!;
+          const lead = document.querySelector<HTMLElement>('[data-k2-part="StatusRow"]')!;
+          const own = getComputedStyle(filterBar);
+          // every line between the host's top and bottom: only the host's own may draw one
+          const lines = [host, ...host.querySelectorAll<HTMLElement>("*")].filter(
+            (element) =>
+              Number.parseFloat(getComputedStyle(element).borderBottomWidth) > 0 &&
+              !element.matches(".k2-btn, .k2-stmt, .k2-stmt-b, .k2-input"),
+          );
+          return {
+            lineWidth: own.borderBottomWidth,
+            sideEdge: own.paddingLeft,
+            lines: lines.map((element) => element.className),
+            fits: filterBar.getBoundingClientRect().bottom <= host.getBoundingClientRect().bottom,
+            start: Math.round(
+              [...filterBar.querySelectorAll<HTMLElement>(".k2-btn, .k2-stmt")]
+                .find((element) => element.getClientRects().length > 0)!
+                .getBoundingClientRect().left,
+            ),
+            edge: Math.round(lead.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(lead).paddingLeft)),
+          };
+        });
+        expect(look.lineWidth).toBe("0px");
+        expect(look.sideEdge).toBe("0px");
+        expect(look.lines.filter((name) => name.includes("k2-fbar"))).toEqual([]);
+        expect(look.fits).toBe(true);
+        // the first thing of the bar stands on the host's text edge, as the status row's words below
+        expect(look.start).toBe(look.edge);
+      },
+      { width, touch: width < 768 },
+    );
+  }
+});

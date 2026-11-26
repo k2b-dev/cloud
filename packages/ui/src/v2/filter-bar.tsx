@@ -377,6 +377,11 @@ export type FilterBarProps<F extends Fields, S extends string, G extends string>
    * page), `"history"` for back and forward (a list keeps the page the address names).
    */
   onChange: (state: ListQueryState<F, S, G>, change: ListChange) => void;
+  /**
+   * The bar lives inside another toolbar (a calendar's head): no line and no side edge of its own, the host gives both.
+   * Inside a v2 `Bar` it takes this form by itself.
+   */
+  bare?: boolean;
   /** The state of the current view, which "Zurücksetzen" returns to; the empty query (`query.reset()`) by default. */
   base?: ListQueryState<F, S, G>;
   /** A Tabler icon per field, before its name in "+ Filter" and the phone sheet. */
@@ -576,7 +581,7 @@ export const FilterBar = <F extends Fields, S extends string, G extends string>(
   const fieldCount = () => active().filter(([key, definition]) => !isDefault(key, definition)).length;
 
   return (
-    <div class="k2-fbar" data-k2-part="FilterBar" role="group" aria-label={t().filters}>
+    <div class="k2-fbar" data-k2-part="FilterBar" data-bare={props.bare ? "" : undefined} role="group" aria-label={t().filters}>
       <Button variant="secondary" icon="adjustments-horizontal" onClick={() => openSheet({})}>
         {t().filterCount}
         <Show when={fieldCount() > 0}>
