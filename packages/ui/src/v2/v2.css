@@ -1168,7 +1168,6 @@
   align-items: center;
   min-height: var(--k2-h-row);
   padding: 8px var(--k2-edge);
-  background: var(--k2-n50);
 }
 .k2-ui .k2-gh[data-meta] {
   min-height: var(--k2-h-head);
