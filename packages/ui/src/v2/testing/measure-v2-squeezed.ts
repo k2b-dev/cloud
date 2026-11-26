@@ -49,12 +49,7 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
     const fontSize = Number.parseFloat(getComputedStyle(parent).fontSize) || 14;
     const least = Math.min(4, fontSize / 3);
     let shownWidth = box.width;
-    // (tabs give way whole by their own rule, which Tabs checks itself: their row is no such box)
-    for (
-      let ancestor = parent.parentElement;
-      ancestor && ancestor !== root.parentElement && !ancestor.matches(".k2-tabs");
-      ancestor = ancestor.parentElement
-    ) {
+    for (let ancestor = parent.parentElement; ancestor && ancestor !== root.parentElement; ancestor = ancestor.parentElement) {
       const style = getComputedStyle(ancestor);
       if (style.display === "contents" || (style.overflowX !== "hidden" && style.overflowX !== "clip")) continue;
       shownWidth = Math.min(shownWidth, ancestor.getBoundingClientRect().width);
@@ -83,4 +78,37 @@ export function measureSqueezedInPage(options: SqueezedOptions): { squeezed: str
       );
   }
   return { squeezed };
+}
+
+/**
+ * Rows past their edge (Files 26.11.): a row that runs past its column or the screen, and a part of a row (its date,
+ * its marks) that stands past the row. A wide table that scrolls sideways is no finding. Runs in the page: closes
+ * over nothing.
+ */
+export function measurePastInPage(options: SqueezedOptions): { past: string[] } {
+  const past: string[] = [];
+  const root = document.querySelector(options.root);
+  if (!root) return { past };
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const labelOf = (element: Element) => (element.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40);
+  const screen = document.documentElement.clientWidth;
+  for (const row of Array.from(root.querySelectorAll('[data-k2-part="Row"]'))) {
+    if (row.closest(options.skip) || row.closest(".k2-table-scroll")) continue;
+    if (!row.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
+    const box = row.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) continue;
+    const column = row.parentElement?.closest("[data-k2-column]")?.getBoundingClientRect();
+    const edge = Math.min(screen, column ? column.right : Number.POSITIVE_INFINITY);
+    if (box.right > edge + 0.5) {
+      past.push(`row "${labelOf(row)}" runs ${round(box.right - edge)} px past the edge of its column; it fits its column`);
+      continue;
+    }
+    for (const part of Array.from(row.children)) {
+      if (part.matches(".k2-row-open")) continue;
+      const own = part.getBoundingClientRect();
+      if (own.width > 0 && own.right > box.right + 0.5)
+        past.push(`${part.className} "${labelOf(part)}" stands ${round(own.right - box.right)} px past its row; it stays inside`);
+    }
+  }
+  return { past };
 }

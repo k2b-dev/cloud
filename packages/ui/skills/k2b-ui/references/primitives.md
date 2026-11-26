@@ -34,7 +34,11 @@ The working surface of an app: one per screen.
   none is open, so nothing moves when it opens. Keep the list's `width`.
 - Tablet: where the sidebar at its default does not fit beside every column
   at its minimum, it becomes a drawer with a button at the start of the head.
-- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`.
+- Phone (< 768 px): the sidebar leaves, head actions hide unless `keep`. In
+  a head with `Tabs` the open view never gives way: buttons with words that
+  `keep` fold into the head's own "…" (each runs as its button would), and
+  the open tab keeps its whole name. A column with a `width` fills the
+  screen; its minimum is the desktop's.
   A search in the head (`Input type="search"`) stays as its symbol; a tap
   goes into the field, which opens over the head while it has the focus
   and folds back, its words kept, on blur or Escape.
