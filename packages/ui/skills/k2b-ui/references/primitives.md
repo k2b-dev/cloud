@@ -267,13 +267,15 @@ lines instead of cutting a thing.
   active filter. Never a colour without a word. There is no neutral status:
   "Pausiert" is `warn` or a plain chip.
 - `Progress`: `value`, `of`, `label` ("Arbeitstag 5 von 22").
-- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first),
-  `label` (one sentence: "postgres-haupt: 30 Abrufe, 3 fehlgeschlagen"),
+- `Ticks`: `slots` (`"ok" | "bad" | "none"` per time slot, oldest first, in
+  the writing direction; at most 60 in a table cell, more are cut at its
+  end), `label` (always "what, period: what happened", such as
+  "postgres-haupt, letzte 30 Minuten: 3 von 30 Abrufen fehlgeschlagen"),
   `color` (the data colour of what it belongs to; default the app),
   `stretch` (in a detail: slots 2 px apart grow up to 12 px, a wider place
-  keeps the strip at its start). Ok is soft, a failure red
-  and taller, an empty slot nothing; 140 × 20 px in a table cell. The one
-  column of a list that shows its data over time; never decoration.
+  keeps the strip at its start). Ok is soft, a failure red and taller, a
+  slot without data a low stub; 140 × 20 px in a table cell. The one column
+  of a list that shows its data over time; never decoration.
 
 ## Controls
 
