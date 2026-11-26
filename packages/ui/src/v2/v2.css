@@ -4532,7 +4532,7 @@
   font: var(--k2-t-meta);
   color: var(--k2-subtle);
 }
-.k2-ui .k2-lpick-state:empty {
+.k2-ui .k2-lpick-state[data-quiet] {
   display: none;
 }
 .k2-ui .k2-lpick-clear {

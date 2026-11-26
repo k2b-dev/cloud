@@ -212,7 +212,11 @@ export const LookupSelect = (props: LookupSelectProps) => {
           </select.Item>
         )}
       >
-        <select.Status class="k2-lpick-state">
+        {/* each says when it shows nothing (`data-quiet`): `:empty` would not see through an island's wrapper */}
+        <select.Status
+          class="k2-lpick-state"
+          data-quiet={state().status === "error" || (state().status === "loading" && state().items.length === 0) ? undefined : ""}
+        >
           {(now: { status?: string }) => (
             <Show
               when={now.status === "error"}
@@ -222,7 +226,7 @@ export const LookupSelect = (props: LookupSelectProps) => {
             </Show>
           )}
         </select.Status>
-        <select.Empty class="k2-lpick-state">
+        <select.Empty class="k2-lpick-state" data-quiet={state().status === "idle" ? undefined : ""}>
           <Show when={state().status === "idle"}>
             <Empty icon="search-off" text={state().query ? t().noMatch({ query: state().query }) : t().noValues} />
           </Show>
