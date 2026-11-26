@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, children as resolveChildren, Show, untrack } from "solid-js";
 import { type MenuLevelParts, useMenuLevels } from "./behavior/menu";
-import { Icon } from "./marks";
+import { custom, Icon } from "./marks";
 import { useOverlayMessages } from "./overlay-messages";
 import { PageLayer } from "./page-layer";
 import type { OnNavigate } from "./types";
@@ -15,6 +15,11 @@ export type MenuItem = {
   label: string;
   /** A Tabler icon name without the `ti-` prefix. */
   icon?: string;
+  /**
+   * A data colour of what the entry stands for (an area of a notebook, a calendar): a dot in the place of the symbol,
+   * or the symbol in that colour. Hex, `oklch()` or `var(--name)`; anything else leaves the entry neutral.
+   */
+  color?: string;
   /** The deed; a returned Promise keeps the menu open and the entry busy until it settles. */
   onClick?: () => unknown;
   /** The page the entry opens, as a link. */
@@ -125,7 +130,7 @@ export const alignTo = (element: HTMLElement | undefined): "start" | "end" => {
 
 /** Whether any entry, also one in a section, has a symbol: then every entry keeps its place, so the words line up. */
 const hasLead = (entries: readonly MenuEntry[]): boolean =>
-  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon));
+  entries.some((entry) => entry !== "separator" && (isSection(entry) ? hasLead(entry.items) : !!entry.icon || !!entry.color));
 
 const Entries = (props: { level: MenuLevelParts; entries: readonly MenuEntry[]; lead?: boolean }) => {
   const lead = () => props.lead ?? hasLead(props.entries);
@@ -237,8 +242,17 @@ const itemOf = (entry: MenuEntry): MenuItem => (entry === "separator" || isSecti
 const EntryFace = (props: { item: MenuItem; lead: boolean; end?: JSX.Element }) => (
   <>
     <Show when={props.lead}>
-      <span class="k2-mi-lead">
-        <Show when={props.item.icon}>{(name) => <Icon name={name()} />}</Show>
+      <span class="k2-mi-lead" data-color={props.item.color ? "" : undefined} style={custom({ "--k2-c": props.item.color })}>
+        <Show
+          when={props.item.icon}
+          fallback={
+            <Show when={props.item.color}>
+              <span class="k2-mi-dot" />
+            </Show>
+          }
+        >
+          {(name) => <Icon name={name()} />}
+        </Show>
       </span>
     </Show>
     <span class="k2-mi-label">{props.item.label}</span>

@@ -1007,13 +1007,12 @@
     opacity: 1;
   }
 }
+/* a name that does not fit ends in "…"; its whole name shows on hover */
 .k2-ui .k2-tiles[data-variant="media"] .k2-tile-title {
   padding: 0 2px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: clip;
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  text-overflow: ellipsis;
 }
 .k2-ui .k2-tile > .k2-tile-line {
   display: flex;
@@ -3782,6 +3781,23 @@
   width: 16px;
   color: var(--k2-subtle);
 }
+/* an entry in its data colour: the symbol or a dot of 8 px, in the step of the colour that keeps 3:1 on the menu */
+.k2-ui .k2-mi-lead[data-color] {
+  align-items: center;
+  justify-content: center;
+  color: var(--k2-c-soft, var(--k2-c, var(--k2-subtle)));
+}
+.k2-ui .k2-mi-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--k2-r-round);
+  background: currentColor;
+}
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-mi-lead[data-color],
+.k2-ui.dark .k2-mi-lead[data-color],
+.k2-ui[data-theme="dark"] .k2-mi-lead[data-color] {
+  color: var(--k2-c-soft-dark, var(--k2-c, var(--k2-subtle)));
+}
 .k2-ui .k2-mi-label {
   flex: 1;
   min-width: 0;
@@ -4231,10 +4247,10 @@
   .k2-ui:has(.k2-bar[data-selecting]) .k2-fab {
     display: none;
   }
-  /* the end of every list stays above the floating actions: their height (56), their distance (16), a gap of 8 and
-     the safe area are kept free at the end of each column that scrolls */
+  /* the floating actions cover nothing of a list: each column ends above them (their height 56, their distance 16, a
+     gap of 8 and the safe area), at rest and at its end alike; the content does not move, only its window ends higher */
   .k2-ui:has(.k2-bar[data-selecting]) .k2-pane > .k2-scroll {
-    padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+    margin-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   }
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
