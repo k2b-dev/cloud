@@ -557,6 +557,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* the name of what stands open after the way back, strong as a row's title: it is the page. The way back keeps at
+   most half the bar and is cut first; the name is cut only when it alone is longer than the rest */
+.k2-ui .k2-pane-back:has(> .k2-pane-back-name) > .k2-btn[data-variant="text"] {
+  max-width: 50%;
+}
+.k2-ui .k2-pane-back > .k2-pane-back-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 8px;
+  overflow: hidden;
+  font: var(--k2-t-row);
+  font-weight: 600;
+  color: var(--k2-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .k2-ui .k2-pane > .k2-scroll {
   flex: 1;
   min-height: 0;

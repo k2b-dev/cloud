@@ -584,6 +584,28 @@ export const fixtures = {
   list: () => <LayoutFixture open={false} />,
   // the way back to a list with a long name, such as a search
   longBack: () => <LayoutFixture back="Suchergebnisse für „Eichenplatten Lieferung KW 49“ in allen Postfächern und Ordnern" />,
+  // an editor: a detail without a head of its own, its name in its label; the way back leads to a long folder name
+  namedBack: () =>
+    shell(
+      <Pane.Split>
+        <Pane label="Breite der Liste" width={{ min: 320, default: 432 }}>
+          <List label="Dateien">
+            {["Notizen.md", "Aufmaß Küche.pdf", "Materialliste.xlsx", "Angebot 2026-118.pdf", "Ansicht Front.jpg", "Budget 2027.xlsx"].map(
+              (name, index) => (
+                <Row lines={[name, `Geändert vor ${index + 2} Stunden · Mira Sommer`]} />
+              ),
+            )}
+          </List>
+        </Pane>
+        <Pane detail label="Notizen.md" back={{ label: "Angebote und Ausschreibungen 2026", href: "#angebote" }}>
+          <Prose
+            markdown={
+              "Zuschnitt Küchenfront bis Freitag. Eiche geölt, 19 mm.\n\nAufmaß am Dienstag mit Frau Lindqvist. Die Nische links ist 4 mm schmaler als im Plan.\n\n- Maße prüfen\n- Kanten bestellen\n- Arbeitsplatte Granit, 38 mm\n- Spüle als Unterbau\n- Sockel 100 mm\n- Lüftungsgitter unter dem Backofen\n- Topfbänder 110°\n- Montage am Donnerstag"
+            }
+          />
+        </Pane>
+      </Pane.Split>,
+    ),
   structure: StructureFixture,
   table: TableFixture,
   grid: GridFixture,
