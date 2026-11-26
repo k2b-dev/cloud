@@ -2144,6 +2144,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* a value that keeps its start and its end (an address and its domain): the start gives way first, then the end */
+.k2-ui .k2-ends {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+}
+.k2-ui :is(.k2-ends-start, .k2-ends-end) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-ends-start {
+  flex: 0 1000 auto;
+}
+.k2-ui .k2-ends-end {
+  flex: 0 1 auto;
+}
 .k2-ui .k2-input-value[data-placeholder] {
   color: var(--k2-subtle);
 }

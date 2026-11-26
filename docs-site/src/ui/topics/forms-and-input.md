@@ -45,6 +45,7 @@ The sign-in settings of an app: a field that goes back to its default through th
 - Many options, or options that come from data, such as customers.
 - Takes little room; `placeholder` says what to pick.
 - An option that cannot be chosen now is `disabled`; so is the whole select while it cannot be changed.
+- A long address, such as a sender, keeps its start and its domain and gives way in the middle; the whole address is its hint.
 
 ## Parts
 
