@@ -6,6 +6,7 @@ import {
   Check,
   Chip,
   Choice,
+  CodeBlock,
   CodeInput,
   ColorInput,
   DateInput,
@@ -32,7 +33,7 @@ import {
 // One screen with every primitive the review of #4058 named, rendered on the server and hydrated in the browser:
 // rows that open something beside their own controls (H1), a pane that comes and goes (H2), fields in one row and a
 // table whose cells are counted (H3), uncontrolled controls (M1), facts (M3), fields of choices (M5), Markdown with
-// hostile parts (M6), a row of two lines with marks and a button in the flow (lane D).
+// hostile parts (M6), a row of two lines with marks and a button in the flow (lane D), code blocks (a hidden secret).
 
 declare global {
   /** How often a cell of the table and the probe in the field row were made, on this side of the page. */
@@ -135,6 +136,22 @@ export function Fixture() {
               },
             ]}
           />
+          {/* code to copy: a secret hidden in its shape, and a highlighted snippet with numbers and a switch */}
+          <Section title="Zugang">
+            <CodeBlock
+              label="gateway_ed25519"
+              code={"-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----"}
+              secret
+              download="gateway_ed25519"
+            />
+            <CodeBlock
+              label="gateway.ts"
+              code={"const gateway = createGateway({ retry: 30_000 });\n// verbindet sich neu\nawait gateway.connect();"}
+              language="ts"
+              lineNumbers
+              wrap="toggle"
+            />
+          </Section>
           <Section title="Auftrag">
             <Field.Row>
               <Field name="kind" label="Art" hint="Bestimmt den Ablauf.">

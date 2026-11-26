@@ -54,6 +54,10 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="content" height="560" default="Text" />
 
+## Code to read and copy
+
+<Example recipe="code" height="640" default="Hidden key" />
+
 ## Mail
 
 <Example recipe="mail" height="720" />

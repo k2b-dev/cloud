@@ -233,6 +233,23 @@ exact room unseen under the bar (lines, chips, wrapping); a value not there
 yet (`""`) is a bar of one line. Give `copy: ""` where a value will have
 one.
 
+### CodeBlock
+
+Code to read and copy: a config, a key, a command, a snippet. `code` and
+`label` (the name in its head, of its region and of its copy and download
+buttons, such as "cloud.env"). Monospace 12/16 as written, on a quiet
+surface inside the text edge, directly in its `Section`. Its head shows a
+sign, the name and the language, with the deeds on the right; copy says
+"Kopiert" in a toast, a failed copy says so in one sentence.
+`language` highlights (`ts`, `tsx`, `js`, `jsx`, `sql`, `markdown`),
+`lineNumbers`, `download` (a file name), `wrap` (`true` wraps long
+lines, `"toggle"` gives a switch; by default they scroll sideways inside
+the block, never the page, and the block takes the focus for that).
+`secret` hides a key in the shape of its signs until "Zeigen"; copy and
+download work while it is hidden. A long code shows 200 lines and "Alles
+zeigen" below them. The secret still travels to the browser in the page's
+data: hide it from eyes, not from the network.
+
 ### Text
 
 `type`: `meta` 12/16, `row` 13/20 (default), `body` 14/20, `lead` 18/24.
@@ -467,7 +484,9 @@ lines instead of cutting a thing.
   which a swipe down also closes. With `tip` instead, a short hint on its one
   child (a `Button`) after a moment on hover or focus.
 - `useToast()`: call it in the component, then
-  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`.
+  `toast("In „Lieferanten“ verschoben", { undo: moveBack, status: "ok" })`. A
+  `title` names the outcome in one to three words above a longer message:
+  `toast("Kopieren hat nicht geklappt; …", { title: "Nicht kopiert", status: "bad" })`.
   One sentence at the bottom in the middle, five seconds, "Rückgängig" with
   `undo`, or "Erneut versuchen" with `retry` for a deed that failed; `status` `ok` or `bad` adds a sign
   (`bad` is announced at once).

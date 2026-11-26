@@ -92,6 +92,9 @@ const highlightMarkdownLine = (line: string): string => {
   return highlightMarkdownInline(escaped);
 };
 
+// Each pattern ends a try at the next place where it could start again, so it reads a line once, however long: a link
+// text holds no "[", a link target holds parentheses one level deep and no other "(", and a formula's arguments hold
+// "=" (a comparison such as A1=B1) but no start of another formula.
 const highlightMarkdownInline = (escaped: string): string =>
   escaped
     .replace(
@@ -99,10 +102,10 @@ const highlightMarkdownInline = (escaped: string): string =>
       '<span class="cd-md-syntax">$1</span><span class="cd-md-code">$2</span><span class="cd-md-syntax">$3</span>',
     )
     .replace(/(\*\*)([^*\n]+?)(\*\*)/g, '<span class="cd-md-syntax">$1</span>$2<span class="cd-md-syntax">$3</span>')
-    .replace(/(\[[^\]\n]+?\])(\([^)]+\))/g, '<span class="cd-md-link">$1</span><span class="cd-md-syntax">$2</span>')
+    .replace(/(\[[^[\]\n]+\])(\((?:[^()\n]|\([^()\n]*\))*\))/g, '<span class="cd-md-link">$1</span><span class="cd-md-syntax">$2</span>')
     .replace(/(^|\s)(@[A-Za-z][\w-]*)/g, '$1<span class="cd-md-ref">$2</span>')
     .replace(/(#[A-Za-z][\w/-]*)/g, '<span class="cd-md-tag">$1</span>')
-    .replace(/(=[A-Z][A-Z0-9_]*\([^)\n]*\))/g, '<span class="cd-md-formula">$1</span>');
+    .replace(/(=[A-Z][A-Z0-9_]*\((?:[^)=\n]|=(?![A-Z][A-Z0-9_]*\())*\))/g, '<span class="cd-md-formula">$1</span>');
 
 export const highlightCodeDisplayLines = (code: string, language: CodeDisplayLanguage = "text"): string[] => {
   const lines = code.split("\n");

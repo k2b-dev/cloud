@@ -247,9 +247,9 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 
 - Writing the text happens behind "Bearbeiten": the Markdown editor of
   `@k2b/editor` has no v2 form yet (gap).
-- Code to read and copy is a `Facts` item with `mono` and `copy`; a code
-  block with highlighting is a gap. Media open from their `Tiles`; an image
-  or video viewer is a gap.
+- A short key or ID to copy is a `Facts` item with `mono` and `copy`;
+  code of more than a line is a `CodeBlock` (see `code.tsx`). Media open
+  from their `Tiles`; an image or video viewer is a gap.
 - A chart is a `Chart` of `@k2b/ui` in a `Canvas` in its `Section`, sized
   `style={{ height: "100%" }}`. Inside `.k2-ui` it takes the v2 font, the
   meta role (12 px), the v2 inks and lines, the surface as separator in
@@ -260,3 +260,19 @@ empty (`Empty` with "Text schreiben"), loading (`Loading` rows) and failed
 - With no data, put `Empty` in place of the `Canvas`. `Loading` and
   `Failed` hold rows, not the height of a drawing, so the page moves while a
   chart loads (gap).
+
+## code.tsx: code to read and copy
+
+![code at 1440 px](../images/code-1440.png)
+![code at 390 px](../images/code-390.png)
+
+An admin page of a gateway: a `Nav`, a head `Bar` with the title and the
+one primary "Verbindung prüfen" (mirrored as `Workspace primary`), a
+`StatusRow` ("3 Standorte verbunden" with a `Chip status="ok"`), and four `Section`s, each with one `CodeBlock`: the private key
+as `secret` with `download`, the config with `lineNumbers`, `wrap="toggle"`
+and `download`, the command to run, and a TypeScript snippet with
+`language="ts"`. `states` exports the worst case of a log: 2,000 lines, one of 10,000 signs, of which the block
+shows 200 and "Alles zeigen (2.000 Zeilen)".
+
+- A section's `summary` says what to do with the code; the block only holds it.
+- Never a code block for a short value: a token or an ID is a `Facts` item.
