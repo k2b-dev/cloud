@@ -3225,6 +3225,10 @@
   padding: 8px;
   gap: 0;
 }
+/* as a sheet on the phone it reaches the edges: its head stands on the text edge of the menu sheet beside it */
+.k2-ui .k2-pop.k2-dpop[data-presentation="sheet"] {
+  padding-inline: 0;
+}
 .k2-ui .k2-dpick {
   display: flex;
   flex-direction: column;
