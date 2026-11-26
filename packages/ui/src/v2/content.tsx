@@ -201,12 +201,21 @@ export type ListProps = {
  * up there. (As v1's `MailConversationList`.)
  */
 const keepPlace = (list: HTMLElement) => {
-  const scroller = list.closest<HTMLElement>(".k2-scroll");
-  if (!scroller || typeof MutationObserver === "undefined") return;
+  // The column scrolls (`.k2-scroll`), or on the phone the page of stacked panes does (`.k2-split`): the place is
+  // held in the one of them that scrolls now.
+  const regions = [list.closest<HTMLElement>(".k2-scroll"), list.closest<HTMLElement>(".k2-split")].filter(
+    (region): region is HTMLElement => region !== null,
+  );
+  if (!regions.length || typeof MutationObserver === "undefined") return;
+  const scrolling = () =>
+    regions.find(
+      (region) => ["auto", "scroll"].includes(getComputedStyle(region).overflowY) && region.scrollHeight > region.clientHeight,
+    ) ?? regions[0]!;
   type Place = { row: HTMLElement; top: number };
   let held: { place: Place; next?: Place; previous?: Place } | null = null;
   const isRow = (node: Node | null): node is HTMLElement => node instanceof HTMLElement && node.matches(".k2-row");
   const hold = () => {
+    const scroller = scrolling();
     const view = scroller.getBoundingClientRect();
     const placeOf = (row: HTMLElement): Place => ({ row, top: row.getBoundingClientRect().top - view.top });
     const visible = (row: HTMLElement) => {
@@ -237,6 +246,7 @@ const keepPlace = (list: HTMLElement) => {
     if (!records.some((record) => [...record.addedNodes, ...record.removedNodes].some(isRow))) return;
     const place = [held?.place, held?.next, held?.previous].find((each) => each?.row.isConnected);
     if (place) {
+      const scroller = scrolling();
       const moved = place.row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - place.top;
       if (Math.abs(moved) >= 1) scroller.scrollTop += moved;
     }
@@ -244,13 +254,17 @@ const keepPlace = (list: HTMLElement) => {
   };
   const rows = new MutationObserver(changed);
   rows.observe(list, { childList: true });
-  scroller.addEventListener("scroll", hold, { passive: true });
-  scroller.addEventListener("focusin", hold);
+  for (const region of regions) {
+    region.addEventListener("scroll", hold, { passive: true });
+    region.addEventListener("focusin", hold);
+  }
   hold();
   onCleanup(() => {
     rows.disconnect();
-    scroller.removeEventListener("scroll", hold);
-    scroller.removeEventListener("focusin", hold);
+    for (const region of regions) {
+      region.removeEventListener("scroll", hold);
+      region.removeEventListener("focusin", hold);
+    }
   });
 };
 

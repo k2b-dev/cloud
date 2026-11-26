@@ -79,8 +79,10 @@ describe("k2b-ui skill recipes keep the v2 rules", () => {
           expect(closed).toEqual([]);
           // scrolled to its end, the page shows its last line in the window, and clear of the floating main action
           const end = await page.evaluate(() => {
+            // only what a person can scroll: a box that clips (overflow hidden) can be scrolled by a script, not by a hand
             for (const element of document.querySelectorAll(".frame *"))
-              if (element.scrollHeight > element.clientHeight) element.scrollTop = element.scrollHeight;
+              if (element.scrollHeight > element.clientHeight && ["auto", "scroll"].includes(getComputedStyle(element).overflowY))
+                element.scrollTop = element.scrollHeight;
             const fab = document.querySelector(".k2-fab");
             const floor = Math.min(window.innerHeight, fab && fab.getClientRects().length ? fab.getBoundingClientRect().top - 8 : Infinity);
             const lines = [...document.querySelectorAll(".frame *")].filter(

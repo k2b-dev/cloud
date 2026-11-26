@@ -478,6 +478,14 @@ test("files: a refusal sentence goes when the form is reset or the page empties 
     await template.locator(".k2-files-name").waitFor();
     await input.setInputFiles({ name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") });
     await template.locator(".k2-files-hint[data-refused]").waitFor();
+    // a file taken and one refused in one pick: the page's copy of the list is no change, the sentence stays
+    await input.setInputFiles([
+      { name: "anlage.pdf", mimeType: "application/pdf", buffer: Buffer.from("a") },
+      { name: "setup.exe", mimeType: "application/octet-stream", buffer: Buffer.from("x") },
+    ]);
+    await template.locator(".k2-files-name").nth(1).waitFor();
+    await settled(page);
+    expect(await template.locator(".k2-files-hint[data-refused]").count()).toBe(1);
     await page.evaluate(() => window.__k2ClearTemplate?.());
     await template.locator(".k2-files-name").waitFor({ state: "detached" });
     expect(await template.locator(".k2-files-hint[data-refused]").count()).toBe(0);

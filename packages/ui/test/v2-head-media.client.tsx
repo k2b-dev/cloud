@@ -10,7 +10,7 @@ import { CanvasFillScreen, DeepPathScreen, LongAddressScreen, RowStatesScreen } 
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "long";
+    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "side-canvas" | "long";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -31,8 +31,8 @@ render(
         <LongAddressScreen />
       ) : which === "path" ? (
         <DeepPathScreen />
-      ) : which === "canvas" || which === "split-canvas" ? (
-        <CanvasFillScreen split={which === "split-canvas"} />
+      ) : which === "canvas" || which === "split-canvas" || which === "side-canvas" ? (
+        <CanvasFillScreen split={which !== "canvas"} side={which === "side-canvas"} />
       ) : (
         <Folder grid={which !== "list"} selected={which === "selecting" ? ["front", "vorher", "granit"] : undefined} />
       )}

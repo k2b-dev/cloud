@@ -93,11 +93,8 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | one statement that stands out in a column (not a message) | `Band tone` with `Text` | – |
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
-| several short values (domains, addresses), an image, a one-time code | `TagsInput`, `ImageInput`, `CodeInput` in a `Field` | `settings.tsx` |
+| short values (domains), an image, a code, a range, a colour, a default to go back to, an answer that opens in place | `TagsInput`, `ImageInput`, `CodeInput`, `Slider`, `ColorInput`, `Field action`, `Disclosure` | `settings.tsx` |
 | files to send (a document, attachments) | `FileInput` in a `Field` | `upload.tsx` |
-| a number on a range, a colour | `Slider`, `ColorInput` in a `Field` | `settings.tsx` |
-| a field that goes back to its default | `Field action` ("Auf Standard zurücksetzen") | `settings.tsx` |
-| an answer that opens in place (a question in a FAQ) | `Disclosure` | `settings.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
 | attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
@@ -188,22 +185,18 @@ and appealing. Dense is not busy: show more, never the same thing twice.
 
 - **Frame:** `Workspace` (sidebar, head, primary), `Pane` (head, status,
   `width`, `detail`, `side`), `Pane.Split`, `Bar` (start, end), `Band`
-  (`tone`), `Cells`, `Tiles`, `Canvas`.
-- **Structure:** `Section`, `Group`, `Disclosure`.
+  (`tone`), `Cells`, `Tiles`, `Canvas`. **Structure:** `Section`, `Group`, `Disclosure`.
 - **Content:** `List`, `Row`, `Table`, `Facts`, `Text` (`type` meta, row,
   body, lead), `Prose`, `Inline`, `Icon`, `Mark`, `Avatar`, `Avatar.Stack`,
   `Chip`, `Progress`, `Spark`, `Steps`.
 - **Controls:** `Button`, `Field`, `Field.Row`, `Setting`, `Input`,
   `Select`, `DateInput`, `DatePicker`, `Check`, `Choice`, `TagsInput`,
-  `ImageInput`, `FileInput`, `CodeInput`, `Slider`, `ColorInput`.
-  **Media:** `Preview`.
+  `ImageInput`, `FileInput`, `CodeInput`, `Slider`, `ColorInput`. **Media:** `Preview`.
 - **Components:** `Nav`, `Tabs`, `Path`, `StatusRow`, `Notice`, `Digest`,
   `RecordHead`, `FilterBar`, `ListOrder`, `Lookup`.
 - **Overlays:** `Dialog`, `Dialog.confirm`, `Menu`, `Menu.Context`,
-  `Popover` (panel or `tip`), `useToast`.
-- **States:** `Empty`, `Loading`, `Failed`.
-- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`),
-  and `@k2b/ui/v2/testing` for Playwright tests.
+  `Popover` (panel or `tip`), `useToast`. **States:** `Empty`, `Loading`, `Failed`.
+- **Tools:** `describeV2`, the tokens (`typeRoles`, `heights`, `textEdge`), and `@k2b/ui/v2/testing` for Playwright tests.
 
 Not there yet (write a `k2b-ui gap` comment, never a replacement):
 the mail and chat composer and a Markdown editor (come from `@k2b/editor`),

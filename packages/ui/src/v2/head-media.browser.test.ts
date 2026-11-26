@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "long";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path" | "split-canvas" | "side-canvas" | "long";
 
 let browser: Browser;
 let client: string;
@@ -462,6 +462,35 @@ for (const which of ["canvas", "split-canvas"] as const)
         width,
       );
   });
+
+test("on the phone a drawing that is the whole pane stays a window high beside an info column, which follows below in reach (review #4241)", async () => {
+  await withPage(
+    "side-canvas",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const split = document.querySelector<HTMLElement>(".k2-split")!;
+        const canvas = document.querySelector(".k2-canvas[data-fill]")!.getBoundingClientRect();
+        const pane = document.querySelector(".k2-canvas[data-fill]")!.closest(".k2-pane")!.getBoundingClientRect();
+        const inner = document.querySelector<HTMLElement>(".k2-canvas[data-fill]")!.parentElement!;
+        split.scrollTop = split.scrollHeight;
+        const last = [...document.querySelectorAll(".k2-pane[data-side] dd")].at(-1)!.getBoundingClientRect();
+        return {
+          canvas: Math.round(canvas.height),
+          pane: Math.round(pane.height),
+          page: split.clientHeight,
+          nested: inner.scrollHeight > inner.clientHeight,
+          reached: last.bottom <= innerHeight,
+        };
+      });
+      // the pane is the page's height, the drawing fills what its head and status leave, nothing scrolls inside it
+      expect(found.pane).toBe(found.page);
+      expect(found.canvas).toBeGreaterThan(240);
+      expect(found.nested).toBe(false);
+      expect(found.reached).toBe(true);
+    },
+    390,
+  );
+});
 
 for (const width of [1440, 1024])
   test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {

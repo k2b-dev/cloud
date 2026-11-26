@@ -326,7 +326,7 @@ export const Workspace = (props: WorkspaceProps) => {
 
 // ── Pane and Pane.Split ──────────────────────────────────────────────────────────────────────────────────────────
 
-type SplitEntry = { readonly width?: Width; readonly label?: string; element?: HTMLElement };
+type SplitEntry = { readonly width?: Width; readonly label?: string; readonly scrollKey?: string; element?: HTMLElement };
 /** A pane inside a split registers its width and name for the seam beside it, for as long as it exists. */
 const SplitContext = createContext<(entry: SplitEntry) => void>();
 
@@ -376,6 +376,9 @@ export const Pane = (props: PaneProps) => {
     },
     get label() {
       return props.label;
+    },
+    get scrollKey() {
+      return props.scrollKey;
     },
   };
   useContext(SplitContext)?.(entry);
@@ -497,8 +500,14 @@ const SplitBody = (props: { entries: readonly SplitEntry[]; empty: { icon: strin
     const moving = right.width ? right : left?.width ? left : undefined;
     return moving?.width ? { label: moving.label ?? "Column", width: moving.width } : undefined;
   };
+  // On the phone the stacked panes are one page that the split scrolls: it keeps its place under the key of its first
+  // pane that has one, so back and forward bring the page back where it was.
+  const pageKey = () => {
+    const key = props.entries.find((entry) => entry.scrollKey)?.scrollKey;
+    return key ? `${key}:page` : undefined;
+  };
   return (
-    <div class="k2-split" data-k2-part="Pane.Split">
+    <div class="k2-split" data-k2-part="Pane.Split" data-scroll-preserve={pageKey()}>
       <For each={panes()}>
         {(pane, index) => (
           <>

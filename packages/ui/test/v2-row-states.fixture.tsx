@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Bar, Button, Canvas, Chip, FilterBar, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, Canvas, Chip, Facts, FilterBar, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
 import { defineListQuery, type ListQueryStateOf } from "../src/v2/list-query";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
@@ -47,7 +47,7 @@ export const RowStatesScreen = () => (
 );
 
 // `split`: the drawing's pane stands in a `Pane.Split` (a board or a calendar beside the place of its detail, W3 #4197).
-export const CanvasFillScreen = (props: { split?: boolean }) => {
+export const CanvasFillScreen = (props: { split?: boolean; side?: boolean }) => {
   const pane = () => (
     <Pane
       label="Vorlage"
@@ -69,7 +69,32 @@ export const CanvasFillScreen = (props: { split?: boolean }) => {
       </Canvas>
     </Pane>
   );
-  return <Workspace>{props.split ? <Pane.Split>{pane()}</Pane.Split> : pane()}</Workspace>;
+  // with `side`: an info column beside the drawing, as a record's; on the phone it stands under the drawing
+  const side = () => (
+    <Pane side label="Infos" width={{ min: 240, default: 280 }}>
+      <Section icon="info-circle" title="Infos">
+        <Facts
+          items={[
+            { label: "Kunde", value: "Lindqvist" },
+            { label: "Stand", value: "Entwurf" },
+            { label: "Seiten", value: "3" },
+          ]}
+        />
+      </Section>
+    </Pane>
+  );
+  return (
+    <Workspace>
+      {props.split ? (
+        <Pane.Split>
+          {pane()}
+          {props.side ? side() : null}
+        </Pane.Split>
+      ) : (
+        pane()
+      )}
+    </Workspace>
+  );
 };
 
 // A folder twelve levels deep, the last two with long names, in a head that also has a search and its deeds.

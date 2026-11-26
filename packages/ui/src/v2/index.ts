@@ -82,12 +82,12 @@ export {
   Select,
   type SelectOption,
   type SelectProps,
+  Setting,
+  type SettingProps,
   Slider,
   type SliderProps,
   TagsInput,
   type TagsInputProps,
-  Setting,
-  type SettingProps,
 } from "./controls";
 // A month of days to pick one from (with a time for points in time); DateInput opens it.
 export { DatePicker, type DatePickerProps } from "./date-picker";

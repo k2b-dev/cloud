@@ -13,7 +13,7 @@ import type {} from "../../test/v2-list.client";
 
 const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
-  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; } .k2-scroll { overflow-anchor: none; }";
+  "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; } .k2-scroll, .k2-split { overflow-anchor: none; }";
 
 let browser: Browser;
 let client: string;
@@ -54,6 +54,32 @@ test("the pane keeps its scroll position under its key", async () => {
   await withPage(async (page) => {
     expect(await scroller(page).getAttribute("data-scroll-preserve")).toBe("liste");
   });
+});
+
+test("the split keeps the page's scroll position under the pane's key, for the phone where it scrolls the page", async () => {
+  await withPage(async (page) => {
+    expect(await page.locator(".k2-split").getAttribute("data-scroll-preserve")).toBe("liste:page");
+  });
+});
+
+test("on the phone, where the split scrolls the page, new entries on top leave the focused entry where it was", async () => {
+  await withPage(async (page) => {
+    const split = page.locator(".k2-split");
+    await split.evaluate((element) => element.scrollTo({ top: 600 }));
+    await page.getByRole("button", { name: "Eintrag 20", exact: true }).focus();
+    await settled(page);
+    const top = () =>
+      page
+        .locator(".k2-row", { hasText: "Eintrag 20" })
+        .first()
+        .evaluate((row) => row.getBoundingClientRect().top);
+    const before = await top();
+    await page.evaluate(() => window.__k2Prepend?.(3));
+    await page.locator(".k2-row", { hasText: "Neu 3" }).waitFor({ state: "attached" });
+    await settled(page);
+    expect(await split.evaluate((element) => element.scrollTop)).toBeGreaterThan(600);
+    expect(await top()).toBe(before);
+  }, 390);
 });
 
 test("new entries on top leave the focused entry where it was", async () => {

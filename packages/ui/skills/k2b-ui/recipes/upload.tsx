@@ -7,7 +7,16 @@ import { Bar, Button, Chip, Facts, Field, FileInput, List, Nav, Pane, Row, Secti
 import { createSignal } from "solid-js";
 
 type State = "ok" | "warn" | "bad";
-type Done = { id: string; name: string; icon: string; size: string; result: string; state: State; when: string };
+type Type = "pdf" | "doc" | "xls" | "md";
+type Done = { id: string; name: string; type: Type; size: string; result: string; state: State; when: string };
+
+// each file type in its colour, with its letters on the corner, as Files shows it
+const typeMark: Record<Type, { icon: string; color: string; kind: string }> = {
+  pdf: { icon: "file-type-pdf", color: "#dc2626", kind: "PDF" },
+  doc: { icon: "file-type-doc", color: "#2563eb", kind: "DOC" },
+  xls: { icon: "file-spreadsheet", color: "#15803d", kind: "XLS" },
+  md: { icon: "markdown", color: "#52525b", kind: "MD" },
+};
 
 // each state in colour, symbol and word, never a colour alone
 const stateMark: Record<State, { icon: string; word: string }> = {
@@ -20,7 +29,7 @@ const recent: Done[] = [
   {
     id: "d1",
     name: "Angebot Einbauschrank Flur.pdf",
-    icon: "file-type-pdf",
+    type: "pdf",
     size: "1,2 MB",
     result: "4 Seiten, 2 Tabellen",
     state: "ok",
@@ -29,7 +38,7 @@ const recent: Done[] = [
   {
     id: "d2",
     name: "Wartungsvertrag Stadtwerke.docx",
-    icon: "file-type-doc",
+    type: "doc",
     size: "86 kB",
     result: "9 Seiten, 14 Abschnitte",
     state: "ok",
@@ -38,7 +47,7 @@ const recent: Done[] = [
   {
     id: "d3",
     name: "Protokoll Baubesprechung KW 47.pdf",
-    icon: "file-type-pdf",
+    type: "pdf",
     size: "640 kB",
     result: "3 Seiten, 1 Bild nicht lesbar",
     state: "warn",
@@ -47,7 +56,7 @@ const recent: Done[] = [
   {
     id: "d4",
     name: "Preisliste Beschläge 2027.xlsx",
-    icon: "file-type-xls",
+    type: "xls",
     size: "212 kB",
     result: "2 Tabellen, 418 Zeilen",
     state: "ok",
@@ -56,7 +65,7 @@ const recent: Done[] = [
   {
     id: "d5",
     name: "Aufmaß Küche Oswald.pdf",
-    icon: "file-type-pdf",
+    type: "pdf",
     size: "2,4 MB",
     result: "6 Seiten, 3 Skizzen verlinkt",
     state: "ok",
@@ -65,7 +74,7 @@ const recent: Done[] = [
   {
     id: "d6",
     name: "Leitfaden Annahme.md",
-    icon: "file-text",
+    type: "md",
     size: "12 kB",
     result: "unverändert, Links geprüft",
     state: "ok",
@@ -74,7 +83,7 @@ const recent: Done[] = [
   {
     id: "d7",
     name: "Lieferschein Scan.pdf",
-    icon: "file-type-pdf",
+    type: "pdf",
     size: "3,1 MB",
     result: "ein Scan ohne Text",
     state: "bad",
@@ -83,7 +92,7 @@ const recent: Done[] = [
   {
     id: "d8",
     name: "Schulung Stapler.docx",
-    icon: "file-type-doc",
+    type: "doc",
     size: "1,1 MB",
     result: "11 Seiten, 7 Bilder verlinkt",
     state: "ok",
@@ -159,7 +168,7 @@ export default function DocumentToMarkdown(props: Props) {
             <List label="Zuletzt umgewandelt">
               {recent.map((done) => (
                 <Row
-                  icon={done.icon}
+                  mark={typeMark[done.type]}
                   lines={[done.name, done.result]}
                   meta={done.size}
                   time={done.when}

@@ -4586,7 +4586,8 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
-  /* the end of the page stays clear of the floating main action: 16 + 48 + 8 px after the last line */
+  /* the end of the page stays clear of the floating main action (16 + 48 + 8 px) and the safe area under it; while
+     entries are selected the main action gives way, and the columns keep the room of the selection's actions (below) */
   .k2-ui
     .k2-ws:has(> .k2-fab)
     :is(
@@ -4596,7 +4597,22 @@
     )::after {
     content: "";
     flex: none;
-    height: 72px;
+    height: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+  .k2-ui:has(.k2-bar[data-selecting])
+    .k2-ws:has(> .k2-fab)
+    :is(
+      .k2-ws-main > .k2-pane > .k2-scroll,
+      .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])),
+      .k2-ws-main > .k2-split > .k2-pane[data-detail] > .k2-scroll
+    )::after {
+    display: none;
+  }
+  /* a pane whose drawing fills it (a board, a calendar) is one window high in that page, so the panes beside it
+     follow below instead of squeezing the drawing */
+  .k2-ui .k2-ws-main > .k2-split:not(:has(> .k2-pane[data-detail])):has(> .k2-pane ~ .k2-pane) > .k2-pane:has(> .k2-scroll > .k2-canvas[data-fill]) {
+    flex: none;
+    height: 100%;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
   .k2-ui .k2-split > [data-detail-empty],

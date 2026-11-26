@@ -862,11 +862,14 @@ export const FileInput = (props: FileInputProps) => {
   // The sentence holds until the files change: a pick, a removal, the form's reset, or a value the page sets itself
   // (such as an empty field after the page sent the file). The page handing back the files it was given is no change.
   let given: readonly File[] | undefined;
+  // the same files in the same order, also in a copy the page made of the list it was given
+  const sameFiles = (a: readonly File[] | undefined, b: readonly File[] | undefined) =>
+    a === b || (a !== undefined && b !== undefined && a.length === b.length && a.every((file, index) => file === b[index]));
   createEffect(
     on(
       () => props.value,
       (value) => {
-        if (value !== given) setRefused(undefined);
+        if (!sameFiles(value, given)) setRefused(undefined);
       },
       { defer: true },
     ),

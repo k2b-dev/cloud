@@ -288,8 +288,8 @@ answers with a toast with `status` `ok` or `bad`.
 A tool in its frame (`Nav` of tools, head with the one primary
 "Umwandeln", `StatusRow`): a `Section` with a `Field` holding a
 `FileInput` whose files a signal holds (`value` and `onChange`), so
-"Umwandeln" waits for a document; the last conversions as `Row`s with the
-type of each file, its size, what came of it, when, and its state as a
+"Umwandeln" waits for a document; the last conversions as `Row`s led by the
+`mark` of each file's type (its colour and letters), its size, what came of it, when, and its state as a
 `Chip` with `status` and `icon` (colour, symbol and word); a `Pane side`
 with `Facts` on what the tool takes, how the week went and what it cannot
 read.

@@ -111,7 +111,8 @@ export function Demo() {
             />
           </Field>
           <Field name="template" label="Vorlage">
-            <FileInput accept=".pdf" value={template()} onChange={setTemplate} />
+            {/* the page keeps a copy of the list it is given a moment later, as a store does */}
+            <FileInput accept=".pdf" multiple value={template()} onChange={(next) => queueMicrotask(() => setTemplate([...next]))} />
           </Field>
           <Field name="code" label="Code vom anderen Gerät">
             <CodeInput onComplete={(code) => did(`code:${code}`)} />
