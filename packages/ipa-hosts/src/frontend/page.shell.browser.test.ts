@@ -103,7 +103,7 @@ const firstHtml = async (search: string, data: Data) => {
       hostsTotal: data === "worst" ? 123_456 : hosts.length,
       hostsUngrouped: data === "worst" ? 24_691 : ungrouped.length,
       hostgroupsTotal: data === "worst" ? 12_345 : groups.length,
-      // the last sync twelve minutes ago, whatever day the test runs
+      // real clock: the page words the last sync relative to now, so it lies twelve minutes before now on any day
       lastSyncedAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
     } as never),
   ];
