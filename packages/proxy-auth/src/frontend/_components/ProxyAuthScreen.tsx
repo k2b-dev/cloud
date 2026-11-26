@@ -4,6 +4,7 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
+  Cells,
   Chip,
   confirm,
   Dialog,
@@ -20,7 +21,6 @@ import {
   Prose,
   Row,
   Section,
-  StatusRow,
   Table,
   Tabs,
   Text,
@@ -52,6 +52,8 @@ export type ProxyAuthScreenProps = {
   /** The client open beside the list (`client=<id>`); null when none is, or it is gone. */
   open: string | null;
   figures: { withoutGroups: number; total: number };
+  /** The colour of Proxy Auth itself: its figures carry it inside the Administration shell. */
+  accent: string;
   /** The search of the list (`search=`), matched on the server; empty for none. */
   search: string;
 };
@@ -161,8 +163,8 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const groupLine = (client: ClientRow) =>
     client.groups.length === 0 ? t().noGroups : client.groups.map((group) => group.label).join(", ");
 
-  /** A long ID shortened in the middle, whole when copied. */
-  const shortId = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id);
+  /** A figure in the person's number format. */
+  const number = (value: number) => value.toLocaleString(locale());
   const copy = (value: string) => {
     void navigator.clipboard?.writeText(value);
     toast(t().copied, { status: "ok" });
@@ -195,11 +197,22 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
         />
       }
     >
-      <Show when={client.groups.length === 0}>
-        <Notice tone="warn" title={t().blockedTitle} actions={[{ label: t().edit, icon: "pencil", onClick: () => start(client) }]}>
-          {t().blockedText}
-        </Notice>
-      </Show>
+      {/* three key facts as a strip; the tinted object head of @k2b/ui takes them over in one step */}
+      <Cells>
+        <Cells.Cell
+          icon="shield-check"
+          label={t().state}
+          value={client.groups.length === 0 ? blocked() : t().activeState}
+          meta={client.groups.length === 0 ? t().nobodyThrough : t().groupsThrough}
+        />
+        <Cells.Cell
+          icon="users-group"
+          label={t().allowedGroups}
+          value={number(client.groups.length)}
+          meta={client.groups.length === 0 ? t().chooseGroups : groupLine(client)}
+        />
+        <Cells.Cell icon="calendar" label={t().created} value={client.created} meta={client.description ?? ""} />
+      </Cells>
       <Section icon="link" title={t().verifyUrl} summary={t().verifySummary}>
         <Row
           icon="link"
@@ -212,47 +225,47 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
           <For each={client.groups}>{(group) => <Row icon="users-group" lines={[group.label]} />}</For>
         </Show>
       </Section>
-      <Section icon="settings" title={t().details}>
-        <Facts
-          items={[
-            { label: t().clientId, value: shortId(client.clientId), mono: true, copy: client.clientId },
-            ...(client.description ? [{ label: t().description, value: client.description }] : []),
-            { label: t().created, value: client.created },
-          ]}
-        />
+      {/* what Traefik and an administrator need to copy; created and description stand in the strip above */}
+      <Section icon="code" title={t().technique}>
+        <Facts items={[{ label: t().clientId, value: client.clientId, mono: true, copy: client.clientId }]} />
       </Section>
     </Pane>
   );
 
+  /**
+   * The one statement of the page with its figure: how many clients let nobody through, else how many there are. A slot
+   * of its own, so the hero band of @k2b/ui (figure type) replaces it in one step. Proxy Auth keeps no use of its clients,
+   * so the hero has no trend.
+   */
+  const hero = () => {
+    const blockedCount = props.figures.withoutGroups;
+    const names = rows()
+      .filter((client) => client.groups.length === 0)
+      .map((client) => client.name);
+    return (
+      <Cells>
+        <Cells.Cell
+          icon={blockedCount > 0 ? "lock" : "shield-check"}
+          color={props.accent}
+          label={blockedCount > 0 ? t().blockedLabel : t().gatedLabel}
+          value={number(blockedCount > 0 ? blockedCount : props.figures.total)}
+          meta={
+            props.search
+              ? t().shownOf({ shown: rows().length, total: props.figures.total })
+              : [t().clientCount({ count: props.figures.total }), ...(blockedCount > 0 ? [names.join(", ")] : [])]
+                  .filter(Boolean)
+                  .join(" · ")
+          }
+        />
+      </Cells>
+    );
+  };
+
   /** The clients with their figures, one open beside them. */
   const list = () => (
     <Pane.Split>
-      <Pane
-        label={t().appName}
-        scrollKey="proxy-auth-clients"
-        // the first row says what matters with its number; the list's count and the search are quiet facts
-        status={
-          <StatusRow
-            lead={
-              rows().length === 0 && !props.search
-                ? t().emptyLead
-                : props.figures.withoutGroups > 0
-                  ? t().blockedLead({ count: props.figures.withoutGroups })
-                  : t().allGatedLead({ count: props.figures.total })
-            }
-            // the count stands at the end of the row, as in a console's toolbar: all clients, or how many a search shows
-            filters={
-              rows().length > 0 || props.search ? (
-                <Text type="meta" muted>
-                  {props.search
-                    ? t().shownOf({ shown: rows().length, total: props.figures.total })
-                    : t().clientCount({ count: rows().length })}
-                </Text>
-              ) : undefined
-            }
-          />
-        }
-      >
+      <Pane label={t().appName} scrollKey="proxy-auth-clients">
+        <Show when={!nothingYet()}>{hero()}</Show>
         <Table
           label={t().clients}
           rows={rows()}
@@ -267,9 +280,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
               : // the one way to the first client: the head and the phone's button hold none while the list is empty
                 { icon: "shield-half", text: t().empty, action: { label: t().newClient, icon: "plus", onClick: () => start("new") } }
           }
+          // two lines on the phone: the name, then its groups and since when
           phone={(client) => ({
-            lines: [client.name, groupLine(client)],
-            time: client.created,
+            lines: [client.name, `${groupLine(client)} · ${client.created}`],
             marks: client.groups.length === 0 ? blocked() : undefined,
           })}
           // one line per client; colour only for the state that needs a look
@@ -350,7 +363,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
             <Tabs
               label={t().appName}
               items={[
-                { label: t().clients, icon: "shield-half", href: LIST, current: props.tab === "clients" },
+                { label: t().clients, icon: "shield-half", href: LIST, count: props.figures.total, current: props.tab === "clients" },
                 { label: t().setupTitle, icon: "route", href: `${LIST}?tab=setup`, current: props.tab === "setup" },
               ]}
             />

@@ -84,7 +84,8 @@ test("the clients render on v2 with their figures, one open beside the list, and
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
     // the first row says what matters with its number; the list's count is a quiet fact beside it
-    expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt 2 Clients");
+    // the hero: how many let nobody through, with all clients and the blocked one by name
+    expect(text).toContain("Gesperrte Clients 1 2 Clients · Uptime Kuma");
     // one line per client: its name, a state only where nobody gets through, its groups as words
     expect(text).toContain("Client Zustand Zulässige Gruppen Grafana Ops");
     expect(text).toContain("Uptime Kuma Gesperrt Ohne Gruppen");
