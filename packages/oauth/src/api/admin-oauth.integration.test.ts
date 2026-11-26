@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
+import { toPgUuidArray } from "@k2b/cloud/services";
 import { z } from "zod";
 import { assertAdminMutationsRejectReadOAuth, withAdminOAuth } from "../../../../scripts/fixtures/admin-oauth";
 import { suiteFor } from "../../../../scripts/fixtures/test-infra";
 import "../../../../scripts/fixtures/authorization-preload";
+import { oauth } from "../service/oauth";
 import routes from "./index";
 
 suiteFor(
@@ -43,4 +45,106 @@ suiteFor(
         await sql`DELETE FROM oauth.clients WHERE id=${client!.id}::uuid`;
       }
     }));
+
+  test("an administrator disconnects one person, then everyone; a revoked refresh token no longer refreshes", () =>
+    withAdminOAuth(async ({ adminHeaders, sessionHeaders }) => {
+      const fixture = await connectedClient();
+      try {
+        const [ada, ben] = fixture.people;
+        const one = await routes.request(`/${fixture.id}/connections/${ada!.userId}`, { method: "DELETE", headers: adminHeaders });
+        expect(one.status).toBe(200);
+        expect(z.object({ revoked: z.number() }).parse(await one.json())).toEqual({ revoked: 1 });
+        expect(await familyStates(fixture.clientId)).toEqual({ [ada!.userId]: "revoked", [ben!.userId]: "active" });
+        // the revoked refresh token is refused; the other person's still works
+        expect(await oauth.refreshTokens.rotate(ada!.refreshToken, fixture.client)).toEqual({ ok: false, error: "invalid_grant" });
+
+        const all = await routes.request(`/${fixture.id}/connections`, { method: "DELETE", headers: sessionHeaders });
+        expect(all.status).toBe(200);
+        expect(z.object({ revoked: z.number() }).parse(await all.json())).toEqual({ revoked: 1 });
+        expect(await familyStates(fixture.clientId)).toEqual({ [ada!.userId]: "revoked", [ben!.userId]: "revoked" });
+        expect(await oauth.refreshTokens.rotate(ben!.refreshToken, fixture.client)).toEqual({ ok: false, error: "invalid_grant" });
+
+        // one audit entry per revoke: who, which client, which person or all
+        const events = await sql<
+          { actor_user_id: string; target_id: string; metadata: { userId: string | null; all: boolean; revoked: number } }[]
+        >`
+          SELECT actor_user_id, target_id, metadata FROM audit.events
+          WHERE action = 'oauth.client.connections_revoke' AND target_id = ${fixture.id}
+          ORDER BY created_at, id
+        `;
+        expect(events.map((event) => event.metadata)).toMatchObject([
+          { userId: ada!.userId, all: false, revoked: 1 },
+          { userId: null, all: true, revoked: 1 },
+        ]);
+        expect(events.every((event) => typeof event.actor_user_id === "string")).toBe(true);
+      } finally {
+        await fixture.remove();
+      }
+    }));
+
+  test("a person who is not an administrator cannot disconnect anyone", () =>
+    withAdminOAuth(
+      async ({ adminHeaders, sessionHeaders }) => {
+        const fixture = await connectedClient();
+        try {
+          for (const headers of [adminHeaders, sessionHeaders]) {
+            for (const path of [`/${fixture.id}/connections`, `/${fixture.id}/connections/${fixture.people[0]!.userId}`]) {
+              expect((await routes.request(path, { method: "DELETE", headers })).status, path).toBe(403);
+            }
+          }
+          expect(Object.values(await familyStates(fixture.clientId))).toEqual(["active", "active"]);
+        } finally {
+          await fixture.remove();
+        }
+      },
+      { admin: false },
+    ));
 });
+
+/** A confidential client with two people connected through a live refresh token each. */
+const connectedClient = async () => {
+  const clientId = `connections-${crypto.randomUUID()}`;
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO oauth.clients (name,client_id,redirect_uris,scopes,audiences,is_public,registration_kind,client_secret_hash)
+    VALUES ('Connections fixture',${clientId},ARRAY[]::text[],ARRAY['openid','offline_access']::text[],ARRAY['cloud']::text[],false,'managed',
+      ${await Bun.password.hash("fixture")})
+    RETURNING id
+  `;
+  const client = await oauth.clients.get({ id: row!.id });
+  if (!client) throw new Error("Missing fixture client");
+  const people: { userId: string; refreshToken: string }[] = [];
+  for (const name of ["ada", "ben"]) {
+    const [user] = await sql<{ id: string; auth_epoch: string }[]>`
+      INSERT INTO auth.users (uid,provider,profile) VALUES (${`${name}-${crypto.randomUUID()}`},'local','user') RETURNING id, auth_epoch
+    `;
+    const reserved = await oauth.refreshTokens.reserve({
+      userId: user!.id,
+      authEpoch: Number(user!.auth_epoch),
+      client,
+      scopes: ["openid", "offline_access"],
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    });
+    // Core activates a reserved family once it issued the first token
+    await sql`UPDATE oauth.refresh_token_families SET status = 'active' WHERE id = ${reserved.familyId}::uuid`;
+    people.push({ userId: user!.id, refreshToken: reserved.refreshToken });
+  }
+  return {
+    id: row!.id,
+    clientId,
+    client,
+    people,
+    remove: async () => {
+      await sql`DELETE FROM oauth.clients WHERE id = ${row!.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ANY(${toPgUuidArray(people.map((person) => person.userId))}::uuid[])`;
+    },
+  };
+};
+
+const familyStates = async (clientId: string) =>
+  Object.fromEntries(
+    (
+      await sql<{ user_id: string; status: string }[]>`
+        SELECT user_id, status FROM oauth.refresh_token_families WHERE client_id = ${clientId} ORDER BY user_id
+      `
+    ).map((family) => [family.user_id, family.status]),
+  );

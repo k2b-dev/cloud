@@ -8,12 +8,14 @@ import {
   createPagination,
   ErrorResponseSchema,
   MessageResponseSchema,
+  OAuthClientConnectionParamSchema,
   OAuthClientListQuerySchema,
   OAuthClientListResponseSchema,
   OAuthClientParamSchema,
   OAuthClientSchema,
   OAuthClientWithSecretSchema,
   parsePagination,
+  RevokedConnectionsSchema,
   UpdateOAuthClientSchema,
 } from "@/contracts";
 import { oauthService } from "../service";
@@ -202,6 +204,60 @@ const app = new Hono<AuthContext>()
       if (!user) return respond(c, fail(err.forbidden("OAuth client management requires a user-backed actor")));
 
       return respond(c, oauthService.client.regenerateSecret({ id, actor: user }));
+    },
+  )
+
+  // ==========================
+  // Disconnect everyone
+  // ==========================
+  .delete(
+    "/:id/connections",
+    describeRoute({
+      tags: ["OAuth Admin"],
+      summary: "Disconnect everyone from an OAuth client",
+      description:
+        "Revoke every person's refresh tokens for this client (admin only). Access tokens already issued run out at their expiry. Recorded in the audit log.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(RevokedConnectionsSchema, "Number of revoked connections"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid client id"),
+        404: jsonResponse(ErrorResponseSchema, "Client not found"),
+      },
+    }),
+    v("param", OAuthClientParamSchema),
+    async (c) => {
+      const { id } = c.req.valid("param");
+      const user = getUserBackedActor(c);
+      if (!user) return respond(c, fail(err.forbidden("OAuth client management requires a user-backed actor")));
+
+      return respond(c, oauthService.client.revokeConnections({ id, userId: null, actor: user }));
+    },
+  )
+
+  // ==========================
+  // Disconnect one person
+  // ==========================
+  .delete(
+    "/:id/connections/:userId",
+    describeRoute({
+      tags: ["OAuth Admin"],
+      summary: "Disconnect a person from an OAuth client",
+      description:
+        "Revoke one person's refresh tokens for this client (admin only). Access tokens already issued run out at their expiry. Recorded in the audit log.",
+      ...requiresAdmin,
+      responses: {
+        200: jsonResponse(RevokedConnectionsSchema, "Number of revoked connections"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid client or user id"),
+        404: jsonResponse(ErrorResponseSchema, "Client not found"),
+      },
+    }),
+    v("param", OAuthClientConnectionParamSchema),
+    async (c) => {
+      const { id, userId } = c.req.valid("param");
+      const user = getUserBackedActor(c);
+      if (!user) return respond(c, fail(err.forbidden("OAuth client management requires a user-backed actor")));
+
+      return respond(c, oauthService.client.revokeConnections({ id, userId, actor: user }));
     },
   );
 

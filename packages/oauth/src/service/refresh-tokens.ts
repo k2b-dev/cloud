@@ -183,6 +183,48 @@ export const revokeFamily = async (familyId: string, reason: string): Promise<vo
   `;
 };
 
+/**
+ * Revoke a client's connections the way `revokeFamily` revokes one: every live family of one person, or of everyone
+ * when no person is given, and the tokens in them. Returns how many families were live. Runs in the caller's
+ * transaction, so the revocation and its audit entry commit together.
+ */
+export const revokeClientFamilies = async (params: {
+  db: SqlRunner;
+  clientId: string;
+  userId: string | null;
+  reason: string;
+}): Promise<number> => {
+  const families = params.userId
+    ? await params.db<{ id: string }[]>`
+        UPDATE oauth.refresh_token_families
+        SET status = 'revoked',
+          revoked_at = COALESCE(revoked_at, now()),
+          revoked_reason = ${params.reason}
+        WHERE client_id = ${params.clientId}
+          AND user_id = ${params.userId}::uuid
+          AND status IN ('active', 'reserved')
+        RETURNING id
+      `
+    : await params.db<{ id: string }[]>`
+        UPDATE oauth.refresh_token_families
+        SET status = 'revoked',
+          revoked_at = COALESCE(revoked_at, now()),
+          revoked_reason = ${params.reason}
+        WHERE client_id = ${params.clientId}
+          AND status IN ('active', 'reserved')
+        RETURNING id
+      `;
+  if (families.length === 0) return 0;
+  await params.db`
+    UPDATE oauth.refresh_tokens
+    SET status = 'revoked',
+      revoked_at = COALESCE(revoked_at, now())
+    WHERE family_id = ANY(${toPgUuidArray(families.map((family) => family.id))}::uuid[])
+      AND status IN ('active', 'issuing')
+  `;
+  return families.length;
+};
+
 export const rotate = async (
   refreshToken: string,
   client: OAuthClient,
