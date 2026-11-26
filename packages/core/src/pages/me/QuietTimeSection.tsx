@@ -8,8 +8,7 @@ import {
   type UpdateNotificationQuietSettings,
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
-import { Button, DatePicker, Dialog, Empty, Field, Menu, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
+import { Button, DatePicker, Dialog, Empty, Field, Menu, Row, Section, Select, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, Index, onCleanup, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import type { AccountMessages } from "./messages";

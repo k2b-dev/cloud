@@ -1,8 +1,8 @@
 import type { PrivacyTimerSeconds } from "@k2b/cloud/contracts/privacy-timer";
 import { createPrivacyTimerChoice, PRIVACY_SHORTCUT, parsePrivacyTimer, requestPrivacyScreen } from "@k2b/cloud/ssr/privacy-timer-choice";
 import { createSharedWorkstationSwitch } from "@k2b/cloud/ssr/profile-actions";
-import { formatShortcut, type KeyboardPlatform, useLocale } from "@k2b/ui";
-import { Check, Row, Section, Select, Text, useToast } from "@k2b/ui/v2";
+import { formatShortcut, type KeyboardPlatform } from "@k2b/ui";
+import { Check, Row, Section, Select, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createEffect, on, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 

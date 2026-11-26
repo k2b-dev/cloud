@@ -7,8 +7,7 @@ import type {
   WebAuthnPasskey,
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
-import { Cells, Chip, Empty, Pane, Row, Section } from "@k2b/ui/v2";
+import { Cells, Chip, Empty, Pane, Row, Section, useLocale } from "@k2b/ui/v2";
 import { For, Show } from "solid-js";
 import type { z } from "zod";
 import type { ApprovalAvailability } from "../app-approval/availability";

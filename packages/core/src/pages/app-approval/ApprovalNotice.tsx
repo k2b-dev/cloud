@@ -1,5 +1,4 @@
-import { useLocale } from "@k2b/ui";
-import { Notice } from "@k2b/ui/v2";
+import { Notice, useLocale } from "@k2b/ui/v2";
 import type { ApprovalAvailability } from "./availability";
 import { appApprovalMessages } from "./messages";
 

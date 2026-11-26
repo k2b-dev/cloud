@@ -1,8 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@k2b/cloud/contracts";
 import { normalizeRedirectTo } from "@k2b/cloud/shared";
-import { useLocale } from "@k2b/ui";
-import { Button, confirm, Dialog, Field, Notice, Row, Section, Text, useToast } from "@k2b/ui/v2";
+import { Button, confirm, Dialog, Field, Notice, Row, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal, onMount, Show } from "solid-js";
 import {
   isSignOutOthersRetry,

@@ -1,5 +1,4 @@
-import { useLocale } from "@k2b/ui";
-import { Notice } from "@k2b/ui/v2";
+import { Notice, useLocale } from "@k2b/ui/v2";
 import { createSignal, Show } from "solid-js";
 import { approvalErrorMessage, isRecentSignInRequired } from "./feedback-message";
 import { appApprovalMessages } from "./messages";

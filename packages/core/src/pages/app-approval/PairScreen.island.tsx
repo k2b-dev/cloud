@@ -1,5 +1,4 @@
-import { useLocale } from "@k2b/ui";
-import { Bar, Button, Pane, Text, Workspace } from "@k2b/ui/v2";
+import { Bar, Button, Pane, Text, useLocale, Workspace } from "@k2b/ui/v2";
 import { type JSX, onMount, Show } from "solid-js";
 import AccountWorkspace from "../me/AccountWorkspace";
 import type { AccountUserView } from "../me/account-view";

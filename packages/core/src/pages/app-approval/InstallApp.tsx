@@ -1,6 +1,5 @@
 import { qr } from "@k2b/stdlib/qr";
-import { useLocale } from "@k2b/ui";
-import { Band, Bar, Button, Canvas, Dialog, Facts, Text, useToast } from "@k2b/ui/v2";
+import { Band, Bar, Button, Canvas, Dialog, Facts, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal } from "solid-js";
 import { appApprovalMessages } from "./messages";
 

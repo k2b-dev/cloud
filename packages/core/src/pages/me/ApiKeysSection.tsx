@@ -1,7 +1,6 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { isModelsOnlyApiKey, type ServiceAccountCredential } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
 import {
   Button,
   Chip,
@@ -18,6 +17,7 @@ import {
   Row,
   Section,
   Select,
+  useLocale,
   useToast,
 } from "@k2b/ui/v2";
 import { createSignal, For, type JSX, onMount, Show } from "solid-js";

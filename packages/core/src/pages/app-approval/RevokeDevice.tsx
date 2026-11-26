@@ -1,6 +1,5 @@
 import { AppDeviceRemovalStatusSchema, AppDeviceRevokeResultSchema } from "@k2b/cloud/contracts";
-import { useLocale } from "@k2b/ui";
-import { Button, Check, Dialog, Icon, Text, useToast } from "@k2b/ui/v2";
+import { Button, Check, Dialog, Icon, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalApi, approvalRequestOptions, checked, parsed, pollApproval } from "./client";

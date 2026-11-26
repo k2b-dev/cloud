@@ -9,8 +9,23 @@ import {
 } from "@k2b/cloud/contracts";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { qr } from "@k2b/stdlib/qr";
-import { announce, useLocale } from "@k2b/ui";
-import { confirm as ask, Bar, Button, Canvas, Dialog, Empty, Field, Icon, Input, Row, Section, Text, useToast } from "@k2b/ui/v2";
+import { announce } from "@k2b/ui";
+import {
+  confirm as ask,
+  Bar,
+  Button,
+  Canvas,
+  Dialog,
+  Empty,
+  Field,
+  Icon,
+  Input,
+  Row,
+  Section,
+  Text,
+  useLocale,
+  useToast,
+} from "@k2b/ui/v2";
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { z } from "zod";
 import { ApprovalError, approvalRequestOptions, checked, parsed, pollApproval } from "../app-approval/client";

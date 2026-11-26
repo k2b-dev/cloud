@@ -1,7 +1,6 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@k2b/cloud/contracts";
-import { useLocale } from "@k2b/ui";
-import { Button, Chip, Empty, Inline, Row, Section, Text, useToast } from "@k2b/ui/v2";
+import { Button, Chip, Empty, Inline, Row, Section, Text, useLocale, useToast } from "@k2b/ui/v2";
 import { createSignal, For, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";
 import { notificationChannelAvailability, notificationChannelMeta } from "./notification-ui";

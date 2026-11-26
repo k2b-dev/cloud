@@ -1,7 +1,6 @@
 import { AppDevicesPageSchema, type AppDeviceView } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Empty, Field, Input, Menu, Row, Section, useToast } from "@k2b/ui/v2";
+import { Button, Dialog, Empty, Field, Input, Menu, Row, Section, useLocale, useToast } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { z } from "zod";
 import ApprovalNotice from "./ApprovalNotice";

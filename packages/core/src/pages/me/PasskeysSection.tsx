@@ -1,8 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import type { WebAuthnPasskey } from "@k2b/cloud/contracts";
 import { dates } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
-import { Button, confirm, Dialog, Empty, Field, Input, Notice, Row, Section } from "@k2b/ui/v2";
+import { Button, confirm, Dialog, Empty, Field, Input, Notice, Row, Section, useLocale } from "@k2b/ui/v2";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { createSignal, For, onMount, Show } from "solid-js";
 import { useAccountMessages } from "./AccountWorkspace";

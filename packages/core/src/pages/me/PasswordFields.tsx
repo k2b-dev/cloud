@@ -1,6 +1,5 @@
 import { i18n, password } from "@k2b/stdlib";
-import { useLocale } from "@k2b/ui";
-import { Button, Dialog, Facts, Field, Input, Progress, Text } from "@k2b/ui/v2";
+import { Button, Dialog, Facts, Field, Input, Progress, Text, useLocale } from "@k2b/ui/v2";
 import { type Accessor, createMemo, createSignal, type JSX } from "solid-js";
 
 type PasswordSetupFieldsProps = {
