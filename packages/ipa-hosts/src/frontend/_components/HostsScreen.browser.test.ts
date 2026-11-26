@@ -3,6 +3,7 @@ import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
+import { cloudShellSheets } from "../../../../../scripts/fixtures/cloud-shell-sheets";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../../ui/test/browser";
 import { loadShellAssets, type ShellAssets } from "../../../../ui/test/shell-page";
 
@@ -49,7 +50,9 @@ let assets: ShellAssets;
 beforeAll(async () => {
   harness = await buildHarness();
   // the shell's own stylesheets, Plex fonts and icons, as the page loads them
-  assets = await loadShellAssets({ id: "ipa-hosts", css: resolve(import.meta.dir, "../../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "ipa-hosts", css: resolve(import.meta.dir, "../../styles/app.css") }, import.meta.dir),
+  );
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
 }, launchHookMs);
@@ -298,7 +301,9 @@ describe("Hosts on v2", () => {
   test("a sync asks twice, and the schedule can only be saved once it was read", async () => {
     const { context, tab, errors, calls } = await open(desktop, "/admin/ipa-hosts");
     try {
-      await tab.getByRole("button", { name: "Jetzt synchronisieren" }).click();
+      // syncing waits in the head's "…"
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("menuitem", { name: "Jetzt synchronisieren" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Synchronisierung starten" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Protokolle anzeigen" }).click();
       await tab.waitForURL(/observability\/logs\?source=ipa-hosts:sync/);
@@ -308,7 +313,8 @@ describe("Hosts on v2", () => {
     }
     const schedule = await open(desktop, "/admin/ipa-hosts");
     try {
-      await schedule.tab.getByRole("button", { name: "Host-Synchronisierung" }).click();
+      await schedule.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await schedule.tab.getByRole("menuitem", { name: "Host-Synchronisierung" }).click();
       const dialog = schedule.tab.getByRole("dialog");
       await dialog.getByRole("textbox", { name: "Zeitplan (Cron)" }).fill("0 * * * *");
       await dialog.getByRole("button", { name: "Speichern" }).click();
@@ -320,7 +326,8 @@ describe("Hosts on v2", () => {
     }
     const unread = await open(desktop, "/admin/ipa-hosts", "normal", [{ request: "GET /api/ipa-hosts/settings/sync-cron", times: 1 }]);
     try {
-      await unread.tab.getByRole("button", { name: "Host-Synchronisierung" }).click();
+      await unread.tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await unread.tab.getByRole("menuitem", { name: "Host-Synchronisierung" }).click();
       expect(await unread.tab.getByRole("dialog").getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
       expect([...errors, ...unread.errors]).toEqual([]);
     } finally {

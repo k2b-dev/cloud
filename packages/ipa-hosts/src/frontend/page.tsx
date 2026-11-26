@@ -73,7 +73,6 @@ export default ssr<AuthContext>(async (c) => {
         search={search}
         figures={{
           groups: groupsPage.total,
-          hostsInGroups: stats.hostsInGroups,
           hostsTotal: stats.hostsTotal,
           ungrouped: ungroupedHosts.total,
         }}

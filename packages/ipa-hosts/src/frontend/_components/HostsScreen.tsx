@@ -13,6 +13,7 @@ import {
   Input,
   List,
   Lookup,
+  Menu,
   type NavProps,
   Notice,
   Pane,
@@ -35,7 +36,7 @@ export type HostsScreenProps = {
   nav: NavProps;
   tab: HostsTab;
   search: string;
-  figures: { groups: number; hostsInGroups: number; hostsTotal: number; ungrouped: number };
+  figures: { groups: number; hostsTotal: number; ungrouped: number };
   groups: (IpaHostgroup & { hostDetails: IpaHost[] })[];
   ungrouped: IpaHost[];
   /** Pages of the visible list: the groups or the hosts without a group. */
@@ -297,14 +298,9 @@ export default function HostsScreen(props: HostsScreenProps) {
             icon="folders"
             label={t().hostgroups}
             value={number(props.figures.groups)}
-            meta={props.search ? t().filtered : t().mirroredFromIpa}
+            meta={props.search ? t().filtered : undefined}
           />
-          <Cells.Cell
-            icon="server"
-            label={t().hosts}
-            value={number(props.figures.hostsTotal)}
-            meta={t().inGroups({ count: props.figures.hostsInGroups })}
-          />
+          <Cells.Cell icon="server" label={t().hosts} value={number(props.figures.hostsTotal)} />
         </Cells>
       </Show>
       <Show
@@ -330,7 +326,9 @@ export default function HostsScreen(props: HostsScreenProps) {
           fallback={
             <Empty
               icon={props.search ? "search-off" : "folders"}
-              text={props.search ? t().noGroupMatch({ query: props.search }) : t().noGroups}
+              text={
+                props.search ? t().noGroupMatch({ query: props.search }) : props.figures.hostsTotal === 0 ? t().syncToFill : t().noGroups
+              }
               // an empty mirror is filled by the first sync
               action={props.search ? undefined : { label: t().syncNow, icon: "refresh", onClick: () => void sync() }}
             />
@@ -406,13 +404,12 @@ export default function HostsScreen(props: HostsScreenProps) {
       <Facts
         items={[
           ...(group.description ? [{ label: t().description, value: group.description }] : []),
-          { label: t().hosts, value: t().hostCount({ count: group.hostTotal }) },
           ...(group.hostgroups.length > 0
             ? [{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]
             : []),
         ]}
       />
-      <Section icon="server" title={t().hostsOfGroup}>
+      <Section icon="server" title={t().hostsOfGroup} count={group.hostTotal}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
             <For each={group.hostDetails}>
@@ -485,8 +482,7 @@ export default function HostsScreen(props: HostsScreenProps) {
       >
         <Facts
           items={[
-            { label: "FQDN", value: host.fqdn, copy: host.fqdn },
-            { label: t().sshKeys, value: host.sshFingerprints.length > 0 ? t().keysStored : t().noKeys },
+            ...(host.sshFingerprints.length === 0 ? [{ label: t().sshKeys, value: t().noKeys }] : []),
             ...(host.description ? [{ label: t().description, value: host.description }] : []),
             ...(place(host) ? [{ label: t().location, value: place(host) }] : []),
             ...(host.platform || host.osVersion
@@ -528,12 +524,11 @@ export default function HostsScreen(props: HostsScreenProps) {
           <Section icon="key" title={t().sshFingerprints}>
             {/* k2b-ui gap: Facts mono breaks an ID or hash at any sign; IDs need one line with an ellipsis and copy (DP). */}
             <Facts
-              items={host.sshFingerprints.map((fingerprint, index) => ({
-                label: String(index + 1),
-                value: fingerprint,
-                mono: true,
-                copy: fingerprint,
-              }))}
+              items={host.sshFingerprints.map((fingerprint) => {
+                // FreeIPA writes "SHA256:… (ED25519)": the key type is the label, the hash the value
+                const [, hash = fingerprint, type] = /^(.*?)(?: \(([^)]+)\))?$/.exec(fingerprint) ?? [];
+                return { label: type ?? t().sshKey, value: hash, mono: true, copy: hash };
+              })}
             />
           </Section>
         </Show>
@@ -688,8 +683,14 @@ export default function HostsScreen(props: HostsScreenProps) {
                   if (event.key === "Escape" && input.value) location.assign(href({ search: "", group: null, host: null }));
                 }}
               />
-              <Button variant="ghost" icon="refresh" label={t().syncNow} onClick={() => void sync()} />
-              <Button variant="ghost" icon="settings" label={t().syncSettings} onClick={() => void openSchedule()} />
+              {/* the head keeps the search and the one create action; syncing is rarer and waits in "…" */}
+              <Menu
+                label={t().moreActions}
+                items={[
+                  { label: t().syncNow, icon: "refresh", onClick: () => void sync() },
+                  { label: t().syncSettings, icon: "settings", onClick: () => void openSchedule() },
+                ]}
+              />
               <Show when={props.tab === "groups" && !props.group && !props.host}>
                 <Button
                   variant="primary"

@@ -70,12 +70,20 @@ export const denseGroups = (): (IpaHostgroup & { hostDetails: IpaHost[] })[] => 
   }));
 };
 
-/** Hosts the mirror holds without a group: newly enrolled, half described. */
+/** An invented ED25519 fingerprint as FreeIPA writes it. */
+const key = (seed: string) => `SHA256:${seed}7f3a9c2e1b4d4e8a9c0d2b6f1e3a5d7c (ED25519)`;
+
+/** Hosts the mirror holds without a group: newly enrolled, half described; one still has no key. */
 export const denseUngrouped = (): IpaHost[] => [
-  fixtureHost("neu-01.werkstatt.example", { locality: "Lager", osVersion: "Debian 13" }),
-  fixtureHost("laptop-azubi.werkstatt.example", { macAddress: ["AA:BB:CC:00:99:01"] }),
+  fixtureHost("neu-01.werkstatt.example", { locality: "Lager", osVersion: "Debian 13", sshFingerprints: [key("0901")] }),
+  fixtureHost("laptop-azubi.werkstatt.example", { macAddress: ["AA:BB:CC:00:99:01"], sshFingerprints: [key("0902")] }),
   fixtureHost("tablet-montage.werkstatt.example", { description: "Montage-Tablet", sshFingerprints: [] }),
-  fixtureHost("pi-wetterstation.werkstatt.example", { locality: "Dach", platform: "aarch64", osVersion: "Raspberry Pi OS" }),
+  fixtureHost("pi-wetterstation.werkstatt.example", {
+    locality: "Dach",
+    platform: "aarch64",
+    osVersion: "Raspberry Pi OS",
+    sshFingerprints: [key("0904")],
+  }),
 ];
 
 export const LONG_HOST = "kunden-und-auftraege-werkstatt-nord-zeiterfassung-und-materialbestellung-01.intern.werkstatt-nord.example";

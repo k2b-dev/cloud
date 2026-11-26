@@ -34,7 +34,6 @@ export const HostsFixture = (props: { search: string; data?: HostsFixtureData; n
         search={params.get("search") ?? ""}
         figures={{
           groups: data === "worst" ? 12_345 : groups.length,
-          hostsInGroups: data === "worst" ? 98_765 : groups.reduce((sum, group) => sum + group.hostDetails.length, 0),
           hostsTotal: data === "worst" ? 123_456 : everyHost.length,
           ungrouped: data === "worst" ? 24_691 : ungrouped.length,
         }}

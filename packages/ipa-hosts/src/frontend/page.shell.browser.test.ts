@@ -7,6 +7,7 @@ import type { AuthContext } from "@k2b/cloud/server";
 import { measureV2Layout } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
+import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
 import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { loadShellAssets, openShellPage, type ShellAssets } from "../../../ui/test/shell-page";
@@ -144,7 +145,9 @@ let browser: Browser;
 let assets: ShellAssets;
 let harness: string;
 beforeAll(async () => {
-  assets = await loadShellAssets({ id: "ipa-hosts", css: resolve(import.meta.dir, "../styles/app.css") });
+  assets = await loadShellAssets(
+    await cloudShellSheets({ id: "ipa-hosts", css: resolve(import.meta.dir, "../styles/app.css") }, import.meta.dir),
+  );
   harness = await buildShellHarness();
   if (shots) mkdirSync(shots, { recursive: true });
   browser = await launchBrowser();
@@ -167,7 +170,7 @@ describe("Hosts in the Cloud shell", () => {
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, { path: `/admin/ipa-hosts${search}`, html, width });
         try {
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
@@ -190,7 +193,7 @@ describe("Hosts in the Cloud shell", () => {
       ["dialog-zu-gruppen", "?group=server&host=db1.werkstatt.example"],
     ] as const) {
       const html = await firstHtml(search, "normal");
-      for (const width of [1440, 390]) {
+      for (const width of [1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, {
           path: `/admin/ipa-hosts${search}`,
           html,
