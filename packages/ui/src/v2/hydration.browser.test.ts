@@ -283,8 +283,10 @@ for (const fallback of [false, true])
         expect(sent).toBe(8 * 20);
         // emptied, it shrinks to its 3 rows, although its `value` stays the long one (nothing writes it back)
         await page.getByRole("textbox", { name: "Lange Antwort" }).fill("");
+        await settled(page);
         expect(await height(page)).toBe(3 * 20);
         await page.getByRole("textbox", { name: "Lange Antwort" }).fill("Eins\nZwei\nDrei\nVier\nFünf");
+        await settled(page);
         expect(await height(page)).toBe(5 * 20);
       },
       1440,

@@ -122,7 +122,7 @@ for (const width of [1440, 390])
       for (let line = 2; line <= 12; line++) {
         await answer.press("Enter");
         await answer.pressSequentially(`Zeile ${line}`);
-        // read at once: the field has its new height in the frame of the key, it does not jump later
+        // settled: read at once, since the subject is that the field has its new height in the frame of the key
         grown.push(await height("Antwort"));
       }
       expect(grown).toEqual([80, 80, 100, 120, 140, 160, 180, 200, 220, 220, 220]);
