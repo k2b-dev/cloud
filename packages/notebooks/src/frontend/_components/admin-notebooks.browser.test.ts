@@ -124,7 +124,7 @@ for (const width of [1440, 1024, 390]) {
       // the admin bar and the shell name the page: the head holds only its deeds
       expect(await page.locator('[data-slot="head"] .k2-bar-start').count()).toBe(0);
       // the hero: how many notebooks were used in 30 days, of how many, with its trend
-      const hero = page.locator('[data-k2-part="Band"]');
+      const hero = page.getByRole("region", { name: "aktiv in 30 Tagen" });
       expect((await hero.locator('[data-k2-part="Inline"]').first().textContent())?.replace(/\s+/g, " ")).toBe(
         "18aktiv in 30 Tagenvon 24 Notizbüchern",
       );
@@ -307,7 +307,7 @@ for (const width of [1440, 390]) {
     try {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
       if (width > 600) {
-        const hero = page.locator('[data-k2-part="Band"]');
+        const hero = page.getByRole("region", { name: "aktiv in 30 Tagen" });
         // the exceptions name 120-sign names cut to a few words, so the band never runs past its pane
         expect(await hero.evaluate((band) => band.scrollWidth <= band.clientWidth)).toBe(true);
         expect(await hero.getByText("9.302").isVisible()).toBe(true);
