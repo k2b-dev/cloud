@@ -109,13 +109,22 @@ export const worstGroups = (): (IpaHostgroup & { hostDetails: IpaHost[] })[] => 
       (_, index) => `SHA256:${"x".repeat(43)}${index} schichtleitung-werkstatt-nord@kunden-und-auftraege.example (ssh-rsa)`,
     ),
   });
+  const machines = Array.from({ length: 49 }, (_, index) =>
+    fixtureHost(`maschine-${String(index + 1).padStart(3, "0")}.werkstatt-nord.example`, {
+      locality: `Halle 7, Platz ${index + 1}`,
+      osVersion: index % 3 === 0 ? "Windows 11" : "Debian 13",
+      memberofHostgroup: [LONG_GROUP],
+      sshFingerprints: index % 5 === 4 ? [] : [key(String(index + 1).padStart(4, "0"))],
+    }),
+  );
   return [
     {
       cn: LONG_GROUP,
       description: "Alle Maschinen, Messplätze und Bedienterminals der Werkstatt Nord im Erdgeschoss, die im Schichtbetrieb laufen",
-      hosts: [LONG_HOST],
+      hosts: [LONG_HOST, ...machines.map((host) => host.fqdn)],
       hostgroups: Array.from({ length: 6 }, (_, index) => `untergruppe-mit-langem-namen-${index + 1}`),
-      hostDetails: [longHost],
+      // a whole page of its hosts: the open group is a long list that pages, never a half empty pane
+      hostDetails: [longHost, ...machines],
     },
     { cn: "x", description: null, hosts: [], hostgroups: [], hostDetails: [] },
     ...Array.from({ length: 98 }, (_, index) => {

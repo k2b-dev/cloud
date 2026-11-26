@@ -286,8 +286,8 @@ export default function HostsScreen(props: HostsScreenProps) {
             emptyMirror()
               ? t().emptyLead
               : props.tab === "groups"
-                ? t().groupCount({ count: props.groups.length })
-                : t().ungroupedCount({ count: props.ungrouped.length })
+                ? t().groupCount({ count: props.figures.groups })
+                : t().ungroupedCount({ count: props.figures.ungrouped })
           }
           facts={props.search ? [{ before: t().search, value: props.search }] : []}
         />
@@ -409,7 +409,7 @@ export default function HostsScreen(props: HostsScreenProps) {
             : []),
         ]}
       />
-      <Section icon="server" title={t().hostsOfGroup} count={group.hostTotal}>
+      <Section icon="server" title={t().hostsOfGroup} count={number(group.hostTotal)}>
         <Show when={group.hostDetails.length > 0} fallback={<Empty icon="server-off" text={t().noHostsInGroup} />}>
           <List label={t().hostsOfGroup}>
             <For each={group.hostDetails}>

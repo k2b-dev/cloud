@@ -88,7 +88,8 @@ const firstHtml = async (search: string, data: Data) => {
     } as never),
     spyOn(ipaHostsService.hostgroup, "getWithHosts").mockImplementation(async ({ cn }) => {
       const group = groups.find((candidate) => candidate.cn === cn);
-      return group ? { ...group, hostTotal: group.hostDetails.length } : null;
+      // the long group of the worst case holds thousands of hosts; the page shows its first 50
+      return group ? { ...group, hostTotal: data === "worst" && cn === LONG_GROUP ? 4_321 : group.hostDetails.length } : null;
     }),
     spyOn(ipaHostsService.host, "get").mockImplementation(async ({ fqdn }) => hosts.find((host) => host.fqdn === fqdn) ?? null),
     spyOn(ipaHostsService, "stats").mockResolvedValue({
