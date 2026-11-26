@@ -41,7 +41,7 @@ export const fixtureBase = (patch: Partial<PulseBase> & Pick<PulseBase, "id" | "
   memberCount: 4,
   // storage differs from base to base, as real bases fill at their own pace
   store: store({
-    usage: { bytes: ((patch.id.charCodeAt(1) % 17) + 1) * 0.81 * 1024 ** 3, rows: 9_000_000, measuredAt: FIXTURE_NOW },
+    usage: { bytes: (((patch.id.charCodeAt(1) || 0) % 17) + 1) * 0.81 * 1024 ** 3, rows: 9_000_000, measuredAt: FIXTURE_NOW },
   }),
   // a base's first three members as an admin of it reads them, admins first; rotated so the bases differ
   members: [...PEOPLE.slice(patch.id.charCodeAt(0) % 5), ...PEOPLE].slice(0, Math.min(3, patch.memberCount ?? 4)).map((name, index) => ({
@@ -514,7 +514,7 @@ export const worstSources: PulseSource[] = [
     endpointUrl: "https://sehr-lange-subdomain-ohne-umbruch.werkstatt-nord-ost.example:9100/metrics/federate/node-exporter",
     seriesCount: 9_876_543,
     status: status({
-      lastError: "SCRAPE_HTTP_STATUS:503",
+      lastError: "Metrics endpoint returned HTTP 503",
       lastErrorAt: "2026-11-25T09:40:00.000Z",
       throttled: true,
       refusedHistograms: [{ family: "http_request_duration_seconds_bucket_sehr_lang", reason: "too_many_buckets" }],

@@ -21,7 +21,7 @@ export const fixtureAdminNav = (view: AdminView): NavProps => ({
   ],
 });
 
-const base = fixtureBase({ id: "x", name: "x" });
+const base = fixtureBase({ id: "b7Kq2mX9", name: "x" });
 const row = (patch: Partial<AdminBaseRow> & Pick<AdminBaseRow, "id" | "name">): AdminBaseRow => ({
   rollupLag: false,
   icon: "ti ti-activity",
@@ -32,7 +32,7 @@ const row = (patch: Partial<AdminBaseRow> & Pick<AdminBaseRow, "id" | "name">): 
   rollupRetentionDays: 400,
   sensitiveRetentionHours: 72,
   createdAt: "2026-03-02T08:00:00.000Z",
-  store: base.store,
+  store: fixtureBase({ id: patch.id, name: patch.name }).store,
   ...patch,
 });
 

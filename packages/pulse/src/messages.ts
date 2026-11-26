@@ -195,6 +195,7 @@ export const pulseMessages = i18n.define({
       scrapeTargetBlocked:
         "is an internal server and not released for this base. A Cloud admin can release it under Administration -> Pulse -> Internal targets.",
       scrapeTimedOut: ({ seconds }: { seconds: string }) => `The endpoint did not answer within ${seconds} seconds.`,
+      scrapeHttpStatus: ({ status }: { status: string }) => `The endpoint answered with HTTP ${status}.`,
       start: "Start",
       backToPulse: "Back to Pulse",
       publicLinkRemovedTitle: "This link is no longer valid",
@@ -229,8 +230,8 @@ export const pulseMessages = i18n.define({
           negative_sum: "negative _sum",
         })[reason] ?? reason,
       skipped: "Skipped",
-      skippedSummaries: ({ count }: { count: number }) =>
-        `${count} ${i18n.plural(count, "en", { one: "summary", other: "summaries" })}, Pulse does not store summaries`,
+      skippedSummaries: ({ count, shown }: { count: number; shown: string }) =>
+        `${shown} ${i18n.plural(count, "en", { one: "summary", other: "summaries" })}, Pulse does not store summaries`,
       metricsKept: "Metrics",
       allMetrics: "All",
       idempotencyHint: "Send an Idempotency-Key with every batch: a retry with the same key never counts twice.",
@@ -649,6 +650,7 @@ export const pulseMessages = i18n.define({
       scrapeTargetBlocked:
         "ist ein interner Server und für diese Basis nicht freigegeben. Ein Cloud-Admin kann ihn unter Verwaltung -> Pulse -> Interne Ziele freigeben.",
       scrapeTimedOut: ({ seconds }) => `Der Endpunkt hat nicht innerhalb von ${seconds} Sekunden geantwortet.`,
+      scrapeHttpStatus: ({ status }) => `Der Endpunkt hat mit HTTP ${status} geantwortet.`,
       start: "Start",
       backToPulse: "Zurück zu Pulse",
       publicLinkRemovedTitle: "Dieser Link gilt nicht mehr",
@@ -683,7 +685,7 @@ export const pulseMessages = i18n.define({
           negative_sum: "negative _sum",
         })[reason] ?? reason,
       skipped: "Übersprungen",
-      skippedSummaries: ({ count }) => `${count} ${count === 1 ? "Summary" : "Summaries"}, Pulse speichert keine Summaries`,
+      skippedSummaries: ({ count, shown }) => `${shown} ${count === 1 ? "Summary" : "Summaries"}, Pulse speichert keine Summaries`,
       metricsKept: "Metriken",
       allMetrics: "Alle",
       idempotencyHint: "Sende mit jedem Batch einen Idempotency-Key: Eine Wiederholung mit demselben Schlüssel zählt nie doppelt.",
@@ -914,13 +916,20 @@ export const resolvePulseMessages = (locale?: string) => pulseMessages.resolve(l
 
 /** The scraper's stored timeout, "Metrics scrape timed out after 15 seconds", read back into words of the locale. */
 const SCRAPE_TIMEOUT = /^Metrics scrape timed out after (\d+) seconds$/;
+const SCRAPE_HTTP_STATUS = /^Metrics endpoint returned HTTP (\d{3})$/;
 
 export const localizedSourceError = (
   value: string | null,
-  t: { scrapeTargetBlocked: string; scrapeTimedOut: (input: { seconds: string }) => string },
+  t: {
+    scrapeTargetBlocked: string;
+    scrapeTimedOut: (input: { seconds: string }) => string;
+    scrapeHttpStatus: (input: { status: string }) => string;
+  },
 ): string | null => {
   const timeout = value ? SCRAPE_TIMEOUT.exec(value) : null;
   if (timeout?.[1]) return t.scrapeTimedOut({ seconds: timeout[1] });
+  const http = value ? SCRAPE_HTTP_STATUS.exec(value) : null;
+  if (http?.[1]) return t.scrapeHttpStatus({ status: http[1] });
   return value?.endsWith(resolvePulseMessages("en").t.scrapeTargetBlocked)
     ? value.slice(0, -resolvePulseMessages("en").t.scrapeTargetBlocked.length) + t.scrapeTargetBlocked
     : value;

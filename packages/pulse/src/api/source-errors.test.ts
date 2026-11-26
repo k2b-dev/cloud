@@ -24,4 +24,5 @@ test("stored English refusal localizes for both source diagnostics and history, 
   expect(localizedSourceError(null, de)).toBeNull();
   // the scraper's stored timeout reads as words of the locale, with its seconds
   expect(localizedSourceError("Metrics scrape timed out after 15 seconds", de)).toBe(de.scrapeTimedOut({ seconds: "15" }));
+  expect(localizedSourceError("Metrics endpoint returned HTTP 503", de)).toBe("Der Endpunkt hat mit HTTP 503 geantwortet.");
 });

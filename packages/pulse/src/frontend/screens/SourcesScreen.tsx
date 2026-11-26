@@ -1,6 +1,7 @@
 import { ResourceApiKeySection } from "@k2b/cloud/access/ui";
 import { cloudIdMessages, useCloudIdCopy } from "@k2b/cloud/browser/cloud-id";
 import { navigateTo } from "@k2b/ssr/nav";
+import { text } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
 import { useLocale } from "@k2b/ui";
 import {
@@ -686,7 +687,17 @@ function SourceDetail(props: {
           },
         ]
       : []),
-    ...(status().skippedSummaries ? [{ label: t().skipped, value: t().skippedSummaries({ count: status().skippedSummaries }) }] : []),
+    ...(status().skippedSummaries
+      ? [
+          {
+            label: t().skipped,
+            value: t().skippedSummaries({
+              count: status().skippedSummaries,
+              shown: text.pprintNumber(status().skippedSummaries, { locale: locale() }),
+            }),
+          },
+        ]
+      : []),
   ];
   return (
     <Pane
