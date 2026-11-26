@@ -32,6 +32,7 @@ const cloudSsr = await import("@k2b/cloud/ssr");
 const { codePageFixture } = await import("@k2b/cloud/ssr/code-page/code-page.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
 const { default: AssistantCodeView } = await import("./AssistantCodeView");
+const { default: AssistantAppsV2 } = await import("./v2/AssistantAppsV2");
 const { default: AssistantCodeDetail } = await import("./AssistantCodeDetail");
 
 /** Only for parsing the HTML: the SSR render itself runs without browser globals. */
@@ -50,6 +51,8 @@ const codeSeed = (html: string) => {
 };
 /** The Code destinations load their code in the browser; the server renders their loading surface. */
 const codeLoading = '<div class="assistant-deferred-feedback">';
+/** The page's My apps & automations on v2: its pane stands and holds the rows' place while the view's code loads. */
+const appsLoading = /data-k2-part="Pane"[^>]*aria-label="My apps &amp; automations"[\s\S]*?data-k2-part="Loading"/;
 /** What a loaded Code destination shows from its seed, rendered the way the browser does after the code arrives. */
 const renderSeeded = <P extends object>(component: (props: P) => import("solid-js").JSX.Element, props: P) =>
   renderToString(() =>
@@ -392,13 +395,12 @@ test("My apps & automations shows only for a person with Code, and ?code=1 seeds
   const withCode = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(withCode).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  // The server and the first client render show the loading surface; the list arrives with its code.
-  expect(view).toContain(codeLoading);
-  expect(view).toContain("Loading…");
+  // The server and the first client render show the v2 pane loading; the list arrives with its code.
+  expect(view).toMatch(appsLoading);
   expect(view).not.toContain("Your Code runs as you, with your rights and no more.");
   const seed = codeSeed(view);
   expect(seed).toMatchObject({ has: true, open: true, page: { items: [{ id: "c_week01", title: "Weekly sales report" }] } });
-  const list = renderSeeded(AssistantCodeView, {
+  const list = renderSeeded(AssistantAppsV2, {
     userId: user.id,
     timeZone: "UTC",
     initial: seed?.page,
@@ -424,13 +426,14 @@ test("an unknown Code answer keeps the entry, and the list shows its error with 
   const plain = await (await request("https://cloud.example.test/app/assistant")).text();
   expect(plain).toContain('href="/app/assistant?code=1"');
   const view = await (await request("https://cloud.example.test/app/assistant?code=1")).text();
-  expect(view).toContain(codeLoading);
+  expect(view).toMatch(appsLoading);
   const seed = codeSeed(view);
   // A failed list is part of the seed, so the loaded view shows the error instead of asking Core again.
   expect(seed).toMatchObject({ has: true, open: true, page: null });
-  const list = renderSeeded(AssistantCodeView, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
+  const list = renderSeeded(AssistantAppsV2, { userId: user.id, timeZone: "UTC", initial: null, onCreateInChat: () => {} });
   expect(list).toContain("Your automations could not be loaded.");
-  expect(list).toContain("Try again");
+  expect(list).toContain('data-k2-part="Failed"');
+  expect(list).toContain("Retry");
 });
 
 test("an existing chat still loads at its old address under the name Gustav", async () => {
