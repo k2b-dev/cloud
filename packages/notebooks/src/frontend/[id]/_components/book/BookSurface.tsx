@@ -39,7 +39,6 @@ export default function BookSurface(props: BookSurfaceProps) {
           selectedNoteId={props.selectedNoteId}
           navigation={props.navigation}
           tags={props.tags}
-          activeTag={props.activeTag}
           currentHref={props.currentHref}
           canWrite={props.canWrite}
           locked={props.locked}
@@ -64,7 +63,6 @@ export default function BookSurface(props: BookSurfaceProps) {
                     selectedNoteId: props.selectedNoteId,
                     hasNotes: props.navigation.total > 0,
                     tags: props.tags,
-                    activeTag: props.activeTag,
                     canWrite: props.canWrite,
                     locked: props.locked,
                     historyIncomplete: props.historyIncomplete,

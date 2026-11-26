@@ -51,10 +51,8 @@ export const buildAttachmentsUrl = (notebookShortId: string, mode?: Presentation
   return mode ? withPresentationMode(href, mode) : href;
 };
 
-/** Build URL for an individual tag's notes page. The tag list itself
- *  lives in a modal opened from the sidebar — there's no /tags overview
- *  page anymore. */
+/** Build URL for the notes with one tag: the notes list with the tag filter (it replaced the tag page). */
 export const buildTagPageUrl = (notebookShortId: string, tag: string, mode?: PresentationMode): string => {
-  const href = `/app/notebooks/${notebookShortId}/tags/${encodeURIComponent(tag)}`;
+  const href = `/app/notebooks/${notebookShortId}/notes?${new URLSearchParams({ tag: tag.toLowerCase() })}`;
   return mode ? withPresentationMode(href, mode) : href;
 };

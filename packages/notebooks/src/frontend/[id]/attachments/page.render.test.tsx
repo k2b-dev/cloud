@@ -72,7 +72,7 @@ test("readers cannot enter the attachments workspace through a direct URL", asyn
   expect(attachments).not.toHaveBeenCalled();
 });
 
-test("attachments render their current sidebar destination and unframed empty panel, preserving search and presentation", async () => {
+test("attachments render their current sidebar destination and the v2 empty state, preserving search and presentation", async () => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
   spies.push(spyOn(notebooksService.notebook, "get").mockResolvedValue(notebook));
@@ -82,7 +82,13 @@ test("attachments render their current sidebar destination and unframed empty pa
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
-  spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(401));
+  const figures = spyOn(notebooksService.figures, "attachments").mockResolvedValue({
+    days: Array.from({ length: 30 }, (_, index) => (index === 29 ? 3 : 0)),
+    count: 401,
+    bytes: 52_428_800,
+    added: 3,
+  });
+  spies.push(figures);
   spies.push(
     spyOn(notebooksService.attachment, "listPaginated").mockResolvedValue({
       items: [],
@@ -111,12 +117,17 @@ test("attachments render their current sidebar destination and unframed empty pa
       expect(current).toHaveLength(1);
       expect(current[0]?.attributes.href).toBe(`/app/notebooks/book01/attachments?mode=${mode}`);
       expect(current[0]?.text).toContain("Attachments");
-      const empty = await selectHtml(html, '.k2b-app-workspace__main .k2b-placeholder[data-variant="panel"]');
+      const empty = await selectHtml(html, '[data-k2-part="Empty"]');
       expect(empty).toHaveLength(1);
-      expect(empty[0]?.attributes["data-surface"]).not.toBe("paper");
       expect(empty[0]?.text).toContain(search ? "No attachments match “team”." : "No attachments yet");
+      // the hero counts the whole notebook, also while a search shows none, with its uploads per day
+      const hero = await selectHtml(html, '[data-k2-part="Cells.Cell"]');
+      expect(hero[0]?.text).toContain("401");
+      expect(hero[0]?.text).toContain("3 new in 30 days");
+      expect(html).toContain("3 uploaded in 30 days, 3 today");
     }
   }
+  expect(figures).toHaveBeenCalledWith({ notebookId: notebook.id, timeZone: "UTC", now: expect.any(Date) });
 });
 
 let railSnapshot: ReturnType<typeof stubRailSnapshot>;

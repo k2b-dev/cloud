@@ -93,7 +93,7 @@ const PREVIEW_CHARS = 240;
 /** Strip frontmatter + heading markers + code fences from a markdown
  *  body so the preview reads like prose. KISS — full markdown→text
  *  parsing would be overkill for a 240-char snippet. */
-const buildPreview = (md: string | null): string | null => {
+export const buildPreview = (md: string | null): string | null => {
   if (!md) return null;
   let stripped = md;
   // Drop YAML/TOML frontmatter at the head of the doc
@@ -164,17 +164,6 @@ export const listNotesForTag = async (params: {
     })),
     total: countRow?.count ?? 0,
   };
-};
-
-/** Total notes-with-this-tag (unfiltered), for the page-header count. */
-export const countNotesForTag = async (params: { notebookId: string; tag: string }): Promise<number> => {
-  const [row] = await sql<{ count: number }[]>`
-    SELECT COUNT(*)::int AS count
-    FROM notebooks.note_tags
-    WHERE notebook_id = ${params.notebookId}
-      AND tag = ${params.tag.toLowerCase()}
-  `;
-  return row?.count ?? 0;
 };
 
 /** Total distinct tags in a notebook — gates the sidebar "Tags" link. */

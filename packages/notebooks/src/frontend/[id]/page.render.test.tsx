@@ -21,7 +21,7 @@ const islandProps = (attribute: string | undefined) =>
 
 const { default: handler } = await import("./page");
 const { default: attachmentsHandler } = await import("./attachments/page");
-const { default: tagHandler } = await import("./tags/[tag]/page");
+const { default: notesHandler } = await import("./notes/page");
 const user = {
   id: "11111111-1111-4111-8111-111111111111",
   uid: "writer",
@@ -284,8 +284,7 @@ test.each(["write", "book"] as const)(
 
 test.each([
   ["attachments", "/app/notebooks/:id/attachments", "/app/notebooks/book01/attachments?search=x&page=2", attachmentsHandler, false],
-  ["tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?search=x&page=2", tagHandler, false],
-  ["book-mode tag", "/app/notebooks/:id/tags/:tag", "/app/notebooks/book01/tags/ideas?mode=book&search=x&page=2", tagHandler, true],
+  ["notes", "/app/notebooks/:id/notes", "/app/notebooks/book01/notes?tag=ideas&q=x", notesHandler, false],
 ] as const)("the %s page of a notebook also records the notebook", async (_name, route, path, pageHandler, bookMode) => {
   spies.push(spyOn(cloudServices, "get").mockResolvedValue("https://cloud.example.test"));
   spies.push(spyOn(notebooksService.notebook, "getByShortId").mockResolvedValue(notebook));
@@ -297,8 +296,7 @@ test.each([
   spies.push(...mockNoteTree([]));
   spies.push(spyOn(notebooksService.tag, "listForNotebook").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.pageTemplate, "list").mockResolvedValue({ ok: true, data: [] }));
-  spies.push(spyOn(notebooksService.tag, "listNotesForTag").mockResolvedValue({ items: [], total: 0 }));
-  spies.push(spyOn(notebooksService.tag, "countNotesForTag").mockResolvedValue(0));
+  spies.push(spyOn(notebooksService.pages, "list").mockResolvedValue({ items: [], total: 0 }));
   spies.push(spyOn(notebooksService.note.favorites, "listIds").mockResolvedValue([]));
   spies.push(spyOn(notebooksService.attachment, "count").mockResolvedValue(0));
   spies.push(

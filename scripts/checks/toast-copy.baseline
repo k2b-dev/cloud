@@ -275,8 +275,6 @@ packages/mail/src/frontend/_components/mail-feedback.ts | title | options.title
 packages/mail/src/frontend/_components/mail-mailbox-management.ts | untitled | overviewText().mailboxRestored
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | error instanceof Error ? error.message : messages().failedSaveMailboxPreference
 packages/mail/src/frontend/_components/mail-mailbox-preferences.ts | untitled | preference === "pinned" ? messages().pinLimitReached({ count }) : messages().hideLimitReached({ count })
-packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopied
-packages/notebooks/src/frontend/[id]/_components/attachments-overview/AttachmentsOverview.island.tsx | untitled | t().attachmentMarkdownCopyFailed
 packages/notebooks/src/frontend/[id]/_components/comments/CommentCard.tsx | untitled | t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | error instanceof CommentRequestError ? error.message : options.t().actionFailed
 packages/notebooks/src/frontend/[id]/_components/comments/comments-ui.ts | untitled | options.t().actionFailed

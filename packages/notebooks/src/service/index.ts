@@ -14,8 +14,10 @@ import * as links from "./links";
 import * as notePaths from "./note-paths";
 import * as noteQuery from "./note-query";
 import * as noteRefs from "./note-refs";
+import * as notebookFigures from "./notebook-figures";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
+import * as pageList from "./page-list";
 import * as pageTemplates from "./page-templates";
 import * as presence from "./presence";
 import { reindexRuntime } from "./reindex-scheduler";
@@ -277,10 +279,18 @@ export const notebooksService = {
     noteCommentsChanged: workspaceEvents.noteCommentsChanged,
     invalidated: workspaceEvents.invalidated,
   },
+  /** The pages as one list a person filters: all, favorites, a tag, a search (replaces the tag page). */
+  pages: {
+    list: pageList.listPages,
+  },
+  /** The key figures in the head of a notebook's workspace screens: changes per day, notes, attachments. */
+  figures: {
+    notes: notebookFigures.notesFigures,
+    attachments: notebookFigures.attachmentFigures,
+  },
   tag: {
     listForNotebook: tags.listForNotebook,
     listNotesForTag: tags.listNotesForTag,
-    countNotesForTag: tags.countNotesForTag,
     count: tags.count,
     extractTags: tags.extractTags,
     transformHtml: tags.transformTags,

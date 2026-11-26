@@ -1,9 +1,9 @@
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
-import AttachmentsOverview from "../[id]/_components/attachments-overview/AttachmentsOverview.island";
 import type { Attachment } from "../[id]/_components/editor/attachments-client";
+import PreviewTiles from "./attachment-preview.test-host";
 
-/** The real attachments overview; the test serves each attachment with invented demo content. */
+/** One button per attachment that opens it as a row of the attachments page does; the test serves invented demo content. */
 declare global {
   interface Window {
     mountAttachments: (attachments: Attachment[], locale: string) => void;
@@ -17,7 +17,7 @@ window.mountAttachments = (attachments, locale) => {
   render(
     () => (
       <LocaleProvider locale={locale}>
-        <AttachmentsOverview notebookId="nb0001" initial={attachments} searchQuery="" />
+        <PreviewTiles notebookId="nb0001" attachments={attachments} />
       </LocaleProvider>
     ),
     host,

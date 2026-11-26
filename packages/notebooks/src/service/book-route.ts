@@ -1,7 +1,6 @@
 import type { CapabilityCaller } from "@k2b/cloud/capabilities/server";
 import { Placeholder } from "@k2b/ui";
 import { renderToString } from "solid-js/web";
-import BookTagContent from "../frontend/[id]/_components/book/BookTagContent";
 import { type BookSnapshot, bookNavigationTarget } from "../frontend/[id]/_components/book/book-state";
 import { bookMessages } from "../frontend/[id]/_components/book/messages";
 import { parseQueryPages, QUERY_PAGES_PARAM } from "../lib/query-blocks";
@@ -37,10 +36,6 @@ export const loadBookRoute = async (params: {
   } catch {
     return { kind: "invalid" as const };
   }
-  const requestedPage = Number.parseInt(target.searchParams.get("page") ?? "1", 10);
-  const page =
-    Number.isSafeInteger(requestedPage) && requestedPage > 0 && Number.isSafeInteger((requestedPage - 1) * 50) ? requestedPage : 1;
-  const offset = (page - 1) * 50;
   // Cursor before data: updates during the snapshot are replayed, never lost.
   const cursor = await workspaceEvents.latestCursor({ notebookId: params.notebookId });
   const notebook = await notebooks.get({ id: params.notebookId });
@@ -85,33 +80,5 @@ export const loadBookRoute = async (params: {
     };
     return { kind: "ok" as const, snapshot };
   }
-  const tag = resource.toLowerCase();
-  const search = (target.searchParams.get("search") ?? "").trim();
-  const [results, totalNotesForTag] = await Promise.all([
-    tags.listNotesForTag({ notebookId: params.notebookId, tag, search: search || undefined, pagination: { limit: 50, offset } }),
-    tags.countNotesForTag({ notebookId: params.notebookId, tag }),
-  ]);
-  const html = renderToString(() =>
-    BookTagContent({
-      notebookId: params.notebookShortId,
-      tag,
-      search,
-      page,
-      items: results.items,
-      total: results.total,
-      totalNotesForTag,
-      locale: params.locale,
-    }),
-  );
-  const snapshot: BookSnapshot = {
-    ...common,
-    html,
-    title: `#${tag}`,
-    selectedNoteId: null,
-    activeTag: tag,
-    locked: false,
-    historyIncomplete: false,
-    openComments: 0,
-  };
-  return { kind: "ok" as const, snapshot };
+  return { kind: "invalid" as const };
 };

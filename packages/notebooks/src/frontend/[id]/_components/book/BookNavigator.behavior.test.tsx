@@ -227,9 +227,9 @@ describe("Book navigation tree", () => {
     }
   });
 
-  test("Links returns to the page a snapshot opened without a note, such as tag results", async () => {
+  test("Links returns to the page a snapshot opened without a note, such as the notebook root", async () => {
     const app = await mount("note01", { currentHref });
-    const tagHref = "/app/notebooks/book01/tags/guide?mode=book&search=x&page=2";
+    const tagHref = "/app/notebooks/book01?mode=book";
     try {
       window.dispatchEvent(
         new CustomEvent<BookMetadata>(BOOK_SNAPSHOT_EVENT, { detail: { ...snapshot("note01"), href: tagHref, selectedNoteId: null } }),

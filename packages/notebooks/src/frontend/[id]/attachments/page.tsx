@@ -2,32 +2,29 @@
  * Notebook attachments overview page — `/app/notebooks/<id>/attachments`.
  *
  * Path-based (NOT a `?mode=` query) so the URL stays clean and deep-linkable.
- * Search + pagination via SSR — the SearchBar submits to the same URL with
- * `?search=` set, and the page handler re-renders the filtered grid. KISS:
+ * Search + pagination via SSR — the search in the head opens the same URL with
+ * `?search=` set, and the page handler renders the filtered list. KISS:
  * no client-side filter, results stay deterministic.
  */
 
 import { hasRole } from "@k2b/cloud/contracts";
-import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@k2b/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale, getTimeZone } from "@k2b/cloud/server";
 import { get } from "@k2b/cloud/services";
 import { Layout } from "@k2b/cloud/ssr";
-import { SearchBar } from "@k2b/cloud/ssr/islands";
-import { AppWorkspace, Pagination, ScrollArea } from "@k2b/ui";
 import { toPublicAttachment } from "@/api/public-resources";
 import { notebooksService } from "@/service";
 import { ssr } from "../../../config";
-import { requestedPresentationMode, withPresentationMode } from "../../../lib/presentation-url";
+import { requestedPresentationMode } from "../../../lib/presentation-url";
 import { parseSidebarFilter } from "../../../lib/sidebar-filter";
 import { notebooksPageMessages } from "../../messages";
 import { buildAttachmentsUrl } from "../../params";
-import AttachmentsOverview from "../_components/attachments-overview/AttachmentsOverview.island";
 import RememberNotebook from "../_components/RememberNotebook.island";
 import { parseFullWidth, parseNavigationHidden, parseSettings } from "../_components/settings/NotebookSettingsStore";
-import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
 import { notebookWorkspaceMessages } from "../messages";
 import { loadSidebarWithoutNote, projectNotebook } from "../page-data";
+import AttachmentsScreen from "./AttachmentsScreen.island";
 
 const PER_PAGE = 200;
 
@@ -64,18 +61,19 @@ export default ssr<AuthContext>(async (c) => {
 
   // Queries in parallel:
   //   1. Filtered + paginated attachments for the grid (current page only)
-  //   2. Unfiltered total count for the sidebar's "Attachments" badge —
-  //      independent of the active search so the badge always reflects
-  //      the notebook's actual size, not the current view.
+  //   2. The notebook's attachment figures, independent of the active search: the hero (count, uploads per day)
+  //      and the sidebar's "Attachments" badge always reflect the notebook's actual size, not the current view.
   const workspaceCursor = await notebooksService.workspaceEvents.latestCursor({ notebookId });
-  const [snapshotNotebook, paginatedResult, totalAttachmentCount, tags, favoriteRows, appUrl] = await Promise.all([
+  const dateConfig = getDateConfig(c);
+  const now = new Date();
+  const [snapshotNotebook, paginatedResult, figures, tags, favoriteRows, appUrl] = await Promise.all([
     notebooksService.notebook.get({ id: notebookId }),
     notebooksService.attachment.listPaginated({
       notebookId,
       pagination: { page, perPage: PER_PAGE },
       filter: { query: search || undefined },
     }),
-    notebooksService.attachment.count({ notebookId }),
+    notebooksService.figures.attachments({ notebookId, timeZone: getTimeZone(c), now }),
     notebooksService.tag.listForNotebook({ notebookId }),
     notebooksService.note.favorites.listIds({ notebookId, userId: user.id }),
     get<string>("app.url"),
@@ -93,14 +91,8 @@ export default ssr<AuthContext>(async (c) => {
     permission,
   });
   const totalPages = Math.max(1, Math.ceil(paginatedResult.total / paginatedResult.perPage));
-  const baseHref = buildAttachmentsUrl(notebook.shortId);
   const presentationMode = requestedPresentationMode(new URL(c.req.url).searchParams);
-  const searchHref = presentationMode ? withPresentationMode(baseHref, presentationMode) : baseHref;
-  const paginationQuery = new URLSearchParams();
-  if (presentationMode) paginationQuery.set("mode", presentationMode);
-  if (search) paginationQuery.set("search", search);
-  paginationQuery.set("page", "");
-  const paginationBaseUrl = `${baseHref}?${paginationQuery}`;
+  const baseHref = buildAttachmentsUrl(notebook.shortId, presentationMode);
 
   const ctx: NotebookContext = {
     notebook: publicNotebook,
@@ -111,11 +103,11 @@ export default ssr<AuthContext>(async (c) => {
     navigationHidden: parseNavigationHidden(cookieHeader),
     fullWidth: parseFullWidth(cookieHeader),
     permission,
-    attachmentCount: totalAttachmentCount,
+    attachmentCount: figures.count,
     favoriteNoteIds: favoriteRows.map((row) => row.noteId),
     tags,
     workspaceCursor,
-    dateConfig: getDateConfig(c),
+    dateConfig,
     sidebarFilter,
     presentationMode,
   };
@@ -125,34 +117,30 @@ export default ssr<AuthContext>(async (c) => {
       printHint={printHint}
       c={c}
       fullPage
+      fullWidth
+      ui="v2"
+      context={{ scope: { type: "notebooks.notebook", id: notebook.shortId } }}
       title={[
         { title: t.start, href: "/" },
-        { title: t.notebooks, href: "/app/notebooks" },
+        { title: t.notebooks },
         { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
         { title: t.attachments },
       ]}
     >
       <RememberNotebook notebookId={notebook.shortId} />
-      <AppWorkspace mobileSurface="flush" class="notebooks-workspace flex-1 min-h-0">
-        <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
-        <NotebookSidebar ctx={ctx} current="attachments" graphBack={c.req.path + new URL(c.req.url).search} />
-        <AppWorkspace.Content>
-          <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
-            {/* Search bar across the full content width. The breadcrumb already
-                labels the page — no additional title above. */}
-            <SearchBar value={search} action={searchHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
-
-            <ScrollArea class="mt-2 flex-1 min-h-0 flex flex-col gap-2">
-              <AttachmentsOverview
-                notebookId={notebook.shortId}
-                initial={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
-                searchQuery={search}
-              />
-              <Pagination currentPage={paginatedResult.page} totalPages={totalPages} baseUrl={paginationBaseUrl} />
-            </ScrollArea>
-          </AppWorkspace.Main>
-        </AppWorkspace.Content>
-      </AppWorkspace>
+      <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
+      <AttachmentsScreen
+        ctx={ctx}
+        attachments={paginatedResult.items.map((attachment) => toPublicAttachment(attachment, notebook.shortId))}
+        total={paginatedResult.total}
+        figures={figures}
+        search={search}
+        page={paginatedResult.page}
+        pages={totalPages}
+        baseHref={baseHref}
+        graphBack={c.req.path + new URL(c.req.url).search}
+        now={now.toISOString()}
+      />
     </Layout>
   );
 });

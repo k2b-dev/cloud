@@ -93,7 +93,7 @@ describe("independent Book live metadata regression", () => {
       expect(dom.root.textContent).not.toContain("obsolete");
       expect(dom.root.textContent).toContain("Second");
       expect(dom.root.querySelector('a[href="/app/notebooks/book01/notes/note02?mode=book"]')).not.toBeNull();
-      expect(dom.root.querySelector('a[href="/app/notebooks/book01/tags/team?mode=book"]')).not.toBeNull();
+      expect(dom.root.querySelector('a[href="/app/notebooks/book01/notes?tag=team&mode=book"]')).not.toBeNull();
       current.length = 0;
       await dispatchWorkspaceEvent({ v: 1, type: "note.deleted", notebookId: "book01", noteId: "note01" }, "3-0");
       window.dispatchEvent(
@@ -101,7 +101,7 @@ describe("independent Book live metadata regression", () => {
       );
       await Bun.sleep(20);
       expect(dom.root.querySelector('a[href*="/notes/"]')).toBeNull();
-      expect(dom.root.querySelector('a[href*="/tags/"]')).toBeNull();
+      expect(dom.root.querySelector('a[href*="?tag="]')).toBeNull();
     } finally {
       dispose();
       globalThis.fetch = originalFetch;

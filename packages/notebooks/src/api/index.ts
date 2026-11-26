@@ -645,7 +645,6 @@ const BookSnapshotSchema = z.object({
   selectedNoteId: ResourceShortIdSchema.nullable(),
   hasNotes: z.boolean().describe("Whether the notebook has any page; the navigation reads its levels from /tree/levels"),
   tags: z.array(TagSummarySchema),
-  activeTag: z.string().optional(),
   canWrite: z.boolean(),
   locked: z.boolean(),
   historyIncomplete: z.boolean(),

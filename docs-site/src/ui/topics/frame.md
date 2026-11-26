@@ -33,6 +33,7 @@ The workspace decides from its own width, on the server's page too, so nothing j
 - Where a sub-page stands: "Lager › Halle 1"; the last item is the page itself.
 - It stands in the head `Bar start` instead of tabs.
 - On the phone the head with a path is hidden, and the shell's bar names the page.
+- A deep path folds: from five places on, the first place and the page stand and every place between goes into a menu "…". The page keeps its whole name: the places between shorten first, then the first place, the page only when nothing else is left; the deeds at the end keep their words.
 
 ## Parts
 

@@ -269,28 +269,26 @@ describe("Book controller", () => {
     }
   });
 
-  test("loads GET tag filters without a document navigation and restores popstate", async () => {
+  test("loads GET forms of a note without a document navigation and restores popstate", async () => {
     const app = await mount();
     try {
       app.article.innerHTML =
-        '<form method="get" action="/app/notebooks/book01/tags/team"><input name="mode" value="book"><input name="search" value="a guide"></form>';
+        '<form method="get" action="/app/notebooks/book01/notes/note02"><input name="mode" value="book"><input name="blocks" value="3.2"></form>';
       const submit = new Event("submit", { bubbles: true, cancelable: true });
       app.article.querySelector("form")!.dispatchEvent(submit);
       expect(submit.defaultPrevented).toBe(true);
       await flush();
-      expect(app.requests[0]!.href).toBe("/app/notebooks/book01/tags/team?mode=book&search=a+guide");
+      expect(app.requests[0]!.href).toBe("/app/notebooks/book01/notes/note02?mode=book&blocks=3.2");
       app.requests[0]!.resolve(
         Response.json({
-          ...snapshot("note01"),
+          ...snapshot("note02"),
           href: app.requests[0]!.href,
-          selectedNoteId: null,
-          activeTag: "team",
-          html: "<h1>Tag results</h1>",
+          html: "<h1>Query page 2</h1>",
         }),
       );
       await flush();
-      expect(location.pathname).toEndWith("/tags/team");
-      expect(app.article.textContent).toBe("Tag results");
+      expect(location.pathname).toEndWith("/notes/note02");
+      expect(app.article.textContent).toBe("Query page 2");
       const state = { notebooksBookScroll: { top: 123, left: 0, windowX: 0, windowY: 0 } };
       history.replaceState(state, "", initial.href);
       const length = history.length;

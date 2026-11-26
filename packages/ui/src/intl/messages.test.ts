@@ -86,6 +86,7 @@ const catalogs = {
   RangePicker: (await import("../content/range-picker-messages")).checkRangePickerMessages,
   V2Date: (await import("../v2/date-messages")).checkDateMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
+  Setting: (await import("../v2/setting-messages")).checkSettingMessages,
   V2Controls: (await import("../v2/control-messages")).checkControlMessages,
 };
 

@@ -7,7 +7,6 @@ export type BookSnapshot = {
   /** Whether the notebook has pages; the navigation loads its own levels. */
   hasNotes: boolean;
   tags: Array<{ tag: string; count: number }>;
-  activeTag?: string;
   canWrite: boolean;
   locked: boolean;
   historyIncomplete: boolean;
@@ -57,8 +56,7 @@ export const bookNavigationTarget = (href: string, currentHref: string, notebook
   if (target.origin !== current.origin || target.username || target.password) return null;
   const prefix = `/app/notebooks/${notebookId}`;
   const suffix = target.pathname.slice(prefix.length);
-  if (!target.pathname.startsWith(prefix) || (suffix !== "" && suffix !== "/" && !/^\/(?:notes\/[A-Za-z0-9]{6}|tags\/[^/]+)$/.test(suffix)))
-    return null;
+  if (!target.pathname.startsWith(prefix) || (suffix !== "" && suffix !== "/" && !/^\/notes\/[A-Za-z0-9]{6}$/.test(suffix))) return null;
   if (target.searchParams.has("mode") && target.searchParams.get("mode") !== "book") return null;
   target.searchParams.set("mode", "book");
   return target;

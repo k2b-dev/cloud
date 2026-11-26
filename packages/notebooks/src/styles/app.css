@@ -87,6 +87,22 @@
 .k2b-ui .notebooks-workspace {
   --k2b-workspace-sidebar-width: 16rem;
 }
+/* The notebook sidebar's own frame. In the v2 workspace's sidebar it keeps the v2 Nav's gutter (12 px beside and
+   below), so the switcher, the search field, the chips and the rows start on one edge and none touches the sidebar's
+   edge; the v1 sidebar (`SidebarDesktop`) brings its own padding. It goes, with the v1 bodies, once v2 Nav has a tree
+   (k2b-ui gap: Nav tree, #4283). */
+.notebook-sidebar-frame {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+.k2b-app-workspace__sidebar-desktop > .notebook-sidebar-frame {
+  padding: 0;
+}
 .notebook-sidebar-head {
   display: flex;
   min-width: 0;
@@ -1002,21 +1018,6 @@
   }
 }
 
-/* An attachment tile opens its preview; the focus ring sits inside the tile, which clips its content. It is drawn on
-   a layer after the thumbnail, which would otherwise paint over a ring on the button itself. */
-.notebooks-attachment-tile__open {
-  position: absolute;
-  inset: 0;
-  cursor: pointer;
-  outline: none;
-}
-.notebooks-attachment-tile__open:focus-visible::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  box-shadow: var(--k2b-focus-inset);
-  pointer-events: none;
-}
 /* An attachment image in Book opens the lightbox. The inline link around it draws no visible ring of its own, so the
    image carries the focus ring of Book links. */
 .notebook-book-content a.notebook-book-image-link {
