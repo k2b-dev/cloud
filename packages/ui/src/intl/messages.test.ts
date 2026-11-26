@@ -84,6 +84,7 @@ const catalogs = {
   Feed: (await import("../content/feed-messages")).checkFeedMessages,
   Video: (await import("../content/video-messages")).checkVideoMessages,
   RangePicker: (await import("../content/range-picker-messages")).checkRangePickerMessages,
+  V2Date: (await import("../v2/date-messages")).checkDateMessages,
   Refresh: (await import("../layout/refresh-messages")).checkRefreshMessages,
 };
 
