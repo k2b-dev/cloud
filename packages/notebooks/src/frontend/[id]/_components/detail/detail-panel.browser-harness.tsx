@@ -25,6 +25,8 @@ export type DetailPanelHarness = {
   presenceStatus: (status: PresenceStatusEventDetail["status"]) => void;
   offline: (on: boolean) => void;
   heading: (id: string | null) => void;
+  /** The comments the panel starts with, newest first as the API pages them. */
+  comments: () => PublicNoteComment[];
 };
 
 declare const window: Omit<Window, "harness"> & { harness: DetailPanelHarness };
@@ -160,7 +162,7 @@ const presence = (count: number) => {
 const offline = (on: boolean) =>
   window.dispatchEvent(new CustomEvent(SYNC_STATE_EVENT, { detail: { connected: !on, lastSavedAt: on ? minutesAgo(6) : null } }));
 const heading = (id: string | null) => window.dispatchEvent(new CustomEvent(ACTIVE_HEADING_EVENT, { detail: { id } }));
-window.harness = { presence, presenceStatus, offline, heading };
+window.harness = { presence, presenceStatus, offline, heading, comments: () => [...comments].reverse() };
 
 const title =
   state === "longtitle"

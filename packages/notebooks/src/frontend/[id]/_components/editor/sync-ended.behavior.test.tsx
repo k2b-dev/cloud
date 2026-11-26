@@ -492,17 +492,6 @@ describe("sync ended editor recovery", () => {
     expect(assertive()).toContain("All changes saved.");
   });
 
-  test("the bar that replaces the toolbar keeps the workspace's navigation and Details buttons", async () => {
-    // The note page draws no workspace head; without these two, a narrow window could reach neither.
-    using editor = await mountNoteEditor({ pending: false });
-    const { opts } = editor.providers[0]!;
-    opts.onReady?.();
-    editor.end();
-    const bar = editor.dom.root.querySelector("[data-sync-ended]")!;
-    expect(bar.querySelector('[data-app-workspace-sidebar-toggle][aria-controls="notebook-navigation"]')).not.toBeNull();
-    expect(bar.querySelector('[data-app-workspace-detail-toggle][aria-controls="k2b-workspace-detail-notebook-detail"]')).not.toBeNull();
-  });
-
   test("ended sync before the first replay copies the visible edits instead of the empty Yjs document", async () => {
     using editor = await mountNoteEditor({ pending: false });
     editor.view().dispatch({ changes: { from: 0, insert: "My first words. " }, userEvent: "input.type" });

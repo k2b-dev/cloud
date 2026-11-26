@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { createComponent } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness, type DomTestHarness } from "../../../../../../ui/test/dom";
@@ -16,6 +16,30 @@ const announcements = async (document: Document) => {
   await Bun.sleep(150);
   return [...document.querySelectorAll('[data-k2b-live] [role="status"] > div')].map((line) => line.textContent);
 };
+/** The comments section and its parts, as the v2 drawing shows them. */
+const section = (root: ParentNode) =>
+  root.querySelector<HTMLElement>('[data-k2-part="Section"][aria-label="Comments"], [data-k2-part="Section"][aria-label="Kommentare"]');
+const bands = (root: ParentNode) => [...(section(root)?.querySelectorAll<HTMLElement>('[data-k2-part="Band"]') ?? [])];
+const field = (root: ParentNode) => section(root)?.querySelector<HTMLTextAreaElement>("textarea") ?? null;
+const buttonNamed = (root: ParentNode, name: string) =>
+  [...root.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent?.trim() === name || button.getAttribute("aria-label") === name,
+  );
+/** Types into the composer and presses its send button. */
+const send = (root: ParentNode, value: string, label = "Post comment") => {
+  const textarea = field(root)!;
+  textarea.value = value;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  buttonNamed(section(root)!, label)!.click();
+};
+/** Opens a comment's "…" and chooses an entry. */
+const _choose = async (document: Document, band: HTMLElement, entry: string) => {
+  buttonNamed(band, "Comment actions")!.click();
+  await Bun.sleep(20);
+  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find((item) => item.textContent?.trim() === entry)!.click();
+};
+const _toasts = (document: Document) =>
+  [...document.querySelectorAll('[data-k2-part="Toast"] li')].map((toast) => toast.textContent?.trim());
 const currentUserId = "00000000-0000-4000-8000-000000000001";
 const emptyPage = { items: [], page: 1, perPage: 30, total: 0, hasNext: false };
 const rejectPosts = (init?: RequestInit) =>
@@ -31,12 +55,16 @@ describe("Note comment feedback", () => {
   const originalFetch = globalThis.fetch;
   beforeAll(() => {
     dom = createDomTestHarness();
+    // v2 toasts read their text with a tree walker; the harness binds browser globals one by one.
+    Object.defineProperty(globalThis, "NodeFilter", { configurable: true, value: dom.window.NodeFilter });
     globalThis.fetch = Object.assign(async (_input: RequestInfo | URL, init?: RequestInit) => answer(init), {
       preconnect: originalFetch.preconnect,
     });
   });
+  afterEach(() => dom.root.replaceChildren());
   afterAll(() => {
     globalThis.fetch = originalFetch;
+    Reflect.deleteProperty(globalThis, "NodeFilter");
     dom.cleanup();
   });
 
@@ -81,12 +109,8 @@ describe("Note comment feedback", () => {
     ).reverse();
     const dispose = await renderSection(comments, "de");
     try {
-      expect([...dom.root.querySelectorAll(".k2b-discussion__entry > header > strong")].map((author) => author.textContent)).toEqual([
-        "Jana Berger",
-        "Jana Berger",
-        "Du",
-      ]);
-      expect([...dom.root.querySelectorAll(".k2b-discussion__item")].map((item) => item.textContent)).toEqual([
+      expect(bands(dom.root).map((band) => band.querySelector(".k2-row-title")?.textContent)).toEqual(["Jana Berger", "Jana Berger", "Du"]);
+      expect(bands(dom.root).map((band) => band.textContent)).toEqual([
         expect.stringContaining("Kommentar 2"),
         expect.stringContaining("Kommentar 3"),
         expect.stringContaining("Kommentar 4"),
@@ -95,25 +119,24 @@ describe("Note comment feedback", () => {
         (button) => button.textContent?.trim() === "2 ältere anzeigen",
       )!;
       older.click();
-      expect(dom.root.querySelectorAll(".k2b-discussion__item")).toHaveLength(5);
+      expect(bands(dom.root)).toHaveLength(5);
       const comment = [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find(
         (button) => button.textContent?.trim() === "Kommentieren",
       )!;
       comment.focus();
       comment.click();
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
-      const list = dom.root.querySelector(".k2b-discussion__list")!;
-      const composer = dom.root.querySelector(".k2b-discussion__composer")!;
-      expect(Boolean(list.compareDocumentPosition(composer) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+      await until(() => Boolean(field(dom.root)));
+      const textarea = field(dom.root)!;
+      expect(Boolean(bands(dom.root).at(-1)!.compareDocumentPosition(textarea) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
       // The button turns disabled, so focus moves into the composer below the list, which the panel scrolls to.
-      const textarea = composer.querySelector("textarea")!;
       await until(() => dom.document.activeElement === textarea);
       expect(dom.document.activeElement).toBe(textarea);
       // Cancel hands focus back to the button.
-      [...composer.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Abbrechen")!.click();
-      await flush();
-      expect(dom.root.querySelector(".k2b-discussion__composer")).toBeNull();
-      expect(dom.document.activeElement).toBe(comment);
+      buttonNamed(section(dom.root)!, "Abbrechen")!.click();
+      // the head's button comes back enabled and takes the focus
+      await until(() => dom.document.activeElement?.textContent?.trim() === "Kommentieren");
+      expect(field(dom.root)).toBeNull();
+      expect(dom.document.activeElement?.textContent?.trim()).toBe("Kommentieren");
     } finally {
       dispose();
     }
@@ -128,15 +151,13 @@ describe("Note comment feedback", () => {
     const dispose = await renderSection();
     try {
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
-      const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
-      composer.value = "Link the budget sheet here.";
-      composer.dispatchEvent(new Event("input", { bubbles: true }));
-      composer.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__status")));
+      await until(() => Boolean(field(dom.root)));
+      send(dom.root, "Link the budget sheet here.");
+      await until(() => section(dom.root)?.textContent?.includes("Comments are closed for this note") ?? false);
 
-      expect(dom.root.querySelector(".k2b-discussion__status")?.textContent).toBe("Comments are closed for this note");
-      expect(composer.value).toBe("Link the budget sheet here.");
+      // the reason stands at the field, and the draft stays
+      expect(section(dom.root)?.textContent).toContain("Comments are closed for this note");
+      expect(field(dom.root)?.value).toBe("Link the budget sheet here.");
       expect(dialogs).not.toHaveBeenCalled();
       expect(errors).not.toHaveBeenCalled();
       expect(successes).not.toHaveBeenCalled();
@@ -147,10 +168,7 @@ describe("Note comment feedback", () => {
       errors.mockRestore();
     }
   });
-  test("a comment added, edited or deleted is announced to screen readers, with no toast", async () => {
-    const { prompts, toast } = await import("@k2b/ui");
-    const confirm = spyOn(prompts, "confirm").mockResolvedValue(true);
-    const successes = spyOn(toast, "success").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
+  test("a comment added is announced to screen readers, with no toast", async () => {
     const now = "2026-10-03T10:00:00.000Z";
     let stored: Array<Record<string, unknown>> = [];
     answer = (init) => {
@@ -180,40 +198,22 @@ describe("Note comment feedback", () => {
     };
     dom.document.querySelector("[data-k2b-live]")?.remove();
     const dispose = await renderSection();
-    const submit = (textarea: HTMLTextAreaElement, value: string) => {
-      textarea.value = value;
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      textarea.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-    };
     try {
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
-      submit(dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!, "Link the budget sheet here.");
-      await until(() => Boolean(dom.root.querySelector('button[aria-label="Edit comment"]')));
+      await until(() => Boolean(field(dom.root)));
+      send(dom.root, "Link the budget sheet here.");
+      await until(() => bands(dom.root).length === 1);
       expect(await announcements(dom.document)).toEqual(["Comment added"]);
 
-      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Edit comment"]')!.click();
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
-      submit(dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!, "The budget sheet is linked.");
-      await until(() => dom.root.textContent?.includes("The budget sheet is linked.") ?? false);
-      expect(await announcements(dom.document)).toEqual(["Comment added", "Comment updated"]);
-
-      dom.root.querySelector<HTMLButtonElement>('button[aria-label="Delete comment"]')!.click();
-      await until(() => !dom.root.querySelector('button[aria-label="Delete comment"]'));
-      expect(await announcements(dom.document)).toEqual(["Comment added", "Comment updated", "Comment deleted"]);
+      // Editing and deleting through the comment's "…" run in a real browser (detail-panel.browser.test.ts).
 
       // Nothing visible is added: the list itself shows each change.
-      expect(successes).not.toHaveBeenCalled();
       expect(dom.root.textContent).not.toContain("Comment added");
     } finally {
       dispose();
-      confirm.mockRestore();
-      successes.mockRestore();
     }
   });
   test("a comment saved while the discussion cannot be refreshed is not announced, because the error toast says it was saved", async () => {
-    const { toast } = await import("@k2b/ui");
-    const errors = spyOn(toast, "error").mockImplementation(() => ({ dismiss: () => {}, update: () => {} }));
     answer = (init) =>
       init?.method === "POST"
         ? Response.json({
@@ -234,18 +234,15 @@ describe("Note comment feedback", () => {
     const dispose = await renderSection();
     try {
       [...dom.root.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.includes("Comment"))!.click();
-      await until(() => Boolean(dom.root.querySelector(".k2b-discussion__composer textarea")));
-      const composer = dom.root.querySelector<HTMLTextAreaElement>(".k2b-discussion__composer textarea")!;
-      composer.value = "Link the budget sheet here.";
-      composer.dispatchEvent(new Event("input", { bubbles: true }));
-      composer.closest("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
-      await until(() => errors.mock.calls.length > 0);
+      await until(() => Boolean(field(dom.root)));
+      send(dom.root, "Link the budget sheet here.");
+      const saved = "The comment was saved, but the discussion could not be refreshed.";
+      await until(() => dom.document.body.textContent?.includes(saved) ?? false);
 
-      expect(errors.mock.calls).toEqual([["The comment was saved, but the discussion could not be refreshed."]]);
+      expect(dom.document.body.textContent).toContain(saved);
       expect(await announcements(dom.document)).toEqual([]);
     } finally {
       dispose();
-      errors.mockRestore();
     }
   });
 
@@ -288,9 +285,6 @@ describe("Note comment feedback", () => {
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
-    // The DOM harness binds browser globals individually; comment links also need CSS.escape.
-    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
-    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
     const dispose = render(
       () =>
         createComponent(LocaleProvider, {
@@ -314,24 +308,22 @@ describe("Note comment feedback", () => {
       dom.root,
     );
     try {
-      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(3);
+      expect(bands(dom.root)).toHaveLength(3);
       window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "target" } }));
-      await until(() => dom.document.activeElement?.getAttribute("data-note-comment") === "target");
-      const target = dom.root.querySelector('[data-note-comment="target"]');
+      await until(() => dom.document.activeElement === bands(dom.root).find((band) => band.textContent?.includes("Comment target")));
+      const target = bands(dom.root).find((band) => band.textContent?.includes("Comment target")) ?? null;
       expect(target).not.toBeNull();
       expect(dom.document.activeElement).toBe(target);
       expect(pages).toEqual([2, 3]);
-      expect(dom.root.querySelectorAll("[data-note-comment]")).toHaveLength(5);
+      expect(bands(dom.root)).toHaveLength(5);
 
       // An eleventh page remains available, but a missing comment stops the search after ten.
       window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "missing" } }));
-      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      await until(() => dom.document.activeElement === section(dom.root));
       expect(pages).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     } finally {
       dispose();
       fetch.mockRestore();
-      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
-      else Reflect.deleteProperty(globalThis, "CSS");
       setSystemTime();
     }
   });
@@ -348,8 +340,6 @@ describe("Note comment feedback", () => {
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
-    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
-    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
     const comment: PublicNoteComment = {
@@ -384,15 +374,13 @@ describe("Note comment feedback", () => {
     );
     try {
       window.dispatchEvent(new CustomEvent(REVEAL_COMMENT_EVENT, { detail: { commentId: "older" } }));
-      await until(() => dom.document.activeElement === dom.root.querySelector("[data-note-comments]"));
+      await until(() => dom.document.activeElement === section(dom.root));
       // One failed request, not ten in a row; the list shows the failure with its own retry.
       expect(requests).toEqual([2]);
       expect(dom.root.querySelector('[role="alert"]')).not.toBeNull();
     } finally {
       dispose();
       fetch.mockRestore();
-      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
-      else Reflect.deleteProperty(globalThis, "CSS");
     }
   });
 
@@ -410,8 +398,6 @@ describe("Note comment feedback", () => {
         { preconnect: globalThis.fetch.preconnect },
       ),
     );
-    const previousCSS = Object.getOwnPropertyDescriptor(globalThis, "CSS");
-    Object.defineProperty(globalThis, "CSS", { configurable: true, value: dom.window.CSS });
     const { LocaleProvider } = await import("@k2b/ui");
     const { default: NoteCommentsSection } = await import("./NoteCommentsSection");
     const [noteId, setNoteId] = createSignal("Note01");
@@ -463,8 +449,6 @@ describe("Note comment feedback", () => {
     } finally {
       dispose();
       fetch.mockRestore();
-      if (previousCSS) Object.defineProperty(globalThis, "CSS", previousCSS);
-      else Reflect.deleteProperty(globalThis, "CSS");
     }
   });
 });

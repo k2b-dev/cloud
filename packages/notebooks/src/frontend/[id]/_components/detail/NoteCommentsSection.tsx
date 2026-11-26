@@ -12,6 +12,7 @@ import {
   Loading,
   Menu,
   type MenuEntry,
+  Notice,
   type Person,
   Prose,
   Row,
@@ -118,6 +119,12 @@ export default function NoteCommentsSection(props: Props) {
     setExpanded(false);
   });
 
+  /** This section, found by its title (the v2 Section takes no ref). */
+  const findSection = () =>
+    [...document.querySelectorAll<HTMLElement>('[data-k2-part="Section"]')].find(
+      (section) => section.getAttribute("aria-label") === t().comments,
+    );
+
   // The activity list links to a comment: page it in when it is older than the loaded pages, unfold the list when
   // it is folded away, then bring it into view. Paging stops after a bounded number of pages.
   onMount(() => {
@@ -142,19 +149,22 @@ export default function NoteCommentsSection(props: Props) {
       if (index >= 0 && index < commentsPage().items.length - NEWEST) setExpanded(true);
       queueMicrotask(() => {
         if (!current()) return;
-        const target =
-          (index >= 0 && commentId ? document.querySelector<HTMLElement>(`[data-note-comment="${CSS.escape(commentId)}"]`) : null) ??
-          document.querySelector<HTMLElement>("[data-note-comments]");
-        target?.scrollIntoView({ block: "nearest" });
-        target?.focus({ preventScroll: true });
+        // The section is named by its title; its bands stand in the order of the shown comments.
+        const section = findSection();
+        const shownIndex = index - (commentsPage().items.length - shownComments().length);
+        const band = index >= 0 && commentId ? section?.querySelectorAll<HTMLElement>('[data-k2-part="Band"]')[shownIndex] : undefined;
+        const target = band ?? section;
+        if (!target) return;
+        // focusable for this jump only, so a screen reader lands on the comment (or the section) the link named
+        if (!target.hasAttribute("tabindex")) target.setAttribute("tabindex", "-1");
+        target.scrollIntoView({ block: "nearest" });
+        target.focus({ preventScroll: true });
       });
     };
     const listener = (event: Event) => void reveal(event);
     window.addEventListener(REVEAL_COMMENT_EVENT, listener);
     onCleanup(() => window.removeEventListener(REVEAL_COMMENT_EVENT, listener));
   });
-
-  const _exactTime = (value: string) => dates.formatDateTime(value, props.dateConfig);
 
   type CommentTarget = { notebookId: string; noteId: string };
   // The list shows a saved change only after the refresh, so a screen reader hears the outcome only then. When the
@@ -167,8 +177,14 @@ export default function NoteCommentsSection(props: Props) {
     );
   };
 
-  let commentButton: HTMLButtonElement | undefined;
-  let composerForm: HTMLFormElement | undefined;
+  /** The composer's field, to move the focus into it when it opens. */
+  let composerField: HTMLTextAreaElement | HTMLInputElement | undefined;
+  /** The head's "Kommentieren": focus returns there when the composer closes. */
+  const focusCommentAction = () =>
+    // after the head shows the button enabled again
+    queueMicrotask(() =>
+      [...(findSection()?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === t().comment)?.focus(),
+    );
 
   const createMutation = mutations.create<{ target: CommentTarget; comment: PublicNoteComment }, CommentTarget & { content: string }>({
     mutation: async (target, { abortSignal }) => {
@@ -184,9 +200,9 @@ export default function NoteCommentsSection(props: Props) {
     onSuccess: ({ target }) => {
       if (source() === sourceFor(target.notebookId, target.noteId)) {
         // Focus that was in the composer goes back to the button that opened it, not to the page.
-        const hadFocus = composerForm?.contains(document.activeElement) ?? false;
+        const hadFocus = composerField !== undefined && composerField === document.activeElement;
         setComposerOpen(false);
-        if (hadFocus) commentButton?.focus();
+        if (hadFocus) focusCommentAction();
       }
       reconcile(target, t().commentAdded);
     },
@@ -320,7 +336,7 @@ export default function NoteCommentsSection(props: Props) {
         }
         more={
           hiddenComments() > 0
-            ? { label: t().showMore({ count: hiddenComments() }), onClick: () => setExpanded(true) }
+            ? { label: t().showOlderComments({ count: hiddenComments() }), onClick: () => setExpanded(true) }
             : commentsPage().hasNext
               ? { label: t().loadEarlierComments, onClick: () => void commentsQuery.loadMore() }
               : undefined
@@ -363,7 +379,7 @@ export default function NoteCommentsSection(props: Props) {
                     <Prose markdown={comment.content} />
                   }
                 >
-                  <Field label={t().editComment} name="comment">
+                  <Field label={t().editComment} name="comment" error={updateMutation.error()?.message}>
                     <Input multiline value={editDraft()} disabled={updateMutation.loading()} onInput={setEditDraft} />
                   </Field>
                   <Bar
@@ -381,15 +397,44 @@ export default function NoteCommentsSection(props: Props) {
             );
           }}
         </For>
+        {/* An older page that failed keeps the loaded comments and says so after them, with the retry. */}
+        <Show when={commentsQuery.error() && commentsPage().items.length > 0}>
+          <Notice tone="bad" actions={[{ label: t().retry, onClick: () => void commentsQuery.loadMore() }]}>
+            {commentsQuery.error()?.message}
+          </Notice>
+        </Show>
         {/* The composer opens below the newest comment, where the conversation continues. */}
         <Show when={props.canWrite && composerOpen()}>
-          <Field label={t().addComment} name="comment">
-            <Input multiline value={draft()} placeholder={t().commentPlaceholder} disabled={createMutation.loading()} onInput={setDraft} />
+          {/* A comment the server refused keeps the draft, with the reason at the field. */}
+          <Field label={t().addComment} name="comment" error={createMutation.error()?.message}>
+            <Input
+              multiline
+              ref={(field) => {
+                composerField = field;
+                // The button that opened it turns disabled, so the focus moves into the composer, which comes into view.
+                requestAnimationFrame(() => {
+                  if (!field.isConnected) return;
+                  field.scrollIntoView({ block: "nearest" });
+                  field.focus({ preventScroll: true });
+                });
+              }}
+              value={draft()}
+              placeholder={t().commentPlaceholder}
+              disabled={createMutation.loading()}
+              onInput={setDraft}
+            />
           </Field>
           <Bar
             end={
               <>
-                <Button onClick={() => setComposerOpen(false)}>{t().cancel}</Button>
+                <Button
+                  onClick={() => {
+                    setComposerOpen(false);
+                    focusCommentAction();
+                  }}
+                >
+                  {t().cancel}
+                </Button>
                 <Button busy={createMutation.loading()} disabled={!draft().trim()} onClick={() => void submitDraft()}>
                   {t().postComment}
                 </Button>

@@ -206,8 +206,13 @@ for (const width of [1440, 390]) {
         await page.waitForTimeout(50);
         const now = await box(page, below);
         const heights = await page.evaluate(() =>
-          [...document.querySelectorAll('[data-k2-part="Pane"][data-detail] [data-k2-part="Section"], [data-k2-part="Pane"][data-detail] > div > [data-k2-part="Bar"]')].map(
-            (element) => `${element.querySelector("h3")?.textContent ?? element.getAttribute("data-k2-part")}:${Math.round(element.getBoundingClientRect().height)}`,
+          [
+            ...document.querySelectorAll(
+              '[data-k2-part="Pane"][data-detail] [data-k2-part="Section"], [data-k2-part="Pane"][data-detail] > div > [data-k2-part="Bar"]',
+            ),
+          ].map(
+            (element) =>
+              `${element.querySelector("h3")?.textContent ?? element.getAttribute("data-k2-part")}:${Math.round(element.getBoundingClientRect().height)}`,
           ),
         );
         expect(Math.abs(now.y - alone.y), `${before} || ${heights.join(" ")}`).toBeLessThanOrEqual(0.5);
@@ -249,6 +254,66 @@ test("activity loads after the first picture in its own loading state and keeps 
     await activity.getByText("Jana Berger").first().waitFor();
     const after = await box(page, section("Eigenschaften"));
     expect(Math.abs(after.y - above.y)).toBeLessThanOrEqual(0.5);
+  } finally {
+    release();
+    await page.close();
+  }
+}, 60_000);
+
+test("an own comment is edited and deleted from its menu, and the list shows each change", async () => {
+  const { page, release } = await open(1440, false, "standard");
+  try {
+    // The fixture's own comment; the server answers each change, then the refreshed page.
+    let content = "Ist fett gesetzt.";
+    let deleted = false;
+    const changes: string[] = [];
+    await page.route("**/api/notebooks/book01/notes/*/comments/**", async (route) => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith("/comments/page")) {
+        const items = (await page.evaluate(() => window.harness.comments())).filter((item) => !(deleted && item.id === "c3"));
+        return route.fulfill({
+          json: {
+            page: 1,
+            perPage: 30,
+            total: items.length,
+            hasNext: false,
+            items: items.map((item) => (item.id === "c3" ? { ...item, content } : item)),
+          },
+        });
+      }
+      changes.push(`${request.method()} ${path.split("/").at(-1)}`);
+      if (request.method() === "PATCH") {
+        content = (request.postDataJSON() as { content: string }).content;
+        const item = (await page.evaluate(() => window.harness.comments())).find((entry) => entry.id === "c3")!;
+        return route.fulfill({ json: { ...item, content, updatedAt: "2026-10-16T19:30:00.000Z" } });
+      }
+      if (request.method() === "DELETE") {
+        deleted = true;
+        return route.fulfill({ status: 204 });
+      }
+      return route.fulfill({ status: 404 });
+    });
+    const comments = page.locator(section("Kommentare"));
+    const own = comments.locator('[data-k2-part="Band"]', { hasText: "Ist fett gesetzt." });
+
+    await own.getByRole("button", { name: "Aktionen zum Kommentar" }).click();
+    await page.getByRole("menuitem", { name: "Kommentar bearbeiten" }).click();
+    const field = comments.getByRole("textbox", { name: "Kommentar bearbeiten" });
+    await field.fill("Ist fett gesetzt, und die Grenze steht in der Tabelle.");
+    await comments.getByRole("button", { name: "Kommentar speichern" }).click();
+    await comments.getByText("Ist fett gesetzt, und die Grenze steht in der Tabelle.").waitFor();
+    await field.waitFor({ state: "detached" });
+
+    const edited = comments.locator('[data-k2-part="Band"]', { hasText: "und die Grenze" });
+    await edited.getByRole("button", { name: "Aktionen zum Kommentar" }).click();
+    await page.getByRole("menuitem", { name: "Kommentar löschen" }).click();
+    // The delete asks first, and only Löschen removes it.
+    await page.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
+    await edited.waitFor({ state: "detached" });
+
+    expect(changes).toEqual(["PATCH c3", "DELETE c3"]);
+    expect(await comments.locator('[data-k2-part="Band"]').count()).toBe(2);
   } finally {
     release();
     await page.close();
