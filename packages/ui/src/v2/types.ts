@@ -51,8 +51,11 @@ export type Person = {
   image?: string;
 };
 
-/** Words after a name that are no name of their own: "Jr.", "Sr.", "II", "III", "IV". */
-const SUFFIX = /^(?:jr|sr|jun|sen|ii|iii|iv)\.?$/i;
+/**
+ * Words after a name that are no name of their own: "Jr.", "Sr.", "II", "III", "IV"; "jun." and "sen." only with
+ * their dot, since Jun and Sen are surnames too ("Li Jun", "Amartya Sen").
+ */
+const SUFFIX = /^(?:jr\.?|sr\.?|jun\.|sen\.|ii|iii|iv)$/i;
 const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 /** The first character a person sees of a word: a whole emoji or a letter with its accent, never half of one. */
 const first = (word: string) => graphemes.segment(word)[Symbol.iterator]().next().value?.segment ?? "";

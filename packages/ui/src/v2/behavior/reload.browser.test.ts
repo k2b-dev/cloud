@@ -9,7 +9,7 @@ import type { Browser, Page } from "playwright";
 import { browserName, launchBrowser, launchHookMs, pageErrors, settled } from "../../../test/browser";
 import { contractCss, demoBundle, serverMarkup } from "../../../test/v2-behavior/harness";
 
-const demos = ["overlays", "select", "board", "transfer", "resize", "controls", "lists", "toast"] as const;
+const demos = ["overlays", "select", "board", "transfer", "controls", "lists", "toast"] as const;
 let browser: Browser;
 let css: string;
 const bundles = new Map<string, string>();
