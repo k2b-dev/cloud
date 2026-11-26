@@ -8,7 +8,6 @@ import {
   Button,
   Chip,
   Failed,
-  Icon,
   Inline,
   Input,
   Mark,
@@ -178,7 +177,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
             columns={[
               {
                 title: t().columnConversation,
-                width: { min: 220, default: 320 },
+                width: { min: 220, default: 300 },
                 cell: (row) => (
                   <Inline>
                     <Mark {...keptMark(row.mailboxDeleted)} />
@@ -188,13 +187,14 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnMailbox,
-                width: { min: 130, default: 160 },
+                width: { min: 180, default: 210 },
                 cell: (row) =>
                   row.mailboxDeleted ? (
-                    // state as colour, symbol and word; the status row counts these rows
-                    <Text tone="warn">
-                      <Icon name="trash" /> {row.mailboxName} ({t().deletedShort})
-                    </Text>
+                    // the name stays; its state is a dot and a word (the status row counts these rows)
+                    <Inline>
+                      <Text>{row.mailboxName}</Text>
+                      <Chip status="warn">{t().deletedShort}</Chip>
+                    </Inline>
                   ) : (
                     row.mailboxName
                   ),
@@ -202,7 +202,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnSender,
-                width: { min: 150, default: 190 },
+                width: { min: 150, default: 180 },
                 cell: (row) => (
                   <Inline>
                     <Avatar name={row.sender} decorative />
@@ -213,7 +213,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnDate,
-                width: { min: 90, default: 110 },
+                width: { min: 90, default: 100 },
                 cell: (row) =>
                   row.date ? (
                     <time dateTime={row.date.iso} title={row.date.title}>
@@ -226,7 +226,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnKeptBy,
-                width: { min: 150, default: 180 },
+                width: { min: 150, default: 170 },
                 cell: (row) => (
                   <Inline>
                     <Avatar name={row.keptBy} decorative />
@@ -237,7 +237,7 @@ export default function MailAdminKeptList(props: MailAdminKeptListProps) {
               },
               {
                 title: t().columnKeptSince,
-                width: { min: 100, default: 120 },
+                width: { min: 100, default: 110 },
                 align: "end",
                 cell: (row) => (
                   <time dateTime={row.keptSince.iso} title={row.keptSince.title}>
