@@ -128,3 +128,47 @@ query.set(state, "sort", { field: "title", direction: "asc" });
 query.set(state, "group", "era");
 // @ts-expect-error: a possibly undefined state is no state to serialize
 query.serialize(next);
+
+// A field with verbs holds a term: its verb and what that verb compares with; one without keeps its plain value.
+const verbed = defineListQuery({
+  key: "verbed",
+  fields: {
+    title: field.text({ label: "Title", verbs: ["contains", "is", "empty"] }),
+    price: field.numberRange({ label: "Price", verbs: ["between", "after"] }),
+    due: field.dateRange({ label: "Due", verbs: ["between", "before"] }),
+    plain: field.text({ label: "Plain" }),
+  },
+  sort: { fixed: { field: "title", direction: "asc", label: "Title" } },
+});
+type VerbedFilters = ListQueryStateOf<typeof verbed>["filters"];
+export type VerbTypes = [
+  Expect<
+    Equal<
+      VerbedFilters["title"],
+      | { readonly verb: "contains"; readonly value: string }
+      | { readonly verb: "is"; readonly value: string }
+      | { readonly verb: "empty" }
+      | undefined
+    >
+  >,
+  Expect<
+    Equal<
+      VerbedFilters["price"],
+      { readonly verb: "between"; readonly value: NumberRange } | { readonly verb: "after"; readonly value: number } | undefined
+    >
+  >,
+  Expect<
+    Equal<
+      VerbedFilters["due"],
+      { readonly verb: "between"; readonly value: PeriodValue<never> } | { readonly verb: "before"; readonly value: string } | undefined
+    >
+  >,
+  Expect<Equal<VerbedFilters["plain"], string | undefined>>,
+];
+verbed.set(verbed.reset(), "price", { verb: "after", value: 5 });
+// @ts-expect-error: a number verb compares with a number
+verbed.set(verbed.reset(), "price", { verb: "after", value: { min: 5 } });
+// @ts-expect-error: "not" is not one of the field's verbs
+verbed.set(verbed.reset(), "title", { verb: "not", value: "x" });
+// @ts-expect-error: a number range has no text verbs
+field.numberRange({ label: "P", verbs: ["contains"] });
