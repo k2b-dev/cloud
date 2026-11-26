@@ -33,7 +33,7 @@ import {
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
 import { selectedChartSvg } from "./chart-svg";
-import { stretchedTickRoomsSvg } from "./chart-tick-room";
+import { stretchedAxisCornerSvg, stretchedTickRoomsSvg } from "./chart-tick-room";
 import { useViewportMessages } from "./viewport-messages";
 
 /**
@@ -583,7 +583,9 @@ export const renderChartRoot = (props: ChartProps, renderChartSvg: typeof import
     ),
   );
   // A stretched line's dates give way in a narrow box instead of drawing over each other.
-  const svgMarkup = createMemo(() => (props.kind === "line" && props.timeAxis ? stretchedTickRoomsSvg(drawnSvg()) : drawnSvg()));
+  // A stretched line's or scatter's first X label begins at its tick, so it never meets the lowest Y label.
+  const cornered = () => (props.kind === "line" || props.kind === "scatter" ? stretchedAxisCornerSvg(drawnSvg()) : drawnSvg());
+  const svgMarkup = createMemo(() => (props.kind === "line" && props.timeAxis ? stretchedTickRoomsSvg(cornered()) : cornered()));
   createEffect(() => {
     svgMarkup();
     inspection.invalidate();
