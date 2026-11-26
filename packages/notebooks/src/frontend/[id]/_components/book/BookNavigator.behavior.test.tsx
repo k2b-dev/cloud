@@ -63,7 +63,7 @@ describe("Book navigation tree", () => {
       { preconnect: originalFetch.preconnect },
     );
     const { default: BookNavigator } = await import("./BookNavigator.island");
-    const { default: BookController } = await import("./BookController.island");
+    const { default: BookController } = await import("./BookController");
     const disposeNavigator = render(
       () =>
         createComponent(BookNavigator, {

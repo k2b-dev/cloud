@@ -41,7 +41,7 @@ describe("Book Mermaid enhancement", () => {
     let dispose: (() => void) | undefined;
     try {
       dom.root.innerHTML = `<article id="book-theme-probe">${figure}</article><div id="mermaid-island"></div>`;
-      const { default: BookMermaid } = await import("./BookMermaid.island");
+      const { default: BookMermaid } = await import("./BookMermaid");
       dispose = render(() => createComponent(BookMermaid, { rootId: "book-theme-probe" }), dom.root.querySelector("#mermaid-island")!);
       await settle();
       expect(renderSvg).toHaveBeenCalledTimes(1);

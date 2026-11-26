@@ -6,6 +6,7 @@ import * as layoutHelp from "@k2b/cloud/ssr/help";
 import { Hono } from "hono";
 import { fromJSON } from "seroval";
 import { stubRailSnapshot } from "../../../../../tests/fixtures/rail-snapshot";
+import { katexStylesHref } from "../../lib/katex-assets";
 import type { PresentationMode } from "../../lib/presentation-mode";
 import { notebooksService } from "../../service";
 import * as notebookStore from "../../service/notebooks";
@@ -230,30 +231,21 @@ test("a book page is server-rendered with the start page first and the other pag
   expect(rows.map((row) => row.attributes["data-k2b-nav-tree-id"])).toEqual(["note04", "note01", "note03", "note02"]);
 });
 
-test("a book page with a hidden navigation is server-rendered without its contents list", async () => {
-  const html = await renderBookPage({ navigationHidden: true });
-  const [sidebar, ...others] = await select(html, "aside.k2b-app-workspace__sidebar");
-
-  expect(others).toEqual([]);
-  expect(sidebar?.attributes.id).toBe("notebook-navigation");
-  expect(sidebar?.attributes.hidden).toBeDefined();
-  expect(await select(html, "aside.k2b-app-workspace__sidebar *")).toEqual([]);
-  expect(await select(html, '[role="tree"]')).toEqual([]);
-  expect(await select(html, '[data-app-workspace-resize="sidebar"]')).toEqual([]);
-  // The page itself stays readable, and Book view has no editor toolbar, so it offers the show control.
-  const [article] = await select(html, "#notebook-book-content h1");
-  expect(article?.text).toBe("Überblick");
-  expect((await select(html, 'button[aria-controls="notebook-navigation"]')).map((button) => button.attributes["aria-label"])).toEqual([
-    "Navigation einblenden",
-  ]);
-  // Phones keep the contents in the header menu.
-  expect(html).toContain("data-cloud-workspace-navigation");
-
-  const visible = await renderBookPage({ navigationHidden: false });
-  expect(await select(visible, '[role="tree"] [data-k2b-nav-tree-id]')).toHaveLength(4);
-  expect(await select(visible, '.k2b-icon-button[aria-controls="notebook-navigation"]:not([data-app-workspace-sidebar-toggle])')).toEqual(
-    [],
-  );
+test("a book page is one v2 workspace with the reading order beside the note and math styles", async () => {
+  // Hiding the navigation belongs to the v2 frame (lane Z2); until then a hidden navigation shows as well.
+  for (const navigationHidden of [false, true]) {
+    const html = await renderBookPage({ navigationHidden });
+    expect(await select(html, "[data-k2-workspace]")).toHaveLength(1);
+    expect(await select(html, '[role="tree"] [data-k2b-nav-tree-id]')).toHaveLength(4);
+    const [article] = await select(html, '[data-k2-part="Canvas"] #notebook-book-content h1');
+    expect(article?.text).toBe("Überblick");
+    // the v1 frame is gone; phones keep the contents in the header menu
+    expect(await select(html, "aside.k2b-app-workspace__sidebar")).toEqual([]);
+    expect(html).toContain("data-cloud-workspace-navigation");
+    expect(html).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
+  }
+  // also an empty notebook, which may show math as soon as a note arrives
+  expect(await renderEmptyNotebook("book")).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
 });
 
 test.each(["write", "book"] as const)(

@@ -3,12 +3,11 @@ import { LocaleProvider } from "@k2b/ui";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { selectHtml } from "../../../../../../../tests/fixtures/select-html";
-import { katexStylesHref } from "../../../../lib/katex-assets";
 import { bookNavigationState } from "../sidebar/sidebar-tree.test-fixture";
 import { bookMessages } from "./messages";
 import "../detail/ssr-test-plugin";
 
-const { default: BookSurface } = await import("./BookSurface");
+const { default: BookWorkspace } = await import("./BookWorkspace");
 
 const render = (
   canWrite = false,
@@ -22,7 +21,7 @@ const render = (
     createComponent(LocaleProvider, {
       locale,
       get children() {
-        return createComponent(BookSurface, {
+        return createComponent(BookWorkspace, {
           notebookId: "book01",
           notebookName: "Company handbook",
           notebookIcon: null,
@@ -33,7 +32,6 @@ const render = (
           historyIncomplete,
           html,
           noteTitle: "Welcome",
-          appUrl: "https://cloud.example.test",
           cursor: null,
           navigationHidden: false,
           fullWidth: false,
@@ -47,7 +45,7 @@ const render = (
     }),
   );
 
-describe("Book surface", () => {
+describe("Book on v2", () => {
   test("only a rendered note becomes a print region", async () => {
     expect(await selectHtml(render(), "article#notebook-book-content[data-print-region]")).toHaveLength(1);
     expect(await selectHtml(render(false, false, "en", null), "[data-print-region]")).toHaveLength(0);
@@ -75,42 +73,45 @@ describe("Book surface", () => {
     );
   });
 
-  test("loads math styles even when entering through an empty or tag reading surface", () => {
-    expect(render()).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
-    expect(render(false, false, "en", null)).toContain(`rel="stylesheet" href="${katexStylesHref}"`);
-  });
   test("keeps the incomplete-history warning visible to readers", () => {
     const recovered = render(false, false, "en", "<p>Recovered content</p>", true);
     expect(recovered).toContain("Some note changes could not be recovered");
     expect(recovered).toContain('id="notebook-book-history-warning" role="status"');
     expect(render()).toMatch(/id="notebook-book-history-warning" hidden/);
   });
-  test("renders a complete article and reading navigation without the editor or inspector", () => {
+  test("renders a complete article and reading navigation without the editor or inspector", async () => {
     const html = render();
     expect(html).toContain("Our handbook.");
-    expect(html).toContain('class="notebook-book-shell"');
-    expect(html).not.toContain('class="k2b-ui notebook-book-shell"');
-    expect(html).toContain('class="notebook-book-content"');
+    // one v2 workspace whose Canvas holds the reading surface
+    expect((await selectHtml(html, "[data-k2-workspace]")).length).toBe(1);
+    expect((await selectHtml(html, '[data-k2-part="Canvas"] .notebook-book-main article.notebook-book-content')).length).toBe(1);
     expect(html).toContain("Getting started");
     expect(html).toContain("/app/notebooks/book01/notes/note02?mode=book");
     expect(html).toContain("/app/notebooks/book01/notes?tag=handbook&amp;mode=book");
     expect(html).not.toMatch(/CodeMirror|NoteEditor|NotebookDetailPanel|EditorToolbar|mode=write|mode=readonly/);
-    expect(html).not.toContain("sidebar-mobile");
     expect(html).toContain("data-cloud-workspace-navigation");
-    expect(html).toContain("sidebar-desktop");
   });
   test("a page load shows the open page's sub-pages, so they stay reachable before or without JavaScript", () => {
     const html = render(false, false, "en", "<h1>Getting started</h1>", false, "note01");
     expect(html).toMatch(/role="treeitem"[^>]*aria-expanded="true"[^>]*data-k2b-nav-tree-id="note01"/);
     expect(html).toContain('<a href="/app/notebooks/book01/notes/note02?mode=book"');
   });
-  test("authors get a floating edit action only on unlocked notes", () => {
-    expect(render(true)).toContain("mode=write");
-    expect(render(true)).toContain("notebook-floating-edit");
-    expect(render(true)).not.toContain("mode=readonly");
-    expect(render(true, true)).not.toContain("mode=write");
-    expect(render(true, true)).not.toContain("notebook-floating-edit");
-    expect(render(true, true)).toContain("/notes/note02?mode=readonly");
+  test("authors get the views Edit, Read and Book in the head, Edit only on unlocked notes", async () => {
+    const views = async (html: string) =>
+      (await selectHtml(html, '[data-k2-part="Tabs"] a')).map((tab) => [
+        tab.text.trim(),
+        tab.attributes.href,
+        tab.attributes["aria-current"],
+      ]);
+    expect(await views(render(true))).toEqual([
+      ["Edit", "/app/notebooks/book01/notes/note02?mode=write", undefined],
+      ["Read", "/app/notebooks/book01/notes/note02?mode=readonly", undefined],
+      ["Book", "/app/notebooks/book01/notes/note02?mode=book", "page"],
+    ]);
+    expect((await views(render(true, true))).map(([label]) => label)).toEqual(["Read", "Book"]);
+    // readers stay in Book: the head names the note instead
+    expect(await views(render())).toEqual([]);
+    expect(render()).not.toMatch(/mode=write|mode=readonly/);
   });
   test("authors can leave an empty Book without exposing an edit action to readers", () => {
     const empty = render(true, false, "en", null);
@@ -121,7 +122,7 @@ describe("Book surface", () => {
   });
   test("localizes controls and empty states without leaking editor data", () => {
     expect(bookMessages.check()).toEqual([]);
-    expect(render(true, false, "de-CH")).toContain("Notiz bearbeiten");
+    expect(render(true, false, "de-CH")).toContain("Bearbeiten");
     expect(render(false, false, "de", null)).toContain("Wähle eine Seite");
     expect(render(false, false, "de")).not.toContain("yjsSnapshot");
   });

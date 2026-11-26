@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { commentsHref } from "./BookCommentsLink.island";
+import { commentsHref } from "./book-comments";
 
 test("Book's comments entry opens Read at the first comment of the same note", () => {
   expect(commentsHref("/app/notebooks/book01/notes/note01?mode=book#intro")).toBe(

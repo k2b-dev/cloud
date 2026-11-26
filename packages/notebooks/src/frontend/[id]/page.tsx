@@ -7,7 +7,7 @@ import { katexStylesHref } from "../../lib/katex-assets";
 import { notebooksPageMessages } from "../messages";
 import { buildNoteUrl } from "../params";
 import BookGraphSurface from "./_components/book/BookGraphSurface";
-import BookSurface from "./_components/book/BookSurface";
+import BookWorkspace from "./_components/book/BookWorkspace.island";
 import GraphWorkspace from "./_components/graph/GraphWorkspace.island";
 import NotebookCommands from "./_components/NotebookCommands.island";
 import NoteWorkspace from "./_components/NoteWorkspace.island";
@@ -72,10 +72,14 @@ export default ssr<AuthContext>(async (c) => {
         c={c}
         fullPage
         fullWidth
+        ui="v2"
         title={data.notebook.name}
       >
+        <link rel="stylesheet" href={katexStylesHref} />
         <RememberNotebook notebookId={data.notebook.id} />
-        <BookSurface
+        {/* Like the workspace, Book follows live changes, and a revoked grant or an ended session reloads it. */}
+        <WorkspaceEventBridge notebookId={data.notebook.id} appUrl={data.appUrl} initialCursor={data.ctx.workspaceCursor} />
+        <BookWorkspace
           userId={data.ctx.userId}
           notebookId={data.notebook.id}
           notebookName={data.notebook.name}
@@ -89,7 +93,6 @@ export default ssr<AuthContext>(async (c) => {
           canWrite={data.canWrite}
           locked={!!data.selectedNote?.lockedAt}
           historyIncomplete={data.selectedNote?.historyIncomplete ?? false}
-          appUrl={data.appUrl}
           cursor={data.ctx.workspaceCursor}
           navigationHidden={data.ctx.navigationHidden}
           fullWidth={data.ctx.fullWidth}

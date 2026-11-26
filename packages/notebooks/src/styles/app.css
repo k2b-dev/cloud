@@ -21,13 +21,6 @@
 .dark .notebook-book-shell {
   color: var(--color-zinc-100);
 }
-.notebook-book-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem clamp(1rem, 4vw, 3rem);
-}
 .notebook-document-surface {
   position: relative;
   min-width: 0;
@@ -43,40 +36,20 @@
   flex-direction: column;
   height: 100%;
 }
-[data-k2-canvas] > .notebook-graph {
+/* v2 keeps the Canvas a block, so its one surface takes the height itself. */
+[data-k2-canvas] > .notebook-graph,
+[data-k2-canvas] > .notebook-book-document {
   height: 100%;
 }
 .notebook-book-document {
   display: flex;
 }
-.notebook-floating-edit {
-  position: absolute;
-  right: max(1.25rem, env(safe-area-inset-right));
-  bottom: max(1.25rem, env(safe-area-inset-bottom));
-  z-index: 10;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-.notebook-floating-edit .notebook-floating-edit-button {
-  border-radius: 50%;
-}
-.notebook-document-surface:hover .notebook-floating-edit,
-.notebook-floating-edit:hover,
-.notebook-floating-edit:focus-within {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: none) {
-  .notebook-floating-edit {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .notebook-floating-edit {
-    transition: none;
-  }
+/* Book's own scroller inside its Canvas: the reading position and full width measure it. */
+.notebook-book-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 /* The formatting strip scrolls horizontally, so it clips anything painted
    outside a button. Keyboard focus therefore stays inside the button: a blue

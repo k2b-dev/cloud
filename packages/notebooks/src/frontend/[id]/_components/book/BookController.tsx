@@ -265,7 +265,8 @@ export default function BookController(props: Props) {
       const anchor = target?.closest<HTMLAnchorElement>("a[href]") ?? null;
       if (
         !anchor ||
-        !anchor.closest(".notebook-book-shell") ||
+        // Book's own links: the reading surface, its navigation and its head (v1 shell or v2 workspace)
+        !anchor.closest(".notebook-book-shell, [data-k2-workspace]") ||
         anchor.hasAttribute("download") ||
         (anchor.target && anchor.target !== "_self")
       )

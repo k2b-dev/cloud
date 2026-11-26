@@ -66,7 +66,7 @@ describe("Book controller", () => {
       },
       { preconnect: originalFetch.preconnect },
     );
-    const { default: BookController } = await import("./BookController.island.tsx");
+    const { default: BookController } = await import("./BookController");
     const dispose = render(
       () => createComponent(BookController, { notebookId: "book01", initial: current }),
       dom.root.querySelector("#controller")!,
@@ -413,7 +413,7 @@ describe("Book controller", () => {
     const main = app.article.closest<HTMLElement>(".notebook-book-main")!;
     app.article.innerHTML = "<p>A long paragraph that the reader is halfway through.</p>";
     const paragraph = app.article.querySelector("p")!;
-    // Layout stand-ins (the real rewrap runs in book-hidden-navigation.browser.test.ts): the port starts
+    // Layout stand-ins (a real rewrap returns with hiding the navigation in the v2 frame, lane Z2): the port starts
     // 100 px down, and the paragraph 800 px into the article takes 400 px, or 200 px while the article is wider.
     let paragraphHeight = 400;
     const rewrap = (event: Event) => {

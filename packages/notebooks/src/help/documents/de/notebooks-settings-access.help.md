@@ -31,11 +31,9 @@ Mit Zugriff **Bearbeiten** oder **Verwalten** wechselst du zwischen drei Ansicht
 - **Schreibgeschützt:** Arbeitsbereich und Detailbereich nutzen, ohne den Notiztext zu bearbeiten.
 - **Buch:** Das Notizbuch als Handbuch lesen, ohne den Arbeitsbereich des Editors.
 
-In der Ansicht **Bearbeiten** öffnet das Buchsymbol in der unteren Werkzeugleiste die Buchansicht. Der Detailbereich bietet auch Aktionen für Buch und **Schreibgeschützt**. Wähle in **Schreibgeschützt** im Detailbereich **Notiz bearbeiten**, um zurück zur Ansicht **Bearbeiten** zu wechseln.
+Oben in einer Notiz wechseln **Bearbeiten**, **Lesen** und **Buch** zwischen den Ansichten. Buch zeigt sie Personen mit Zugriff **Bearbeiten** oder **Verwalten**. Gesperrte Notizen bieten kein **Bearbeiten**.
 
-In Buch und **Schreibgeschützt** erscheint unten rechts ein runder Stift, wenn du mit dem Mauszeiger über das Dokument fährst. Auch der Tastaturfokus zeigt ihn. Auf Touchgeräten bleibt er sichtbar. Gesperrte Notizen zeigen keine Bearbeitungsaktion.
-
-Ist keine Notiz ausgewählt oder die Notiz gesperrt, zeigt Buch Personen mit Zugriff **Bearbeiten** oder **Verwalten** in der Seitenleiste **Arbeitsbereich öffnen**. Damit öffnest du die Einstellungen oder erstellst eine Notiz. Hast du die Navigation ausgeblendet, blende sie zuerst mit der Schaltfläche unten links ein.
+Ist keine Notiz ausgewählt oder die Notiz gesperrt, zeigt Buch Personen mit Zugriff **Bearbeiten** oder **Verwalten** in der Seitenleiste **Arbeitsbereich öffnen**. Damit öffnest du die Einstellungen oder erstellst eine Notiz.
 
 Du brauchst Zugriff **Verwalten**, um die Standardansicht für Personen mit Zugriff **Bearbeiten** oder **Verwalten** zu ändern:
 
