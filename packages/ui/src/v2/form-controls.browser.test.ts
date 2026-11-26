@@ -170,6 +170,8 @@ test("colour: a swatch press sets it, a typed CSS colour becomes its code, the h
     await code.press("Enter");
     await page.waitForFunction(() => (window.__deeds ?? []).includes("accent:#0f766e"));
     expect(await page.getByRole("option", { name: "Farbe #0f766e" }).getAttribute("aria-selected")).toBe("true");
+    // area and hue stand on a panel behind the swatch, so a settings row stays one line
+    await page.getByRole("button", { name: "Farbe wählen" }).click();
     const hue = page.getByRole("slider", { name: "Farbton" });
     const before = await hue.getAttribute("aria-valuenow");
     await hue.focus();
