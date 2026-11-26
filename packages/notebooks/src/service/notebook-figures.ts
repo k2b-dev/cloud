@@ -33,7 +33,8 @@ export type NotesFigures = {
 export const notesFigures = async (params: { notebookId: string; timeZone: string; now: Date }): Promise<NotesFigures> => {
   const [row] = await sql<
     {
-      days: number[];
+      // Bun reads an int4[] as an Int32Array; the page sends the series to the island, so it becomes a plain array
+      days: ArrayLike<number>;
       changes: number;
       people: number;
       notes: number;
@@ -62,7 +63,7 @@ export const notesFigures = async (params: { notebookId: string; timeZone: strin
     SELECT
       ARRAY(
         SELECT COUNT(recent.day)::int
-        FROM since, generate_series(0, ${FIGURE_DAYS - 1}::int) AS offset_days
+        FROM since CROSS JOIN generate_series(0, ${FIGURE_DAYS - 1}::int) AS offset_days
         LEFT JOIN recent ON recent.day = since.first_day + offset_days
         GROUP BY offset_days
         ORDER BY offset_days
@@ -96,7 +97,7 @@ export const notesFigures = async (params: { notebookId: string; timeZone: strin
   `;
   if (!row) throw new Error("Notebook figures returned no row");
   return {
-    days: row.days.map(Number),
+    days: Array.from(row.days, Number),
     changes: row.changes,
     people: row.people,
     notes: row.notes,
@@ -131,7 +132,7 @@ export type AttachmentFigures = {
 };
 
 export const attachmentFigures = async (params: { notebookId: string; timeZone: string; now: Date }): Promise<AttachmentFigures> => {
-  const [row] = await sql<{ days: number[]; count: number; bytes: string | number | null; added: number }[]>`
+  const [row] = await sql<{ days: ArrayLike<number>; count: number; bytes: string | number | null; added: number }[]>`
     WITH window_days AS (
       SELECT ((${params.now}::timestamptz AT TIME ZONE ${params.timeZone})::date - ${FIGURE_DAYS - 1}::int) AS first_day
     ), since AS (
@@ -144,7 +145,7 @@ export const attachmentFigures = async (params: { notebookId: string; timeZone: 
     SELECT
       ARRAY(
         SELECT COUNT(files.day)::int
-        FROM since, generate_series(0, ${FIGURE_DAYS - 1}::int) AS offset_days
+        FROM since CROSS JOIN generate_series(0, ${FIGURE_DAYS - 1}::int) AS offset_days
         LEFT JOIN files ON files.recent AND files.day = since.first_day + offset_days
         GROUP BY offset_days
         ORDER BY offset_days
@@ -154,5 +155,5 @@ export const attachmentFigures = async (params: { notebookId: string; timeZone: 
       (SELECT COUNT(*)::int FROM files WHERE files.recent) AS added
   `;
   if (!row) throw new Error("Attachment figures returned no row");
-  return { days: row.days.map(Number), count: row.count, bytes: Number(row.bytes ?? 0), added: row.added };
+  return { days: Array.from(row.days, Number), count: row.count, bytes: Number(row.bytes ?? 0), added: row.added };
 };

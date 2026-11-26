@@ -68,6 +68,8 @@ suite("notebook figures and the editors of the notes list", () => {
 
     const quiet = await notesFigures({ notebookId: other, timeZone: "UTC", now });
     expect(quiet).toMatchObject({ changes: 0, people: 0, notes: 0, newNotes: 0, latest: null });
+    // a plain array, not the driver's Int32Array: the series travels to the browser in the island's props
+    expect(Array.isArray(quiet.days)).toBeTrue();
     expect(quiet.days).toEqual(Array.from({ length: FIGURE_DAYS }, () => 0));
 
     // each note's editors: distinct people from its last changes, the last one first; comments name no editor
@@ -96,6 +98,7 @@ suite("notebook figures and the editors of the notes list", () => {
     await upload("old.pdf", 4_000, hoursAgo(24 * 90));
     const figures = await attachmentFigures({ notebookId, timeZone: "UTC", now });
     expect(figures).toMatchObject({ count: 3, bytes: 7_000, added: 2 });
+    expect(Array.isArray(figures.days)).toBeTrue();
     expect(figures.days).toHaveLength(FIGURE_DAYS);
     expect(figures.days.at(-1)).toBe(1);
     expect(figures.days.at(-7)).toBe(1);

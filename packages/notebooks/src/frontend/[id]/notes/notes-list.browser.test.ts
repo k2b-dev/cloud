@@ -116,7 +116,8 @@ const open = async (view: View, address: string, options: { sample?: string; per
   });
   await tab.goto(`${origin}${address}`);
   // the list (or its empty state) stands; its size, not a wall-clock time, is what a large notebook must keep small
-  await tab.locator('[data-k2-part="List"], [data-k2-part="Empty"]').first().waitFor();
+  // the table carries its phone rows too; one of the two is hidden at any width, so the page waits for it to stand
+  await tab.locator('[data-k2-part="Table"], [data-k2-part="Empty"]').first().waitFor({ state: "attached" });
   await tab.evaluate(() => document.fonts.ready);
   await settled(tab);
   return { context, tab, errors, pages };
