@@ -8,8 +8,8 @@ import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
 import { useSpaceMessages } from "../[id]/messages";
 import { adminMessages } from "../admin-messages";
-import { SPACE_MARK_ICON } from "./spaces-nav";
 import { readResponseError } from "../lib/response";
+import { SPACE_MARK_ICON } from "./spaces-nav";
 
 export type AdminSpaceRow = { id: string; name: string; description: string | null; color: string; permissionCount: number };
 
@@ -164,12 +164,15 @@ export default function AdminSpaces(props: AdminSpacesProps) {
           empty={{ icon: "layout-kanban", text: props.search ? t().noMatch({ query: props.search }) : t().noneFound }}
           phone={(space) => ({
             mark: { icon: SPACE_MARK_ICON, color: space.color },
-            // A Space nobody can open says so once, in its red mark, not again as "0 access entries".
-            lines:
-              space.permissionCount === 0
-                ? [space.name]
-                : [space.name, t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })],
-            marks: space.permissionCount === 0 ? <Chip status="bad">{t().noAccess}</Chip> : undefined,
+            // A Space nobody can open says so once, in red on its second line, not again as "0 access entries".
+            lines: [
+              space.name,
+              space.permissionCount === 0 ? (
+                <Chip status="bad">{t().noAccess}</Chip>
+              ) : (
+                t().accessCount({ count: space.permissionCount, shown: number(space.permissionCount) })
+              ),
+            ],
           })}
           columns={[
             {

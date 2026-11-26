@@ -293,8 +293,9 @@ export default function SpaceScreen(props: SpaceScreenProps) {
         />
       }
       primary={
-        // An open item on the phone is the page with back and its own deeds; the floating main action stays with the list.
-        state.canWrite && !detail.open()
+        // k2b-ui gap (DP): an open item on the phone is the page with back and its own deeds; B wants no floating main
+        // action over it, but the v2 rules require Workspace primary at phone width, also while a detail is the page.
+        state.canWrite
           ? {
               label: primaryLabel,
               icon: "plus",

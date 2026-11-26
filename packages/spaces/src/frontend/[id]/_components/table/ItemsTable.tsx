@@ -40,8 +40,13 @@ export default function ItemsTable(props: Props) {
   // k2b-ui gap (DP, #4326): a quiet state, a neutral dot and its word without the tinted round, is not on this branch.
   const status = (item: SpaceItem) => columnsById().get(item.columnId)?.name ?? "—";
   const people = (item: SpaceItem) => {
-    const names = itemPeople(item, t.onIt);
-    return names.length ? <Avatar.Stack people={names.map((name) => ({ name }))} max={3} label={names.join(", ")} /> : "—";
+    // The faces carry the plain names; the stack's one name says who is on it.
+    const names = itemPeople(item);
+    return names.length ? (
+      <Avatar.Stack people={names.map((name) => ({ name }))} max={3} label={itemPeople(item, t.onIt).join(", ")} />
+    ) : (
+      "—"
+    );
   };
   const sign = (item: SpaceItem) => ({ icon: isEvent(item) ? "calendar-event" : "checkbox", color: props.color ?? undefined });
   return (
