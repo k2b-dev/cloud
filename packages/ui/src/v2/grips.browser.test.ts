@@ -401,17 +401,20 @@ test("1440: grips rest hidden and show under the pointer along their line and in
   });
 });
 
-// Without hover (a touch screen) the seam grips stay, and a table's grips show while its head is pressed or holds
-// the focus.
-test("touch: seam grips stay; table grips show while the head holds the focus", async () => {
+// With touch every grip stays: there is no hover to find it by, and a hidden 9 px target in a table head cannot be
+// found. A real tap on a column grip takes the focus there, and the grip stays shown.
+test("touch: every grip stays at rest, and a tap on a column grip keeps it", async () => {
   await withPage(
     async (page) => {
       // the page sees a touch screen: no hover
       expect(await page.evaluate(() => matchMedia("(hover: none)").matches)).toBe(true);
-      expect(await shown(page)).toEqual({ side: "1", list: "1", info: "1", subject: "0" });
-      await page.locator(grips.subject).focus();
+      expect(await shown(page)).toEqual({ side: "1", list: "1", info: "1", subject: "1" });
+      const box = await page.locator(grips.subject).boundingBox();
+      if (!box) throw new Error("no column grip");
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
       await settled(page);
-      expect((await shown(page)).subject).toBe("1");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe("Betreff");
+      expect(await shown(page)).toEqual({ side: "1", list: "1", info: "1", subject: "1" });
     },
     { touch: true },
   );

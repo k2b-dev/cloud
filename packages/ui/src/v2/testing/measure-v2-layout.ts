@@ -846,6 +846,7 @@ export async function measureV2Layout(page: Page, options: V2LayoutOptions = {})
       problems,
     };
   } finally {
-    await page.evaluate(() => document.getElementById("k2-measure-grips")?.remove());
+    // a page that closed or failed must not hide the error that ended the measurement
+    await page.evaluate(() => document.getElementById("k2-measure-grips")?.remove()).catch(() => {});
   }
 }
