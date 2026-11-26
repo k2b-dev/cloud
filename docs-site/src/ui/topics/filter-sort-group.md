@@ -62,7 +62,7 @@ The one declaration of fields, search, sorts and groups, shared by the server (`
 
 ### FilterBar
 
-The active filters as statements, in `Pane status` above the `StatusRow`; it writes the address and calls `onChange`. Inside another toolbar (a calendar's head) give it `bare`: no line and no side edge of its own, the host gives both; inside a v2 `Bar` it takes that form by itself.
+The active filters as statements, in `Pane status` above the `StatusRow`; it writes the address and calls `onChange`. Placed in a toolbar, as the `start` or `end` of a v2 `Bar` (a calendar's head), it has no line and no side edge of its own (the bar gives both) and keeps one line that scrolls sideways, so the head never grows as filters come. Build such a head as a `Bar`.
 
 <Props of="FilterBar" />
 

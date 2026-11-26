@@ -1,6 +1,20 @@
 import { createMemo, createSignal } from "solid-js";
 import { isServer } from "solid-js/web";
-import { Bar, Button, Chip, FilterBar, Input, type ListChange, ListOrder, Pane, StatusRow, Table, Tabs, Workspace } from "../src/v2";
+import {
+  Bar,
+  Button,
+  Chip,
+  FilterBar,
+  Input,
+  type ListChange,
+  ListOrder,
+  Pane,
+  Popover,
+  StatusRow,
+  Table,
+  Tabs,
+  Workspace,
+} from "../src/v2";
 import { defineListQuery, field, type ListQueryStateOf, type LookupItem } from "../src/v2/list-query";
 
 // The inventory of an antiques trade on invented data, as a table with many columns would declare it: thirteen fields
@@ -296,11 +310,11 @@ export function Demo() {
     setState(next);
     if (!slow) setFetched(next);
   };
-  // `_bare`: the bar lives in a host's toolbar, as the calendar of a Space puts it in its head
-  const bare = !isServer && new URLSearchParams(location.search).has("_bare");
+  // `_host`: the bar lives in a toolbar (a v2 Bar), as the calendar of a Space puts it in its head; a popover in the same
+  // toolbar holds a second bar, which stays a bar of its own
+  const host = !isServer && new URLSearchParams(location.search).has("_host");
   const filterBar = () => (
     <FilterBar
-      bare={bare}
       query={inventoryQuery}
       state={state()}
       onChange={change}
@@ -352,7 +366,19 @@ export function Demo() {
         busy={busy()}
         status={
           <>
-            {bare ? <Bar start={filterBar()} end={<span>{rows().length} Artikel</span>} /> : filterBar()}
+            {host ? (
+              <Bar
+                start={filterBar()}
+                end={
+                  <>
+                    <span>{rows().length} Artikel</span>
+                    <Popover icon="adjustments" label="Weitere Filter" title="Weitere Filter" content={filterBar()} />
+                  </>
+                }
+              />
+            ) : (
+              filterBar()
+            )}
             <StatusRow
               lead={`${rows().length} von ${items.length} Artikeln`}
               filters={<ListOrder query={inventoryQuery} state={state()} onChange={change} />}

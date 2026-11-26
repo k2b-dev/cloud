@@ -87,9 +87,10 @@ no × at its default; changed, it is tinted and × returns it to the default.
   state; never parse search parameters yourself, keep filter values the
   address does not hold, or build a row of filter `Chip`s or a filter
   `Popover`. One declaration, one bar.
-- In a host's toolbar (a calendar's head) `FilterBar bare` drops its own
-  line and side edge; inside a v2 `Bar` that happens by itself. Never hide
-  the bar's line with your own CSS.
+- In a toolbar (a calendar's head) put the `FilterBar` straight into a v2
+  `Bar`'s `start` or `end`: it drops its own line and side edge and keeps
+  one line that scrolls sideways. Never hide the bar's line with your own
+  CSS or wrap it in a box of your own.
 - `names` are per field (`{ consignor: [...] }`): two lookups may use the same
   code for different things.
 - `timeZone` (default "UTC") is the zone points in time are read and entered
