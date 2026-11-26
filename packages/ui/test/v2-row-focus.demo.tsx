@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { Button, Kbd, List, Pane, Row, Section, Workspace } from "../src/v2";
+import { Button, Input, Kbd, List, Pane, Row, Section, Workspace } from "../src/v2";
 
 // Invitations a person withdraws: the row's own action leaves while it has the focus, and the row says what happened in
 // its status. One row keeps a second button, one opens a page, one has nothing else to focus.
@@ -34,6 +34,53 @@ export function Demo() {
               action={gone("tobias") ? undefined : { label: "Zurückziehen", icon: "x", onClick: withdraw("tobias") }}
             />
           </List>
+        </Section>
+        <Section icon="users" title="Freigaben" count={3}>
+          <List label="Freigaben">
+            {/* a row that opens a page and keeps a button: the button comes before the row's link */}
+            <Row
+              icon="user"
+              lines={["Jana Petersen", "Bearbeiten"]}
+              href="#jana"
+              status={gone("jana") ? "Entzogen" : ""}
+              action={gone("jana") ? undefined : { label: "Entziehen", icon: "x", onClick: withdraw("jana") }}
+              end={<Button variant="ghost" icon="mail" label="Jana schreiben" />}
+            />
+            {/* a button that is hidden cannot take the focus; the next place in the row takes it */}
+            <Row
+              icon="user"
+              lines={["Jonas Wolf", "Lesen"]}
+              href="#jonas"
+              status={gone("jonas") ? "Entzogen" : ""}
+              action={gone("jonas") ? undefined : { label: "Entziehen", icon: "x", onClick: withdraw("jonas") }}
+              end={
+                <span hidden>
+                  <Button variant="ghost" icon="mail" label="Jonas schreiben" />
+                </span>
+              }
+            />
+            {/* a deed that moves the focus on purpose: the row leaves it where it went */}
+            <Row
+              icon="user"
+              lines={["Mira Aydın", "Lesen"]}
+              status={gone("mira") ? "Entzogen" : ""}
+              action={
+                gone("mira")
+                  ? undefined
+                  : {
+                      label: "Entziehen",
+                      icon: "x",
+                      onClick: () => {
+                        withdraw("mira")();
+                        document.querySelector<HTMLElement>('[aria-label="Person suchen"]')?.focus();
+                      },
+                    }
+              }
+            />
+          </List>
+        </Section>
+        <Section icon="search" title="Suche">
+          <Input type="search" icon="search" label="Person suchen" />
         </Section>
         <Section icon="keyboard" title="Kurzbefehle">
           <List label="Kurzbefehle">

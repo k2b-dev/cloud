@@ -353,7 +353,8 @@ export const Row = (props: RowProps) => {
   const title = createUniqueId();
   let row: HTMLDivElement | undefined;
   // When the row's own action leaves while it has the focus ("Zurückziehen" withdraws the invitation it stands on),
-  // the focus stays in the row: on its next button, else on what opens it, else on the row itself; never the page.
+  // the focus stays in the row: on its next button, else on what opens it, else on its box, else on the row itself;
+  // never the page. A deed that moved the focus elsewhere on purpose keeps it there.
   const keepFocus = () => {
     if (isServer || !row) return;
     const end = row.querySelector(".k2-row-end");
@@ -361,13 +362,20 @@ export const Row = (props: RowProps) => {
     queueMicrotask(() => {
       if (!row?.isConnected) return;
       const now = document.activeElement;
-      if (now && now !== document.body && row.contains(now)) return;
-      const next = row.querySelector<HTMLElement>(".k2-row-end :is(button, a[href]):not(:disabled), .k2-row-open, .k2-mark-input");
-      if (next) next.focus();
-      else {
-        row.tabIndex = -1;
-        row.focus();
+      if (now && now !== document.body) return;
+      const candidates = [
+        ...row.querySelectorAll<HTMLElement>(".k2-row-end :is(button, a[href]):not(:disabled)"),
+        ...row.querySelectorAll<HTMLElement>(":scope > .k2-row-open"),
+        ...row.querySelectorAll<HTMLElement>(".k2-mark-input:not(:disabled)"),
+      ];
+      // only what can be seen takes the focus; a focus that does not take moves on to the next place
+      for (const next of candidates) {
+        if (!next.isConnected || next.closest("[hidden], [inert]") || next.getClientRects().length === 0) continue;
+        next.focus();
+        if (document.activeElement === next) return;
       }
+      row.tabIndex = -1;
+      row.focus();
     });
   };
   return (

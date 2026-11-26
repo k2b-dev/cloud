@@ -50,7 +50,7 @@ const focusedIn = (page: Page) =>
   });
 
 test("server markup: an empty status is already a status, so later words are heard; keycaps carry the keys' names", () => {
-  expect(markup.match(/class="k2-row-status" role="status"/g)?.length).toBe(3);
+  expect(markup.match(/class="k2-row-status" role="status"/g)?.length).toBe(6);
   expect(markup).toContain("Befehlstaste K");
   expect(markup).toContain(">⌘<");
   expect(markup).toContain(">Strg<");
@@ -75,6 +75,26 @@ test("a row's action that leaves with the focus hands it to the row's next butto
     await page.waitForFunction(() => document.querySelectorAll(".k2-row-status:not(:empty)").length === 3);
     expect(await page.evaluate(() => document.activeElement?.classList.contains("k2-row"))).toBe(true);
     expect(await focusedIn(page)).not.toBe("body");
+  });
+});
+
+test("focus after a leaving action: a button of the row before its link, past a hidden button, never against a deliberate move", async () => {
+  await withPage(async (page) => {
+    const withdraw = async (title: string) => {
+      await row(page, title).getByRole("button", { name: "Entziehen" }).focus();
+      await page.keyboard.press("Enter");
+      await row(page, title).getByRole("status").filter({ hasText: "Entzogen" }).waitFor();
+      await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => setTimeout(done))));
+    };
+    // a remaining button wins over the row's link, which comes earlier in the row
+    await withdraw("Jana Petersen");
+    expect(await focusedIn(page)).toBe("Jana schreiben");
+    // a hidden button is passed over: the row's link takes the focus
+    await withdraw("Jonas Wolf");
+    expect(await page.evaluate(() => document.activeElement?.classList.contains("k2-row-open"))).toBe(true);
+    // the deed moved the focus to the search on purpose: it stays there
+    await withdraw("Mira Aydın");
+    expect(await focusedIn(page)).toBe("Person suchen");
   });
 });
 
