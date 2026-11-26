@@ -797,6 +797,10 @@
 .k2-ui .k2-cell-value > .k2-spark {
   margin-left: auto;
 }
+/* while the value loads its history keeps its place unseen: no old bars beside the bar of the new value */
+.k2-ui .k2-cell[aria-busy="true"] > .k2-cell-value > .k2-spark {
+  visibility: hidden;
+}
 .k2-ui .k2-cell-meta {
   grid-column: 2 / -1;
   font: var(--k2-t-meta);

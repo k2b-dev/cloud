@@ -113,8 +113,8 @@ alone across the second row). A cell:
 `href` (adds a chevron), `trend` (a `Spark` at the end of the value, such
 as orders per day this week), `loading` (a bar lies on value and `meta`;
 what is there keeps its room unseen under it, a value not there yet is one
-line; symbol and label stay). Use for the key statements of a record or
-the home of a place.
+line; symbol and label stay, a `trend` keeps its place unseen). Use for the
+key statements of a record or the home of a place.
 
 ### Tiles
 

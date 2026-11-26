@@ -1,7 +1,7 @@
 import { createSignal, For, type JSX, children as resolveChildren, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import { personColor } from "../surfaces/person-color";
-import { colorStyle, safeValue } from "./colors";
+import { colorStyle, safeColor, safeValue } from "./colors";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
 
@@ -91,9 +91,12 @@ const createPicture = (src: () => string | undefined) => {
   return { state, Picture };
 };
 
-// `place`: its place in an `Avatar.Stack` (1 to 5), by which the stylesheet lets the later faces give way; an island
-// wrapper hides no place, as `:nth-of-type` would miscount
-export const Avatar = (props: AvatarProps & { place?: number }) => {
+const faceColor = (color: string | undefined): JSX.CSSProperties | undefined => (color === undefined ? undefined : { "--k2-c": color });
+
+// A face, and in a stack its place from 1 on, which the stylesheet reads to let the later ones give way (a sibling
+// count such as :nth-of-type cannot see through an island's wrapper). A button with a person uses the face alone, so
+// a bundle with buttons carries no stack.
+export const Face = (props: AvatarProps & { place?: number }) => {
   // Shown, the initials under the picture leave, as a picture may be transparent.
   const picture = createPicture(() => props.image);
   return (
@@ -101,13 +104,14 @@ export const Avatar = (props: AvatarProps & { place?: number }) => {
       class="k2-av"
       data-k2-part="Avatar"
       data-k2-avatar=""
-      data-place={props.place}
+      data-place={props.place === undefined ? undefined : String(props.place)}
       data-image={props.image ? (picture.state() ?? "") : undefined}
       role="img"
       aria-label={props.name}
       aria-hidden={props.decorative ? "true" : undefined}
-      // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud.
-      style={custom({ "--k2-c": props.color ?? personColor(props.name) })}
+      // Every person has a colour: given, or the fixed one of their name, the same as everywhere in Cloud. A face reads
+      // only the colour itself, none of the inks a mark derives from it; one that is no colour leaves it neutral.
+      style={faceColor(props.color === undefined ? personColor(props.name) : safeColor(props.color))}
     >
       {initialsOf(props)}
       <picture.Picture />
@@ -128,7 +132,7 @@ export type AvatarStackProps = {
  * People side by side, each over the one before it with a ring of the surface, and "+n" for the rest. The stack is
  * one picture with one name; the avatars in it are decoration. 20 px in a row, a tile and a cell, 24 px elsewhere.
  */
-Avatar.Stack = (props: AvatarStackProps) => {
+const AvatarStack = (props: AvatarStackProps) => {
   // at most five faces; fewer when the place is narrow (the stylesheet decides by the stack's own width)
   const shown = () => props.people.slice(0, Math.min(5, Math.max(1, props.max ?? 3)));
   // "+n" for each number of faces the place may leave visible: the stylesheet shows the one that matches, so the count
@@ -149,7 +153,7 @@ Avatar.Stack = (props: AvatarStackProps) => {
       aria-label={props.label ?? props.people.map((person) => person.name).join(", ")}
       style={custom({ "--k2-avs-w": `${room()}px` })}
     >
-      <For each={shown()}>{(person, index) => <Avatar {...person} place={index() + 1} decorative />}</For>
+      <For each={shown()}>{(person, index) => <Face {...person} decorative place={index() + 1} />}</For>
       <For each={counts()}>
         {(count) => (
           <span class="k2-avs-rest" data-visible={String(count.visible)} aria-hidden="true">
@@ -160,6 +164,8 @@ Avatar.Stack = (props: AvatarStackProps) => {
     </span>
   );
 };
+
+export const Avatar = /* @__PURE__ */ Object.assign((props: AvatarProps) => <Face {...props} />, { Stack: AvatarStack });
 
 export type MarkProps = {
   /** A Tabler icon for the kind of thing, such as `table`, `folder-filled` or `tool`. */

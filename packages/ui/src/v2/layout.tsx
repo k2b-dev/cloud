@@ -706,6 +706,7 @@ export type CellProps = {
    * The value is on its way: a quiet bar lies on the value and on its quiet line, while symbol and label stay. What is
    * there (a refresh) keeps its exact room unseen under the bar, a quiet line of several lines too; a value not there
    * yet is a bar of one line. So nothing moves when it comes. Assistive technology hears "Wird geladen…" at the value.
+   * A `trend` keeps its place unseen meanwhile.
    */
   loading?: boolean;
 };
