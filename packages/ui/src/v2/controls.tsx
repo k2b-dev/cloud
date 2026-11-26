@@ -9,7 +9,14 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { isServer } from "solid-js/web";
+import { formatDateInput, parseDateInput } from "../inputs/date-input";
+import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
+import { useLocale } from "../intl/locale";
+import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
+import { useDateMessages } from "./date-messages";
+import { DatePicker } from "./date-picker";
 import { Icon } from "./marks";
 import { textEdge } from "./tokens";
 
@@ -34,6 +41,7 @@ type FieldIds = {
 const FieldContext = createContext<FieldIds>();
 
 export type FieldProps = {
+  /** The question of the field, above the control. */
   label: string;
   /** The name the value is sent under; the control inside takes it. */
   name?: string;
@@ -48,6 +56,7 @@ export type FieldProps = {
    * label line shows nothing for it; the fields that may stay empty say "optional" instead (as the mockup does).
    */
   required?: boolean;
+  /** The one control: `Input`, `Select`, `DateInput` or `Choice`. */
   children: JSX.Element;
 };
 
@@ -138,7 +147,10 @@ export const Field = (props: FieldProps) => {
 };
 
 /** Fields side by side on one grid; one column on the phone. */
-Field.Row = (props: { children: JSX.Element }) => (
+Field.Row = (props: {
+  /** The `Field`s side by side. */
+  children: JSX.Element;
+}) => (
   <div class="k2-frow" data-k2-part="Field.Row">
     {props.children}
   </div>
@@ -147,24 +159,30 @@ Field.Row = (props: { children: JSX.Element }) => (
 const useField = () => useContext(FieldContext);
 
 export type InputProps = {
+  /** The text in the field. */
   value?: string;
+  /** A quiet example while the field is empty. */
   placeholder?: string;
   /**
-   * The kind of text. A `search` in the head of a workspace or pane stays on the phone as its symbol (36 px, like an
-   * icon button), where the other head actions hide: a tap goes into the field, which opens over the head while it
-   * has the focus and folds back, its words kept, when the focus leaves or on Escape (unless `onKeyDown` takes Escape
-   * itself with `preventDefault`).
+   * The kind of text, which picks the phone's keyboard; `text` when not set. A `search` in the head of a workspace
+   * or pane stays on the phone as its symbol (36 px, like an icon button), where the other head actions hide: a tap
+   * goes into the field, which opens over the head while it has the focus and folds back, its words kept, when the
+   * focus leaves or on Escape (unless `onKeyDown` takes Escape itself with `preventDefault`).
    */
   type?: "text" | "email" | "number" | "search" | "tel" | "url" | "password";
   /** A Tabler icon before the text, such as `search`. */
   icon?: string;
   /** A text of several lines (80 px). */
   multiline?: boolean;
+  /** The smallest number a `number` field takes. */
   min?: number;
+  /** The largest number a `number` field takes. */
   max?: number;
+  /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
   /** A name when the input stands without a Field, such as a search in a head. */
   label?: string;
+  /** Called with the new text on every change. */
   onInput?: (value: string) => void;
   /**
    * A key in the field, such as Enter to search or Escape to clear; the handler may call `preventDefault`. While
@@ -181,6 +199,19 @@ export type InputProps = {
   end?: JSX.Element;
   /** The value cannot be changed now: a grey well; the browser leaves it out of a form that is sent. */
   disabled?: boolean;
+  /**
+   * What the browser and a password manager may fill in, such as `username`, `current-password`, `new-password`,
+   * `one-time-code` or `off`. It stands in the server's markup, where a password manager reads it.
+   */
+  autocomplete?: JSX.InputHTMLAttributes<HTMLInputElement>["autocomplete"];
+  /** The most characters the field takes. */
+  maxLength?: number;
+  /** The keyboard a phone shows, such as `numeric` for a code or `email`; the kind of text (`type`) stays. */
+  inputMode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url";
+  /** Whether the browser marks misspelt words; `false` for names, codes, keys and addresses. */
+  spellcheck?: boolean;
+  /** Whether a phone's keyboard starts words or sentences with a capital; `off` for names, codes and keys. */
+  autocapitalize?: "off" | "none" | "on" | "sentences" | "words" | "characters";
 };
 
 /** Hands the text field to a `ref` prop; Solid turns `ref={variable}` into a function that sets the variable. */
@@ -217,6 +248,12 @@ export const Input = (props: InputProps) => {
     "aria-describedby": field?.described,
     required: field?.required || undefined,
     disabled: props.disabled,
+    // written as attributes, so the first markup from the server already carries them (password managers read it)
+    autocomplete: props.autocomplete,
+    maxlength: props.maxLength,
+    inputmode: props.inputMode,
+    spellcheck: props.spellcheck === undefined ? undefined : props.spellcheck ? ("true" as const) : ("false" as const),
+    autocapitalize: props.autocapitalize,
   });
   return (
     <span
@@ -245,12 +282,17 @@ export const Input = (props: InputProps) => {
           />
         }
       >
+        {/* A textarea's value is its text: the server sends it there, so the first render already shows it; in the browser
+            the value property holds it. HTML drops one newline at the start of a textarea's text, so the server sends
+            one before the value: a value that starts with a blank line keeps it. */}
         <textarea
           {...shared()}
           ref={(element) => forwardRef(props.ref, element)}
           onInput={(event) => props.onInput?.(event.currentTarget.value)}
           onKeyDown={(event) => props.onKeyDown?.(event)}
-        />
+        >
+          {isServer ? `\n${props.value ?? ""}` : undefined}
+        </textarea>
       </Show>
       <Show when={end() !== undefined}>
         <span class="k2-input-end">{end()}</span>
@@ -259,13 +301,23 @@ export const Input = (props: InputProps) => {
   );
 };
 
-export type SelectOption = { value: string; label: string; disabled?: boolean };
+export type SelectOption = {
+  /** The value that is sent. */
+  value: string;
+  /** The words shown for it. */
+  label: string;
+  /** The option cannot be chosen now. */
+  disabled?: boolean;
+};
 
 export type SelectProps = {
+  /** The options: words, or a value with its words. */
   options: readonly (string | SelectOption)[];
   /** The chosen value. With `onChange` the caller holds it; without, the selection keeps the choice itself. */
   value?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
+  /** The words while nothing is chosen, such as "Kunde wählen". */
   placeholder?: string;
   /** The name the value is sent under in a form; the field's name by default. */
   name?: string;
@@ -341,44 +393,150 @@ export const Select = (props: SelectProps) => {
 };
 
 export type DateInputProps = {
+  /** The date as a date key ("2026-12-15") or as the locale writes it ("15.12.2026"); the field shows the second. */
   value?: string;
+  /**
+   * A picked or typed date as a date key ("2026-12-15"), or "" when the field was emptied. Typed text applies on Enter
+   * or when the field is left; text that is no date marks the field and applies nothing.
+   */
   onInput?: (value: string) => void;
+  /** A quiet example date while the field is empty. */
   placeholder?: string;
+  /** The name a form sends the date key under; the field's name by default. */
   name?: string;
+  /** A name when the date stands without a Field. */
   label?: string;
+  /**
+   * The zone that says which day today is, for words such as "heute" or "+3" and the calendar's today; "UTC" by
+   * default. Give the person's zone, the same on the server and in the island, as for `FilterBar`.
+   */
+  timeZone?: string;
 };
 
-/** The shape of a date field: the date and a calendar symbol. (The picker opens with the behaviour layer.) */
+/**
+ * A date field: the date typed in the order of the locale ("24.11.2026", also "heute", "+3", "Mi"), and the calendar
+ * symbol at its end opens `DatePicker` below it. Picking a day fills the field and gives the focus back to it.
+ */
 export const DateInput = (props: DateInputProps) => {
   const field = useField();
+  const locale = useLocale();
+  const t = useDateMessages();
+  // today in one zone on the server and in the browser, so "heute" names the same day on both sides
+  const today = () => dateKey(new Date(), { timeZone: props.timeZone ?? "UTC" });
+  /** A date key for a value, or `undefined` when it is no readable date (also a key of a day that does not exist). */
+  const keyOf = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+    if (isDateKey(value)) return isCalendarDay(value) ? value : undefined;
+    const read = parseDateInput(value, { today: today(), locale: locale() });
+    return read.kind === "date" ? read.date : undefined;
+  };
+  const shown = (value: string | undefined) => (value && isCalendarDay(value) ? formatDateInput(value, locale()) : (value ?? ""));
+  // Without `onInput` the field keeps what was picked or typed itself, so it always shows the date it holds.
+  const [own, setOwn] = createSignal(props.value);
+  createRenderEffect(() => setOwn(props.value));
+  const [text, setText] = createSignal(shown(props.value));
+  createRenderEffect(() => setText(shown(own())));
+  const [unreadable, setUnreadable] = createSignal(false);
+  const [open, setOpen] = createSignal(false);
+  let input: HTMLInputElement | undefined;
+  const take = (key: string) => {
+    setUnreadable(false);
+    setOwn(key);
+    setText(shown(key));
+    props.onInput?.(key);
+  };
+  const commit = (typed: string) => {
+    if (!typed.trim()) {
+      if (keyOf(own()) !== undefined || own()) take("");
+      setUnreadable(false);
+      return;
+    }
+    const key = keyOf(typed);
+    if (key === undefined) {
+      setUnreadable(true);
+      return;
+    }
+    if (key !== keyOf(own())) take(key);
+    else {
+      setUnreadable(false);
+      setText(shown(key));
+    }
+  };
+  const popover = usePopover(() => ({ open: open(), onOpenChange: setOpen }));
+  const invalid = () => field?.invalid || unreadable();
+  // text that is no date makes the form invalid too, so it never sends the date the field held before
+  // (the message is read before the element is there, so the effect follows it from the start)
+  createRenderEffect(() => {
+    const message = unreadable() ? t().unreadable : "";
+    input?.setCustomValidity(message);
+  });
   return (
-    <span class="k2-input" data-k2-part="DateInput" data-invalid={field?.invalid ? "" : undefined}>
+    <span class="k2-input" data-k2-part="DateInput" data-invalid={invalid() ? "" : undefined}>
       <input
+        ref={input}
         id={field?.control}
-        name={props.name ?? field?.name}
         type="text"
         inputmode="numeric"
-        value={props.value ?? ""}
+        autocomplete="off"
+        value={text()}
         placeholder={props.placeholder}
         aria-label={field ? undefined : props.label}
-        aria-invalid={field?.invalid ? "true" : undefined}
+        aria-invalid={invalid() ? "true" : undefined}
         aria-describedby={field?.described}
+        title={unreadable() ? t().unreadable : undefined}
         required={field?.required || undefined}
-        onInput={(event) => props.onInput?.(event.currentTarget.value)}
+        onInput={(event) => setText(event.currentTarget.value)}
+        onChange={(event) => commit(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && !event.isComposing) commit(event.currentTarget.value);
+          if (event.key === "ArrowDown" && event.altKey) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
       />
-      <Icon name="calendar" />
+      <Show when={props.name ?? field?.name}>{(name) => <input type="hidden" name={name()} value={keyOf(own()) ?? own() ?? ""} />}</Show>
+      <span class="k2-input-end">
+        <popover.Trigger
+          class="k2-btn"
+          data-k2-part="Button"
+          data-variant="ghost"
+          data-icon-only=""
+          aria-label={t().openCalendar}
+          title={t().openCalendar}
+        >
+          <Icon name="calendar" />
+        </popover.Trigger>
+      </span>
+      <popover.Popup class="k2-pop k2-dpop" data-k2-part="Popover" side="bottom" align="end" sideOffset={4} collisionPadding={8}>
+        <DatePicker
+          value={keyOf(own())}
+          timeZone={props.timeZone ?? "UTC"}
+          label={props.label}
+          autoFocus
+          onPick={(key) => {
+            take(key);
+            setOpen(false);
+            input?.focus({ preventScroll: true });
+          }}
+        />
+      </popover.Popup>
     </span>
   );
 };
 
 export type CheckProps = {
+  /** The words beside the box; they say what is turned on. */
   label: JSX.Element;
+  /** The name the box is sent under in a form. */
   name?: string;
   /** Set, not set, or mixed (some of a group). */
   checked?: boolean | "mixed";
   /** A switch instead of a box: on and off take effect at once. */
   switch?: boolean;
+  /** The box cannot be changed now: dimmed; its words say why. */
   disabled?: boolean;
+  /** Called with the new state when a person changes it. */
   onChange?: (checked: boolean) => void;
 };
 
@@ -473,11 +631,15 @@ export const MarkCheck = (
 );
 
 export type ChoiceProps = {
+  /** The name the choice is sent under in a form. */
   name: string;
+  /** The few options, all visible: words, or a value with its words. */
   options: readonly (string | { value: string; label: string })[];
+  /** The chosen value. */
   value?: string;
   /** The question of the choice when it stands without a Field: shown as the label line of a field of its own. */
   label?: string;
+  /** Called with the value a person chose. */
   onChange?: (value: string) => void;
   /** The choice cannot be changed now: every option dimmed, the chosen one still shown. */
   disabled?: boolean;

@@ -94,6 +94,14 @@ export function Fixture() {
               ]}
               href="#zeile"
             />
+            <Row
+              lines={[
+                "Spedition Falk",
+                "Lieferavis 4471",
+                "Ihre Sendung wird am 23.11. zwischen 7 und 11 Uhr zugestellt, bitte die Rampe frei halten",
+              ]}
+              time="Mo"
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>
@@ -128,6 +136,10 @@ export function Fixture() {
             <Field name="delivery" label="Übergabe">
               <Choice name="delivery" options={["Abholung", "Lieferung"]} value="Lieferung" />
             </Field>
+            {/* a word for a day: the server and the browser read it in the same zone, so both say 1 January 2027 */}
+            <Field name="since" label="Seit">
+              <DateInput value="heute" timeZone="Europe/Berlin" />
+            </Field>
             <Field name="notify" label="Benachrichtigung">
               <Check label="Kunde benachrichtigen" />
             </Field>
@@ -135,7 +147,13 @@ export function Fixture() {
               <Check label="Einige Positionen" checked="mixed" onChange={() => undefined} />
             </Field>
             <Field name="contact" label="Ansprechperson">
-              <Input placeholder="Wer nimmt ab?" />
+              <Input placeholder="Wer nimmt ab?" autocomplete="name" maxLength={80} spellcheck={false} autocapitalize="words" />
+            </Field>
+            <Field name="code" label="Abholcode">
+              <Input type="password" autocomplete="one-time-code" inputMode="numeric" maxLength={6} />
+            </Field>
+            <Field name="note" label="Notiz">
+              <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />
             </Field>
           </Section>
           <Facts

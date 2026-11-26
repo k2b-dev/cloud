@@ -5,6 +5,7 @@ import type { Browser, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../test/browser";
 import { bundleV2Entry } from "../../test/v2-bundle";
 import type {} from "../../test/v2-status-table.client";
+import { measureV2Layout } from "./testing";
 import { textEdge } from "./tokens";
 
 // A filtered list as an operations log draws it (test/v2-status-table.client.tsx): the status row measures its own
@@ -50,38 +51,113 @@ const withPage = async (run: (page: Page) => Promise<void>, { width = 1440, colu
   }
 };
 
-/** The status row: its width, whether its figures show, and whether lead and controls stay whole within its edge. */
+/**
+ * The status row: its width, which figures are in sight and whether each is whole and clear of the end, the gaps
+ * before them, and whether its controls stay whole within its edge. Self-contained (Playwright sends its source).
+ */
 const statusRow = () => {
   const row = document.querySelector('[data-k2-part="StatusRow"]')!;
   const box = row.getBoundingClientRect();
-  const end = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
+  const inner = box.right - Number.parseFloat(getComputedStyle(row).paddingRight);
+  const end = row.querySelector(".k2-bar-end")?.getBoundingClientRect().left ?? inner;
   const lead = row.querySelector(".k2-status-lead")!.getBoundingClientRect();
-  const controls = [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")];
+  const figures = [...row.querySelectorAll<HTMLElement>(".k2-fact")].map((fact) => {
+    const shape = fact.getBoundingClientRect();
+    // what of the figure is in sight: within every box between it and the row that clips what overflows it
+    let [left, right, top, bottom] = [shape.left, shape.right, shape.top, shape.bottom];
+    for (let parent = fact.parentElement; parent && parent !== row.parentElement; parent = parent.parentElement) {
+      if (getComputedStyle(parent).overflow === "visible") continue;
+      const clip = parent.getBoundingClientRect();
+      [left, right, top, bottom] = [
+        Math.max(left, clip.left),
+        Math.min(right, clip.right),
+        Math.max(top, clip.top),
+        Math.min(bottom, clip.bottom),
+      ];
+    }
+    return {
+      shape,
+      seen: fact.getClientRects().length > 0 && right - left > 0.5 && bottom - top > 0.5,
+      whole: right - left >= shape.width - 0.5 && bottom - top >= shape.height - 0.5,
+      clear: shape.right <= end,
+    };
+  });
+  const seen = figures.filter((figure) => figure.seen);
+  const before = row.querySelector(".k2-status-busy")?.getBoundingClientRect() ?? lead;
   return {
     width: Math.round(box.width * 64) / 64,
-    facts: [...row.querySelectorAll(".k2-fact")].filter((fact) => fact.getClientRects().length > 0).length,
-    controls: controls.map((button) => ({
+    shown: figures.map((figure) => figure.seen),
+    wrong: seen.filter((figure) => !(figure.whole && figure.clear)).length,
+    gaps: [before, ...seen.map((figure) => figure.shape)].flatMap((shape, index, shapes) =>
+      index === 0 ? [] : [Math.round(shape.left - shapes[index - 1]!.right)],
+    ),
+    controls: [...row.querySelectorAll<HTMLElement>(".k2-bar-end .k2-btn")].map((button) => ({
       name: button.textContent?.trim(),
-      inside: button.getBoundingClientRect().right <= end + 0.5,
+      inside: button.getBoundingClientRect().right <= inner + 0.5,
       whole: button.scrollWidth <= button.clientWidth,
       clear: button.getBoundingClientRect().left >= lead.right,
     })),
   };
 };
 
-for (const column of [1024, 760, 759.5, 759, 600])
-  test(`a status row ${column} px wide: figures from 760 px on, below they give way and the controls keep their words`, async () => {
+/**
+ * The figures in sight are whole, clear of the controls, the first ones, 16 px apart; the controls keep their words.
+ * Below 600 px this fixture's lead and worded controls do not fit beside each other at all; there only the figures
+ * and the controls themselves are checked.
+ */
+const expectHeld = (found: Awaited<ReturnType<typeof statusRow>>) => {
+  expect(found.wrong).toBe(0);
+  expect(found.shown).toEqual(found.shown.map((_, index) => index < found.shown.filter(Boolean).length));
+  for (const gap of found.gaps) expect(gap).toBe(16);
+  const beside = found.width >= 600;
+  for (const control of found.controls)
+    expect({ ...control, clear: beside ? control.clear : true }).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+};
+
+// Figures give way only where they do not fit before the controls, never by the row's width alone (#4149).
+for (const column of [1024, 760, 600, 400])
+  test(`a status row ${column} px wide: the figures that fit stay, the controls keep their words`, async () => {
     await withPage(
       async (page) => {
         const found = await page.evaluate(statusRow);
         expect(found.width).toBe(column);
-        expect(found.facts).toBe(column >= 760 ? 2 : 0);
-        for (const control of found.controls) expect(control).toEqual({ name: control.name, inside: true, whole: true, clear: true });
+        expectHeld(found);
+        if (column >= 760) expect(found.shown).toEqual([true, true]);
         expect(found.controls.map((control) => control.name)).toEqual(["Neueste zuerst", "Nach Minute"]);
       },
       { column },
     );
   });
+
+// More figures than fit before the controls: the later ones go first, whole; none is cut or runs under a control.
+for (const column of [1440, 1024, 900, 760, 400])
+  test(`a status row ${column} px wide with more figures than fit: whole figures from the first on, none under a control`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2MoreFacts?.());
+        await settled(page);
+        const found = await page.evaluate(statusRow);
+        expectHeld(found);
+        if (column >= 1024) expect(found.shown.filter(Boolean).length).toBeGreaterThan(1);
+      },
+      { column },
+    );
+  });
+
+// A row with nothing at its end keeps its figures where they fit, as in Mail's list column of 432 px.
+test("a status row 432 px wide without filters keeps its figures", async () => {
+  await withPage(
+    async (page) => {
+      await page.evaluate(() => window.__k2NoFilters?.());
+      await settled(page);
+      const found = await page.evaluate(statusRow);
+      expect(found.width).toBe(432);
+      expectHeld(found);
+      expect(found.shown).toEqual([true, true]);
+    },
+    { column: 432 },
+  );
+});
 
 for (const width of [1440, 390])
   test(`at ${width}: the loading mark has its place of 16 px whether it shows or not, and nothing moves`, async () => {
@@ -179,6 +255,8 @@ test("390 px: the search of the head stays as its symbol, opens over the head wh
         height: 36,
         middle: 0,
       });
+      // the open field covers the views and draws no line of its own: the head keeps its one line
+      expect((await measureV2Layout(page, { root: '[data-slot="head"] > .k2-bar' })).problems).toEqual([]);
       await search.fill("Zeitüberschreitung");
       await search.blur();
       await settled(page);

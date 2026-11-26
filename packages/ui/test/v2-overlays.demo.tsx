@@ -3,7 +3,7 @@ import { Bar, Button, Dialog, Field, Input, Pane, Section, Select, Text, Workspa
 
 // The v2 dialog in the place the mockup puts it: it asks before something is discarded, opened from a button in the
 // head that stays on the phone. `<html data-long>` gives the dialog more content than fits, so it scrolls.
-// `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
+// `__k2Shorten()` takes that content away again, so the open dialog gets shorter. `<html data-two>` puts a second Workspace beside it; `__k2Drop(1 | 2)` takes one away, `__k2Ask()` asks
 // `Dialog.confirm` from outside both and writes the answer to `<body data-answer>`. `<html data-opened>` has the dialog
 // "Neuer Zugang" open from the start, as a page whose address names the dialog ("…/keys/new").
 
@@ -11,6 +11,7 @@ declare global {
   interface Window {
     __k2Drop?: (which: 1 | 2) => void;
     __k2Ask?: () => void;
+    __k2Shorten?: () => void;
   }
 }
 
@@ -54,7 +55,8 @@ function Order() {
         ? "ja"
         : "nein",
     );
-  const long = document.documentElement.dataset.long !== undefined;
+  const [long, setLong] = createSignal(document.documentElement.dataset.long !== undefined);
+  window.__k2Shorten = () => setLong(false);
   return (
     <Workspace
       head={
@@ -111,7 +113,7 @@ function Order() {
         }
       >
         <Text>Die Angaben gehen verloren. Ein verworfener Auftrag lässt sich nicht wiederherstellen.</Text>
-        <For each={long ? Array.from({ length: 24 }, (_, index) => index + 1) : []}>
+        <For each={long() ? Array.from({ length: 24 }, (_, index) => index + 1) : []}>
           {(line) => <Text>Position {line}: Korpus, Front und Beschläge.</Text>}
         </For>
       </Dialog>
