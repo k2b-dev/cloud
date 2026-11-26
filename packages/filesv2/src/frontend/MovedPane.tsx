@@ -1,5 +1,5 @@
 import { useLocale } from "@k2b/ui";
-import { type Action, Notice, type OnNavigate, Pane, Row, Section, StatusRow } from "@k2b/ui/v2";
+import { type Action, List, Notice, type OnNavigate, Pane, Row, StatusRow } from "@k2b/ui/v2";
 import { createMemo } from "solid-js";
 import { entryMark } from "./entry-mark";
 import {
@@ -47,23 +47,25 @@ export default function MovedPane(props: {
       time: formatTime(props.moved.entry.time, locale(), props.env),
       by: byParts(actor(), h(), props.env, props.moved.entry),
     });
-  const deeds = (): [Action] | [Action, Action] => {
-    const history: Action = { label: h().viewHistory, icon: "history", href: props.historyHref, onNavigate: props.onNavigate };
+  const history = (): Action => ({ label: h().viewHistory, icon: "history", href: props.historyHref, onNavigate: props.onNavigate });
+  const jump = (): Action | undefined => {
     const point = props.moved.chain.endpoint;
     return point
-      ? [{ label: h().jumpThere, icon: "arrow-right", onClick: () => props.onOpen({ kind: "endpoint", endpoint: point }) }, history]
-      : [history];
+      ? { label: h().jumpThere, icon: "arrow-right", onClick: () => props.onOpen({ kind: "endpoint", endpoint: point }) }
+      : undefined;
   };
   const mark = entryMark({ name: name(), directory: true });
   return (
     <Pane label={h().movedTitleFolder} status={<StatusRow lead={h().movedTitleFolder} />}>
-      {/* The note about the bookmark leads; the section's one line closes the page, no second line under a note. */}
+      {/* The note about the bookmark leads; two rows say where the folder is now and who moved it, each with its one
+          deed. A list ends with the space under its last row, so no line closes the page. */}
       <Notice tone="note">
         <SentenceText parts={fill(h().bookmarkNote, { path: [{ kind: "place", segments: props.oldAddress }] })} />
       </Notice>
-      <Section icon={mark.icon} color={mark.color} title={name()} actions={deeds()} summary={<SentenceText parts={now()} />}>
-        <Row avatar={personOf(actor())} lines={[<SentenceText parts={why()} />, props.oldAddress.join(" › ")]} />
-      </Section>
+      <List label={h().movedTitleFolder}>
+        <Row mark={mark} lines={[name(), <SentenceText parts={now()} />]} action={jump()} />
+        <Row avatar={personOf(actor())} lines={[<SentenceText parts={why()} />, props.oldAddress.join(" › ")]} action={history()} />
+      </List>
     </Pane>
   );
 }

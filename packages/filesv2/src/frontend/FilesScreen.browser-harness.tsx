@@ -78,7 +78,23 @@ if (view === "edit") snapshot.editor = fixtureMarkdown(location.origin, fixture)
 // An old folder address: the server found where its folder went.
 if (view === "folder" && path === "Alte Angebote") {
   snapshot.directory = null;
-  const moved = fixtureActivity("plain").items[3]!;
+  // Felix moved the folder into the archive of 2025 this morning: old place, sentence and endpoint agree.
+  const before = fixtureActivity("plain").items[3]!;
+  const folder = (place: string) => ({
+    visibility: "full" as const,
+    source: "current" as const,
+    name: "Alte Angebote",
+    path: `groups/werkstatt/${place}`,
+    root: "groups",
+    baseId: "20000000-0000-4000-8000-000000000001",
+    publicBaseId: fixtureBase.id,
+    relativePath: place,
+    itemId: null,
+    directory: true,
+    size: null,
+    revision: null,
+  });
+  const moved = { ...before, action: "item.move" as const, before: folder("Alte Angebote"), after: folder("Archiv/2025/Alte Angebote") };
   snapshot.moved = {
     baseId: fixtureBase.id,
     path,
@@ -86,7 +102,7 @@ if (view === "folder" && path === "Alte Angebote") {
     chain: {
       sourceId: moved.id,
       hops: [],
-      endpoint: { baseId: fixtureBase.id, path: "Angebote", itemId: null },
+      endpoint: { baseId: fixtureBase.id, path: "Archiv/2025/Alte Angebote", itemId: null },
       certainty: "verified",
       historyComplete: false,
       truncated: false,

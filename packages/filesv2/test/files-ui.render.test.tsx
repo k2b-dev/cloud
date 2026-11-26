@@ -99,7 +99,9 @@ describe("Filesv2 server-rendered feedback", () => {
     for (const text of ["All storage", "Vertrieb", "Preise.xlsx", "Angebot 2026-118.pdf", "Today 1 change by you"])
       expect(overview).toContain(text);
     expect(overview).toContain('aria-label="All storage"');
-    expect(overview).toContain('data-k2-part="Digest"');
+    // beside the storages, the viewer's own last changes under their day, in the row design of Activity
+    expect(overview).toContain('aria-label="Recently by you"');
+    expect(overview).toContain('class="k2-list-head"');
     expect(overview).not.toContain('data-k2-part="Loading"');
 
     const activity = screen("/app/filesv2?view=activity&who=me", {

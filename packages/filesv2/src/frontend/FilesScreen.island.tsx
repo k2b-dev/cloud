@@ -11,6 +11,7 @@ import {
   Avatar,
   Bar,
   Button,
+  Chip,
   Empty,
   Failed,
   FilterBar,
@@ -106,11 +107,6 @@ const ancestors = (path: string) => {
   return parts.map((_, index) => parts.slice(0, index + 1).join("/"));
 };
 const paramsOf = (source: string) => new URL(source, ORIGIN).searchParams;
-/** A name for a place where it cannot wrap: at most 48 signs, its start and its last 16 (extension, version) kept. */
-const shortName = (name: string) => {
-  const signs = Array.from(name);
-  return signs.length <= 48 ? name : `${signs.slice(0, 31).join("")}…${signs.slice(-16).join("")}`;
-};
 /** The list parameters a folder keeps while moving between folders: its order, grouping and what it shows. */
 const KEPT = ["sort", "group", "type"] as const;
 const FILTER_ICONS = { type: "files", kind: "file-search", size: "ruler-2", modified: "calendar", match: "equal" } as const;
@@ -289,6 +285,11 @@ export default function FilesScreen(props: {
   const directory = () => snapshot().directory;
   const folder = () => directory()?.path ?? params().get("path") ?? "";
   const address = createMemo((): FolderAddress => readFolderAddress(queries(), params(), preference(snapshot().selectedId)));
+  /** Where a storage's folder starts: its own order and grouping, no filter. */
+  const folderBase = createMemo(() => {
+    const start = readFolderAddress(queries(), new URLSearchParams(), preference(snapshot().selectedId));
+    return start.mode === "folder" ? start.state : undefined;
+  });
   const folderState = createMemo(() => {
     const current = address();
     return current.mode === "folder" ? current.state : undefined;
@@ -894,7 +895,7 @@ export default function FilesScreen(props: {
         // k2b-ui gap: Nav has no tree (lane Y2: Nav tree, lazy with paging). The open storage folds out the folders
         // down to this one; other branches open from the listing until then.
         const chain =
-          open && screen() === "folder"
+          open && screen() === "folder" && !snapshot().moved
             ? ancestors(folder()).map((path) => ({
                 label: path.split("/").at(-1) ?? path,
                 icon: "folder",
@@ -949,8 +950,7 @@ export default function FilesScreen(props: {
         ...(base ? [{ label: label(base), href: filesUrl(base.id) }] : []),
         ...(folders.length > 1 ? [{ label: "…", href: filesUrl(base?.id, folders.at(-2)!) }] : []),
         ...folders.slice(-1).map((path) => ({ label: path.split("/").at(-1) ?? path, href: filesUrl(base?.id, path) })),
-        // k2b-ui gap: the last Path item is not cut either; a long name keeps its start and its extension here.
-        { label: shortName(launch?.entry.name ?? params().get("file")?.split("/").at(-1) ?? "") },
+        // the file itself is the editor's title, in its status row: the path ends at its folder
       ];
     }
     const moved = snapshot().moved;
@@ -972,6 +972,12 @@ export default function FilesScreen(props: {
       ...(searching() ? [{ label: b().v2SearchResults }] : []),
     ];
   };
+  /** Who reaches the open folder: the team of a group storage or only this person, and the links among its entries. */
+  const folderSharing = () => {
+    const links = entries().reduce((sum, entry) => sum + (entry.facts?.links ?? 0), 0);
+    const who = selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
+    return links ? b().v2WhoAndLinks({ who, links }) : who;
+  };
   const uploadAction = () => (canCreate() && !searching() ? { label: b().upload, icon: "upload", onClick: actions.pickFiles } : undefined);
 
   return (
@@ -986,7 +992,18 @@ export default function FilesScreen(props: {
         primary={screen() === "folder" && !snapshot().moved && !openPath() ? uploadAction() : undefined}
         head={
           <Bar
-            start={<Path label={b().v2Where} items={pathItems()} />}
+            start={
+              // a folder says who reaches it beside its path, as the mockup's "Team + 1 Link"
+              <Show
+                when={screen() === "folder" && !snapshot().moved && selected()}
+                fallback={<Path label={b().v2Where} items={pathItems()} />}
+              >
+                <Inline>
+                  <Path label={b().v2Where} items={pathItems()} />
+                  <Chip icon={selected()?.kind === "groups" ? "users" : "lock"}>{folderSharing()}</Chip>
+                </Inline>
+              </Show>
+            }
             end={
               <>
                 <Show when={screen() === "activity"}>
@@ -1013,7 +1030,7 @@ export default function FilesScreen(props: {
                     type="search"
                     icon="search"
                     label={b().searchIn(folderName(folder()))}
-                    placeholder={b().search}
+                    placeholder={b().v2SearchShort}
                     value={address().state.search ?? ""}
                     onKeyDown={(event) => {
                       if (event.isComposing) return;
@@ -1156,6 +1173,8 @@ export default function FilesScreen(props: {
                               query={queries().folder}
                               state={state()}
                               onChange={changeFolder}
+                              // "Zurücksetzen" only with a filter: the storage's own order and grouping are where it starts
+                              base={folderBase()}
                               icons={FILTER_ICONS}
                               timeZone={timeZone()}
                               results={lead()}

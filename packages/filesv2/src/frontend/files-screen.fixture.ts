@@ -1,5 +1,5 @@
-import type { ActivityEntry, ActivityPage, ActivitySide } from "../activity-contracts";
-import type { BaseSummary, FileEntry, MarkdownLaunch, MarkedEntry, SharePage, ShareView } from "../contracts";
+import type { ActivityEntry, ActivityPage, ActivitySide, ShareAccessCounts } from "../activity-contracts";
+import type { BaseSummary, FileEntry, FileVersion, MarkdownLaunch, MarkedEntry, SharePage, ShareView } from "../contracts";
 import type { DirectoryView, WorkspaceSnapshot } from "./workspace-state";
 
 // Invented folders for the v2 folder screen's browser test and design review: a fixed "now", no real people or files.
@@ -17,7 +17,7 @@ export const fixtureBase: BaseSummary = {
   status: "existing",
   reason: null,
   indexEnabled: true,
-  versioningEnabled: false,
+  versioningEnabled: true,
 };
 const hoursAgo = (hours: number) => new Date(Date.parse(FIXTURE_NOW) - hours * 3_600_000).toISOString();
 /** Who changed an entry last and how many links lead to it, as the listing reads them; steady per path. */
@@ -26,7 +26,7 @@ const factsOf = (path: string) => {
   const seed = [...path].reduce((sum, char) => sum + char.charCodeAt(0), 0);
   const name = AUTHORS[seed % AUTHORS.length]!;
   return {
-    author: seed % 7 === 0 ? null : { userId: `user-${seed % AUTHORS.length}`, name },
+    author: { userId: `user-${seed % AUTHORS.length}`, name },
     links: seed % 5 === 0 ? 1 : seed % 11 === 0 ? 3 : 0,
   };
 };
@@ -49,7 +49,16 @@ const plain: FileEntry[] = [
   entry("Budget 2027.xlsx", false, 48_213, 5),
   entry("Lieferplan.pdf", false, 312_000, 80),
   entry("Notizen.md", false, 912, 1),
-  entry("Zuschnitt Küchenfront.dxf", false, 1_024_000, 300),
+  entry("Zuschnitt Küchenfront.dxf", false, 1_820_000, 300),
+  // the workshop's day, as the approved mockup shows it: photos, a plan, a sheet, a video
+  entry("Aufmaß", true, 0, 4),
+  entry("Aufmaß/Skizze Wand Nord.png", false, 640_000, 4),
+  entry("Ansicht Front Eiche.jpg", false, 4_400_000, 2),
+  entry("Bestand Küche vorher.jpg", false, 5_870_000, 20),
+  entry("Materialliste.xlsx", false, 49_152, 24),
+  entry("Muster Arbeitsplatte Granit.jpg", false, 3_250_000, 72),
+  entry("Skizze Hochschrank.png", false, 655_360, 74),
+  entry("Rundgang Aufmaß.mp4", false, 171_966_464, 120),
 ];
 
 /** What break-ui feeds a file list: very long names without breaks, one letter, emoji, other scripts, huge and empty files. */
@@ -253,7 +262,8 @@ const worstActivity = (): ActivityEntry[] => [
       { actor: worstPerson(index) },
     ),
   ),
-  change("file.upload", 3, 0, { after: side("<script>alert(1)</script> &amp; **bold**.md") }),
+  // markup, an entity and Markdown in a name must read as they are written; no slash, which a path would split
+  change("file.upload", 3, 0, { after: side("<img src=x onerror=alert(1)> & &amp; **bold**.md") }),
   change("file.upload", 5, 0, { after: side(`${"Sehr-langer-Ordnername-ohne-Leerzeichen-".repeat(3)}/${"x".repeat(160)}.pdf`) }),
   change("file.edit", 9, 1, { after: side("b") }, { actor: { kind: "user", userId: null, name: null } }),
   change("item.move", 20, 2, { before: side("文件夹/长文件名示例文档.docx"), after: side("مستند/مستند طويل جدا للاختبار.pdf") }),
@@ -291,7 +301,16 @@ const link = (index: number, patch: Partial<ShareView> = {}): ShareView => ({
   id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
   kind: index % 4 === 3 ? "inbox" : "download",
   url: null,
-  title: ["Unterlagen Lindqvist", "Fotos Baustelle", "Angebot Stadtwerke", "Belege Steuerbüro", "Aufmaß Oswald"][index % 5]!,
+  title: [
+    "Unterlagen Lindqvist",
+    "Fotos Baustelle",
+    "Angebot Stadtwerke",
+    "Belege Steuerbüro",
+    "Aufmaß Oswald",
+    "Pläne Treppe Winter",
+    "Muster Arbeitsplatten",
+    "Rechnungen Oktober",
+  ][index % 8]!,
   note: null,
   publicNote: null,
   base: { id: fixtureBase.id, name: fixtureBase.name, kind: fixtureBase.kind },
@@ -325,6 +344,46 @@ export function fixtureShares(fixture: FixtureCase): SharePage {
     };
   return { items: Array.from({ length: 8 }, (_, index) => link(index)), next: null };
 }
+
+/** The one link of an open file, as its detail lists it: active, made by Mira, opened a few times. */
+export const fixtureItemShares = (path: string): SharePage => ({
+  items: [
+    link(0, { title: path.split("/").at(-1) ?? path, scope: path.split("/").slice(0, -1).join("/"), items: [path], state: "active" }),
+  ],
+  next: null,
+});
+
+/** How often the link of an open file was used: three page views and two downloads this week, from one network. */
+export const fixtureShareAccess = (from: string, to: string): ShareAccessCounts => ({
+  from,
+  to,
+  timeline: { items: [], next: null },
+  pageNetworks: 1,
+  pages: 3,
+  downloads: 2,
+  passwordFailed: 0,
+  networks: { known: 1, incomplete: false, overflow: false, items: [], next: null, rolledUp: false },
+});
+
+/** Two earlier states of an open file, by two people of the workshop. */
+export const fixtureVersions = (): FileVersion[] => [
+  {
+    id: "v-2",
+    created: new Date(Date.parse(FIXTURE_NOW) - 3 * 3_600_000).toISOString(),
+    size: 3_900,
+    pinned: false,
+    comment: null,
+    author: "Mira Sommer",
+  },
+  {
+    id: "v-1",
+    created: new Date(Date.parse(FIXTURE_NOW) - 26 * 3_600_000).toISOString(),
+    size: 3_100,
+    pinned: true,
+    comment: "Stand Aufmaß",
+    author: "Felix Thal",
+  },
+];
 
 /** A Markdown file in its editor; the test answers its content from `/content`. The worst case is read only, deep and long. */
 export const fixtureMarkdown = (origin: string, fixture: FixtureCase = "plain"): MarkdownLaunch => ({

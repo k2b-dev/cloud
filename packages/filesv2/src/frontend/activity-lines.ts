@@ -63,16 +63,20 @@ export function activityDays(
     });
 }
 
+/** The day a line stands under, as the list's group head: "Heute", "Gestern" or the dated weekday. */
+export type LineDay = { key: string; label: string };
+
 /**
  * One line of the Activity list, flat so the list keeps only the lines in view: a change, a run of changes, a change
- * inside an open run, a member of an open batch, or an opened file.
+ * inside an open run, a member of an open batch, or an opened file. Each knows its day, the list's group head.
  */
-export type ActivityListLine =
+export type ActivityListLine = (
   | { kind: "row"; key: string; row: HistoryRowModel; batch?: { open: boolean; count: number } }
   | { kind: "run"; key: string; rows: readonly HistoryRowModel[]; open: boolean }
   | { kind: "runRow"; key: string; row: HistoryRowModel; short: boolean }
   | { kind: "member"; key: string; row: HistoryRowModel; index: number }
-  | { kind: "opened"; key: string; item: MarkedEntry };
+  | { kind: "opened"; key: string; item: MarkedEntry }
+) & { day: LineDay };
 
 /** The days as one list: an open run or batch follows its line with its own lines, so opening moves nothing above. */
 export function activityListLines(
@@ -81,22 +85,24 @@ export function activityListLines(
   shortRun: (rows: readonly HistoryRowModel[]) => boolean,
 ) {
   const lines: ActivityListLine[] = [];
-  for (const day of days)
-    for (const { item } of day.items) {
-      if (item.kind === "opened") lines.push({ kind: "opened", key: item.key, item: item.item });
+  for (const group of days) {
+    const day: LineDay = { key: group.key, label: group.detail ? `${group.label} · ${group.detail}` : group.label };
+    for (const { item } of group.items) {
+      if (item.kind === "opened") lines.push({ kind: "opened", key: item.key, item: item.item, day });
       else if (item.kind === "run") {
         const expanded = open.has(item.key);
-        lines.push({ kind: "run", key: item.key, rows: item.rows, open: expanded });
+        lines.push({ kind: "run", key: item.key, rows: item.rows, open: expanded, day });
         if (expanded) {
           const short = shortRun(item.rows);
-          for (const row of item.rows) lines.push({ kind: "runRow", key: `${item.key}/${row.key}`, row, short });
+          for (const row of item.rows) lines.push({ kind: "runRow", key: `${item.key}/${row.key}`, row, short, day });
         }
       } else {
         const row = item.row;
         const batch = row.kind === "batch" ? { open: open.has(row.key), count: row.entries.length } : undefined;
-        lines.push({ kind: "row", key: row.key, row, batch });
-        if (batch?.open) row.entries.forEach((_, index) => lines.push({ kind: "member", key: `${row.key}/${index}`, row, index }));
+        lines.push({ kind: "row", key: row.key, row, batch, day });
+        if (batch?.open) row.entries.forEach((_, index) => lines.push({ kind: "member", key: `${row.key}/${index}`, row, index, day }));
       }
     }
+  }
   return lines;
 }

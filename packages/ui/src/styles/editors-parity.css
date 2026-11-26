@@ -579,7 +579,8 @@
   padding: 0.25rem 0.75rem;
   color: var(--k2b-text-muted);
   font-family: var(--k2b-font-mono);
-  font-size: 0.625rem;
+  /* 12 px, the smallest text of the look rules */
+  font-size: 0.75rem;
   letter-spacing: 0.02em;
   user-select: none;
 }

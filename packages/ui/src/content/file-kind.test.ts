@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fileKindLabel } from "./FileTypeIcon";
+import { fileViewMessages } from "./file-view-messages";
 import { formatFileViewSize } from "./file-view-preview";
 
 describe("file kind and size labels", () => {
@@ -19,5 +20,14 @@ describe("file kind and size labels", () => {
     expect(formatFileViewSize(64 * 1024, "de")).toBe("64 KB");
     expect(formatFileViewSize(64 * 1024)).toBe("64.0 KB");
     expect(formatFileViewSize(512, "en")).toBe("512 B");
+    // a value never needs four digits: the next unit takes over (break-ui 26.11.: "1.000 KB", "94.190,1 MB")
+    expect(formatFileViewSize(1_024_000, "de")).toBe("1 MB");
+    expect(formatFileViewSize(98_765_432_109, "de")).toBe("92 GB");
+  });
+
+  test("the more-lines hint counts one line in the singular", () => {
+    expect(fileViewMessages.resolve(["de"]).t.previewMoreLines(1)).toBe("… 1 weitere Zeile");
+    expect(fileViewMessages.resolve(["de"]).t.previewMoreLines(4)).toBe("… 4 weitere Zeilen");
+    expect(fileViewMessages.resolve(["en"]).t.previewMoreLines(1)).toBe("… 1 more line");
   });
 });

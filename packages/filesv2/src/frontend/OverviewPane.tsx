@@ -1,44 +1,18 @@
 import { useLocale } from "@k2b/ui";
-import {
-  Chip,
-  Digest,
-  type ActivityEntry as DigestActivity,
-  Empty,
-  Failed,
-  List,
-  Notice,
-  type OnNavigate,
-  Pane,
-  Row,
-  Section,
-  StatusRow,
-  Tiles,
-} from "@k2b/ui/v2";
-import { createMemo, Show } from "solid-js";
+import { Chip, Empty, Failed, List, Notice, type OnNavigate, Pane, Row, Section, StatusRow, Tiles } from "@k2b/ui/v2";
+import { createMemo, createSignal, Show } from "solid-js";
 import type { ActivityPage } from "../activity-contracts";
 import type { BaseSummary, BasesResult, MarkedEntry } from "../contracts";
-import { activityDays } from "./activity-lines";
+import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { entryMark, FILES_COLOR, storageMark } from "./entry-mark";
 import { favoriteHref } from "./FavoritesPane";
 import { favoritePlace } from "./favorite-place";
 import { issueText } from "./feedback";
-import {
-  actorOf,
-  daysAgo,
-  fill,
-  formatWhen,
-  type HistoryEnvironment,
-  historyRows,
-  isDirectory,
-  noteSentence,
-  runSentence,
-  sentence,
-  subjectName,
-} from "./history-actions";
+import { daysAgo, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
 import { useHistoryMessages } from "./history-messages";
-import { personOf, SentenceText } from "./history-v2";
+import { ActivityLineRow } from "./history-v2";
 import { useFilesMessages } from "./messages";
 import { activityUrl, filesUrl } from "./urls";
 
@@ -78,9 +52,17 @@ export default function OverviewPane(props: {
     return b().v2TodayByYou({ count, more: page.next && count === page.items.length ? "+" : "" });
   };
   const unreachable = () => props.bases.filter((base) => base.status !== "existing").length;
-  // The opened files are this person's own; their name comes from their own changes, else "Me".
-  const me = () => props.recent?.page.items.find((entry) => entry.actor.kind === "user" && entry.actor.name)?.actor.name ?? h().whoMe;
-  const recent = createMemo((): DigestActivity[] => {
+  // runs this page opened; opening is presentation only, so a reload starts closed
+  const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
+  const toggle = (key: string) =>
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  // The last few things this person did, in the one row design of Activity: under their day, each with its mark.
+  const recent = createMemo((): ActivityListLine[] => {
     const shown = props.recent;
     if (!shown) return [];
     const days = activityDays(historyRows(shown.page.items, { batches: true, merge: true }), shown.opened, {
@@ -89,125 +71,101 @@ export default function OverviewPane(props: {
       t: h(),
       env: props.env,
     });
-    return days
-      .flatMap((day) => day.items)
-      .slice(0, RECENT_LINES)
-      .map(({ item }): DigestActivity => {
-        if (item.kind === "opened") {
-          const mark = entryMark(item.item.entry);
-          return {
-            person: { name: me() },
-            text: (
-              <SentenceText
-                parts={fill(h().v2Opened, { object: [{ kind: "name", text: item.item.entry.name }] })}
-                mark={{ name: item.item.entry.name, mark }}
-              />
-            ),
-            time: formatWhen(item.item.markedAt, locale(), h(), props.env),
-            place: favoritePlace(item.item, labels()),
-            href: favoriteHref(item.item),
-          };
-        }
-        const rows = item.kind === "run" ? item.rows : [item.row];
-        const lead = rows[0]!.lead;
-        const parts =
-          item.kind === "run"
-            ? runSentence(rows, h(), props.env, locale())
-            : (noteSentence(rows[0]!, h(), props.env, { links: true }) ??
-              sentence(rows[0]!, h(), props.env, { context: "activity", links: true }));
-        const subject = subjectName(lead);
-        const href = parts.find((part): part is Extract<typeof part, { kind: "name" }> => part.kind === "name" && !!part.href)?.href;
-        return {
-          person: personOf(actorOf(lead, h(), props.env)),
-          text: (
-            <SentenceText
-              parts={parts}
-              mark={
-                subject && item.kind !== "run"
-                  ? { name: subject, mark: entryMark({ name: subject, directory: isDirectory(lead) === true }) }
-                  : null
-              }
-            />
-          ),
-          time: formatWhen(lead.time, locale(), h(), props.env),
-          href,
-        };
-      });
+    let left = RECENT_LINES;
+    const first = days
+      .map((day) => {
+        const items = day.items.slice(0, left);
+        left -= items.length;
+        return { ...day, items };
+      })
+      .filter((day) => day.items.length > 0);
+    return activityListLines(first, open(), (rows) => !!runDestination(rows, props.env));
   });
 
   return (
-    <Pane
-      label={b().allStorage}
-      scrollKey="filesv2-overview"
-      status={<StatusRow lead={today()} facts={unreachable() ? [{ value: unreachable(), after: b().v2Unreachable }] : undefined} />}
-    >
-      {props.issues.map((issue) => (
-        <Notice tone="warn" title={t()[issue.area]}>
-          {issueText(t(), issue.code)}
-        </Notice>
-      ))}
-      <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length} summary={b().createInStorage}>
-        {/* Rows, not cards: a few storages fill no grid, and many stay one list that keeps only its rows in view. */}
-        <List
-          label={b().allStorage}
-          items={props.bases}
-          rowKey={(base) => base.id}
-          row={(base) => (
-            <Row
-              mark={storageMark(base)}
-              lines={[
-                baseLabel(base, b(), locale()),
-                [base.kind === "users" ? b().onlyYou : t().group, t()[base.area], base.kind === "users" ? base.name : ""]
-                  .filter(Boolean)
-                  .join(" · "),
-              ]}
-              href={filesUrl(base.id)}
-              onNavigate={props.onNavigate}
-              end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
-            />
-          )}
-        />
-      </Section>
-      <Section
-        icon="star"
-        color="#ca8a04"
-        title={b().favorites}
-        count={props.favorites?.items.length ? `${props.favorites.items.length}${props.favorites.more ? "+" : ""}` : undefined}
-        more={
-          props.favorites?.items.length
-            ? { label: b().showAllFavorites, href: "/app/filesv2?view=favorites", onNavigate: props.onNavigate }
-            : undefined
-        }
+    // Two columns: the storages and favorites, and beside them what this person did last; on the phone one under the other.
+    <Pane.Split>
+      <Pane
+        label={b().allStorage}
+        scrollKey="filesv2-overview"
+        status={<StatusRow lead={today()} facts={unreachable() ? [{ value: unreachable(), after: b().v2Unreachable }] : undefined} />}
       >
-        <Show when={props.favorites} fallback={<Failed text={b().favoritesFailed} onRetry={props.onRetry} />}>
-          {(favorites) => (
-            <Show when={favorites().items.length} fallback={<Empty icon="star" text={b().noFavoritesInline} />}>
-              <Tiles
-                label={b().favorites}
-                items={favorites().items.map((item) => ({
-                  ...entryMark(item.entry),
-                  title: item.entry.name,
-                  meta: favoritePlace(item, labels()),
-                  href: favoriteHref(item),
-                  onNavigate: props.onNavigate,
-                }))}
+        {props.issues.map((issue) => (
+          <Notice tone="warn" title={t()[issue.area]}>
+            {issueText(t(), issue.code)}
+          </Notice>
+        ))}
+        <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length}>
+          {/* Rows, not cards: a few storages fill no grid, and many stay one list that keeps only its rows in view. */}
+          <List
+            label={b().allStorage}
+            items={props.bases}
+            rowKey={(base) => base.id}
+            row={(base) => (
+              <Row
+                mark={storageMark(base)}
+                lines={[
+                  baseLabel(base, b(), locale()),
+                  [base.kind === "users" ? b().onlyYou : t().group, t()[base.area], base.kind === "users" ? base.name : ""]
+                    .filter(Boolean)
+                    .join(" · "),
+                ]}
+                href={filesUrl(base.id)}
+                onNavigate={props.onNavigate}
+                end={base.status !== "existing" ? <Chip status="warn">{t()[base.status]}</Chip> : undefined}
+              />
+            )}
+          />
+        </Section>
+        <Section
+          icon="star"
+          color="#ca8a04"
+          title={b().favorites}
+          count={props.favorites?.items.length ? `${props.favorites.items.length}${props.favorites.more ? "+" : ""}` : undefined}
+          more={
+            props.favorites?.items.length
+              ? { label: b().showAllFavorites, href: "/app/filesv2?view=favorites", onNavigate: props.onNavigate }
+              : undefined
+          }
+        >
+          <Show when={props.favorites} fallback={<Failed text={b().favoritesFailed} onRetry={props.onRetry} />}>
+            {(favorites) => (
+              <Show when={favorites().items.length} fallback={<Empty icon="star" text={b().noFavoritesInline} />}>
+                <Tiles
+                  label={b().favorites}
+                  items={favorites().items.map((item) => ({
+                    ...entryMark(item.entry),
+                    title: item.entry.name,
+                    meta: favoritePlace(item, labels()),
+                    href: favoriteHref(item),
+                    onNavigate: props.onNavigate,
+                  }))}
+                />
+              </Show>
+            )}
+          </Show>
+        </Section>
+      </Pane>
+      <Pane label={b().recentByYou} side width={{ min: 320, default: 400 }} scrollKey="filesv2-overview-recent">
+        <Section
+          icon="history"
+          color={FILES_COLOR}
+          title={b().recentByYou}
+          more={{ label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate }}
+        >
+          <Show when={props.recent} fallback={<Failed text={b().recentFailed} onRetry={props.onRetry} />}>
+            <Show when={recent().length} fallback={<Empty icon="history" text={b().noRecentByYou} />}>
+              <List
+                label={b().recentByYou}
+                items={recent()}
+                rowKey={(item) => item.key}
+                group={(item) => ({ key: item.day.key, label: item.day.label })}
+                row={(item) => <ActivityLineRow item={item} env={props.env} mode="me" bases={labels()} onToggle={toggle} />}
               />
             </Show>
-          )}
-        </Show>
-      </Section>
-      <Section
-        icon="history"
-        color={FILES_COLOR}
-        title={b().recentByYou}
-        more={{ label: b().showAllActivity, href: activityUrl({ actor: "me" }), onNavigate: props.onNavigate }}
-      >
-        <Show when={props.recent} fallback={<Failed text={b().recentFailed} onRetry={props.onRetry} />}>
-          <Show when={recent().length} fallback={<Empty icon="history" text={b().noRecentByYou} />}>
-            <Digest label={b().recentByYou} activity={recent()} />
           </Show>
-        </Show>
-      </Section>
-    </Pane>
+        </Section>
+      </Pane>
+    </Pane.Split>
   );
 }

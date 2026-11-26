@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { useLocale } from "../intl/locale";
 
-const fileViewMessages = i18n.define({
+export const fileViewMessages = i18n.define({
   baseLocale: "en",
   messages: {
     en: {
@@ -22,7 +22,7 @@ const fileViewMessages = i18n.define({
       emptyFile: "Empty file",
       failedLoadFile: "Failed to load file",
       noInlinePreview: "No inline preview available for this source.",
-      previewMoreLines: (n: number) => `… ${n} more lines`,
+      previewMoreLines: (n: number) => (n === 1 ? "… 1 more line" : `… ${n} more lines`),
       previewColumnsLimited: "Showing the first 50 columns. Download the file for all columns.",
       textEditor: "Text editor",
       audioUnsupported: "Your browser does not support audio playback.",
@@ -45,7 +45,7 @@ const fileViewMessages = i18n.define({
       emptyFile: "Leere Datei",
       failedLoadFile: "Datei konnte nicht geladen werden",
       noInlinePreview: "Für diese Quelle ist keine direkte Vorschau verfügbar.",
-      previewMoreLines: (n: number) => `… ${n} weitere Zeilen`,
+      previewMoreLines: (n: number) => (n === 1 ? "… 1 weitere Zeile" : `… ${n} weitere Zeilen`),
       previewColumnsLimited: "Die ersten 50 Spalten werden angezeigt. Lade die Datei für alle Spalten herunter.",
       textEditor: "Texteditor",
       audioUnsupported: "Dein Browser unterstützt keine Audiowiedergabe.",

@@ -131,8 +131,8 @@ export default function SharesPane(props: {
               })}
               columns={[
                 {
+                  // the name takes the rest of the width: it is what a person looks for in the list
                   title: b().shareName,
-                  width: { min: 180, default: 200 },
                   mark: (share) => ({ ...KIND_MARK[share.kind], label: share.kind === "inbox" ? b().inboxShare : b().downloadShare }),
                   cell: (share) => (
                     <Text>
@@ -153,21 +153,16 @@ export default function SharesPane(props: {
                 },
                 {
                   title: b().shareState,
-                  width: { min: 130, default: 140 },
+                  width: { min: 180, default: 190 },
                   drop: true,
                   cell: (share) => (
                     <Inline>
                       {state(share)}
                       <Show when={share.state === "active"}>
-                        <Button
-                          variant="ghost"
-                          icon="link-off"
-                          label={b().revoke}
-                          title={b().revoke}
-                          busy={busy() === share.id}
-                          disabled={Boolean(busy())}
-                          onClick={() => void revoke(share)}
-                        />
+                        {/* the deed says its word: a crossed link beside "Aktiv" read as a second state */}
+                        <Button variant="ghost" busy={busy() === share.id} disabled={Boolean(busy())} onClick={() => void revoke(share)}>
+                          {b().revoke}
+                        </Button>
                       </Show>
                     </Inline>
                   ),
@@ -180,8 +175,8 @@ export default function SharesPane(props: {
                   drop: true,
                   cell: (share) => String(share.accessCount),
                 },
-                // the place takes the rest of the width: a deep folder is the longest words of a link
-                { title: b().v2Place, drop: true, cell: place },
+                // the place has its own width and gives the rest to the name
+                { title: b().v2Place, width: { min: 160, default: 220 }, drop: true, cell: place },
               ]}
             />
             <Show when={shown().next}>

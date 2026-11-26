@@ -128,8 +128,16 @@ export const getFileViewPreviewKind = (file: FileViewFile): FileViewPreviewKind 
  * zero ("64 KB"); without it, the output stays as before.
  */
 export const formatFileViewSize = (bytes: number, locale?: string): string => {
-  const [value, unit] = bytes < 1024 ? [bytes, "B"] : bytes < 1024 * 1024 ? [bytes / 1024, "KB"] : [bytes / (1024 * 1024), "MB"];
-  if (unit === "B") return `${bytes} B`;
+  if (bytes < 1024) return `${bytes} B`;
+  // the next unit as soon as a value would need four digits: 1 MB, never 1.000 KB; 98 GB, never 94.190 MB
+  const units = ["KB", "MB", "GB", "TB"] as const;
+  let value = bytes / 1024;
+  let step = 0;
+  while (value >= 1000 && step < units.length - 1) {
+    value /= 1024;
+    step += 1;
+  }
+  const unit = units[step];
   if (!locale) return `${value.toFixed(1)} ${unit}`;
   return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value)} ${unit}`;
 };

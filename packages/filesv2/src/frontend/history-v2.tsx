@@ -4,6 +4,7 @@ import { type Action, Mark, type MarkProps, Menu, type MenuEntry, type Person, R
 import { createMemo, For, Match, Show, Switch } from "solid-js";
 import type { ActivityEntry } from "../activity-contracts";
 import type { MarkedEntry } from "../contracts";
+import type { ActivityListLine } from "./activity-lines";
 import { entryMark } from "./entry-mark";
 import {
   type ActorView,
@@ -168,19 +169,7 @@ function moreDeeds(
   actions?: HistoryActions,
 ): MenuEntry[] {
   const run = entry.execution ? env.executionHref?.(entry) : null;
-  const person = actor.person;
-  return [
-    ...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : []),
-    ...(actions?.onContact && person?.userId && entry.actor.name
-      ? [
-          {
-            label: h.messageTo.replace("{name}", person.name),
-            icon: "message",
-            onClick: () => actions.onContact?.({ userId: person.userId!, name: person.name }),
-          },
-        ]
-      : []),
-  ];
+  return [...(run ? [{ label: h.viewExecution, icon: "player-play", href: run }] : [])];
 }
 
 export type ActivityRowProps = {
@@ -273,7 +262,7 @@ export function ActivityRow(props: ActivityRowProps) {
     const error = versions.error();
     return error ? (error instanceof Error && error.message ? error.message : h().historyFailed) : "";
   };
-  const sentenceLine = () => <SentenceText parts={linked()} mark={props.mode === "me" ? null : mark()} />;
+  const sentenceLine = () => <SentenceText parts={linked()} />;
   // The web is how most changes come; only another channel (the API, an app, the Assistant) is worth a word.
   const channel = () => meta().filter((part) => !(part.kind === "via" && entry().via === "web"));
   // A row with a deed keeps its end for the deed: the time moves into its quiet line, so the two never overlap.
@@ -292,8 +281,8 @@ export function ActivityRow(props: ActivityRowProps) {
   return (
     <Row
       lines={facts() ? [sentenceLine(), facts()] : [sentenceLine()]}
-      avatar={props.mode === "all" && !props.member ? personOf(actor()) : undefined}
-      mark={props.mode === "me" && !props.member ? (mark()?.mark ?? { icon: "history" }) : undefined}
+      // one row everywhere: the thing's mark leads, the sentence names who did it (in "Me" it is the person)
+      mark={mark()?.mark ?? { icon: "history" }}
       time={crowded() ? undefined : time()}
       href={props.toggle ? undefined : hrefOf(linked())}
       onNavigate={props.env.onNavigate}
@@ -323,11 +312,11 @@ export function RunRow(props: {
   const h = useHistoryMessages();
   const locale = useLocale();
   const lead = () => props.rows[0]!.lead;
-  const actor = createMemo(() => actorOf(lead(), h(), props.env));
   const span = () => {
-    const newest = formatWhen(lead().time, locale(), h(), props.env);
+    // under a day head the time alone, as on every row
+    const newest = formatTime(lead().time, locale(), props.env);
     const oldest = formatTime(props.rows.at(-1)!.entries.at(-1)!.time, locale(), props.env);
-    return oldest === formatTime(lead().time, locale(), props.env) ? newest : `${oldest}–${newest.split(", ").at(-1)}`;
+    return oldest === newest ? newest : `${oldest}–${newest}`;
   };
   return (
     <Row
@@ -335,12 +324,58 @@ export function RunRow(props: {
         <SentenceText parts={runSentence(props.rows, h(), props.env, locale())} />,
         h().changesCount.replace("{count}", String(props.rows.length)),
       ]}
-      avatar={props.mode === "all" ? personOf(actor()) : undefined}
-      mark={props.mode === "me" ? { icon: "stack-2" } : undefined}
+      mark={{ icon: "stack-2" }}
       time={span()}
       onOpen={props.onToggle}
     />
   );
+}
+
+/**
+ * One line of a list of changes, in the one row design of Files: Activity, its search, all storage. Lines stand under
+ * their day's head, so each says its time alone.
+ */
+export function ActivityLineRow(props: {
+  item: ActivityListLine;
+  env: HistoryEnvironment;
+  actions?: HistoryActions;
+  mode: "me" | "all";
+  /** The storages by their names, so an opened file says where it lies. */
+  bases: readonly { id: string; label: string }[];
+  onToggle: (key: string) => void;
+  onChanged?: () => void;
+}) {
+  const item = props.item;
+  switch (item.kind) {
+    case "opened":
+      return <OpenedRow item={item.item} env={props.env} bases={props.bases} dated={false} />;
+    case "run":
+      return <RunRow rows={item.rows} env={props.env} mode={props.mode} open={item.open} onToggle={() => props.onToggle(item.key)} />;
+    case "runRow":
+      return (
+        <ActivityRow
+          row={item.row}
+          env={props.env}
+          actions={props.actions}
+          mode={props.mode}
+          member={item.short ? "short" : undefined}
+          onChanged={props.onChanged}
+        />
+      );
+    case "member":
+      return <MemberRow entry={item.row.entries[item.index]!} />;
+    default:
+      return (
+        <ActivityRow
+          row={item.row}
+          env={props.env}
+          actions={props.actions}
+          mode={props.mode}
+          onChanged={props.onChanged}
+          toggle={item.batch ? { ...item.batch, onToggle: () => props.onToggle(item.row.key) } : undefined}
+        />
+      );
+  }
 }
 
 /** A member of a batch: the thing by its name and mark, nothing more; the batch's line said who and when. */
@@ -357,7 +392,13 @@ export function MemberRow(props: { entry: ActivityEntry }) {
 }
 
 /** A file the person opened, in their own activity only; the recent list checked current access for this read. */
-export function OpenedRow(props: { item: MarkedEntry; env: HistoryEnvironment; bases: readonly { id: string; label: string }[] }) {
+export function OpenedRow(props: {
+  item: MarkedEntry;
+  env: HistoryEnvironment;
+  bases: readonly { id: string; label: string }[];
+  /** Beside the day in the time, for a list without day heads. */
+  dated?: boolean;
+}) {
   const h = useHistoryMessages();
   const locale = useLocale();
   const folders = () => props.item.entry.path.split("/").filter(Boolean).slice(0, -1);
@@ -372,7 +413,11 @@ export function OpenedRow(props: { item: MarkedEntry; env: HistoryEnvironment; b
     <Row
       lines={[<SentenceText parts={parts()} />, place()]}
       mark={entryMark(props.item.entry)}
-      time={formatWhen(props.item.markedAt, locale(), h(), props.env)}
+      time={
+        props.dated === false
+          ? formatTime(props.item.markedAt, locale(), props.env)
+          : formatWhen(props.item.markedAt, locale(), h(), props.env)
+      }
       href={href()}
       onNavigate={props.env.onNavigate}
     />

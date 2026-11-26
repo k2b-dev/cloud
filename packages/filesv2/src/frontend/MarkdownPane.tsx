@@ -1,5 +1,5 @@
 import { MarkdownEditor, prompts, toast } from "@k2b/ui";
-import { Canvas, Chip, Failed, Loading, Notice, Pane, StatusRow } from "@k2b/ui/v2";
+import { Bar, Canvas, Chip, Failed, Inline, Loading, Notice, Pane, Text } from "@k2b/ui/v2";
 import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { MarkdownLaunch } from "../contracts";
@@ -197,12 +197,16 @@ export default function MarkdownPane(props: {
   return (
     <Pane
       label={props.launch.entry.name}
-      // the file is the title; whether its draft is saved is a state beside it
+      // the file is the title; whether its draft is saved is a state beside it, on the phone too (a status row's
+      // filters leave there, the state of an open entry stays)
       status={
-        <StatusRow
-          lead={props.launch.entry.name}
-          loading={saving() || loading()}
-          filters={<Chip status={dirty() ? "warn" : "ok"}>{state()}</Chip>}
+        <Bar
+          start={
+            <Inline>
+              <Text type="lead">{props.launch.entry.name}</Text>
+              <Chip status={dirty() ? "warn" : "ok"}>{state()}</Chip>
+            </Inline>
+          }
         />
       }
     >

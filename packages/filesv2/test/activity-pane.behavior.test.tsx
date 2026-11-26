@@ -171,17 +171,31 @@ describe("Activity on UI v2", () => {
     expect(opener(moved)?.getAttribute("href")).toBe(
       "/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Buchhaltung&file=Buchhaltung%2FA.pdf",
     );
-    // Under "All" each change leads with its person, and the sentence names them.
-    expect(moved.querySelector('[data-k2-part="Avatar"]')).not.toBeNull();
+    // One row design everywhere: each change leads with the thing's mark, and under "All" the sentence names the person.
+    expect(moved.querySelector('[data-k2-part="Mark"]')).not.toBeNull();
+    expect(moved.querySelector('[data-k2-part="Avatar"]')).toBeNull();
     expect(moved.textContent).toContain("Valentin Kolb");
     const vanished = rowWith("Alt.pdf")!;
     expect(vanished.textContent).toContain("Alt.pdf (nicht mehr verfügbar)");
     expect(vanished.querySelector("a")).toBeNull();
-    // Time and day stand at the end; the web, the usual channel, is not named.
-    expect(moved.textContent).toContain("heute, 14:12");
+    // The day stands once over its changes, so the row says its time alone; the web, the usual channel, is not named.
+    expect(dom.root.querySelector(".k2-list-head")?.textContent).toContain("Heute");
+    expect(moved.textContent).toContain("14:12");
+    expect(moved.textContent).not.toContain("heute");
     expect(vanished.textContent).not.toContain("Web");
     // The row opens the file in its folder; there is no second way to the same place behind a "…".
     expect(buttonNamed(moved, "Aktionen zum Verlauf")).toBeUndefined();
+  });
+
+  test("markup, an entity and Markdown in a name read as written and make no element", async () => {
+    const name = "<img src=x onerror=alert(1)> & &amp; **bold**.md";
+    await pane([
+      entry({ action: "file.upload", actor: valentin, before: hidden, after: live(`vertrieb/Inbox/${name}`, { directory: false }) }),
+    ]);
+    // the review of 26.11. read "script> &amp; **bold**.md": that was the fixture (a slash split the name as a path)
+    expect(rowWith("onerror")!.textContent).toContain(name);
+    expect(dom.root.querySelector("img")).toBeNull();
+    expect(dom.root.querySelector("strong")).toBeNull();
   });
 
   test("only sides the reader returned as current lead anywhere; a hidden side adds no name, folder or address", async () => {
@@ -401,7 +415,9 @@ describe("Activity on UI v2", () => {
         },
       },
     );
-    expect(text()).toContain("1 Treffer im Verlauf für „Angebote 2025“, auch frühere Namen und Orte");
+    // the filter row counts the hits once; no second line repeats the count
+    expect(text()).toContain("1 Treffer im Verlauf");
+    expect(text().match(/1 Treffer/g)?.length).toBe(1);
     expect(text()).not.toContain("Liegt jetzt in");
     expect(buttonNamed(dom.root, "Dorthin springen")).toBeUndefined();
     replies[0]!.reject(new Error("timeout"));

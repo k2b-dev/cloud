@@ -127,15 +127,28 @@ export default function ActivitySearch(props: ActivitySearchProps) {
             />
           )}
         </Show>
+        {/* the filter row says how many hits there are; below the best hit the others stand under one quiet head */}
         <Show when={others().length > 0}>
-          <Section title={top() ? h().otherHits : label()} count={others().length}>
-            <List
-              label={top() ? h().otherHits : label()}
-              items={others()}
-              rowKey={(hit) => hit.key}
-              row={(hit) => <OtherHit hit={hit} env={props.env} actions={props.actions} onChanged={props.onChanged} />}
-            />
-          </Section>
+          <Show
+            when={top()}
+            fallback={
+              <List
+                label={label()}
+                items={others()}
+                rowKey={(hit) => hit.key}
+                row={(hit) => <OtherHit hit={hit} env={props.env} actions={props.actions} onChanged={props.onChanged} />}
+              />
+            }
+          >
+            <Section title={h().otherHits} count={others().length}>
+              <List
+                label={h().otherHits}
+                items={others()}
+                rowKey={(hit) => hit.key}
+                row={(hit) => <OtherHit hit={hit} env={props.env} actions={props.actions} onChanged={props.onChanged} />}
+              />
+            </Section>
+          </Show>
         </Show>
       </Show>
       <Show when={props.moreFailed}>
@@ -460,7 +473,7 @@ function MissingHit(props: {
           </>
         }
       >
-        <Show when={why()}>{(parts) => <Row icon="info-circle" lines={[<SentenceText parts={parts()} />, props.label]} />}</Show>
+        <Show when={why()}>{(parts) => <Row icon="info-circle" lines={[<SentenceText parts={parts()} />]} />}</Show>
         <Show when={props.kind === "moved" && chain.error()}>
           <Notice tone="bad" actions={[{ label: h().retry, onClick: () => void chain.refresh() }]}>
             {h().chainFailed}

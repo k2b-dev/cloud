@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser, BrowserContext, Page } from "playwright";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
+import type { ActivityPage } from "../activity-contracts";
 import "../../../ui/test/solid-ssr-preload";
 import {
   FIXTURE_NOW,
@@ -13,13 +14,16 @@ import {
   fixtureBase,
   fixtureBases,
   fixtureFavorites,
+  fixtureItemShares,
   fixtureListing,
   fixtureMarkdown,
   fixtureMine,
   fixturePage,
   fixtureSearch,
+  fixtureShareAccess,
   fixtureShares,
   fixtureTrash,
+  fixtureVersions,
 } from "./files-screen.fixture";
 
 // A person works in a folder of Files on v2: opens folders and files in place, sorts, searches, chooses entries and
@@ -226,9 +230,16 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
           ? emptyHistory
           : url.searchParams.get("actor") === "me"
             ? fixtureMine(Number(url.searchParams.get("limit")) || undefined)
-            : fixtureActivity(fixture),
+            : searched(fixtureActivity(fixture), url.searchParams.get("q")),
       });
-    if (url.pathname === `${api}/shares`) return route.fulfill({ json: fixtureShares(fixture) });
+    // the detail asks for the links of its file; the overview of links asks without a path
+    if (url.pathname === `${api}/shares`)
+      return route.fulfill({
+        json: url.searchParams.get("path") ? fixtureItemShares(url.searchParams.get("path")!) : fixtureShares(fixture),
+      });
+    if (url.pathname === `${api}/bases/demo/versions`) return route.fulfill({ json: fixtureVersions() });
+    if (url.pathname.startsWith(`${api}/shares/`) && url.pathname.endsWith("/access"))
+      return route.fulfill({ json: fixtureShareAccess(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") });
     if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
     if (url.pathname.startsWith(`${api}/bases/demo/preview`)) return route.fulfill({ status: 404, body: "" });
     if (url.pathname === "/content")
@@ -249,6 +260,15 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
   await tab.evaluate(() => document.fonts.ready);
   await settled(tab);
   return { context, tab, errors, seen };
+};
+
+/** A search answers as the server does: only changes whose current or earlier name or place holds the words. */
+const searched = (page: ActivityPage, q: string | null): ActivityPage => {
+  const words = q?.trim().toLocaleLowerCase();
+  if (!words) return page;
+  const sides = (item: ActivityPage["items"][number]) =>
+    [item.before, item.after].map((side) => ("path" in side && side.path ? side.path : "").toLocaleLowerCase());
+  return { ...page, items: page.items.filter((item) => sides(item).some((path) => path.includes(words))) };
 };
 
 /** The names of the rows the folder shows, in order. */
@@ -297,10 +317,17 @@ describe("a folder of Files on v2", () => {
     try {
       expect(await names(tab)).toEqual([
         "Angebote",
+        "Aufmaß",
         "Fotos",
+        "Ansicht Front Eiche.jpg",
+        "Bestand Küche vorher.jpg",
         "Budget 2027.xlsx",
         "Lieferplan.pdf",
+        "Materialliste.xlsx",
+        "Muster Arbeitsplatte Granit.jpg",
         "Notizen.md",
+        "Rundgang Aufmaß.mp4",
+        "Skizze Hochschrank.png",
         "Zuschnitt Küchenfront.dxf",
       ]);
       await shoot(tab, "01-folder-1440");
@@ -316,7 +343,7 @@ describe("a folder of Files on v2", () => {
 
       await tab.goBack();
       await tab.waitForFunction(() => !new URL(location.href).searchParams.get("path"));
-      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === 6);
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === 13);
 
       await rowLink(tab, "Notizen.md").click();
       await tab.waitForFunction(() => new URL(location.href).searchParams.get("file") === "Notizen.md");
@@ -342,10 +369,10 @@ describe("a folder of Files on v2", () => {
         () =>
           [
             ...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group]) td:nth-child(2) .k2-cell-line"),
-          ][2]?.textContent?.trim() === "Zuschnitt Küchenfront.dxf",
+          ][3]?.textContent?.trim() === "Rundgang Aufmaß.mp4",
       );
       const sorted = await names(tab);
-      expect(sorted.slice(0, 3)).toEqual(["Angebote", "Fotos", "Zuschnitt Küchenfront.dxf"]);
+      expect(sorted.slice(0, 4)).toEqual(["Angebote", "Fotos", "Aufmaß", "Rundgang Aufmaß.mp4"]);
       await tab.reload();
       await settled(tab);
       expect(await names(tab)).toEqual(sorted);
@@ -369,7 +396,7 @@ describe("a folder of Files on v2", () => {
       await field.focus();
       await field.press("Escape");
       await tab.waitForFunction(() => !new URL(location.href).searchParams.get("q"));
-      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === 6);
+      await tab.waitForFunction(() => document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])").length === 13);
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -383,6 +410,15 @@ describe("a folder of Files on v2", () => {
       await tab.getByRole("checkbox", { name: /Lieferplan\.pdf/ }).check();
       const status = tab.locator("[data-k2-part=StatusRow]");
       await status.getByText(/2 ausgewählt/).waitFor();
+      // a chosen row wears the selection's tint, an unchosen one none (the guard of #1543, now on the v2 table)
+      const fills = await tab.evaluate(() =>
+        [...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])")]
+          .slice(3, 6)
+          .map((row) => [row, row.querySelector("td")!].map((part) => getComputedStyle(part).backgroundColor).join(" ")),
+      );
+      // Ansicht and Bestand are not chosen, Budget is
+      expect(fills[0]).toBe(fills[1]);
+      expect(fills[2]).not.toBe(fills[0]);
       for (const deed of ["Verschieben nach …", "In den Papierkorb"])
         expect(await status.getByRole("button", { name: deed }).count()).toBe(1);
       await shoot(tab, "04-selection-1440");
@@ -407,6 +443,27 @@ describe("a folder of Files on v2", () => {
       await tab.getByRole("alertdialog").or(tab.getByRole("dialog")).getByRole("button", { name: "In den Papierkorb" }).click();
       await tab.waitForFunction(() => document.querySelector("[role=status], [role=alert]") !== null);
       expect(seen.posts.at(-1)).toEqual({ path: "/bases/demo/delete", body: { paths: ["Lieferplan.pdf"] } });
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test("the grid shows the folder as pictures and chooses entries as the list does", async () => {
+    const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo");
+    try {
+      await tab.locator("[data-k2-part=FilterBar]").getByRole("button", { name: /Liste/ }).click();
+      await tab.getByRole("menuitemradio", { name: "Raster" }).click();
+      await tab.locator("[data-k2-part=Tiles]").waitFor();
+      expect(await tab.locator("[data-k2-part=Tiles] > [role=listitem]").count()).toBe(13);
+      await shoot(tab, "04b-grid-1440");
+      await tab.getByRole("checkbox", { name: /Ansicht Front Eiche\.jpg/ }).check();
+      await tab.getByRole("checkbox", { name: /Skizze Hochschrank\.png/ }).check();
+      await tab
+        .locator("[data-k2-part=StatusRow]")
+        .getByText(/2 ausgewählt/)
+        .waitFor();
+      await shoot(tab, "04c-grid-selection-1440");
       expect(errors).toEqual([]);
     } finally {
       await context.close();
@@ -543,7 +600,10 @@ describe("the views beside the folders on v2", () => {
       await nav.getByRole("link", { name: "Alle Ablagen" }).click();
       await tab.waitForFunction(() => !new URL(location.href).search);
       await tab.locator("[data-k2-part=List][aria-label='Alle Ablagen'] [data-k2-part=Row]").first().waitFor();
-      expect(await tab.locator("[data-k2-part=Digest]").innerText()).toContain("Ansicht Front Eiche.jpg");
+      // beside the storages, the viewer's own last changes in the row design of Activity, under their day
+      const recent = tab.locator("[data-k2-part=List][aria-label='Zuletzt von dir']");
+      expect(await recent.innerText()).toContain("Ansicht Front Eiche.jpg");
+      expect(await recent.locator("[data-k2-part=Row] [data-k2-part=Avatar]").count()).toBe(0);
       await shoot(tab, "14-overview-1440");
       await expectClean(tab);
 

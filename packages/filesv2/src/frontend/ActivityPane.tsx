@@ -6,11 +6,11 @@ import type { MarkedEntry } from "../contracts";
 import ActivitySearch from "./ActivitySearch";
 import { type ActivityListLine, activityDays, activityListLines } from "./activity-lines";
 import type { ActivityListState, ActivityQuery } from "./activity-query";
-import { type HistoryActions, type HistoryEnvironment, historyRows, runDestination } from "./history-actions";
+import { type HistoryActions, type HistoryEnvironment, historyRows, runDestination, searchHits } from "./history-actions";
 import { loadActivity } from "./history-api";
 import { useHistoryMessages } from "./history-messages";
 import { type ActivityFilters, activityRequest } from "./history-requests";
-import { ActivityRow, MemberRow, OpenedRow, RunRow } from "./history-v2";
+import { ActivityLineRow } from "./history-v2";
 import { activityUrl } from "./urls";
 
 const FILTER_ICONS = { who: "user", base: "folders", what: "activity", when: "calendar" } as const;
@@ -119,43 +119,28 @@ export default function ActivityPane(props: ActivityPaneProps) {
   const changed = () => props.onReload();
 
   const lead = () => {
+    if (props.filters.q) {
+      const hits = searchHits(entries(), props.filters.q).length;
+      return next()
+        ? h().hitCountMore.replace("{count}", String(hits))
+        : hits === 1
+          ? h().hitCountOne
+          : h().hitCount.replace("{count}", String(hits));
+    }
     const count = props.initial ? new Set(entries().map((entry) => entry.id)).size : 0;
     return (next() ? h().v2ActivityLeadMore : h().v2ActivityLead).replace("{count}", new Intl.NumberFormat(locale()).format(count));
   };
-  const line = (item: ActivityListLine) => {
-    switch (item.kind) {
-      case "opened":
-        return <OpenedRow item={item.item} env={props.env} bases={props.bases} />;
-      case "run":
-        return <RunRow rows={item.rows} env={props.env} mode={mode()} open={item.open} onToggle={() => toggle(item.key)} />;
-      case "runRow":
-        return (
-          <ActivityRow
-            row={item.row}
-            env={props.env}
-            actions={props.actions}
-            mode={mode()}
-            member={item.short ? "short" : undefined}
-            dated
-            onChanged={changed}
-          />
-        );
-      case "member":
-        return <MemberRow entry={item.row.entries[item.index]!} />;
-      default:
-        return (
-          <ActivityRow
-            row={item.row}
-            env={props.env}
-            actions={props.actions}
-            mode={mode()}
-            dated
-            onChanged={changed}
-            toggle={item.batch ? { ...item.batch, onToggle: () => toggle(item.row.key) } : undefined}
-          />
-        );
-    }
-  };
+  const line = (item: ActivityListLine) => (
+    <ActivityLineRow
+      item={item}
+      env={props.env}
+      actions={props.actions}
+      mode={mode()}
+      bases={props.bases}
+      onToggle={toggle}
+      onChanged={changed}
+    />
+  );
   const allHref = () => activityUrl({ ...props.filters, actor: undefined });
   const resetHref = () => activityUrl({ actor: "me" });
 
@@ -240,7 +225,14 @@ export default function ActivityPane(props: ActivityPaneProps) {
           <Empty icon="history" text={`${h().noActivityTitle}. ${h().noActivityText}`} />
         </Match>
         <Match when={lines().length > 0}>
-          <List label={h().activity} items={lines()} rowKey={(item) => item.key} row={line} />
+          {/* the day stands once over its changes, so each row says its time alone */}
+          <List
+            label={h().activity}
+            items={lines()}
+            rowKey={(item) => item.key}
+            group={(item) => ({ key: item.day.key, label: item.day.label })}
+            row={line}
+          />
         </Match>
       </Switch>
       <Show when={props.initial && !props.filters.q && !unavailable()}>
