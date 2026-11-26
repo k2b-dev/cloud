@@ -7,6 +7,7 @@ import {
   CanvasFillScreen,
   CellsScreen,
   DeepPathScreen,
+  EmptyWaysScreen,
   GroupsScreen,
   LongAddressScreen,
   ProseCodeScreen,
@@ -40,7 +41,8 @@ declare global {
       | "structure"
       | "prose"
       | "groups"
-      | "split-list-canvas";
+      | "split-list-canvas"
+      | "empty-ways";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -65,6 +67,8 @@ render(
         <StructureScreen />
       ) : which === "areas" ? (
         <AreasMenuScreen />
+      ) : which === "empty-ways" ? (
+        <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
       ) : which === "long" ? (

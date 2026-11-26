@@ -35,7 +35,8 @@ type Case =
   | "structure"
   | "prose"
   | "groups"
-  | "split-list-canvas";
+  | "split-list-canvas"
+  | "empty-ways";
 
 let browser: Browser;
 let client: string;
@@ -1185,3 +1186,43 @@ for (const which of ["list", "grid", "selecting", "settings"] as const)
         width,
       );
     });
+
+test("an empty state with two ways out: the first a button, the second quiet text after it; the focus from „Erneut versuchen“ goes to the first", async () => {
+  for (const width of [1440, 1024, 390])
+    await withPage(
+      "empty-ways",
+      async (page) => {
+        await page.getByRole("button", { name: "Erneut versuchen" }).focus();
+        await page.keyboard.press("Enter");
+        await page.locator('[data-k2-part="Empty"]').waitFor();
+        await page.waitForFunction(() => document.activeElement?.textContent?.trim() === "Filter zurücksetzen");
+        const found = await page.evaluate(() => {
+          const state = document.querySelector('[data-k2-part="Empty"]')!;
+          const first = state.querySelector<HTMLElement>(".k2-state-ways > .k2-btn:nth-child(1)")!;
+          const second = state.querySelector<HTMLElement>(".k2-state-ways > .k2-btn:nth-child(2)")!;
+          const text = state.querySelector(".k2-state-text")!.getBoundingClientRect();
+          const a = first.getBoundingClientRect();
+          const b = second.getBoundingClientRect();
+          return {
+            variants: [first.dataset.variant, second.dataset.variant],
+            link: second.tagName === "A" ? second.getAttribute("href") : null,
+            heights: [a.height, b.height],
+            // both start on the text edge or stand beside each other in its line, never beyond the window
+            edge: Math.round(a.left - text.left),
+            beside: Math.abs(a.top - b.top) < 1 && b.left > a.right,
+            inside: b.right <= innerWidth + 0.5,
+          };
+        });
+        expect(found.variants).toEqual([undefined, "text"]);
+        expect(found.link).toBe("#notizbuch");
+        expect(found.heights[0]).toBe(found.heights[1]);
+        expect(found.edge).toBe(0);
+        expect(found.beside).toBe(true);
+        expect(found.inside).toBe(true);
+        // Tab goes on to the quiet way
+        await page.keyboard.press("Tab");
+        expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe("Ganzes Notizbuch zeigen");
+      },
+      width,
+    );
+});
