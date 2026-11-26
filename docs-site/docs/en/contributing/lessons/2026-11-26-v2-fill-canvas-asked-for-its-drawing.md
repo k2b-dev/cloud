@@ -1,0 +1,6 @@
+### A drawing that was the whole pane pushed its pane past the phone
+
+- **What happened:** The Assistant on `@k2b/ui/v2` draws its chat in a `Canvas height="fill"`. On a phone with a long history the pane grew past the screen, and the composer under the history was out of sight. The app worked around it by placing its drawing absolutely.
+- **Root cause:** On the phone, a pane with a fill canvas keeps at least its `min-content` height, so that a long list beside it in a split cannot squeeze the drawing below 240 px. A canvas is a block, so its `min-content` is what its drawing holds. A chat column that asks for no height of its own holds its whole history, and the pane grew by that much.
+- **Error class:** A minimum taken from intrinsic content (`min-content`) includes everything a child holds, not only the minimum it means to keep.
+- **Guard:** A fill canvas sets `contain: size`, so it asks for its own 240 px only. It is a grid of one `minmax(0, 1fr)` row, so a drawing without a height takes the whole canvas and scrolls inside. `packages/ui/src/v2/head-media.browser.test.ts` ("a tall drawing that is the whole pane…") checks at 390 and 1440 px, in Chromium and WebKit, that the pane ends on the screen, the composer is in sight, the history scrolls inside, and the page does not scroll.

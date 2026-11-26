@@ -2908,6 +2908,12 @@
   height: auto;
   flex: 1 1 auto;
   min-height: 240px;
+  /* It asks its pane for its 240 px only, never for what its drawing holds (a chat history taller than the phone,
+     W7 26.11.), and a drawing that asks for no height of its own takes all of it: what is taller scrolls inside. */
+  contain: size;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 /* A state stands in the drawing's place: `Empty`, `Loading` or `Failed` inside a Canvas with a height keep the height
    of the Canvas, so nothing moves when the drawing comes, stays empty or fails. Empty and Failed stand in its middle;
