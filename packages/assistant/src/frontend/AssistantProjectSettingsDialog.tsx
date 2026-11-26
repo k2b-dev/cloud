@@ -32,7 +32,11 @@ const readError = async (response: Pick<Response, "json">, fallback: string) => 
   return body?.message || fallback;
 };
 
-function ProjectSettings(props: { project: AiProject; close: () => void }) {
+/**
+ * The Project's settings: its fields and their changes, its default model, and who has access. `close` runs after a
+ * save (v1's dialog closes, v2's page returns to the Project). v1's dialog and v2's page draw the same state.
+ */
+export const createProjectSettings = (props: { project: AiProject; close: () => void }) => {
   const text = useAssistantText();
   const [name, setName] = createSignal(props.project.name);
   const [description, setDescription] = createSignal(props.project.description);
@@ -163,6 +167,49 @@ function ProjectSettings(props: { project: AiProject; close: () => void }) {
     }
   };
 
+  return {
+    text,
+    name,
+    setName,
+    description,
+    setDescription,
+    instructions,
+    setInstructions,
+    defaultModel,
+    setDefaultModel,
+    models,
+    saving,
+    saveError,
+    changeCount,
+    access,
+    runEditAccess,
+    discard,
+    requestClose,
+    save,
+  };
+};
+
+function ProjectSettings(props: { project: AiProject; close: () => void }) {
+  const {
+    text,
+    name,
+    setName,
+    description,
+    setDescription,
+    instructions,
+    setInstructions,
+    defaultModel,
+    setDefaultModel,
+    models,
+    saving,
+    saveError,
+    changeCount,
+    access,
+    runEditAccess,
+    discard,
+    requestClose,
+    save,
+  } = createProjectSettings(props);
   return (
     <div class="dialog-fixed-frame flex min-h-0 flex-col overflow-hidden">
       <SettingsModal title={text("Project settings")} onClose={() => void requestClose()} closeLabel={text("Close Project settings")}>

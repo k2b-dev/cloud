@@ -287,6 +287,7 @@ const germanText: Record<string, string> = {
   "Revoke approval": "Freigabe widerrufen",
   Run: "Lauf",
   Save: "Speichern",
+  Discard: "Verwerfen",
   "Save changes": "Änderungen speichern",
   "Save reference": "Referenz speichern",
   "Saved personalization": "Gespeicherte Personalisierung",

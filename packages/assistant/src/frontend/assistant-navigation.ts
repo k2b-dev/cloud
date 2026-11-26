@@ -46,6 +46,7 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
   url.searchParams.delete("question");
   url.searchParams.delete("artifact");
   url.searchParams.set("project", projectId);
+  url.searchParams.delete("settings");
   url.searchParams.delete("approvals");
   url.searchParams.delete("code");
   url.searchParams.delete("q");
@@ -55,6 +56,17 @@ export const assistantProjectHref = (currentHref: string, projectId: string): st
 export const assistantConversationIdFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("conversation");
 
 export const assistantProjectIdFromHref = (href: string): string | null => new URL(href, URL_BASE).searchParams.get("project");
+
+/** A Project's settings on v2's page: `?project=<id>&settings=1`, so reload and Back keep them. */
+export const assistantProjectSettingsHref = (currentHref: string, projectId: string): string => {
+  const url = new URL(assistantProjectHref(currentHref, projectId), URL_BASE);
+  url.searchParams.set("settings", "1");
+  return relativeHref(url);
+};
+export const assistantProjectSettingsFromHref = (href: string): boolean => {
+  const params = new URL(href, URL_BASE).searchParams;
+  return params.has("project") && params.get("settings") === "1";
+};
 
 export const assistantArtifactHref = (currentHref: string, path: string | null): string => {
   const url = new URL(currentHref, URL_BASE);

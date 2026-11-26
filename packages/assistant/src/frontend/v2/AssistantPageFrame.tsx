@@ -4,8 +4,9 @@ import { createSignal, lazy, Show, Suspense } from "solid-js";
 import { AssistantLiveProvider } from "../assistant-live";
 import { assistantProjectHref } from "../assistant-navigation";
 import type { AssistantWorkspaceParts } from "../assistant-workspace";
-import { AssistantAppsV2, AssistantPrefsV2 } from "../code-deferred-views";
+import { AssistantAppsV2, AssistantPrefsV2, AssistantProjectSettingsV2 } from "../code-deferred-views";
 import { lazyAction } from "../lazy-action";
+import { useAssistantText } from "../ui-copy";
 import AssistantFrameV2 from "./AssistantFrameV2";
 import AssistantProjectV2 from "./AssistantProjectV2";
 import AssistantWaitingV2 from "./AssistantWaitingV2";
@@ -22,6 +23,7 @@ const createProjectForm = lazyAction(() => import("../AssistantProjectsDialog"))
  */
 export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }) {
   const w = frame.w;
+  const text = useAssistantText();
   // The chat's title and "In diesem Chat" stand in this frame's head, not in a row above the timeline.
   w.setContextHead(false);
   // The tabs' pane has the one way back on the phone; v1's own button above the tabs stays away.
@@ -54,6 +56,8 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
     if (w.mainView() === "code") return [{ label: w.t().myCode, href: w.codeHref }];
     if (w.mainView() === "prefs") return [{ label: w.t().personalize }];
     const project = w.activeProject();
+    if (project && w.projectSettings())
+      return [{ label: project.name, href: assistantProjectHref(w.basePath, project.id) }, { label: text("Project settings") }];
     if (project) return [{ label: project.name }];
     const open = w.activeConversation();
     // A new chat has no name yet; "Neuer Chat" stands once, as the head's action.
@@ -107,6 +111,7 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         openContext={(title) => w.openChatContext(title)}
         openChat={() => (w.mainView() || w.activeProject() ? null : (w.activeConversation() ?? null))}
         path={headPath}
+        pagePrimary={() => w.projectSettings() && w.activeProject()?.permission === "admin"}
         newChat={() => ({
           label: w.t().newChat,
           icon: "plus",
@@ -164,7 +169,31 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
                   ? () => (
                       // The open Project as its own panes: its chats and composer, its context beside them.
                       <Show when={w.projectView()} keyed>
-                        {(view) => <w.ProjectContent view={view} v2={(parts) => <AssistantProjectV2 {...parts} />} />}
+                        {(view) => (
+                          <Show
+                            when={w.projectSettings() && w.activeProject()?.permission === "admin" ? w.activeProject() : null}
+                            fallback={
+                              <w.ProjectContent
+                                view={view}
+                                v2={(parts) => <AssistantProjectV2 {...parts} settings={w.openProjectSettings} />}
+                              />
+                            }
+                          >
+                            {(project) => (
+                              <AssistantProjectSettingsV2
+                                project={project()}
+                                onDone={w.closeProjectSettings}
+                                waiting={(state) => (
+                                  <Pane label={text("Project settings")}>
+                                    <Show when={state.failed} fallback={<Loading rows={4} lines={2} />}>
+                                      <Failed text={w.t().codeViewLoadFailed} onRetry={state.retry} />
+                                    </Show>
+                                  </Pane>
+                                )}
+                              />
+                            )}
+                          </Show>
+                        )}
                       </Show>
                     )
                   : null

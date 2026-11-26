@@ -27,6 +27,8 @@ export type AssistantFrameV2Props = {
   /** Where the page stands after "Gustav": the open chat, Project or view. */
   path: Accessor<readonly { label: string; href?: string }[]>;
   newChat: Accessor<Action>;
+  /** The view has a primary action of its own, such as Save on a settings page. */
+  pagePrimary?: Accessor<boolean>;
   /** The chat, a Project or a view: the Assistant's own surface, drawn by the shared chat parts. */
   main: JSX.Element;
   /** A view rebuilt on v2 that takes the chat's place, as its own `Pane`; null while the chat (or a v1 view) shows. */
@@ -144,7 +146,14 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
                 {/* The one way to create; it stays on the phone, where no button floats over the composer.
                     k2b-ui gap: v2's primary is always blue; Gustav's primary is plum (appearance.primary "ai", rule
                     assistant-no-blue). Lane Y brings it as a platform token; until then no colour of our own. */}
-                <Button variant="primary" icon="plus" keep disabled={props.newChat().disabled} onClick={() => props.newChat().onClick?.()}>
+                {/* A page with its own primary (Save on a settings page) keeps New chat secondary: one primary per page. */}
+                <Button
+                  variant={props.pagePrimary?.() ? "secondary" : "primary"}
+                  icon="plus"
+                  keep
+                  disabled={props.newChat().disabled}
+                  onClick={() => props.newChat().onClick?.()}
+                >
                   {props.newChat().label}
                 </Button>
               </>

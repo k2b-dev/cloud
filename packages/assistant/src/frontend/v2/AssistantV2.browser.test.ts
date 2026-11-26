@@ -349,6 +349,22 @@ const open = async (view: View, address: string, scene: Scene = {}) => {
       return route.fulfill({ json: { prompt: "Du bist Gustav, der Assistent von Mira.", renderedAt: FIXTURE_NOW } });
     if (url.pathname === "/api/ai/approval-preferences" && method === "GET") return route.fulfill({ json: { approvals: [] } });
     if (url.pathname.endsWith("/skills") && method === "GET") return route.fulfill({ json: { skills: [] } });
+    // A Project's settings: the models to choose from, who has access, and the save.
+    if (url.pathname === "/api/ai/models" && method === "GET")
+      return route.fulfill({
+        json: {
+          status: "ok",
+          selection: null,
+          effectiveDefault: { class: "balanced" },
+          classes: [{ class: "balanced", variantId: "standard" }],
+          options: MODELS,
+        },
+      });
+    if (/^\/api\/ai\/projects\/[^/]+\/access$/.test(url.pathname) && method === "GET") return route.fulfill({ json: { access: [] } });
+    if (/^\/api\/ai\/projects\/[^/]+$/.test(url.pathname) && method === "PATCH") {
+      const project = fixtureProjects("usual").find((entry) => url.pathname.endsWith(`/${entry.id}`));
+      return route.fulfill({ json: { ...project, ...(route.request().postDataJSON() as object) } });
+    }
     // The operator offers no OpenAI-compatible API here, so the settings show no API tab.
     if (url.pathname === "/api/ai/status" && method === "GET")
       return route.fulfill({ json: { openaiApi: { enabled: false }, options: [] } });
@@ -891,6 +907,31 @@ describe("Assistant on v2", () => {
         await context.close();
       }
     }, 60_000);
+
+  test("a Project's settings open as a page from its head, save, and return to the Project", async () => {
+    const { context, page, errors, unanswered, posted } = await open(wide, "/app/assistant?project=Prj03", { open: false });
+    try {
+      await page.getByRole("button", { name: "Projekt-Einstellungen" }).click();
+      const pane = page.locator('[data-k2-part="Pane"][aria-label="Projekt-Einstellungen"]');
+      const name = pane.getByRole("textbox", { name: "Name" });
+      await name.waitFor();
+      expect(new URL(page.url()).search).toBe("?project=Prj03&settings=1");
+      expect(await name.inputValue()).toBe("Buchhaltung 2026");
+      await settled(page);
+      await shoot(page, "1440-project-settings");
+      expect(await layoutProblems(page)).toEqual([]);
+      await name.fill("Buchhaltung 2027");
+      await pane.getByRole("button", { name: "Speichern" }).click();
+      await until(() => posted.some((entry) => entry.path === "/api/ai/projects/Prj03"));
+      expect(posted.find((entry) => entry.path === "/api/ai/projects/Prj03")?.body).toMatchObject({ name: "Buchhaltung 2027" });
+      await until(() => !page.url().includes("settings=1"));
+      expect(new URL(page.url()).search).toBe("?project=Prj03");
+      expect(errors).toEqual([]);
+      expect(unanswered).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 
   test("a person with only archived chats keeps All chats in the sidebar; a person without any chat does not get it", async () => {
     for (const archived of [true, false]) {
