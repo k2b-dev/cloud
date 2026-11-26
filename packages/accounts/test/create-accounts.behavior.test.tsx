@@ -191,7 +191,7 @@ describe("Accounts creation forms", () => {
 
   test("group creation rejects empty normalized names, previews normalization and retains values after errors", async () => {
     const dom = createDomTestHarness();
-    const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+    const { CreateGroupDialog } = await import("../src/frontend/groups/new-group");
     const dispose = render(
       () => createComponent(CreateGroupDialog, { freeIpaEnabled: false, linuxEnabled: false, close: () => {} }),
       dom.root,
@@ -219,7 +219,7 @@ describe("Accounts creation forms", () => {
 
   test("local POSIX creation is opt-in and validates names before a single request", async () => {
     const dom = createDomTestHarness();
-    const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+    const { CreateGroupDialog } = await import("../src/frontend/groups/new-group");
     const dispose = render(
       () => createComponent(CreateGroupDialog, { freeIpaEnabled: false, linuxEnabled: true, close: () => {} }),
       dom.root,
@@ -247,7 +247,7 @@ describe("Accounts creation forms", () => {
   test("provider switches preserve each POSIX choice; disabled setup never submits local POSIX", async () => {
     for (const linuxEnabled of [false, true]) {
       const dom = createDomTestHarness();
-      const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+      const { CreateGroupDialog } = await import("../src/frontend/groups/new-group");
       const dispose = render(() => createComponent(CreateGroupDialog, { freeIpaEnabled: true, linuxEnabled, close: () => {} }), dom.root);
       cleanup = () => {
         dispose();
@@ -274,7 +274,7 @@ describe("Accounts creation forms", () => {
 
   test("cancelling an edited form requires discard confirmation and keeps fields when declined", async () => {
     const dom = createDomTestHarness();
-    const { CreateGroupDialog } = await import("../src/frontend/groups/NewGroup.island");
+    const { CreateGroupDialog } = await import("../src/frontend/groups/new-group");
     const { dialogCore } = await import("@k2b/ui");
     let closed = false;
     const dispose = render(
