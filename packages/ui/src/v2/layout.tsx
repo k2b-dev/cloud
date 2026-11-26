@@ -15,13 +15,18 @@ import { Dynamic } from "solid-js/web";
 import { useUiMessages } from "../intl/messages";
 import { useDrawer } from "./behavior/overlays";
 import { ActionButton } from "./button";
-import { RowOpen } from "./content";
+import { Cut, RowOpen } from "./content";
 import { linkOr } from "./link";
 import { custom, Icon } from "./marks";
+import { HeadFoldContext, Menu, type MenuEntry } from "./menu";
+import { useOverlayMessages } from "./overlay-messages";
 import { ConfirmDialog } from "./overlays";
 import { Empty } from "./states";
 import { Toasts } from "./toast";
 import type { Action, Width } from "./types";
+
+/** A bar made as the head of a workspace or pane: on the phone it folds the deeds a crowded head cannot hold (`Bar`). */
+const HeadContext = createContext(false);
 
 // ── Grip ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -180,7 +185,8 @@ export const Workspace = (props: WorkspaceProps) => {
   // A part passed as JSX is made once, here, and read from here: reading the prop again would make it again (the
   // server's `Show` reads `when` more than once), and the browser would look for nodes the server never sent.
   const sidebar = resolveChildren(() => props.sidebar);
-  const head = resolveChildren(() => props.head);
+  // a bar made as the head knows it (see `Bar`)
+  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
   const [columns, setColumns] = createSignal<readonly Column[]>([]);
   const register = (column: Column) => {
     setColumns((list) => [...list, column]);
@@ -387,7 +393,7 @@ export const Pane = (props: PaneProps) => {
       return props.detail === true;
     },
   });
-  const head = resolveChildren(() => props.head);
+  const head = resolveChildren(() => <HeadContext.Provider value={true}>{props.head}</HeadContext.Provider>);
   const status = resolveChildren(() => props.status);
   let section: HTMLElement | undefined;
   // A detail appears because something opened it, which then has the focus (the row). When the detail goes while the
@@ -537,15 +543,55 @@ export type BarProps = {
  * and its end flow as one line, one line stays 40, and only a second line makes the bar higher.
  */
 export const Bar = (props: BarProps) => {
+  const inHead = useContext(HeadContext);
+  const t = useOverlayMessages();
+  // On the phone the open view never gives way to deeds that keep their words: in a head with views, those deeds fold
+  // into the head's own "…" (handed to it by context) or, without one, into this menu (the stylesheet shows it only
+  // there); each runs as the button itself would, a pressed one as a ticked entry.
+  const [folded, setFolded] = createSignal<MenuEntry[]>([]);
   const start = resolveChildren(() => props.start);
-  const end = resolveChildren(() => props.end);
+  const end = resolveChildren(() => <HeadFoldContext.Provider value={inHead ? folded : undefined}>{props.end}</HeadFoldContext.Provider>);
+  let bar: HTMLDivElement | undefined;
+  onMount(() => {
+    const deeds = inHead ? bar?.querySelector(":scope > .k2-bar-end") : null;
+    if (!deeds) return;
+    // only a head with views folds (its start holds the tabs); a pressed deed is a ticked entry
+    const read = () =>
+      !bar?.querySelector(":scope > .k2-bar-start > .k2-tabs-nav")
+        ? setFolded([])
+        : setFolded(
+            Array.from(deeds.querySelectorAll<HTMLElement>(":scope > [data-keep]:not([data-icon-only])")).map((button) => ({
+              label: (button.textContent ?? "").replace(/\s+/g, " ").trim() || (button.getAttribute("aria-label") ?? ""),
+              disabled: button.matches(":disabled") || button.getAttribute("aria-disabled") === "true",
+              onClick: () => button.click(),
+              checked: button.getAttribute("aria-pressed") === null ? undefined : button.getAttribute("aria-pressed") === "true",
+            })),
+          );
+    read();
+    const changes = new MutationObserver(read);
+    changes.observe(deeds, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["disabled", "aria-disabled", "aria-pressed"],
+    });
+    onCleanup(() => changes.disconnect());
+  });
   return (
-    <div class="k2-bar" data-k2-part="Bar">
+    <div class="k2-bar" data-k2-part="Bar" ref={bar}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end">{end()}</div>
+        <div class="k2-bar-end">
+          {end()}
+          <Show when={inHead && start() !== undefined}>
+            <span class="k2-bar-fold">
+              <Menu label={t().moreActions} items={folded()} />
+            </span>
+          </Show>
+        </div>
       </Show>
     </div>
   );
@@ -652,7 +698,10 @@ export const Tiles = (props: TilesProps) => (
           <Icon name={tile.icon} />
           <span>
             <span class="k2-tile-title">
-              <RowOpen href={tile.href}>{tile.title}</RowOpen>
+              {/* a long name is cut in the middle, so its extension and version stay readable */}
+              <RowOpen href={tile.href}>
+                <Cut text={tile.title} keep="extension" />
+              </RowOpen>
             </span>
             <Show when={tile.meta}>
               <span class="k2-t-meta">{tile.meta}</span>
