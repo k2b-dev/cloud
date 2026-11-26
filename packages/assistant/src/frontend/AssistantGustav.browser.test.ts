@@ -22,6 +22,7 @@ import { render } from "solid-js/web";
 import { default as RevisionDecision, AssistantCodeReviewStartLine as RevisionStart } from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeDecisionLine.tsx"))};
 import AssistantCodeVersionCard from ${JSON.stringify(resolve(import.meta.dir, "AssistantCodeVersionCard.tsx"))};
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+import AssistantPanel from ${JSON.stringify(resolve(import.meta.dir, "AssistantPanel.island.tsx"))};
 import { AssistantCodeDecisionEntry } from ${JSON.stringify(resolve(import.meta.dir, "code-decision-deferred.tsx"))};
 import { AssistantLiveProvider, createAssistantLiveHub } from ${JSON.stringify(resolve(import.meta.dir, "assistant-live.tsx"))};
 
@@ -61,7 +62,7 @@ render(
           </AssistantLiveProvider>
         </div>
       ) : (
-        <AssistantWorkspace {...window.harness.props} />
+        {window.harness.props.embedded ? <AssistantPanel {...window.harness.props} /> : <AssistantWorkspace {...window.harness.props} />}
       )}
     </LocaleProvider>
   ),

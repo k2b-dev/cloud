@@ -42,7 +42,9 @@ const parser = (() => {
 })();
 /** The Code seed the workspace island carries to the browser. */
 const codeSeed = (html: string) => {
-  const island = parser.parseFromString(html, "text/html").querySelector('solid-island[data-file="AssistantWorkspace.island.tsx"]');
+  const island = parser
+    .parseFromString(html, "text/html")
+    .querySelector('solid-island:is([data-file="AssistantWorkspace.island.tsx"], [data-file="AssistantPanel.island.tsx"])');
   const props: ComponentProps<typeof AssistantWorkspace> = fromJSON(JSON.parse(island?.getAttribute("data-props") ?? "null"));
   return props.code;
 };

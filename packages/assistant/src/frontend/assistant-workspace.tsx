@@ -1,0 +1,3704 @@
+import type {
+  AiConversation,
+  AiConversationPage,
+  AiConversationTimelineEntry,
+  AiDraftContentPart,
+  AiOpenQuestion,
+  AiOpenQuestions,
+  AiProject,
+  AiQuoteDraft,
+  AiSettingsError,
+  AiStoredMessage,
+} from "@k2b/cloud/ai";
+import { aiQuotesWith, createLiveDictationSource, parseAiTodoPlan } from "@k2b/cloud/ai/browser";
+import { createAiChatController } from "@k2b/cloud/ai/solid";
+import {
+  AI_COMPOSER_TEXT_MAX_CHARS,
+  AI_TURN_ATTACHMENT_MAX_ITEMS,
+  AiChatActionsProvider,
+  AiChatTurnNavigator,
+  type AiComposerAttachment,
+  type AiComposerSendInput,
+  AiModelChooser,
+  type AiModelChooserState,
+  AiModelNote,
+  type AiWakeupLineInput,
+  aiChatAttachments,
+  aiChatModelOptions,
+  aiComposerAttachmentRecords,
+  aiComposerChooseMaxBytes,
+  aiComposerDraft,
+  aiComposerFileAccept,
+  aiComposerSendInput,
+  aiLatestUsageSnapshot,
+  aiModelBlocksSending,
+  aiModelRequestFor,
+  createAiChatTimeline,
+  createAiPastedTextFile,
+  readAiComposerFiles,
+  resolveAiModelChoice,
+  shouldAttachAiPastedText,
+} from "@k2b/cloud/ai/ui";
+import { consumeCommandLink, registerCommandHandler, registerContextAwareCommand } from "@k2b/cloud/browser/commands";
+import { cloudCommandMenu, createCloudComposerCatalog } from "@k2b/cloud/browser/composer-insert";
+import { chooseFiles } from "@k2b/cloud/browser/files";
+import { askPanelConsent, closePanel, getContext, onContextChange, onPanelBeforeLeave } from "@k2b/cloud/browser/panel";
+import { importOnDemand, reloadOnce } from "@k2b/cloud/browser/reload";
+import { cloudResourceClipboard } from "@k2b/cloud/browser/resource-clipboard";
+import { pastedCloudLink, type ResolvedCloudResourceUrl, resolveCloudUrl } from "@k2b/cloud/browser/resource-links";
+import { openGlobalSearch, registerSearchNavigation } from "@k2b/cloud/browser/search";
+import type { CloudResourceRef } from "@k2b/cloud/contracts";
+import type { ApprovalPage } from "@k2b/cloud/contracts/approvals";
+import { type AiModelRequest, type AiPeopleModels, aiModelClassFallbackChain } from "@k2b/cloud/shared";
+import type { CodePageData } from "@k2b/cloud/ssr/code-page";
+import { navigate, navigateTo } from "@k2b/ssr/nav";
+import { mutation, query } from "@k2b/stdlib/solid";
+import {
+  Button,
+  ButtonLink,
+  Chat,
+  ChatComposerQuotes,
+  type ChatMention,
+  dialogCore,
+  LocaleProvider,
+  NoticeCard,
+  Placeholder,
+  prompts,
+  reconcileChatMentions,
+  toast,
+  useLocale,
+} from "@k2b/ui";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  type JSX,
+  lazy,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  Suspense,
+} from "solid-js";
+import { assistantApi } from "../api/client";
+import { revokeChatWebsite } from "../chat-code/approval-preferences";
+import { artifactMessages } from "../chat-code/messages";
+import { SecretRequestEntry } from "../chat-code/SecretRequestEntry";
+import { createChatSecretRuntime } from "../chat-code/secret-runtime";
+import { createSecretTitleStore } from "../chat-code/secret-title-store";
+import { createChatWorkspace } from "../chat-code/workspace-controller";
+import { contextTab, fileTab, webTab } from "../chat-code/workspace-state";
+import type { AssistantChatContextSnapshot } from "../chat-context";
+import type { ChatWorkspaceSnapshot } from "../chat-workspace";
+import type { CodeVersionCardEntry } from "../code-version-cards";
+import { assistantCommandMessages, ChatComposeInputSchema } from "../commands";
+import type { AssistantProjectContextSnapshot } from "../project-context";
+import type { SecretTitles } from "../secret-titles";
+import type { AssistantSidebarSnapshot } from "../sidebar";
+import type { WaitingAutomation } from "../waiting-automations";
+import AssistantApprovalsView from "./AssistantApprovalsView";
+import AssistantAuthoringStop from "./AssistantAuthoringStop";
+import {
+  AssistantChatContextContent,
+  assistantChatSidebarActions,
+  type ContextCategory,
+  type ContextView,
+  createAssistantChatContextState,
+} from "./AssistantChatContext";
+import { AssistantChatContextPlaces, type ContextBoxActions } from "./AssistantChatContextBox";
+import type { ChatSidebarJump } from "./AssistantChatSidebar";
+import AssistantCodeBlock, { type AssistantCodeBlockInitial } from "./AssistantCodeBlock";
+import { openAssistantCloudReference, resolveAssistantCloudResource } from "./AssistantContextContent";
+import AssistantEmptyChat, { type AssistantStarterAction } from "./AssistantEmptyChat";
+import AssistantPanelContext from "./AssistantPanelContext";
+import AssistantPlaceBar, { type AssistantPlaceBarState } from "./AssistantPlaceBar";
+import AssistantProjectView from "./AssistantProjectView";
+import type { AssistantQueueEntry } from "./AssistantQueue";
+import type { AssistantQueueHost } from "./AssistantQueueConnected";
+import { createAssistantQuota, createAssistantQuotaSections } from "./AssistantQuota";
+import { AssistantWaitingStrip, createWaitingQuestionFocus } from "./AssistantWaitingStrip";
+import { assistantArchiveBlocker } from "./archive-blocker";
+import { assistantChatFilePaths } from "./assistant-context";
+import { createAssistantDictation } from "./assistant-dictation";
+import {
+  type AssistantLiveInvalidation,
+  AssistantLiveProvider,
+  createAssistantLiveHub,
+  followAssistantLive,
+  matchesAssistantInvalidation,
+} from "./assistant-live";
+import {
+  assistantApprovalsOpenFromHref,
+  assistantArtifactHref,
+  assistantArtifactPathFromHref,
+  assistantCodeOpenFromHref,
+  assistantConversationHref,
+  assistantConversationIdFromHref,
+  assistantMessageHref,
+  assistantMessageSeqFromHref,
+  assistantProjectHref,
+  assistantProjectIdFromHref,
+  assistantQuestionAnchorFromHref,
+  assistantQuestionHref,
+} from "./assistant-navigation";
+import {
+  type AssistantPlaceView,
+  conversationPlace,
+  createPagePlace,
+  fetchAssistantPlace,
+  type PlaceLoader,
+  panelFollowsPlace,
+  samePlace,
+} from "./assistant-place";
+import { submitAssistantProjectMessage } from "./assistant-project-chat";
+import { assistantSearchOptions } from "./assistant-search";
+import { audioMessages } from "./audio-messages";
+import { resolveChatFileLink } from "./chat-file-link";
+import { revealChatDelivery } from "./chat-sidebar-layout";
+import { chatSidebarMessages } from "./chat-sidebar-messages";
+import { AssistantCodeDecisionEntry } from "./code-decision-deferred";
+import { AssistantCodeDetail, AssistantCodeView } from "./code-deferred-views";
+import type { CodeOverviewPage } from "./code-overview";
+import { AssistantCodeVersionCard } from "./code-version-card-deferred";
+import { createCodeVersionCardStore } from "./code-version-card-store";
+import { pastedLinkCurrent, pastedLinkPlace, watchPastedLink, withoutPastedLink } from "./composer-cloud-link";
+import {
+  assistantBuiltInCommands,
+  assistantCommandScopes,
+  assistantCommandSections,
+  assistantComposerCommands,
+  assistantDraftRefs,
+  assistantExcludedRefs,
+  assistantInsertCommands,
+  assistantRecentCommands,
+  createAssistantCommandSession,
+  createAssistantRecentResources,
+} from "./composer-commands";
+import { releaseWhenPageReturns } from "./composer-file-choice";
+import {
+  type ComposerSession,
+  confirmComposerSave,
+  editComposerSession,
+  newComposerSession,
+  observeComposerRevision,
+  sameComposerSubmission,
+  sendBesideComposer,
+} from "./composer-session";
+import { isPlainChat } from "./conversation-view";
+import { lazyAction } from "./lazy-action";
+import { assistantMessageAnchorSeq } from "./message-anchor";
+import { assistantMessages } from "./messages";
+import { createAssistantNextMessage } from "./next-message";
+import { placeMessages } from "./place-messages";
+import { quotaText } from "./quota-messages";
+import { finishedPlanShown, shownTasks, type TaskHostChoice, taskHostOpen } from "./task-host";
+import { useAssistantCopy, useAssistantText } from "./ui-copy";
+import { type WaitingAttention, waitingQuestionsView } from "./waiting-questions";
+import type { AssistantWakeupLineText } from "./wakeup-line";
+import { AssistantWakeupLine, type AssistantWakeupLineHost } from "./wakeup-line-view";
+import type { AssistantWakeupContext } from "./wakeups";
+
+type Status = AiPeopleModels & {
+  ok: boolean;
+  enabled: boolean;
+  visionModelConfigured: boolean;
+  audioModelConfigured?: boolean;
+  /** Live dictation replaces recording when a live model is set up; recording stays the way out when it is busy. */
+  liveDictationAvailable?: boolean;
+  error: AiSettingsError | null;
+};
+
+/** Rarely used parts that load when someone opens them. */
+const projectPicker = lazyAction(() => import("./empty-chat-project-picker"));
+
+type InitialDetail = {
+  conversation: AiConversation;
+  messages: AiStoredMessage[];
+  hasMoreMessages?: boolean;
+  activeTurn: import("@k2b/cloud/ai").AiTurnSnapshot | null;
+  timeline?: AiConversationTimelineEntry[];
+};
+
+export type AssistantWorkspaceProps = {
+  initialCodeVersionCards?: CodeVersionCardEntry[];
+  /** Automation titles that stored secret outcome lines name, read with the reader's rights. */
+  initialSecretTitles?: SecretTitles;
+  embedded?: boolean;
+  initialPanelContext?: ReturnType<typeof getContext>;
+  /** The panel's place at render time, from `loadPlaceAssistant`; null without a place or before it is known. */
+  initialPlace?: AssistantPlaceView | null;
+  /** Reads a place on navigation; tests answer it themselves. */
+  loadPlace?: PlaceLoader;
+  /** The person's chats at places at render time, for the sidebar's "At places (n)"; null when they could not be listed. */
+  initialPlaceChats?: { total: number; items: AiConversation[] } | null;
+  /** The page opened with the "At places" filter on (`?places=1`). */
+  initialPlacesFilter?: boolean;
+  initialQuotas?: import("@k2b/cloud/shared").AiChatQuotaSnapshot | null;
+  userId: string;
+  /** Current viewer may open AI administration; resolved by the server. */
+  canConfigureAi?: boolean;
+  cloudUrl: string;
+  status: Status;
+  models: AiPeopleModels["options"];
+  /** Model of the user's most recent turn (any chat) — preselected for new chats. */
+  /** The viewer's time zone from the request; the chat list's day sections use it on the server and in the browser. */
+  timeZone: string;
+  /** The server's render time, so hydration builds the same day sections as the server. */
+  renderedAt: string;
+  initialLiveCursor: string;
+  initialCounts?: import("@k2b/cloud/ai").AiConversationCounts;
+  initialConversations: AiConversation[];
+  initialDoneCount: number;
+  /** More open chats exist than the sidebar's first page lists. */
+  initialMoreConversations?: boolean;
+  initialConversationId: string | null;
+  initialArtifactPath: string | null;
+  initialWorkspaceHref?: string;
+  initialDetail: InitialDetail | null;
+  initialContext: AssistantChatContextSnapshot | null;
+  /** The chat's alarm lines in words for the first frame, by row id. */
+  initialWakeupLines?: Record<string, AssistantWakeupLineText>;
+  /** The open tabs of the initial chat as the person left them, from the server. */
+  initialTabs?: { chatId: string; snapshot: ChatWorkspaceSnapshot } | null;
+  /** The hint that tabs can be arranged was dismissed. */
+  arrangeHintSeen?: boolean;
+  projects: AiProject[];
+  initialProject: AiProject | null;
+  initialProjectChats: AiConversationPage | null;
+  initialProjectContext: AssistantProjectContextSnapshot | null;
+  /** Whether the page opened on the approvals view, and then its open approvals at render time. */
+  approvals: { page?: ApprovalPage; open: boolean };
+  /**
+   * The person's own Code: whether they have any (unknown counts as yes, so their Code stays reachable), whether the
+   * page opened on its list, and the list's first page when it did (null when Core could not list it).
+   */
+  code?: {
+    has: boolean;
+    open: boolean;
+    page?: CodeOverviewPage | null;
+    /** One personal Code, at /app/assistant/code/<codeId>, rendered with the shared Code page. */
+    detail?: CodePageData;
+  };
+  /** The person's own Code that waits for them, when the page opened on Waiting for you; null when Core could not answer. */
+  initialAutomations?: WaitingAutomation[] | null;
+  /** The panel's place and its Code at render time, for the "Code of …" block. */
+  initialCodeBlock?: AssistantCodeBlockInitial | null;
+  /** The person's open questions at render time, for "Waiting for you" above the composer. */
+  initialQuestions: AiOpenQuestions;
+};
+
+type ProjectViewState = {
+  projectId: string;
+  page: AiConversationPage;
+  context: AssistantProjectContextSnapshot;
+};
+
+/** The tabs beside the chat load when the first one opens; the chat's first frame does not need them. */
+const ChatWorkspace = lazy(() => import("../chat-code/Workspace").then((module) => ({ default: module.ChatWorkspace })));
+// "Quote" at a selection loads with the first selection in the chat; a chunk an update replaced reloads the page
+// instead of breaking the chat. A draft's quote rows render from the first frame, so a saved draft never shifts.
+const QuoteSelection = lazy(async () => (await importOnDemand(() => import("./assistant-quotes"))) ?? { default: () => null });
+/** Loaded once a chat has queued messages; most chats never need it. */
+const AssistantQueue = lazy(() => import("./AssistantQueueConnected"));
+// Like "Queued", the alarms' row loads on first use: it lies on the timeline's free end, so it comes without a shift.
+const AssistantWakeupDock = lazy(async () => (await importOnDemand(() => import("./wakeup-dock"))) ?? { default: () => null });
+const TurnErrorAction = lazy(() => import("./AssistantTurnErrorAction"));
+
+/** The usage of a chat that has sent nothing yet. */
+const NOTHING_USED = { input: 0, output: 0, total: 0 };
+
+export function createAssistantWorkspace(props: AssistantWorkspaceProps) {
+  const basePath = props.embedded ? "/app/assistant/panel" : "/app/assistant";
+  const approvalsHref = `${basePath}?approvals=1`;
+  const codeHref = `${basePath}?code=1`;
+  const locale = useLocale();
+  const contextText = useAssistantText();
+  const commandCopy = useAssistantCopy();
+  const artifactWorkspace = createChatWorkspace(props.initialWorkspaceHref, {
+    initial: props.initialTabs ?? null,
+    store: { load: assistantApi.getChatTabs, save: assistantApi.saveChatTabs },
+    onSaveError: () => toast.error(t().tabsNotSaved),
+  });
+  // Web pages of the chat open as reading views only where the operator set up the reading service.
+  const [webReader] = createResource(async () => (await assistantApi.getWebReader().catch(() => ({ available: false }))).available);
+  const openWebPage = () => {
+    const conversationId = chat.activeConversationId();
+    return webReader() && conversationId
+      ? (url: string, title: string) => artifactWorkspace.open(webTab(conversationId, url, title))
+      : undefined;
+  };
+  const [workspaceMounted, setWorkspaceMounted] = createSignal(false);
+  // Grows when a version card in this chat switched Code on, so the panel's block above it shows the new state.
+  const [codeRevision, setCodeRevision] = createSignal(0);
+  const openContextView = (view: ContextView) =>
+    artifactWorkspace.open(
+      view.context
+        ? contextTab(view.context.conversationId, view.context.category, view.title, view.context.project)
+        : view.file
+          ? { ...fileTab(view.file.conversationId, view.file.path), title: view.title }
+          : { ...view, kind: "view" },
+    );
+  const openContextOverview = (category: ContextCategory, title: string) => {
+    const chatId = chat.activeConversationId();
+    if (!chatId) return;
+    const project = activeConversationProject();
+    openContextView({
+      context: { conversationId: chatId, category, project },
+      key: `${chatId}:${category}`,
+      title,
+      render: () => (
+        <AssistantChatContextContent
+          chatId={chatId}
+          project={project}
+          category={category}
+          onOpenView={openContextView}
+          onJump={(target) => void jumpTo(target)}
+          onOpenSecrets={openChatSecrets}
+        />
+      ),
+    });
+  };
+  // "Secrets & approvals" loads with its first use; a secret request itself asks in the timeline.
+  const openChatSecrets = () => {
+    const conversationId = chat.activeConversationId();
+    if (conversationId)
+      void importOnDemand(() => import("../chat-code/SecretsDialog")).then((dialog) => dialog?.openSecretsDialog({ conversationId }));
+  };
+  const artifactCopy = () => artifactMessages.resolve([locale()]).t;
+  const t = () => assistantMessages.resolve([locale()]).t;
+  const audioCopy = () => audioMessages.resolve([locale()]).t;
+
+  const [liveError, setLiveError] = createSignal<string | null>(null);
+  const liveHub = createAssistantLiveHub();
+  const codeVersionCards = createCodeVersionCardStore(liveHub, props.initialCodeVersionCards);
+  const secretTitles = createSecretTitleStore(props.initialSecretTitles);
+
+  const chat = createAiChatController({
+    baseUrl: "/api/ai",
+    initialConversationId: props.initialConversationId,
+    initialDetail: props.initialDetail,
+    initialTimeline: props.initialDetail?.timeline,
+    initialError: props.status.error?.message ?? null,
+    trackViewedState: true,
+    clientToolIds: ["code_secret"],
+    frontendTools: createChatSecretRuntime({ cards: true }),
+  });
+
+  const quotas = createAssistantQuota(props.initialQuotas);
+  createEffect(
+    on(
+      () => chat.running(),
+      () => quotas.refresh(),
+      { defer: true },
+    ),
+  );
+
+  const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({
+    source: () => "/api/assistant/workspace/sidebar",
+    initial: {
+      source: "/api/assistant/workspace/sidebar",
+      data: {
+        counts: props.initialCounts ?? { unread: 0, needsAttention: 0, places: { total: 0, unread: 0, needsAttention: 0 } },
+        conversations: props.initialConversations,
+        projects: props.projects,
+        doneCount: props.initialDoneCount,
+        questions: props.initialQuestions,
+        placeChats: props.initialPlaceChats ?? null,
+      },
+    },
+    load: (_source, { abortSignal }) => assistantApi.loadSidebar(abortSignal),
+  });
+  const conversations = () => sidebar.data()?.conversations ?? props.initialConversations;
+  const projects = () => sidebar.data()?.projects ?? props.projects;
+  const openQuestions = () => sidebar.data()?.questions ?? props.initialQuestions;
+  const [projectView, setProjectView] = createSignal<ProjectViewState | null>(
+    props.initialProject && props.initialProjectChats && props.initialProjectContext
+      ? {
+          projectId: props.initialProject.id,
+          page: props.initialProjectChats,
+          context: props.initialProjectContext,
+        }
+      : null,
+  );
+  // The approvals view replaces the chat like a Project does. Its first page comes from the server only while the page
+  // still shows what it rendered; opened later, the list loads its current state.
+  // The person's Code list replaces the chat the same way; only one of the two views is open at a time.
+  const [mainView, setMainView] = createSignal<"approvals" | "code" | null>(
+    props.approvals.open ? "approvals" : props.code?.open ? "code" : null,
+  );
+  const approvalsOpen = () => mainView() === "approvals";
+  const codeOpen = () => mainView() === "code";
+  const [approvalsRendered, setApprovalsRendered] = createSignal(props.approvals.open);
+  const [codeRendered, setCodeRendered] = createSignal(Boolean(props.code?.open));
+  const openApprovals = () => {
+    if (approvalsOpen()) return;
+    navigationRequest++;
+    setProjectView(null);
+    setApprovalsRendered(false);
+    setMainView("approvals");
+    navigate(approvalsHref, { scroll: "manual", viewTransition: false });
+  };
+  const codeDetailShown = () => codeOpen() && codeRendered() && Boolean(props.code?.detail);
+  const openCode = () => {
+    // A personal Code page leads back to the list, which the server renders with its counts.
+    if (codeDetailShown()) {
+      navigateTo(codeHref);
+      return;
+    }
+    if (codeOpen()) return;
+    navigationRequest++;
+    setProjectView(null);
+    setCodeRendered(false);
+    setMainView("code");
+    navigate(codeHref, { scroll: "manual", viewTransition: false });
+  };
+  const activeProject = () => {
+    const projectId = projectView()?.projectId;
+    return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
+  };
+
+  const unregisterSidebar = liveHub.register({
+    matches: matchesAssistantInvalidation(["conversation-list", "project-list"]),
+    invalidate: (invalidation) => sidebar.invalidate(invalidation),
+  });
+  const unregisterConversation = liveHub.register({
+    matches: (invalidation) => {
+      if (!invalidation.domains.has("conversation-detail")) return false;
+      const conversationId = chat.activeConversationId();
+      return Boolean(conversationId && (!invalidation.conversationIds || invalidation.conversationIds.has(conversationId)));
+    },
+    invalidate: async () => {
+      // A chat that is gone shows why; its queue cannot load either.
+      if (await chat.refreshActiveConversation()) await queuedMessages.refresh();
+    },
+  });
+  onMount(() => {
+    const subscription = followAssistantLive(liveHub, {
+      cursor: props.initialLiveCursor,
+      failing: (failing) => setLiveError(failing ? t().liveRetry : null),
+      // The page loads the current state, once.
+      stopped: () => {
+        if (!reloadOnce("assistant:live")) setLiveError(t().liveUnavailable);
+      },
+    });
+    onCleanup(() => subscription.close());
+  });
+  onCleanup(() => {
+    unregisterSidebar();
+    unregisterConversation();
+  });
+
+  // Model selection is per chat: an explicit pick only applies to the chat it
+  // was made in. Without a pick, a chat shows the model of its own last
+  // assistant turn; new chats start on the user's last-used model.
+  const projectComposerKey = (projectId: string) => `project:${projectId}`;
+  const [modelChoices, setModelChoices] = createSignal<Record<string, AiModelRequest>>({});
+  const modelSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
+  const modelOfActiveChat = createMemo(() => {
+    if (!chat.activeConversationId()) return null;
+    const entry = chat
+      .messages()
+      .findLast((message) => message.kind === "message" && message.message.role === "user" && message.meta?.modelRequest);
+    return entry?.meta?.modelRequest ?? null;
+  });
+  const selectedModelRequest = createMemo<AiModelRequest>(() => {
+    const explicit = modelChoices()[modelSessionKey()];
+    if (explicit) return explicit;
+    const previous = modelOfActiveChat();
+    return previous ?? props.status.selection ?? props.status.effectiveDefault;
+  });
+  const selectedModelId = createMemo(() => {
+    const request = selectedModelRequest();
+    if ("id" in request) return request.id;
+    for (const modelClass of [request.class, ...aiModelClassFallbackChain(request.class)]) {
+      const id = props.status.classes.find((option) => option.class === modelClass)?.variantId;
+      if (id) return id;
+    }
+    return "";
+  });
+  const quotaSections = createAssistantQuotaSections({
+    quota: quotas,
+    model: selectedModelId,
+    modelLabel: () => props.models.find((m) => m.id === selectedModelId())?.label ?? selectedModelId(),
+  });
+  /** A class when the person chose one, so the chat follows the administration's assignment. */
+  const setSelectedModelRequest = (request: AiModelRequest) => {
+    const key = modelSessionKey();
+    setModelChoices((current) => ({ ...current, [key]: request }));
+  };
+  /** `/model` picks a model; like the card, a model inside a class keeps the class. */
+  const setSelectedModelId = (modelId: string) =>
+    setSelectedModelRequest(props.status.ok ? aiModelRequestFor(props.status, modelId) : { id: modelId });
+  const modelState = (): AiModelChooserState => (props.status.ok ? { status: "ready", models: props.status } : { status: "error" });
+  const modelNote = () =>
+    aiModelBlocksSending(modelState(), selectedModelRequest()) || resolveAiModelChoice(props.status, selectedModelRequest()).unavailable ? (
+      <AiModelNote state={modelState()} value={selectedModelRequest()} onChange={setSelectedModelRequest} />
+    ) : undefined;
+
+  const [composerFocusToken, setComposerFocusToken] = createSignal(0);
+  const [composerDrafts, setComposerDrafts] = createSignal<Record<string, string>>({});
+  const [composerAttachments, setComposerAttachments] = createSignal<Record<string, AiComposerAttachment[]>>({});
+  const queuedMessages = query.create({
+    source: () => chat.activeConversationId(),
+    load: (conversationId, { abortSignal }) =>
+      conversationId ? assistantApi.loadQueuedMessages(conversationId, abortSignal) : Promise.resolve([]),
+  });
+  /** "Send now" of one entry runs; the queue locks its other buttons meanwhile. */
+  const [queueSendingId, setQueueSendingId] = createSignal<string | null>(null);
+  /** Entries whose "Send now" was not sent on this device; their send sign reads "Send again". */
+  const [queueFailed, setQueueFailed] = createSignal<ReadonlySet<string>>(new Set());
+  const [queueBusy, setQueueBusy] = createSignal(false);
+  const [composerSubmitting, setComposerSubmitting] = createSignal(false);
+  // A picker or file selection inserts into, or gives back the `/…` of, the draft it came from; saving a new chat
+  // meanwhile would move that draft to another key and lose the choice.
+  const [composerPicking, setComposerPicking] = createSignal(0);
+  // Command preparation keeps saves and leaving blocked; Chat.Composer owns its cancellable editing lock.
+  const [pendingCommandSaves, setPendingCommandSaves] = createSignal(0);
+  const composerBusy = () => composerPicking() > 0 || pendingCommandSaves() > 0;
+  /** Holds saving until `until` settles or the returned release runs, whichever comes first. */
+  const holdComposerSave = (until?: Promise<unknown>) => {
+    let held = true;
+    setComposerPicking((count) => count + 1);
+    const release = () => {
+      if (!held) return;
+      held = false;
+      setComposerPicking((count) => count - 1);
+    };
+    void until?.then(release, release);
+    return release;
+  };
+  const trackComposerPicking = <T,>(picking: Promise<T>): Promise<T> => {
+    holdComposerSave(picking);
+    return picking;
+  };
+  const trackComposerFileChoice = (choosing: Promise<readonly File[]>): Promise<readonly File[]> => {
+    const release = holdComposerSave(choosing);
+    releaseWhenPageReturns(choosing, release, { target: window, dialogOpen: dialogCore.isOpen });
+    return choosing;
+  };
+  const [pendingProjectChats, setPendingProjectChats] = createSignal<Record<string, AiConversation>>({});
+  const [filesDialogOpen, setFilesDialogOpen] = createSignal(false);
+  const [timelineViewport, setTimelineViewport] = createSignal<HTMLDivElement>();
+  const [timelineContent, setTimelineContent] = createSignal<HTMLDivElement>();
+  // "Quote" loads with the first text selected in the chat and then follows every selection there itself.
+  const [quoting, setQuoting] = createSignal(false);
+  onMount(() => {
+    const select = () => {
+      const selection = document.getSelection();
+      if (!selection || selection.isCollapsed || !timelineContent()?.contains(selection.anchorNode)) return;
+      document.removeEventListener("selectionchange", select);
+      setQuoting(true);
+    };
+    document.addEventListener("selectionchange", select);
+    onCleanup(() => document.removeEventListener("selectionchange", select));
+  });
+  let scrollToMessageAnchor: ((anchorId: string | number) => boolean) | undefined;
+
+  let revealRequest = 0;
+  const revealMessage = async (messageSeq: number, options: { highlight?: boolean } = {}) => {
+    const request = ++revealRequest;
+    const conversationId = chat.activeConversationId();
+    const navigation = navigationRequest;
+    const current = () =>
+      request === revealRequest && navigation === navigationRequest && !projectView() && conversationId === chat.activeConversationId();
+    const unavailable = () => new Error(assistantCommandMessages.resolve([locale()]).t.messageUnavailable);
+    if (!(await chat.loadHistoryThroughSeq(messageSeq))) {
+      if (current()) throw unavailable();
+      return false;
+    }
+    if (!current()) return false;
+    const message = chat.usageMessages().find((item) => item.seq === messageSeq);
+    if (!message) throw unavailable();
+    const seq = assistantMessageAnchorSeq(message, chat.timeline());
+    if (!(await chat.loadHistoryThroughSeq(seq))) {
+      if (current()) throw unavailable();
+      return false;
+    }
+    if (!current()) return false;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    if (!current()) return false;
+    const anchor = timelineContent()?.querySelector<HTMLElement>(`[data-chat-anchor="${seq}"]`);
+    if (!anchor || !scrollToMessageAnchor?.(seq)) {
+      throw unavailable();
+    }
+    anchor.tabIndex = -1;
+    anchor.focus({ preventScroll: true });
+    if (options.highlight !== false) highlightChatElement(anchor);
+    return true;
+  };
+  const highlightChatElement = (element: HTMLElement) => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    element.animate(
+      [
+        { outline: "2px solid var(--k2b-ai-accent)", outlineOffset: "2px" },
+        { outline: "2px solid transparent", outlineOffset: "6px" },
+      ],
+      { duration: 900, easing: "ease-out" },
+    );
+  };
+  /**
+   * Shows where a result came from: loads the history up to its message, scrolls to the delivering call (the present
+   * row or the visualization) and highlights it, or the turn when that element is not visible. The jump becomes a
+   * `?message=` history entry like a search hit.
+   */
+  const jumpTo = async (target: ChatSidebarJump) => {
+    const conversationId = chat.activeConversationId();
+    try {
+      if (!(await revealMessage(target.messageSeq, { highlight: false }))) return;
+    } catch (error) {
+      chat.setError(error instanceof Error ? error.message : String(error));
+      return;
+    }
+    if (conversationId !== chat.activeConversationId()) return;
+    const content = timelineContent();
+    const delivery = revealChatDelivery(content, target);
+    const marked = delivery ?? content?.querySelector<HTMLElement>(":focus");
+    if (marked) highlightChatElement(marked);
+    const href = assistantMessageHref(window.location.href, target.messageSeq);
+    if (href !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+      navigate(href, { scroll: "manual", viewTransition: false });
+  };
+
+  const canUseComposer = createMemo(() => props.status.ok && props.status.enabled && props.models.length > 0);
+  const usageSnapshot = createMemo(() => aiLatestUsageSnapshot(chat.usageMessages()));
+  const usageModel = createMemo(() => {
+    const snapshot = usageSnapshot();
+    const modelId = snapshot ? snapshot.modelId : selectedModelId();
+    return props.models.find((model) => model.id === modelId) ?? null;
+  });
+  const composerSessionKey = () => chat.activeConversationId() ?? (activeProject() ? projectComposerKey(activeProject()!.id) : "__new__");
+  const composerDraft = (key: string) => composerDrafts()[key] ?? "";
+  const sessions = new Map<string, ReturnType<typeof newComposerSession>>();
+  const [serverDrafts, setServerDrafts] = createSignal<Record<string, AiConversation["draft"]>>({});
+  const [sessionVersion, setSessionVersion] = createSignal(0);
+  const touchSession = () => setSessionVersion((n) => n + 1);
+  const session = (key: string) => {
+    let value = sessions.get(key);
+    if (!value) {
+      value = newComposerSession();
+      sessions.set(key, value);
+    }
+    return value;
+  };
+  // Async attachments follow this same local session when creation assigns its conversation ID.
+  const followComposerSession = (key: string) => {
+    const local = session(key);
+    return () => {
+      if (sessions.get(key) === local) return key;
+      for (const [current, value] of sessions) if (value === local) return current;
+      throw new Error(t().chatActionFailed);
+    };
+  };
+  const [composerMentions, setComposerMentions] = createSignal<Record<string, readonly ChatMention[]>>({});
+  const mentionsFor = (key: string) => composerMentions()[key] ?? [];
+  // Passages the draft quotes, saved with it like its attachments.
+  const [composerQuotes, setComposerQuotes] = createSignal<Record<string, readonly AiQuoteDraft[]>>({});
+  const quotesFor = (key: string) => composerQuotes()[key] ?? [];
+  const setQuotesFor = (key: string, quotes: readonly AiQuoteDraft[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerQuotes((all) => ({ ...all, [key]: quotes }));
+  };
+  /** A passage joins the chat's draft: a cut one or a full draft says so, and the answer is written in the field. */
+  const addQuote = (quote: AiQuoteDraft) => {
+    const key = composerSessionKey();
+    const next = aiQuotesWith(quotesFor(key), quote);
+    if (next.full) return void toast(t().quotesFull, { title: t().quotesFullTitle });
+    if (next.cut) toast(t().quoteCut, { title: t().quoteCutTitle });
+    setQuotesFor(key, next.quotes);
+    focusComposer();
+  };
+  const setMentionsFor = (key: string, mentions: readonly ChatMention[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerMentions((all) => ({ ...all, [key]: mentions }));
+  };
+  const setComposerDraft = (key: string, value: string) => {
+    setMentionsFor(key, reconcileChatMentions(composerDraft(key), value, mentionsFor(key)));
+    editComposerSession(session(key));
+    touchSession();
+    setComposerDrafts((current) => ({ ...current, [key]: value }));
+  };
+  const composerAttachmentsFor = (key: string) => composerAttachments()[key] ?? [];
+  const setComposerAttachmentsFor = (key: string, attachments: AiComposerAttachment[]) => {
+    editComposerSession(session(key));
+    touchSession();
+    setComposerAttachments((current) => ({ ...current, [key]: attachments }));
+  };
+
+  /** Pending pasted links per composer session; a restored draft replaces the text without any input in the field. */
+  const pastedLinkRestores = new WeakMap<ComposerSession, Set<() => void>>();
+  const hydrateComposer = (key: string, draft: AiConversation["draft"]) => {
+    const restored = aiComposerDraft(draft.content);
+    setComposerDrafts((current) => ({ ...current, [key]: restored.text }));
+    setComposerAttachments((current) => ({ ...current, [key]: restored.attachments }));
+    setComposerMentions((current) => ({ ...current, [key]: restored.mentions }));
+    setComposerQuotes((current) => ({ ...current, [key]: restored.quotes }));
+    const local = session(key);
+    for (const restored of pastedLinkRestores.get(local) ?? []) restored();
+    local.editGeneration++;
+    local.baseRevision = draft.revision;
+    local.dirty = false;
+    local.conflict = false;
+    touchSession();
+  };
+  createEffect(() => {
+    const conversation = chat.conversation();
+    if (!conversation) return;
+    const keys = [
+      conversation.id,
+      ...Object.entries(pendingProjectChats())
+        .filter(([, pending]) => pending.id === conversation.id)
+        .map(([projectId]) => projectComposerKey(projectId)),
+    ];
+    for (const key of keys) {
+      setServerDrafts((all) => ({ ...all, [key]: conversation.draft }));
+      const existing = sessions.get(key);
+      if (!existing || observeComposerRevision(existing, conversation.draft.revision) === "hydrate") {
+        hydrateComposer(key, conversation.draft);
+      } else if (existing.conflict) touchSession();
+    }
+  });
+  const submissionSnapshots = new Map<string, AiComposerSendInput>();
+  const [acceptedSubmissions, setAcceptedSubmissions] = createSignal<string[]>([]);
+  const [submissionChecking, setSubmissionChecking] = createSignal(false);
+  const settleSubmission = (id: string, remote: AiConversation["draft"]) => {
+    const keys = [
+      id,
+      ...Object.entries(pendingProjectChats())
+        .filter(([, value]) => value.id === id)
+        .map(([project]) => projectComposerKey(project)),
+    ];
+    for (const key of keys) {
+      const submitted = submissionSnapshots.get(key);
+      if (!session(key).dirty || (submitted && sameComposerSubmission(composerInput(key), submitted))) hydrateComposer(key, remote);
+      else if (submitted) {
+        setServerDrafts((all) => ({ ...all, [key]: remote }));
+        session(key).conflict = true;
+        touchSession();
+      }
+      submissionSnapshots.delete(key);
+    }
+  };
+  createEffect(() => {
+    const conversation = chat.conversation();
+    if (!conversation || !acceptedSubmissions().includes(conversation.id)) return;
+    settleSubmission(conversation.id, conversation.draft);
+    setAcceptedSubmissions((ids) => ids.filter((id) => id !== conversation.id));
+  });
+  const checkSubmissions = async (retry = false) => {
+    if (submissionChecking()) return;
+    setSubmissionChecking(true);
+    try {
+      for (const id of Object.keys(chat.uncertainSubmissions())) {
+        if ((await (retry ? chat.retrySubmission(id) : chat.reconcileSubmission(id))) !== "accepted") continue;
+        setAcceptedSubmissions((ids) => [...ids, id]);
+      }
+    } finally {
+      setSubmissionChecking(false);
+    }
+  };
+  const composerSaves = new Map<string, Promise<unknown>>();
+  const serializeComposer = <T,>(key: string, action: () => Promise<T>): Promise<T> => {
+    const next = (composerSaves.get(key) ?? Promise.resolve()).then(action, action);
+    composerSaves.set(
+      key,
+      next.catch(() => undefined),
+    );
+    return next;
+  };
+  type ComposerOverride = { text: string; mentions: readonly ChatMention[] };
+  /** The composer's input with the draft's quotes, which the composer itself does not know. */
+  const withQuotes = (key: string, input: AiComposerSendInput): AiComposerSendInput =>
+    quotesFor(key).length ? { ...input, quotes: [...quotesFor(key)] } : input;
+  const composerInput = (key: string, override?: ComposerOverride) =>
+    withQuotes(
+      key,
+      aiComposerSendInput({
+        intent: "send",
+        text: override?.text ?? composerDraft(key),
+        mentions: override?.mentions ?? mentionsFor(key),
+        attachments: aiChatAttachments(composerAttachmentsFor(key)),
+      }),
+    );
+  /**
+   * Only a save the server rejected for its revision is a conflict. Any other failure, such as an unreachable app,
+   * leaves the saved draft as it was: the composer keeps its unsaved text and says that saving failed.
+   */
+  const failComposerSave = (local: ComposerSession, target: string) => {
+    if (chat.draftSaveFailure(target) === "failed") chat.setError(audioCopy().saveFailed);
+    else local.conflict = true;
+  };
+  const saveComposer = (key: string, target: string, override?: ComposerOverride) => {
+    // An override snapshots this generation, even if newer edits arrive before its queued save starts.
+    const overrideGeneration = override ? session(key).editGeneration : undefined;
+    return serializeComposer(key, async () => {
+      const local = session(key);
+      if (local.conflict || chat.uncertainSubmissions()[target] !== undefined) return null;
+      const generation = overrideGeneration ?? local.editGeneration;
+      local.saving = true;
+      try {
+        const saved = await chat.saveDraft({
+          ...composerInput(key, override),
+          conversationId: target,
+          expectedDraftRevision: local.baseRevision,
+        });
+        if (saved) {
+          confirmComposerSave(local, saved.revision, generation);
+          if (chat.error() === audioCopy().saveFailed) chat.setError(null);
+        } else {
+          failComposerSave(local, target);
+          if (local.conflict && chat.activeConversationId() === target) await chat.refreshActiveConversation();
+        }
+        return saved;
+      } finally {
+        local.saving = false;
+        const remote = serverDrafts()[key];
+        if (remote && observeComposerRevision(local, remote.revision) === "hydrate") hydrateComposer(key, remote);
+        touchSession();
+      }
+    });
+  };
+
+  const acceptsImages = () => true;
+  const focusComposer = () => setComposerFocusToken((value) => value + 1);
+  const commitConversationUrl = (conversationId: string, replace = false) => {
+    const href = assistantConversationHref(window.location.href, conversationId);
+    const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (href === current) return;
+    navigate(href, { replace, scroll: "manual", viewTransition: false });
+  };
+  // A place chat starts with its first message: its request carries the place and that message, never a title (O2).
+  type CreationRequest = {
+    requestId: string;
+    title?: string;
+    projectId?: string;
+    place?: CloudResourceRef;
+    draft?: { content: AiDraftContentPart[] };
+  };
+  const creationRequests = new Map<string, CreationRequest>();
+  const creationComposerKey = (key: string) => (key.startsWith("place:") ? "__new__" : key);
+  const [rejectedCreations, setRejectedCreations] = createSignal<ReadonlySet<string>>(new Set());
+  const [creationVersion, setCreationVersion] = createSignal(0);
+  const hasUnknownCreations = () => (creationVersion(), creationRequests.size > 0 && !newConversation.loading());
+  const [savingPanelDrafts, setSavingPanelDrafts] = createSignal(false);
+  const [panelStorageFailed, setPanelStorageFailed] = createSignal(false);
+  const [panelLeaveAttempted, setPanelLeaveAttempted] = createSignal(false);
+  const panelSelectionKey = `cloud.assistant.panel:${props.userId}`;
+  const rememberPanelConversation = (id: string) => {
+    if (!props.embedded) return;
+    try {
+      window.sessionStorage.setItem(panelSelectionKey, id);
+      setPanelStorageFailed(false);
+    } catch {
+      setPanelStorageFailed(true);
+    }
+  };
+  // The draft the composer shows. When the new chat's own save creates it, the draft stays the same one there, so an
+  // open command list and its caret stay; a send or an app command moves on with the composer's own `follow()` path.
+  const [composerIdentities, setComposerIdentities] = createSignal<Record<string, string>>({ __new__: "__new__:0" });
+  let newComposerIdentities = 0;
+  const composerIdentity = (key: string) => composerIdentities()[key] ?? key;
+  const migrateNewComposer = (conversation: AiConversation) => {
+    const from = "__new__";
+    const local = sessions.get(from);
+    if (!local?.dirty) return;
+    if (draftCreation() && !pendingCommandSaves() && !composerSubmitting())
+      setComposerIdentities((all) => ({ ...all, [conversation.id]: all[from] ?? from, [from]: `${from}:${++newComposerIdentities}` }));
+    // The replay may contain another tab's newer draft. Keep the revision this local text was based on.
+    sessions.set(conversation.id, local);
+    setComposerDraft(conversation.id, composerDraft(from));
+    setComposerAttachmentsFor(conversation.id, composerAttachmentsFor(from));
+    setMentionsFor(conversation.id, mentionsFor(from));
+    setComposerDrafts((all) => ({ ...all, [from]: "" }));
+    setComposerAttachments((all) => ({ ...all, [from]: [] }));
+    setComposerMentions((all) => ({ ...all, [from]: [] }));
+    sessions.delete(from);
+  };
+  const newConversation = mutation.create<
+    AiConversation | null,
+    {
+      focus: boolean;
+      projectId?: string;
+      navigate?: boolean | (() => boolean);
+      place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] };
+      background?: boolean;
+    }
+  >({
+    mutation: async ({ focus, projectId, navigate: shouldNavigate = true, place, background = false }) => {
+      const composerKey = projectId ? projectComposerKey(projectId) : "__new__";
+      const key = place ? `place:${JSON.stringify([place.ref.type, place.ref.id])}` : composerKey;
+      let request = creationRequests.get(key);
+      if (!request) {
+        request = place
+          ? { requestId: crypto.randomUUID(), place: { ...place.ref }, draft: { content: place.draft } }
+          : { requestId: crypto.randomUUID(), ...(projectId ? { projectId } : {}) };
+        creationRequests.set(key, request);
+        setCreationVersion((version) => version + 1);
+      }
+      setRejectedCreations((keys) => new Set([...keys].filter((item) => item !== composerKey)));
+      // A replay can find a conversation already edited in this workspace. Never replace that session.
+      const collides = (conversation: AiConversation) => {
+        const existing = sessions.get(conversation.id);
+        return Boolean(existing && (existing.dirty || existing.conflict || existing.saving));
+      };
+      // The new draft moves into the chat in the same update that opens it, so the field never shows the chat without it.
+      let moved = false;
+      const conversation = await chat.createConversation(request, {
+        activate: !background,
+        beforeOpen:
+          projectId || background || place
+            ? undefined
+            : (created) => {
+                if (collides(created)) return;
+                migrateNewComposer(created);
+                moved = true;
+              },
+      });
+      // A reconciliation for another view retains its original request until it succeeds.
+      if (!conversation && background) return null;
+      if (!conversation && place && chat.creationErrorStatus() === 409) {
+        creationRequests.delete(key);
+        setCreationVersion((version) => version + 1);
+        const navigation = navigationRequest;
+        try {
+          const view = await loadPlace(place.ref, new AbortController().signal);
+          pagePlace.update(view);
+          if (
+            !background &&
+            navigation === navigationRequest &&
+            samePlace(emptyPlace()?.ref, place.ref) &&
+            view.state === "available" &&
+            view.conversationId
+          ) {
+            const target = view.conversationId;
+            const local = sessions.get(target);
+            if (local && (local.dirty || local.conflict || local.saving)) {
+              chat.setError(t().panelCreateDraftCollision);
+              return null;
+            }
+            if (await openAndFocusConversation(target)) {
+              const loaded = chat.conversation();
+              if (loaded?.id === target) {
+                const own = sessions.get("__new__");
+                // An empty remote draft is safe to build on; a populated one still requires conflict review.
+                if (own && loaded.draft.content.length === 0) own.baseRevision = loaded.draft.revision;
+                migrateNewComposer(loaded);
+              }
+              commitConversationUrl(target);
+            }
+          }
+        } catch {
+          chat.setError(t().openConversationFailed);
+        }
+        // Another tab's draft is never submitted automatically. Keep this text for the person to review.
+        return null;
+      }
+      if (!conversation && [400, 401, 403, 404, 409, 413, 422].includes(chat.creationErrorStatus() ?? 0)) {
+        creationRequests.delete(key);
+        setRejectedCreations((keys) => new Set([...keys, composerKey]));
+        setCreationVersion((version) => version + 1);
+      }
+      if (conversation && !projectId && !moved && collides(conversation)) {
+        chat.setError(t().panelCreateDraftCollision);
+        return null;
+      }
+      if (conversation)
+        batch(() => {
+          creationRequests.delete(key);
+          setCreationVersion((version) => version + 1);
+          if (projectId) setPendingProjectChats((all) => ({ ...all, [projectId]: conversation }));
+          else if (!background) migrateNewComposer(conversation);
+          const targetKey = projectId ? composerKey : conversation.id;
+          const local = session(targetKey);
+          // A place chat is created with this composer's own first message as its draft: that revision is ours, not a
+          // remote change, so the send right after builds on it instead of stopping at a draft conflict.
+          if (request.place) local.baseRevision = Math.max(local.baseRevision, conversation.draft.revision);
+          setServerDrafts((all) => ({ ...all, [targetKey]: conversation.draft }));
+          if (!local.dirty || observeComposerRevision(local, conversation.draft.revision) === "hydrate")
+            hydrateComposer(targetKey, conversation.draft);
+          else touchSession();
+        });
+      if (conversation && chat.activeConversationId() === conversation.id) {
+        rememberPanelConversation(conversation.id);
+        if (typeof shouldNavigate === "function" ? shouldNavigate() : shouldNavigate) {
+          setProjectView(null);
+          setMainView(null);
+          commitConversationUrl(conversation.id);
+        }
+        if (focus) focusComposer();
+      }
+      return conversation;
+    },
+  });
+  // The draft's own save creates its chat in the background. Meanwhile the field stays editable, and whatever needs
+  // the new chat, such as a send or an app command, continues in that one.
+  const [draftCreation, setDraftCreation] = createSignal<Promise<AiConversation | null>>();
+  // Only the plain draft can keep editing during its own create; a place waits for its separate creation.
+  const editingDraftCreation = () => Boolean(draftCreation()) && !emptyAt() && !placeResolving();
+  const createConversation = async (
+    focus: boolean,
+    projectId?: string,
+    shouldNavigate: boolean | (() => boolean) = true,
+    place?: { ref: CloudResourceRef; draft: AiDraftContentPart[] },
+    background = false,
+  ) => {
+    const drafting = projectId || place || background ? undefined : draftCreation();
+    if (drafting) return drafting;
+    if (newConversation.loading() || composerPicking() > 0) return null;
+    const outcome = await newConversation.mutate({ focus, projectId, navigate: shouldNavigate, ...(place ? { place } : {}), background });
+    return outcome === "success" ? newConversation.data() : null;
+  };
+  const createDraftConversation = () => {
+    let creation!: Promise<AiConversation | null>;
+    // One update: the field never sees the creation without knowing it is the draft's.
+    batch(() => {
+      creation = createConversation(false);
+      setDraftCreation(() => creation);
+    });
+    return creation.finally(() => setDraftCreation(undefined));
+  };
+  type UnknownExit = { revisions: Record<string, number>; generations: Map<string, number>; creations: Map<string, string> };
+  let confirmedUnknownExit: UnknownExit | undefined;
+  const unknownExitSnapshot = (): UnknownExit => ({
+    revisions: { ...chat.uncertainSubmissions() },
+    generations: new Map(
+      [...new Set([...sessions.keys(), ...creationRequests.keys()])].map((key) => [key, session(creationComposerKey(key)).editGeneration]),
+    ),
+    creations: new Map([...creationRequests].map(([key, request]) => [key, request.requestId])),
+  });
+  const sessionConversation = (key: string) => (key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key);
+  const submissionUnknown = (key: string) => {
+    const id = sessionConversation(key);
+    return id !== undefined && chat.uncertainSubmissions()[id] !== undefined;
+  };
+  const emptyCreationCovered = (key: string, exit?: UnknownExit) => {
+    const request = creationRequests.get(key);
+    const composerKey = creationComposerKey(key);
+    return Boolean(
+      request &&
+        exit &&
+        exit.creations.get(key) === request.requestId &&
+        exit.generations.get(key) === session(composerKey).editGeneration &&
+        !request.draft?.content.length &&
+        !composerDraft(composerKey) &&
+        !composerAttachmentsFor(composerKey).length &&
+        !mentionsFor(composerKey).length,
+    );
+  };
+  const hasUnsavedPanelState = (exit?: UnknownExit) => {
+    sessionVersion();
+    creationVersion();
+    return (
+      submissionChecking() ||
+      savingPanelDrafts() ||
+      composerBusy() ||
+      composerSubmitting() ||
+      newConversation.loading() ||
+      [...creationRequests.keys()].some((key) => !emptyCreationCovered(key, exit)) ||
+      dictation.busy() ||
+      artifactWorkspace.hasDirty() ||
+      Object.entries(chat.uncertainSubmissions()).some(([id, revision]) => exit?.revisions[id] !== revision) ||
+      [...sessions].some(([key, local]) => {
+        const target = sessionConversation(key);
+        const explicitlyDiscarded =
+          target &&
+          exit &&
+          chat.uncertainSubmissions()[target] !== undefined &&
+          exit.revisions[target] === chat.uncertainSubmissions()[target] &&
+          exit.generations.get(key) === local.editGeneration;
+        return local.saving || ((local.dirty || local.conflict) && !explicitlyDiscarded && !emptyCreationCovered(key, exit));
+      })
+    );
+  };
+  createEffect(() => {
+    if (!hasUnsavedPanelState()) setPanelLeaveAttempted(false);
+  });
+  const hasUnknownSends = () => Object.keys(chat.uncertainSubmissions()).length > 0;
+  const unknownExitLabel = () => (hasUnknownSends() ? t().panelLeaveUnknown : t().panelLeaveUnknownCreate);
+  const leaveUnknownSubmission = async () => {
+    const exit = unknownExitSnapshot();
+    if ((!Object.keys(exit.revisions).length && !exit.creations.size) || hasUnsavedPanelState(exit)) return;
+    if (
+      !(await prompts.confirm(
+        [
+          ...(Object.keys(exit.revisions).length ? [t().panelLeaveUnknownConfirm] : []),
+          ...(exit.creations.size ? [t().panelLeaveUnknownCreateConfirm] : []),
+        ].join("\n\n"),
+        {
+          title: unknownExitLabel(),
+          confirmText: unknownExitLabel(),
+          variant: "danger",
+        },
+      ))
+    )
+      return;
+    // The confirmation covers exactly these revisions and local edits, never newer work.
+    if (hasUnsavedPanelState(exit)) return;
+    confirmedUnknownExit = exit;
+    closePanel();
+  };
+  const savePanelDrafts = async () => {
+    if (savingPanelDrafts() || composerBusy() || composerSubmitting() || dictation.busy()) return;
+    setSavingPanelDrafts(true);
+    try {
+      if (panelStorageFailed()) {
+        try {
+          const selected = window.sessionStorage.getItem(panelSelectionKey);
+          setPanelStorageFailed(false);
+          if (
+            !chat.activeConversationId() &&
+            !session("__new__").dirty &&
+            selected &&
+            /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)
+          ) {
+            await openAndFocusConversation(selected);
+          }
+        } catch {
+          setPanelStorageFailed(true);
+          return;
+        }
+      }
+      // Save known conversations first: a creation replay may resolve to one of these local drafts.
+      for (const [key, local] of [...sessions]) {
+        if (key === "__new__" || key.startsWith("project:") || !local.dirty || local.conflict) continue;
+        if (chat.uncertainSubmissions()[key] !== undefined) continue;
+        if (!(await saveComposer(key, key))) return;
+      }
+      for (const key of [...rejectedCreations()]) {
+        const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+        const place = projectId ? undefined : newChatPlace();
+        if (!(await createConversation(false, projectId, !projectId && composerSessionKey() === key, place))) return;
+      }
+      for (const request of [...creationRequests.values()]) {
+        const place = request.place && request.draft ? { ref: request.place, draft: request.draft.content } : undefined;
+        // Opening an ordinary creation's result does not detach its pending empty composer. Replay must still
+        // migrate that draft and resolve any saved-draft conflict; only a switch to a place separates it.
+        const current = request.projectId
+          ? activeProject()?.id === request.projectId
+          : place
+            ? !chat.activeConversationId() && samePlace(place.ref, emptyPlace()?.ref)
+            : !emptyAt();
+        if (!(await createConversation(false, request.projectId, false, place, !current))) return;
+      }
+      for (const [original, local] of [...sessions]) {
+        if (!local.dirty || local.conflict) continue;
+        let key = original;
+        let target = key.startsWith("project:") ? pendingProjectChats()[key.slice(8)]?.id : key === "__new__" ? undefined : key;
+        if (!target) {
+          const projectId = key.startsWith("project:") ? key.slice(8) : undefined;
+          const created = await createConversation(false, projectId, !projectId, projectId ? undefined : newChatPlace());
+          if (!created) return;
+          target = created.id;
+          if (!projectId) key = target;
+        }
+        if (chat.uncertainSubmissions()[target] !== undefined) continue;
+        if (!(await saveComposer(key, target))) return;
+        rememberPanelConversation(target);
+      }
+      const target = chat.activeConversationId();
+      if (target) rememberPanelConversation(target);
+    } finally {
+      setSavingPanelDrafts(false);
+    }
+  };
+  onMount(() => {
+    if (!props.embedded) return;
+    onCleanup(
+      onPanelBeforeLeave(() => {
+        const exit = confirmedUnknownExit;
+        confirmedUnknownExit = undefined;
+        const safe = !hasUnsavedPanelState(exit) && !dialogCore.isOpen();
+        setPanelLeaveAttempted(!safe);
+        return safe;
+      }),
+    );
+    const selectors = new URLSearchParams(window.location.search);
+    // At a Gustav place the panel opens on the person's chat there, or on its empty chat; not on the remembered one.
+    const atPlace = props.initialPlace?.state === "available" || props.initialPlace?.state === "unavailable";
+    if (!atPlace && !["conversation", "project", "artifact", "approvals", "code"].some((key) => selectors.has(key))) {
+      try {
+        const selected = window.sessionStorage.getItem(panelSelectionKey);
+        if (selected && /^[23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz]{6}$/.test(selected)) {
+          void openAndFocusConversation(selected).catch((error) =>
+            chat.setError(error instanceof Error ? error.message : t().openConversationFailed),
+          );
+        }
+      } catch {
+        setPanelStorageFailed(true);
+      }
+    }
+  });
+  createEffect(() => {
+    const id = chat.activeConversationId();
+    if (workspaceMounted() && id) rememberPanelConversation(id);
+  });
+  createEffect(() => {
+    if (activeProject() || composerSubmitting() || composerBusy()) return;
+    const key = composerSessionKey();
+    creationVersion();
+    // An unknown creation is retried only by the person's explicit Save/Retry action.
+    if ([...creationRequests.keys()].some((requestKey) => creationComposerKey(requestKey) === key) || rejectedCreations().has(key)) return;
+    const text = composerDraft(key);
+    const files = composerAttachmentsFor(key);
+    mentionsFor(key);
+    quotesFor(key);
+    if (!session(key).dirty || session(key).conflict) return;
+    if (!chat.activeConversationId() && !text && !files.length) return;
+    // At a place, typing creates nothing: the first sent message creates the chat (O2). The draft stays local until then,
+    // also while the panel still learns whether the page is a place.
+    if (!chat.activeConversationId() && (emptyAt() || placeResolving())) return;
+    const target = chat.activeConversationId();
+    const timer = window.setTimeout(async () => {
+      if (composerSessionKey() !== key || session(key).conflict) return;
+      let conversationId = target;
+      if (!conversationId) {
+        const created = await createDraftConversation();
+        // A send that started meanwhile took this draft along; it saves no older copy after it.
+        if (!created || composerSubmitting()) return;
+        conversationId = created.id;
+      }
+      await saveComposer(conversationId, conversationId);
+    }, 2_000);
+    onCleanup(() => window.clearTimeout(timer));
+  });
+  // "New chat" on a plain chat that is still empty keeps it: another empty chat would only crowd the list.
+  const activeChatIsBlank = () => {
+    const conversationId = chat.activeConversationId();
+    const loaded = chat.conversation();
+    const listed = activeConversation();
+    // A chat that is still loading also shows no messages, and one that failed to load or is gone cannot take a
+    // message; only a loaded, available chat counts as empty.
+    return Boolean(
+      conversationId &&
+        loaded?.id === conversationId &&
+        !chat.loadingConversation() &&
+        !chat.error() &&
+        !activeProject() &&
+        isPlainChat(loaded) &&
+        (!listed || isPlainChat(listed)) &&
+        chat.messages().length === 0 &&
+        !chat.hasMoreHistory() &&
+        !chat.activeTurn() &&
+        !composerDraft(conversationId).trim() &&
+        composerAttachmentsFor(conversationId).length === 0 &&
+        mentionsFor(conversationId).length === 0,
+    );
+  };
+  const createAndFocusConversation = async () => {
+    if (!activeChatIsBlank()) return createConversation(true);
+    // The approvals and Code views open over the chat they came from; New chat returns to that empty chat instead of a
+    // new one.
+    const conversationId = chat.activeConversationId();
+    if (mainView() && conversationId) {
+      navigationRequest++;
+      setMainView(null);
+      commitConversationUrl(conversationId);
+    }
+    focusComposer();
+    return chat.conversation();
+  };
+  onMount(() => {
+    onCleanup(
+      registerCommandHandler("assistant.chat.compose", ChatComposeInputSchema, async (input) => {
+        if (input.projectId && !projects().some((project) => project.id === input.projectId))
+          throw new Error(assistantCommandMessages.resolve([locale()]).t.unavailable);
+        const result = input.projectId ? await createConversation(true, input.projectId) : await createAndFocusConversation();
+        if (!result) throw new Error(assistantCommandMessages.resolve([locale()]).t.failed);
+      }),
+    );
+    void consumeCommandLink();
+  });
+  createEffect(() => {
+    if (newConversation.loading() || composerPicking() > 0) return;
+    const project = activeProject() ?? projects().find((project) => project.id === activeConversation()?.projectId);
+    onCleanup(
+      registerContextAwareCommand({
+        id: "assistant.chat.compose",
+        title: t().newChat,
+        description: project
+          ? assistantCommandMessages.resolve([locale()]).t.newProjectChatDescription({ name: project.name })
+          : assistantCommandMessages.resolve([locale()]).t.newChatDescription,
+        icon: "ti ti-plus",
+        shortcut: "mod+alt+n",
+        action: { command: "assistant.chat.compose", input: project ? { projectId: project.id } : {} },
+      }),
+    );
+  });
+  const canSend = createMemo(
+    () =>
+      canUseComposer() &&
+      !composerBusy() &&
+      (!newConversation.loading() || editingDraftCreation()) &&
+      !chat.loadingConversation() &&
+      !chat.running() &&
+      !chat.activeTurn(),
+  );
+  let navigationRequest = 0;
+  const openAndFocusConversation = async (conversationId: string) => {
+    const requestId = ++navigationRequest;
+    setProjectView(null);
+    setMainView(null);
+    const result = await chat.openConversation(conversationId);
+    if (result === "failed") throw new Error(t().openConversationFailed);
+    if (result === "stale" || requestId !== navigationRequest) return false;
+    if (chat.activeConversationId() === conversationId) focusComposer();
+    return true;
+  };
+  // "Waiting for you" above the composer: the server's read of every open question, corrected by what this chat shows.
+  const waitingConversationId = () => (projectView() || mainView() ? null : chat.activeConversationId());
+  // What stopped in the open chat and waits for the person; set once the chat's details exist.
+  const [waitingAttention, setWaitingAttention] = createSignal<() => WaitingAttention[]>(() => []);
+  const waiting = createMemo(() => {
+    const conversationId = waitingConversationId();
+    const loaded = conversationId !== null && chat.conversation()?.id === conversationId && !chat.loadingConversation();
+    return waitingQuestionsView({
+      questions: openQuestions(),
+      conversationId,
+      local: loaded ? (chat.activeTurn()?.blocks ?? []) : null,
+      attention: loaded ? waitingAttention()() : [],
+    });
+  });
+  const waitingFocus = createWaitingQuestionFocus({
+    onlyHere: () => waiting().onlyHere,
+    atEnd: () => waiting().onlyHereAtEnd,
+    viewport: timelineViewport,
+    content: timelineContent,
+    scrollToAnchor: (anchor) => scrollToMessageAnchor?.(anchor) ?? false,
+    gone: focusComposer,
+  });
+  // Quiet only while this chat's one entry is in view and nothing else waits; other chats' entries keep the row.
+  const waitingQuiet = () => waitingFocus.inView() !== null && waiting().total === 1;
+  let questionJump = 0;
+  /** Jumps to a question from "Waiting for you"; one in another chat opens that chat as a new history entry. */
+  const jumpToQuestion = async (question: Pick<AiOpenQuestion, "conversationId" | "anchor" | "href">) => {
+    const jump = ++questionJump;
+    // The question replaces any message the chat was opened at, also after a reload.
+    const reveal = ++revealRequest;
+    // The committed URL decides: a chat that is still opening from an earlier jump has no history entry yet.
+    const here =
+      waitingConversationId() === question.conversationId &&
+      assistantConversationIdFromHref(window.location.href) === question.conversationId;
+    // A newer jump, a message reveal, any navigation and leaving the workspace end this one, also while it waits for
+    // the card.
+    const navigation = here ? navigationRequest : ++navigationRequest;
+    const current = () =>
+      jump === questionJump &&
+      reveal === revealRequest &&
+      navigation === navigationRequest &&
+      waitingConversationId() === question.conversationId;
+    // The URL keeps the question, so a reload and Back land on it again.
+    if (question.href) {
+      window.location.assign(question.href);
+      return;
+    }
+    const href = assistantQuestionHref(window.location.href, question.conversationId, question.anchor);
+    if (here) {
+      navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+      return waitingFocus.focus(question.anchor, current);
+    }
+    setProjectView(null);
+    setMainView(null);
+    const result = await chat.openConversation(question.conversationId);
+    if (navigation !== navigationRequest || jump !== questionJump || result === "stale") return;
+    // The page load shows the chat, or why it cannot.
+    if (result === "failed") return navigateTo(href);
+    navigate(href, { scroll: "manual", viewTransition: false });
+    await waitingFocus.focus(question.anchor, current);
+  };
+  /** Lands on the question the URL names, after a reload or Back, once its chat shows it. */
+  const landOnQuestion = async (anchor: string) => {
+    const navigation = navigationRequest;
+    const jump = questionJump;
+    const reveal = revealRequest;
+    const conversationId = chat.activeConversationId();
+    // A jump the person starts meanwhile wins, also one within this chat, to a question or to a message.
+    const current = () =>
+      navigation === navigationRequest &&
+      jump === questionJump &&
+      reveal === revealRequest &&
+      chat.activeConversationId() === conversationId;
+    // After the frame in which the composer takes the page's first focus.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (current()) await waitingFocus.focus(anchor, current);
+  };
+  const openProject = async (projectId: string) => {
+    const project = projects().find((item) => item.id === projectId);
+    if (!project) throw new Error(t().projectNotFound);
+    const requestId = ++navigationRequest;
+    const [page, context] = await Promise.all([
+      assistantApi.listConversationsPage({ projectId, page: 1, perPage: 20 }),
+      assistantApi.loadProjectContext(projectId),
+    ]);
+    if (requestId !== navigationRequest) return false;
+    setMainView(null);
+    setProjectView({ projectId, page, context });
+    return true;
+  };
+  const filesRefreshKey = createMemo(() => {
+    const toolStates =
+      chat
+        .activeTurn()
+        ?.blocks.filter((block) => block.kind === "tool")
+        .map((block) => `${block.id}:${block.status}`)
+        .join("|") ?? "";
+    return `${chat.activeConversationId() ?? ""}:${toolStates}`;
+  });
+  const openFiles = async (initialPath = "/") => {
+    const conversationId = chat.activeConversationId();
+    if (conversationId && initialPath !== "/") {
+      artifactWorkspace.open(fileTab(conversationId, initialPath));
+      return;
+    }
+    if (!conversationId || filesDialogOpen()) return;
+    setFilesDialogOpen(true);
+    try {
+      openContextOverview("files", artifactCopy().files);
+    } finally {
+      setFilesDialogOpen(false);
+      const href = assistantArtifactHref(window.location.href, null);
+      const current = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      if (href !== current) navigate(href, { replace: true, scroll: "manual", viewTransition: false });
+      if (artifactWorkspace.mobile() === "chat") focusComposer();
+    }
+  };
+
+  onMount(() => {
+    onCleanup(() => {
+      revealRequest++;
+      navigationRequest++;
+    });
+    onCleanup(
+      registerSearchNavigation(async ({ href, ref }) => {
+        if (ref?.type !== "assistant.chat" && ref?.type !== "assistant.message") return false;
+        const target = new URL(href, props.cloudUrl);
+        if (target.origin !== new URL(props.cloudUrl).origin || target.pathname !== basePath) return false;
+        const conversationId = assistantConversationIdFromHref(href);
+        if (!conversationId) return false;
+        const generation = navigationRequest + 1;
+        if (!(await openAndFocusConversation(conversationId))) return true;
+        const seq = assistantMessageSeqFromHref(href);
+        if (seq !== null && !(await revealMessage(seq))) return true;
+        if (navigationRequest === generation && chat.activeConversationId() === conversationId)
+          navigate(href, { scroll: "manual", viewTransition: false });
+        return true;
+      }),
+    );
+    const initialMessage = assistantMessageSeqFromHref(window.location.href);
+    const initialQuestion = assistantQuestionAnchorFromHref(window.location.href);
+    if (initialMessage !== null) void revealMessage(initialMessage).catch((error) => chat.setError(error.message));
+    else if (initialQuestion && !mainView() && !projectView()) void landOnQuestion(initialQuestion);
+    artifactWorkspace.restore();
+    setWorkspaceMounted(true);
+    const guardUnsaved = (event: BeforeUnloadEvent) => {
+      if (hasUnsavedPanelState()) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", guardUnsaved);
+    onCleanup(() => window.removeEventListener("beforeunload", guardUnsaved));
+    const initialConversationId = chat.activeConversationId();
+    if (initialConversationId && !mainView()) commitConversationUrl(initialConversationId, true);
+    if (props.initialArtifactPath) requestAnimationFrame(() => void openFiles(props.initialArtifactPath!));
+
+    const handlePopState = () => {
+      navigationRequest++;
+      artifactWorkspace.restore();
+      const conversationId = assistantConversationIdFromHref(window.location.href);
+      const projectId = assistantProjectIdFromHref(window.location.href);
+      const artifactPath = assistantArtifactPathFromHref(window.location.href);
+      const messageSeq = assistantMessageSeqFromHref(window.location.href);
+      const questionAnchor = assistantQuestionAnchorFromHref(window.location.href);
+      if (assistantApprovalsOpenFromHref(window.location.href)) {
+        setProjectView(null);
+        setApprovalsRendered(false);
+        setMainView("approvals");
+        return;
+      }
+      if (assistantCodeOpenFromHref(window.location.href)) {
+        setProjectView(null);
+        setCodeRendered(false);
+        setMainView("code");
+        return;
+      }
+      setMainView(null);
+      if (projectId) {
+        void openProject(projectId).catch(() => navigateTo(basePath));
+        return;
+      }
+      if (!conversationId) {
+        navigateTo(`${window.location.pathname}${window.location.search}${window.location.hash}`);
+        return;
+      }
+      if (projectView() || conversationId !== chat.activeConversationId()) {
+        const generation = navigationRequest + 1;
+        void openAndFocusConversation(conversationId)
+          .then(async (opened) => {
+            if (!opened || navigationRequest !== generation) return;
+            if (messageSeq !== null && !(await revealMessage(messageSeq))) return;
+            if (navigationRequest === generation && messageSeq === null && questionAnchor) await landOnQuestion(questionAnchor);
+            if (navigationRequest === generation && artifactPath) void openFiles(artifactPath);
+          })
+          .catch(() => {
+            if (navigationRequest === generation) navigateTo(window.location.href);
+          });
+        return;
+      }
+      if (messageSeq !== null) void revealMessage(messageSeq).catch((error) => chat.setError(error.message));
+      else if (questionAnchor) void landOnQuestion(questionAnchor);
+      if (artifactPath) void openFiles(artifactPath);
+    };
+    window.addEventListener("popstate", handlePopState);
+    onCleanup(() => window.removeEventListener("popstate", handlePopState));
+  });
+
+  const send = async (input: AiComposerSendInput) => {
+    if (!canSend() || dictation.busy()) return false;
+    dictation.invalidateAutomatic();
+    setComposerSubmitting(true);
+    try {
+      if (!chat.activeConversationId()) {
+        if (placeResolving()) return false;
+        // At a place, the first message creates the person's chat there; a chat another tab created meanwhile is reused
+        // with its history.
+        const place = emptyPlace();
+        const conversation = place
+          ? await createConversation(false, undefined, true, { ref: place.ref, draft: placeDraft(input) })
+          : await createConversation(false);
+        if (!conversation || chat.activeConversationId() !== conversation.id) return false;
+        if (place) {
+          await chat.refreshActiveConversation();
+          pagePlace.update({ ...place, conversationId: conversation.id });
+          // The panel may have followed the page to another place meanwhile; this message belongs to the new chat only.
+          if (chat.activeConversationId() !== conversation.id) return false;
+        }
+      }
+      const target = chat.activeConversationId()!;
+      const sent = await serializeComposer(target, async () => {
+        const local = session(target);
+        if (local.conflict) return false;
+        local.saving = true;
+        try {
+          submissionSnapshots.set(target, input);
+          const result = await chat.send({
+            ...input,
+            conversationId: target,
+            expectedDraftRevision: local.baseRevision,
+            model: selectedModelRequest(),
+          });
+          const draft = chat.conversation()?.id === target ? chat.conversation()?.draft : undefined;
+          if (draft) local.baseRevision = draft.revision;
+          if (!result) failComposerSave(local, target);
+          return result;
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
+      });
+      return sent;
+    } finally {
+      setComposerSubmitting(false);
+    }
+  };
+  const sendProjectMessage = async (projectId: string, input: AiComposerSendInput) => {
+    if (!canSend() || dictation.busy()) return false;
+    dictation.invalidateAutomatic();
+    const model = selectedModelRequest();
+    return submitAssistantProjectMessage({
+      projectId,
+      message: input,
+      model,
+      pendingConversation: pendingProjectChats()[projectId],
+      activeConversationId: chat.activeConversationId,
+      openConversation: chat.openConversation,
+      createConversation: (targetProjectId) => createConversation(false, targetProjectId, false),
+      send: (message) => {
+        const target = chat.activeConversationId();
+        if (!target) return Promise.resolve(false);
+        const key = projectComposerKey(projectId);
+        return serializeComposer(key, async () => {
+          const local = session(key);
+          if (local.conflict) return false;
+          local.saving = true;
+          try {
+            submissionSnapshots.set(key, message);
+            const sent = await chat.send({ ...message, conversationId: target, expectedDraftRevision: local.baseRevision });
+            const draft = chat.conversation()?.draft;
+            if (draft) local.baseRevision = draft.revision;
+            if (!sent) failComposerSave(local, target);
+            return sent;
+          } finally {
+            local.saving = false;
+            touchSession();
+          }
+        });
+      },
+      rememberPending: (conversation) => setPendingProjectChats((current) => ({ ...current, [projectId]: conversation })),
+      clearPending: () => {
+        const draft = chat.conversation()?.draft;
+        if (draft) hydrateComposer(projectComposerKey(projectId), draft);
+        setPendingProjectChats((current) => {
+          const next = { ...current };
+          delete next[projectId];
+          return next;
+        });
+      },
+      navigate: (conversationId) => navigateTo(assistantConversationHref(window.location.href, conversationId)),
+    });
+  };
+  /** The active chat's queued messages, in the order the server received them. */
+  const queueEntries = createMemo((): AssistantQueueEntry[] =>
+    chat.activeConversationId()
+      ? (queuedMessages.data() ?? []).map((message) => ({
+          ...message,
+          // The person's own words and attachments; a quote is no word of theirs and stays out of the line. An entry an
+          // automation or another chat wrote shows the server's text: its instruction, without the data it brought.
+          text:
+            message.origin.kind !== "person"
+              ? message.text
+              : message.content
+                  .flatMap((part) =>
+                    part.type === "quote"
+                      ? []
+                      : [
+                          part.type === "text"
+                            ? part.text
+                            : part.type === "file" || part.type === "project-file"
+                              ? part.path
+                              : (part.title ?? part.ref.id),
+                        ],
+                  )
+                  .join(" · "),
+        }))
+      : [],
+  );
+  const queueMessage = async (input: AiComposerSendInput) => {
+    const conversationId = chat.activeConversationId();
+    if (!conversationId || composerSubmitting() || composerBusy()) return false;
+    setComposerSubmitting(true);
+    try {
+      return await serializeComposer(conversationId, async () => {
+        const local = session(conversationId);
+        if (local.conflict) return false;
+        local.saving = true;
+        try {
+          submissionSnapshots.set(conversationId, input);
+          const accepted = await chat.queueMessage({
+            ...input,
+            conversationId,
+            expectedDraftRevision: local.baseRevision,
+            model: selectedModelRequest(),
+          });
+          if (accepted && chat.conversation()?.id === conversationId) local.baseRevision = chat.conversation()!.draft.revision;
+          if (!accepted && chat.draftSaveFailure(conversationId) === "conflict") local.conflict = true;
+          // Acceptance is durable even if refreshing the visible queue fails.
+          void queuedMessages.refresh().catch(() => chat.setError(t().chatActionFailed));
+          return accepted;
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
+      });
+    } finally {
+      setComposerSubmitting(false);
+    }
+  };
+  /** What the queue, loaded on first use, needs from the chat; its actions live in that module. */
+  const queueHost: AssistantQueueHost = {
+    conversationId: chat.activeConversationId,
+    content: (id) => queuedMessages.data()?.find((message) => message.id === id)?.content,
+    reload: () => queuedMessages.refresh(),
+    hasDraft: (id) => composerDraft(id).trim().length > 0 || composerAttachmentsFor(id).length > 0 || quotesFor(id).length > 0,
+    putIntoField: (id, content) => {
+      const restored = aiComposerDraft(content);
+      setComposerAttachmentsFor(id, restored.attachments);
+      setComposerDrafts((current) => ({ ...current, [id]: restored.text }));
+      setMentionsFor(id, restored.mentions);
+      setQuotesFor(id, restored.quotes);
+      setComposerFocusToken((token) => token + 1);
+    },
+    fail: chat.setError,
+    sendingId: queueSendingId,
+    setSendingId: setQueueSendingId,
+    failedIds: queueFailed,
+    setFailedIds: setQueueFailed,
+    busy: queueBusy,
+    setBusy: setQueueBusy,
+  };
+
+  const activeConversation = () =>
+    conversations().find((conversation) => conversation.id === chat.activeConversationId()) ?? chat.conversation();
+  const todoItems = () => {
+    const checkpoint = chat.conversation()?.todoPlan;
+    let todos = checkpoint?.todos ?? [];
+    for (const stored of chat.messages()) {
+      if (stored.seq <= (checkpoint?.seq ?? -1)) continue;
+      const message = stored.message;
+      const plan =
+        message.role === "tool_result" && message.name === "todo_write" && !message.isError
+          ? parseAiTodoPlan(message.result)
+          : stored.meta?.todoPlan;
+      if (plan) todos = plan.todos;
+    }
+    for (const block of chat.activeTurn()?.blocks ?? []) {
+      if (block.kind === "tool" && block.name === "todo_write" && block.status === "completed" && !block.isError) {
+        const plan = parseAiTodoPlan(block.result);
+        if (plan) todos = plan.todos;
+      }
+    }
+    return todos;
+  };
+  const hasOpenTodos = createMemo(() => todoItems().some((item) => item.status === "pending" || item.status === "in_progress"));
+  /**
+   * The plan above the field (Bauplan 3a): open while Gustav works on it; once every task is done its header says so and
+   * the list folds, unless the person opened it. Their own choice per chat stays for the session. A plan that was
+   * already done when the chat opened stays out of the way behind "Show tasks", as before.
+   */
+  const todoChoiceKey = () => `assistant.tasks-open:${chat.activeConversationId() ?? ""}`;
+  const readTodoChoice = (): TaskHostChoice => {
+    try {
+      const value = window.sessionStorage.getItem(todoChoiceKey());
+      return value === "open" || value === "closed" ? value : null;
+    } catch {
+      return null;
+    }
+  };
+  const [todoChoice, setTodoChoice] = createSignal<TaskHostChoice>(null);
+  const [showCompletedTodos, setShowCompletedTodos] = createSignal(false);
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      () => {
+        setTodoChoice(readTodoChoice());
+        setShowCompletedTodos(false);
+      },
+    ),
+  );
+  // Work that finishes while the person watches keeps its folded "All tasks done" header in place instead of vanishing.
+  createEffect(
+    on([hasOpenTodos, () => chat.activeConversationId()] as const, ([open, id], before) => {
+      if (before && before[1] === id && before[0] && !open) setShowCompletedTodos(true);
+    }),
+  );
+  const todoOpen = () => taskHostOpen({ hasOpenTasks: hasOpenTodos(), choice: todoChoice() });
+  const setTodoOpen = (open: boolean) => {
+    const choice = open ? "open" : "closed";
+    setTodoChoice(choice);
+    try {
+      window.sessionStorage.setItem(todoChoiceKey(), choice);
+    } catch {
+      /* Without storage the choice holds until the chat changes. */
+    }
+  };
+  /** A finished plan shows when it just finished here or when the person opened it in this chat. */
+  const completedPlanShown = () => finishedPlanShown({ finishedHere: showCompletedTodos(), choice: todoChoice() });
+  /** "2 of 4": done tasks of those that count; cancelled ones do not. */
+  const todoProgress = () => {
+    const counted = todoItems().filter((item) => item.status !== "cancelled");
+    const done = counted.filter((item) => item.status === "completed").length;
+    return locale().startsWith("de") ? `${done} von ${counted.length}` : `${done} of ${counted.length}`;
+  };
+  const todoLabel = () =>
+    hasOpenTodos()
+      ? locale().startsWith("de")
+        ? "Aufgaben"
+        : "Tasks"
+      : locale().startsWith("de")
+        ? "Alle Aufgaben erledigt"
+        : "All tasks done";
+  const activeConversationProject = () => {
+    const projectId = activeConversation()?.projectId;
+    return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
+  };
+  const emptyChat = () => !chat.loadingConversation() && chat.messages().length === 0 && !chat.activeTurn();
+
+  // The chat sidebar ("In this chat"): one live snapshot for the column, the drawer, the phone sheet, and the Files tab.
+  const contextState = createAssistantChatContextState(
+    {
+      get chatId() {
+        return chat.activeConversationId() ?? "";
+      },
+      get project() {
+        return activeConversationProject();
+      },
+      initial: props.initialContext,
+    },
+    liveHub,
+  );
+  const workspaceContext = () => contextState.snapshot();
+  /** The chat's alarms from its context snapshot, so the server's first frame shows them; their actions load on use. */
+  const wakeupContext: AssistantWakeupContext = {
+    chatId: chat.activeConversationId,
+    items: () => contextState.snapshot()?.wakeups?.items ?? [],
+    limit: () => contextState.snapshot()?.wakeups?.limit ?? 5,
+    refresh: () => contextState.refresh(),
+    locale,
+    timeZone: props.timeZone,
+  };
+  /** Pencil, cross and the one way out of a line act on the chat's alarm as listed now; the actions load on use. */
+  const wakeupLineHost: AssistantWakeupLineHost = {
+    act: (action, id) => {
+      const wakeup = wakeupContext.items().find((item) => item.id === id);
+      return wakeup
+        ? importOnDemand(() => import("./wakeups")).then((module) => module?.actOnWakeup(wakeupContext, action, wakeup))
+        : undefined;
+    },
+    retry: (input) => importOnDemand(() => import("./wakeups")).then((module) => module?.retryWakeup(wakeupContext, input)),
+  };
+  /** The words of the alarm lines: the server's for the first frame, then this chat's own once they loaded. */
+  const [wakeupWords, setWakeupWords] = createSignal<typeof import("./wakeup-line") | null>(null);
+  let wakeupWordsLoading = false;
+  const wakeupLine = (line: AiWakeupLineInput, key: string): AssistantWakeupLineText | undefined => {
+    if (!wakeupWordsLoading && typeof window !== "undefined") {
+      wakeupWordsLoading = true;
+      void importOnDemand(() => import("./wakeup-line")).then((module) => module && setWakeupWords(() => module));
+    }
+    const words = wakeupWords();
+    return words
+      ? words.describeWakeupLine(line, {
+          canConfigureAi: props.canConfigureAi,
+          locale: locale(),
+          timeZone: props.timeZone,
+          current: contextState.snapshot()?.wakeups?.items,
+        })
+      : props.initialWakeupLines?.[key];
+  };
+
+  const sidebarCopy = () => chatSidebarMessages.resolve([locale()]).t;
+  const sidebarActions = () =>
+    assistantChatSidebarActions({
+      chatId: chat.activeConversationId() ?? "",
+      project: activeConversationProject(),
+      copy: {
+        files: artifactCopy().files,
+        knowledge: contextText("Project knowledge"),
+        sources: contextText("Sources"),
+      },
+      onOpenView: openContextView,
+      onJump: (target) => void jumpTo(target),
+      onOpenSecrets: openChatSecrets,
+      onFileDeleted: (file) => artifactWorkspace.closeFile(file.conversationId, file.path),
+      onOpenWebPage: openWebPage(),
+    });
+  // "Needs attention" in this chat becomes entries of "Waiting for you", with the same targets as its details had.
+  // Routines and Studio app runs no longer exist with Code; nothing in this chat's details waits for the person yet.
+  setWaitingAttention(() => () => []);
+  // The box "In this chat": a click opens the thing as a tab beside the chat, or jumps to it.
+  const contextBoxActions = (): ContextBoxActions => ({
+    onOpen: (target) => {
+      const actions = sidebarActions();
+      if (target.kind === "file") actions.onOpenFile({ path: target.path, title: target.title });
+      else if (target.kind === "app") return;
+      else if (target.kind === "jump") actions.onJump(target.target);
+      else if (target.kind === "wakeup") {
+        wakeupLineHost.act("edit", target.id);
+      } else window.location.assign(target.href);
+    },
+    onJump: (target) => void jumpTo(target),
+    onOpenAll: () => openContextOverview("files", sidebarCopy().title),
+    onOpenSources: () => openContextOverview("sources", contextText("Sources")),
+    onOpenContext: () => openContextOverview("context", artifactCopy().context),
+  });
+  const openContextSheet = () =>
+    // The phone sheet loads when it opens.
+    void import("./AssistantChatContextSheet").then(({ openAssistantContextBoxSheet }) =>
+      openAssistantContextBoxSheet({
+        state: contextState,
+        actions: contextBoxActions(),
+        project: activeConversationProject(),
+        wrap: (content) => (
+          <LocaleProvider locale={locale()}>
+            <AssistantLiveProvider value={liveHub}>{content()}</AssistantLiveProvider>
+          </LocaleProvider>
+        ),
+      }),
+    );
+  // The tabs belong to the chat and the person: another chat shows its own tabs.
+  createEffect(
+    on(
+      () => chat.activeConversationId(),
+      (id) => artifactWorkspace.bindChat(id ?? null),
+      { defer: true },
+    ),
+  );
+  const [emptyProjectId, setEmptyProjectId] = createSignal<string | null>(activeConversation()?.projectId ?? null);
+  const [choosingProject, setChoosingProject] = createSignal(false);
+  let emptyProjectConversationId: string | null = null;
+  createEffect(() => {
+    const conversation = activeConversation();
+    if ((conversation?.id ?? null) === emptyProjectConversationId) return;
+    emptyProjectConversationId = conversation?.id ?? null;
+    setEmptyProjectId(conversation?.projectId ?? null);
+  });
+
+  const chooseEmptyChatProject = async () => {
+    const selected = await projectPicker(locale(), (module) => module.pickEmptyChatProject(t(), projects));
+    if (selected === undefined || selected.projectId === emptyProjectId()) return;
+
+    setChoosingProject(true);
+    try {
+      const conversation = activeConversation();
+      if (!conversation) {
+        if (selected.projectId) await createConversation(true, selected.projectId);
+        return;
+      }
+      const updated = await assistantApi.updateConversationProject(conversation.id, selected.projectId);
+      setEmptyProjectId(updated.projectId);
+      await Promise.all([
+        chat.refreshActiveConversation(),
+        sidebar.invalidate({
+          domains: new Set(["conversation-list"]),
+          conversationIds: new Set([updated.id]),
+          projectIds: null,
+        }),
+      ]);
+    } catch (error) {
+      chat.setError(error instanceof Error ? error.message : t().chooseProjectFailed);
+    } finally {
+      setChoosingProject(false);
+    }
+  };
+
+  /**
+   * A prepared message from a version card, such as "Revise version 5 the way Jana wants it". An empty field sends it
+   * at once; text the person already typed stays, and the message joins it in the field instead.
+   */
+  const askGustav = (text: string) => {
+    const key = composerSessionKey();
+    const current = composerDraft(key);
+    if (current.trim() || composerAttachmentsFor(key).length > 0) {
+      setComposerDraft(key, `${current.trimEnd()}\n\n${text}`);
+      focusComposer();
+      return;
+    }
+    void send({ message: text });
+  };
+  const useStarter = async (starter: AssistantStarterAction) => {
+    const release = holdComposerSave();
+    try {
+      const key = composerSessionKey();
+      const target = followComposerSession(key);
+      const current = composerDraft(key);
+      setComposerDraft(key, current.trim() ? `${current}\n\n${starter.prompt}` : starter.prompt);
+      focusComposer();
+      if (starter.skill)
+        try {
+          const skill = (await assistantApi.listSkills()).find((skill) => skill.enabled && skill.name === starter.skill);
+          if (
+            !skill ||
+            composerSessionKey() !== target() ||
+            composerAttachmentsFor(target()).some(
+              (item) => item.kind === "resource" && item.ref.type === "core.ai.skill" && item.ref.id === skill.id,
+            )
+          )
+            return;
+          await addResolvedComposerResource(target(), { type: "core.ai.skill", id: skill.id });
+        } catch {
+          chat.setError(t().attachResourceFailed);
+        }
+    } finally {
+      release();
+    }
+  };
+
+  /** The server counts every non-text part of a draft: attachments and references in the text alike. */
+  const composerPartCount = (key: string) => composerAttachmentsFor(key).length + mentionsFor(key).length;
+  const addComposerFiles = async (sessionKey: string, files: readonly File[]) => {
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      const current = composerAttachmentsFor(sessionKey);
+      const result = await readAiComposerFiles(files, {
+        acceptsImages: acceptsImages(),
+        locale: locale(),
+        currentCount: composerPartCount(sessionKey),
+        currentImageBytes: current.reduce((total, attachment) => total + (attachment.kind === "image" ? attachment.size : 0), 0),
+      });
+      const attachmentErrors = [...result.errors];
+      if (result.discarded > 0) {
+        attachmentErrors.push(t().discardedAttachments({ count: result.discarded }));
+      }
+      if (attachmentErrors.length > 0) chat.setError(attachmentErrors.join(" "));
+      if (result.attachments.length === 0) return;
+      const key = target();
+      setComposerAttachmentsFor(key, [...composerAttachmentsFor(key), ...result.attachments]);
+    } finally {
+      release();
+    }
+  };
+
+  /** From this device or from a Cloud app, within what the draft can still take; a full draft says so at once. */
+  const chooseComposerFiles = (sessionKey: string): Promise<readonly File[]> => {
+    const maxTotalBytes = aiComposerChooseMaxBytes(composerPartCount(sessionKey));
+    if (maxTotalBytes === 0) {
+      chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+      return Promise.resolve([]);
+    }
+    return chooseFiles({ multiple: true, accept: aiComposerFileAccept, maxTotalBytes });
+  };
+
+  const composerAttachmentsBlocked = (sessionKey: string) => chat.activeConversationId() === sessionKey && chat.running();
+
+  const requireComposerAttachmentsAvailable = (sessionKey: string) => {
+    if (!composerAttachmentsBlocked(sessionKey)) return true;
+    chat.setError(t().attachmentsAfterResponse);
+    return false;
+  };
+
+  const addResolvedComposerResource = async (
+    sessionKey: string,
+    ref: { type: string; id: string },
+    isCurrent = () => true,
+    /** The resource as a pasted link resolved it, with its own title. */
+    known?: Pick<ResolvedCloudResourceUrl, "title" | "icon" | "href">,
+  ) => {
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      if (!requireComposerAttachmentsAvailable(sessionKey)) return;
+      const current = composerAttachmentsFor(sessionKey);
+      if (current.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(sessionKey) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      const resource = known ? { ref, ...known, icon: known.icon ?? "ti ti-link" } : await resolveAssistantCloudResource(ref);
+      if (!isCurrent()) return;
+      const key = target();
+      const latest = composerAttachmentsFor(key);
+      if (latest.some((item) => item.kind === "resource" && item.ref.type === ref.type && item.ref.id === ref.id)) {
+        chat.setError(t().resourceAlreadyAttached);
+        return;
+      }
+      if (composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS) {
+        chat.setError(t().attachmentLimit({ count: AI_TURN_ATTACHMENT_MAX_ITEMS }));
+        return;
+      }
+      setComposerAttachmentsFor(key, [
+        ...latest,
+        {
+          kind: "resource",
+          id: `resource:${resource.ref.type}:${resource.ref.id}`,
+          name: resource.title,
+          ref: resource.ref,
+          icon: resource.icon,
+          href: resource.href,
+        },
+      ]);
+    } finally {
+      release();
+    }
+  };
+
+  /** "Ask Gustav about it" in a tab's menu: names the thing in the next message of this chat. */
+  const askAboutTab = (title: string) => {
+    const key = chat.activeConversationId();
+    if (!key) return;
+    const mention = `„${title}“ `;
+    const existing = composerDraft(key);
+    setComposerDraft(key, existing.trim() ? `${existing} ${mention}` : mention);
+    artifactWorkspace.setMobile("chat");
+    focusComposer();
+  };
+  const showComposerTextAttachment = async (sessionKey: string, attachment: AiComposerAttachment) => {
+    const target = followComposerSession(sessionKey);
+    const release = holdComposerSave();
+    try {
+      let text: string;
+      if (attachment.kind === "file") {
+        text = await attachment.file.text();
+      } else if (attachment.kind === "stored-file") {
+        const conversationId = chat.activeConversationId();
+        if (!conversationId) throw new Error(t().openChatBeforeAttachment);
+        const query = new URLSearchParams({ path: attachment.path });
+        const response = await fetch(`/api/ai/conversations/${encodeURIComponent(conversationId)}/files/content?${query}`);
+        if (!response.ok) throw new Error(t().loadTextAttachmentFailed);
+        text = await response.text();
+      } else {
+        return;
+      }
+      const key = target();
+      const currentText = composerDraft(key);
+      const nextText = currentText ? `${currentText}\n\n${text}` : text;
+      if (nextText.length > AI_COMPOSER_TEXT_MAX_CHARS) throw new Error(t().textTooLong);
+      setComposerDraft(key, nextText);
+      setComposerAttachmentsFor(
+        key,
+        composerAttachmentsFor(key).filter((candidate) => candidate.id !== attachment.id),
+      );
+      focusComposer();
+    } finally {
+      release();
+    }
+  };
+
+  const pasteComposerContent = (sessionKey: string, event: ClipboardEvent) => {
+    const structured = [cloudResourceClipboard.webFormat, cloudResourceClipboard.mimeType]
+      .map((type) => event.clipboardData?.getData(type) ?? "")
+      .find(Boolean);
+    const ref = structured ? cloudResourceClipboard.parse(structured, props.cloudUrl) : null;
+    if (ref) {
+      event.preventDefault();
+      if (!requireComposerAttachmentsAvailable(sessionKey)) return;
+      void addResolvedComposerResource(sessionKey, ref).catch((error) =>
+        chat.setError(error instanceof Error ? error.message : t().attachResourceFailed),
+      );
+      return;
+    }
+    const link = pastedCloudLink(event);
+    if (link && event.target instanceof HTMLTextAreaElement) {
+      // The link lands as text at once. Once its resource is recognized, a reference with its title takes its place;
+      // an unreadable or unknown link stays text. Ctrl+Shift+V keeps the link as text.
+      // The draft right after this paste: the link is recognized only while it is still this paste's link.
+      const place = pastedLinkPlace(
+        composerDraft(sessionKey),
+        { start: event.target.selectionStart, end: event.target.selectionEnd },
+        event.clipboardData?.getData("text/plain") ?? "",
+        link,
+      );
+      const target = followComposerSession(sessionKey);
+      const watch = watchPastedLink(event.target);
+      // A restored draft, such as "Use saved draft", also ends this paste.
+      const restores = pastedLinkRestores.get(session(sessionKey)) ?? new Set<() => void>();
+      pastedLinkRestores.set(session(sessionKey), restores);
+      let restored = false;
+      const onRestore = () => {
+        restored = true;
+      };
+      restores.add(onRestore);
+      const inPlace = (key: string) => pastedLinkCurrent({ edited: watch.edited() || restored, draft: composerDraft(key) }, place);
+      void resolveCloudUrl(link)
+        .then(async (resolved) => {
+          if (!resolved) return;
+          const key = target();
+          const attached = composerAttachmentsFor(key).some(
+            (item) => item.kind === "resource" && item.ref.type === resolved.ref.type && item.ref.id === resolved.ref.id,
+          );
+          // An edited or removed link, a reference already attached, a full draft, or attachments waiting for a
+          // response all leave the text as it is.
+          if (!inPlace(key) || attached || composerAttachmentsBlocked(key) || composerPartCount(key) >= AI_TURN_ATTACHMENT_MAX_ITEMS)
+            return;
+          const count = composerAttachmentsFor(key).length;
+          await addResolvedComposerResource(key, resolved.ref, () => inPlace(target()), resolved).catch(() => undefined);
+          const current = target();
+          if (composerAttachmentsFor(current).length === count || !inPlace(current)) return;
+          setComposerDraft(current, withoutPastedLink(composerDraft(current), place, link));
+        })
+        .finally(() => {
+          watch.stop();
+          restores.delete(onRestore);
+        });
+      return;
+    }
+    const text = event.clipboardData?.getData("text/plain") ?? "";
+    if (!text || !shouldAttachAiPastedText(text, composerDraft(sessionKey).length)) return;
+    event.preventDefault();
+    if (!requireComposerAttachmentsAvailable(sessionKey)) return;
+    void addComposerFiles(sessionKey, [createAiPastedTextFile(text)]);
+  };
+
+  const dictationKey = () => (activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey());
+  const dictationTarget = () => (activeProject() ? (pendingProjectChats()[activeProject()!.id]?.id ?? null) : chat.activeConversationId());
+  const liveDictationSource = createLiveDictationSource({ app: "assistant" });
+  const dictation = createAssistantDictation({
+    // At a place the first sent message creates the chat (O2); dictation needs a chat to upload to, so it starts there
+    // once the chat exists.
+    configured: () => Boolean(props.status.audioModelConfigured) && canUseComposer() && !(emptyPlace() && !chat.activeConversationId()),
+    key: dictationKey,
+    target: dictationTarget,
+    generation: (key) => {
+      composerDraft(key);
+      composerAttachmentsFor(key);
+      return session(key).editGeneration;
+    },
+    live: liveHub,
+    ensureTarget: async () => {
+      const key = dictationKey();
+      const projectId = activeProject()?.id;
+      const target = dictationTarget();
+      if (target) return { key, target };
+      const created = await createConversation(false, projectId, !projectId);
+      if (!created) return null;
+      if (projectId) {
+        setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
+        return { key, target: created.id };
+      }
+
+      return { key: created.id, target: created.id };
+    },
+    apply: async (key, target, id) => {
+      const generation = session(key).editGeneration;
+      const saved = await saveComposer(key, target);
+      if (!saved || generation !== session(key).editGeneration) return false;
+      return serializeComposer(key, async () => {
+        const local = session(key);
+        if (local.conflict || local.editGeneration !== generation) return false;
+        local.saving = true;
+        try {
+          const response = await fetch(`/api/ai/conversations/${target}/dictations/${id}/apply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expectedRevision: local.baseRevision, content: saved.content }),
+          });
+          // The dictation reports any failure itself; only a changed saved draft is also a conflict.
+          if (!response.ok) {
+            if (response.status === 409) {
+              local.conflict = true;
+              await chat.refreshActiveConversation();
+            }
+            return false;
+          }
+          const result: { disposition: string; draft: AiConversation["draft"] | null } = await response.json();
+          if (result.draft) {
+            setServerDrafts((all) => ({ ...all, [key]: result.draft! }));
+            if (local.editGeneration === generation) hydrateComposer(key, result.draft);
+            else local.conflict = true;
+          } else if (result.disposition === "applied") {
+            local.conflict = true;
+          }
+          await chat.refreshActiveConversation();
+          return result.disposition === "applied";
+        } finally {
+          local.saving = false;
+          touchSession();
+        }
+      });
+    },
+  });
+
+  const QueuePart = (partProps: { layout: "line" | "chip"; end?: JSX.Element }) => (
+    <Suspense>
+      <AssistantQueue host={queueHost} entries={queueEntries()} layout={partProps.layout} timeZone={props.timeZone} end={partProps.end} />
+    </Suspense>
+  );
+  /**
+   * "Waiting for you": over the chat's free end above the field, in flow on the start screen and in a project. Over a
+   * chat with queued messages it shares its one row with "Queued · n"; without anything waiting, the row previews the
+   * next queued message instead.
+   */
+  const WaitingRow = (rowProps: { queue?: boolean }) => {
+    const queued = () => Boolean(rowProps.queue) && queueEntries().length > 0;
+    // Alarms share the one row (Gustav alarms v1, F1 A): alone as their own line, else as the chip at its end.
+    const alarms = () => Boolean(rowProps.queue) && wakeupContext.items().length > 0;
+    const waitingShown = () => waiting().total > 0 && !waitingQuiet();
+    const AlarmChip = () => (
+      <Suspense>
+        <AssistantWakeupDock context={wakeupContext} layout="chip" />
+      </Suspense>
+    );
+    return (
+      <>
+        <Show when={waiting().total > 0}>
+          <AssistantWaitingStrip
+            view={waiting()}
+            conversationId={waitingConversationId()}
+            quiet={waitingQuiet()}
+            inView={waitingFocus.inView()}
+            onJump={(question) => void jumpToQuestion(question)}
+            onShowMore={openApprovals}
+            queue={
+              (queued() || alarms()) && waitingShown() ? (
+                <>
+                  <Show when={queued()}>
+                    <QueuePart layout="chip" />
+                  </Show>
+                  <Show when={alarms()}>
+                    <AlarmChip />
+                  </Show>
+                </>
+              ) : undefined
+            }
+          />
+        </Show>
+        <Show when={queued() && !waitingShown()}>
+          <QueuePart layout="line" end={alarms() ? <AlarmChip /> : undefined} />
+        </Show>
+        <Show when={alarms() && !queued() && !waitingShown()}>
+          <Suspense>
+            <AssistantWakeupDock context={wakeupContext} layout="line" />
+          </Suspense>
+        </Show>
+      </>
+    );
+  };
+  const AssistantComposer = (composerProps: { projectId?: string; projectName?: string }) => {
+    const sessionKey = () => (composerProps.projectId ? projectComposerKey(composerProps.projectId) : composerSessionKey());
+    const projectComposer = () => Boolean(composerProps.projectId);
+    // A Project composer starts new chats; a response still running in the previous chat does not block it.
+    const composerRunning = () => !projectComposer() && chat.running();
+    const nextMessage = createAssistantNextMessage({
+      conversationId: () => (projectComposer() ? null : chat.activeConversationId()),
+      messages: chat.messages,
+      blocked: () =>
+        chat.running() ||
+        Boolean(chat.activeTurn()) ||
+        waiting().entries.some((question) => question.conversationId === chat.activeConversationId()) ||
+        queueEntries().length > 0,
+      dismiss: assistantApi.dismissNextMessage,
+      onDismissFailed: (retry) =>
+        toast.error(contextText("Failed to dismiss the suggestion"), {
+          action: { label: commandCopy().commandTryAgain, onClick: retry },
+        }),
+    });
+    const catalog = createCloudComposerCatalog();
+    let commandTarget: string | undefined;
+    const [commandCreating, setCommandCreating] = createSignal(false);
+    // One app opening at a time; it ends when this composer goes away or the person moves to another chat, so a late
+    // answer never navigates over where they are now.
+    let commandOpening: { controller: AbortController; key?: string } | undefined;
+    onCleanup(() => commandOpening?.controller.abort());
+    createEffect(() => {
+      const key = sessionKey();
+      if (commandOpening?.key !== undefined && commandOpening.key !== key) commandOpening.controller.abort();
+    });
+    // Saves the draft without its "/…" before an app opens, through the revisioned path, with references and
+    // attachments. A chat that does not exist yet is created first, as "Assign project" and dictation do.
+    const beforeCommand = async (draft: { value: string; mentions: readonly ChatMention[] }, signal: AbortSignal, follow: () => void) => {
+      if (signal.aborted) return;
+      let key = sessionKey();
+      // A draft already in conflict says so; the conflict notice offers the way out.
+      if (session(key).conflict) throw new Error(commandCopy().commandDraftConflict);
+      const projectId = composerProps.projectId;
+      let target = projectId ? pendingProjectChats()[projectId]?.id : chat.activeConversationId();
+      commandOpening?.controller.abort();
+      const opening: { controller: AbortController; key?: string } = { controller: new AbortController() };
+      commandOpening = opening;
+      try {
+        if (!target) {
+          // The new chat starts with the draft as it is saved, without "/…": its key changes, so the composer cannot
+          // take the token out there itself.
+          const attachments = composerAttachmentsFor(key);
+          setCommandCreating(true);
+          if (!projectId) follow();
+          const created = await createConversation(false, projectId, projectId ? false : () => !opening.controller.signal.aborted).finally(
+            () => setCommandCreating(false),
+          );
+          if (!created) throw new Error("Chat not created");
+          target = created.id;
+          if (projectId) {
+            setPendingProjectChats((all) => ({ ...all, [projectId]: created }));
+          } else {
+            key = created.id;
+            if (!signal.aborted) {
+              setComposerDraft(key, draft.value);
+              setComposerAttachmentsFor(key, attachments);
+              setMentionsFor(key, draft.mentions);
+            }
+          }
+        }
+        const opened = key;
+        // Once the person cancelled, they may have edited since choosing, also in a project composer: save the live draft.
+        const override = signal.aborted ? undefined : { text: draft.value, mentions: draft.mentions };
+        // A failed save answers null for a revision conflict and for any other failure alike; a conflict also
+        // shows the composer's conflict notice.
+        if (!(await saveComposer(key, target, override))) throw new Error("Draft not saved");
+        // The saved draft leaves out "/…", which an opening that fails or is cancelled keeps on screen; the composer's
+        // signal aborts then, and the live draft is saved again, so a reload shows what the person sees.
+        if (override) {
+          const savedKey = key;
+          const savedTarget = target;
+          const resave = () => void saveComposer(savedKey, savedTarget);
+          if (signal.aborted) resave();
+          else signal.addEventListener("abort", resave, { once: true });
+        }
+        // This composer went away meanwhile, such as for Approvals: the opening just ends.
+        if (signal.aborted || opening.controller.signal.aborted) return;
+        // The person moved to another chat while it saved: the app does not open over that one.
+        if (sessionKey() !== opened) {
+          opening.controller.abort();
+          throw new Error(commandCopy().commandSuperseded);
+        }
+        commandTarget = target;
+        // From here on, moving to another chat ends the opening, also while the link resolves.
+        opening.key = opened;
+      } catch (error) {
+        // The composer's status line names the failure once; an error of a chat the person moved to stays there.
+        if (sessionKey() === key) chat.setError(null);
+        throw error instanceof Error && error.message === commandCopy().commandSuperseded
+          ? error
+          : new Error(commandCopy().commandDraftNotSaved);
+      }
+    };
+    const appCommands = createMemo(() =>
+      props.embedded
+        ? { commands: [], pending: false }
+        : cloudCommandMenu({
+            locale: locale(),
+            commands: catalog.commands(),
+            state: catalog.state(),
+            section: "apps",
+            before: (draft, signal, follow) => {
+              setPendingCommandSaves((count) => count + 1);
+              return beforeCommand(draft, signal, follow).finally(() => setPendingCommandSaves((count) => count - 1));
+            },
+            returnTo: () => (commandTarget ? assistantConversationHref(window.location.href, commandTarget) : undefined),
+            signal: () => commandOpening?.controller.signal,
+          }),
+    );
+    const attachmentCount = createMemo(() => composerAttachmentsFor(sessionKey()).length);
+    const mentionCount = createMemo(() => mentionsFor(sessionKey()).length);
+    const insert = createMemo(() =>
+      assistantInsertCommands({
+        copy: commandCopy(),
+        locale: locale(),
+        tags: catalog.tags(),
+        partCount: () => attachmentCount() + mentionCount(),
+        excludeRefs: () => assistantExcludedRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey())),
+        fileSelectionDisabled: composerRunning(),
+        track: trackComposerPicking,
+      }),
+    );
+    const commandSession = createAssistantCommandSession();
+    onCleanup(() => commandSession.dispose());
+    // "Recent" loads when the composer appears, so it is usually there before the first "/"; an opening that comes
+    // first shows the list without it, and only a later opening adds it.
+    const recentResources = createAssistantRecentResources();
+    onMount(() => recentResources.ensure(locale()));
+    const draftRefs = () => assistantDraftRefs(composerAttachmentsFor(sessionKey()), mentionsFor(sessionKey()));
+    const searchChat = () => {
+      const conversation = activeConversation();
+      if (conversation) openGlobalSearch(assistantSearchOptions(locale(), conversation));
+    };
+    // In the chat the command started in, it takes over the controller's error so the failure is reported once,
+    // in the composer status line. After the person moved on, that error belongs to the other chat and stays there.
+    const commandFailure = (key: string, message: (input: { reason: string }) => string, draftUnchanged = true) => {
+      if (sessionKey() !== key) return new Error(message({ reason: t().chatActionFailed.replace(/\.+$/, "") }));
+      const failed = message({ reason: (chat.error() ?? t().chatActionFailed).replace(/\.+$/, "") });
+      chat.setError(null);
+      return new Error(draftUnchanged ? `${failed} ${commandCopy().draftUnchanged}` : failed);
+    };
+    return (
+      <>
+        <Show
+          when={
+            props.embedded &&
+            ((panelLeaveAttempted() && hasUnsavedPanelState()) || panelStorageFailed() || hasUnknownSends() || hasUnknownCreations())
+          }
+        >
+          <NoticeCard tone="warning" title={t().panelUnsaved}>
+            <p>{t().panelSaveHint}</p>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerBusy() || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelSave}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={rejectedCreations().size > 0}>
+          <NoticeCard tone="danger" title={t().panelCreateRejected} detail={t().panelCreateRejectedHint}>
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={savingPanelDrafts() || composerBusy() || composerSubmitting()}
+              onClick={() => void savePanelDrafts()}
+            >
+              {t().panelRetryCreate}
+            </Button>
+          </NoticeCard>
+        </Show>
+        <Show when={hasUnknownSends() || hasUnknownCreations()}>
+          <NoticeCard tone="warning" title={hasUnknownSends() ? t().panelUnknownSend : t().panelUnknownCreate}>
+            <Show when={hasUnknownCreations()}>
+              <p>{t().panelUnknownCreateHint}</p>
+              <For each={(creationVersion(), [...creationRequests.values()])}>
+                {(request) => (
+                  <For each={request.draft?.content ?? []}>
+                    {(part) => (part.type === "text" ? <p class="whitespace-pre-wrap">{part.text}</p> : null)}
+                  </For>
+                )}
+              </For>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={savingPanelDrafts() || composerSubmitting() || composerBusy()}
+                onClick={() => void savePanelDrafts()}
+              >
+                {t().panelRetryCreate}
+              </Button>
+            </Show>
+            <Show when={hasUnknownSends()}>
+              <p>{t().panelUnknownHint}</p>
+              <For each={Object.keys(chat.uncertainSubmissions())}>
+                {(id) => (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={async () => {
+                      if (await openAndFocusConversation(id)) commitConversationUrl(id);
+                    }}
+                  >
+                    {conversations().find((conversation) => conversation.id === id)?.title ?? t().newChat}
+                  </Button>
+                )}
+              </For>
+              <Button size="sm" variant="secondary" disabled={submissionChecking()} onClick={() => void checkSubmissions()}>
+                {t().panelCheckSend}
+              </Button>
+              <Button size="sm" variant="ghost" disabled={submissionChecking()} onClick={() => void checkSubmissions(true)}>
+                {t().panelRetrySend}
+              </Button>
+            </Show>
+            <Show when={props.embedded}>
+              <p>{t().panelLeaveUnknownHint}</p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={hasUnsavedPanelState(unknownExitSnapshot())}
+                onClick={() => void leaveUnknownSubmission()}
+              >
+                {unknownExitLabel()}
+              </Button>
+            </Show>
+          </NoticeCard>
+        </Show>
+        <dictation.Status />
+        <Show when={(sessionVersion(), session(sessionKey()).conflict) && !submissionUnknown(sessionKey())}>
+          <NoticeCard role="status" tone="warning" title={audioCopy().conflict} detail={audioCopy().conflictDetail}>
+            <Show when={serverDrafts()[sessionKey()]}>
+              {(saved) => {
+                const savedText = () =>
+                  saved()
+                    .content.filter((part) => part.type === "text")
+                    .map((part) => part.text)
+                    .join("\n\n");
+                return (
+                  <>
+                    <Show when={savedText()} fallback={<p class="text-dimmed">{audioCopy().savedDraftEmpty}</p>}>
+                      {(text) => (
+                        <div class="space-y-1">
+                          <p class="text-dimmed">{audioCopy().savedDraft}</p>
+                          <p class="max-h-40 overflow-auto whitespace-pre-wrap break-words">{text()}</p>
+                        </div>
+                      )}
+                    </Show>
+                    <div class="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          const key = sessionKey();
+                          const target = dictationTarget();
+                          if (!target) return;
+                          const local = session(key);
+                          local.baseRevision = saved().revision;
+                          local.conflict = false;
+                          await saveComposer(key, target);
+                        }}
+                      >
+                        {audioCopy().keepLocal}
+                      </Button>
+                      <Button size="sm" variant="secondary" onClick={() => hydrateComposer(sessionKey(), saved())}>
+                        {audioCopy().useSaved}
+                      </Button>
+                    </div>
+                  </>
+                );
+              }}
+            </Show>
+          </NoticeCard>
+        </Show>
+        <Chat.Composer
+          addOpensCommands
+          accessory={
+            <>
+              <Show when={!projectComposer() && (hasOpenTodos() || completedPlanShown())}>
+                <Chat.Tasks
+                  items={shownTasks(todoItems(), chat.activeTurn()?.status)}
+                  open={todoOpen()}
+                  onOpenChange={setTodoOpen}
+                  label={todoLabel()}
+                  progressLabel={todoProgress()}
+                  // A plan whose turn is not running (stopped, failed, or waiting for the person) stands still.
+                  paused={chat.activeTurn()?.status !== "running"}
+                  statusLabels={
+                    locale().startsWith("de")
+                      ? {
+                          pending: "Offen",
+                          in_progress: chat.activeTurn()?.status === "running" ? "In Arbeit" : "Aktueller Schritt",
+                          completed: "Erledigt",
+                          cancelled: "Verworfen",
+                        }
+                      : {
+                          pending: "Pending",
+                          in_progress: chat.activeTurn()?.status === "running" ? "In progress" : "Current step",
+                          completed: "Completed",
+                          cancelled: "Cancelled",
+                        }
+                  }
+                />
+              </Show>
+              <Show when={quotesFor(sessionKey()).length}>
+                <ChatComposerQuotes
+                  quotes={quotesFor(sessionKey()).map((quote, index) => ({
+                    id: `${index}:${quote.text}`,
+                    author: quote.from === "user" ? t().quotedFromYou : "Gustav",
+                    text: quote.text,
+                    onRemove: () =>
+                      setQuotesFor(
+                        sessionKey(),
+                        quotesFor(sessionKey()).filter((_, position) => position !== index),
+                      ),
+                  }))}
+                />
+              </Show>
+            </>
+          }
+          draftKey={composerIdentity(sessionKey())}
+          mentions={mentionsFor(sessionKey())}
+          onMentionsChange={(mentions) => setMentionsFor(sessionKey(), mentions)}
+          commandSections={assistantCommandSections(commandCopy(), appCommands().pending)}
+          commandScopes={[...assistantCommandScopes(commandCopy(), locale()), ...insert().scopes]}
+          commandFallback={insert().fallback}
+          commands={[
+            ...assistantRecentCommands({
+              items: recentResources.items(),
+              excludeRefs: draftRefs(),
+              partCount: () => attachmentCount() + mentionCount(),
+              locale: locale(),
+            }),
+            ...insert().commands,
+            ...appCommands().commands,
+            ...assistantBuiltInCommands({
+              copy: commandCopy(),
+              projectComposer: projectComposer(),
+              // A chat in a project counts as assigned even before the project list has its name.
+              projectName:
+                composerProps.projectName ??
+                (chat.conversation()?.projectId
+                  ? (projects().find((project) => project.id === chat.conversation()?.projectId)?.name ?? "")
+                  : undefined),
+              running: composerRunning(),
+              recording: dictation.recording(),
+              models: aiChatModelOptions(props.models),
+              selectedModelId: selectedModelId(),
+              searchChat,
+              hasMessages: chat.messages().length > 0,
+              hasAssistantMessage: chat.messages().some((message) => message.message.role === "assistant"),
+              compact: async () => {
+                const key = sessionKey();
+                if (!(await chat.compactConversation({ model: selectedModelRequest() })))
+                  throw commandFailure(key, commandCopy().compactFailed);
+                // The request queues a compaction turn; the chat shows its progress and result, so this only says it started.
+                return { done: commandCopy().compactDone };
+              },
+              fork: async () => {
+                const key = sessionKey();
+                const fail = () => commandFailure(key, commandCopy().forkFailed);
+                const target = [...chat.messages()].reverse().find((message) => message.message.role === "assistant");
+                if (!target) return "cancelled";
+                const saved = await saveComposer(key, key);
+                if (!saved) throw fail();
+                if (sessionKey() !== key) return "cancelled";
+                const fork = await chat.forkMessage(target.id, {});
+                if (!fork) throw fail();
+                hydrateComposer(fork.id, { ...fork.draft, content: saved.content });
+                editComposerSession(session(fork.id));
+                // The fork exists and is open now; only saving the copied draft there failed.
+                if (!(await saveComposer(fork.id, fork.id))) throw commandFailure(fork.id, commandCopy().forkDraftNotSaved, false);
+                if (chat.activeConversationId() === fork.id) focusComposer();
+                return { done: commandCopy().forkDone };
+              },
+              newChat: async () => {
+                const key = sessionKey();
+                const title = projectComposer() ? undefined : chat.conversation()?.title;
+                const hasRemainingDraft = Boolean(composerDraft(key).trim());
+                if (chat.activeConversationId() && !projectComposer() && !(await saveComposer(key, key)))
+                  throw commandFailure(key, commandCopy().newChatFailed);
+                if (sessionKey() !== key) return "cancelled";
+                // A failed creation resolves to null; report it instead of a success line.
+                if (!(await createAndFocusConversation())) throw commandFailure(key, commandCopy().newChatFailed);
+                if (title && hasRemainingDraft) return { done: commandCopy().newChatDraftKept({ title }) };
+              },
+            }),
+          ]}
+          searchCommands={async (query, signal, search) => {
+            // A new opening asks again after a failed load; it never waits for the answer.
+            const recentAtOpening = recentResources.opened(search, locale());
+            const [rows] = await Promise.all([
+              assistantComposerCommands({
+                recent: recentResources.items(),
+                recentAtOpening,
+                excludeRefs: draftRefs(),
+                partCount: () => attachmentCount() + mentionCount(),
+                query,
+                scope: search.scope,
+                session: search.opening,
+                sessionLoader: commandSession,
+                models: aiChatModelOptions(props.models),
+                selectedModelId: selectedModelId(),
+                chooseModel: setSelectedModelId,
+                isRunning: () => composerRunning(),
+                signal,
+                locale: locale(),
+                conversationId: projectComposer() ? undefined : (chat.activeConversationId() ?? undefined),
+                projectId: composerProps.projectId ?? chat.conversation()?.projectId,
+                projects: projects(),
+                running: composerRunning(),
+                assignProject: async (projectId) => {
+                  const key = sessionKey();
+                  const text = composerDraft(key),
+                    attachments = composerAttachmentsFor(key),
+                    mentions = mentionsFor(key);
+                  const existing = chat.activeConversationId();
+                  const created = existing ? null : await createConversation(false);
+                  const conversationId = existing ?? created?.id;
+                  if (!conversationId) throw new Error(t().chatActionFailed);
+                  if (created) {
+                    setComposerDraft(conversationId, text);
+                    setComposerAttachmentsFor(conversationId, attachments);
+                    setMentionsFor(conversationId, mentions);
+                  }
+                  if (!(await saveComposer(conversationId, conversationId))) throw new Error(t().chatActionFailed);
+                  if (chat.activeConversationId() !== conversationId) return;
+                  const updated = await assistantApi.assignProject(conversationId, projectId);
+                  if (chat.activeConversationId() === conversationId) setEmptyProjectId(updated.projectId);
+                  await Promise.all([
+                    chat.refreshActiveConversation(),
+                    sidebar.invalidate({
+                      domains: new Set(["conversation-list"]),
+                      conversationIds: new Set([updated.id]),
+                      projectIds: null,
+                    }),
+                  ]);
+                },
+              }),
+              // Starts this opening's catalog load; only typed text outside a scope waits for it.
+              catalog.ready(query, search, locale()),
+            ]);
+            return rows;
+          }}
+          submitTools={
+            <>
+              <AiModelChooser
+                state={modelState()}
+                value={selectedModelRequest()}
+                onChange={setSelectedModelRequest}
+                locked={!projectComposer() && chat.running()}
+                lockedReason={t().modelLockedWhileRunning}
+              />
+              {/* Without live dictation or an audio model there is nothing to start, so no greyed microphone stands there. */}
+              <Show
+                when={
+                  dictation.busy() ||
+                  dictation.pendingResult() ||
+                  (!props.status.liveDictationAvailable && props.status.audioModelConfigured)
+                }
+              >
+                <dictation.Control />
+              </Show>
+            </>
+          }
+          dictation={
+            props.status.liveDictationAvailable && canUseComposer() && !dictation.busy() && !dictation.pendingResult()
+              ? {
+                  source: liveDictationSource,
+                  alternative: props.status.audioModelConfigured
+                    ? { label: audioCopy().recordInstead, note: audioCopy().recordInsteadNote, run: () => void dictation.startRecording() }
+                    : undefined,
+                }
+              : undefined
+          }
+          footerContent={dictation.recording() ? <dictation.RecordingFooter /> : undefined}
+          value={composerDraft(sessionKey())}
+          onValueChange={(value) => setComposerDraft(sessionKey(), value)}
+          attachments={aiChatAttachments(composerAttachmentsFor(sessionKey()), {
+            onShowText: (attachment) => showComposerTextAttachment(sessionKey(), attachment),
+          })}
+          onAttachmentsChange={(next) => setComposerAttachmentsFor(sessionKey(), aiComposerAttachmentRecords(next))}
+          onPaste={(event) => pasteComposerContent(sessionKey(), event)}
+          fileSelection={{
+            onSelect: (files) => addComposerFiles(sessionKey(), files),
+            // Called within the activation, as the device's file dialog needs; only its answer is tracked.
+            choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey())),
+            accept: aiComposerFileAccept,
+            disabled: !projectComposer() && chat.running(),
+            label: t().attachFiles,
+          }}
+          contextSections={quotaSections()}
+          disabled={
+            (props.embedded && !workspaceMounted()) ||
+            composerPicking() > 0 ||
+            !canUseComposer() ||
+            panelStorageFailed() ||
+            submissionUnknown(sessionKey()) ||
+            (newConversation.loading() && !commandCreating() && !editingDraftCreation()) ||
+            chat.loadingConversation()
+          }
+          state={
+            projectComposer()
+              ? newConversation.loading() && !commandCreating()
+                ? "submitting"
+                : "idle"
+              : chat.runStatus() === "stopping"
+                ? "stopping"
+                : chat.running()
+                  ? "running"
+                  : "idle"
+          }
+          // Only an explicit request focuses the field (a new or opened chat, a starter); a page load leaves it at rest.
+          focusToken={projectComposer() || composerFocusToken() === 0 ? undefined : composerFocusToken()}
+          suggestion={nextMessage()}
+          submitDisabled={aiModelBlocksSending(modelState(), selectedModelRequest())}
+          runningSubmitIntent="queue"
+          placeholder={
+            props.status.enabled && props.models.length === 0
+              ? t().noModelsAvailable
+              : props.status.enabled
+                ? projectComposer()
+                  ? t().startProjectChat({ project: composerProps.projectName ?? t().thisProject })
+                  : chat.runStatus() === "stopping"
+                    ? t().stopping
+                    : chat.running()
+                      ? t().queueMessage
+                      : t().askAnything
+                : t().aiNotConfigured
+          }
+          error={projectComposer() ? (chat.error() ?? undefined) : undefined}
+          onSubmit={(input) =>
+            composerProps.projectId
+              ? sendProjectMessage(composerProps.projectId, aiComposerSendInput(input))
+              : input.intent === "queue" || (input.intent === "send" && Boolean(queuedMessages.data()?.length))
+                ? queueMessage(withQuotes(sessionKey(), aiComposerSendInput(input)))
+                : send(withQuotes(sessionKey(), aiComposerSendInput(input)))
+          }
+          onStop={
+            !projectComposer() && chat.activeTurn()
+              ? async () => {
+                  await chat.abort();
+                }
+              : undefined
+          }
+          onError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
+          contextActions={
+            !projectComposer() && todoItems().length > 0 && !hasOpenTodos()
+              ? [
+                  {
+                    id: "toggle-completed-tasks",
+                    icon: "ti ti-list-check",
+                    label: locale().startsWith("de")
+                      ? completedPlanShown()
+                        ? "Aufgaben ausblenden"
+                        : "Aufgaben anzeigen"
+                      : completedPlanShown()
+                        ? "Hide tasks"
+                        : "Show tasks",
+                    pressed: completedPlanShown(),
+                    onSelect: () => {
+                      const visible = !completedPlanShown();
+                      setShowCompletedTodos(visible);
+                      setTodoOpen(visible);
+                    },
+                  },
+                ]
+              : []
+          }
+          contextPopupAction={
+            // An empty chat has nothing to summarize; the action to do so appears with the first message.
+            !projectComposer() && activeConversation() && chat.messages().length > 0
+              ? {
+                  id: "compact-context",
+                  label: quotaText.resolve([locale()]).t.compactNow,
+                  icon: "ti ti-arrows-diagonal-minimize-2",
+                  disabled: chat.running(),
+                  disabledReason: quotaText.resolve([locale()]).t.compactWhileRunning,
+                  onSelect: async () => {
+                    if (!chat.activeConversationId()) return;
+                    await chat.compactConversation({ model: selectedModelRequest() });
+                  },
+                }
+              : undefined
+          }
+          contextUsage={
+            projectComposer()
+              ? undefined
+              : {
+                  // Nothing sent yet, such as on the start page: the ring stands empty in its place (v12 §9).
+                  usage: usageSnapshot()?.request ?? (emptyChat() ? NOTHING_USED : null),
+                  loopUsage: usageSnapshot()?.loop ?? null,
+                  contextWindow: usageModel()?.contextWindow,
+                  modelLabel: usageModel()?.label,
+                  note: quotaText.resolve([locale()]).t.contextNote,
+                }
+          }
+        />
+      </>
+    );
+  };
+
+  const updateConversation = (updated: AiConversation) => {
+    void sidebar.invalidate({
+      domains: new Set(["conversation-list"]),
+      conversationIds: new Set([updated.id]),
+      projectIds: null,
+    });
+  };
+
+  createEffect(() => {
+    const conversation = activeConversation();
+    if (!conversation || activeProject()) return;
+    const copy = assistantCommandMessages.resolve([locale()]).t;
+    onCleanup(
+      registerContextAwareCommand({
+        id: `assistant.${conversation.id}.search`,
+        title: t().searchThisChat,
+        description: copy.searchChatDescription({ title: conversation.title }),
+        icon: "ti ti-search",
+        scope: "selection",
+        shortcut: "mod+shift+k",
+        action: { search: assistantSearchOptions(locale(), conversation) },
+      }),
+    );
+    if (!["queued", "running", "needs_attention", "waiting_for_browser"].includes(conversation.runStatus))
+      onCleanup(
+        registerContextAwareCommand({
+          id: `assistant.${conversation.id}.done`,
+          title: conversation.isDone ? copy.reopen : copy.done,
+          description: conversation.isDone
+            ? copy.reopenDescription({ title: conversation.title })
+            : copy.doneDescription({ title: conversation.title }),
+          scope: "selection",
+          shortcut: "d",
+          icon: "ti ti-check",
+          action: async () => updateConversation(await assistantApi.setConversationDone(conversation.id, !conversation.isDone)),
+        }),
+      );
+  });
+
+  const archiveConversation = (archived: AiConversation) => {
+    void sidebar.invalidate({
+      domains: new Set(["conversation-list"]),
+      conversationIds: new Set([archived.id]),
+      projectIds: null,
+    });
+    setComposerDrafts((current) => {
+      const next = { ...current };
+      delete next[archived.id];
+      return next;
+    });
+    setComposerAttachments((current) => {
+      const next = { ...current };
+      delete next[archived.id];
+      return next;
+    });
+    setModelChoices((current) => {
+      const next = { ...current };
+      delete next[archived.id];
+      return next;
+    });
+    if (archived.id === chat.activeConversationId()) navigateTo(basePath);
+  };
+
+  // While a turn runs, its work line says that the chat reconnects.
+  const composerNotice = createMemo(() =>
+    chat.streamStatus() === "reconnecting" && !chat.activeTurn()
+      ? { message: t().reconnecting, reconnecting: true }
+      : chat.error() || liveError()
+        ? { message: chat.error() ?? liveError()!, reconnecting: false }
+        : null,
+  );
+  const ComposerNotices = () => (
+    <Show when={composerNotice()}>
+      {(notice) => (
+        <p
+          class={`inline-flex w-full items-start gap-1.5 px-1 text-xs ${notice().reconnecting ? "text-[var(--k2b-warning-text)]" : "text-[var(--k2b-danger-text)]"}`}
+          role={notice().reconnecting ? "status" : "alert"}
+        >
+          <i
+            class={`${notice().reconnecting ? "ti ti-refresh animate-spin motion-reduce:animate-none" : "ti ti-alert-circle"} mt-0.5 text-sm`}
+            style={notice().reconnecting ? { "animation-direction": "reverse" } : undefined}
+            aria-hidden="true"
+          />
+          <span>{notice().message}</span>
+        </p>
+      )}
+    </Show>
+  );
+
+  const ConversationTimeline = () => {
+    const items = createAiChatTimeline({
+      messages: chat.messages,
+      activeTurn: chat.activeTurn,
+      reconnecting: () => chat.streamStatus() === "reconnecting",
+      timeZone: props.timeZone,
+      renderedAt: props.renderedAt,
+    });
+
+    return (
+      <>
+        <Chat.Timeline
+          class="ai-message-list-container h-full"
+          conversationKey={chat.activeConversationId()}
+          items={items()}
+          loading={chat.loadingConversation()}
+          hasMore={chat.hasMoreHistory()}
+          loadingOlder={chat.loadingOlder()}
+          onLoadOlder={chat.loadOlderMessages}
+          emptyTitle={props.status.enabled ? t().startConversation : t().aiDisabled}
+          viewportRef={setTimelineViewport}
+          contentRef={setTimelineContent}
+          scrollToAnchorRef={(scrollToAnchor) => {
+            scrollToMessageAnchor = scrollToAnchor;
+          }}
+          onActionError={(error) => chat.setError(error instanceof Error ? error.message : t().chatActionFailed)}
+          navigation={
+            <AiChatTurnNavigator
+              entries={chat.timeline()}
+              loading={chat.timelineLoading()}
+              viewport={timelineViewport}
+              content={timelineContent}
+              loadThrough={chat.loadHistoryThroughSeq}
+            />
+          }
+        />
+        <Show when={quoting() && timelineContent()}>
+          {(root) => <QuoteSelection root={root()} label={t().quoteSelection} onQuote={addQuote} />}
+        </Show>
+      </>
+    );
+  };
+
+  // The side panel has no head row; a quiet row under the composer leads on. "All chats" opens the Assistant
+  // application at what the panel shows (the current chat, Project or approvals), so a chat continues in the full view.
+  const panelFullViewHref = () => {
+    const project = activeProject();
+    const pending = project ? pendingProjectChats()[project.id]?.id : undefined;
+    if (pending) return assistantConversationHref("/app/assistant", pending);
+    if (project) return assistantProjectHref("/app/assistant", project.id);
+    if (approvalsOpen()) return "/app/assistant?approvals=1";
+    if (codeOpen()) return "/app/assistant?code=1";
+    return assistantConversationHref("/app/assistant", chat.activeConversationId());
+  };
+  // "Create in chat" leaves the Code list for the chat first, so creation progress and errors show at the composer.
+  const createFromCodeView = () => {
+    navigationRequest++;
+    setMainView(null);
+    const conversationId = chat.activeConversationId();
+    if (conversationId) commitConversationUrl(conversationId);
+    else navigate(basePath, { scroll: "manual", viewTransition: false });
+    void createAndFocusConversation();
+  };
+  const panelAttachDisabled = () =>
+    (props.embedded && !workspaceMounted()) ||
+    !canUseComposer() ||
+    panelStorageFailed() ||
+    submissionUnknown(activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey()) ||
+    composerSubmitting() ||
+    newConversation.loading() ||
+    chat.loadingConversation() ||
+    chat.running();
+  const attachPanelResource = (ref: CloudResourceRef, current: () => boolean) => {
+    const key = activeProject() ? projectComposerKey(activeProject()!.id) : composerSessionKey();
+    return trackComposerPicking(addResolvedComposerResource(key, ref, current));
+  };
+  // Gustav at a place (side panel only). The page's place loads on every accepted page context; the bar describes the
+  // open chat's place, or the page's place while the panel waits for the first message there.
+  const placeT = () => placeMessages.resolve([locale()]).t;
+  /** A saved draft at an empty place creates the chat there with that draft, never a chat without the place. */
+  const newChatPlace = () => {
+    const place = emptyPlace();
+    const text = composerDraft("__new__").trim();
+    return place && text ? { ref: place.ref, draft: [{ type: "text" as const, text }] } : undefined;
+  };
+  /** The first message as the place chat's initial draft: its text and references; files follow with the normal send. */
+  const placeDraft = (input: AiComposerSendInput): AiDraftContentPart[] => {
+    const parts = (input.draftContent ?? []).filter((part) => part.type === "text" || part.type === "resource");
+    if (parts.some((part) => part.type === "resource" || part.text.trim())) return parts;
+    return [{ type: "text", text: input.message?.trim() || "…" }];
+  };
+  const loadPlace = props.loadPlace ?? fetchAssistantPlace;
+  const openChatPlace = () => {
+    const id = chat.activeConversationId();
+    if (!id) return null;
+    const loaded = chat.conversation();
+    return conversationPlace(loaded?.id === id ? loaded : null) ?? conversationPlace(activeConversation());
+  };
+  const followablePlace = (view: AssistantPlaceView | null): view is Extract<AssistantPlaceView, { state: "available" | "unavailable" }> =>
+    Boolean(view && (view.state === "available" || (view.state === "unavailable" && view.conversationId)));
+  const panelShowsNothingToLose = () =>
+    !mainView() &&
+    !projectView() &&
+    (switchingPlace() ||
+      (chat.activeConversationId()
+        ? panelFollowsPlace({ conversationId: chat.activeConversationId(), empty: activeChatIsBlank(), atPlace: Boolean(openChatPlace()) })
+        : // Text typed into the empty chat is something to lose; the bar then offers the switch instead.
+          !composerDraft("__new__").trim() && composerAttachmentsFor("__new__").length === 0));
+  /** The page names a place whose answer is still out: no chat is created until the panel knows which kind. */
+  const placeResolving = () => Boolean(props.embedded && pagePlace.context()?.scope && pagePlace.state() === "loading");
+  const [switchingPlace, setSwitchingPlace] = createSignal(false);
+  /** The place the empty chat belongs to: its next message creates the person's chat there. */
+  const [emptyAt, setEmptyAt] = createSignal<Extract<AssistantPlaceView, { state: "available" }> | null>(
+    props.initialPlace?.state === "available" && !props.initialConversationId ? props.initialPlace : null,
+  );
+  /** The empty chat at a place: the next message creates the person's chat there. */
+  const showEmptyPlaceChat = (view: Extract<AssistantPlaceView, { state: "available" }>) => {
+    setEmptyAt(view);
+    navigationRequest++;
+    setMainView(null);
+    setProjectView(null);
+    if (chat.activeConversationId()) chat.setActiveConversationId(null);
+    const href = assistantConversationHref(window.location.href, null);
+    if (href !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+      navigate(href, { scroll: "manual", viewTransition: false });
+    focusComposer();
+  };
+  // Each switch has its own number; a newer page ends an older switch before its chat lands.
+  let placeSwitch = 0;
+  const switchToPlace = async (view: Extract<AssistantPlaceView, { state: "available" | "unavailable" }>) => {
+    const target = view.conversationId;
+    if (target && target === chat.activeConversationId() && !mainView() && !projectView()) return;
+    const token = ++placeSwitch;
+    setSwitchingPlace(true);
+    try {
+      if (!target) {
+        if (view.state === "available") showEmptyPlaceChat(view);
+        return;
+      }
+      if ((await openAndFocusConversation(target)) && token === placeSwitch) commitConversationUrl(target);
+    } catch (error) {
+      if (token === placeSwitch) chat.setError(error instanceof Error ? error.message : t().openConversationFailed);
+    } finally {
+      if (token === placeSwitch) setSwitchingPlace(false);
+    }
+  };
+  const pagePlace = createPagePlace({
+    context: props.embedded ? (props.initialPanelContext ?? null) : null,
+    initial: props.initialPlace ?? null,
+    load: (ref, signal) => loadPlace(ref, signal),
+    // O1: a late answer for an earlier page never arrives here (seq and pageId), so this only follows the current page.
+    onPlace: (view) => {
+      if (followablePlace(view) && panelShowsNothingToLose()) void switchToPlace(view);
+    },
+  });
+  onMount(() => {
+    if (!props.embedded) return;
+    pagePlace.receive(getContext());
+    onCleanup(
+      onContextChange((next) => {
+        // A switch still opening the previous page's chat ends here; the new page decides again.
+        if (switchingPlace() && !samePlace(next?.scope, pagePlace.context()?.scope)) {
+          placeSwitch++;
+          navigationRequest++;
+          setSwitchingPlace(false);
+          // Also invalidate the controller's in-flight open, so its late detail cannot become the active chat.
+          chat.setActiveConversationId(assistantConversationIdFromHref(window.location.href));
+        }
+        pagePlace.receive(next);
+        if (!next) retryOtherPlace();
+        // Consent arrives as a new context: the open chat's own place loads again too.
+        if (otherPlace()?.view?.state === "consent") retryOtherPlace();
+      }),
+    );
+  });
+  // A chat whose place is not the page's reads its own place once, for its bar.
+  const [otherPlace, setOtherPlace] = createSignal<{ key: string; view: AssistantPlaceView | null; failed: boolean } | null>(null);
+  const [otherRetry, setOtherRetry] = createSignal(0);
+  createEffect(
+    on(
+      () => {
+        const place = openChatPlace();
+        otherRetry();
+        return place && !samePlace(place.ref, pagePlace.view()?.ref) ? place.ref : null;
+      },
+      (ref) => {
+        if (!props.embedded || !ref) return;
+        const key = `${ref.type}:${ref.id}`;
+        if (otherPlace()?.key === key && !otherPlace()?.failed) return;
+        setOtherPlace({ key, view: null, failed: false });
+        const abort = new AbortController();
+        onCleanup(() => abort.abort());
+        loadPlace({ ...ref }, abort.signal).then(
+          (view) => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view, failed: false });
+          },
+          () => {
+            if (!abort.signal.aborted) setOtherPlace({ key, view: null, failed: true });
+          },
+        );
+      },
+    ),
+  );
+  const retryOtherPlace = () => {
+    setOtherPlace(null);
+    setOtherRetry((count) => count + 1);
+  };
+  /** The page's place when it is the open chat's, or when the empty panel waits for its first message there. */
+  const emptyPlace = () => {
+    const at = emptyAt();
+    if (!props.embedded || !at || !pagePlace.context() || chat.activeConversationId() || mainView() || projectView() || !emptyChat())
+      return null;
+    // The page's fresher answer for the same place wins; after leaving it, the empty chat keeps its own place.
+    const page = pagePlace.view();
+    return page?.state === "available" && samePlace(page.ref, at.ref) ? page : at;
+  };
+  const placeBar = createMemo((): AssistantPlaceBarState | null => {
+    if (!props.embedded || mainView() || projectView()) return null;
+    const page = pagePlace.view();
+    const chatPlace = openChatPlace();
+    if (chatPlace) {
+      const view = samePlace(chatPlace.ref, page?.ref) ? page : otherPlace()?.view;
+      if (view?.state === "available") return { kind: "place", view };
+      // Only a place that is gone or no longer readable says so (O5); the chat stays, without the place's tools.
+      if (view?.state === "unavailable")
+        return {
+          kind: "gone",
+          view: { ...view, title: view.title ?? chatPlace.title, app: view.app ?? chatPlace.app ?? null },
+        };
+      // Without consent the place is not lost, only not shared: the shell's own question brings it back.
+      if (view?.state === "consent") return { kind: "consent", title: chatPlace.title, app: chatPlace.app ?? null, onAsk: askPanelConsent };
+      // The app no longer declares a Gustav place: a normal chat, without a bar.
+      if (view?.state === "none") return null;
+      if (samePlace(chatPlace.ref, page?.ref) ? pagePlace.state() === "failed" : otherPlace()?.failed)
+        return { kind: "failed", onRetry: samePlace(chatPlace.ref, page?.ref) ? pagePlace.retry : retryOtherPlace };
+      return { kind: "loading" };
+    }
+    const followable = panelShowsNothingToLose();
+    if (!chat.activeConversationId() && emptyAt() && !pagePlace.context())
+      return { kind: "consent", title: emptyAt()!.title, app: emptyAt()!.app, onAsk: askPanelConsent };
+    if (page?.state === "consent" && followable) return { kind: "consent", title: null, app: null, onAsk: askPanelConsent };
+    const here = emptyPlace();
+    const offer = followablePlace(page) && !samePlace(page.ref, here?.ref) ? page : null;
+    if (pagePlace.state() === "loading" && followable && pagePlace.context()?.scope) return { kind: "loading" };
+    if (pagePlace.state() === "failed" && pagePlace.context()?.scope) return { kind: "failed", onRetry: pagePlace.retry };
+    if (offer && !followable)
+      return {
+        kind: "switch",
+        view: offer,
+        busy: switchingPlace(),
+        disabled: !canUseComposer(),
+        onSwitch: () => void switchToPlace(offer),
+      };
+    if (here) return { kind: "place", view: here };
+    return null;
+  });
+  // "Attach current view" stays for places whose app declares no Gustav block, and as the way out when a place failed.
+  const showsAttachPlace = () =>
+    Boolean(pagePlace.context()?.scope) && (pagePlace.view()?.state === "none" || pagePlace.state() === "failed");
+  const [startingOver, setStartingOver] = createSignal(false);
+  /** "Start over": archives the person's chat at this place; the next message there starts a new one (O2). */
+  const startOver = async () => {
+    const conversation = chat.conversation();
+    const conversationId = chat.activeConversationId();
+    if (!conversation || conversation.id !== conversationId || startingOver() || chat.activeTurn() || chat.running()) return;
+    setStartingOver(true);
+    const place = openChatPlace();
+    try {
+      await assistantApi.archiveConversation(conversationId);
+      // Only while the page is still this chat's place: a later page decided on its own.
+      const page = pagePlace.view();
+      if (place && page && (page.state === "available" || page.state === "unavailable") && samePlace(place.ref, page.ref)) {
+        pagePlace.update({ ...page, conversationId: null });
+        if (chat.activeConversationId() === conversationId && page.state === "available")
+          showEmptyPlaceChat({ ...page, conversationId: null });
+      }
+      archiveConversation(conversation);
+    } catch {
+      toast.error(placeT().startOverFailed, { title: placeT().startOverFailedTitle });
+    } finally {
+      setStartingOver(false);
+    }
+  };
+  const PanelAllChats = () => (
+    <ButtonLink
+      href={panelFullViewHref()}
+      size="xs"
+      variant="ghost"
+      class="assistant-panel-link"
+      // Before the panel scripts run, the host opens the link instead of the panel frame.
+      target={workspaceMounted() ? undefined : "_top"}
+    >
+      <i class="ti ti-messages" aria-hidden="true" />
+      {t().allChats}
+    </ButtonLink>
+  );
+  // The panel reopens the chat it remembers, so the row also starts a new one whenever the panel holds a chat, even one
+  // without messages (a saved draft, or a chat that failed to load).
+  // In a chat at a place, the same slot reads "Start over": a place keeps one chat per person (O2).
+  const PanelNewChat = () => (
+    <Show
+      when={openChatPlace()}
+      fallback={
+        <Button
+          size="xs"
+          variant="ghost"
+          class="assistant-panel-link"
+          disabled={newConversation.loading() || composerPicking() > 0}
+          onClick={() => void createAndFocusConversation()}
+        >
+          <i class="ti ti-plus" aria-hidden="true" />
+          {t().newChat}
+        </Button>
+      }
+    >
+      <Button
+        size="xs"
+        variant="ghost"
+        class="assistant-panel-link"
+        title={placeT().startOverHint}
+        disabled={startingOver() || Boolean(chat.activeTurn()) || chat.running() || composerPicking() > 0}
+        onClick={() => void startOver()}
+      >
+        <i class={startingOver() ? "ti ti-loader-2 k2b-spin" : "ti ti-refresh"} aria-hidden="true" />
+        {placeT().startOver}
+      </Button>
+    </Show>
+  );
+  const PanelRow = () => (
+    <div class="assistant-panel-row">
+      <PanelNewChat />
+      <PanelAllChats />
+    </div>
+  );
+  // In the empty chat the Project choice keeps the start of the row; these links share its end.
+  const PanelRowEnd = () => (
+    <div class="assistant-panel-row-end">
+      <Show when={chat.activeConversationId()}>
+        <PanelNewChat />
+      </Show>
+      <PanelAllChats />
+    </div>
+  );
+
+  // The parts of the page, shared by the v1 frame of the panel and the v2 frame of the page.
+  const PanelTop = () => (
+    <>
+      <Show when={props.embedded && !mainView()}>
+        <Show when={placeBar()}>{(state) => <AssistantPlaceBar state={state()} />}</Show>
+        <AssistantCodeBlock
+          initial={props.initialCodeBlock}
+          timeZone={props.timeZone}
+          chatOpen={Boolean(chat.activeConversationId() || activeProject())}
+          disabled={panelAttachDisabled()}
+          revision={codeRevision()}
+          onEdit={async (ref) => {
+            // Gustav works on a place's Code with that place in the message; the chat's tools find its Code.
+            await attachPanelResource(ref, () => true);
+            focusComposer();
+          }}
+        />
+        <Show when={showsAttachPlace()}>
+          <AssistantPanelContext
+            initial={props.initialPanelContext ?? null}
+            disabled={panelAttachDisabled()}
+            attach={attachPanelResource}
+          />
+        </Show>
+      </Show>
+    </>
+  );
+  const MainContent = () => (
+    <>
+      <PanelTop />
+      <Show
+        when={!mainView()}
+        fallback={
+          <>
+            <Show
+              when={codeOpen()}
+              fallback={
+                <AssistantApprovalsView
+                  initial={approvalsRendered() ? props.approvals.page : undefined}
+                  questions={() => waiting().entries}
+                  questionsPage={openQuestions}
+                  onJump={(question) => void jumpToQuestion(question)}
+                  initialAutomations={approvalsRendered() ? props.initialAutomations : undefined}
+                  timeZone={props.timeZone}
+                />
+              }
+            >
+              <Show
+                when={codeRendered() && props.code?.detail}
+                fallback={
+                  <AssistantCodeView
+                    userId={props.userId}
+                    timeZone={props.timeZone}
+                    initial={codeRendered() ? props.code?.page : undefined}
+                    onCreateInChat={createFromCodeView}
+                  />
+                }
+              >
+                {(detail) => <AssistantCodeDetail data={detail()} />}
+              </Show>
+            </Show>
+            <Show when={props.embedded}>
+              <div class="mx-auto w-full max-w-3xl shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)]">
+                <PanelRow />
+              </div>
+            </Show>
+          </>
+        }
+      >
+        <Show
+          keyed
+          when={projectView()}
+          fallback={
+            <Chat class="assistant-chat-shell min-h-0 flex-1">
+              <div class="assistant-chat-layout" data-tabs={artifactWorkspace.state().tabs.length > 0 ? "open" : undefined}>
+                <div class="contents">
+                  <section class="assistant-chat-messages min-h-0 overflow-hidden" data-scroll-preserve="assistant-messages">
+                    <Show
+                      when={emptyChat()}
+                      fallback={
+                        <AiChatActionsProvider
+                          actions={{
+                            renderWakeupLine: (line, key) => <AssistantWakeupLine line={wakeupLine(line, key)} host={wakeupLineHost} />,
+                            renderTurnErrorAction: (error) =>
+                              props.canConfigureAi ? <TurnErrorAction error={error} canConfigure /> : undefined,
+                            onQuote: addQuote,
+                            renderCodeAuthoringStop: (state, continuable, superseded) => (
+                              <AssistantAuthoringStop state={state} continuable={continuable} superseded={superseded} />
+                            ),
+                            renderCodeDecision: (entry) => (
+                              <AssistantCodeDecisionEntry entry={entry} messages={chat.usageMessages} timeZone={props.timeZone} />
+                            ),
+                            renderSecretRequest: (request) => (
+                              <SecretRequestEntry
+                                {...request}
+                                conversationId={chat.activeConversationId}
+                                timeZone={props.timeZone}
+                                titles={secretTitles}
+                              />
+                            ),
+                            renderCodeVersion: (version) => (
+                              <AssistantCodeVersionCard
+                                store={codeVersionCards}
+                                {...version}
+                                timeZone={props.timeZone}
+                                onActivated={() => setCodeRevision((revision) => revision + 1)}
+                                onAsk={askGustav}
+                              />
+                            ),
+                            actionDisabled: () => chat.runStatus() === "stopping",
+                            onCheckAction: (request) => chat.checkAction(request),
+                            onEditDraft: (request, values, digest) => chat.editDraft(request, values, digest),
+                            onChoice: (request, blockId, ids) => chat.submitChoice(request, blockId, ids),
+                            onShowQuestion: (anchor) => {
+                              const conversationId = chat.activeConversationId();
+                              if (conversationId) void jumpToQuestion({ conversationId, anchor });
+                            },
+                            onApproval: async (request, input) => {
+                              if (!(await chat.respondToApproval(request, input))) throw new Error(t().submitApprovalFailed);
+                            },
+                            onRevokeWebsite: async (origin) => {
+                              const conversationId = chat.activeConversationId();
+                              if (conversationId) await revokeChatWebsite(conversationId, origin);
+                            },
+                            onFrontendToolResult: async (request, result) => {
+                              if (!(await chat.submitFrontendToolResult(request, result))) throw new Error(t().submitToolFailed);
+                            },
+                            onForkMessage: async (entry, input) => {
+                              const conversation = await chat.forkMessage(entry.id, input);
+                              if (!conversation) throw new Error(t().forkFailed);
+                              if (chat.activeConversationId() === conversation.id) commitConversationUrl(conversation.id);
+                            },
+                            onRetryMessage: async (entry, input) => {
+                              const retried = await chat.retryUserMessage(entry.id, {
+                                ...input,
+                                model: selectedModelRequest(),
+                              });
+                              if (!retried) throw new Error(chat.error() ?? t().retryMessageFailed);
+                            },
+                            onMessageFeedback: async (entry, feedback) => {
+                              const saved = feedback
+                                ? await chat.setMessageFeedback(entry.id, feedback)
+                                : await chat.clearMessageFeedback(entry.id);
+                              if (!saved) throw new Error(chat.error() ?? t().saveFeedbackFailed);
+                            },
+                            onContinueTurn: async (message) => {
+                              const target = chat.activeConversationId();
+                              if (!target) throw new Error(t().authoringContinueFailed);
+                              // Sending replaces the saved draft; what the person was writing goes back into it.
+                              const sent = await sendBesideComposer(session(target), {
+                                send: () => send({ message }),
+                                hasContent: () => Boolean(composerDraft(target).trim()) || composerAttachmentsFor(target).length > 0,
+                                save: () => saveComposer(target, target),
+                              });
+                              if (!sent) throw new Error(t().authoringContinueFailed);
+                            },
+                            onOpenFile: (path) => void openFiles(path),
+                            onOpenWebLink: (href, title) => {
+                              const open = openWebPage();
+                              if (!open) return false;
+                              open(href, title);
+                              return true;
+                            },
+                            resolveFileLink: (href) => {
+                              const context = workspaceContext();
+                              const conversationId = chat.activeConversationId();
+                              return conversationId && context?.chatId === conversationId
+                                ? resolveChatFileLink(href, window.location.href, conversationId, assistantChatFilePaths(context))
+                                : null;
+                            },
+                            fileUrl: chat.fileContentUrl,
+                            onOpenReference: (title, ref) => void openAssistantCloudReference(title, ref),
+                          }}
+                        >
+                          <ConversationTimeline />
+                        </AiChatActionsProvider>
+                      }
+                    >
+                      <AssistantEmptyChat
+                        // The start screen keeps only the field (v12 image 11); what waits is in the navigation.
+                        composer={<AssistantComposer />}
+                        notices={<ComposerNotices />}
+                        modelNote={modelNote()}
+                        projects={projects()}
+                        selectedProjectId={emptyProjectId()}
+                        choosingProject={choosingProject()}
+                        onChooseProject={() => void chooseEmptyChatProject()}
+                        onStarter={props.embedded ? undefined : useStarter}
+                        rowEnd={props.embedded ? <PanelRowEnd /> : undefined}
+                        place={
+                          emptyPlace()
+                            ? {
+                                title: emptyPlace()!.title,
+                                appName: emptyPlace()!.app.name,
+                                starters: emptyPlace()!.starters,
+                                onStarter: (starter) => void useStarter({ ...starter, icon: "ti ti-sparkles" }),
+                              }
+                            : null
+                        }
+                      />
+                    </Show>
+                  </section>
+
+                  <Show when={!emptyChat()}>
+                    <div class="assistant-chat-composer shrink-0 px-[var(--ui-space-section)] pb-[var(--ui-space-section)] pt-2">
+                      <div class="assistant-chat-composer__column mx-auto flex max-w-3xl flex-col gap-2">
+                        {/* Right above everything over the field, under the thumb on phones. It lies over the
+                            timeline's free end, so it comes and goes without moving the field or the chat. */}
+                        <WaitingRow queue />
+                        <ComposerNotices />
+                        {modelNote()}
+                        <AssistantComposer />
+                        <Show when={props.embedded}>
+                          <PanelRow />
+                        </Show>
+                      </div>
+                    </div>
+                  </Show>
+                </div>
+                <Show when={activeConversation() && !emptyChat()}>
+                  <AssistantChatContextPlaces
+                    chatId={chat.activeConversationId()}
+                    state={contextState}
+                    actions={contextBoxActions()}
+                    project={activeConversationProject()}
+                    title={activeConversation()?.title ?? null}
+                    onSheet={openContextSheet}
+                  />
+                </Show>
+              </div>
+            </Chat>
+          }
+        >
+          {(view) => (
+            <Show when={projects().find((project) => project.id === view.projectId)}>
+              {(project) => (
+                <AssistantProjectView
+                  project={project()}
+                  initialPage={view.page}
+                  initialContext={view.context}
+                  composer={
+                    <div class="flex flex-col gap-2">
+                      <WaitingRow />
+                      {modelNote()}
+                      <AssistantComposer projectId={project().id} projectName={project().name} />
+                      <Show when={props.embedded}>
+                        <PanelRow />
+                      </Show>
+                    </div>
+                  }
+                  onOpenConversation={openAndFocusConversation}
+                />
+              )}
+            </Show>
+          )}
+        </Show>
+      </Show>
+    </>
+  );
+  const TabsContent = () => (
+    <Show
+      when={workspaceMounted()}
+      fallback={
+        <div class="flex h-full items-center justify-center">
+          <Placeholder state="loading" title={artifactCopy().loading} />
+        </div>
+      }
+    >
+      <Suspense
+        fallback={
+          <div class="flex h-full items-center justify-center">
+            <Placeholder state="loading" title={artifactCopy().loading} />
+          </div>
+        }
+      >
+        <ChatWorkspace
+          onOpenView={openContextView}
+          project={activeConversationProject()}
+          conversationId={chat.activeConversationId()}
+          controller={artifactWorkspace}
+          userId={props.userId}
+          refreshKey={filesRefreshKey()}
+          onJump={(target) => void jumpTo(target)}
+          onOpenSecrets={openChatSecrets}
+          snapshot={contextState.snapshot}
+          onAsk={askAboutTab}
+          onAdd={() => openContextOverview("files", sidebarCopy().title)}
+          webReader={webReader() === true}
+          arrangeHintSeen={props.arrangeHintSeen === true}
+        />
+      </Suspense>
+    </Show>
+  );
+
+  const archiveBlocker = (conversation: AiConversation) =>
+    assistantArchiveBlocker(conversation, conversation.id === chat.activeConversationId() ? chat.activeTurn() : null);
+  return {
+    liveHub,
+    basePath,
+    conversations,
+    props,
+    sidebar,
+    chat,
+    mainView,
+    projects,
+    activeProject,
+    newConversation,
+    composerPicking,
+    createAndFocusConversation,
+    locale,
+    t,
+    openProject,
+    openAndFocusConversation,
+    queuedMessages,
+    updateConversation,
+    archiveConversation,
+    waiting,
+    openApprovals,
+    openCode,
+    artifactWorkspace,
+    artifactCopy,
+    MainContent,
+    TabsContent,
+    codeHref,
+    activeConversation,
+    approvalsRendered,
+    openQuestions,
+    jumpToQuestion,
+    archiveBlocker,
+  };
+}
+
+/** What the frames of the page and of the panel draw: the chat, the views, the tabs and the deeds around them. */
+export type AssistantWorkspaceParts = ReturnType<typeof createAssistantWorkspace>;

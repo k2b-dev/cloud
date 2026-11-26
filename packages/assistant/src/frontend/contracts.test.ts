@@ -36,7 +36,7 @@ describe("Assistant frontend contracts", () => {
 
   test("keeps Projects and chat context inside the Assistant workspace", async () => {
     const [workspace, sidebar, projectsDialog, project, context, projectSettings] = await Promise.all([
-      read("./AssistantWorkspace.island.tsx"),
+      read("./assistant-workspace.tsx"),
       read("./AssistantSidebar.tsx"),
       read("./AssistantProjectsDialog.tsx"),
       read("./AssistantProjectView.tsx"),
@@ -81,7 +81,7 @@ describe("Assistant frontend contracts", () => {
 
   test("keeps contextual composer actions alongside shared slash commands", async () => {
     const [workspace, page, messageSearch] = await Promise.all([
-      read("./AssistantWorkspace.island.tsx"),
+      read("./assistant-workspace.tsx"),
       read("./page.tsx"),
       read("./assistant-search.ts"),
     ]);
@@ -118,7 +118,7 @@ describe("Assistant frontend contracts", () => {
   });
 
   test("queues complete follow-up messages durably and presents one minimal connection notice", async () => {
-    const workspace = await read("./AssistantWorkspace.island.tsx");
+    const workspace = await read("./assistant-workspace.tsx");
 
     // Sending while Gustav works queues the message; "Send now" in the queue replaced steering the running turn.
     expect(workspace).toContain('runningSubmitIntent="queue"');
@@ -136,7 +136,7 @@ describe("Assistant frontend contracts", () => {
   });
 
   test("Attach files reads from Cloud apps only within what the draft can still take", async () => {
-    const workspace = await read("./AssistantWorkspace.island.tsx");
+    const workspace = await read("./assistant-workspace.tsx");
 
     expect(workspace).toContain("choose: () => trackComposerFileChoice(chooseComposerFiles(sessionKey()))");
     expect(workspace).toContain("aiComposerChooseMaxBytes(composerPartCount(sessionKey))");
@@ -144,7 +144,7 @@ describe("Assistant frontend contracts", () => {
   });
 
   test("follows AI live updates on Core's shared live socket and streams the visible turn over SSE", async () => {
-    const workspace = await read("./AssistantWorkspace.island.tsx");
+    const workspace = await read("./assistant-workspace.tsx");
 
     expect(workspace.match(/followAssistantLive\(liveHub/g)).toHaveLength(1);
     expect(workspace).not.toContain("streamTransport");

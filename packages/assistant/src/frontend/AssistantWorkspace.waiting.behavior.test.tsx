@@ -19,7 +19,8 @@ mock.module("@k2b/cloud/browser/live", () => ({
 const bootstrap = createDomTestHarness();
 const { WAITING_NOW, waitingChatHistory, waitingFixture, waitingStripSummary } = await import("./waiting-questions.fixture");
 const { LocaleProvider } = await import("@k2b/ui");
-const { default: Workspace } = await import("./AssistantWorkspace.island");
+// The shared count logic, seen through the panel, which keeps the v1 sidebar; the v2 page has its own browser tests.
+const { default: Workspace } = await import("./AssistantPanel.island");
 bootstrap.cleanup();
 
 const now = WAITING_NOW;
@@ -76,7 +77,7 @@ const mount = (
   setSystemTime(new Date(now));
   const dom = createDomTestHarness();
   cleanups.push(dom.cleanup);
-  dom.window.history.replaceState(null, "", `/app/assistant?conversation=${here.id}`);
+  dom.window.history.replaceState(null, "", `/app/assistant/panel?conversation=${here.id}`);
   const shell = dom.document.createElement("script");
   shell.id = "cloud-shell-data";
   shell.textContent = JSON.stringify({ apps: [], appId: "assistant" });
@@ -220,7 +221,7 @@ test("the dot and the waiting row follow a question that opens and is decided in
   server.questions = { items: [routine], count: 1 };
   await h.changed("Tops42");
   await waitFor(() => h.dotted().length === 1);
-  expect(h.dotted()).toEqual(["/app/assistant?conversation=Tops42"]);
+  expect(h.dotted()).toEqual(["/app/assistant/panel?conversation=Tops42"]);
   await waitFor(() => h.strip() !== null);
   expect(waitingStripSummary(h.strip()!.outerHTML)).toEqual({
     quiet: false,
@@ -294,7 +295,7 @@ test("a run that starts in the open chat and in another marks both rows without 
     ["Tops42", "assistant-chat-unread", true],
   ]);
   expect(h.root.querySelector("div.assistant-chat-sidebar-item--unread a")?.getAttribute("href")).toBe(
-    "/app/assistant?conversation=Tops42",
+    "/app/assistant/panel?conversation=Tops42",
   );
   expect(h.sidebarLoads).toHaveLength(2);
 });
@@ -326,7 +327,7 @@ test("the sidebar counts exactly what the waiting row lists, also entries that a
   const h = mount(server, here);
   /** The sidebar's "Waiting for you" count, and the number of entries the row above the field lists. */
   const counts = () => {
-    const row = h.root.querySelector('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]');
+    const row = h.root.querySelector('footer[data-sidebar-mode="expanded"] a[href="/app/assistant/panel?approvals=1"]');
     const strip = h.strip();
     return {
       sidebar: row?.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent ?? null,
@@ -360,7 +361,7 @@ test("the page Waiting for you lists the same entries as the row and the sidebar
     .entries.map((entry) => entry.replace(/ in .*$/, ""))
     .sort();
   const sidebarRow = () =>
-    h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+    h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant/panel?approvals=1"]')!;
   const sidebar = () => sidebarRow().querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
   expect(sidebar()).toBe("2");
 
@@ -394,7 +395,7 @@ const mailApproval = (id: string, offer: string): { request: PendingApproval; qu
     assurance: "confirm",
     sentence: `Mail: Angebot ${offer} senden`,
     review: null,
-    requester: { kind: "chat", appId: "assistant", title: "Wartung Oktober", href: "/app/assistant?conversation=Wart42" },
+    requester: { kind: "chat", appId: "assistant", title: "Wartung Oktober", href: "/app/assistant/panel?conversation=Wart42" },
     remember: { chat: false, always: false, website: false },
     createdAt: now,
     expiresAt: new Date(Date.parse(now) + 23 * 3_600_000).toISOString(),
@@ -423,7 +424,7 @@ test("an approval decided on the page keeps its receipt; a new one elsewhere app
   const h = mount(server, here);
   await waitFor(() => subscriptions.length > 0);
   h.root
-    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!
+    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant/panel?approvals=1"]')!
     .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
   const cards = () => [...h.root.querySelectorAll<HTMLElement>(".assistant-waiting-page article.cloud-approval")];
   await waitFor(() => cards().length === 1);
@@ -468,7 +469,9 @@ test("twenty approvals plus a newer Code version remain reachable with the sideb
   };
   const h = mount(server, here);
   await waitFor(() => subscriptions.length > 0);
-  const sidebarRow = h.root.querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!;
+  const sidebarRow = h.root.querySelector<HTMLAnchorElement>(
+    'footer[data-sidebar-mode="expanded"] a[href="/app/assistant/panel?approvals=1"]',
+  )!;
   const counter = () => sidebarRow.querySelector(".k2b-app-workspace__sidebar-status-count")?.textContent;
   expect(counter()).toBe("21");
   expect(h.strip()!.querySelector(".assistant-waiting__more")?.getAttribute("aria-label")).toContain("21");
@@ -512,7 +515,7 @@ const manyWaitingQuestions = () => {
 const openWaitingPage = async (h: ReturnType<typeof mount>) => {
   await waitFor(() => subscriptions.length > 0);
   h.root
-    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant?approvals=1"]')!
+    .querySelector<HTMLAnchorElement>('footer[data-sidebar-mode="expanded"] a[href="/app/assistant/panel?approvals=1"]')!
     .dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
   await waitFor(() => h.root.querySelector(".assistant-waiting-page article.cloud-approval") !== null);
 };

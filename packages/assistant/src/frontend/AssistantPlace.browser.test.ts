@@ -19,11 +19,12 @@ const entrySource = `
 import { LocaleProvider } from "@k2b/ui";
 import { render } from "solid-js/web";
 import AssistantWorkspace from ${JSON.stringify(resolve(import.meta.dir, "AssistantWorkspace.island.tsx"))};
+import AssistantPanel from ${JSON.stringify(resolve(import.meta.dir, "AssistantPanel.island.tsx"))};
 
 render(
   () => (
     <LocaleProvider locale={window.harness.locale}>
-      <AssistantWorkspace {...window.harness.props} />
+      {window.harness.props.embedded ? <AssistantPanel {...window.harness.props} /> : <AssistantWorkspace {...window.harness.props} />}
     </LocaleProvider>
   ),
   document.getElementById("root"),

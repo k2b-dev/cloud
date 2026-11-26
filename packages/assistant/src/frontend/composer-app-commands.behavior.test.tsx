@@ -14,7 +14,8 @@ const openCommand = mock(async (_id: string, _input: unknown, _options: { return
   return true;
 });
 mock.module("@k2b/cloud/browser/commands", () => ({ ...commandsModule, openCommand }));
-const { default: Workspace } = await import("./AssistantWorkspace.island");
+const { default: PageIsland } = await import("./AssistantWorkspace.island");
+const { default: PanelIsland } = await import("./AssistantPanel.island");
 bootstrap.cleanup();
 const command: CloudComposerCommand = {
   id: "spaces.task.compose",
@@ -213,6 +214,8 @@ const mount = async (
     globalThis.fetch = originalFetch;
   });
   const active = !options.project && !options.newChat;
+  // The panel and the page are two islands.
+  const Workspace = options.embedded ? PanelIsland : PageIsland;
   const dispose = render(
     () => (
       <LocaleProvider locale="de">
@@ -539,7 +542,8 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
   expect(approvals).not.toBeNull();
   approvals!.click();
   await waitFor(() => h.window.location.search === "?approvals=1");
-  const heading = h.root.querySelector("h1");
+  // Waiting for you on v2: its statement row stands where the chat was.
+  const heading = h.root.querySelector('[data-k2-part="StatusRow"]');
   expect(heading).not.toBeNull();
   expect(h.root.querySelector("textarea")).toBeNull();
   const href = h.window.location.href;
@@ -547,7 +551,7 @@ test("opening Approvals while an app Command creates a plain chat keeps Approval
   await waitFor(() => h.saves.length === 1);
   await Bun.sleep(50);
   expect(h.window.location.href).toBe(href);
-  expect(h.root.querySelector("h1") === heading).toBe(true);
+  expect(h.root.querySelector('[data-k2-part="StatusRow"]') === heading).toBe(true);
   expect(h.root.querySelector("textarea")).toBeNull();
   expect(openCommand).not.toHaveBeenCalled();
 });

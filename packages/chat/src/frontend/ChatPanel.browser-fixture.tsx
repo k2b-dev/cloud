@@ -18,16 +18,26 @@ export async function startConversationPanelFixture() {
   const root = mkdtempSync(resolve(tmpdir(), "conversation-panel-"));
   registerSsrTestPlugin({ dev: true, rootDir: root });
 
-  const [{ defineApp }, { Layout, PanelLayout }, { default: ChatWorkspace }, { default: AssistantWorkspace }, settings, help, consent] =
-    await Promise.all([
-      import("@k2b/cloud"),
-      import("@k2b/cloud/ssr"),
-      import("./ChatWorkspace.island"),
-      import("../../../assistant/src/frontend/AssistantWorkspace.island"),
-      import("@k2b/cloud/server/middleware/settings"),
-      import("@k2b/cloud/ssr/help"),
-      import("@k2b/cloud/services/panel-context-consent"),
-    ]);
+  const [
+    { defineApp },
+    { Layout, PanelLayout },
+    { default: ChatWorkspace },
+    { default: AssistantWorkspace },
+    { default: AssistantPanel },
+    settings,
+    help,
+    consent,
+  ] = await Promise.all([
+    import("@k2b/cloud"),
+    import("@k2b/cloud/ssr"),
+    import("./ChatWorkspace.island"),
+    import("../../../assistant/src/frontend/AssistantWorkspace.island"),
+    // The Assistant's panel has an island of its own; the page's is v2.
+    import("../../../assistant/src/frontend/AssistantPanel.island"),
+    import("@k2b/cloud/server/middleware/settings"),
+    import("@k2b/cloud/ssr/help"),
+    import("@k2b/cloud/services/panel-context-consent"),
+  ]);
   // This fixture builds the embedding client below; the backend only serves data, CSS and fonts.
   const backend = await startChatHarness({ client: false });
   const assistant = assistantPanelFixture();
@@ -164,7 +174,7 @@ export async function startConversationPanelFixture() {
                   innerHTML={JSON.stringify(assistant.snapshot(url)).replace(/</g, "\\u003c")}
                 />
                 <div id="assistant-workspace" class="flex min-h-0 flex-1 flex-col">
-                  {createComponent(AssistantWorkspace, assistant.snapshot(url))}
+                  {createComponent(assistant.snapshot(url).embedded ? AssistantPanel : AssistantWorkspace, assistant.snapshot(url))}
                 </div>
               </>
             ) : chatPage ? (
@@ -222,6 +232,7 @@ import { openPanel } from "@k2b/cloud/browser/panel";
 import ShellRuntime from "@k2b/cloud/ssr/ShellRuntime.island";
 import ChatWorkspace from "./ChatWorkspace.island";
 import AssistantWorkspace from "../../../assistant/src/frontend/AssistantWorkspace.island";
+import AssistantPanel from "../../../assistant/src/frontend/AssistantPanel.island";
 const embedded = document.querySelector("[data-cloud-panel-page]");
 const runtime = document.createElement("div");
 document.body.append(runtime);
@@ -240,7 +251,8 @@ render(() => createComponent(LocaleProvider, { locale: "en", get children() {
 const assistantProps = document.getElementById("assistant-props");
 if (assistantProps) {
  const root = document.getElementById("assistant-workspace"); root.replaceChildren();
- render(() => createComponent(AssistantWorkspace, JSON.parse(assistantProps.textContent)), root);
+ const assistantIslandProps = JSON.parse(assistantProps.textContent);
+ render(() => createComponent(assistantIslandProps.embedded ? AssistantPanel : AssistantWorkspace, assistantIslandProps), root);
 }
 document.documentElement.dataset.fixtureReady = "true";
 `,

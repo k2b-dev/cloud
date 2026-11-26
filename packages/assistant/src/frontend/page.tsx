@@ -26,6 +26,7 @@ import { loadAssistantProjectContextSnapshot } from "../project-context";
 import { chatSecretTitleRefs, loadSecretTitles } from "../secret-titles";
 import { loadAssistantSidebarSnapshot, openQuestionsCaller, placeAppsFromCatalog } from "../sidebar";
 import { loadWaitingAutomations } from "../waiting-automations";
+import AssistantPanel from "./AssistantPanel.island";
 import AssistantWorkspace from "./AssistantWorkspace.island";
 import { readAssistantPlace } from "./assistant-place";
 import { ASSISTANT_PANES_HINT_COOKIE } from "./chat-sidebar-layout";
@@ -204,70 +205,66 @@ export default ssr<AuthContext>(async (c) => {
       )
     : undefined;
 
-  const workspace = () => (
-    <AssistantWorkspace
-      initialCodeVersionCards={initialCodeVersionCards}
-      initialSecretTitles={initialSecretTitles}
-      embedded={embedded}
-      initialPanelContext={panelContext}
-      initialPlace={initialPlace}
-      initialPlaceChats={sidebar.placeChats ?? null}
-      // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
-      initialPlacesFilter={url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place))}
-      initialQuotas={initialQuotas}
-      userId={user.id}
-      canConfigureAi={user.roles.includes("admin")}
-      cloudUrl={publicCloudOrigin(appUrl)}
-      status={status}
-      models={status.options}
-      timeZone={timeZone}
-      renderedAt={new Date().toISOString()}
-      initialLiveCursor={initialLiveCursor}
-      initialCounts={sidebar.counts}
-      initialConversations={initialConversations}
-      initialDoneCount={sidebar.doneCount}
-      initialMoreConversations={sidebar.moreConversations ?? false}
-      initialQuestions={sidebar.questions}
-      initialConversationId={activeConversation?.shortId ?? null}
-      initialArtifactPath={initialArtifactPath}
-      initialWorkspaceHref={`${url.pathname}${url.search}`}
-      initialDetail={
-        initialDetail
-          ? {
-              conversation: initialDetail.conversation,
-              messages: initialDetail.messages,
-              hasMoreMessages: initialDetail.hasMoreMessages ?? false,
-              activeTurn: initialDetail.activeTurn,
-              timeline: initialTimeline,
-            }
-          : null
-      }
-      initialContext={initialContext}
-      initialWakeupLines={initialWakeupLines}
-      initialTabs={activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null}
-      arrangeHintSeen={getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen"}
-      projects={projects}
-      initialProject={activeProject}
-      initialProjectChats={
-        projectChats
-          ? {
-              ...projectChats,
-              items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
-            }
-          : null
-      }
-      initialProjectContext={projectContext}
-      approvals={{ ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen }}
-      code={{
-        has: hasCode,
-        open: codeOpen,
-        ...(codeList !== undefined ? { page: codeList } : {}),
-        ...(codeDetail ? { detail: codeDetail } : {}),
-      }}
-      {...(automations !== undefined ? { initialAutomations: automations } : {})}
-      initialCodeBlock={panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null}
-    />
-  );
+  const islandProps = {
+    initialCodeVersionCards: initialCodeVersionCards,
+    initialSecretTitles: initialSecretTitles,
+    embedded: embedded,
+    initialPanelContext: panelContext,
+    initialPlace: initialPlace,
+    initialPlaceChats: sidebar.placeChats ?? null,
+    // A chat at a place opens with the list that holds it, so a reload keeps the person where they were.
+    initialPlacesFilter: url.searchParams.get("places") === "1" || (!embedded && Boolean(activeConversation?.place)),
+    initialQuotas: initialQuotas,
+    userId: user.id,
+    canConfigureAi: user.roles.includes("admin"),
+    cloudUrl: publicCloudOrigin(appUrl),
+    status: status,
+    models: status.options,
+    timeZone: timeZone,
+    renderedAt: new Date().toISOString(),
+    initialLiveCursor: initialLiveCursor,
+    initialCounts: sidebar.counts,
+    initialConversations: initialConversations,
+    initialDoneCount: sidebar.doneCount,
+    initialMoreConversations: sidebar.moreConversations ?? false,
+    initialQuestions: sidebar.questions,
+    initialConversationId: activeConversation?.shortId ?? null,
+    initialArtifactPath: initialArtifactPath,
+    initialWorkspaceHref: `${url.pathname}${url.search}`,
+    initialDetail: initialDetail
+      ? {
+          conversation: initialDetail.conversation,
+          messages: initialDetail.messages,
+          hasMoreMessages: initialDetail.hasMoreMessages ?? false,
+          activeTurn: initialDetail.activeTurn,
+          timeline: initialTimeline,
+        }
+      : null,
+    initialContext: initialContext,
+    initialWakeupLines: initialWakeupLines,
+    initialTabs: activeConversation && initialTabs ? { chatId: activeConversation.shortId, snapshot: initialTabs } : null,
+    arrangeHintSeen: getCookie(c, ASSISTANT_PANES_HINT_COOKIE) === "seen",
+    projects: projects,
+    initialProject: activeProject,
+    initialProjectChats: projectChats
+      ? {
+          ...projectChats,
+          items: projectChats.items.map((chat) => ({ ...chat, id: chat.shortId, projectId: activeProject!.id })),
+        }
+      : null,
+    initialProjectContext: projectContext,
+    approvals: { ...(approvals !== undefined ? { page: approvals } : {}), open: approvalsOpen },
+    code: {
+      has: hasCode,
+      open: codeOpen,
+      ...(codeList !== undefined ? { page: codeList } : {}),
+      ...(codeDetail ? { detail: codeDetail } : {}),
+    },
+    ...(automations !== undefined ? { initialAutomations: automations } : {}),
+    initialCodeBlock: panelScope && codeBlockPage !== undefined ? { ref: panelScope, page: codeBlockPage, place: codePlace } : null,
+  };
+  // The panel and the page are two islands, each with only its own frame; each is written out, so SSR marks it.
+  const workspace = () => (embedded ? <AssistantPanel {...islandProps} /> : <AssistantWorkspace {...islandProps} />);
   if (embedded)
     return () => (
       <PanelLayout c={c} title={t.assistant}>
