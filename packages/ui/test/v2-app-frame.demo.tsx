@@ -76,7 +76,7 @@ export function Demo() {
         </Pane>
       </Workspace>
       <TabBar label="App" items={places} />
-      <NoticeStack tabBar>
+      <NoticeStack>
         <Show when={notices()}>
           <Notice tone="warn" icon="wifi-off" actions={[{ label: "Ausblenden", onClick: () => setNotices(false) }]}>
             Offline – Änderungen gehen raus, sobald du wieder online bist
