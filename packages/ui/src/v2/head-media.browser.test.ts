@@ -227,6 +227,48 @@ test("the sidebar shows what the storage uses, as a meter with its words", async
   });
 });
 
+test("a setting goes to one column by the width of its pane, so its name never runs into its value (review #4223)", async () => {
+  // at 800 px of window the settings pane is narrow beside the sidebar and the side column, while the window is no phone
+  for (const width of [800, 1024, 1440])
+    await withPage(
+      "settings",
+      async (page) => {
+        const crossed = await page.evaluate(() =>
+          [...document.querySelectorAll("[data-k2-part='Setting']")]
+            .map((setting) => {
+              const label = setting.querySelector<HTMLElement>(".k2-field-label")!;
+              const control = setting.querySelector(":scope > .k2-input, :scope > .k2-check")!.getBoundingClientRect();
+              const box = label.getBoundingClientRect();
+              const beside = control.left > box.left;
+              return { name: label.textContent, bad: label.scrollWidth > label.clientWidth + 1 || (beside && box.right > control.left) };
+            })
+            .filter((setting) => setting.bad)
+            .map((setting) => setting.name),
+        );
+        expect(crossed).toEqual([]);
+      },
+      width,
+    );
+});
+
+test("on the phone the end of the list stays above the floating actions of a selection (review #4223)", async () => {
+  await withPage(
+    "selecting",
+    async (page) => {
+      const found = await page.evaluate(() => {
+        const scroller = document.querySelector(".k2-tiles")!.closest(".k2-scroll")!;
+        scroller.scrollTop = scroller.scrollHeight;
+        const titles = [...document.querySelectorAll(".k2-tile-title")].map((title) => title.getBoundingClientRect().bottom);
+        const bar = document.querySelector(".k2-status-actions")!.getBoundingClientRect();
+        return { last: Math.max(...titles), bar: bar.top };
+      });
+      // the last names stand above the bar, with room to breathe
+      expect(found.last).toBeLessThanOrEqual(found.bar - 8);
+    },
+    390,
+  );
+});
+
 test("a setting stands with its value beside its name, and an unsaved change says what it was", async () => {
   await withPage("settings", async (page) => {
     const setting = page.locator("[data-k2-part='Setting']").first();
