@@ -178,7 +178,7 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
               <Button icon="trash" onClick={() => void remove(client)}>
                 {t().delete}
               </Button>
-              <Button icon="pencil" onClick={() => start(client)}>
+              <Button icon="pencil" keep onClick={() => start(client)}>
                 {t().edit}
               </Button>
               <Button variant="ghost" icon="x" label={t().close} href={LIST} />
