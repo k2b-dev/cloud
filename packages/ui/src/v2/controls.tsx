@@ -176,16 +176,6 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       )}
     </Show>
   );
-  // The deed stands beside the label line, never in it: a button inside a <label> would be pressed with it.
-  const actionLine = (
-    <Show when={props.action}>
-      {(action) => (
-        <span class="k2-field-action">
-          <ActionButton action={action()} variant="text" />
-        </span>
-      )}
-    </Show>
-  );
   // A group of choices is named by its label line; one control is labelled by it.
   return grouped ? (
     <div
@@ -200,7 +190,6 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
       {deed}
       {was}
@@ -218,7 +207,6 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <span class="k2-field-label" id={label} onClick={() => named?.()}>
         {labelLine}
       </span>
-      {actionLine}
       {content}
       {deed}
       {was}
@@ -235,7 +223,6 @@ const FieldFrame = (frame: { field: FieldProps & { was?: string; action?: Action
       <label class="k2-field-label" id={label} for={control}>
         {labelLine}
       </label>
-      {actionLine}
       {content}
       {deed}
       {was}
