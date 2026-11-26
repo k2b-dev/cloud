@@ -18,7 +18,6 @@ import {
   Menu,
   Notice,
   Pane,
-  Progress,
   Row,
   Section,
   Select,
@@ -531,16 +530,17 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
       ? t().basesSubtitle({ count: total(), used: bytes(used(), locale()), free: bytes(free.freeBytes, locale()) })
       : t().basesSubtitleNoDisk({ count: total(), used: bytes(used(), locale()) });
   };
-  const defaultsSummary = () => {
+  // the starting values one per line, each with its own name (label left, value right)
+  const defaults = () => {
     const current = policy();
-    if (!current) return "";
-    return t().defaultsSummary({
-      storage: bytes(current.defaultLimits.storageBytes, locale()),
-      values: number(current.defaultLimits.valuesPerMinute, locale()),
-      profile: profileLabel(t(), current.defaultProfile).toLowerCase(),
-      maxRaw: number(current.maxRawRetentionDays, locale()),
-      maxBases: number(current.maxBases, locale()),
-    });
+    if (!current) return [];
+    return [
+      { label: t().storageLimit, value: bytes(current.defaultLimits.storageBytes, locale()) },
+      { label: t().valuesPerMinute, value: number(current.defaultLimits.valuesPerMinute, locale()) },
+      { label: t().profile, value: profileLabel(t(), current.defaultProfile) },
+      { label: t().maxRawRetention, value: t().retentionDaysValue({ days: number(current.maxRawRetentionDays, locale()) }) },
+      { label: t().maxBases, value: number(current.maxBases, locale()) },
+    ];
   };
   const blocked = () => rows().filter((row) => row.store.state === "active" && row.store.writeBlockReason);
   const badge = (row: AdminBaseRow) => {
@@ -597,7 +597,7 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
           summary={t().defaultsDescription}
           actions={[{ label: t().editDefaults, icon: "pencil", onClick: () => setEditingDefaults(true) }]}
         >
-          <Facts items={[{ label: t().defaultsTitle, value: defaultsSummary() }]} />
+          <Facts items={defaults()} />
         </Section>
         <Show when={blocked().length > 0}>
           <Section icon="lock" title={t().blockedTitle({ count: blocked().length })} summary={t().blockedHelp}>
@@ -650,32 +650,26 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
               mark: (row) => ({ icon: iconName(row.icon ?? ""), color: baseColor(row.color ?? "") }),
               cell: (row) => row.name,
             },
+            { title: t().colState, width: { min: 150, default: 170 }, cell: stateCell },
+            // the amount as a whole figure, never cut; at this width a bar would squeeze it (columns drop, they do not shrink)
+            {
+              title: t().colStorage,
+              align: "end",
+              width: { min: 160, default: 180 },
+              cell: (row) =>
+                row.store.usage
+                  ? t().storageOf({
+                      used: bytes(row.store.usage.bytes, locale()),
+                      limit: bytes(row.store.limits.storageBytes, locale()),
+                    })
+                  : t().notMeasured,
+            },
             {
               title: t().colAdmins,
               width: { min: 130, default: 160 },
               drop: true,
               // the admins as faces; the stack counts the ones it does not show
               cell: (row) => <Avatar.Stack people={row.admins.map((name) => ({ name }))} max={3} label={admins(row)} />,
-            },
-            { title: t().colState, width: { min: 150, default: 170 }, cell: stateCell },
-            { title: t().colProfile, width: { min: 90, default: 100 }, drop: true, cell: (row) => profileLabel(t(), row.store.profile) },
-            {
-              title: t().colStorage,
-              align: "end",
-              width: { min: 140, default: 160 },
-              cell: (row) =>
-                row.store.usage ? (
-                  <Progress
-                    value={row.store.usage.bytes}
-                    of={row.store.limits.storageBytes}
-                    label={t().storageOf({
-                      used: bytes(row.store.usage.bytes, locale()),
-                      limit: bytes(row.store.limits.storageBytes, locale()),
-                    })}
-                  />
-                ) : (
-                  t().notMeasured
-                ),
             },
             {
               title: t().colValues,
@@ -690,20 +684,24 @@ export default function BasesView(props: { label: string; initialPolicy: PulsePo
               drop: true,
               cell: (row) => t().retentionOf({ days: row.rawRetentionDays, max: policy()?.maxRawRetentionDays ?? row.rawRetentionDays }),
             },
+            { title: t().colProfile, width: { min: 90, default: 100 }, drop: true, cell: (row) => profileLabel(t(), row.store.profile) },
           ]}
         />
-        <Show when={nextOffset() !== null}>
-          <Bar
-            end={
+        {/* the note under the table stands in a bar of its own, beside the way to the next page */}
+        <Bar
+          start={
+            <Text type="meta" muted>
+              {t().amountsOnly}
+            </Text>
+          }
+          end={
+            nextOffset() !== null ? (
               <Button icon="chevrons-down" busy={loadingMore()} onClick={() => void more()}>
                 {t().loadMore}
               </Button>
-            }
-          />
-        </Show>
-        <Text type="meta" muted>
-          {t().amountsOnly}
-        </Text>
+            ) : undefined
+          }
+        />
       </Show>
       <Orphans t={t()} signal={controller.signal} />
       <Show when={editingDefaults()}>
