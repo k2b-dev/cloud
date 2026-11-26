@@ -2,7 +2,8 @@ import { render } from "solid-js/web";
 import { Notice, Pane, Text, Workspace } from "../src/v2";
 
 // The offline notice of a Cloud page (PS PWA): "Neu laden" is the one thing to do, "Später" waits quietly. The page
-// has its own primary action, which stays the one primary of the page.
+// has its own primary action, which stays the one primary of the page. The notice's sign is the refresh symbol, and
+// "Neu laden" gives the same symbol: a deed does not repeat the sign of its notice.
 
 declare global {
   interface Window {
@@ -24,8 +25,9 @@ render(
         <Notice
           tone="warn"
           title="Offline"
-          primary={{ label: "Neu laden", onClick: did("reload") }}
-          actions={[{ label: "Später", onClick: did("later") }]}
+          icon="refresh"
+          primary={{ label: "Neu laden", icon: "refresh", onClick: did("reload") }}
+          actions={[{ label: "Später", icon: "clock", onClick: did("later") }]}
         >
           Die Seite ist nicht mehr verbunden. Neue Einträge erscheinen erst nach dem Neuladen.
         </Notice>

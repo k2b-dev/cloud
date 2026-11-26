@@ -82,3 +82,24 @@ for (const width of [1440, 390])
       expect((await measureV2Layout(page, { root: "#root" })).problems).toEqual([]);
     });
   });
+
+// PS (PWA review): the refresh sign stood twice, as the notice's sign and on its "Neu laden". A deed of a notice shows
+// no symbol that repeats the notice's sign; a deed with a symbol of its own keeps it.
+test("a notice's deed does not repeat the notice's sign", async () => {
+  await withPage(1440, async (page) => {
+    const signs = await page.evaluate(() => ({
+      notice: document.querySelector(".k2-notice > .k2-icon")?.getAttribute("data-name"),
+      deeds: Array.from(document.querySelectorAll(".k2-notice-end > .k2-btn")).map((button) => [
+        button.textContent?.trim(),
+        button.querySelector(".k2-icon")?.getAttribute("data-name") ?? null,
+      ]),
+    }));
+    expect(signs).toEqual({
+      notice: "refresh",
+      deeds: [
+        ["Später", "clock"],
+        ["Neu laden", null],
+      ],
+    });
+  });
+});

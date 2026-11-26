@@ -553,34 +553,40 @@ export type NoticeProps = NoticeBase &
 
 const toneIcon = { note: "note", ai: "sparkles", bad: "alert-circle", warn: "alert-triangle" } as const;
 
+/** A deed of a notice without the symbol it would repeat: the notice's sign already says it (PS 26.11.). */
+const withoutSign = (action: Action, sign: string): Action => (action.icon === sign ? { ...action, icon: undefined } : action);
+
 /** A band with a sign, a sentence and its consequence, and at most two deeds. The tint is its edge. */
-export const Notice = (props: NoticeProps) => (
-  <div
-    class="k2-notice"
-    data-k2-part="Notice"
-    data-tone={props.tone}
-    data-title={props.title ? "" : undefined}
-    role={props.tone === "bad" ? "alert" : "note"}
-  >
-    <Icon name={props.icon ?? toneIcon[props.tone]} />
-    <Show when={props.title}>
-      <span class="k2-notice-title">
-        {props.title}
-        <Show when={props.meta}>
-          {" "}
-          <span class="k2-notice-meta">· {props.meta}</span>
-        </Show>
-      </span>
-    </Show>
-    <span class="k2-notice-text">{props.children}</span>
-    <Show when={props.actions?.length || props.primary}>
-      <span class="k2-notice-end">
-        <For each={props.actions}>{(action) => <ActionButton action={action} variant="text" />}</For>
-        <Show when={props.primary}>{(primary) => <ActionButton action={primary()} variant="secondary" />}</Show>
-      </span>
-    </Show>
-  </div>
-);
+export const Notice = (props: NoticeProps) => {
+  const sign = () => props.icon ?? toneIcon[props.tone];
+  return (
+    <div
+      class="k2-notice"
+      data-k2-part="Notice"
+      data-tone={props.tone}
+      data-title={props.title ? "" : undefined}
+      role={props.tone === "bad" ? "alert" : "note"}
+    >
+      <Icon name={sign()} />
+      <Show when={props.title}>
+        <span class="k2-notice-title">
+          {props.title}
+          <Show when={props.meta}>
+            {" "}
+            <span class="k2-notice-meta">· {props.meta}</span>
+          </Show>
+        </span>
+      </Show>
+      <span class="k2-notice-text">{props.children}</span>
+      <Show when={props.actions?.length || props.primary}>
+        <span class="k2-notice-end">
+          <For each={props.actions}>{(action) => <ActionButton action={withoutSign(action, sign())} variant="text" />}</For>
+          <Show when={props.primary}>{(primary) => <ActionButton action={withoutSign(primary(), sign())} variant="secondary" />}</Show>
+        </span>
+      </Show>
+    </div>
+  );
+};
 
 // ── Digest ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
