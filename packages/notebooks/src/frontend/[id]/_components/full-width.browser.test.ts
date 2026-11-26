@@ -203,13 +203,14 @@ test("the palette command shares the menu choice, cookie and live on/off title",
 }, 30_000);
 
 for (const width of [390, 1023, 1024]) {
-  test(`the menu choice and command follow the 64rem boundary at ${width}px`, async () => {
+  test(`the menu choice and command are offered at ${width}px and say when they apply`, async () => {
     const page = await open("write", width, width === 390);
     try {
       // the entry is always there, so the menu stands from the first frame; the choice is personal and can always be made
       expect(await toggle(page).isVisible()).toBe(true);
       expect(await toggle(page).isDisabled()).toBe(false);
-      expect(await page.evaluate(() => window.harness.command() !== null)).toBe(width >= 1024);
+      const command = await page.evaluate(() => window.harness.command());
+      expect(command?.description).toBe(width >= 1024 ? "Nur für dich in diesem Browser" : "Wirkt erst in einem breiteren Fenster");
     } finally {
       await page.close();
     }
@@ -246,13 +247,13 @@ test("only the 64 rem app-host query lifts the column", async () => {
   }
 }, 30_000);
 
-test("resizing removes and restores the command without losing the preference", async () => {
+test("resizing keeps the command and the preference; below the boundary the text keeps its reading column", async () => {
   const page = await open();
   try {
     await toggle(page).click();
     expect(await toggle(page).isVisible()).toBe(true);
     await page.setViewportSize({ width: 1023, height: 1440 });
-    await page.waitForFunction(() => window.harness.command() === null);
+    await page.waitForFunction(() => window.harness.command()?.description === "Wirkt erst in einem breiteren Fenster");
     expect(await toggle(page).isVisible()).toBe(true);
     // Below the boundary the choice waits: the text keeps the reading column.
     const measureValue = () =>
@@ -261,7 +262,7 @@ test("resizing removes and restores the command without losing the preference", 
         .evaluate((surface) => getComputedStyle(surface).getPropertyValue("--notebook-measure").trim());
     expect(await measureValue()).toBe("44rem");
     await page.setViewportSize({ width: 1024, height: 1440 });
-    await page.waitForFunction(() => window.harness.command() !== null);
+    await page.waitForFunction(() => window.harness.command()?.description === "Nur für dich in diesem Browser");
     expect(await toggle(page).isChecked()).toBe(true);
     expect((await page.evaluate(() => window.harness.command()))?.title).toBe("Volle Breite ausschalten");
     expect(await measureValue()).toBe("100%");
@@ -338,7 +339,7 @@ for (const mode of ["write", "book"]) {
 
 // Pins the JS consumers to the nearest app host; matchMedia would offer them in the 952px host. The settings
 // switch mounts outside the host, as Cloud's dialogs do, so CSS there would follow the window.
-test("command, ViewMenu and the settings switch follow a narrowed host, including host-only resize", async () => {
+test("command, ViewMenu and the settings switch stay with a narrowed host and say when they apply", async () => {
   for (const [width, host] of [
     [1440, 952],
     [1680, 1192],
@@ -346,17 +347,21 @@ test("command, ViewMenu and the settings switch follow a narrowed host, includin
     const page = await open("book", width, false, host);
     try {
       const offered = host >= 1024;
-      expect(await page.evaluate(() => window.harness.command() !== null)).toBe(offered);
+      const narrow = "Wirkt erst in einem breiteren Fenster";
+      expect((await page.evaluate(() => window.harness.command()))?.description === narrow).toBe(!offered);
       expect(await toggle(page).count()).toBe(1);
       await page.evaluate(() => window.harness.preferences());
       const option = page.locator(".k2b-ui-portal .notebooks-full-width-option");
-      expect(await option.count()).toBe(offered ? 1 : 0);
+      expect(await option.count()).toBe(1);
       for (const next of [1023, 1023.75, 1024]) {
         await page.locator("#app-host").evaluate((element, width) => (element.style.width = `${width}px`), next);
         await settle(page);
-        await page.waitForFunction((offered) => (window.harness.command() !== null) === offered, next >= 1024);
+        await page.waitForFunction(([offered, narrow]) => (window.harness.command()?.description === narrow) === !offered, [
+          next >= 1024,
+          narrow,
+        ] as const);
         expect(await toggle(page).count()).toBe(1);
-        expect(await option.count()).toBe(next >= 1024 ? 1 : 0);
+        expect(await option.count()).toBe(1);
       }
     } finally {
       await page.close();

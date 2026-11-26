@@ -74,8 +74,8 @@ describe("personal view preferences", () => {
   });
 
   // Beside Cloud's panel a 1440 px window leaves a 952 px app, where "Full width" changes nothing.
-  test("full width shows only from a 64 rem app host, not by the window", async () => {
-    for (const [width, shown] of [
+  test("full width is always offered and says from the 64 rem app host, not the window, when it applies", async () => {
+    for (const [width, wide] of [
       [952, false],
       [1023.75, false],
       [1024, true],
@@ -88,7 +88,8 @@ describe("personal view preferences", () => {
         dom.root,
       );
       try {
-        expect(switchByLabel(dom.root, "Full width") !== undefined, `${width}px host`).toBe(shown);
+        expect(switchByLabel(dom.root, "Full width"), `${width}px host`).toBeDefined();
+        expect(dom.root.textContent?.includes("Takes effect in a wider window"), `${width}px host`).toBe(!wide);
         expect(switchByLabel(dom.root, "Tab moves focus instead of indenting")).toBeDefined();
       } finally {
         dispose();

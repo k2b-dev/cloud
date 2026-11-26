@@ -272,13 +272,11 @@ function GraphView(props: Omit<GraphFrameProps, "graph"> & { graph: NoteGraph })
           <Match when={g.model.notes.length === 0}>
             <Empty icon="affiliate" text={t().graphNoNotes} />
           </Match>
+          {/* Without links the notes stand as one section: how many and that none is linked, and how to link one. The
+              way back is the head's ×, once. k2b-ui gap: a section ends with its line also as the pane's last part
+              (v2.css .k2-sec). */}
           <Match when={!g.hasLinks && !g.state().list}>
-            <Empty
-              icon="affiliate"
-              text={t().graphNoLinksYet}
-              action={{ label: t().graphBackToNote, icon: "arrow-left", href: g.closeHref() }}
-            />
-            <Section title={t().graphUnlinkedNotes({ count: g.model.notes.length })}>
+            <Section title={t().graphUnlinkedNotes({ count: g.model.notes.length })} summary={t().graphLinkHint}>
               <For each={g.model.notes}>
                 {(note) => (
                   <Row

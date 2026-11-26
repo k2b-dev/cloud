@@ -86,6 +86,7 @@ export const notebookSettingsMessages = i18n.define({
       onlyForYou: "Only for you",
       fullWidth: "Full width",
       fullWidthDescription: "On wide screens, text in Write, Read-only and Book uses the whole width instead of a reading column.",
+      fullWidthNarrowDescription: "Takes effect in a wider window: there, text in Write, Read-only and Book uses the whole width.",
       tabMovesFocus: "Tab moves focus instead of indenting",
       tabMovesFocusDescription:
         "When this is off, Tab indents in notes and Shift+Tab reduces the indent. Press Esc, then Tab to leave the editor.",
@@ -252,6 +253,8 @@ export const notebookSettingsMessages = i18n.define({
       fullWidth: "Volle Breite",
       fullWidthDescription:
         "Auf breiten Bildschirmen nutzt der Text in den Ansichten Bearbeiten, Schreibgeschützt und Buch die ganze Breite statt einer Lesespalte.",
+      fullWidthNarrowDescription:
+        "Wirkt erst in einem breiteren Fenster: Dort nutzt der Text in Bearbeiten, Schreibgeschützt und Buch die ganze Breite.",
       tabMovesFocus: "Tab-Taste bewegt den Fokus statt einzurücken",
       tabMovesFocusDescription:
         "Ist die Option aus, rückt Tab in Notizen ein und Umschalt+Tab verringert den Einzug. Mit Esc und dann Tab verlässt du den Editor.",

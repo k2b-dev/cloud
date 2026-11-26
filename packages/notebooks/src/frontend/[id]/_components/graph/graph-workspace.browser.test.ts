@@ -188,11 +188,12 @@ test("the search counts its matches and Enter moves into the graph", async () =>
 test("notes without links list themselves with the way back, and an empty notebook says so", async () => {
   const page = await open("/app/notebooks/free01?mode=graph");
   try {
-    await page.getByText("No links yet").waitFor();
+    await page.getByText("6 notes, not linked yet").waitFor();
     // without links there is nothing to filter or zoom
     expect(await page.getByRole("button", { name: "Zoom in" }).count()).toBe(0);
     expect(await page.locator('[data-k2-part="Section"] [data-k2-part="Row"]').count()).toBeGreaterThan(0);
-    await page.getByRole("link", { name: "Back to note" }).waitFor();
+    // the way back is the head's ×
+    await page.getByRole("link", { name: "Close graph" }).waitFor();
     await page.goto(new URL("/app/notebooks/none01?mode=graph", server.url).href);
     await page.getByText("This notebook has no notes yet.").waitFor();
   } finally {
