@@ -177,6 +177,16 @@
   --k2-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -12px rgb(0 0 0 / 0.7);
   --k2-float-large: 0 2px 4px rgb(0 0 0 / 0.4), 0 24px 64px -16px rgb(0 0 0 / 0.75);
 }
+/* The initials of a soft avatar take its colour as ink; on the dark surface a dark colour (a brown, a navy) would
+   vanish, so there they mix towards white, as the ink of a tag does. */
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) .k2-av[data-soft],
+.dark .k2-ui:not([data-theme="light"], [data-theme="light"] .k2-ui) [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av,
+.k2-ui.dark .k2-av[data-soft],
+.k2-ui.dark [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av,
+.k2-ui[data-theme="dark"] .k2-av[data-soft],
+.k2-ui[data-theme="dark"] [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av {
+  color: color-mix(in srgb, var(--k2-c, var(--k2-n600)) 55%, var(--k2-ink-mix));
+}
 
 /* The phone is every width below 768 px, written as "not at least 768" so a fractional width at zoom (767.5 px)
    falls on one side of the line, never between two queries. */
@@ -221,6 +231,16 @@
   display: block;
   padding-inline: var(--k2-edge);
 }
+/* Text a machine wrote (a stack trace, a log message): monospace, its line breaks and spaces as written, a long line
+   wrapped at any sign; 12/18 so a trace of many lines stays compact. */
+.k2-ui .k2-text[data-mono] {
+  font-family: var(--k2-font-mono);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
 
 /* One line, cut with "…"; cut text never widens its column. */
 .k2-ui .k2-cut {
@@ -254,6 +274,8 @@
   --k2-ws-drawer: initial;
   --k2-drawer-w: initial;
   --k2-p: initial;
+  --k2-whole: initial;
+  --k2-col-w: initial;
   --k2-canvas-h: initial;
   --k2-steps: initial;
   --k2-sticky-left: initial;
@@ -712,7 +734,9 @@
 .k2-ui .k2-cells {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
+  /* equal cells, unless a value needs more: an amount is never cut (it reads as another number), so its cell takes
+     the room of its value and the others share the rest */
+  grid-auto-columns: minmax(min-content, 1fr);
   border-bottom: var(--k2-hairline);
   min-width: 0;
 }
@@ -720,7 +744,8 @@
   padding: 12px var(--k2-edge);
   min-width: 0;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  /* the value column takes at least what its value cannot give up (an amount), so the cells around can make room */
+  grid-template-columns: 16px minmax(min-content, 1fr) auto;
   gap: 0 8px;
   align-content: start;
   align-items: center;
@@ -741,9 +766,8 @@
   grid-column: 2 / -1;
   font: var(--k2-t-body);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* a value is read whole: words wrap, a number (an amount chip) stays one */
+  overflow-wrap: anywhere;
   margin-top: 4px;
 }
 .k2-ui .k2-cell-meta {
@@ -1121,7 +1145,10 @@
 .k2-ui .k2-row[data-lines="3"] {
   min-height: var(--k2-h-row3);
 }
-.k2-ui .k2-row[data-lines="3"] > .k2-row-lead {
+/* A symbol, dot or box leads the title's line in a row of more than one line: a title that wraps to three or four
+   lines would leave a centred symbol beside nothing. A person stays on the middle of a row of two lines. */
+.k2-ui .k2-row[data-lines="3"] > .k2-row-lead,
+.k2-ui .k2-row[data-lines="2"]:not([data-avatar]) > .k2-row-lead {
   align-self: start;
   height: 20px;
 }
@@ -1222,10 +1249,13 @@
 }
 
 /* ── Table: column head 36, a line under every row, none between columns, numbers right ─────────────────────── */
+/* The table's place is a container: its width never comes from the columns (a wide table scrolls in its place
+   instead of widening the page), and the table drops its `drop` columns by the room of that place. */
 .k2-ui .k2-table-scroll {
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  container: k2-table / inline-size;
 }
 .k2-ui .k2-table-scroll::-webkit-scrollbar {
   display: none;
@@ -1236,6 +1266,10 @@
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
+}
+/* a column's width, set by the table (its default, or what its longest number needs); none: the rest of the row */
+.k2-ui .k2-table col {
+  width: var(--k2-col-w);
 }
 .k2-ui .k2-table th {
   position: relative;
@@ -1310,6 +1344,77 @@
 .k2-ui .k2-table .k2-cell-line > .k2-inline > .k2-chip {
   vertical-align: top;
   margin-block: -2px;
+}
+/* Numbers, amounts and times are never cut (a cut one reads as another value): tabular figures, one line; the
+   column is measured to its longest value, so nothing needs cutting. */
+.k2-ui .k2-table :is(th, td)[data-numeric] {
+  font-variant-numeric: tabular-nums;
+}
+.k2-ui .k2-table td[data-numeric] > .k2-cell-line:not([data-second]) {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+/* An ID or a file name cut in its middle: the start gives way with "…", the end stays */
+.k2-ui .k2-mid {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+/* the start gives way first; only in a column too narrow for the end alone is the end cut too, with "…" */
+.k2-ui .k2-mid-start {
+  flex: 0 1000 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.k2-ui .k2-mid-end {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A person with their lines in a cell: the picture, then the lines, each cut with "…" (never in the middle of a sign);
+   24 px beside one line, 32 px beside two. */
+.k2-ui .k2-cell-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.k2-ui .k2-table[data-lines="2"] .k2-cell-person > .k2-av {
+  width: 32px;
+  height: 32px;
+  font-size: 12px;
+}
+.k2-ui .k2-cell-lines {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.k2-ui .k2-cell-lines > .k2-cell-line {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-cell-lines > .k2-cell-line[data-second] {
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-table[data-lines="2"] td:has(> .k2-cell-person) {
+  vertical-align: middle;
+}
+/* things in one line in a cut cell (a picture and a name): the words give way with "…", not cut through a sign */
+.k2-ui .k2-table[data-sized] .k2-cell-line > .k2-inline > :is(.k2-text, a, span:not(.k2-av, .k2-chip, .k2-icon, .k2-dot)) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
   margin-right: -8px;
@@ -1719,11 +1824,43 @@
   font-weight: 500;
   white-space: nowrap;
   flex: none;
+  max-width: 100%;
   background: var(--k2-n100);
   color: var(--k2-text-2);
 }
 .k2-ui .k2-chip > .k2-icon {
   font-size: 13px;
+}
+/* A state is read whole (decided 25.11.): where the chip stands free its words wrap to two lines and the chip grows,
+   never cut without a way to read them. A place that keeps one line (a table row, the marks of a row, a head) sets
+   --k2-chip-lines to 1: the words are cut with "…" there and the chip's tip holds them whole. */
+.k2-ui .k2-chip-text {
+  min-width: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--k2-chip-lines, 2);
+  line-clamp: var(--k2-chip-lines, 2);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* a pressable chip, an amount and the chips of a one-line place keep one line and their height */
+.k2-ui :is(.k2-chip[data-kind="control"], .k2-chip[data-kind="amount"]) > .k2-chip-text,
+.k2-ui :is(.k2-table[data-sized] .k2-cell-line, .k2-row-marks, .k2-bar, .k2-ni, .k2-tab) .k2-chip-text {
+  --k2-chip-lines: 1;
+}
+.k2-ui
+  .k2-chip:not([data-kind="control"], [data-kind="amount"], :is(.k2-table[data-sized] .k2-cell-line, .k2-row-marks, .k2-bar, .k2-ni, .k2-tab) .k2-chip) {
+  height: auto;
+  min-height: 24px;
+  padding-block: 4px;
+}
+/* an amount is one number: it never breaks, and it never is cut */
+.k2-ui .k2-chip[data-kind="amount"] > .k2-chip-text {
+  display: block;
+  overflow: visible;
+  white-space: nowrap;
+  overflow-wrap: normal;
 }
 .k2-ui .k2-chip[data-status="ok"] {
   background: var(--k2-ok-tint);
@@ -1862,6 +1999,11 @@
   height: 100%;
   width: var(--k2-p);
   background: var(--k2-ok);
+}
+/* more than the whole: the whole in its colour, the part beyond it in the colour of waiting, so it never passes as
+   simply full */
+.k2-ui .k2-progress[data-over] .k2-progress-track > i {
+  background: linear-gradient(to right, var(--k2-ok) var(--k2-whole), var(--k2-warn-dot) var(--k2-whole));
 }
 
 /* ── Controls: round. Button, field, select, check, switch, radio ───────────────────────────────────────────── */
@@ -2693,8 +2835,16 @@
   font: var(--k2-t-row);
   color: inherit;
 }
+/* The entries share their columns (a subgrid of the digest): the date column is as wide as the longest date, which
+   never breaks, and the titles of all entries start in one line. */
+.k2-ui .k2-digest:has(> .k2-row[data-digest]) {
+  display: grid;
+  grid-template-columns: 16px max-content 176px minmax(0, 1fr) auto;
+  column-gap: 12px;
+}
 .k2-ui .k2-row[data-digest] {
-  grid-template-columns: 16px 56px 176px minmax(0, 1fr) auto;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   grid-template-areas: "lead l0 l1 l2 go" "lead l0 l3 l2 go";
   align-items: start;
   min-height: var(--k2-h-row2);
@@ -2706,6 +2856,7 @@
 }
 .k2-ui .k2-row[data-digest] > .k2-digest-date {
   grid-area: l0;
+  white-space: nowrap;
   font: var(--k2-t-meta);
   line-height: 20px;
   color: var(--k2-subtle);
@@ -2720,6 +2871,13 @@
   align-items: center;
   color: var(--k2-text-2);
   font-weight: 500;
+}
+/* the state stays one line, cut with "…"; its words stand whole in the tip */
+.k2-ui .k2-digest-state > .k2-digest-state-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .k2-ui .k2-row[data-digest] > .k2-digest-text {
   grid-area: l2;
@@ -2751,8 +2909,9 @@
   color: var(--k2-subtle);
 }
 /* A record's identity never runs under the head's actions: the actions keep their width, and the identity gives way
-   in its own place. The identifiers go first (cut, then out of sight), then the name is cut with "…"; avatar and
-   kinds stay. (On the phone the head grows instead, and the identifiers leave.) */
+   in its own place. The identifiers go first (cut, then out of sight), then the kinds (cut to a stub), then the name is
+   cut with "…"; the avatar stays. (On the phone the head grows instead: the name takes two lines beside the avatar,
+   the kinds wrap under it, and the identifiers leave.) */
 .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-record-name) > .k2-bar-end {
   flex-shrink: 0;
 }
@@ -2766,9 +2925,15 @@
   text-overflow: ellipsis;
 }
 .k2-ui .k2-bar-start > .k2-record-id {
-  flex: 0 100 auto;
+  flex: 0 1000 auto;
   min-width: 0;
   overflow: hidden;
+}
+/* after the identifiers the kinds give way, before the name: each is cut with "…" down to a short stub (its words in
+   its tip), and only then is the name cut */
+.k2-ui .k2-bar-start > .k2-record-name ~ .k2-chip {
+  flex: 0 100 auto;
+  min-width: 48px;
 }
 /* the person or thing of a record, leading its head: 32 px and soft */
 .k2-ui [data-slot="head"] > .k2-bar > .k2-bar-start > .k2-av {
@@ -3261,6 +3426,10 @@
     width: auto;
     overflow: visible;
   }
+  /* a column is the page on the phone: its desktop minimum (360 px) never pushes it past a window of 320 px */
+  .k2-ui .k2-pane[data-width] {
+    min-width: 0;
+  }
   .k2-ui .k2-split > .k2-pane > .k2-scroll {
     overflow: visible;
   }
@@ -3389,6 +3558,21 @@
   .k2-ui .k2-record-id {
     display: none;
   }
+  /* the name stays beside the avatar and takes up to two lines, then "…"; the kinds follow on its line where they
+     fit and wrap under it, whole, where they do not (a short name keeps the head one line, as in the mockup) */
+  .k2-ui .k2-bar-start > .k2-record-name {
+    flex: 0 1 auto;
+    max-width: calc(100% - 44px);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+  .k2-ui .k2-bar-start > .k2-record-name ~ .k2-chip {
+    flex: none;
+  }
   /* a head that only shows where the page stands gives way to the phone bar of the shell; with a search it keeps
      its bar for the search and lets only the path go */
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:has(> .k2-bar-end > .k2-input[data-search])) {
@@ -3441,6 +3625,13 @@
   /* a toast stands where the floating main action leaves room (16 + 48 + 8 px), never on it */
   .k2-ui .k2-toasts {
     --k2-toasts-bottom: 72px;
+  }
+  /* The end of a column keeps the same room free below its last thing: scrolled to the end, the pages of a list
+     ("Zurück", "Weiter") or a last row's deed stand above the floating main action, never under it. */
+  .k2-ui .k2-ws:has(> .k2-fab) .k2-pane > .k2-scroll::after {
+    content: "";
+    flex: none;
+    height: 72px;
   }
   .k2-ui .k2-notice {
     grid-template-columns: 16px minmax(0, 1fr);
@@ -3508,7 +3699,17 @@
     flex-direction: column;
     min-width: 0;
   }
-  .k2-ui .k2-table [data-drop],
+  /* a column that drops keeps its place in the grid of columns of a fixed table (a group row spans them all) at no
+     width; a large table lays itself out by its content, and there the column leaves whole */
+  .k2-ui .k2-table:not([data-grid]) :is(col, th, td)[data-drop] {
+    width: 0;
+    padding: 0;
+    visibility: hidden;
+    overflow: hidden;
+  }
+  .k2-ui .k2-table[data-grid] :is(col, th, td)[data-drop] {
+    display: none;
+  }
   .k2-ui .k2-cgrip {
     display: none;
   }
@@ -3544,6 +3745,55 @@
   }
   .k2-ui .k2-step-label {
     margin-top: 0;
+  }
+}
+/* A row whose deed is long (more than 24 signs) puts the deed under its text in a column under 640 px, as the phone
+   does with every deed: beside it the text would break after every letter (a record's main column at 1024 px). A
+   deed's words are never cut; where even the line under the text is too narrow, they wrap. */
+@container k2-pane (max-width: 639px) {
+  .k2-ui .k2-row[data-action="long"] {
+    grid-template-areas: "lead l1" "lead l2" "lead time";
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action="long"]:not(:has(> .k2-row-lead > *)):not(.k2-list:has(> .k2-row > .k2-row-lead > *) > .k2-row) {
+    grid-template-areas: "l1" "l2" "time";
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .k2-ui .k2-row[data-action="long"] > .k2-row-end {
+    grid-area: time;
+    justify-content: flex-start;
+    padding: 8px 0 4px;
+  }
+  .k2-ui .k2-row[data-action="long"] > .k2-row-end > .k2-btn {
+    max-width: 100%;
+    height: auto;
+    min-height: var(--k2-h-control);
+    padding-block: 6px;
+    white-space: normal;
+    text-align: start;
+  }
+  .k2-ui .k2-row[data-action="long"] > .k2-row-end > .k2-btn > .k2-btn-label {
+    overflow-wrap: anywhere;
+  }
+}
+/* Three or four key numbers stand one under the other a little earlier: below about 200 px a cell, an amount and
+   its words would no longer fit beside the others. */
+@container k2-pane (max-width: 599px) {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) {
+    grid-auto-flow: row;
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(3)) > .k2-cell + .k2-cell {
+    border-left: 0;
+    border-top: var(--k2-hairline);
+  }
+}
+@container k2-pane (max-width: 799px) {
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) {
+    grid-auto-flow: row;
+  }
+  .k2-ui .k2-cells:has(> .k2-cell:nth-child(4)) > .k2-cell + .k2-cell {
+    border-left: 0;
+    border-top: var(--k2-hairline);
   }
 }
 
@@ -4241,14 +4491,15 @@
 
 @media not all and (min-width: 768px) {
   /* The phone: one line that scrolls sideways (the filter button, the statements without ×, sort, group); its end
-     fades. The scroller keeps 6 px above and below, so a focus ring (3 px) is never cut. */
+     fades over 48 px, wide enough to read as "more" also where a statement happens to end at the edge. The scroller
+     keeps 6 px above and below, so a focus ring (3 px) is never cut. */
   .k2-ui .k2-fbar {
     align-items: center;
     overflow-x: auto;
     overflow-y: hidden;
     scrollbar-width: none;
-    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
-    mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 48px), transparent);
   }
   .k2-ui .k2-fbar::-webkit-scrollbar {
     display: none;
@@ -4261,7 +4512,7 @@
     display: inline-flex;
     gap: 8px;
     flex: none;
-    padding-right: 24px;
+    padding-right: 48px;
   }
   .k2-ui .k2-fbar-flow {
     flex-wrap: nowrap;

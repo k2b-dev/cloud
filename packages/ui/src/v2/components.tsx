@@ -13,12 +13,13 @@ import {
   untrack,
 } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { useUiMessages } from "../intl/messages";
 import { ActionButton } from "./button";
 import { RowOpen } from "./content";
 import { MarkCheck } from "./controls";
 import { linkOr } from "./link";
-import { Avatar, Chip, custom, Dot, Icon } from "./marks";
+import { Avatar, Chip, Count, custom, Dot, Icon } from "./marks";
 import { Menu, type MenuEntry, MenuTab } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { Action, OnNavigate, Person, Status, TwoActions } from "./types";
@@ -105,7 +106,9 @@ const NavEnd = (props: { item: NavItem }) => (
     <span class="k2-ni-name">{props.item.label}</span>
     <Show when={props.item.dot}>{(status) => <Dot status={status()} />}</Show>
     <Show when={props.item.count !== undefined}>
-      <span class="k2-ni-count">{props.item.count}</span>
+      <span class="k2-ni-count">
+        <Count value={props.item.count ?? ""} />
+      </span>
     </Show>
   </>
 );
@@ -255,16 +258,18 @@ const TabFace = (props: { tab: Tab }) => (
     <Show when={props.tab.icon}>{(name) => <Icon name={name()} />}</Show>
     {props.tab.label}
     <Show when={props.tab.count !== undefined}>
-      <span class="k2-tab-count">{props.tab.count}</span>
+      <span class="k2-tab-count">
+        <Count value={props.tab.count ?? ""} />
+      </span>
     </Show>
   </>
 );
 
 /** A tab that hides for lack of room, as an entry of the menu of further views. */
-const asEntry = (tab: Tab): MenuEntry => ({
+const asEntry = (tab: Tab, number: Intl.NumberFormat): MenuEntry => ({
   label: tab.label,
   icon: tab.icon,
-  meta: tab.count === undefined ? undefined : String(tab.count),
+  meta: tab.count === undefined ? undefined : typeof tab.count === "number" ? number.format(tab.count) : tab.count,
   href: tab.href,
   onNavigate: tab.href !== undefined ? tab.onNavigate : undefined,
   onClick: tab.onClick,
@@ -337,7 +342,11 @@ export const Tabs = (props: TabsProps) => {
     });
   });
   const hidden = () => plain().slice(fit());
-  const more = () => hidden().map(asEntry);
+  const locale = useLocale();
+  const more = () => {
+    const number = new Intl.NumberFormat(locale());
+    return hidden().map((tab) => asEntry(tab, number));
+  };
   return (
     <nav class="k2-tabs-nav" data-k2-part="Tabs" aria-label={props.label}>
       <div class="k2-tabs" ref={row}>
@@ -629,7 +638,9 @@ export const Digest = (props: DigestProps) => {
                 </span>
                 <span class="k2-digest-state">
                   <Icon name={entry.state.icon} tone={entry.state.tone} />
-                  {entry.state.label}
+                  <span class="k2-digest-state-text" title={entry.state.label}>
+                    {entry.state.label}
+                  </span>
                 </span>
                 <span class="k2-digest-text">{entry.text}</span>
                 <Show when={entry.href !== undefined}>

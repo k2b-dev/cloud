@@ -123,6 +123,12 @@ export type NumberRangeField<R = unknown> = FieldCommon & {
   readonly kind: "numberRange";
   /** Final unit text shown after numbers, such as "€" or "ms". */
   readonly unit?: string;
+  /**
+   * How the statement writes the numbers, as `Intl.NumberFormat` in the render locale, such as
+   * `{ style: "currency", currency: "EUR" }` for "ab 12.345.678,90 €". A format that writes its own unit (currency,
+   * unit, percent) takes no `unit` after it; the editor still shows `unit` beside its fields.
+   */
+  readonly format?: Intl.NumberFormatOptions;
   /** Ranges offered for one click. */
   readonly presets: readonly NumberRange[];
   readonly required: R;
@@ -251,9 +257,16 @@ export const field = {
   },
   /** A number from–to with open ends. */
   numberRange<const R extends NumberRange | undefined = undefined>(
-    spec: FieldSpec<R> & { readonly unit?: string; readonly presets?: readonly NumberRange[] },
+    spec: FieldSpec<R> & { readonly unit?: string; readonly format?: Intl.NumberFormatOptions; readonly presets?: readonly NumberRange[] },
   ): NoInfer<NumberRangeField<R>> {
-    return { kind: "numberRange", ...common(spec), unit: spec.unit, presets: spec.presets ?? [], required: spec.required as R };
+    return {
+      kind: "numberRange",
+      ...common(spec),
+      unit: spec.unit,
+      format: spec.format,
+      presets: spec.presets ?? [],
+      required: spec.required as R,
+    };
   },
   /** Calendar days from–to, or a declared preset. */
   dateRange<const P extends string = never, const R extends PeriodValue<NoInfer<P>> | undefined = undefined>(

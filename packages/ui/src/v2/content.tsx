@@ -41,6 +41,11 @@ export type TextProps = {
   tone?: Status | "ai" | "draft";
   /** The words lead to this page: they keep the ink of the text and are underlined (blue is only the main action). */
   href?: string;
+  /**
+   * Text a machine wrote, read sign by sign: a stack trace, a log message, a command. Monospace, and its line breaks
+   * and spaces stay as written; a line longer than its place wraps at any sign. In the flow of a column it is a block.
+   */
+  mono?: boolean;
   /** The words. */
   children: JSX.Element;
 };
@@ -61,6 +66,7 @@ export const Text = (props: TextProps) => (
     data-k2-part="Text"
     data-type={props.type}
     data-tone={props.tone}
+    data-mono={props.mono ? "" : undefined}
   >
     {props.children}
   </Dynamic>
@@ -334,6 +340,9 @@ export const RowOpen = (props: { href?: string; onNavigate?: OnNavigate; onOpen?
   </Show>
 );
 
+/** The signs of a deed at the end of a row beyond which it stands under the text in a column under 640 px. */
+const longDeed = 24;
+
 /** One entry: from column edge to column edge, square, also when it opens something. */
 export const Row = (props: RowProps) => {
   const inList = useContext(ListContext);
@@ -361,7 +370,8 @@ export const Row = (props: RowProps) => {
       // in a selection the box takes the person's place, so the row's text starts where the other rows' text does
       data-avatar={props.avatar && !props.select ? "" : undefined}
       data-time={time() !== undefined ? "" : undefined}
-      data-action={props.action ? "" : undefined}
+      // a long deed (more than 24 signs, some 170 px) stands under the text in a narrow column, never beside a squeezed one
+      data-action={props.action ? ([...props.action.label].length > longDeed ? "long" : "") : undefined}
       style={custom({ "--k2-c": props.color })}
     >
       {/* What opens the row lies over all of it and is named by the title; it holds no part of the row, so a link in
@@ -440,10 +450,16 @@ export const Row = (props: RowProps) => {
 
 // ── Table ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Two lines of a cell: the line itself and a quiet second line under it. */
-export type CellLines = { lines: readonly [JSX.Element, JSX.Element] };
+/**
+ * The lines of a cell: the line itself and a quiet second line under it; with `avatar` a person before them (a user,
+ * a group). The lines are cut with "…", never in the middle of a sign.
+ */
+export type CellLines = { lines: readonly [JSX.Element, JSX.Element] | readonly [JSX.Element]; avatar?: Person };
 
-/** What a cell shows: one line, or two lines named as such (`{ lines: [first, second] }`). */
+/**
+ * What a cell shows: one line, two lines named as such (`{ lines: [first, second] }`), or a person with one or two
+ * lines (`{ avatar, lines: [name] }`).
+ */
 export type CellValue = JSX.Element | CellLines;
 
 export type Column<T> = {
@@ -451,8 +467,19 @@ export type Column<T> = {
   title: string;
   /** What a cell shows: one line, or two lines named as such. */
   cell: (row: T) => CellValue;
-  /** Numbers and amounts stand at the end. */
+  /** Numbers and amounts stand at the end; a column at the end is `numeric`. */
   align?: "start" | "end";
+  /**
+   * Numbers, amounts, times and durations: a cut one reads as another value ("12.345.678,…"), so they are never cut.
+   * Tabular figures; the column is at least as wide as its longest text value, beyond its `width`. Set by
+   * `align: "end"`; give it to a time or date column at the start.
+   */
+  numeric?: boolean;
+  /**
+   * Where a text value too long for the column is cut: at its end (the default), or in its middle for IDs and file
+   * names, whose end tells them apart ("A-1042-NACHL…SONNENHALDE"). The whole value stays in its tip.
+   */
+  truncate?: "end" | "middle";
   /**
    * A column that can be dragged wider or narrower: its minimum and default in px. The column is exactly its
    * default wide; cut text never widens it.
@@ -460,7 +487,11 @@ export type Column<T> = {
   width?: { min: number; default: number };
   /** A text column that may wrap to at most three lines; the row grows, every other cell stays on its first line. */
   wrap?: boolean;
-  /** Drops away on the phone (rule 7: columns drop, they do not shrink). */
+  /**
+   * Drops away where the table has no room for it (rule 7: columns drop, they do not shrink): in a table with column
+   * widths one by one from the last such column as its place gets narrower than the columns need, and all of them in a
+   * column narrower than 480 px.
+   */
   drop?: boolean;
   /**
    * The rows can be sorted by this column: its head is pressed to sort. Give the address of the page sorted so
@@ -546,6 +577,46 @@ const isPair = (value: CellValue): value is CellLines =>
   !(typeof Node !== "undefined" && value instanceof Node) &&
   "lines" in value;
 
+/** A column of numbers, amounts or times: never cut. */
+const isNumeric = <T,>(column: Column<T>) => column.numeric ?? column.align === "end";
+
+/**
+ * The signs of a text value, of a cell's first line (the value; the quiet line under it is a note that may wrap); 0
+ * for what is not text, which is not measured.
+ */
+const signsOf = (value: CellValue): number => {
+  if (typeof value === "string" || typeof value === "number") return [...String(value)].length;
+  if (isPair(value)) return signsOf(value.lines[0]);
+  return 0;
+};
+
+/** The room a column without a width needs before its table drops columns, and a figure's width for that sum. */
+const flexibleColumn = 160;
+const figureWidth = 8;
+
+/**
+ * A text cut in its middle: the start gives way with "…", the end that tells IDs and files apart stays. Read whole,
+ * it is the same text (both parts follow each other), and the tip holds it.
+ */
+const Middle = (props: { text: string }) => {
+  const signs = () => [...props.text];
+  const end = () => Math.min(12, Math.floor(signs().length / 2));
+  return (
+    <span class="k2-mid" title={props.text}>
+      <span class="k2-mid-start">
+        {signs()
+          .slice(0, signs().length - end())
+          .join("")}
+      </span>
+      <span class="k2-mid-end">
+        {signs()
+          .slice(signs().length - end())
+          .join("")}
+      </span>
+    </span>
+  );
+};
+
 /**
  * A group of rows: its key, its head (such as a state chip), quiet figures after it, and the count for the phone.
  * The head is made where it stands (the table and the phone list each make their own), so it is a function.
@@ -571,7 +642,62 @@ export const Table = <T,>(props: TableProps<T>) => {
     return shape === true ? { rows: 3, lines: 1 as const } : shape ? { rows: shape.rows ?? 3, lines: shape.lines ?? 1 } : undefined;
   };
   const empty = () => (loading() || props.rows.length > 0 ? undefined : props.empty);
-  const lines = () => (loading()?.lines === 2 || values().some((row) => row.some(isPair)) ? "2" : "1");
+  const lines = () =>
+    loading()?.lines === 2 || values().some((row) => row.some((value) => isPair(value) && value.lines.length === 2)) ? "2" : "1";
+  // A numeric column is at least as wide as its longest text value, and its head, in signs (`ch`, the width of a
+  // figure). A column whose values are no text (parts made by the app) is not measured and keeps its width.
+  const signs = createMemo(() =>
+    props.columns.map((column, index) => {
+      if (!isNumeric(column)) return 0;
+      const longest = values().reduce((most, row) => Math.max(most, signsOf(row[index]!)), 0);
+      return longest === 0 ? 0 : Math.max(longest, signsOf(column.title));
+    }),
+  );
+  const colWidth = (column: Column<T>, index: number): string | undefined => {
+    const last = index === props.columns.length - 1;
+    // in a small table with widths the last column takes the rest of the row, which holds its value
+    if (sized() && !grid() && last) return undefined;
+    const fixed = column.width && (grid() || !last) ? `${column.width.default}px` : undefined;
+    const count = signs()[index] ?? 0;
+    if (count === 0) return fixed;
+    const fit = `calc(${count}ch + 12px + var(--k2-edge))`;
+    return fixed ? `max(${fixed}, ${fit})` : fit;
+  };
+  const measured = () => signs().some((count) => count > 0);
+  const id = createUniqueId();
+  // Rule 7 by the room of the table: the `drop` columns go one by one, from the last, as the table's place gets
+  // narrower than the columns it shows need. The room is known from the widths (and the measured numbers), so the
+  // stylesheet decides on the server's page too; it is one container query per table.
+  const steps = createMemo(() => {
+    if (!sized()) return [] as { column: number; below: number }[];
+    const need = props.columns.map((column, index) => {
+      const base = column.width?.default ?? flexibleColumn;
+      return Math.max(base, (signs()[index] ?? 0) * figureWidth + 32);
+    });
+    let room = need.reduce((sum, width) => sum + width, props.select ? 44 : 0);
+    const out: { column: number; below: number }[] = [];
+    for (let index = props.columns.length - 1; index >= 0; index--) {
+      if (!props.columns[index]!.drop) continue;
+      out.push({ column: index, below: room });
+      room -= need[index]!;
+    }
+    return out;
+  });
+  const step = (index: number) => {
+    const at = steps().findIndex((entry) => entry.column === index);
+    return at < 0 ? undefined : String(at + 1);
+  };
+  // A large table lays itself out by its content, so a column leaves whole; a table of fixed columns keeps the column
+  // in its grid of columns (a group row spans them all) at no width, so the others keep theirs.
+  const hide = (selector: string) =>
+    grid() ? `${selector} { display: none; }` : `${selector} { width: 0; padding: 0; visibility: hidden; overflow: hidden; }`;
+  const dropRule = () =>
+    steps()
+      .map(
+        (entry, at) =>
+          `@container k2-table (width < ${entry.below}px) { ${hide(`.k2-ui [data-k2-table="${id}"] [data-drop-step="${at + 1}"]`)} }`,
+      )
+      .join(" ");
   const key = (row: T, index: number) => props.rowKey?.(row) ?? String(index);
   const items = createMemo((): TableItem<T>[] => {
     const out: TableItem<T>[] = [];
@@ -617,20 +743,31 @@ export const Table = <T,>(props: TableProps<T>) => {
     // Every line of a cell is a block of its own: cut with "…" in a sized table, wrapped in a small one.
     const line = (content: JSX.Element, second = false) => (
       <span class="k2-cell-line" data-wrap={!second && column.wrap ? "" : undefined} data-second={second ? "" : undefined}>
-        {content}
+        {column.truncate === "middle" && typeof content === "string" ? <Middle text={content} /> : content}
       </span>
     );
     const first = (content: JSX.Element) =>
       line(
         target ? (
           <RowOpen href={target.href} onNavigate={target.onNavigate} onOpen={target.onOpen}>
-            {content}
+            {column.truncate === "middle" && typeof content === "string" ? <Middle text={content} /> : content}
           </RowOpen>
         ) : (
           content
         ),
       );
-    return isPair(value) ? [first(value.lines[0]), line(value.lines[1], true)] : first(value);
+    if (!isPair(value)) return first(value);
+    const [head, second] = value.lines;
+    const parts = second === undefined ? first(head) : [first(head), line(second, true)];
+    // a person leads the lines (the name stands in them, so the picture adds no name of its own)
+    return value.avatar ? (
+      <span class="k2-cell-person">
+        <Avatar {...value.avatar} decorative />
+        <span class="k2-cell-lines">{parts}</span>
+      </span>
+    ) : (
+      parts
+    );
   };
 
   const table = () => (
@@ -640,7 +777,11 @@ export const Table = <T,>(props: TableProps<T>) => {
         data-k2-part="Table"
         data-grid={grid() ? "" : undefined}
         data-wrap={props.columns.some((column) => column.wrap) ? "" : undefined}
+        data-k2-table={steps().length > 0 ? id : undefined}
       >
+        <Show when={steps().length > 0}>
+          <style>{dropRule()}</style>
+        </Show>
         {/* said outside the table, which is busy while its rows load */}
         <Show when={loading()}>
           <LoadingStatus />
@@ -653,18 +794,19 @@ export const Table = <T,>(props: TableProps<T>) => {
           aria-label={props.label}
           aria-busy={loading() ? "true" : undefined}
         >
-          <Show when={sized()}>
+          <Show when={sized() || measured()}>
             <colgroup>
               <Show when={props.select}>
                 <col style={{ width: "44px" }} />
               </Show>
-              {/* every column is its default wide; in a small table the last one takes the rest of the row */}
+              {/* every column is its default wide, a numeric one at least as wide as its longest value; in a small table
+                  the last one takes the rest of the row. A column that drops leaves with its cells. */}
               <For each={props.columns}>
                 {(column, index) => (
                   <col
-                    style={
-                      column.width && (grid() || index() < props.columns.length - 1) ? { width: `${column.width.default}px` } : undefined
-                    }
+                    data-drop={column.drop ? "" : undefined}
+                    data-drop-step={step(index())}
+                    style={custom({ "--k2-col-w": colWidth(column, index()) })}
                   />
                 )}
               </For>
@@ -684,7 +826,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                   <th
                     scope="col"
                     data-align={column.align}
+                    data-numeric={isNumeric(column) ? "" : undefined}
                     data-drop={column.drop ? "" : undefined}
+                    data-drop-step={step(index())}
                     data-sticky={firstSticky(index())}
                     style={firstSticky(index()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                     aria-sort={props.sort?.column === index() ? props.sort.direction : undefined}
@@ -745,7 +889,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                         {(column, columnIndex) => (
                           <td
                             data-align={column.align}
+                            data-numeric={isNumeric(column) ? "" : undefined}
                             data-drop={column.drop ? "" : undefined}
+                            data-drop-step={step(columnIndex())}
                             data-sticky={firstSticky(columnIndex())}
                             style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                           >
@@ -803,7 +949,9 @@ export const Table = <T,>(props: TableProps<T>) => {
                           {(column, columnIndex) => (
                             <td
                               data-align={column.align}
+                              data-numeric={isNumeric(column) ? "" : undefined}
                               data-drop={column.drop ? "" : undefined}
+                              data-drop-step={step(columnIndex())}
                               data-sticky={firstSticky(columnIndex())}
                               style={firstSticky(columnIndex()) ? custom({ "--k2-sticky-left": stickyLeft() }) : undefined}
                             >

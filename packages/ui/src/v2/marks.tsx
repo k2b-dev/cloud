@@ -1,5 +1,6 @@
 import { createSignal, type JSX, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
+import { useLocale } from "../intl/locale";
 import { personColor } from "../surfaces/person-color";
 import { linkOr } from "./link";
 import { initialsOf, type OnNavigate, type Person, type Status } from "./types";
@@ -177,6 +178,7 @@ export const Chip = (props: ChipProps) => {
       data-kind={kind()}
       aria-pressed={props.onClick && props.pressed !== undefined ? (props.pressed ? "true" : "false") : undefined}
       data-pressed={props.pressed ? "" : undefined}
+      title={typeof props.children === "string" ? props.children : undefined}
       style={custom({ "--k2-c": "color" in props ? props.color : undefined })}
     >
       <Show when={props.status}>{(status) => <span class="k2-dot" data-status={status()} />}</Show>
@@ -185,9 +187,20 @@ export const Chip = (props: ChipProps) => {
       </Show>
       <Show when={props.amount}>{(amount) => <Icon name={amount() === "out" ? "arrow-up-right" : "arrow-down-left"} />}</Show>
       <Show when={props.icon}>{(name) => <Icon name={name()} />}</Show>
-      {props.children}
+      {/* the words wrap to two lines where the chip stands free, and are cut with "…" where its place keeps one line
+          (a table row, the marks of a row, a head); the whole words then stand in the tip */}
+      <span class="k2-chip-text">{props.children}</span>
     </Dynamic>
   );
+};
+
+/**
+ * A count as the render locale writes it ("12.840" in German, "12,840" in English); words the app gives ("+8",
+ * "99+") stay as they are. Internal: the counts of tabs, nav entries, sections and groups.
+ */
+export const Count = (props: { value: number | string }) => {
+  const locale = useLocale();
+  return <>{typeof props.value === "number" ? new Intl.NumberFormat(locale()).format(props.value) : props.value}</>;
 };
 
 /** A small round dot of a state (internal: a row marks "unread" with it, the sidebar "new"). */
@@ -205,6 +218,8 @@ export type ProgressProps = {
 /** A thin bar with its value. */
 export const Progress = (props: ProgressProps) => {
   const share = () => (props.of > 0 ? Math.max(0, Math.min(1, props.value / props.of)) : 0);
+  // more than the whole (day 23 of 22): the bar is full, and the part beyond the whole shows in the colour of waiting
+  const over = () => props.of > 0 && props.value > props.of;
   return (
     <span
       class="k2-progress"
@@ -212,10 +227,18 @@ export const Progress = (props: ProgressProps) => {
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={props.of}
-      aria-valuenow={props.value}
+      aria-valuenow={over() ? props.of : props.value}
+      aria-valuetext={over() ? props.label : undefined}
+      data-over={over() ? "" : undefined}
       aria-label={props.label}
     >
-      <span class="k2-progress-track" style={custom({ "--k2-p": `${Math.round(share() * 1000) / 10}%` })}>
+      <span
+        class="k2-progress-track"
+        style={custom({
+          "--k2-p": `${Math.round(share() * 1000) / 10}%`,
+          "--k2-whole": over() ? `${Math.round((props.of / props.value) * 1000) / 10}%` : undefined,
+        })}
+      >
         <i />
       </span>
       <Show when={props.label}>

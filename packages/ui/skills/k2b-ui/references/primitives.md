@@ -179,10 +179,16 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
-returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
-numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+returning one value, `{ lines: [line, quietLine] }`, or a person with lines
+(`{ avatar, lines: [name] }`: picture and lines, each cut with "…"; never an
+`Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
+`numeric` for a time or date column at the start (both: tabular figures,
+never cut, the column at least as wide as its longest text value),
+`truncate: "middle"` for IDs and file names (cut in the middle, the end that
+tells them apart stays), `width={{ min, default }}` (exactly that wide, cut
+text never widens it, grip in the head), `wrap` (one text column may take 3
+lines), `drop` (leaves when the table has no room for it: one by one from
+the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
@@ -227,6 +233,9 @@ line with `end` (such as a print button).
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`mono` for text a machine wrote (a stack trace, a log message, a command):
+monospace 12/18, its line breaks and spaces kept, long lines wrapped at any
+sign.
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 

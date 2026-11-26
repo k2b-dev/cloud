@@ -13,6 +13,7 @@ import type {
   ListQueryState,
   LookupItem,
   NumberRange,
+  NumberRangeField,
   PeriodValue,
   SavedListView,
   ViewStore,
@@ -73,7 +74,13 @@ const listParts = (labels: readonly { text: string; missing?: boolean }[], t: Fi
   return parts;
 };
 
-type Formats = { number: (value: number) => string; day: (text: string) => string; minute: (text: string) => string };
+/** How a field writes its values: its numbers with their unit or format, its days and minutes. */
+type Formats = {
+  number: (value: number) => string;
+  amount: (value: number, field: Pick<NumberRangeField, "unit" | "format">) => string;
+  day: (text: string) => string;
+  minute: (text: string) => string;
+};
 
 /**
  * The wall time of a moment in a time zone, as a datetime field holds it ("2026-11-24T09:00"), and back: the zone is
@@ -124,8 +131,18 @@ const useFormats = (timeZone: () => string): (() => Formats) => {
       minute: "2-digit",
       timeZone: timeZone(),
     });
+    const amounts = new Map<Intl.NumberFormatOptions, Intl.NumberFormat>();
     return {
       number: (value: number) => number.format(value),
+      // a format that writes its own unit (a currency, a unit, a share) takes no unit after it
+      amount: (value, field) => {
+        const unit = field.unit ? ` ${field.unit}` : "";
+        if (!field.format) return `${number.format(value)}${unit}`;
+        const formatter = amounts.get(field.format) ?? new Intl.NumberFormat(locale(), field.format);
+        amounts.set(field.format, formatter);
+        const own = field.format.style === "currency" || field.format.style === "unit" || field.format.style === "percent";
+        return `${formatter.format(value)}${own ? "" : unit}`;
+      },
       day: (text: string) => {
         const date = new Date(`${text}T00:00:00Z`);
         return Number.isNaN(date.getTime()) ? text : day.format(date);
@@ -147,11 +164,16 @@ const valueParts = (
   names: ReadonlyMap<string, LookupItem>,
 ): Part[] => {
   switch (definition.kind) {
-    case "choice":
+    case "choice": {
+      const chosen = codes(value);
+      // every value of the choice is no filter at all: the statement says so ("Stufe ist beliebig")
+      if (definition.multiple && definition.options.length > 1 && definition.options.every((option) => chosen.includes(option.value)))
+        return [{ text: t.anyValue, value: true }];
       return listParts(
-        codes(value).map((code) => ({ text: labelOf(definition.options, code) })),
+        chosen.map((code) => ({ text: labelOf(definition.options, code) })),
         t,
       );
+    }
     case "lookup":
       return listParts(
         codes(value).map((code) => {
@@ -162,8 +184,7 @@ const valueParts = (
       );
     case "numberRange": {
       if (!isRange(value)) return [];
-      const unit = definition.unit ? ` ${definition.unit}` : "";
-      const show = (amount: number) => `${format.number(amount)}${unit}`;
+      const show = (amount: number) => format.amount(amount, definition);
       if (value.min !== undefined && value.max !== undefined)
         return [{ text: t.between({ min: show(value.min), max: show(value.max) }), value: true }];
       if (value.min !== undefined) return [{ text: `${t.from} ${show(value.min)}`, value: true }];
@@ -1024,9 +1045,8 @@ const RangeEditor = (props: {
     }
     setRejected(!props.onChange(low === undefined && high === undefined ? undefined : { min: low, max: high }));
   };
-  const unit = () => (props.definition.unit ? ` ${props.definition.unit}` : "");
   const presetLabel = (range: NumberRange) => {
-    const show = (amount: number) => `${format().number(amount)}${unit()}`;
+    const show = (amount: number) => format().amount(amount, props.definition);
     if (range.min !== undefined && range.max !== undefined) return t().between({ min: show(range.min), max: show(range.max) });
     if (range.min !== undefined) return `${t().from} ${show(range.min)}`;
     return range.max !== undefined ? `${t().upTo} ${show(range.max)}` : "";

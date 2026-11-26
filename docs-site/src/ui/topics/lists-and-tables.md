@@ -84,13 +84,16 @@ Reorder by dragging, and a tree. Until they ship, use the nearest part and write
 - Give every wide table a `phone(row)`.
 - Put the count and key figures in the `StatusRow`.
 - Keep row text short; long text is cut with "…".
+- Mark numbers, amounts and times with `align: "end"` (or `numeric` for a time at the start): they are never cut, and their column grows to the longest value.
+- Cut IDs and file names in the middle (`truncate: "middle"`): the end tells them apart.
+- Show a person in a cell as `{ avatar, lines: [name] }`, not as an `Inline` of `Avatar` and `Text`.
 
 ### Don't
 
 - Draw your own lines between rows or around a table.
 - Open entries with `onClick` when they have an address.
 - Put "Erneut versuchen" anywhere but `Failed`.
-- Shrink columns on the phone; `drop` them.
+- Shrink columns when room runs out; `drop` them (they leave one by one from the last, as the table gets narrower).
 
 ## Next
 

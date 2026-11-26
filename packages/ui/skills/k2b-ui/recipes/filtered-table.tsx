@@ -23,7 +23,14 @@ export const orderQuery = defineListQuery({
   key: "orders",
   fields: {
     status: field.choice({ label: "Status", options: STATUS, common: true }),
-    amount: field.numberRange({ label: "Betrag", unit: "€", common: true, presets: [{ max: 500 }, { min: 500 }] }),
+    // the statement writes amounts as the table does ("ab 500,00 €"); the editor shows "€" beside its fields
+    amount: field.numberRange({
+      label: "Betrag",
+      unit: "€",
+      format: { style: "currency", currency: "EUR" },
+      common: true,
+      presets: [{ max: 500 }, { min: 500 }],
+    }),
     customer: field.lookup({
       label: "Kunde",
       common: true,
@@ -53,7 +60,12 @@ const orders: Order[] = [
 ];
 
 const label = (status: Order["status"]) => STATUS.find((option) => option.value === status)?.label ?? status;
-const euro = (amount: number) => `${amount.toLocaleString("de-DE")} €`;
+// amounts with cents and a real minus sign; a sum of floats is rounded to the cent by the format
+const money = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const euro = (amount: number) => money.format(amount).replace("-", "\u2212");
+// "1 Auftrag", "5 Aufträge": the plural rule of the locale picks the word
+const plural = new Intl.PluralRules("de-DE");
+const countOrders = (count: number) => `${count.toLocaleString("de-DE")} ${plural.select(count) === "one" ? "Auftrag" : "Aufträge"}`;
 
 type Props = { rows?: Order[]; loading?: boolean; address?: string; customers?: LookupItem[] };
 
@@ -63,6 +75,18 @@ export default function FilteredOrders(props: Props) {
   const [state, setState] = createSignal<ListQueryStateOf<typeof orderQuery>>(
     orderQuery.parse(props.address ?? "status=open,work&amount=500..").state,
   );
+  // Grouped, the server orders the rows by their group first, so the rows of a group follow one another; the sample
+  // rows here are ordered the same way.
+  const shown = () =>
+    state().group === "status"
+      ? [...rows()].sort((a, b) => STATUS.findIndex((s) => s.value === a.status) - STATUS.findIndex((s) => s.value === b.status))
+      : rows();
+  // The search is part of the address too: the field shows it, and Enter sets it through the declaration (a search
+  // the address holds but no field shows would filter the list for no visible reason).
+  const search = (text: string) => {
+    const next = orderQuery.set(state(), "q", text.trim());
+    if (next) setState(next);
+  };
   return (
     <Workspace
       head={
@@ -78,7 +102,17 @@ export default function FilteredOrders(props: Props) {
           }
           end={
             <>
-              <Input type="search" icon="search" label="Auftrag oder Kunde" placeholder="Auftrag oder Kunde" />
+              <Input
+                type="search"
+                icon="search"
+                label="Auftrag oder Kunde"
+                placeholder="Auftrag oder Kunde"
+                value={state().search ?? ""}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.isComposing && event.currentTarget instanceof HTMLInputElement)
+                    search(event.currentTarget.value);
+                }}
+              />
               <Button variant="primary" icon="plus">
                 Auftrag
               </Button>
@@ -98,7 +132,7 @@ export default function FilteredOrders(props: Props) {
               onChange={setState}
               icons={{ status: "circle-dashed", amount: "currency-euro", customer: "user" }}
               names={{ customer: props.customers ?? CUSTOMERS }}
-              results={`${rows().length} Aufträge`}
+              results={countOrders(rows().length)}
             />
             <StatusRow
               lead={props.loading ? "Wird geladen" : `${rows().length} von 34 Aufträgen`}
@@ -110,13 +144,24 @@ export default function FilteredOrders(props: Props) {
       >
         <Table
           label="Aufträge"
-          rows={rows()}
+          rows={shown()}
+          rowKey={(row) => row.number}
+          // the grouping the address chose: rows of one status follow one another under its chip
+          group={
+            state().group === "status"
+              ? (row) => ({
+                  key: row.status,
+                  head: () => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip>,
+                  count: countOrders(shown().filter((other) => other.status === row.status).length),
+                })
+              : undefined
+          }
           loading={props.loading && { rows: 3 }}
           open={(row) => ({ href: `#${row.number}` })}
           empty={{ icon: "filter-off", text: "Kein Auftrag passt zu diesen Filtern." }}
           phone={(row) => ({ lines: [row.title, `${row.number} · ${row.customer} · fällig ${row.due}`], time: euro(row.amount) })}
           columns={[
-            { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true },
+            { title: "Nummer", width: { min: 90, default: 100 }, cell: (row) => row.number, drop: true, truncate: "middle" },
             { title: "Auftrag", width: { min: 160, default: 220 }, cell: (row) => row.title },
             { title: "Kunde", width: { min: 140, default: 200 }, cell: (row) => row.customer, drop: true },
             {
@@ -124,7 +169,7 @@ export default function FilteredOrders(props: Props) {
               width: { min: 100, default: 120 },
               cell: (row) => <Chip status={row.status === "open" ? "warn" : "ok"}>{label(row.status)}</Chip>,
             },
-            { title: "Fällig", width: { min: 90, default: 110 }, cell: (row) => row.due, drop: true },
+            { title: "Fällig", width: { min: 90, default: 110 }, numeric: true, cell: (row) => row.due, drop: true },
             { title: "Betrag", width: { min: 90, default: 110 }, align: "end", cell: (row) => euro(row.amount) },
           ]}
         />
