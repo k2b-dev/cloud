@@ -1,0 +1,61 @@
+/* Core's v2.css: the one shared stylesheet of a page built only with @k2b/ui/v2 and without the Cloud shell
+   (`MinimalLayout ui="v2"`, a visitor page, a form, a kiosk screen). It holds v2 and Cloud's v2 additions, without
+   v1, Tailwind and the shell, so such a page loads a fraction of global.css. Every rule here also reaches global.css
+   through the same files, so a v2 page looks the same under both. */
+@import "@k2b/ui/v2.css";
+@import "./v2-app-ink.css";
+@import "./minimal-layout.css";
+
+/* The page itself: v2.css brings no reset of its own, so the page has no margin, and the v2 scope that fills it
+   (the whole page, or the main area of a kiosk screen) paints the surface and the text of the theme. */
+body {
+  margin: 0;
+}
+
+.minimal-layout[data-ui="v2"],
+.k2-ui.minimal-layout-main {
+  background: var(--k2-surface);
+  color: var(--k2-text);
+}
+
+/* The visitor footer on v2: the legal links and the language and theme menus, quiet, centred, in v2's words and
+   lines. On touch screens every control is at least 44 px tall. */
+.minimal-layout-footer[data-ui="v2"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 16px;
+  margin-top: auto;
+  padding: 12px max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  color: var(--k2-muted);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.minimal-layout-footer[data-ui="v2"] nav,
+.minimal-layout-footer[data-ui="v2"] [data-footer-preferences] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  column-gap: 16px;
+}
+
+.minimal-layout-footer[data-ui="v2"] nav a {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+}
+
+.minimal-layout-footer[data-ui="v2"] nav a:hover {
+  color: var(--k2-text);
+}
+
+@media (any-pointer: coarse) {
+  .minimal-layout-footer[data-ui="v2"] nav a {
+    min-height: 44px;
+  }
+}

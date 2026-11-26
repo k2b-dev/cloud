@@ -1,10 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -23,7 +21,7 @@ type Context = Parameters<typeof MinimalLayout>[0]["c"];
 
 const legalApp = { id: "legal-probe", legalLinks: [{ label: "Imprint", href: "/impressum" }] };
 const render = (kiosk: boolean) => {
-  const page: { appUi?: "v2" } = {};
+  const page: { appUi?: "v2"; stylesheets?: "v2" } = {};
   const context = {
     get: (key: string) => (key === "page" ? page : key === "runtime" ? { apps: [legalApp] } : undefined),
     req: { raw: { headers: new Headers({ "Accept-Language": "en" }), url: "https://cloud.test/public/kulturhaus" } },
@@ -44,10 +42,10 @@ const render = (kiosk: boolean) => {
 let browser: Browser;
 let css: string;
 beforeAll(async () => {
-  const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
-  if (!build.success) throw new AggregateError(build.logs, "Could not compile the global stylesheet.");
-  const v2Css = readFileSync(fileURLToPath(import.meta.resolve("@k2b/ui/v2.css")), "utf8");
-  css = `${await build.outputs[0]!.text()}\n${v2Css}`;
+  // The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it: no global.css, no v1.
+  const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
+  if (!build.success) throw new AggregateError(build.logs, "Could not build v2.css.");
+  css = await build.outputs[0]!.text();
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
@@ -55,10 +53,27 @@ afterAll(async () => {
 });
 
 describe("MinimalLayout ui v2", () => {
+  test("a page without ui keeps global.css, its v1 footer and its page options", () => {
+    const page: Record<string, unknown> = {};
+    const context = {
+      get: (key: string) => (key === "page" ? page : key === "runtime" ? { apps: [legalApp] } : undefined),
+      req: { raw: { headers: new Headers({ "Accept-Language": "en" }), url: "https://cloud.test/share/probe" } },
+    } as unknown as Context;
+    const html = renderToString(() => createComponent(MinimalLayout, { c: context, children: "Share" }));
+    expect(page).toEqual({});
+    expect(html).toContain('<footer class="minimal-layout-footer">');
+    expect(html).not.toContain("k2-ui");
+  });
+
   test("the page is the v2 scope in the app's colours, without the Cloud shell", () => {
     const { html, page } = render(false);
     expect(page.appUi).toBe("v2");
-    expect(html).toContain('<main class="k2-ui minimal-layout-main"');
+    // The page links Core's v2.css alone, and its footer is a v2 scope with v2 menus (no v1 markup).
+    expect(page.stylesheets).toBe("v2");
+    expect(html).toContain('<footer class="minimal-layout-footer" data-ui="v2"');
+    expect(html).not.toMatch(/k2b-button|k2b-dropdown/);
+    expect(html).toContain('<div class="k2-ui minimal-layout" data-ui="v2"');
+    expect(html).toContain('<main class="minimal-layout-main"');
     expect(html).toContain('data-k2-part="Workspace"');
     for (const shell of ["rail-item", "cloud-app-canvas", "layout-header"]) expect(html).not.toContain(shell);
     expect(html).toContain("Imprint");

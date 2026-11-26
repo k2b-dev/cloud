@@ -1,0 +1,23 @@
+/* MinimalLayout stacks the page content and its footer in a column at least
+   one viewport tall, so the footer ends a short page and follows a long one.
+   Content that should fill the remaining height grows with flex-1. */
+.minimal-layout {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  flex-direction: column;
+}
+
+/* A v2 page fills the window above the footer: its Workspace scrolls inside, and a kiosk screen without the footer
+   takes the whole window. */
+.minimal-layout-main {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.minimal-layout > .minimal-layout-main {
+  height: auto;
+}

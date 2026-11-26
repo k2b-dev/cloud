@@ -131,6 +131,7 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
+import { pageStylesheetLinks } from "./page-stylesheets";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
@@ -138,7 +139,7 @@ import { appInstanceRegistry, appMembershipLock, appRegistry, type CapabilityReg
 import { canonicalRoute, isOwnAppPath, validateAppRegistryEntry } from "./registry-validation";
 import { ensureRuntimeWatcher, getCurrentRuntime, registeredCoreRelease, stopRuntimeWatcher } from "./runtime-watcher";
 import { runSetupExclusively } from "./setup-lock";
-import { publicFileVersion, servePublicAsset, sharedStylesheetVersion, versionedPublicHref } from "./static-assets";
+import { publicFileVersion, servePublicAsset, sharedStylesheetVersion } from "./static-assets";
 import { createStatusPreservingSsrHandler } from "./status-preserving-ssr";
 import { WEB_VITALS_ASSET_HREF } from "./web-vitals-asset";
 import { compileWidgetDeclarations } from "./widget-declarations";
@@ -169,6 +170,8 @@ type ResolvedPageOptions = PageOptions & {
   appAccent?: string;
   /** `Layout ui="v2"`: the body carries the app's v2 inks beside its accent. */
   appUi?: "v2";
+  /** `MinimalLayout ui="v2"`: the page links Core's `v2.css` in place of `global.css` (see `pageStylesheetLinks`). */
+  stylesheets?: "v2";
   appPrimary?: AppAppearance["primary"];
   /** Signed-in pages: the person's screen preferences, for the privacy screen. */
   screen?: ScreenPreferences;
@@ -600,6 +603,7 @@ export const defineApp = <
       pwa,
       appAccent,
       appUi,
+      stylesheets,
       appPrimary,
       installable: pageInstallable,
     }) => {
@@ -670,10 +674,7 @@ export const defineApp = <
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     ${FONT_PRELOAD_LINKS}
-    <link rel="stylesheet" href="${versionedPublicHref("/public/fonts.css", sharedVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref("/public/tabler-icons.css", sharedVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref(appStylesheet, appVersion)}">
-    <link rel="stylesheet" href="${versionedPublicHref("/public/global.css", sharedVersion)}">${head.styles}
+    ${pageStylesheetLinks({ appStylesheet, appVersion, sharedVersion, stylesheets })}${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
   <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">

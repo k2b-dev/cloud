@@ -126,7 +126,7 @@ export function servePublicAsset(isDevelopment: boolean, sharedVersion?: string)
     let cacheControl = isDevelopment ? "no-cache" : "public, max-age=31536000, immutable";
     if (!isDevelopment) {
       const pathname = decodePathname(url.pathname)!;
-      const shared = /^\/public\/(fonts|tabler-icons|global)\.css$/.test(pathname);
+      const shared = /^\/public\/(fonts|tabler-icons|global|v2)\.css$/.test(pathname);
       const own = /^\/public\/[^/]+\/(app\.css|favicon\.svg)$/.test(pathname);
       if (shared || own) {
         const expected = shared ? sharedVersion : publicFileVersion(url.pathname);

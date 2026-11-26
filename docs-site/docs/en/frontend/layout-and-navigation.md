@@ -538,7 +538,11 @@ Set `ui="v2"` (provisional, like `@k2b/ui/v2`) when the page is built with
 `@k2b/ui/v2`, such as a venue's public programme, a public form, a share or a
 kiosk screen. The layout then puts the content in the `main` landmark as the
 v2 scope in the application's colours, as `Layout ui="v2"` does, with no Cloud
-chrome. The content fills the window above the footer: return one `Workspace`
+chrome. Such a page links Core's `/public/v2.css` in place of `global.css`: v2
+and Cloud's v2 additions without v1, Tailwind and the shell (about 17 KB instead
+of about 165 KB with Brotli). Its footer keeps the legal links, and the language
+and theme choices become v2 menus. The page still loads the fonts, the icons and
+the application's own `app.css`, for drawings inside a `Canvas`. The content fills the window above the footer: return one `Workspace`
 without a sidebar, with the brand and the one task in its head. With
 `preferences={false}`, a kiosk screen takes the whole window and its `Pane`
 scrolls inside. The k2b-ui recipe `public-page` shows such a page and its kiosk

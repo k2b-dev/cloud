@@ -5,6 +5,7 @@ import { resolveAppPresentations } from "../shared/app-presentation";
 import { readThemePreferenceFromCookieHeader } from "../shared/theme";
 import type { MinimalLayoutContext } from "./layout-context";
 import MinimalLayoutPreferences from "./MinimalLayoutPreferences.island";
+import MinimalLayoutPreferencesV2 from "./MinimalLayoutPreferencesV2.island";
 import { profilePreferencesMessages } from "./profile-preferences-messages";
 import TimezoneCookie from "./TimezoneCookie.island";
 
@@ -35,14 +36,17 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   const theme = readThemePreferenceFromCookieHeader(cookie);
   const locale = getLocale(props.c);
   // A v2 page's content is the v2 scope; its app colours sit on the body (see `page.appUi`).
-  if (props.ui === "v2") props.c.get("page").appUi = "v2";
-  const content = () => (props.ui === "v2" ? <main class="k2-ui minimal-layout-main">{props.children}</main> : props.children);
+  // It links Core's v2.css alone: v2 and Cloud's v2 additions, without v1 and the shell (see `pageStylesheetLinks`).
+  if (props.ui === "v2") Object.assign(props.c.get("page"), { appUi: "v2", stylesheets: "v2" });
+  // Without the footer the main area is the v2 scope; with it, the whole page is (see below).
+  const content = (scope: boolean) =>
+    props.ui === "v2" ? <main class={scope ? "k2-ui minimal-layout-main" : "minimal-layout-main"}>{props.children}</main> : props.children;
 
   if (props.preferences === false) {
     return (
       <LocaleProvider locale={locale}>
         <TimezoneCookie />
-        {content()}
+        {content(true)}
       </LocaleProvider>
     );
   }
@@ -57,9 +61,10 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
   return (
     <LocaleProvider locale={locale}>
       <TimezoneCookie />
-      <div class="minimal-layout">
-        {content()}
-        <footer class="minimal-layout-footer">
+      {/* On v2 the page and its footer are one v2 scope with v2 menus, so it needs no v1 stylesheet. */}
+      <div class={props.ui === "v2" ? "k2-ui minimal-layout" : "minimal-layout"} data-ui={props.ui}>
+        {content(false)}
+        <footer class="minimal-layout-footer" data-ui={props.ui}>
           {legalLinks.length > 0 && (
             <nav class="minimal-layout-footer__links" aria-label={t.legalLinks}>
               {legalLinks.map((link) => (
@@ -70,7 +75,7 @@ export default function MinimalLayout(props: MinimalLayoutProps) {
               ))}
             </nav>
           )}
-          <MinimalLayoutPreferences initialTheme={theme} />
+          {props.ui === "v2" ? <MinimalLayoutPreferencesV2 initialTheme={theme} /> : <MinimalLayoutPreferences initialTheme={theme} />}
         </footer>
       </div>
     </LocaleProvider>
