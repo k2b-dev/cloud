@@ -51,3 +51,36 @@ test("a multi-line field asks for the lines of its value on the server, from its
   expect(rows({ value: Array.from({ length: 14 }, (_, line) => `Zeile ${line}`).join("\n") })).toBe("10");
   expect(rows({ value: "Eine Zeile", rows: 5 })).toBe("5");
 });
+
+// A password manager reads the server's markup, before the island hydrates: what it may fill in stands there (#4173).
+test("a text field sends autocomplete, length, keyboard, spelling and capitals in the server's markup", () => {
+  const markup = renderToString(() =>
+    createComponent(Input, {
+      label: "Code",
+      name: "code",
+      type: "password",
+      autocomplete: "one-time-code",
+      maxLength: 8,
+      inputMode: "numeric",
+      spellcheck: false,
+      autocapitalize: "off",
+    }),
+  );
+  const input = markup.match(/<input[^>]*>/)?.[0] ?? "";
+  for (const attribute of [
+    'name="code"',
+    'autocomplete="one-time-code"',
+    'maxlength="8"',
+    'inputmode="numeric"',
+    'spellcheck="false"',
+    'autocapitalize="off"',
+  ])
+    expect(input).toContain(attribute);
+  expect(renderToString(() => createComponent(Input, { multiline: true, label: "Notiz", spellcheck: true }))).toContain(
+    'spellcheck="true"',
+  );
+  // without them the field stays as it was: no attribute is guessed
+  expect(renderToString(() => createComponent(Input, { label: "Suche" }))).not.toMatch(
+    /autocomplete|maxlength|inputmode|spellcheck|autocapitalize/,
+  );
+});
