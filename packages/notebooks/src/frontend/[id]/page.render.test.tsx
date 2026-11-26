@@ -748,8 +748,8 @@ const renderLinkedNotebook = async (
 };
 
 for (const [locale, line] of [
-  ["en", "This notebook has 20,000 pages. The graph shows the 1 around “Welcome”"],
-  ["de", "Dieses Notizbuch hat 20.000 Seiten. Der Graph zeigt die 1 rund um „Welcome“"],
+  ["en", "1 of 20,000 pages, around “Welcome”"],
+  ["de", "1 von 20.000 Seiten rund um „Welcome“"],
 ]) {
   test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
     const html = await renderLinkedNotebook("write", "graph", locale, "write", { around: "note01", total: 20_000 });
