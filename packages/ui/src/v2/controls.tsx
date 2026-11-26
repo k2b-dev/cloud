@@ -15,6 +15,7 @@ import { isServer } from "solid-js/web";
 import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
+import { BarPlaceContext } from "./bar-place";
 import { usePopover } from "./behavior/overlays";
 import { type ChoiceItem, useSelect } from "./behavior/select";
 import { useDateMessages } from "./date-messages";
@@ -268,7 +269,8 @@ export const Input = (props: InputProps) => {
     () => props.type === "search",
   );
   // the end is made once, here (reading the prop twice would make its JSX twice)
-  const end = resolveChildren(() => props.end);
+  // what stands at the field's end (the filter of a search) belongs to the field, not to the bar around it
+  const end = resolveChildren(() => <BarPlaceContext.Provider value={undefined}>{props.end}</BarPlaceContext.Provider>);
   const shared = () => ({
     id: field?.control,
     name: props.name ?? field?.name,

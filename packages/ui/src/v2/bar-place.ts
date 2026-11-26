@@ -1,7 +1,7 @@
-import { createContext, useContext } from "solid-js";
+import { createContext, onCleanup, useContext } from "solid-js";
 
 /** A place of a `Bar`, its start or its end, which hears what stands in it. */
-type BarPlace = { place: "start" | "end"; mark: () => void };
+type BarPlace = { place: "start" | "end"; mark: () => () => void };
 
 export const BarPlaceContext = createContext<BarPlace>();
 
@@ -12,5 +12,6 @@ export const BarPlaceContext = createContext<BarPlace>();
  */
 export const markBarPlace = (place: "start" | "end") => {
   const bar = useContext(BarPlaceContext);
-  if (bar?.place === place) bar.mark();
+  // the mark goes with the part that made it
+  if (bar?.place === place) onCleanup(bar.mark());
 };

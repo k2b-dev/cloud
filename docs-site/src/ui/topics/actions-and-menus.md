@@ -59,9 +59,9 @@ A panel behind a button: Escape and a press outside close it, the focus moves in
 
 <Props of="Popover" />
 
-## Not in v2 yet
+## In a head that gives way
 
-A `Popover` in the head has no `keep`: on the phone it leaves with the other head actions, while a `Menu` in the head stays. A filter the phone needs is a `Menu` with ticked entries. Write `// k2b-ui gap: popover keep on the phone` at that place.
+A head's "…" is a `Menu` without words or a symbol of its own, at the end of its `Bar`. Where the head gives way (on the phone, or below 1100 px in a head with a title), its buttons without `keep` leave, and the "…" lists them first when it opens: a button runs its own click, a link opens as it does, a `Menu` with words becomes a submenu, a pressed toggle shows its tick and a disabled one stays disabled. Put no copy of them into the "…" yourself. A `Menu` or `Popover` that shows only its symbol (such as "Später" with a clock) stays in the head and keeps its own entries. A head without a "…" keeps its buttons.
 
 ## Do and don't
 

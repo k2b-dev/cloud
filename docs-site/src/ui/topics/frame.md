@@ -17,7 +17,8 @@ Open orders of a workshop: the sidebar holds the app's places, the head holds th
 The workspace decides from its own width, on the server's page too, so nothing jumps when the page comes alive. Switch the example to 1024 and 390 px to see each.
 
 - **Tablet:** where the sidebar at its default width does not fit beside every column at its minimum, it becomes a drawer behind a button at the start of the head. A declared `detail` counts also while it is closed, so the sidebar does not jump when an entry opens.
-- **Phone (below 768 px):** the sidebar leaves, and head actions hide unless they have `keep`. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
+- **Phone (below 768 px):** the sidebar leaves. In a head with a "…" (a `Menu` without words or a symbol of its own), the buttons without `keep` give way, and the "…" lists them by itself, with their names, states and deeds; a head without a "…" keeps them, so no deed vanishes unseen. The main action floats at the bottom right from `Workspace primary`. The list is the page; an open entry is a page of its own.
+- **A head with a title, without room:** a head that names its page (a `Text` in `Bar start`) gives way below 1100 px of its own width, such as a laptop beside its sidebar. First its search shows as its symbol while it holds no words (a search folds where it shows its placeholder) and its buttons without `keep` move into the "…", while the main action stays. Then its tabs give way, whole tab by whole tab, and its title is cut with "…" last. A head of tabs alone keeps its actions.
 - **One way back:** on the phone, the open entry's `Pane back` is the one way back to the list, with the list's address as `href`. The close × of its head gives way there, so there are never two.
 
 ## Tabs or path?

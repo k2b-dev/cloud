@@ -541,21 +541,25 @@ export type BarProps = {
  */
 export const Bar = (props: BarProps) => {
   // what stands in its places marks the bar, already on the server: a title in its start, the "…" at its end
-  const [title, setTitle] = createSignal(false);
-  const [more, setMore] = createSignal(false);
+  const [title, setTitle] = createSignal(0);
+  const [more, setMore] = createSignal(0);
+  const counter = (set: (change: (count: number) => number) => void) => () => {
+    set((count) => count + 1);
+    return () => set((count) => count - 1);
+  };
   const start = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "start", mark: () => setTitle(true) }}>{props.start}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "start", mark: counter(setTitle) }}>{props.start}</BarPlaceContext.Provider>
   ));
   const end = resolveChildren(() => (
-    <BarPlaceContext.Provider value={{ place: "end", mark: () => setMore(true) }}>{props.end}</BarPlaceContext.Provider>
+    <BarPlaceContext.Provider value={{ place: "end", mark: counter(setMore) }}>{props.end}</BarPlaceContext.Provider>
   ));
   return (
-    <div class="k2-bar" data-k2-part="Bar" data-title={title() ? "" : undefined}>
+    <div class="k2-bar" data-k2-part="Bar" data-title={title() > 0 ? "" : undefined}>
       <Show when={start() !== undefined}>
         <div class="k2-bar-start">{start()}</div>
       </Show>
       <Show when={end() !== undefined}>
-        <div class="k2-bar-end" data-more={more() ? "" : undefined}>
+        <div class="k2-bar-end" data-more={more() > 0 ? "" : undefined}>
           {end()}
         </div>
       </Show>

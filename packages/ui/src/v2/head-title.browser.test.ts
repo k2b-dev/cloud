@@ -91,6 +91,14 @@ const head = (page: Page) =>
   });
 const search = (page: Page) => page.locator('.k2-ws-main [data-slot="head"] .k2-input[data-search] input');
 
+test("the server's markup already marks the head's title and its \"…\", so the first frame folds as the live page does", () => {
+  const html = markup({ deeds: true });
+  expect(html).toMatch(/class="k2-bar"[^>]*data-title=""/);
+  expect(html).toMatch(/class="k2-bar-end"[^>]*data-more=""/);
+  // a head without a "…" is not marked: it keeps its buttons
+  expect(markup({ deeds: true, more: false })).not.toContain("data-more");
+});
+
 for (const width of [1024, 1280, 1366])
   test(`at ${width} px in the shell the actions fold first and the long name keeps its words`, async () => {
     const page = await open(width);
@@ -190,12 +198,15 @@ for (const width of [1024, 390])
         "Mitglieder",
         "Einstellungen",
       ]);
-      expect(await menu.getByRole("menuitem", { name: "Exportieren" }).getAttribute("href")).toBe("#export");
       // on the phone the main action floats as the round button; on a desktop it stays in the head
       expect(await menu.getByRole("menuitem", { name: "Neue Aufgabe" }).count()).toBe(0);
       await menu.getByRole("menuitem", { name: "Teilen" }).click();
       await settled(page);
       expect(await page.evaluate(() => window.__shared)).toBe(1);
+      // a link runs its own click, so it opens as the link does (its way of opening kept)
+      await page.getByRole("button", { name: "Space-Menü" }).click();
+      await page.locator('[data-k2-part="Menu"]:visible').getByRole("menuitem", { name: "Exportieren" }).click();
+      await page.waitForFunction(() => location.hash === "#export");
     } finally {
       await page.close();
     }
