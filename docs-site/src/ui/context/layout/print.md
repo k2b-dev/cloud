@@ -2,6 +2,11 @@
 
 Every application view either prints its content (mark it with `data-print-region`) or shows the print fallback with the app's export hint (Cloud Layout `printHint`).
 
+
+On a page built with `@k2b/ui/v2`, mark the part that prints with `Band print`: the band carries `data-print-region`,
+and v2.css prints it alone, without the page's head, panes and footer, at its full length. A visitor page whose body
+is the v2 scope (Core's v2.css) prints the same way.
+
 ## Use browser printing
 
 Use the `@k2b/ui` stylesheet contract for complete readable content. For an app overview, graph, or virtualized list without a printable copy, supply the fallback.

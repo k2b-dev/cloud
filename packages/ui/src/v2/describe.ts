@@ -262,7 +262,8 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       }
       case "Band": {
         const tone = element.getAttribute("data-tone");
-        return `Band${tone ? ` ${tone}` : ""}${label ? ` ${quote(label)}` : ""}${rest().length ? `: ${rest().join(" ")}` : ""}`;
+        const print = element.hasAttribute("data-print-region") ? " print" : "";
+        return `Band${tone ? ` ${tone}` : ""}${print}${label ? ` ${quote(label)}` : ""}${rest().length ? `: ${rest().join(" ")}` : ""}`;
       }
       case "Cells": {
         const cells = [...element.querySelectorAll("[data-k2-part='Cells.Cell']")].map(

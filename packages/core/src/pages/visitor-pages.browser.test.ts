@@ -249,7 +249,22 @@ const measure = async (name: Name, width: number, locale: Locale) => {
         printed: Array.from(document.querySelectorAll("[data-print-region]")).map((region) => region.textContent?.trim().slice(0, 20)),
       };
     });
-    return { outline, problems: layout.problems, ...boxes };
+    // On paper: what shows of the head, the footer and the printed text
+    await tab.emulateMedia({ media: "print" });
+    await settled(tab);
+    const paper = await tab.evaluate(() => {
+      const shown = (selector: string) => {
+        const element = document.querySelector(selector);
+        return element ? element.getClientRects().length > 0 : false;
+      };
+      return {
+        head: shown('[data-slot="head"]'),
+        footer: shown("footer"),
+        region: shown("[data-print-region]"),
+        text: document.querySelector("[data-print-region]")?.textContent?.trim().slice(0, 24),
+      };
+    });
+    return { outline, problems: layout.problems, paper, ...boxes };
   } finally {
     await tab.close();
   }
@@ -288,6 +303,9 @@ describe("Core visitor pages on v2", () => {
           // The smokes accept the terms by the version on the consent form.
           if (name === "consent") expect(page.legalVersion, context).toBe("a".repeat(64));
           expect(page.printed.length, context).toBe(name === "legal" ? 1 : 0);
+          // the legal text prints alone: no head and no footer on paper
+          if (name === "legal")
+            expect(page.paper, context).toEqual({ head: false, footer: false, region: true, text: expect.stringMatching(/\S/) });
         }
     }, 60_000);
 });

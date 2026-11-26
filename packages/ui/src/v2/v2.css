@@ -4594,3 +4594,56 @@
   letter-spacing: 0.08em;
   color: var(--k2-text);
 }
+
+/* ── Paper: what a page marks with `Band print` prints alone ───────────────────────────────────────────────────── */
+
+/* A page marks what it prints (`Band print`, `data-print-region`): on paper only that prints, without the page's head,
+   panes, footer or a scrollport that would cut it after the first screen. Its ancestors become plain blocks that grow
+   with it. A v2 page whose body is the scope (Core's v2.css) hides its footer too; nothing here changes the screen. */
+@media print {
+  .k2-ui,
+  .k2-ui *,
+  .k2-ui *::before,
+  .k2-ui *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+  /* every drawn part (it has a class) outside the printed text and its ancestors */
+  .k2-ui:has([data-print-region]) [class]:not([data-print-region], [data-print-region] *, :has([data-print-region])) {
+    display: none !important;
+  }
+  .k2-ui:has([data-print-region]),
+  .k2-ui :has([data-print-region]) {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: none !important;
+    overflow: visible !important;
+    transform: none !important;
+    contain: none !important;
+  }
+  .k2-ui [data-print-region],
+  .k2-ui [data-print-region] .k2-scroll {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+  }
+  .k2-ui [data-print-region] :is(h1, h2, h3, h4, h5, h6) {
+    break-after: avoid;
+  }
+  .k2-ui [data-print-region] :is(figure, img, pre, blockquote, tr) {
+    break-inside: avoid;
+  }
+}
