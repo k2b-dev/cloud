@@ -1034,6 +1034,30 @@
   padding-top: var(--k2-before);
   padding-bottom: var(--k2-after);
 }
+/* The head of a group of rows (a day): words in 600 and a quiet count on the text edge; no band, no line, the space
+   above it sets the group apart */
+.k2-ui .k2-list-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px var(--k2-edge) 4px;
+  font: var(--k2-t-row);
+  color: var(--k2-text);
+}
+.k2-ui .k2-list-head > :first-child {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.k2-ui .k2-list-head-count {
+  flex: none;
+  font: var(--k2-t-meta);
+  color: var(--k2-subtle);
+  font-variant-numeric: tabular-nums;
+}
 .k2-ui .k2-row {
   /* the column of time, end and marks: as wide as they are, but marks never take more than half of the row */
   --k2-row-side: auto;
@@ -2410,6 +2434,37 @@
 .k2-ui .k2-nav-title > .k2-icon {
   color: var(--k2-app-text);
   font-size: 18px;
+}
+/* The groups scroll between the app's name and the foot, so a long group (1,000 tables) reaches its end; the area
+   reaches to the sidebar's edges, so the ring of a focused entry is never cut */
+.k2-ui .k2-nav-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-inline: -12px;
+  padding-inline: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+.k2-ui .k2-nav-scroll::-webkit-scrollbar {
+  display: none;
+}
+.k2-ui .k2-nav-scroll > *,
+.k2-ui .k2-nav-window > * {
+  flex: none;
+}
+/* a long group keeps only the entries in view; its padding holds the place of the others */
+.k2-ui .k2-nav-window {
+  --k2-before: 0px;
+  --k2-after: 0px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: var(--k2-before);
+  padding-bottom: var(--k2-after);
 }
 .k2-ui .k2-nav-label {
   font: var(--k2-t-meta);

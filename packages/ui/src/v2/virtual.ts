@@ -157,6 +157,7 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
     const view = scroller ?? document.documentElement;
     let frame = 0;
     const nodes = new WeakMap<Element, string>();
+    const gap = Number.parseFloat(getComputedStyle(list).rowGap) || 0;
     const byKey = new Map<string, Element>();
     /** How far the column is scrolled into the list, in px. */
     const scrolledIn = () => -(list.getBoundingClientRect().top - (scroller ? scroller.getBoundingClientRect().top : 0));
@@ -194,7 +195,8 @@ export const createVirtualWindow = <T>(options: { items: Accessor<readonly T[]>;
       for (const entry of entries) {
         const key = nodes.get(entry.target);
         if (key === undefined || !position.has(key) || !entry.target.isConnected) continue;
-        const size = entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height;
+        // an item takes its height and the gap after it (the entries of a sidebar stand 4 px apart)
+        const size = (entry.borderBoxSize[0]?.blockSize ?? entry.target.getBoundingClientRect().height) + gap;
         const before = known.get(key);
         if (size <= 0 || (before !== undefined && Math.abs(before - size) <= 0.5)) continue;
         known.set(key, size);

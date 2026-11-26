@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
-import { List, type ListController, Pane, Row, Table, Workspace } from "../src/v2";
+import { List, type ListController, Nav, Pane, Row, Table, Workspace } from "../src/v2";
 
 // A list of 1,000 entries whose titles wrap at narrow widths, and a table of 200 rows whose cells read a live value:
 // the virtual window of v2 (review of #4211) under scrolling, resizing, Tab and a reveal by key.
@@ -28,36 +28,107 @@ window.__k2Reveal = (key) => list?.reveal(key) ?? null;
 
 const root = document.getElementById("root");
 if (!root) throw new Error("virtual: #root is missing");
-render(
-  () => (
-    <Workspace>
-      <Pane.Split>
-        <Pane label="Liste">
-          <List
-            label="Einträge"
-            items={entries}
-            rowKey={(entry) => entry.key}
-            controller={(handle) => {
-              list = handle;
-            }}
-            row={(entry) => <Row lines={[entry.title, "Zweite Zeile"]} href={`#${entry.key}`} />}
-          />
-        </Pane>
-        <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
-          <Table
-            label="Zeilen"
-            rows={rows}
-            rowKey={(row) => row.id}
-            sticky
-            columns={[
-              { title: "Zeile", cell: (row) => row.id, width: { min: 80, default: 120 } },
-              { title: "Wert", cell: (row) => <span data-cell={row.id}>{`${row.id}:${tick()}`}</span>, width: { min: 80, default: 120 } },
+// `<body data-case="groups">`: the same entries, seven a day under a head of their day, in a list and in a table
+const day = (index: number) => Math.floor(index / 7) + 1;
+// `<body data-case="nav">`: a sidebar whose group holds 1,000 entries (a base with 1,000 tables), and a foot
+if (document.body.dataset.case === "nav")
+  render(
+    () => (
+      <Workspace
+        sidebar={
+          <Nav
+            title="Grids"
+            icon="table"
+            groups={[
+              {
+                label: "Tabellen",
+                items: entries.map((entry, index) => ({
+                  label: `Tabelle ${index + 1}`,
+                  icon: "table",
+                  href: `#t${index + 1}`,
+                  current: index === 699,
+                })),
+              },
             ]}
+            foot={[{ label: "Papierkorb", icon: "trash", href: "#trash" }]}
           />
+        }
+      >
+        <Pane label="Inhalt">
+          <Row lines={["Inhalt"]} />
         </Pane>
-      </Pane.Split>
-    </Workspace>
-  ),
-  root,
-);
+      </Workspace>
+    ),
+    root,
+  );
+else if (document.body.dataset.case === "groups")
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              group={(entry) => {
+                const at = day(Number(entry.key.slice(1)) - 1);
+                return { key: `d${at}`, label: `Tag ${at}`, count: "7" };
+              }}
+              controller={(handle) => {
+                list = handle;
+              }}
+              row={(entry) => <Row lines={[entry.key, "Zweite Zeile"]} href={`#${entry.key}`} />}
+            />
+          </Pane>
+          <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
+            <Table
+              label="Zeilen"
+              rows={entries}
+              rowKey={(entry) => entry.key}
+              group={(entry) => {
+                const at = day(Number(entry.key.slice(1)) - 1);
+                return { key: `d${at}`, head: () => `Tag ${at}`, meta: "7" };
+              }}
+              columns={[{ title: "Eintrag", cell: (entry) => entry.key, width: { min: 80, default: 160 } }]}
+            />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
+else
+  render(
+    () => (
+      <Workspace>
+        <Pane.Split>
+          <Pane label="Liste">
+            <List
+              label="Einträge"
+              items={entries}
+              rowKey={(entry) => entry.key}
+              controller={(handle) => {
+                list = handle;
+              }}
+              row={(entry) => <Row lines={[entry.title, "Zweite Zeile"]} href={`#${entry.key}`} />}
+            />
+          </Pane>
+          <Pane label="Tabelle" width={{ min: 240, default: 320 }}>
+            <Table
+              label="Zeilen"
+              rows={rows}
+              rowKey={(row) => row.id}
+              sticky
+              columns={[
+                { title: "Zeile", cell: (row) => row.id, width: { min: 80, default: 120 } },
+                { title: "Wert", cell: (row) => <span data-cell={row.id}>{`${row.id}:${tick()}`}</span>, width: { min: 80, default: 120 } },
+              ]}
+            />
+          </Pane>
+        </Pane.Split>
+      </Workspace>
+    ),
+    root,
+  );
 window.__k2Mounted = true;

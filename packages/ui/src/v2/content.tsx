@@ -251,7 +251,11 @@ type WrittenList = {
   row?: never;
   total?: never;
   controller?: never;
+  group?: never;
 };
+
+/** The group of an item in a list of items: its stable key, its words and a quiet count. */
+export type ListGroup = { key: string; label: string; count?: string };
 
 /** What an app may ask of a list of items: a row that is not in the page now, such as the row to give the focus back to. */
 export type ListController = {
@@ -270,6 +274,11 @@ type ItemList<T> = {
   rowKey: (item: T) => string;
   /** The `Row` of an item, made once per item while it is in the page. */
   row: (item: T, index: Accessor<number>) => JSX.Element;
+  /**
+   * The group an item belongs to, such as its day: items of one group follow one another, and a head stands before
+   * the first of them (its words in 600 and a quiet count, no band, no line).
+   */
+  group?: (item: T) => ListGroup;
   /** Receives the list's controller once it is in the page (see `ListController`). */
   controller?: (list: ListController) => void;
   /** How many items the whole list has, when more than are loaded; the rows count against it. */
@@ -370,12 +379,45 @@ export const List = <T,>(props: ListProps<T>) => {
 /** The rows of a list of items, in a window (see `List`). */
 const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
   let list: HTMLDivElement | undefined;
-  const view = createVirtualWindow({ items: () => props.items, key: (item: T) => props.rowKey(item) });
+  // What stands in the list: the rows, each group's head before its first row. An entry keeps its object while its
+  // item (or its group) stays, so a change of the items makes no row anew.
+  type Entry = { key: string; head: ListGroup } | { key: string; item: T };
+  let made = new Map<string, Entry>();
+  const at = new Map<string, number>();
+  const entries = createMemo(() => {
+    const kept = made;
+    made = new Map();
+    at.clear();
+    const out: Entry[] = [];
+    let last: string | undefined;
+    props.items.forEach((item, index) => {
+      const group = props.group?.(item);
+      if (group && group.key !== last) {
+        const key = `group:${group.key}`;
+        const before = kept.get(key);
+        const head =
+          before && "head" in before && before.head.label === group.label && before.head.count === group.count
+            ? before
+            : { key, head: group };
+        made.set(key, head);
+        out.push(head);
+      }
+      last = group?.key;
+      const key = `row:${props.rowKey(item)}`;
+      const before = kept.get(key);
+      const row = before && "item" in before && before.item === item ? before : { key, item };
+      made.set(key, row);
+      at.set(key, index);
+      out.push(row);
+    });
+    return out;
+  });
+  const view = createVirtualWindow({ items: entries, key: (entry: Entry) => entry.key });
   onMount(() => {
     if (!list) return;
     // the window keeps the reading place itself, around changes of the items only (see `createVirtualWindow`)
     view.mount(list);
-    props.controller?.({ reveal: view.reveal });
+    props.controller?.({ reveal: (key) => view.reveal(`row:${key}`) });
   });
   const size = () => Math.max(props.total ?? 0, props.items.length);
   return (
@@ -390,13 +432,26 @@ const ItemRows = <T,>(props: ItemList<T> & { label?: string }) => {
     >
       <ListContext.Provider value={true}>
         <For each={view.shown()}>
-          {(item) => {
-            const index = () => view.indexOf(item);
-            const node = <ListItemContext.Provider value={{ index, size }}>{props.row(item, index)}</ListItemContext.Provider>;
+          {(entry) => {
+            if ("head" in entry) {
+              // a head is no entry of the list: it names the rows after it, as the group rows of a table on the phone
+              const head = (
+                <div class="k2-list-head" role="presentation">
+                  <span>{entry.head.label}</span>
+                  <Show when={entry.head.count}>
+                    <span class="k2-list-head-count">{entry.head.count}</span>
+                  </Show>
+                </div>
+              );
+              if (typeof Element !== "undefined" && head instanceof Element) view.observe(head, entry);
+              return head;
+            }
+            const index = () => (entries(), at.get(entry.key) ?? -1);
+            const node = <ListItemContext.Provider value={{ index, size }}>{props.row(entry.item, index)}</ListItemContext.Provider>;
             const element = resolveChildren(() => node)
               .toArray()
               .find((part): part is Element => typeof Element !== "undefined" && part instanceof Element);
-            if (element) view.observe(element, item);
+            if (element) view.observe(element, entry);
             return node;
           }}
         </For>
