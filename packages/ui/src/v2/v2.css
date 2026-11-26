@@ -3,7 +3,12 @@
 
    Everything stays below the v2 root `.k2-ui`, in its own namespace: classes start with `k2-`, custom properties
    with `--k2-`. A page can load this sheet beside the v1 sheet (`.k2b-ui`, `--k2b-*`) without either touching the
-   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own. */
+   other. Primitives own spacing, lines and type; an application never adds layout CSS of its own.
+
+   Write relations as usual (`>`, `+`, `~`, `:first-child`, `:last-child`, `:has(> …)`): the build ships every one
+   also through an island wrapper of @k2b/ssr (scripts/v2-island-css.ts), so a primitive keeps its layout inside a
+   small island. A form that cannot do that (`:nth-*`, `:*-of-type`, `:empty`) fails the build; only placeholders
+   (`.k2-skel`) may use `:nth-*`. */
 
 .k2-ui {
   /* neutral scale */
@@ -525,6 +530,7 @@
   min-width: 400px;
 }
 /* a fixed column at the end includes its line, so its grip sits at 100% minus its width, like one at the start */
+/* one primitive: Pane.Split puts a seam after every pane */
 .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
   width: calc(var(--k2-pane-w) - 1px);
 }
@@ -744,7 +750,7 @@
   align-content: start;
   align-items: center;
 }
-.k2-ui .k2-cell + .k2-cell {
+.k2-ui .k2-cell ~ .k2-cell {
   border-left: var(--k2-hairline);
 }
 .k2-ui .k2-cell > .k2-icon:first-child {
@@ -888,6 +894,7 @@
   font-size: 14px;
 }
 /* the 20 px tile stands on the symbol axis; the title after it keeps the one text edge of 44 px */
+/* one primitive: the symbol and the title of a Section head */
 .k2-ui .k2-sh > .k2-stile + h3 {
   margin-left: -4px;
 }
@@ -985,10 +992,10 @@
 /* only borderless buttons pull out to the text edge; a framed button keeps its box on the edge (K5).
    "The last button" skips popups: a menu or popover renders right after its button while it is open (in the top
    layer), and the button must not jump when it opens. */
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-gh > .k2-gh-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -6px;
 }
 .k2-ui .k2-group[data-folded] {
@@ -1300,12 +1307,12 @@
   color: var(--k2-subtle);
 }
 /* a text button at the end of a row stands with its text, not its box, on the text edge (K5) */
-.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
-.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))),
-.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-row-time > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])),
+.k2-ui .k2-row-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 /* A row that opens something: its title is the link or button, and that control is stretched over the whole row.
@@ -1456,7 +1463,7 @@
   vertical-align: top;
   margin-block: -2px;
 }
-.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-table td:last-child > .k2-btn[data-variant="text"]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -8px;
 }
 .k2-ui .k2-group .k2-table:not([data-lines="2"]) td {
@@ -1638,12 +1645,15 @@
   --k2-pill-edge: transparent;
   --k2-dot: var(--k2-n300);
   position: absolute;
-  left: -5px;
+  /* on the line before its column, also right to left */
+  inset-inline-start: -5px;
   top: 9px;
   width: 9px;
   height: 18px;
   z-index: 4;
   cursor: col-resize;
+  /* a touch drag is the grip's, never a pan of the table */
+  touch-action: none;
   outline: none;
 }
 .k2-ui .k2-cgrip::before {
@@ -1763,7 +1773,7 @@
   align-items: center;
 }
 /* an icon button at the end stands with its icon on the text edge */
-.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:not(:has(~ :not([popover], [data-slot$="-content"]))) {
+.k2-ui .k2-facts-end > .k2-btn[data-variant="ghost"][data-icon-only]:nth-last-child(1 of :not([popover], [data-slot$="-content"])) {
   margin-right: -10px;
 }
 
@@ -2208,6 +2218,7 @@
   opacity: 0;
   cursor: default;
 }
+/* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
 .k2-ui .k2-mark-input:focus-visible + .k2-switch {
@@ -2786,6 +2797,7 @@
   color: var(--k2-text);
   font-weight: 600;
 }
+/* one primitive: the facts of a StatusRow */
 .k2-ui .k2-fact + .k2-fact {
   margin-left: 8px;
 }
@@ -3412,6 +3424,20 @@
   gap: 8px;
   outline: none;
 }
+/* On the phone the panel is a sheet, as a dialog is: the whole width at the bottom, its top corners round, as high as
+   its content up to most of the screen; a swipe down closes it. */
+.k2-ui .k2-pop[data-presentation="sheet"] {
+  position: fixed;
+  inset: auto 0 0;
+  /* as high as its content: on a touch screen core places the sheet by its top, and a bottom of 0 would squeeze it */
+  height: fit-content;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 48px);
+  border-radius: var(--k2-r-overlay) var(--k2-r-overlay) 0 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  box-shadow: var(--k2-float-large);
+}
 .k2-ui .k2-pop-title {
   margin: 0;
   padding: 0 var(--k2-edge);
@@ -3545,6 +3571,34 @@
   height: var(--k2-h-dense);
   font-variant-numeric: tabular-nums;
 }
+/* The time: hour and minute as segments in one field, each as wide as two digits; the focused one is marked like a
+   selection, the separator stays quiet. */
+.k2-ui .k2-time {
+  gap: 0;
+  cursor: text;
+}
+.k2-ui .k2-time > .k2-time-seg {
+  flex: none;
+  width: 2.4ch;
+  height: 20px;
+  padding: 0;
+  border-radius: var(--k2-r-mark);
+  text-align: center;
+  font: var(--k2-t-row);
+  font-variant-numeric: tabular-nums;
+  caret-color: transparent;
+}
+.k2-ui .k2-time > .k2-time-seg:focus {
+  background: var(--k2-blue-tint);
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-time > .k2-time-seg::placeholder {
+  color: var(--k2-subtle);
+}
+.k2-ui .k2-time > .k2-time-sep {
+  color: var(--k2-subtle);
+  font: var(--k2-t-row);
+}
 .k2-ui .k2-dpick-error {
   margin: 0;
   font: var(--k2-t-meta);
@@ -3672,6 +3726,7 @@
     width: auto;
     height: 1px;
   }
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane,
   .k2-ui .k2-split > .k2-seam + .k2-pane[data-width] {
     flex: none;
@@ -3682,6 +3737,7 @@
     overflow: visible;
   }
   /* the place of a detail that is not open: the list is the page (with no line after it) */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > [data-detail-empty],
   .k2-ui .k2-split > .k2-seam:has(+ [data-detail-empty]) {
     display: none;
@@ -3712,6 +3768,7 @@
     display: none;
   }
   /* panes stand one under the other: the seam is the line between them, so the last line inside a pane gives way */
+  /* one primitive: Pane.Split puts a seam after every pane */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > :is(.k2-sec, .k2-row):last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-list:last-child > .k2-row:last-child,
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-phone:last-child > .k2-list > .k2-row:last-child {
@@ -3719,6 +3776,7 @@
   }
   /* a large table ends with a line of its own: it gives way through the one scroller, not through each of its cells */
   /* (a table with a phone form ends with that form, which stays hidden while the large table still shows) */
+  /* one primitive: Pane.Split puts a seam after every pane, a Table its phone form after the large one */
   .k2-ui .k2-split > .k2-pane:has(+ .k2-seam:not(:last-child)) > .k2-scroll > .k2-table-scroll:is(:last-child, :has(+ .k2-table-phone:last-child)) {
     --k2-table-end: 0;
   }
@@ -3790,6 +3848,35 @@
     justify-content: flex-start;
     border-color: var(--k2-blue);
     background: var(--k2-surface);
+  }
+  /* A host that offers the page's search in a bar of its own (the Cloud shell's phone bar) marks the v2 scope with
+     `data-k2-host-search` and focuses the field from there. The folded search then leaves the head, so its tabs keep
+     the room, but stays in reach of the focus; it opens over the head as above. A head with a path and a search gives
+     way as a head with only a path does, also while its search is open: the field then lies over the content's first
+     row, so nothing below moves. */
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar > .k2-bar-end > .k2-input[data-search]:not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) {
+    height: 0;
+    padding-block: 0;
+    border-bottom: 0;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):not(:focus-within) {
+    overflow: hidden;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path):has(> .k2-bar-end > .k2-input[data-search])::after {
+    content: none;
+  }
+  .k2-ui[data-k2-host-search] [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-path) > .k2-bar-end > .k2-input[data-search]:focus-within {
+    top: calc((var(--k2-h-status) - var(--k2-h-control)) / 2);
   }
   .k2-ui [data-slot="head"] > .k2-bar:has(> .k2-bar-start > .k2-tabs-nav) {
     height: var(--k2-h-tabs);
@@ -3920,6 +4007,7 @@
     grid-template-areas: "lead l0 go" "lead l1 go" "lead l3 go" "lead l2 go";
   }
   /* a large table becomes rows of two lines (rule 7: columns drop, they do not shrink) */
+  /* one primitive: the large and the phone form of a Table */
   .k2-ui .k2-table-scroll:has(+ .k2-table-phone) {
     display: none;
   }
@@ -3935,7 +4023,7 @@
   .k2-ui .k2-cells {
     grid-auto-flow: row;
   }
-  .k2-ui .k2-cell + .k2-cell {
+  .k2-ui .k2-cell ~ .k2-cell {
     border-left: 0;
     border-top: var(--k2-hairline);
   }
@@ -4021,6 +4109,24 @@
 }
 .k2-ui .k2-table td[data-align="end"] .k2-skel {
   margin-left: auto;
+}
+/* a value on its way in an inline line of facts holds a short place of its own: the line has no column to fill */
+.k2-ui .k2-facts[data-inline] .k2-skel {
+  width: 48px;
+}
+/* A value that is there while a newer one comes keeps its exact room, unseen (its lines, chips and wrapping), and the
+   bar lies over its first line, so nothing moves when the newer one comes. */
+.k2-ui .k2-held {
+  display: contents;
+  visibility: hidden;
+}
+.k2-ui :is(.k2-fact-value, .k2-cell-value, .k2-cell-meta):has(> .k2-skel[data-over]) {
+  position: relative;
+}
+.k2-ui .k2-skel[data-over] {
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 /* words for assistive technology only, such as "loading" beside the placeholders */
 .k2-ui .k2-hidden-text {
@@ -4834,7 +4940,8 @@
   gap: 8px;
   pointer-events: none;
 }
-.k2-ui .k2-notice-stack:empty {
+/* without a notice (an island's wrapper around one counts as none) */
+.k2-ui .k2-notice-stack:not(:has(.k2-notice)) {
   display: none;
 }
 .k2-ui .k2-notice-stack > .k2-notice {

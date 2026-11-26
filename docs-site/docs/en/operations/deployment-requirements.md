@@ -27,6 +27,67 @@ In the supplied Compose files, an app ID such as `mail` maps to service
 package, CLI and desktop development tools are not additional server apps in
 this service set.
 
+## Remove the Capabilities application when upgrading
+
+The built-in Capabilities application is removed from this release. Before
+replacing your deployment files, stop and remove `app-capabilities` using the
+previous Compose configuration:
+
+```bash
+docker compose -f compose.prod.yml stop app-capabilities
+docker compose -f compose.prod.yml rm -f app-capabilities
+```
+
+Use your normal environment and infrastructure overlays for both commands.
+Wait at least three minutes after the old service stops, so any remaining
+registry lease expires before Core performs the database cleanup. Then deploy
+the new release. For Kubernetes or a custom deployment, remove the
+Capabilities workload and its service from your manifests. Remove its app-key
+mount and secret from deployment configuration once the old service is gone.
+The new release no longer publishes a Capabilities application image.
+
+There is no application-specific compatibility or registration path. An old
+container is an unknown application handled by the generic registry. Stop it
+before upgrading: graceful shutdown withdraws its routes; otherwise its last
+heartbeat lease expires within three minutes. Until expiry, an old route can
+point to the stopped service and return a gateway error. Other applications
+remain available.
+
+**Upgrading permanently deletes the removed application's own records.**
+Core removes its remembered registration and package assignment, app keys and
+service accounts with their grants, settings and domains, rail entries and
+chooser/consent preferences, notification definitions and deliveries,
+approvals and remembered approval grants, Help/search documents and app Skill
+catalogs, app-owned Code, workflow runs/scopes and their AI admission/budget
+state, event subscriptions/outbox data, and its own capability execution and
+idempotency records. Explicit grants to this app are removed from other
+workloads' mandates; affected active mandates are paused and audited.
+
+Historical audit events, AI inference/quota and structured-run records,
+outgoing-mail messages, logging data and other providers' capability execution
+records stay, including executions called through the removed app. Core writes
+one `app.removed` audit event only when it removes or changes rows; fresh
+installations get no removal event. Direct counts separate deletions from
+changes to surviving rows; foreign-key cascades delete additional dependent
+rows. Revoked mandates owned by other applications stay unchanged. Other
+applications' data stays. Back up the database before upgrading if you need
+removed data.
+
+On large installations this transaction can extend Core startup and hold
+database locks while it deletes the old data. Wait for Core's readiness check
+to pass before starting the remaining applications.
+
+The application had no owned database schema or authored content, so there is
+no application content to export and no separate export command. The database
+schema named `capabilities` belongs to the platform and is kept. Its execution
+history is deleted only where this application was the provider.
+
+The platform capability API, mandates, `cld capabilities`, Assistant and provider
+applications continue to work. Use `cld capabilities catalog` for discovery and
+**Administration → Observability → Capabilities** for administrator inspection.
+Saved links to `/app/capabilities` and calls to its catalog-search Query no
+longer work after removal; update scripts or bookmarks that use that app.
+
 ## Code runner hosts
 
 Production Compose starts the Code runner service. Before starting it, install
@@ -325,7 +386,7 @@ See [the migration steps](/en/docs/reference/deprecations-and-migrations#confirm
 
 Applications built with this release may declare Action policies and return
 per-call reviews or receipts. Upgrade Core and every application that calls
-Actions, at least Assistant and Capabilities, to this release or newer first.
+Actions, including Assistant, to this release or newer first.
 Older versions still discover the Actions through derived approval metadata,
 but reject the new response shapes. Existing apps need no migration in this
 release. See [Action contract migration](/en/docs/platform/capabilities#migrate-an-application).
@@ -819,7 +880,6 @@ or mutate real data without approval.
 | [OAuth](/en/apps/oauth) (`oauth`) | Baseline; same database as Core; direct Core origin and an enrolled `oauth` app key (or matching legacy broker secret). Readiness probes Core before OAuth migrations. | Register external clients with exact callbacks and access rules. OAuth needs no workload credential and never receives Core's KEK. | Fetch discovery, then complete a test authorization-code/PKCE flow and refresh a token. For headless CLI sign-in, also approve one `cld login --device` code at `/oauth/device` and, with Cloud Login approval enabled, one `cld login --user` request on a paired device. Discovery alone is insufficient. |
 | [Proxy Auth](/en/apps/proxy-auth) (`proxy-auth`) | Baseline | Configure a proxy-auth client and the external reverse proxy's forward-auth/callback integration. This is not an OAuth-client requirement. | Check denied and permitted access to one test upstream through that reverse proxy. |
 | [API Docs](/en/apps/api-docs) (`api-docs`) | Baseline | Registered applications must publish reachable OpenAPI endpoints to appear as usable sources. | Open `/app/api-docs`, select an installed app, and load its specification. |
-| [Capabilities](/en/apps/capabilities) (`capabilities`) | Baseline | Core's dispatcher and the selected provider apps. The Capabilities app is a UI, not a prerequisite for other apps to call capabilities. | Open `/app/capabilities` and execute a permitted read-only query against an installed provider. |
 | [Dashboard](/en/apps/dashboard) (`dashboard`) | Baseline | Selected widget-provider apps and Core's widget proxy; no fixed requirement to install every provider. | Open `/app/dashboard`; verify a selected provider's widget and its unavailable state when that provider is absent. |
 | [Pulse](/en/apps/pulse) (`pulse`) | Baseline; included in development and production Compose; boots ready before ClickHouse setup | [Dedicated ClickHouse 26.9+](#provide-clickhouse-for-pulse) is required to use Pulse. A Cloud admin connects it under Administration → Pulse. Each base owns a database and read user. Ingestion requires configured sources, source-bound credentials and producers. The release workflow publishes the Pulse image. | Ingest a disposable batch through its source credential and inspect source health. |
 
