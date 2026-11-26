@@ -69,9 +69,8 @@ export default function ToolsScreen(props: {
                   label={t().appName}
                   items={[
                     { label: t().appName, href: "/tools" },
-                    ...(props.item
-                      ? [{ label: open()!.name, href: `/tools/${open()!.id}` }, { label: props.item }]
-                      : [{ label: open()!.name }]),
+                    // the tool's own step is the current address: a link there would reload and drop what is open
+                    ...(props.item ? [{ label: open()!.name }, { label: props.item }] : [{ label: open()!.name }]),
                   ]}
                 />
               ) : (

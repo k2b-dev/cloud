@@ -5,6 +5,7 @@ import { createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { type DocumentMarkdownMessages, documentMarkdownMessages } from "@/api/document-markdown-messages";
 import ToolsScreen from "../ToolsScreen";
+import { LiveStatus } from "../tools-status";
 
 export type DocumentMarkdownResult = {
   filename: string;
@@ -194,6 +195,16 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
       () => toast(t().copied, { status: "ok" }),
       () => toast(t().copyFailed, { status: "bad" }),
     );
+  /** What the live region says: converting, converted, or that it failed (the notice says why). */
+  const announcement = () =>
+    busy()
+      ? t().convertingFile({ filename: selectedFilename() })
+      : error()
+        ? t().conversionFailedTitle
+        : result()
+          ? t().converted({ filename: result()!.filename })
+          : undefined;
+
   /** What the place of the result says while there is none: converting, a drop on its way, or how to start. */
   const waiting = () =>
     busy() ? t().convertingFile({ filename: selectedFilename() }) : dragging() ? t().dropToConvert : t().previewDescription;
@@ -217,6 +228,9 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
       }
     >
       <Pane label={t().previewTitle} scrollKey="tools-document-markdown">
+        <Canvas label={t().statusLabel}>
+          <LiveStatus text={announcement()} />
+        </Canvas>
         <Show when={refusal()}>
           {(refused) => (
             <Notice tone="warn" title={refused().title} actions={[{ label: t().hide, onClick: () => setRefusal(null) }]}>
@@ -254,6 +268,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
                 icon="markdown"
                 title={t().previewTitle}
                 summary={t().resultMeta({
+                  filename: resolved().filename,
                   format: resolved().format.toUpperCase(),
                   input: formatBytes(resolved().inputBytes),
                   output: formatBytes(resolved().outputBytes),
@@ -289,7 +304,7 @@ export function DocumentMarkdownView(props: DocumentMarkdownViewProps = {}) {
         </Show>
         <Band>
           <Text type="meta" muted>
-            {`${t().dropSubtitle} · ${t().dropHint}. ${t().serverNotice}`}
+            {t().aboutDocuments}
           </Text>
         </Band>
       </Pane>

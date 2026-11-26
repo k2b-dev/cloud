@@ -42,6 +42,12 @@ describe("Document to Markdown tool", () => {
     expect(html).toContain("Cancel");
     // the document on its way is the last step of the path
     expect(html.slice(html.indexOf('data-k2-part="Path"'))).toContain("handbook.pdf");
+    // what happens is announced through the one live region, which is always there
+    expect(html).toMatch(/role="status"[^>]*>(?:<!--[^>]*-->)*Converting handbook.pdf…/);
+    // the path has no link to its own address: a click there would reload and drop the conversion
+    expect(html.slice(html.indexOf('data-k2-part="Path"'), html.indexOf("</nav>", html.indexOf('data-k2-part="Path"')))).not.toContain(
+      'href="/tools/document-markdown"',
+    );
   });
 
   test("keeps extracted Markdown plain and exposes copy and download actions", () => {
@@ -64,6 +70,9 @@ describe("Document to Markdown tool", () => {
     expect(html).toContain("Copy Markdown");
     expect(html).toContain("Download .md");
     expect(html.slice(html.indexOf('data-k2-part="Path"'))).toContain("quarterly-report.docx");
+    // the finished conversion is announced, and the whole name stands with the result, where the path gives way on the phone
+    expect(html).toMatch(/role="status"[^>]*>(?:<!--[^>]*-->)*quarterly-report.docx converted/);
+    expect(html).toMatch(/quarterly-report.docx · DOCX · 2 KB input/);
     expect(html).not.toContain('data-k2-part="StatusRow"');
   });
 
