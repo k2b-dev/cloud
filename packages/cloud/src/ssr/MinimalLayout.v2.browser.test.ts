@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
-import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import * as watcher from "../_internal/runtime-watcher";
+import { buildOlderGlobal } from "../styles/older-core-global.fixture";
 
 // A visitor page without the Cloud shell on v2: the k2b-ui "public page" recipe inside `MinimalLayout ui="v2"`. The
 // page and its footer share the window; a kiosk page without the footer takes the whole window and scrolls inside.
@@ -48,24 +48,6 @@ const render = (kiosk: boolean, core: Core = "with v2.css") => {
   return { html, page };
 };
 
-/**
- * Core's global.css as a Core from before the v2 sheet built it: without the file that holds the v2 frame of visitor
- * pages and their v2 footer (`minimal-layout.css`, new with it). Built from a copy beside global.css, whose imports are
- * relative, and removed at once. Stricter than the real older sheet, which still had the plain `.minimal-layout` rule.
- */
-const buildOlderGlobal = async () => {
-  const styles = resolve(import.meta.dir, "../styles");
-  const copy = join(styles, `.older-core-${process.pid}.css`);
-  const source = readFileSync(join(styles, "global.css"), "utf8");
-  if (!source.includes('@import "./minimal-layout.css";')) throw new Error("global.css no longer imports the visitor frame.");
-  writeFileSync(copy, source.replace('@import "./minimal-layout.css";', ""));
-  try {
-    return await Bun.build({ entrypoints: [copy], plugins: [tailwind] });
-  } finally {
-    rmSync(copy, { force: true });
-  }
-};
-
 let browser: Browser;
 // The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it (its body then is the v2 scope). Beside an
 // older Core it keeps that Core's global.css and the v1 footer.
@@ -75,10 +57,10 @@ const sheets: Record<Core, { css: string; body: string }> = {
 };
 beforeAll(async () => {
   const v2 = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
-  const older = await buildOlderGlobal();
-  for (const build of [v2, older]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
+  if (!v2.success) throw new AggregateError(v2.logs, "Could not build v2.css.");
   sheets["with v2.css"].css = await v2.outputs[0]!.text();
-  sheets.older.css = await older.outputs[0]!.text();
+  // the visitor frame and its v2 footer (`minimal-layout.css`) came with the v2 sheet; an older Core has neither
+  sheets.older.css = await buildOlderGlobal(["./minimal-layout.css"]);
   if (sheets.older.css.includes("minimal-layout-main")) throw new Error("The older sheet still holds the v2 visitor frame.");
   browser = await launchBrowser();
 }, launchHookMs);
