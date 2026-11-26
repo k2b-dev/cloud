@@ -68,6 +68,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
   const t = state.t;
   const access = state.access;
   const editable = () => state.canEdit() && !state.saving();
+  const [summaryOpen, setSummaryOpen] = createSignal(true);
 
   // ── Search ────────────────────────────────────────────────────────────
   // k2b-ui gap: v2 has no single-choice lookup (pick one to add). The search is a field with its results as rows below
@@ -153,6 +154,7 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
     const image = row.principal.type === "group" ? undefined : cloudAvatarImage({ kind, userId: id, avatarHash: row.display.avatarHash });
     return { name: state.nameOf(row), ...(image ? { image } : {}) };
   };
+  // k2b-ui gap: a Menu choice option has no description line; a level's meaning shows only as the reason of a lock.
   const levelMenu = (row: DraftRow): MenuEntry[] => {
     const protectedRow = state.lastManagers().has(row.key);
     const current = row.next ? levelKey(row.next.permission, row.next.scope) : "";
@@ -493,8 +495,13 @@ export function AccessDialogV2(props: AccessDialogProps & { close: (saved: boole
       </Show>
 
       <Show when={state.changes().length > 0}>
-        <Section icon="list-check" title={t().whatChanges} count={state.changes().length}>
-          <For each={state.changeItems()}>
+        <Section
+          icon="list-check"
+          title={t().whatChanges}
+          count={state.changes().length}
+          actions={[{ label: summaryOpen() ? t().hideChanges : t().showChanges, onClick: () => setSummaryOpen((value) => !value) }]}
+        >
+          <For each={summaryOpen() ? state.changeItems() : []}>
             {(item) => (
               <Row
                 icon={changeIcon[item.tone]}
