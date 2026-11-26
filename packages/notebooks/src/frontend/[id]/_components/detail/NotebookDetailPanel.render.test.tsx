@@ -194,7 +194,7 @@ describe("Notebook note detail panel", () => {
         backlinks: [{ noteId: "n2", title: "Onboarding", notebookId: "book02", notebookName: "Handbuch Versand", updatedAt: created }],
       },
       (document) => {
-        expect(document.querySelector('.k2b-detail-tag[href="/app/notebooks/book01/tags/k%C3%BChlkette"]')).not.toBeNull();
+        expect(document.querySelector('.k2b-detail-tag[href="/app/notebooks/book01/notes?tag=k%C3%BChlkette"]')).not.toBeNull();
         const links = text(titled(document, "Verknüpfungen"));
         expect(links).toContain("Verlinkt von 1");
         expect(links).toContain("Verweist auf 1");
