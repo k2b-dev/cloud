@@ -1,8 +1,9 @@
 import { listenPopState } from "@k2b/ssr/nav";
-import { fuzzy, i18n } from "@k2b/stdlib";
+import { i18n } from "@k2b/stdlib";
 import { useLocale } from "@k2b/ui";
 import { Empty, Input, List, Pane, Row, Section, StatusRow, Tiles } from "@k2b/ui/v2";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { findTools } from "./catalog-search";
 import ToolsScreen, { categoryColor, toolIcon } from "./ToolsScreen";
 import { categoryOrder, resolveRegistry } from "./tools/registry";
 import { toolsQuery } from "./tools-query";
@@ -43,9 +44,7 @@ export default function ToolCatalog(props: { search?: string }) {
   const [search, setSearch] = createSignal(props.search ?? "");
   let field: HTMLInputElement | HTMLTextAreaElement | undefined;
   const needle = () => search().trim().toLowerCase();
-  const matches = createMemo(() =>
-    needle() ? fuzzy.filter(needle(), registry().tools, { key: registry().searchText }).map((hit) => hit.item) : registry().tools,
-  );
+  const matches = createMemo(() => findTools(needle(), registry().tools, registry().searchText));
   const update = (value: string) => {
     setSearch(value);
     const state = query().set(query().parse(location.search).state, "q", value);
@@ -79,7 +78,8 @@ export default function ToolCatalog(props: { search?: string }) {
         label={t().searchLabel}
         scrollKey="tools-catalog"
         // a count is no statement worth the lead: the row speaks only while a search narrows the catalog
-        status={needle() ? <StatusRow lead={t().matchingTools({ count: matches().length })} /> : undefined}
+        // without a match the empty state says it once, so the row stays away
+        status={needle() && matches().length > 0 ? <StatusRow lead={t().matchingTools({ count: matches().length })} /> : undefined}
       >
         <Show when={!needle()}>
           <Section icon="star" title={t().quickTools}>

@@ -142,7 +142,10 @@ export default function PasswordGenerator() {
                 "place-items": "center",
                 height: "100%",
                 padding: "0 20px",
-                font: "600 28px/1.15 var(--k2-font-mono)",
+                // three fixed steps by length keep the 120 px drawing whole: 64 signs with symbols take two lines at
+                // 16 px on a phone, where 28 px cut them after the third line; anything longer scrolls inside
+                font: `600 ${password().length <= 20 ? 28 : password().length <= 40 ? 22 : 16}px/1.3 var(--k2-font-mono)`,
+                "overflow-y": "auto",
                 "text-align": "center",
                 "overflow-wrap": "anywhere",
                 "user-select": "all",
