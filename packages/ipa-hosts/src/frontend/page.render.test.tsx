@@ -63,13 +63,9 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     total: filter?.query === "server" ? 1 : 12_345,
     hasNext: false,
   }));
-  const hosts = spyOn(ipaHostsService.host, "list").mockResolvedValue({
-    items: [host("far-away.example.longer"), host("far-away.example", ["archiv"])],
-    page: 1,
-    perPage: 50,
-    total: 2,
-    hasNext: false,
-  } as never);
+  const hosts = spyOn(ipaHostsService.host, "get").mockImplementation(async ({ fqdn }) =>
+    fqdn === "far-away.example" ? host("far-away.example", ["archiv"]) : null,
+  );
   const spies = [
     stubRailSnapshot(),
     groups,
@@ -93,8 +89,8 @@ test("hosts render on v2; an open host is read on its own, so it stays open outs
     const text = read(html);
     expect(text).toContain("7 Hosts sind keiner Gruppe zugeordnet");
     expect(text).toContain("von 5.678 insgesamt");
-    // the open host is the exact one, though the search finds a longer name first, and it is not on this page
-    expect(hosts.mock.calls[0]![0]).toMatchObject({ filter: { query: "far-away.example" } });
+    // the open host is read by its exact name, though it is not on this page and the search names something else
+    expect(hosts.mock.calls[0]![0]).toEqual({ fqdn: "far-away.example" });
     expect(text).toContain("archiv");
     const gone = read(await (await app.request("/admin/ipa-hosts?host=weg.example", { headers: { "Accept-Language": "de" } })).text());
     expect(gone).toContain("Diesen Host gibt es im Spiegel nicht mehr.");

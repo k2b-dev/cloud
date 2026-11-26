@@ -7,8 +7,6 @@ import HostsScreen from "./_components/HostsScreen.island";
 import { hostMessages } from "./messages";
 
 const PER_PAGE = 100;
-/** Exact matches the mirror's search may hide behind longer names that contain them. */
-const LOOKUP_LIMIT = 50;
 
 const pageOf = (raw: string | undefined) => {
   const page = Number(raw ?? "1");
@@ -33,16 +31,9 @@ export default ssr<AuthContext>(async (c) => {
     ipaHostsService.hostgroup.listWithHosts({ pagination: { page, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     ipaHostsService.host.listUngrouped({ pagination: { page: ungroupedPage, perPage: PER_PAGE }, filter: { query: search || undefined } }),
     ipaHostsService.stats(),
-    groupName
-      ? ipaHostsService.hostgroup
-          .listWithHosts({ pagination: { page: 1, perPage: LOOKUP_LIMIT }, filter: { query: groupName } })
-          .then((result) => result.items.find((group) => group.cn === groupName) ?? null)
-      : null,
-    fqdn
-      ? ipaHostsService.host
-          .list({ pagination: { page: 1, perPage: LOOKUP_LIMIT }, filter: { query: fqdn } })
-          .then((result) => result.items.find((host) => host.fqdn === fqdn) ?? null)
-      : null,
+    // an open record is read by its exact name, so it opens on any page, with any search, among any number of names
+    groupName ? ipaHostsService.hostgroup.getWithHosts({ cn: groupName }) : null,
+    fqdn ? ipaHostsService.host.get({ fqdn }) : null,
   ]);
   const pagination =
     tab === "groups"

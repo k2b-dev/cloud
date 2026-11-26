@@ -77,3 +77,53 @@ export const denseUngrouped = (): IpaHost[] => [
   fixtureHost("tablet-montage.werkstatt.example", { description: "Montage-Tablet", sshFingerprints: [] }),
   fixtureHost("pi-wetterstation.werkstatt.example", { locality: "Dach", platform: "aarch64", osVersion: "Raspberry Pi OS" }),
 ];
+
+export const LONG_HOST = "kunden-und-auftraege-werkstatt-nord-zeiterfassung-und-materialbestellung-01.intern.werkstatt-nord.example";
+export const LONG_GROUP = "werkstatt-nord-schichtbetrieb-maschinen-und-messplaetze-im-erdgeschoss";
+
+/**
+ * The worst a mirror holds, a whole page of it: 100 groups with long names and descriptions, nested groups, a host with
+ * a very long name, mixed scripts, six MAC addresses and eight groups, and groups without hosts or description.
+ */
+export const worstGroups = (): (IpaHostgroup & { hostDetails: IpaHost[] })[] => {
+  const longHost = fixtureHost(LONG_HOST, {
+    description: "Терминал · 工作站 · محطة عمل 🖥️",
+    locality: "Werkstatt Nord, Erdgeschoss, Halle 7 (Anbau)",
+    location: "Rack 12, Höheneinheit 38–40",
+    memberofHostgroup: [LONG_GROUP, ...Array.from({ length: 7 }, (_, index) => `gruppe-${index + 1}`)],
+    macAddress: Array.from({ length: 6 }, (_, index) => `AA:BB:CC:DD:EE:0${index}`),
+    osVersion: "Debian 13",
+    sshFingerprints: Array.from({ length: 3 }, (_, index) => `SHA256:${"x".repeat(43)}${index} (RSA)`),
+  });
+  return [
+    {
+      cn: LONG_GROUP,
+      description: "Alle Maschinen, Messplätze und Bedienterminals der Werkstatt Nord im Erdgeschoss, die im Schichtbetrieb laufen",
+      hosts: [LONG_HOST],
+      hostgroups: Array.from({ length: 6 }, (_, index) => `untergruppe-mit-langem-namen-${index + 1}`),
+      hostDetails: [longHost],
+    },
+    { cn: "x", description: null, hosts: [], hostgroups: [], hostDetails: [] },
+    ...Array.from({ length: 98 }, (_, index) => {
+      const cn = `standort-${String(index + 1).padStart(3, "0")}-${["lager", "buero", "halle", "aussenstelle-sued"][index % 4]}`;
+      const hosts = Array.from({ length: index % 5 }, (_, at) =>
+        fixtureHost(`${cn}-${at + 1}.werkstatt.example`, { memberofHostgroup: [cn], osVersion: OS[at % OS.length]! }),
+      );
+      return {
+        cn,
+        description: index % 3 ? `Geräte am Standort ${index + 1}` : null,
+        hosts: hosts.map((host) => host.fqdn),
+        hostgroups: index % 9 === 0 ? ["netzwerk"] : [],
+        hostDetails: hosts,
+      };
+    }),
+  ];
+};
+
+export const worstUngrouped = (): IpaHost[] => [
+  fixtureHost("a"),
+  fixtureHost(LONG_HOST.replace("01", "02"), { macAddress: ["AA:BB:CC:DD:EE:FF", "AA:BB:CC:DD:EE:F1"] }),
+  ...Array.from({ length: 40 }, (_, index) =>
+    fixtureHost(`neu-${String(index + 1).padStart(3, "0")}.werkstatt.example`, { locality: index % 2 ? "Lager" : null }),
+  ),
+];

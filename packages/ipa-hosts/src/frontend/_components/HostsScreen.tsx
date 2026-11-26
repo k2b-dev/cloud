@@ -107,19 +107,20 @@ export default function HostsScreen(props: HostsScreenProps) {
   };
 
   // the sync schedule: read when its dialog opens
-  const [schedule, setSchedule] = createSignal<{ cron: string; timezone: string } | null>(null);
+  const [schedule, setSchedule] = createSignal<{ cron: string; timezone: string; loaded: boolean } | null>(null);
   const openSchedule = async () => {
     setFailure(null);
     const response = await apiClient.settings["sync-cron"].$get().catch(() => null);
-    if (response?.ok) setSchedule(await response.json());
+    if (response?.ok) setSchedule({ ...(await response.json()), loaded: true });
     else {
-      setSchedule({ cron: "*/5 * * * *", timezone: "Europe/Berlin" });
+      // without the stored schedule there is nothing to change: saving a guess would overwrite it
+      setSchedule({ cron: "", timezone: "", loaded: false });
       setFailure(t().scheduleLoadFailed);
     }
   };
   const saveSchedule = async () => {
     const value = schedule();
-    if (!value?.cron.trim()) return;
+    if (!value?.loaded || !value.cron.trim()) return;
     setBusy(true);
     const response = await apiClient.settings["sync-cron"].$put({ json: { cron: value.cron.trim() } }).catch(() => null);
     setBusy(false);
@@ -201,19 +202,33 @@ export default function HostsScreen(props: HostsScreenProps) {
         .map((group): LookupItem => ({ value: group.cn, label: group.cn, meta: group.description ?? undefined })),
     };
   };
+  // groups a host was added to while the dialog is open: closing it shows them
+  const [added, setAdded] = createSignal(false);
+  /**
+   * Adds the host to every chosen group, one request each. Those that worked leave the choice; those that failed stay
+   * chosen and are named, so "Hinzufügen" again sends only them. Closing the dialog after any success shows the result.
+   */
   const addToGroups = async (fqdn: string) => {
     const chosen = adding() ?? [];
     if (chosen.length === 0) return;
     setBusy(true);
-    let ok = true;
+    const failed: string[] = [];
     for (const hostgroup of chosen) {
       const response = await apiClient[":fqdn"].hostgroups.$post({ param: { fqdn }, json: { hostgroup } }).catch(() => null);
-      if (!response?.ok) ok = false;
+      if (response?.ok) setAdded(true);
+      else failed.push(hostgroup);
     }
     setBusy(false);
-    if (!ok) return setFailure(t().failedAddGroup);
+    if (failed.length === 0) {
+      setAdding(null);
+      return done();
+    }
+    setAdding(failed);
+    setFailure(t().notAddedTo({ groups: failed.join(", ") }));
+  };
+  const closeAdding = () => {
     setAdding(null);
-    done();
+    if (added()) done();
   };
 
   // ── Parts ─────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -242,14 +257,13 @@ export default function HostsScreen(props: HostsScreenProps) {
       href={open}
     />
   );
-  const nestedChips = (group: IpaHostgroup, limit = 2) => (
-    <>
-      <For each={group.hostgroups.slice(0, limit)}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For>
-      <Show when={group.hostgroups.length > limit}>
-        <Chip>{`+${number(group.hostgroups.length - limit)}`}</Chip>
-      </Show>
-    </>
-  );
+  /** A row names one short sub-group; several or long ones it counts, and the open group lists them all. */
+  const nestedChips = (group: IpaHostgroup) =>
+    group.hostgroups.length === 1 && group.hostgroups[0]!.length <= 18 ? (
+      <Chip icon="folder">{group.hostgroups[0]}</Chip>
+    ) : (
+      <Chip icon="folders">{t().nestedCount({ count: group.hostgroups.length })}</Chip>
+    );
 
   const list = () => (
     <Pane
@@ -257,7 +271,13 @@ export default function HostsScreen(props: HostsScreenProps) {
       scrollKey={`ipa-hosts-${props.tab}`}
       status={
         <StatusRow
-          lead={props.figures.ungrouped > 0 ? t().unassignedLead({ count: props.figures.ungrouped }) : t().assignedLead}
+          lead={
+            props.figures.hostsTotal === 0 && props.figures.groups === 0
+              ? t().emptyLead
+              : props.figures.ungrouped > 0
+                ? t().unassignedLead({ count: props.figures.ungrouped })
+                : t().assignedLead
+          }
           facts={props.search ? [{ before: t().search, value: props.search }] : []}
           filters={
             props.figures.ungrouped > 0 ? (
@@ -314,6 +334,8 @@ export default function HostsScreen(props: HostsScreenProps) {
             <Empty
               icon={props.search ? "search-off" : "folders"}
               text={props.search ? t().noGroupMatch({ query: props.search }) : t().noGroups}
+              // an empty mirror is filled by the first sync
+              action={props.search ? undefined : { label: t().syncNow, icon: "refresh", onClick: () => void sync() }}
             />
           }
         >
@@ -373,10 +395,10 @@ export default function HostsScreen(props: HostsScreenProps) {
       <List label={group.cn}>
         <Show when={group.description}>{(text) => <Row icon="align-left" lines={[text(), t().description]} />}</Show>
         <Row icon="server" color={groupColor(group.cn)} lines={[t().hostCount({ count: group.hostDetails.length }), t().hosts]} />
-        <Show when={group.hostgroups.length > 0}>
-          <Row icon="folders" lines={[t().nested]} marks={nestedChips(group, group.hostgroups.length)} />
-        </Show>
       </List>
+      <Show when={group.hostgroups.length > 0}>
+        <Facts items={[{ label: t().nested, value: <For each={group.hostgroups}>{(cn) => <Chip icon="folder">{cn}</Chip>}</For> }]} />
+      </Show>
       <Bar
         end={
           <>
@@ -492,10 +514,10 @@ export default function HostsScreen(props: HostsScreenProps) {
         <Dialog
           title={t().addToGroup}
           open={adding() !== null}
-          onOpenChange={(open) => !open && setAdding(null)}
+          onOpenChange={(open) => !open && closeAdding()}
           foot={
             <>
-              <Button onClick={() => setAdding(null)}>{t().cancel}</Button>
+              <Button onClick={closeAdding}>{t().cancel}</Button>
               <Button icon="folder-plus" busy={busy()} disabled={(adding() ?? []).length === 0} onClick={() => void addToGroups(host.fqdn)}>
                 {t().add}
               </Button>
@@ -713,7 +735,7 @@ export default function HostsScreen(props: HostsScreenProps) {
         foot={
           <>
             <Button onClick={() => setSchedule(null)}>{t().cancel}</Button>
-            <Button icon="check" busy={busy()} onClick={() => void saveSchedule()}>
+            <Button icon="check" busy={busy()} disabled={!schedule()?.loaded} onClick={() => void saveSchedule()}>
               {t().save}
             </Button>
           </>

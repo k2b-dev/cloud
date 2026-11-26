@@ -443,6 +443,48 @@ export const hostgroupListWithHosts = async (params: {
   };
 };
 
+/** One host group by its exact name with its members, for the record a page opens; null when the mirror has none. One statement. */
+export const hostgroupGetWithHosts = async (cn: string): Promise<IpaHostgroupWithHostsRecord | null> => {
+  const rows = await sql<DbRow[]>`
+    SELECT hg.cn, hg.description,
+      COALESCE(ARRAY(SELECT hh.host_fqdn FROM ipa_hosts.host_hostgroups hh WHERE hh.hostgroup_cn = hg.cn ORDER BY hh.host_fqdn), '{}') AS member_hosts,
+      COALESCE(ARRAY(SELECT hgh.child_cn FROM ipa_hosts.hostgroup_hostgroups hgh WHERE hgh.parent_cn = hg.cn ORDER BY hgh.child_cn), '{}') AS member_hostgroups,
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'fqdn', h.fqdn,
+            'description', h.description,
+            'location', h.location,
+            'locality', h.locality,
+            'hostgroups', COALESCE((SELECT array_agg(hh2.hostgroup_cn ORDER BY hh2.hostgroup_cn) FROM ipa_hosts.host_hostgroups hh2 WHERE hh2.host_fqdn = h.fqdn), '{}'::text[]),
+            'mac_address', h.mac_address,
+            'platform', h.platform,
+            'os_version', h.os_version,
+            'ssh_fingerprints', h.ssh_fingerprints
+          )
+          ORDER BY h.fqdn
+        )
+        FROM ipa_hosts.host_hostgroups hh
+        JOIN ipa_hosts.hosts h ON h.fqdn = hh.host_fqdn
+        WHERE hh.hostgroup_cn = hg.cn
+      ), '[]'::jsonb) AS host_details
+    FROM ipa_hosts.hostgroups hg
+    WHERE hg.cn = ${cn}
+  `;
+  return rows[0] ? toHostgroupWithHosts(rows[0]) : null;
+};
+
+/** One host by its exact name with its groups, for the record a page opens; null when the mirror has none. One statement. */
+export const hostGet = async (fqdn: string): Promise<IpaHostRecord | null> => {
+  const rows = await sql<DbRow[]>`
+    SELECT h.*,
+      COALESCE(ARRAY(SELECT hostgroup_cn FROM ipa_hosts.host_hostgroups WHERE host_fqdn = h.fqdn), '{}') AS hostgroups
+    FROM ipa_hosts.hosts h
+    WHERE h.fqdn = ${fqdn}
+  `;
+  return rows[0] ? toHost(rows[0]) : null;
+};
+
 export const hostgroupSearch = async (params: { query: string; exclude?: string[]; limit?: number }): Promise<IpaHostgroupRecord[]> => {
   const search = toLike(params.query);
   if (!search) return [];

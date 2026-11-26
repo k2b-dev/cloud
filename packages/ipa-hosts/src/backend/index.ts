@@ -7,6 +7,7 @@ import * as sync from "./sync";
 export const ipaHosts = {
   hosts: {
     list: provider.hostList,
+    get: provider.hostGet,
     listUngrouped: provider.hostListUngrouped,
     update: provider.hostMod,
     delete: provider.hostDel,
@@ -16,6 +17,7 @@ export const ipaHosts = {
   hostgroups: {
     list: provider.hostgroupList,
     listWithHosts: provider.hostgroupListWithHosts,
+    getWithHosts: provider.hostgroupGetWithHosts,
     search: provider.hostgroupSearch,
     create: provider.hostgroupAdd,
     update: provider.hostgroupMod,

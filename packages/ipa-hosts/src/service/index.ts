@@ -134,6 +134,8 @@ export const ipaHostsService = {
       });
       return toPaginated<IpaHost>(result.hosts, result.total, { page, perPage });
     },
+    /** One host by its exact name; null when the mirror has none. */
+    get: async (config: { fqdn: string }): Promise<IpaHost | null> => ipaHosts.hosts.get(config.fqdn),
     listUngrouped: async (config: { pagination?: PageParams; filter?: { query?: string } }) => {
       const { page, perPage } = paginate(config.pagination);
       const result = await ipaHosts.hosts.listUngrouped({
@@ -213,6 +215,8 @@ export const ipaHostsService = {
         hasNext: page * perPage < result.total,
       };
     },
+    /** One host group by its exact name with its members; null when the mirror has none. */
+    getWithHosts: async (config: { cn: string }) => ipaHosts.hostgroups.getWithHosts(config.cn),
     search: async (config: { query: string; exclude?: string[]; limit?: number }) => {
       return ipaHosts.hostgroups.search({
         query: config.query,
