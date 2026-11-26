@@ -48,6 +48,8 @@ export const oauthService = {
     connectionFigures: () => oauth.connections.figures(),
     /** The connections of a page of clients, by `clientId`. */
     connections: (config: { clientIds: readonly string[] }) => oauth.connections.forClients(config.clientIds),
+    /** The people connected with one client, most recently used first. */
+    connectedPeople: (config: { clientId: string }) => oauth.connections.peopleOf(config.clientId),
     get: async (config: { id: string }) => oauth.clients.get({ id: config.id }),
     create: async (config: Parameters<typeof oauth.clients.create>[0]) => fromMutation(await oauth.clients.create(config)),
     update: async (config: Parameters<typeof oauth.clients.update>[0]) => fromMutation(await oauth.clients.update(config)),

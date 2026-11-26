@@ -53,6 +53,7 @@ const spies = [
   spyOn(oauthService.client, "summary").mockResolvedValue({ total: 120, public: 30, dynamic: 2 }),
   spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(NORMAL)),
   spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(NORMAL)),
+  spyOn(oauthService.client, "connectedPeople").mockResolvedValue({ total: 0, people: [] }),
 ];
 const get = spyOn(oauthService.client, "get").mockImplementation(async ({ id }) => (id === beyond.id ? beyond : null));
 afterEach(() => get.mockClear());

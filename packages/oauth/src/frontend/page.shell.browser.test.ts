@@ -13,7 +13,15 @@ import { stubRailSnapshot } from "../../../../tests/fixtures/rail-snapshot";
 import { launchBrowser, launchHookMs, pageErrors, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 import { oauthService } from "../service";
-import { FAKE_SECRET, fixtureActivity, fixtureClient, fixtureConnections, NORMAL, WORST } from "./_components/oauth-fixture-data";
+import {
+  FAKE_SECRET,
+  fixtureActivity,
+  fixtureClient,
+  fixtureConnectedPeople,
+  fixtureConnections,
+  NORMAL,
+  WORST,
+} from "./_components/oauth-fixture-data";
 
 // The real page in the Cloud shell, from invented clients: its first HTML with the shell's own stylesheets, fonts
 // (Plex) and icons keeps the v2 layout rules at 1440 and 390 px. `CLOUD_OAUTH_SHELL_SHOTS=<dir>` also saves light
@@ -82,6 +90,13 @@ const firstHtml = async (search: string, data: Data) => {
     // invented connections, relative to now
     spyOn(oauthService.client, "connectionFigures").mockResolvedValue(fixtureActivity(clients, data === "worst")),
     spyOn(oauthService.client, "connections").mockResolvedValue(fixtureConnections(clients)),
+    spyOn(oauthService.client, "connectedPeople").mockImplementation(
+      async ({ clientId }) =>
+        fixtureConnectedPeople(
+          clients.find((client) => client.clientId === clientId),
+          clients,
+        ) ?? { total: 0, people: [] },
+    ),
   ];
   try {
     const app = new Hono<AuthContext & { Variables: { runtime: CloudRuntime } }>();
@@ -156,10 +171,13 @@ describe("OAuth in the Cloud shell", () => {
       ["frisch", "", "fresh"],
       ["worst-case", "", "worst"],
       ["worst-case-offen", `?client=${WORST[0]!.id}`, "worst"],
+      // another script and an address with no place to break
+      ["worst-case-schrift", `?client=${WORST[3]!.id}`, "worst"],
     ];
     for (const [name, search, data] of cases) {
       const html = await firstHtml(search, data);
-      for (const width of [1440, 1024, 390]) {
+      // 1920 too: large screens grow the detail, not the rows
+      for (const width of [1920, 1440, 1024, 390]) {
         const { context, tab, errors } = await openShellPage(browser, assets, {
           errors: pageErrors,
           path: `/admin/oauth${search}`,

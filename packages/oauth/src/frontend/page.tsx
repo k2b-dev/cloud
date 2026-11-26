@@ -30,10 +30,13 @@ export default ssr<AuthContext>(async (c) => {
     // an id that is no id names no client; the store is never asked for it
     openId && UUID.test(openId) ? oauthService.client.get({ id: openId }) : null,
   ]);
-  // the connections of the clients on this page and of the open one, in one statement
-  const connections = await oauthService.client.connections({
-    clientIds: [...new Set([...clientsPage.items.map((client) => client.clientId), ...(opened ? [opened.clientId] : [])])],
-  });
+  // the connections of the clients on this page and of the open one, and the people of the open one
+  const [connections, connectedPeople] = await Promise.all([
+    oauthService.client.connections({
+      clientIds: [...new Set([...clientsPage.items.map((client) => client.clientId), ...(opened ? [opened.clientId] : [])])],
+    }),
+    opened ? oauthService.client.connectedPeople({ clientId: opened.clientId }) : null,
+  ]);
 
   // Build base URL for OAuth endpoints
   const rawAppUrl = await get<string>("app.url");
@@ -53,6 +56,7 @@ export default ssr<AuthContext>(async (c) => {
         activity={activity}
         accent={ACCENT}
         connections={connections}
+        connectedPeople={connectedPeople}
         open={openId ? { id: openId, found: opened ? row(opened) : null } : null}
       />
     </AdminLayout>

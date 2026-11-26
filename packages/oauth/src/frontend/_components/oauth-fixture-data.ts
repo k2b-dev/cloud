@@ -1,5 +1,5 @@
 import type { OAuthClient } from "@/contracts";
-import type { ClientConnections, ConnectionFigures } from "../../service/connections";
+import type { ClientConnections, ConnectedPerson, ConnectionFigures } from "../../service/connections";
 import type { ClientRow } from "./OAuthScreen";
 
 // Invented clients for render and browser tests and pictures: fixed dates, no production data. The secrets are fakes
@@ -140,6 +140,15 @@ export const WORST: ClientRow[] = [
     accessGroups: Array.from({ length: 6 }, (_, index) => team(100 + index, `werkstatt-nord-schicht-${index + 1}`)),
   }),
   fixtureClient(101, { name: "X", registrationKind: "dynamic", isPublic: true, scopes: ["read"], allowedProfiles: ["user", "guest"] }),
+  // a name with an emoji, one in another script, and one address with no place to break
+  fixtureClient(150, { name: "🧪 Labor-Notizen", description: null, scopes: ["openid", "offline_access"] }),
+  fixtureClient(151, {
+    name: "設備管理システム（第二工場）",
+    description: "生産ラインの設備点検と保守記録",
+    redirectUris: [
+      "https://werkstatt-nord-auftragsverwaltung-und-materialbestellung.intern.example/oauth2/callback?tenant=werkstatt-nord-schichtbetrieb",
+    ],
+  }),
   ...Array.from({ length: 48 }, (_, index) =>
     fixtureClient(102 + index, {
       name: `Standort ${String(index + 1).padStart(3, "0")} · Kasse`,
@@ -207,4 +216,26 @@ export const fixtureActivity = (clients: readonly ClientRow[], worst = false): C
         perDay,
         unused: { count: 1, names: ["MCP Inspector"] },
       };
+};
+
+/** The people connected with one client, as the service lists them: the same people the list counts, used last first. */
+export const fixtureConnectedPeople = (
+  client: ClientRow | undefined,
+  clients: readonly ClientRow[] = NORMAL,
+): { total: number; people: ConnectedPerson[] } | null => {
+  if (!client) return null;
+  const connections = fixtureConnections(clients)[client.clientId];
+  if (!connections) return { total: 0, people: [] };
+  const names = [...connections.people.map((person) => person.name), ...PEOPLE].filter((name, at, all) => all.indexOf(name) === at);
+  const shown = Math.min(connections.peopleCount, 8);
+  const people = names.slice(0, shown).map((name, at) => ({
+    // a chosen person keeps their own id, so the access list can say they are connected
+    userId:
+      client.accessUsers.find((user) => (user.displayName || user.uid) === name)?.id ??
+      `22222222-2222-4222-8222-${String(at + 1).padStart(12, "0")}`,
+    name,
+    since: new Date(Date.now() - (40 - at * 5) * 24 * 60 * MINUTE).toISOString(),
+    lastUsedAt: connections.lastUsedAt ? new Date(Date.parse(connections.lastUsedAt) - at * at * 90 * MINUTE).toISOString() : null,
+  }));
+  return { total: connections.peopleCount, people };
 };

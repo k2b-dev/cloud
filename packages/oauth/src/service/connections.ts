@@ -143,3 +143,44 @@ export const forClients = async (clientIds: readonly string[]): Promise<Record<s
     ]),
   );
 };
+
+/** People an open client shows with their connection; more are counted. */
+export const PEOPLE_SHOWN = 50;
+
+export type ConnectedPerson = {
+  userId: string;
+  name: string;
+  /** When their first active connection with the client was made, ISO. */
+  since: string;
+  /** Their last sign-in or refresh with the client, ISO; null when never used. */
+  lastUsedAt: string | null;
+};
+
+type PersonRow = { user_id: string; name: string; since: Date; last_used_at: Date | null; total: number };
+
+/** The people connected with one client, most recently used first, at most `PEOPLE_SHOWN`, in one statement. */
+export const peopleOf = async (clientId: string): Promise<{ total: number; people: ConnectedPerson[] }> => {
+  const rows = await sql<PersonRow[]>`
+    SELECT
+      f.user_id,
+      COALESCE(NULLIF(u.display_name, ''), u.uid) AS name,
+      min(f.created_at) AS since,
+      max(f.last_used_at) AS last_used_at,
+      count(*) OVER ()::int AS total
+    FROM oauth.refresh_token_families f
+    JOIN auth.users u ON u.id = f.user_id
+    WHERE f.client_id = ${clientId} AND f.status = 'active' AND f.expires_at > now()
+    GROUP BY f.user_id, u.display_name, u.uid
+    ORDER BY max(COALESCE(f.last_used_at, f.created_at)) DESC
+    LIMIT ${PEOPLE_SHOWN}
+  `;
+  return {
+    total: rows[0]?.total ?? 0,
+    people: rows.map((row) => ({
+      userId: row.user_id,
+      name: row.name,
+      since: new Date(row.since).toISOString(),
+      lastUsedAt: row.last_used_at ? new Date(row.last_used_at).toISOString() : null,
+    })),
+  };
+};

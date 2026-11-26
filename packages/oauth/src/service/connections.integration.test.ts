@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { sql } from "@k2b/cloud";
 import { meterSql } from "../../../../scripts/fixtures/sql-meter";
 import { databaseSuite } from "../../../../scripts/fixtures/test-infra";
-import { CONNECTION_DAYS, figures, forClients } from "./connections";
+import { CONNECTION_DAYS, figures, forClients, peopleOf } from "./connections";
 
 // Connections are refresh token families. Invented clients and people; other suites may add families of their own at
 // the same time, so the global figures are checked by what this suite adds, the per-client ones exactly.
@@ -49,6 +49,14 @@ databaseSuite()("OAuth connections for the admin page", () => {
         expect(page[stale!]).toMatchObject({ active: 1, peopleCount: 1 });
         expect(page[none!]).toMatchObject({ active: 0, peopleCount: 0, people: [], lastUsedAt: null });
         expect(page[none!]!.perDay.every((count) => count === 0)).toBe(true);
+
+        // the people of one client: each once, the one used last first, since their first connection
+        let people: Awaited<ReturnType<typeof peopleOf>> | null = null;
+        expect(await meter.during(async () => (people = await peopleOf(busy!)))).toHaveLength(1);
+        expect(people!.total).toBe(2);
+        expect(people!.people.map((person) => person.name)).toEqual(["Ada Renz", "Ben Okafor"]);
+        expect(Date.now() - Date.parse(people!.people[0]!.since)).toBeGreaterThan(24 * 60 * 60 * 1000);
+        expect((await peopleOf(none!)).total).toBe(0);
 
         let after: Awaited<ReturnType<typeof figures>> | null = null;
         expect(await meter.during(async () => (after = await figures()))).toHaveLength(2);
