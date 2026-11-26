@@ -39,6 +39,22 @@ test("markup outside @k2b/ui may name a primitive's root but not one of its inne
         "  </div>",
         ");",
       ].join("\n"),
+      // a const, `attr:class` and a selector in a .ts module count too
+      "packages/demo/src/names.ts": [
+        'export const lead = "k2-row-lead";',
+        'export const pick = () => document.querySelector(".k2-row-lead");',
+      ].join("\n"),
+      "packages/demo/src/Attr.tsx": 'export const Attr = () => <i attr:class="k2-row-lead" />;',
+      // the skill's recipes are copied by people
+      "packages/ui/skills/k2b-ui/recipes/row.tsx": 'export const Recipe = () => <span class="k2-row-lead" />;',
+      // @k2b/ui's own sources may
+      "packages/ui/src/v2/other.tsx": 'export const Other = () => <div class="k2-x"><span class="k2-row-lead" /></div>;',
     }),
-  ).toEqual(["packages/demo/src/Page.tsx:4"]);
+  ).toEqual([
+    "packages/demo/src/Attr.tsx:1",
+    "packages/demo/src/Page.tsx:4",
+    "packages/demo/src/names.ts:1",
+    "packages/demo/src/names.ts:2",
+    "packages/ui/skills/k2b-ui/recipes/row.tsx:1",
+  ]);
 });

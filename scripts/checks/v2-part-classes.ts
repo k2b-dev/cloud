@@ -5,22 +5,17 @@ import { v2Parts } from "../../packages/ui/scripts/v2-parts";
 import { isTestFile, listFiles, parseSource } from "./files";
 import type { Finding, Rule } from "./rule";
 
-/** Class tokens written in a JSX class value, including string parts of expressions. */
-const classTokens = (initializer: ts.JsxAttributeValue): string[] => {
-  const tokens: string[] = [];
-  const collect = (node: ts.Node): void => {
-    if (ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node))
-      tokens.push(...node.text.split(/\s+/).filter(Boolean));
-    ts.forEachChild(node, collect);
-  };
-  collect(initializer);
-  return tokens;
-};
+/** A string's words: a class list in a JSX value, a const, `attr:class`, a `classList` or a selector. */
+const words = (node: ts.Node): string[] =>
+  ts.isStringLiteralLike(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)
+    ? (node.text.match(/\bk2-[a-z0-9-]+/g) ?? [])
+    : [];
 
 /**
  * The shipped v2.css gives an inner part of a primitive (packages/ui/scripts/v2-parts.ts) no way through an island
  * wrapper, because only its primitive puts it, inside its own element. Markup outside @k2b/ui that wrote such a class
- * could stand in an island, and the part's rules would miss it there.
+ * could stand in an island, and the part's rules would miss it there. Every string of a source outside @k2b/ui counts
+ * (a JSX class, a const, `attr:class`, a selector), and the k2b-ui skill's recipes, which people copy.
  */
 export const rule: Rule = {
   name: "v2-part-classes",
@@ -29,9 +24,10 @@ export const rule: Rule = {
     const packages = join(workspaceRoot, "packages");
     const parts = v2Parts(join(packages, "ui", "src", "v2"));
     const findings: Finding[] = [];
+    const recipes = join(packages, "ui", "skills", "k2b-ui", "recipes");
     const sources = [packages, join(workspaceRoot, "pwas"), join(workspaceRoot, "docs-site", "src")]
-      .flatMap((root) => listFiles(root, /\.tsx$/))
-      .filter((file) => !isTestFile(file) && !file.startsWith(join(packages, "ui", "")))
+      .flatMap((root) => listFiles(root, /\.tsx?$/))
+      .filter((file) => !isTestFile(file) && (!file.startsWith(join(packages, "ui", "")) || file.startsWith(join(recipes, ""))))
       .sort();
     for (const file of sources) {
       const source = readFileSync(file, "utf8");
@@ -39,15 +35,13 @@ export const rule: Rule = {
       const { sourceFile, findings: unparsed } = parseSource(file, source);
       findings.push(...unparsed);
       const visit = (node: ts.Node): void => {
-        if (ts.isJsxAttribute(node) && node.initializer && /^class(Name|List)?$/.test(node.name.getText(sourceFile))) {
-          const named = classTokens(node.initializer).filter((token) => parts.has(token));
-          if (named.length > 0)
-            findings.push({
-              file,
-              line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
-              message: `${named.join(" ")} is an inner part of a v2 primitive; render the primitive that puts it instead.`,
-            });
-        }
+        const named = words(node).filter((token) => parts.has(token));
+        if (named.length > 0)
+          findings.push({
+            file,
+            line: sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1,
+            message: `${named.join(" ")} is an inner part of a v2 primitive; render the primitive that puts it instead.`,
+          });
         ts.forEachChild(node, visit);
       };
       visit(sourceFile);
