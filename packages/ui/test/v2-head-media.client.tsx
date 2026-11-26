@@ -2,7 +2,7 @@ import { render } from "solid-js/web";
 import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
-import { CanvasFillScreen, RowStatesScreen } from "./v2-row-states.fixture";
+import { CanvasFillScreen, DeepPathScreen, RowStatesScreen } from "./v2-row-states.fixture";
 
 // The folder and the settings page of the k2b-ui skill in the browser, by the case the page names before this bundle
 // runs: the list with the open file, the grid, the grid with three photos selected, or the settings page.
@@ -10,7 +10,7 @@ import { CanvasFillScreen, RowStatesScreen } from "./v2-row-states.fixture";
 declare global {
   interface Window {
     __k2Mounted?: boolean;
-    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas";
+    __k2Case?: "list" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -27,6 +27,8 @@ render(
         <SigninSettings />
       ) : which === "states" ? (
         <RowStatesScreen />
+      ) : which === "path" ? (
+        <DeepPathScreen />
       ) : which === "canvas" ? (
         <CanvasFillScreen />
       ) : (

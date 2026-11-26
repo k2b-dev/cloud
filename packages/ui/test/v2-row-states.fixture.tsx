@@ -1,4 +1,4 @@
-import { Bar, Canvas, Chip, List, Pane, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
+import { Bar, Button, Canvas, Chip, Input, List, Pane, Path, Row, Section, StatusRow, Text, Workspace } from "../src/v2";
 
 // Rows whose states must be read whole (the domain checks of the administration, S2 #4174), in their worst case: many
 // states, a state longer than the row, rows with and without states side by side. Beside it a drawing that is the
@@ -64,6 +64,51 @@ export const CanvasFillScreen = () => (
           <p>Sehr geehrte Frau Lindqvist,</p>
         </div>
       </Canvas>
+    </Pane>
+  </Workspace>
+);
+
+// A folder twelve levels deep, the last two with long names, in a head that also has a search and its deeds.
+const levels = [
+  "Werkstatt",
+  "Projekte",
+  "2026",
+  "Kunden",
+  "Lindqvist",
+  "Küche",
+  "Entwürfe",
+  "Fronten",
+  "Eiche geölt",
+  "Muster",
+  "Abnahme mit der Kundin am Werktisch",
+  "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
+];
+
+export const deepPath = levels.map((label, index) => (index < levels.length - 1 ? { label, href: `#level-${index}` } : { label }));
+
+export const DeepPathScreen = () => (
+  <Workspace
+    head={
+      <Bar
+        start={<Path label="Ort" items={deepPath} />}
+        end={
+          <>
+            <Input type="search" icon="search" label="In diesem Ordner" placeholder="In diesem Ordner" />
+            <Button icon="folder-plus" label="Neuer Ordner" />
+            <Button variant="primary" icon="upload">
+              Hochladen
+            </Button>
+          </>
+        }
+      />
+    }
+  >
+    <Pane label="Fotos" status={<StatusRow lead="14 Dateien" />}>
+      <Section title="Fotos" count={1}>
+        <List label="Fotos">
+          <Row lines={["Front_01.jpg"]} />
+        </List>
+      </Section>
     </Pane>
   </Workspace>
 );

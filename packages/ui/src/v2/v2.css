@@ -3161,9 +3161,35 @@
 .k2-ui .k2-path > b {
   font-weight: 600;
 }
+.k2-ui .k2-path > .k2-icon,
+.k2-ui .k2-path > .k2-btn {
+  flex: none;
+}
 .k2-ui .k2-path > .k2-icon {
   font-size: 14px;
   color: var(--k2-n400);
+}
+/* where the room runs out, the place before the page shortens first, then the page; the first place stays whole */
+.k2-ui .k2-bar-start > .k2-path {
+  flex: 0 1 auto;
+}
+/* a path gives way before the deeds at the end: they keep their words while the path can still shorten */
+.k2-ui .k2-bar-start:has(> .k2-path) {
+  flex-shrink: 1000;
+}
+.k2-ui .k2-path > .k2-path-step,
+.k2-ui .k2-path > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+.k2-ui .k2-path > .k2-path-step[data-near] {
+  flex: 0 1000 auto;
+  min-width: 48px;
+}
+.k2-ui .k2-path > b {
+  flex-shrink: 1;
+  min-width: 48px;
 }
 /* the status row turns into the bar of what can be done with the selected entries (rule 6) */
 .k2-ui .k2-bar[data-selecting] {

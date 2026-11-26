@@ -16,7 +16,7 @@ const css = readFileSync(resolve(import.meta.dir, "v2.css"), "utf8");
 const testCss =
   "html, body { margin: 0; height: 100%; } #root { position: fixed; inset: 0; display: flex; padding: 8px; } .ti { display: inline-block; width: 1em; height: 1em; }";
 
-type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas";
+type Case = "list" | "closed" | "grid" | "selecting" | "settings" | "states" | "canvas" | "path";
 
 let browser: Browser;
 let client: string;
@@ -420,6 +420,73 @@ test("a drawing that is the whole pane has its final height from the first rende
       },
       width,
     );
+});
+
+for (const width of [1440, 1024])
+  test(`a path twelve levels deep folds its middle into "…" and keeps first and page in one line at ${width} px`, async () => {
+    await withPage(
+      "path",
+      async (page) => {
+        const path = page.locator(".k2-path");
+        // the first place, the menu, the place before the page and the page: one line in the head
+        expect(await path.locator(".k2-path-step, b").allTextContents()).toEqual([
+          "Werkstatt",
+          "Abnahme mit der Kundin am Werktisch",
+          "Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht",
+        ]);
+        const lines = await path
+          .locator(".k2-path-step, b")
+          .evaluateAll((steps) => steps.map((step) => [Math.round(step.getBoundingClientRect().top), step.getClientRects().length]));
+        expect(new Set(lines.map(([top]) => top)).size).toBe(1);
+        expect(lines.every(([, boxes]) => boxes === 1)).toBe(true);
+        const start = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-start");
+        const end = await rect(page, "[data-slot='head'] > .k2-bar > .k2-bar-end");
+        expect(start.right).toBeLessThanOrEqual(end.left);
+        // the first place stays whole; the page keeps its whole name for those who hover or listen
+        const first = await path
+          .locator(".k2-path-step")
+          .first()
+          .evaluate((step) => step.scrollWidth <= step.clientWidth);
+        expect(first).toBe(true);
+        const current = path.locator("b[aria-current='page']");
+        expect(await current.getAttribute("title")).toBe("Fotos der Musterfronten nach dem zweiten Ölen, Tageslicht");
+        // the places between, in their order, as links in the menu
+        await path.getByRole("button", { name: "Übergeordnete Ebenen" }).click();
+        await settled(page);
+        const entries = page.getByRole("menu").getByRole("menuitem");
+        expect(await entries.allTextContents()).toEqual([
+          "Projekte",
+          "2026",
+          "Kunden",
+          "Lindqvist",
+          "Küche",
+          "Entwürfe",
+          "Fronten",
+          "Eiche geölt",
+          "Muster",
+        ]);
+        expect(await entries.first().getAttribute("href")).toBe("#level-1");
+        await page.keyboard.press("Escape");
+        await settled(page);
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+      },
+      width,
+    );
+  });
+
+test("on the phone a deep path gives way to the shell's bar, and the head keeps only its search", async () => {
+  await withPage(
+    "path",
+    async (page) => {
+      expect(await page.locator(".k2-path").isVisible()).toBe(false);
+      expect(await page.getByRole("searchbox", { name: "In diesem Ordner" }).isVisible()).toBe(true);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+      const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+      expect(layout.problems).toEqual([]);
+    },
+    390,
+  );
 });
 
 for (const which of ["list", "grid", "selecting", "settings"] as const)
