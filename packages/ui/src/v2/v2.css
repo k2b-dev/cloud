@@ -996,7 +996,7 @@
   background: var(--k2-surface);
   opacity: 0;
 }
-.k2-ui .k2-tile:is(:hover, :focus-visible) .k2-tile-menu,
+.k2-ui .k2-tiles > .k2-tile:is(:hover, :focus-visible) > .k2-tile-media > .k2-tile-menu,
 .k2-ui .k2-tile-menu:has(.k2-btn[aria-expanded="true"]) {
   opacity: 1;
 }
@@ -1019,7 +1019,9 @@
   background: var(--k2-surface);
   opacity: 0;
 }
-.k2-ui .k2-tile:is(:hover, :focus-within, [data-selected]) .k2-tile-check,
+/* `:focus-visible` on the tile, never `:focus-within`: the tile takes the focus itself, and a `:focus-within` rule makes
+   WebKit check the ancestors of every focus change on the page (a table of 10 000 rows took 600 ms per key) */
+.k2-ui .k2-tiles > .k2-tile:is(:hover, :focus-visible, [data-selected]) > .k2-tile-media > .k2-tile-check,
 .k2-ui .k2-tiles[data-selecting] .k2-tile-check {
   opacity: 1;
 }

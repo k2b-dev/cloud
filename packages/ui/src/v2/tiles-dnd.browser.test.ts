@@ -119,12 +119,15 @@ test("drag: a folder that does not take it says so; letting go there, on the zon
     expect(await tile(page, "Fotos").getAttribute("data-drop-over")).toBeNull();
     await page.mouse.up();
     // the zone exists only while a drag is under way: lift first, then go there
+    await settled(page);
     await dragTo(page, tile(page, "Angebot.pdf"), tile(page, "Messestand.jpg"));
+    await settled(page);
     const zone = await page.getByText("Hier loslassen: nichts passiert").boundingBox();
     if (!zone) throw new Error("no zone while dragging");
     await page.mouse.move(zone.x + zone.width / 2, zone.y + zone.height / 2, { steps: 6 });
     await frames(page);
     await page.mouse.up();
+    await settled(page);
     await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Archiv"));
     await page.keyboard.press("Escape");
     await page.mouse.up();
@@ -139,6 +142,7 @@ test("drag: resting on a closed folder opens it, so a level below is reached", a
     await dragTo(page, tableRow(page, "Angebot.pdf"), folder(page, "Archiv"), 900);
     expect(await archive.getAttribute("aria-expanded")).toBe("true");
     const year = folder(page, "2025");
+    await settled(page);
     const box = await year.boundingBox();
     if (!box) throw new Error("2025 not shown");
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 4 });
@@ -152,6 +156,7 @@ test("drag: selected rows go together onto a folder row; a click without moving 
   await withPage(async (page) => {
     await tableRow(page, "Messestand.jpg").locator("input").check();
     await tableRow(page, "Angebot.pdf").locator("input").check();
+    await settled(page);
     await dragTo(page, tableRow(page, "Angebot.pdf"), tableRow(page, "Belege"));
     expect(await tableRow(page, "Messestand.jpg").getAttribute("data-dragging")).toBe("");
     expect(await page.locator("[data-drag-preview]").textContent()).toBe("2 Einträge");
@@ -200,9 +205,11 @@ test("drag: the place that says 'nothing happens' wins over a folder under it", 
     await page.setViewportSize({ width: 1440, height: Math.round(rowBox.y + rowBox.height / 2 + 46) });
     await settled(page);
     await dragTo(page, tile(page, "Angebot.pdf"), tile(page, "Messestand.jpg"));
+    await settled(page);
     const zone = await page.getByText("Hier loslassen: nichts passiert").boundingBox();
     if (!zone) throw new Error("no zone");
     // the row lies under that place (the library finds targets by their boxes, as here)
+    await settled(page);
     const rowNow = await tableRow(page, "Belege").boundingBox();
     if (!rowNow) throw new Error("no row");
     const middle = { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 };
@@ -230,10 +237,12 @@ test("drag: what is dragged is fixed when it is lifted, and the folder is asked 
     await dragTo(page, tile(page, "Angebot.pdf"), folder(page, "Projekte"));
     // the selection changes under the drag: the drag keeps what it lifted
     await page.evaluate(() => window.__select?.(["angebot", "messe"]));
+    await settled(page);
     await moveTo(page, (await folder(page, "Archiv").boundingBox())!);
     await page.mouse.up();
     expect(await page.evaluate(() => window.__moves)).toEqual(["angebot>archiv"]);
     // the folder stops taking files while the pointer is down: letting go moves nothing
+    await settled(page);
     await dragTo(page, tile(page, "Werkstatt mit einem sehr langen Dateinamen, der nicht passt.jpg"), folder(page, "Projekte"));
     expect(await folder(page, "Projekte").getAttribute("data-drop-over")).toBe("");
     await page.evaluate(() => {
@@ -248,6 +257,7 @@ test("drag: a folder never goes into a folder that lies in it", async () => {
   await withPage(async (page) => {
     await page.getByRole("treeitem", { name: "Projekte", exact: true }).focus();
     await page.keyboard.press("ArrowRight");
+    await settled(page);
     await dragTo(page, folder(page, "Projekte"), folder(page, "Website"));
     expect(await folder(page, "Website").getAttribute("data-drop-refused")).toBe("");
     await page.mouse.up();

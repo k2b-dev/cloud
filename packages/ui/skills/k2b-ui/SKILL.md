@@ -63,9 +63,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | You want to show | Use | Recipe |
 | --- | --- | --- |
 | an app's frame: sidebar, head, columns | `Workspace` with `sidebar`, `head`, `primary` | all |
-| the app's sections in the sidebar | `Nav` | `list-detail.tsx` |
-| folders or pages in levels in the sidebar | a `Nav` group with `tree` (`load`, `loadMore` for what opens) | `tree.tsx` |
-| rows in levels (a folder's content as a tree) | `Table` with `rowKey` and `tree` | `tree.tsx` |
+| the app's sections in the sidebar; folders or pages in levels | `Nav`; a group's `tree` (`load`, `loadMore`) | `list-detail.tsx`, `tree.tsx` |
 | views of the page, or areas of a record | `Tabs` (in the head `Bar`, or as `Pane` head) | `mail.tsx`, `record.tsx` |
 | where a sub-page stands | `Path` in the head `Bar start` | – |
 | the one main statement and key figures | `StatusRow` in `Pane status` | `table.tsx` |
@@ -75,7 +73,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | who did what | `Digest activity` | `overview.tsx`, `home.tsx` |
 | several people at once (a team, who has access) | `Avatar.Stack` | `overview.tsx` |
 | a short history beside a number | `Spark`; in a cell `Cells.Cell trend` | `home.tsx` |
-| many like things with columns | `Table` | `table.tsx` |
+| many like things with columns; rows in levels | `Table`; with `rowKey` and `tree` | `table.tsx`, `tree.tsx` |
 | a large table: select rows, groups, sticky first column | `Table` with `rowKey`, `select`, `group`, `sticky`; `StatusRow selection` | – |
 | rows the person sorts by a column | a column's `sort` (`href` to the sorted page) and the table's `sort` (the column sorted now) | – |
 | a list or table people filter, sort or group | `defineListQuery` (`@k2b/ui/v2/list-query`), then `FilterBar` in `Pane status` with `results` and `ListOrder` in its `end` (one row; a `StatusRow selection` takes its place while selecting) | `files.tsx`, `filtered-table.tsx` |
@@ -96,8 +94,7 @@ import { Workspace, Pane, Bar, List, Row } from "@k2b/ui/v2";
 | something that needs this person | `Row yours` or `Chip yours` | `record-groups.tsx` |
 | a form | `Field` / `Field.Row` with `Input`, `Select`, `DateInput`, `Check`, `Choice` | `form.tsx` |
 | reading text, an email body, a page of Markdown | `Prose` | `content.tsx`, `mail.tsx` |
-| attachments, media files, like things to press | `Tiles` | `content.tsx`, `mail.tsx` |
-| rows, tiles or places dragged onto folders | `drag` on `Table`, `Tiles variant="media"`, a `Nav` `tree` (same `scope`), plus a menu entry (`menu`) | – |
+| attachments, media files, like things to press; things dragged onto folders | `Tiles`; `drag` + `menu` on media `Tiles`, `Table`, a `Nav` `tree` | `content.tsx`, `mail.tsx` |
 | a state, tag, amount, count | `Chip` | `table.tsx` |
 | a person's or agent's picture | `Person image` on `Avatar`, `RecordHead avatar`, `Row avatar` (initials stay while it loads or fails) | – |
 | a deed under way (saving, sending) | `Button busy`; a deed that cannot be taken now: `disabled` | `actions.tsx` |
