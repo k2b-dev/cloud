@@ -31,7 +31,6 @@ export const ProxyAuthFixture = (props: { search: string; data?: ProxyAuthFixtur
         open={new URLSearchParams(props.search).get("client")}
         tab={new URLSearchParams(props.search).get("tab") === "setup" ? "setup" : "clients"}
         figures={{
-          groups: clients.reduce((sum, client) => sum + client.groups.length, 0),
           withoutGroups: clients.filter((client) => client.groups.length === 0).length,
         }}
       />

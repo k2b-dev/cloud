@@ -24,7 +24,6 @@ export default ssr<AuthContext>(async (c) => {
         open={open}
         tab={c.req.query("tab") === "setup" ? "setup" : "clients"}
         figures={{
-          groups: clients.reduce((sum, client) => sum + client.allowedGroups.length, 0),
           withoutGroups: clients.filter((client) => client.allowedGroups.length === 0).length,
         }}
         clients={clients.map((client) => ({

@@ -4,7 +4,6 @@ import { useLocale } from "@k2b/ui";
 import {
   Bar,
   Button,
-  Cells,
   Chip,
   confirm,
   Dialog,
@@ -13,6 +12,7 @@ import {
   Field,
   Input,
   Lookup,
+  Menu,
   type NavProps,
   Notice,
   Pane,
@@ -48,7 +48,7 @@ export type ProxyAuthScreenProps = {
   tab: "clients" | "setup";
   /** The client open beside the list (`client=<id>`); null when none is, or it is gone. */
   open: string | null;
-  figures: { groups: number; withoutGroups: number };
+  figures: { withoutGroups: number };
 };
 
 type Draft = { name: string; description: string; groups: string[] };
@@ -66,9 +66,12 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const number = (value: number) => value.toLocaleString(locale());
   const verifyUrl = (clientId: string) => `${props.baseUrl}/proxy-auth/verify/${clientId}`;
   const opened = () => props.clients.find((client) => client.id === props.open) ?? null;
+  const blockedClients = () => props.clients.filter((client) => client.groups.length === 0);
   const known = (): LookupItem[] =>
     props.clients.flatMap((client) => client.groups).map((group) => ({ value: group.id, label: group.label }));
 
+  // the labels of groups seen in searches, so a new client's row names its groups at once
+  const seen = new Map<string, string>();
   // groups come from the directory, as the access editors search them
   const loadGroups = async (text: string, context: { signal: AbortSignal; limit: number }) => {
     const url = new URL("/api/accounts/entities", location.origin);
@@ -78,11 +81,11 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     const response = await fetch(url, { credentials: "same-origin", signal: context.signal });
     if (!response.ok) throw new Error(response.statusText);
     const data: { items?: { kind: string; group?: { id: string; name: string } }[] } = await response.json();
-    return {
-      items: (data.items ?? []).flatMap((item) =>
-        item.kind === "group" && item.group ? [{ value: item.group.id, label: groupDisplayName(item.group.name, locale()) }] : [],
-      ),
-    };
+    const items = (data.items ?? []).flatMap((item) =>
+      item.kind === "group" && item.group ? [{ value: item.group.id, label: groupDisplayName(item.group.name, locale()) }] : [],
+    );
+    for (const item of items) seen.set(item.value, item.label);
+    return { items };
   };
 
   // ── Create and edit: one dialog ───────────────────────────────────────────────────────────────────────────────
@@ -91,6 +94,9 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
   const [failure, setFailure] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [created, setCreated] = createSignal<string | null>(null);
+  // a client just created stands in the list behind its dialog; the next page load brings it from the server
+  const [added, setAdded] = createSignal<ClientRow[]>([]);
+  const rows = () => [...props.clients, ...added()];
   const start = (client: ClientRow | "new") => {
     setDraft(
       client === "new"
@@ -123,7 +129,21 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
     setEditing(null);
     if (target === "new") {
       const body = await response.json();
-      if ("clientId" in body) setCreated(body.clientId);
+      if ("clientId" in body) {
+        const labels = new Map(known().map((item) => [item.value, item.label]));
+        setAdded((rows) => [
+          ...rows,
+          {
+            id: body.clientId,
+            clientId: body.clientId,
+            name: values.name.trim(),
+            description: values.description.trim() || null,
+            groups: values.groups.map((id) => ({ id, label: seen.get(id) ?? labels.get(id) ?? id })),
+            created: new Intl.DateTimeFormat(locale(), { dateStyle: "medium" }).format(new Date()),
+          },
+        ]);
+        setCreated(body.clientId);
+      }
     } else {
       // the next picture shows the change; a toast before the page is replaced would never be seen
       location.reload();
@@ -172,12 +192,13 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       back={{ label: t().backToClients, href: LIST }}
       head={
         <Bar
-          start={<Text type="lead">{client.name}</Text>}
+          start={<Text weight="strong">{client.name}</Text>}
           end={
             <>
-              <Button icon="trash" onClick={() => void remove(client)}>
-                {t().delete}
-              </Button>
+              <Menu
+                label={t().moreActions}
+                items={[{ label: t().delete, icon: "trash", danger: true, onClick: () => void remove(client) }]}
+              />
               <Button icon="pencil" keep onClick={() => start(client)}>
                 {t().edit}
               </Button>
@@ -212,28 +233,25 @@ export default function ProxyAuthScreen(props: ProxyAuthScreenProps) {
       <Pane
         label={t().appName}
         scrollKey="proxy-auth-clients"
-        status={
-          <StatusRow
-            lead={
-              props.clients.length === 0
-                ? t().emptyLead
-                : props.figures.withoutGroups > 0
-                  ? t().blockedLead({ count: props.figures.withoutGroups })
-                  : t().allGatedLead
-            }
-          />
-        }
+        status={<StatusRow lead={rows().length === 0 ? t().emptyLead : t().clientCount({ count: rows().length })} />}
       >
-        {/* the figures say what the lead does not: nothing to count before the first client */}
-        <Show when={props.clients.length > 0}>
-          <Cells>
-            <Cells.Cell icon="shield-half" label={t().clients} value={number(props.clients.length)} />
-            <Cells.Cell icon="users-group" label={t().allowedGroups} value={number(props.figures.groups)} />
-          </Cells>
+        {/* what needs a deed stands with its colour and sign; while a client is open, its own notice says it */}
+        <Show when={props.figures.withoutGroups > 0 && !props.open}>
+          <Notice
+            tone="warn"
+            icon="lock"
+            actions={
+              blockedClients().length === 1
+                ? [{ label: t().openClient, href: `${LIST}?client=${encodeURIComponent(blockedClients()[0]!.id)}` }]
+                : undefined
+            }
+          >
+            {t().blockedLead({ count: props.figures.withoutGroups })}
+          </Notice>
         </Show>
         <Table
           label={t().clients}
-          rows={props.clients}
+          rows={rows()}
           rowKey={(client) => client.id}
           sticky
           current={props.open ?? undefined}

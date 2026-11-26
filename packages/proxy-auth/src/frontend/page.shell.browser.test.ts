@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 import type { CloudRuntime, User } from "@k2b/cloud/contracts";
 import type { AuthContext } from "@k2b/cloud/server";
 import * as services from "@k2b/cloud/services";
-import { measureV2Layout } from "@k2b/ui/v2/testing";
+import { measureV2Layout, settled } from "@k2b/ui/v2/testing";
 import { Hono } from "hono";
 import type { Browser } from "playwright";
 import { cloudShellSheets } from "../../../../scripts/fixtures/cloud-shell-sheets";
@@ -185,7 +185,12 @@ describe("Proxy Auth in the Cloud shell", () => {
             "/__shell-harness.js": { type: "text/javascript; charset=utf-8", body: harness },
             "/api/accounts/entities": {
               type: "application/json",
-              body: JSON.stringify({ items: [{ kind: "group", group: { id: "g-ops", name: "betrieb" } }] }),
+              // enough groups that the picker has hits beside the chosen one
+              body: JSON.stringify({
+                items: ["betrieb", "buchhaltung", "entwicklung", "haustechnik", "leitung", "verwaltung", "lager", "werkstatt"].map(
+                  (name) => ({ kind: "group", group: { id: `g-${name}`, name } }),
+                ),
+              }),
             },
             "/api/proxy-auth": { type: "application/json", body: JSON.stringify({ clientId: "pa_wiki" }) },
           },
@@ -198,7 +203,11 @@ describe("Proxy Auth in the Cloud shell", () => {
         await dialog.getByRole("option", { name: "Betrieb" }).click();
         if (shots) await tab.screenshot({ path: join(shots, `dialog-neuer-client-${width}.png`) });
         await dialog.getByRole("button", { name: "Erstellen" }).click();
-        await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki").waitFor();
+        const done = tab.getByRole("dialog", { name: "Client erstellt" });
+        await done.getByText("https://cloud.example.test/proxy-auth/verify/pa_wiki").waitFor();
+        await settled(tab);
+        // the new client stands in the list behind its dialog
+        expect(await tab.locator("[data-k2-workspace]").getByText("Wiki", { exact: true }).count()).toBeGreaterThan(0);
         if (shots) await tab.screenshot({ path: join(shots, `dialog-client-angelegt-${width}.png`) });
         expect(errors).toEqual([]);
       } finally {

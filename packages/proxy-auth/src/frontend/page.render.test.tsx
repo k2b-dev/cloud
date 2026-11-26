@@ -83,10 +83,10 @@ test("the clients render on v2 with their figures, one open beside the list, and
     expect(response.status, html).toBe(200);
     expect(html).toContain('data-k2-part="Workspace"');
     const text = read(html);
-    expect(text).toContain("1 Client ist bis zur Konfiguration gesperrt");
+    // the list counts its clients; while a client is open its own notice says what it needs, not a second one above the list
+    expect(text).toContain("2 Clients");
+    expect(text).not.toContain("bis zur Konfiguration gesperrt");
     expect(text).toContain("Uptime Kuma");
-    // the lead says once that a client without a group is blocked; only that client's row marks it
-    expect(text.split("bis zur Konfiguration gesperrt")).toHaveLength(2);
     expect(text).toContain("Ohne Gruppen");
     // the open client names its verify address with this Cloud's public address
     expect(text).toContain("https://cloud.example.test/proxy-auth/verify/pa_grafana");

@@ -185,12 +185,14 @@ describe("Proxy Auth on v2", () => {
       await tab.waitForURL(/client=/);
       await tab.waitForSelector('body[data-ready="true"]');
       expect(await tab.getByText("https://cloud.example.test/proxy-auth/verify/pa_grafana").isVisible()).toBe(true);
-      // answering no sends nothing
-      await tab.getByRole("button", { name: "Löschen" }).click();
+      // answering no sends nothing; deleting waits in the head's "…"
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("menuitem", { name: "Löschen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Abbrechen" }).click();
       expect(calls).toEqual([]);
       // answering yes sends the one delete
-      await tab.getByRole("button", { name: "Löschen" }).click();
+      await tab.getByRole("button", { name: "Weitere Aktionen" }).click();
+      await tab.getByRole("menuitem", { name: "Löschen" }).click();
       await tab.getByRole("alertdialog").getByRole("button", { name: "Löschen" }).click();
       await tab.waitForURL((url) => !url.search.includes("client="));
       expect(calls).toEqual(["DELETE /api/proxy-auth/00000000-0000-4000-8000-000000000001"]);
