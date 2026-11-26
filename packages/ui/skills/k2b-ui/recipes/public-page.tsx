@@ -177,19 +177,21 @@ const programme = (events: Listed[]) => (
         cell: (event) => <Avatar name={event.host.name} color={event.host.color} />,
       },
       {
-        title: "Belegt",
-        width: { min: 150, default: 160, fixed: true },
-        drop: true,
+        // the meter and, for the exceptions, their chip: title and seats share the room the host leaves
+        title: "Plätze",
         cell: (event) => (
-          <Progress
-            value={taken(event.seats)}
-            of={event.seats.of}
-            label={`${taken(event.seats)}/${event.seats.of}`}
-            status={load(event.seats)}
-          />
+          <Inline>
+            <Progress
+              value={taken(event.seats)}
+              of={event.seats.of}
+              // booked out, the chip says it: the figures would only repeat it
+              label={event.seats.free === 0 ? undefined : `${taken(event.seats)}/${event.seats.of}`}
+              status={load(event.seats)}
+            />
+            <Show when={load(event.seats)}>{seatsChip(event.seats)}</Show>
+          </Inline>
         ),
       },
-      { title: "Plätze", align: "end", cell: (event) => seatsChip(event.seats) },
     ]}
     phone={(event) => ({
       lines: [event.title, `${event.time} · ${event.room} · ${kinds[event.kind].label}`],
