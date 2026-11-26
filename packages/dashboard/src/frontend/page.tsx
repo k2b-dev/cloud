@@ -38,10 +38,12 @@ const readLegacyCookie = (cookieHeader: string) => {
 
 /**
  * How long the server render waits for the board's widgets before it sends the page; a widget that answers later
- * loads in the browser. Unset until the widget handlers' measured times (widget-timing integration tests in CI) give
- * it a value: without it the page sends every frame loading, as before.
+ * loads in the browser. From CI run 45772333857 (#4263): the slowest built-in handler's p95 is 6.7 ms (spaces/today,
+ * 20 calls each against Postgres, in the app's process), and Core's stream of signing and fan-out took 26.8–44.9 ms
+ * in the integration runs. Three times their sum (51.6 ms) covers the network between Core and the apps and fuller
+ * tables than the test's: 155 ms, rounded up to 160.
  */
-const DASHBOARD_WIDGET_BUDGET_MS: number | undefined = undefined;
+const DASHBOARD_WIDGET_BUDGET_MS = 160;
 
 const mayUse = (requiresRoles: readonly Role[], user: User) =>
   requiresRoles.length === 0 || requiresRoles.some((role) => hasRole(user, role));
@@ -127,20 +129,17 @@ export default ssr<AuthContext>(async (c) => {
   }
   const { shown, kept } = board ? splitDashboardBoard(board, catalog) : { shown: defaultDashboardBoard(catalog), kept: [] };
   // The widgets the board shows, asked through Core with the person's own credentials as the browser would ask them.
+  // The person's own credentials ask; a request without any (none reaches this signed-in page) loads in the browser.
+  const cookie = c.req.header("cookie");
+  const authorization = c.req.header("authorization");
   const { answered } =
-    DASHBOARD_WIDGET_BUDGET_MS === undefined
-      ? { answered: {} }
-      : await loadWidgetsWithin(
-          {
-            cookie: c.req.header("cookie"),
-            authorization: c.req.header("authorization"),
-            locale,
-            signal: c.req.raw.signal,
-            requestId: c.req.header("x-request-id"),
-          },
+    cookie || authorization
+      ? await loadWidgetsWithin(
+          { cookie, authorization, locale, signal: c.req.raw.signal, requestId: c.req.header("x-request-id") },
           shown.map(widgetRequestOf),
           { budgetMs: DASHBOARD_WIDGET_BUDGET_MS },
-        );
+        )
+      : { answered: {} };
 
   return () => (
     <Layout c={c} title={t.title} fullPage>
