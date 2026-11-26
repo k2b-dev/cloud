@@ -266,6 +266,35 @@ export const fixtureSettings = (): VenueSettingsContext => ({
     },
   ],
   templates: [lunch.template, evening.template],
-  accessEntries: [],
+  accessEntries: [
+    {
+      id: "00000000-0000-4000-8000-000000000001",
+      principal: { type: "user", userId: "00000000-0000-4000-9000-000000000001" },
+      permission: "admin",
+      createdAt: "2026-09-01T08:00:00.000Z",
+      displayName: "Kim Muster",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000002",
+      principal: { type: "user", userId: "00000000-0000-4000-9000-000000000002" },
+      permission: "write",
+      createdAt: "2026-09-02T08:00:00.000Z",
+      displayName: "Sam Beispiel",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000003",
+      principal: { type: "user", userId: "00000000-0000-4000-9000-000000000003" },
+      permission: "write",
+      createdAt: "2026-09-03T08:00:00.000Z",
+      displayName: "Alex Probe",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000004",
+      principal: { type: "group", groupId: "00000000-0000-4000-9000-000000000004" },
+      permission: "read",
+      createdAt: "2026-09-04T08:00:00.000Z",
+      displayName: "Café-Team",
+    },
+  ],
   apiKeys: [],
 });

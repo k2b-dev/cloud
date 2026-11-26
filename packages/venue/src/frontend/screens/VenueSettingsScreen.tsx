@@ -387,7 +387,7 @@ function AccessArea(props: {
   reread: (success?: string) => Promise<void>;
   write: (key: string, run: () => Promise<void>, success: string) => Promise<void>;
 }) {
-  const { t } = useVenueWords();
+  const { t, words } = useVenueWords();
   const locale = useLocale();
   const toast = useToast();
   const [editing, setEditing] = createSignal(false);
@@ -448,7 +448,7 @@ function AccessArea(props: {
         summary={t().peopleAndGroupsDescription}
         actions={[{ label: t().editAccess, icon: "lock-access", disabled: props.blocked || editing(), onClick: () => void edit() }]}
       >
-        <Show when={people().length > 0} fallback={<Empty icon="users" text={t().peopleAndGroupsDescription} />}>
+        <Show when={people().length > 0} fallback={<Empty icon="users" text={words().nobodyHasAccess} />}>
           <List label={t().peopleAndGroups}>
             <For each={people()}>
               {(entry) => (
