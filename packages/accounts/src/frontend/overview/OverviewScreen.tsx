@@ -127,6 +127,12 @@ export default function OverviewScreen(props: OverviewScreenProps) {
     ) : (
       <Chip status="ok">{o().noExpiry}</Chip>
     );
+  /** The names of a few groups, as a quiet line under their count. */
+  const names = (groups: OverviewGroup[]) =>
+    groups
+      .slice(0, 3)
+      .map((group) => group.name)
+      .join(", ");
   const groupWords = (group: OverviewGroup) =>
     [group.provider === "ipa" ? "FreeIPA" : t().local, group.description].filter(Boolean).join(" · ");
 
@@ -179,7 +185,13 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 color={kind.account.color}
                 label={o().yourAccount}
                 value={props.me.expired ? <Chip status="bad">{t().expired}</Chip> : <Chip status="ok">{o().active}</Chip>}
-                meta={`${kindWord()} · ${providerWord()}`}
+                meta={
+                  props.me.expires
+                    ? props.me.expired
+                      ? o().expiredOn({ when: props.me.expires })
+                      : o().expiresOn({ when: props.me.expires })
+                    : o().noExpiry
+                }
                 href="/me"
               />
               <Cells.Cell
@@ -187,7 +199,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 color={kind.ipaGroup.color}
                 label={t().managedByMe}
                 value={number(props.groups.managed.count)}
-                meta={t().groupCount({ count: props.groups.managed.count })}
+                meta={names(props.myGroups.filter((group) => group.managed)) || t().groupCount({ count: props.groups.managed.count })}
                 href={props.groups.managed.href}
               />
               <Cells.Cell
@@ -195,16 +207,10 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 color={kind.localGroup.color}
                 label={t().myGroups}
                 value={number(props.groups.member.count)}
-                meta={t().groupCount({ count: props.groups.member.count })}
+                meta={names(props.myGroups.filter((group) => !group.managed)) || t().groupCount({ count: props.groups.member.count })}
                 href={props.groups.member.href}
               />
-              <Cells.Cell
-                icon="layout-grid"
-                label={t().allGroups}
-                value={number(props.groups.all.count)}
-                meta={t().groupCount({ count: props.groups.all.count })}
-                href={props.groups.all.href}
-              />
+              <Cells.Cell icon="layout-grid" label={t().allGroups} value={number(props.groups.all.count)} href={props.groups.all.href} />
             </Cells>
           }
         >
@@ -220,13 +226,9 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   label={t().requests}
                   value={
                     admin().openRequests > 0 ? (
-                      <Chip status="warn">
-                        {o().waiting({ count: admin().openRequests, text: number(admin().openRequests) })}
-                      </Chip>
+                      <Chip status="warn">{o().waiting({ count: admin().openRequests, text: number(admin().openRequests) })}</Chip>
                     ) : (
-                      <Chip status="ok">
-                        {o().noneWaiting}
-                      </Chip>
+                      <Chip status="ok">{o().noneWaiting}</Chip>
                     )
                   }
                   meta={admin().openRequests > 0 ? t().pendingReview : t().nonePending}
@@ -236,15 +238,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                   icon={kind.expiry.icon}
                   color={kind.expiry.color}
                   label={t().expiring30d}
-                  value={
-                    expiring() > 0 ? (
-                      <Chip status="warn">
-                        {o().accounts({ count: expiring(), text: number(expiring()) })}
-                      </Chip>
-                    ) : (
-                      0
-                    )
-                  }
+                  value={expiring() > 0 ? <Chip status="warn">{o().accounts({ count: expiring(), text: number(expiring()) })}</Chip> : 0}
                   meta={
                     expiring() > 0
                       ? o().expiringSplit({
@@ -266,13 +260,9 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                           label={t().reminders}
                           value={
                             run().failed > 0 ? (
-                              <Chip status="bad">
-                                {o().errors({ count: run().failed })}
-                              </Chip>
+                              <Chip status="bad">{o().errors({ count: run().failed })}</Chip>
                             ) : (
-                              <Chip status="ok">
-                                {o().noErrors}
-                              </Chip>
+                              <Chip status="ok">{o().noErrors}</Chip>
                             )
                           }
                           meta={o().runsOk({ ok: run().runs - run().failed, runs: run().runs })}
@@ -290,13 +280,9 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                         admin().lastSync === null ? (
                           <Chip status="warn">{t().noSyncYet}</Chip>
                         ) : run().failed > 0 ? (
-                          <Chip status="warn">
-                            {o().errors({ count: run().failed })}
-                          </Chip>
+                          <Chip status="warn">{o().errors({ count: run().failed })}</Chip>
                         ) : (
-                          <Chip status="ok">
-                            {o().synced}
-                          </Chip>
+                          <Chip status="ok">{o().synced}</Chip>
                         )
                       }
                       meta={[admin().lastSync, o().runsOk({ ok: run().runs - run().failed, runs: run().runs })].filter(Boolean).join(" · ")}
@@ -319,12 +305,14 @@ export default function OverviewScreen(props: OverviewScreenProps) {
           <Pane label={t().dashboard}>
             <Section title={o().yourAccount}>
               <Row
+                strong
                 avatar={me()}
                 lines={[
                   props.me.name,
                   `${props.me.uid} · ${kindWord()} · ${providerWord()} · ${props.me.provider === "ipa" ? t().freeIpaPassword : t().magicLink}`,
                 ]}
-                marks={expiryChip()}
+                // without the administration's figures, the first row already says when the account expires
+                marks={props.admin ? expiryChip() : undefined}
                 href="/me"
               />
             </Section>
@@ -337,6 +325,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                 <For each={props.myGroups}>
                   {(group) => (
                     <Row
+                      strong
                       mark={group.provider === "ipa" ? kind.ipaGroup : kind.localGroup}
                       lines={[group.name, groupWords(group)]}
                       marks={group.managed ? <Chip yours>{o().youManage}</Chip> : undefined}
@@ -361,6 +350,7 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                       const ok = row.runs - row.failed;
                       return (
                         <Row
+                          strong
                           mark={runKind[row.run]}
                           lines={[runLabel(row.run), o().runsOk({ ok, runs: row.runs })]}
                           marks={
@@ -402,7 +392,6 @@ export default function OverviewScreen(props: OverviewScreenProps) {
                               <Text weight="strong">{run.name}</Text>: {entry.message} {levelChip(o(), entry.level)}
                             </>
                           ),
-                          place: entry.source,
                           time: entry.time,
                         };
                       })}

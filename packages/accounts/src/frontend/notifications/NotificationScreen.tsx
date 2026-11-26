@@ -288,10 +288,10 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                   <Progress
                     value={props.batch.sentCount}
                     of={props.batch.deliverableCount}
-                    label={words().sentOf({ sent: props.batch.sent, total: props.batch.deliverable })}
+                    label={`${props.batch.sent} / ${props.batch.deliverable}`}
                   />
                 }
-                meta={t().skippedCount({ count: props.batch.skipped })}
+                meta={`${words().sentOf({ sent: props.batch.sent, total: props.batch.deliverable })} · ${t().skippedCount({ count: props.batch.skipped })}`}
               />
               <Cells.Cell
                 icon="alert-circle"
@@ -355,6 +355,7 @@ export default function NotificationScreen(props: NotificationScreenProps) {
                   })}
                   columns={[
                     {
+                      // k2b-ui gap: a table cell has no lead mark or avatar; the second line does not stand under the text
                       title: t().user,
                       width: { min: 160, default: 190 },
                       cell: (row) => ({

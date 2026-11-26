@@ -48,9 +48,7 @@ const spies = [
     hiddenAutomaticCount: 32,
   }),
   spyOn(notificationBatches, "list").mockResolvedValue({ items: batches, total: batches.length, page: 1, perPage: 50 }),
-  spyOn(notificationBatches, "get").mockResolvedValue(
-    batch(2, { selection: { userIds: [], groupIds: ["33333333-3333-4333-8333-000000000001"] } }),
-  ),
+  spyOn(notificationBatches, "get").mockResolvedValue(batch(2, { selection: { userIds: [], groupIds: [] } })),
   spyOn(notificationBatches, "listRecipients").mockResolvedValue({ items: recipients, total: recipients.length, page: 1, perPage: 100 }),
   spyOn(accountsAppService.lifecycle.reminders, "list").mockResolvedValue({
     items: REMINDERS,
@@ -132,7 +130,9 @@ describe("the activity page in the Cloud shell", () => {
           if (styles[url.pathname]) return route.fulfill({ contentType: "text/css", body: styles[url.pathname] });
           if (url.pathname.endsWith(".css") && url.pathname.includes("v2"))
             return route.fulfill({ contentType: "text/css", body: styles.v2 });
-          // islands, fonts and pictures of the live page are not part of the server's first picture
+          // pictures (the app's logo, avatars) stand as an empty square; islands and fonts are not part of the first picture
+          if (/\.(svg|png|webp|jpe?g)$/.test(url.pathname) || url.pathname.includes("/avatar"))
+            return route.fulfill({ contentType: "image/svg+xml", body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>' });
           return route.fulfill({ status: 404, body: "" });
         });
         try {

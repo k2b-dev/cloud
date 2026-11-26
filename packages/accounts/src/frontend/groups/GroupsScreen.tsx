@@ -4,6 +4,7 @@ import { createMemo, createSignal, Show } from "solid-js";
 import AccountsNav from "../AccountsNav";
 import { usePageSwap } from "../lib/page-swap";
 import { useListMessages } from "../list-messages";
+import { groupDetailMessages } from "./detail/messages";
 import { groupTags, markOf } from "./group-mark";
 import NewGroupDialog from "./NewGroupDialog";
 import { useGroupCreated } from "./new-group";
@@ -49,6 +50,7 @@ export default function GroupsScreen(props: GroupsScreenProps) {
   // the form lives while the dialog is open: a new dialog starts empty
   const [creating, setCreating] = createSignal(false);
   const query = createMemo(() => groupsQuery(locale(), props.defaultScope));
+  const personal = () => groupDetailMessages.resolve([locale()]).t.personal;
   const [state, setState] = createSignal<GroupsState>(props.state);
   const [ignored, setIgnored] = createSignal(props.ignored);
   const [refreshing, setRefreshing] = createSignal(false);
@@ -180,28 +182,31 @@ export default function GroupsScreen(props: GroupsScreenProps) {
             { title: t().description, width: { min: 180, default: 320 }, cell: (group) => group.description || "–", drop: true },
             {
               title: t().managedBy,
-              width: { min: 110, default: 130 },
-              cell: (group) =>
-                group.provider === "ipa" ? (
-                  <Chip tag icon={groupTags.ipa.icon} color={groupTags.ipa.color}>
-                    FreeIPA
-                  </Chip>
-                ) : (
-                  <Chip>{t().local}</Chip>
-                ),
+              width: { min: 100, default: 120 },
+              cell: (group) => (group.provider === "ipa" ? "FreeIPA" : t().local),
               drop: true,
             },
             {
               title: t().flags,
-              width: { min: 120, default: 160 },
+              width: { min: 180, default: 200 },
+              // at most two chips: yours, then what the group is (personal, else POSIX)
               cell: (group) => (
                 <Inline>
                   <Show when={group.managed}>
                     <Chip yours>{t().managed}</Chip>
                   </Show>
-                  <Show when={group.posix}>
-                    <Chip tag icon={groupTags.posix.icon} color={groupTags.posix.color}>
-                      POSIX
+                  <Show
+                    when={group.personal}
+                    fallback={
+                      <Show when={group.posix}>
+                        <Chip tag icon={groupTags.posix.icon} color={groupTags.posix.color}>
+                          POSIX
+                        </Chip>
+                      </Show>
+                    }
+                  >
+                    <Chip tag icon={groupTags.personal.icon} color={groupTags.personal.color}>
+                      {personal()}
                     </Chip>
                   </Show>
                 </Inline>

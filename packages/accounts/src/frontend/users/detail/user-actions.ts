@@ -37,3 +37,13 @@ export const emailRules = (user: User, localEmailOptional: boolean) => {
     (user.provider === "local" && user.profile === "user" && localEmailOptional);
   return { removable, required: Boolean(user.mail) && !removable };
 };
+
+/** A day as the expiry takes it ("2026-12-31"), from the field's text; also "31.12.2026". Null when it is no day. */
+export const dayFromText = (text: string): string | null => {
+  const value = text.trim();
+  const german = value.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  const iso = german ? `${german[3]}-${german[2]!.padStart(2, "0")}-${german[1]!.padStart(2, "0")}` : value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const date = new Date(`${iso}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(iso) ? iso : null;
+};

@@ -191,6 +191,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                 columns={(
                   [
                     {
+                      // k2b-ui gap: a table cell has no lead mark or avatar; the second line does not stand under the text
                       title: t().subject,
                       width: { min: 220, default: 320 },
                       cell: (row) => ({
@@ -213,11 +214,7 @@ export default function NotificationsScreen(props: NotificationsScreenProps) {
                       width: { min: 170, default: 200 },
                       // how far the delivery got: sent of the deliverable recipients, as a bar
                       cell: (row) => (
-                        <Progress
-                          value={row.sentCount}
-                          of={row.deliverableCount}
-                          label={words().sentOf({ sent: row.sent, total: row.deliverable })}
-                        />
+                        <Progress value={row.sentCount} of={row.deliverableCount} label={`${row.sent} / ${row.deliverable}`} />
                       ),
                       drop: true,
                     },

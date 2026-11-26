@@ -186,8 +186,8 @@ export const RequestsFixture = (props: {
         pages={props.worst ? 13 : 1}
         freeIpaEnabled={props.freeIpa ?? true}
         pendingRequests={props.empty ? 0 : props.worst ? 1204 : 8}
-        oldest={status === "pending" && !props.empty ? (props.worst ? "3. Jan. 2025" : REQUESTS_OLDEST) : null}
-        overdue={status === "pending" && !props.empty ? (props.worst ? 1180 : REQUESTS_OVERDUE) : 0}
+        oldest={(status === "pending" || status === "all") && !props.empty ? (props.worst ? "3. Jan. 2025" : REQUESTS_OLDEST) : null}
+        overdue={(status === "pending" || status === "all") && !props.empty ? (props.worst ? 1180 : REQUESTS_OVERDUE) : 0}
       />
     </LocaleProvider>
   );

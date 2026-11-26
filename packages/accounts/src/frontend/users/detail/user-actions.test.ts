@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { LocalUser, User } from "@k2b/cloud/contracts";
-import { emailRules, userActionAvailability } from "./user-actions";
-import { dayFromText } from "./user-dialogs";
+import { dayFromText, emailRules, userActionAvailability } from "./user-actions";
 import { toSafeParagraphHtml } from "./user-requests";
 import { userRecordHref, userTabFrom } from "./user-view";
 

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { User } from "@/contracts";
 import { useAccountsMessages } from "../../messages";
 import { useUserRecordMessages } from "./messages";
-import { emailRules } from "./user-actions";
+import { dayFromText, emailRules } from "./user-actions";
 import { addMembership, editUser, notifyUser, setExpiry } from "./user-requests";
 
 /** A dialog that changes something closes with `true`, so the page shows the change. */
@@ -184,16 +184,6 @@ export function NotifyDialog(props: { user: User; open: boolean; close: (sent: s
     </Dialog>
   );
 }
-
-/** A day as the expiry takes it ("2026-12-31"), from the field's text; also "31.12.2026". Null when it is no day. */
-export const dayFromText = (text: string): string | null => {
-  const value = text.trim();
-  const german = value.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  const iso = german ? `${german[3]}-${german[2]!.padStart(2, "0")}-${german[1]!.padStart(2, "0")}` : value;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
-  const date = new Date(`${iso}T00:00:00Z`);
-  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(iso) ? iso : null;
-};
 
 /** When the account stops working: a day, or never (which asks once more). */
 export function ExpiryDialog(props: { user: User; open: boolean; close: Close }) {
