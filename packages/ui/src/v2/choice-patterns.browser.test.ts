@@ -217,9 +217,11 @@ const calls = (page: Page) =>
   page.evaluate(() => (window.__picks?.calls ?? []).map((call) => ({ query: call.query, aborted: call.aborted() })));
 
 test("LookupSelect: the first picture is the server's; the field reads like a Select with the chosen name", async () => {
-  const server = [...pickMarkup.matchAll(/<[^>]*data-k2-part="LookupSelect"[^>]*>(.*?)<\/button>/gs)].map((match) =>
-    match[1]?.replace(/<[^>]*>/g, ""),
-  );
+  // the server's markup read as HTML, without scripts: what each field says before anything runs
+  const probe = await browser.newPage();
+  await probe.setContent(pickMarkup, { waitUntil: "domcontentloaded" });
+  const server = await probe.locator('[data-k2-part="LookupSelect"]').allTextContents();
+  await probe.close();
   expect(server).toEqual(["Familie Oswald", "Personen wählen", "Einlieferer wählen", "Nur mit Vollmacht", "Stadtwerke Auental"]);
   await withPage(
     pickBundle,
