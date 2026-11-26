@@ -1,10 +1,8 @@
 import type { AiConversation, AiProject } from "@k2b/cloud/ai";
-import { navigateTo } from "@k2b/ssr/nav";
 import { confirm, useToast } from "@k2b/ui/v2";
 import { assistantApi } from "../../api/client";
 import type { AssistantArchiveBlocker } from "../archive-blocker";
 import type { AssistantLiveHub } from "../assistant-live";
-import { assistantConversationHref } from "../assistant-navigation";
 import { assistantMessages } from "../messages";
 import { openAssistantAllChatsDialog, openAssistantConversationEditor } from "../rare-dialogs";
 import { assistantCopyFor } from "../ui-copy";
@@ -73,7 +71,7 @@ export const createAssistantChatDeeds = (options: AssistantChatDeedsOptions) => 
       options.projects,
       "all",
       options.basePath,
-    ).catch(() => navigateTo(assistantConversationHref(options.basePath, options.activeConversationId())));
+    ).catch(() => toast(v2().allChatsFailed, { status: "bad", retry: openAll }));
 
   return { edit, archive, openAll };
 };

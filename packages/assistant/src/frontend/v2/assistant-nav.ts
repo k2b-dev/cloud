@@ -254,21 +254,27 @@ export function createAssistantNav(options: AssistantNavOptions) {
           { label: t().searchProjects, icon: "search", onClick: () => openGlobalSearch(assistantProjectsSearchOptions(locale())) },
         ],
       },
-      items: options.projects().map((project) => ({
-        label: project.name,
-        icon: iconName(project.icon, "folder"),
-        href: assistantProjectHref(base, project.id),
-        onNavigate: async (nav) => {
-          if (options.activeProjectId() === project.id && view === "chat") return;
-          try {
-            if (await options.openProject(project.id)) nav.push(undefined, { scroll: "manual" });
-            else nav.fallback();
-          } catch {
-            nav.fallback();
-          }
-        },
-        current: view === "chat" && options.activeProjectId() === project.id,
-      })),
+      // Without a Project the group still says how to start one, instead of standing empty.
+      items:
+        options.projects().length === 0
+          ? [{ label: t().newProject, icon: "plus", onClick: () => void options.createProject() }]
+          : options.projects().map((project) => ({
+              label: project.name,
+              icon: iconName(project.icon, "folder"),
+              // A Project is a thing of its own: its mark in the app's tone (rule 1); chats keep a calm symbol.
+              color: "var(--k2-app)",
+              href: assistantProjectHref(base, project.id),
+              onNavigate: async (nav) => {
+                if (options.activeProjectId() === project.id && view === "chat") return;
+                try {
+                  if (await options.openProject(project.id)) nav.push(undefined, { scroll: "manual" });
+                  else nav.fallback();
+                } catch {
+                  nav.fallback();
+                }
+              },
+              current: view === "chat" && options.activeProjectId() === project.id,
+            })),
     };
     const chats = groupConversationsByAge(openChats(), now(), options.timeZone).map(
       (entry): NavGroup => ({ label: groupLabel(entry.group), items: entry.conversations.map(chatEntry) }),
@@ -284,7 +290,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
             {
               label: text("Done"),
               count: Math.max(options.doneCount(), doneChats().length).toLocaleString(locale()),
-              items: [...doneChats().map(chatEntry), { label: t().allChats, icon: "messages", onClick: options.openAllChats }],
+              items: doneChats().map(chatEntry),
             },
           ]
         : []),
@@ -293,13 +299,7 @@ export function createAssistantNav(options: AssistantNavOptions) {
     const more: NavGroup[] = options.moreConversations()
       ? [{ items: [{ label: v2().moreChats, icon: "dots", onClick: options.openAllChats }] }]
       : [];
-    return [
-      { items: top },
-      projects,
-      ...(chats.length > 0 ? chats : [{ label: v2().chats, items: [] }]),
-      ...more,
-      ...(folded.length > 0 ? [{ items: folded }] : []),
-    ];
+    return [{ items: top }, projects, ...chats, ...more, ...(folded.length > 0 ? [{ items: folded }] : [])];
   });
   const foot = createMemo((): NavItem[] => [{ label: t().personalize, icon: "user-cog", onClick: () => void options.openPreferences() }]);
 

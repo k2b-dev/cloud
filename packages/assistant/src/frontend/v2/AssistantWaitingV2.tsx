@@ -69,7 +69,12 @@ export default function AssistantWaitingV2(props: AssistantApprovalsViewProps & 
   return (
     <Pane
       label={t().waitingForYou}
-      status={<StatusRow lead={t().waitingStatus({ count: total() })} facts={[{ value: t().waitingLead }]} />}
+      // The statement only stands when it is true: not while the page loads, not beside a failed read.
+      status={
+        <Show when={!page.loading() && page.approvals()}>
+          <StatusRow lead={t().waitingStatus({ count: total() })} facts={[{ value: t().waitingLead }]} />
+        </Show>
+      }
     >
       <Show when={!page.loading()} fallback={<Loading rows={3} lines={2} />}>
         <Show when={page.approvals()} fallback={<Failed text={`${t().waitingFailed} ${t().waitingFailedHint}`} onRetry={page.retry} />}>

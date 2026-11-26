@@ -83,7 +83,19 @@ const contextOf = (chatId: string) => ({
   runs: [],
 });
 
-type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean };
+type Scene = { state?: AssistantV2FixtureState; open?: boolean; waiting?: boolean; tabs?: boolean };
+/** A web page the person left open beside the chat, as the server stores the chat's tabs. */
+const storedTabs = (chatId: string) => ({
+  chatId,
+  snapshot: {
+    revision: 1,
+    state: {
+      tabs: [{ id: "web-1", key: JSON.stringify(["web", "Lieferant", "https://lieferant.example.org/katalog"]), title: "Lieferant" }],
+      layout: null,
+      front: "web-1",
+    },
+  },
+});
 const propsOf = (scene: Scene, url: URL) => {
   const state = scene.state ?? "usual";
   const conversations = fixtureConversations(state);
@@ -130,6 +142,7 @@ const propsOf = (scene: Scene, url: URL) => {
         }
       : null,
     initialContext: open ? contextOf(open.id) : null,
+    initialTabs: open && scene.tabs ? storedTabs(open.id) : null,
     projects: fixtureProjects(state),
     initialProject: null,
     initialProjectChats: null,
@@ -539,11 +552,28 @@ describe("Assistant on v2", () => {
         }));
         console.log(`measure ${state}: ready ${ready} ms, elements ${counts.all}, in the sidebar ${counts.nav}, loading ${counts.loading}`);
         expect(counts.loading).toBe(0);
-        if (state === "huge") expect(await page.getByRole("button", { name: "Weitere Chats …" }).count()).toBe(1);
+        if (state === "huge") {
+          expect(await page.getByRole("button", { name: "Weitere Chats …" }).count()).toBe(1);
+          // The sidebar's bound keeps the page small: 100 chats stay under 1,200 elements.
+          expect(counts.all).toBeLessThan(1_200);
+        }
         expect(errors).toEqual([]);
       } finally {
         await context.close();
       }
     }
   }, 90_000);
+
+  test("on the phone a chat with stored tabs opens on the chat; the server's first picture and the first render agree", async () => {
+    const { context, page, errors } = await open(phone, "/app/assistant", { tabs: true });
+    try {
+      expect(await page.locator('[data-k2-part="Pane"][data-detail]').count()).toBe(0);
+      const composer = await page.locator(".assistant-chat-composer").boundingBox();
+      expect(composer && composer.y + composer.height <= phone.height).toBe(true);
+      await shoot(page, "390-chat-with-tabs");
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }, 60_000);
 });

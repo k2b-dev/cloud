@@ -47,6 +47,15 @@ export const openQuestionsCaller = (c: Context): CapabilityCaller => ({
   requestId: c.req.header("x-request-id"),
 });
 
+/**
+ * The open chats the sidebar shows: at most `AI_SIDEBAR_CONVERSATIONS_MAX`, in the store's order (pinned, then the
+ * newest), and whether more exist. The store reads one more than that to tell.
+ */
+export const sidebarPage = <T>(open: readonly T[]): { conversations: T[]; more: boolean } => ({
+  conversations: open.slice(0, AI_SIDEBAR_CONVERSATIONS_MAX),
+  more: open.length > AI_SIDEBAR_CONVERSATIONS_MAX,
+});
+
 export const loadAssistantSidebarSnapshot = async (
   identity: AiResourceContext,
   context: { locale: string; timeZone: string; caller: CapabilityCaller },
@@ -64,8 +73,9 @@ export const loadAssistantSidebarSnapshot = async (
     // A failed list leaves "At places" with its failure line; the rest of the sidebar still shows.
     aiConversations.listConversationsPage({ ownerUserId: userId, place: "any", page: 1, perPage: PLACE_CHATS_PAGE }).catch(() => null),
   ]);
-  const moreConversations = activeConversations.length > AI_SIDEBAR_CONVERSATIONS_MAX;
-  const conversations = [...activeConversations.slice(0, AI_SIDEBAR_CONVERSATIONS_MAX), ...donePage.items];
+  const open = sidebarPage(activeConversations);
+  const moreConversations = open.more;
+  const conversations = [...open.conversations, ...donePage.items];
   const apps = new Map<string, ReturnType<AssistantPlaceAppLookup>>();
   const appOf = (appId: string) => {
     let app = apps.get(appId);

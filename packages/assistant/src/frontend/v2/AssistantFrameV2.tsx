@@ -32,6 +32,8 @@ export type AssistantFrameV2Props = {
   /** The chat's tabs beside it while one is open; on the phone they are the page until the person goes back. */
   tabs: {
     open: Accessor<boolean>;
+    /** The tabs are what the person looks at now (the controller's choice), so on the phone they are the page. */
+    focused: Accessor<boolean>;
     back: Accessor<Action>;
     content: JSX.Element;
   };
@@ -81,7 +83,14 @@ export default function AssistantFrameV2(props: AssistantFrameV2Props) {
         </Canvas>
       </Pane>
       <Show when={props.tabs.open()}>
-        <Pane label={v2().tabsPane} detail back={props.tabs.back()} width={{ min: 320, default: 680 }}>
+        {/* k2b-ui gap: a pane that is no detail stands under the chat on the phone; the tabs there should give way
+            while the chat is in front. */}
+        <Pane
+          label={v2().tabsPane}
+          detail={props.tabs.focused()}
+          back={props.tabs.focused() ? props.tabs.back() : undefined}
+          width={{ min: 320, default: 680 }}
+        >
           <Canvas label={v2().tabsPane} height="fill">
             <div style={drawing}>{props.tabs.content}</div>
           </Canvas>

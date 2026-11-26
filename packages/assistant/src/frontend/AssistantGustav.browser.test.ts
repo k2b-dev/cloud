@@ -62,7 +62,7 @@ render(
           </AssistantLiveProvider>
         </div>
       ) : (
-        {window.harness.props.embedded ? <AssistantPanel {...window.harness.props} /> : <AssistantWorkspace {...window.harness.props} />}
+        window.harness.props.embedded ? <AssistantPanel {...window.harness.props} /> : <AssistantWorkspace {...window.harness.props} />
       )}
     </LocaleProvider>
   ),
