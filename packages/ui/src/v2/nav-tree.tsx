@@ -1,7 +1,7 @@
 import { createComputed, createMemo, For, type JSX, on, onMount, Show, untrack } from "solid-js";
 import { useUiMessages } from "../intl/messages";
 import { type TreeParts, useTree } from "./behavior/lists";
-import { Dot, Icon, Mark } from "./marks";
+import { Dot, Icon } from "./marks";
 import { Menu, type MenuEntry } from "./menu";
 import { useOverlayMessages } from "./overlay-messages";
 import type { OnNavigate, Status } from "./types";
@@ -15,11 +15,6 @@ export type NavTreeNode = {
   label: string;
   /** A Tabler icon name, such as `folder`; places of one tree all have one or all have none. */
   icon?: string;
-  /**
-   * The data colour of the place, such as a storage or a project folder: its symbol then stands on a tint of it, as the
-   * place's mark (`Mark`), the same as a `Nav` item with `color` and the place's rows.
-   */
-  color?: string;
   /** Where the place leads; a node without one only folds its children open. */
   href?: string;
   /** With `href`: opens the page in place on a plain click (see `OnNavigate`). */
@@ -222,13 +217,7 @@ export const NavTreeView = (props: NavTree) => {
             <Icon name="alert-circle" />
           </parts.Indicator>
         </Show>
-        <Show when={entry.node.icon}>
-          {(icon) => (
-            <Show when={entry.node.color} fallback={<Icon name={icon()} />}>
-              {(color) => <Mark icon={icon()} color={color()} />}
-            </Show>
-          )}
-        </Show>
+        <Show when={entry.node.icon}>{(icon) => <Icon name={icon()} />}</Show>
         <Show when={entry.node.href} fallback={<parts.Label class="k2-ni-name">{entry.node.label}</parts.Label>}>
           {(href) => (
             // the tree item is what assistive technology meets (named by this text); Enter on it follows the link

@@ -484,7 +484,7 @@ describe("measureV2Layout", () => {
     async () => {
       const page = await open(
         columns(
-          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip">Wartet auf Antwort</span><span class="k2-chip">Angebot</span></span></div>',
+          '<div class="row" style="display:flex;flex-wrap:wrap;gap:8px"><span style="display:contents;overflow:hidden"><span class="k2-chip"><span class="k2-chip-text">Wartet auf Antwort</span></span><span class="k2-chip"><span class="k2-chip-text">Angebot</span></span></span></div>',
         ),
         { width: 390 },
       );
@@ -674,6 +674,249 @@ describe("measureV2Layout", () => {
       } finally {
         await page.close();
       }
+    },
+    TEST_TIMEOUT,
+  );
+});
+
+// The text checks (break-ui, 25.11.): each proved red on the case that slipped through and green on its fix.
+describe("text a person cannot read", () => {
+  const measure = async (body: string, width = 1440) => {
+    const page = await open(columns(body), { width });
+    try {
+      return await measureV2Layout(page);
+    } finally {
+      await page.close();
+    }
+  };
+
+  test(
+    "red: a key figure that runs under a switch; green: the same figure beside it",
+    async () => {
+      const under = await measure(
+        '<div class="row" style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:20px;top:10px">321 Warnungen</span><button type="button" role="switch" aria-checked="true" aria-label="Live" style="position:absolute;left:60px;top:8px;width:60px;height:24px"></button></div>',
+      );
+      expect(under.overlap.length).toBe(1);
+      expect(under.overlap[0]).toContain('"321 Warnungen"');
+      const beside = await measure(
+        '<div class="row" style="display:flex;gap:8px"><span class="k2-t-row">321 Warnungen</span><button type="button" role="switch" aria-checked="true" aria-label="Live" style="width:60px;height:24px"></button></div>',
+      );
+      expect(beside.overlap).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: an amount in a cut table cell; green: the cell holds the whole amount",
+    async () => {
+      const cell = (width: number) =>
+        `<table class="k2-table" data-sized style="width:${width}px"><colgroup><col style="width:${width}px"></colgroup><tbody><tr><td data-numeric><span class="k2-cell-line">12.345.678,90 €</span></td></tr></tbody></table>`;
+      const cut = await measure(cell(80));
+      expect(cut.number.length).toBe(1);
+      expect(cut.number[0]).toContain('"12.345.678,90 €"');
+      expect((await measure(cell(200))).number).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: a name in a line of things cut through a sign; green: the name cut with an ellipsis",
+    async () => {
+      const line = (text: string) =>
+        `<div class="row" style="width:160px"><div class="k2-inline"><span class="k2-av" data-k2-avatar style="--k2-c:#7c2d12">NO</span><span class="k2-text" style="${text}">Nachlassverwaltung Oberhauser-Wettstein</span></div></div>`;
+      const cut = await measure(line(""));
+      expect(cut.clip.length).toBe(1);
+      expect(cut.clip[0]).toContain("without");
+      expect((await measure(line("flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"))).clip).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Spaces home on the phone (W3, 26.11.): "Weiter" under the floating main action is reached once the column scrolls
+  // it above the button; only a control that no scroller can lift is covered.
+  test(
+    "red: the pages under the floating main action at the end of a column; green: the column keeps room to lift them",
+    async () => {
+      const screen = (room: number) =>
+        `<div data-k2-workspace data-k2-part="Workspace" style="position:relative;width:390px;height:300px">` +
+        `<div style="overflow-y:auto;height:300px"><div style="height:260px"></div>` +
+        `<div data-k2-part="Bar" style="height:40px;display:flex;justify-content:flex-end"><button type="button" class="k2-btn">Weiter</button></div>` +
+        `<div style="height:${room}px"></div></div>` +
+        `<button type="button" class="k2-btn k2-fab" style="position:absolute;right:16px;bottom:16px;height:48px">Neu</button></div>`;
+      const outline = async (room: number) => {
+        const page = await open(screen(room), { width: 390 });
+        try {
+          return await describeV2Page(page, "#app");
+        } finally {
+          await page.close();
+        }
+      };
+      expect(await outline(0)).toContain('the floating main action "Neu" covers "Weiter"');
+      expect(await outline(72)).not.toContain("floating main action");
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Codex review of #4209: text a control covers whole is lost as well; only a control named in `covers` may lie over
+  // the page on purpose.
+  test(
+    "red: a figure hidden whole under an opaque button; green: the same button named as a cover on purpose",
+    async () => {
+      const page = await open(
+        columns(
+          '<div class="row" style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:24px;top:10px">321</span><button type="button" aria-label="Live" data-probe="live" style="position:absolute;left:12px;top:4px;width:80px;height:32px;background:white;border:0"></button></div>',
+        ),
+      );
+      try {
+        expect((await measureV2Layout(page)).overlap).toEqual([expect.stringContaining('text "321"')]);
+        expect((await measureV2Layout(page, { covers: "[data-probe='live']" })).overlap).toEqual([]);
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: amounts of en-US and ar-EG cut in a cell that is not marked numeric",
+    async () => {
+      const amounts = [
+        new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(12345678.9),
+        new Intl.NumberFormat("ar-EG", { style: "currency", currency: "EGP" }).format(12345678.9),
+      ];
+      const found = await measure(
+        `<table class="k2-table" data-sized style="width:70px"><colgroup><col style="width:70px"></colgroup><tbody>${amounts
+          .map((amount) => `<tr><td><span class="k2-cell-line">${amount}</span></td></tr>`)
+          .join("")}</tbody></table>`,
+      );
+      expect(found.number.length).toBe(2);
+      // an ID is no number: cut with "…" it is the table's own way
+      const id = await measure(
+        '<table class="k2-table" data-sized style="width:70px"><colgroup><col style="width:70px"></colgroup><tbody><tr><td><span class="k2-cell-line">RE-2611-0042-NACHLASS</span></td></tr></tbody></table>',
+      );
+      expect(id.number).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // delta review r3: negative amounts with the currency first, in brackets, or joined to a currency code
+  test(
+    "red: negative amounts of en-US, en-GB, ja-JP and de-CH cut in a cell that is not marked numeric",
+    async () => {
+      const money = (locale: string, currency: string, sign?: "accounting") =>
+        new Intl.NumberFormat(locale, { style: "currency", currency, currencySign: sign }).format(-1234567.5);
+      const amounts = [
+        money("en-US", "USD"),
+        money("en-US", "USD", "accounting"),
+        money("en-GB", "GBP"),
+        money("ja-JP", "JPY"),
+        money("de-CH", "CHF"),
+      ];
+      const found = await measure(
+        `<table class="k2-table" data-sized style="width:60px"><colgroup><col style="width:60px"></colgroup><tbody>${amounts
+          .map((amount) => `<tr><td><span class="k2-cell-line">${amount}</span></td></tr>`)
+          .join("")}</tbody></table>`,
+      );
+      expect(found.number.length).toBe(amounts.length);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // delta review r3: a number the edge of a scrolling place cuts reads as another number
+  test(
+    "red: an amount cut by the edge of a table that scrolls sideways",
+    async () => {
+      const found = await measure(
+        '<div style="width:200px;overflow-x:auto"><table class="k2-table" style="width:320px"><tbody><tr><td style="width:150px">Kunde</td><td data-numeric><span class="k2-cell-line">12.345.678,90 €</span></td></tr></tbody></table></div>',
+      );
+      expect(found.number).toEqual([expect.stringContaining('"12.345.678,90 €"')]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // delta review r3: only the search of a head opened over its tabs covers text on purpose, with its end (a clear ×)
+  test(
+    "red: a focused search outside a head lies on text; green: the open search of a head with its end",
+    async () => {
+      const search = (place: string) =>
+        `<div ${place} style="position:relative;height:40px"><span class="k2-t-row" style="position:absolute;left:24px;top:10px">Fehler</span>` +
+        '<div class="k2-input" data-search style="position:absolute;left:12px;top:4px;width:200px;height:32px;background:white;display:flex"><input aria-label="Suchen" style="flex:1;border:0"><span class="k2-input-end"><button type="button" aria-label="Leeren" style="width:24px;height:24px"></button></span></div></div>';
+      const outline = async (place: string) => {
+        const page = await open(columns(search(place)));
+        try {
+          await page.locator("input[aria-label='Suchen']").focus();
+          return (await measureV2Layout(page)).overlap;
+        } finally {
+          await page.close();
+        }
+      };
+      expect((await outline('class="row"')).length).toBeGreaterThan(0);
+      expect(await outline('data-slot="head"')).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "green: text a machine wrote stands in a type role, its line breaks kept",
+    async () => {
+      const found = await measure('<p class="k2-text" data-mono>Error: boom\n    at handler (rows.ts:80)</p>');
+      expect(found.type).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
+    "red: identifiers of a record head cut through a sign where the head has no room; green: cut with an ellipsis",
+    async () => {
+      const found = await measure(
+        '<div data-slot="head"><div class="k2-bar" style="width:520px"><div class="k2-bar-start"><h1 class="k2-record-name">Nachlassverwaltung Oberhauser</h1><span class="k2-chip"><span class="k2-chip-text">Gewerblich</span></span><span class="k2-record-id" title="Kunde K-1042">Kunde <b>K-1042</b></span><span class="k2-record-id" title="USt-IdNr. DE123456789">USt-IdNr. <b>DE123456789</b></span></div></div></div>',
+      );
+      expect(found.clip.filter((line) => line.includes("Kunde") || line.includes("USt-IdNr."))).toEqual([]);
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Codex review of #4209: a scroller that holds the control and the floating button moves both; scrolling it lifts
+  // nothing.
+  test(
+    "red: a control under the floating main action that scrolls together with it",
+    async () => {
+      const page = await open(
+        `<div data-k2-workspace data-k2-part="Workspace" style="width:390px;height:300px;overflow-y:auto;position:relative">` +
+          `<div style="height:240px"></div><div data-k2-part="Bar" style="height:40px;display:flex;justify-content:flex-end"><button type="button" class="k2-btn">Weiter</button></div>` +
+          `<div style="height:400px"></div>` +
+          `<button type="button" class="k2-btn k2-fab" style="position:absolute;right:16px;top:236px;height:48px">Neu</button></div>`,
+        { width: 390 },
+      );
+      try {
+        expect(await describeV2Page(page, "#app")).toContain('the floating main action "Neu" covers "Weiter"');
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  // Spaces at 1024 px (W3, 26.11.): a narrow status row keeps the symbol of ListOrder and hides its words with a clip;
+  // the words stay its name, so the label is not cut. A label that has room to show and is cut still is.
+  test(
+    "red: a button whose shown label is cut; green: a button whose label is hidden on purpose and stays its name",
+    async () => {
+      const outline = async (label: string) => {
+        const page = await open(
+          `<div data-k2-workspace data-k2-part="Workspace"><div data-k2-part="Bar" style="display:flex"><button type="button" class="k2-btn" style="width:48px;overflow:hidden"><span class="k2-btn-label" style="${label}">Sortiert nach Fälligkeit</span></button></div></div>`,
+          { width: 390 },
+        );
+        try {
+          return await describeV2Page(page, "#app");
+        } finally {
+          await page.close();
+        }
+      };
+      expect(await outline("white-space:nowrap")).toContain('"Sortiert nach Fälligkeit" cuts its label');
+      expect(await outline("position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap")).not.toContain(
+        "cuts its label",
+      );
     },
     TEST_TIMEOUT,
   );

@@ -429,6 +429,36 @@ describe("v2 primitives keep the numbers of the mockup", () => {
     );
 
   test(
+    "an amount in the last column of a narrow table is never cut: the columns give way to their minimum first",
+    async () => {
+      const page = await open("tableAmount", { width: 400 });
+      try {
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.number).toEqual([]);
+        // the columns give way between their minimum and default, so 200 + the amount fit 384 px: every amount is whole
+        // in sight, nothing hides behind the edge of a scroller (delta review r3: "12.345" of "12.345.678,90 €")
+        const seen = await page.evaluate(() => {
+          const scroller = document.querySelector<HTMLElement>(".k2-table-scroll")!;
+          const edge = scroller.getBoundingClientRect();
+          return {
+            scrolls: scroller.scrollWidth > scroller.clientWidth + 1,
+            hidden: [...document.querySelectorAll(".k2-table td[data-numeric] > .k2-cell-line")]
+              .filter((line) => {
+                const box = line.getBoundingClientRect();
+                return box.left < edge.left - 0.5 || box.right > edge.right + 0.5 || line.scrollWidth > line.clientWidth;
+              })
+              .map((line) => line.textContent),
+          };
+        });
+        expect(seen).toEqual({ scrolls: false, hidden: [] });
+      } finally {
+        await page.close();
+      }
+    },
+    TEST_TIMEOUT,
+  );
+
+  test(
     "a table column is exactly its default wide; cut text never widens it, rows without wrap are 40 px",
     async () => {
       const page = await open("table");

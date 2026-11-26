@@ -157,7 +157,7 @@ export default function OpenInvoices(props: Props) {
                 width: { min: 110, default: 120 },
                 cell: (row) => <Chip status={stateOf[row.state].status}>{stateOf[row.state].label}</Chip>,
               },
-              { title: "Fällig", width: { min: 70, default: 80 }, cell: (row) => row.due, drop: true },
+              { title: "Fällig", width: { min: 70, default: 80 }, numeric: true, cell: (row) => row.due, drop: true },
               // the person in charge as a face; the avatar carries the name
               { title: "Person", width: { min: 64, default: 64 }, drop: true, cell: (row) => <Avatar {...row.owner} /> },
               { title: "Betrag", width: { min: 90, default: 100 }, align: "end", cell: (row) => row.amount },
@@ -184,4 +184,44 @@ export const states = {
   empty: () => <OpenInvoices rows={[]} />,
   loading: () => <OpenInvoices loading />,
   failed: () => <OpenInvoices failed />,
+  worst: () => <OpenInvoices rows={worstInvoices} />,
+  one: () => <OpenInvoices rows={[invoices[0]!]} />,
+  huge: () => <OpenInvoices rows={hugeInvoices} />,
 };
+
+// The realistic worst case for Fibel's Example and the recipe test: customers at the length people write them, an address
+// that cannot wrap, amounts in the millions and below zero. `one` is a single invoice; `huge` an unpaginated long list.
+const worstInvoices: Invoice[] = [
+  {
+    number: "RE-2611-0042-NACHLASS-SONNENHALDE",
+    customer: "Nachlassverwaltung Oberhauser-Wettstein & Söhne Antiquitäten GmbH & Co. KG",
+    due: "31. Dez. 2026",
+    state: "overdue",
+    owner: people.ada,
+    amount: "12.345.678,90 €",
+  },
+  {
+    number: "RE-2611-0043-ERBENGEMEINSCHAFT-OBERHAUSER-WETTSTEIN-NACHLASS",
+    customer:
+      "Erbengemeinschaft Oberhauser-Wettstein, vertreten durch Rechtsanwältin Dr. Aleksandra Wiśniewska-Kowalczyk, Kanzlei am Markt",
+    due: "31. Dez. 2026",
+    state: "open",
+    owner: people.felix,
+    amount: "4.611.686,00 €",
+  },
+  { number: "RE-1", customer: "J", due: "1. Jan.", state: "open", owner: people.felix, amount: "0,30 €" },
+  {
+    number: "RE-2611-0051",
+    customer: "bartholomew.fitzgerald@northwind-industries-holdings.example.com",
+    due: "2. Dez.",
+    state: "open",
+    owner: people.felix,
+    amount: "−42,50 €",
+  },
+  { number: "RE-2611-0052", customer: "Đặng Thị Ngọc Hân", due: "3. Dez.", state: "overdue", owner: people.ada, amount: "1.284,00 €" },
+  { number: "RE-2611-0053", customer: "王秀英", due: "4. Dez.", state: "open", owner: people.felix, amount: "1.000.000,00 €" },
+];
+const hugeInvoices: Invoice[] = Array.from({ length: 1000 }, (_, index) => ({
+  ...invoices[index % 3]!,
+  number: `RE-2611-${String(index + 1).padStart(4, "0")}`,
+}));

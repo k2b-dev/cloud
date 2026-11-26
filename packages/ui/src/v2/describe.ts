@@ -579,8 +579,12 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
       if (hidden(control)) continue;
       const box = control.getBoundingClientRect();
       const label = control.querySelector(".k2-btn-label") ?? control;
-      // a label the place hides on purpose (the button keeps only its symbol, the words stay its name) is not cut
-      if (label !== control && getComputedStyle(label).clipPath.startsWith("inset")) continue;
+      // Words hidden on purpose (a narrow status row keeps the symbol of ListOrder, a clip of 1 px keeps the words as
+      // its name) are no cut label, as long as the control still has a name; a label hidden with no name left is.
+      const visuallyHidden =
+        label !== control && (label.getBoundingClientRect().width <= 1 || /inset\(50%\)/.test(getComputedStyle(label).clipPath));
+      const named = (control.getAttribute("aria-label") ?? label.textContent ?? "").trim() !== "";
+      if (visuallyHidden && named) continue;
       if (label.scrollWidth > label.clientWidth + 1 || label.getBoundingClientRect().right > box.right + 0.5)
         problems.push(
           `${part(control) || "control"} ${quote(control.getAttribute("aria-label") ?? control.textContent, 30)} cuts its label: give it the room of its whole label`,
@@ -599,12 +603,28 @@ export function describeV2(root: Element, options: DescribeV2Options = {}): stri
     const box = fab.getBoundingClientRect();
     // Fields and the buttons of a bar in the content (a form's footer): rows and their buttons slide under it while the
     // list scrolls, which is fine.
+    // How far the page can still move a control up: what its scrollers (and the page) have left to scroll down. A control
+    // that scrolling lifts above the button (the end of a column keeps that room free) is reached; only one that stays
+    // under it is covered.
+    // Only scrolling that moves the control past the button counts: a scroller that holds the button too moves both.
+    const lift = (control: Element) => {
+      let left = 0;
+      for (let node = control.parentElement; node; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowY;
+        if ((overflow === "auto" || overflow === "scroll") && node.scrollHeight > node.clientHeight + 1 && !node.contains(fab))
+          left += node.scrollHeight - node.clientHeight - node.scrollTop;
+      }
+      const page = document.scrollingElement;
+      if (page && getComputedStyle(fab).position === "fixed") left += page.scrollHeight - page.clientHeight - page.scrollTop;
+      return left;
+    };
     const covered = [...root.querySelectorAll(".k2-btn, input:not(.k2-mark-input), select, textarea")].filter((control) => {
       if (control === fab || fab.contains(control) || hidden(control)) return false;
       const bar = control.closest("[data-k2-part='Bar'], [data-k2-part='Field']");
       if (control.classList.contains("k2-btn") && (part(bar) !== "Bar" || bar?.parentElement?.hasAttribute("data-slot"))) return false;
       const other = control.getBoundingClientRect();
-      return other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom;
+      if (!(other.right > box.left && other.left < box.right && other.bottom > box.top && other.top < box.bottom)) return false;
+      return other.bottom - lift(control) > box.top;
     });
     if (covered.length)
       problems.push(

@@ -102,6 +102,15 @@ export function Fixture() {
               ]}
               time="Mo"
             />
+            {/* a chip whose words are JSX (Codex review of #4209): its words are made once, for the tip and the text */}
+            <Row
+              lines={["Wörter als JSX", "im Chip"]}
+              marks={
+                <Chip status="warn">
+                  <Text weight="medium">Wartet</Text>
+                </Chip>
+              }
+            />
             <Row lines={["Zwei Zeilen", "mit Marken"]} marks={<Chip status="ok">bezahlt</Chip>} />
           </List>
         </Pane>
@@ -136,6 +145,10 @@ export function Fixture() {
             <Field name="delivery" label="Übergabe">
               <Choice name="delivery" options={["Abholung", "Lieferung"]} value="Lieferung" />
             </Field>
+            {/* a word for a day: the server and the browser read it in the same zone, so both say 1 January 2027 */}
+            <Field name="since" label="Seit">
+              <DateInput value="heute" timeZone="Europe/Berlin" />
+            </Field>
             <Field name="notify" label="Benachrichtigung">
               <Check label="Kunde benachrichtigen" />
             </Field>
@@ -143,7 +156,10 @@ export function Fixture() {
               <Check label="Einige Positionen" checked="mixed" onChange={() => undefined} />
             </Field>
             <Field name="contact" label="Ansprechperson">
-              <Input placeholder="Wer nimmt ab?" />
+              <Input placeholder="Wer nimmt ab?" autocomplete="name" maxLength={80} spellcheck={false} autocapitalize="words" />
+            </Field>
+            <Field name="code" label="Abholcode">
+              <Input type="password" autocomplete="one-time-code" inputMode="numeric" maxLength={6} />
             </Field>
             <Field name="note" label="Notiz">
               <Input multiline value={"\nZwei Zeilen\nzum Aufbau"} />

@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import { useDisclosure } from "./behavior/files";
 import { Button } from "./button";
 import { linkOr } from "./link";
-import { custom, Icon } from "./marks";
+import { Count, custom, Icon } from "./marks";
 import type { Action, TwoActions } from "./types";
 
 const HeadActions = (props: { actions?: TwoActions }) => (
@@ -65,7 +65,9 @@ export const Section = (props: SectionProps) => {
         </Show>
         <h3>{props.title}</h3>
         <Show when={props.count !== undefined}>
-          <span class="k2-sh-count">{props.count}</span>
+          <span class="k2-sh-count">
+            <Count value={props.count ?? ""} />
+          </span>
         </Show>
         <Show when={props.actions?.length}>
           <span class="k2-sh-end">
@@ -158,7 +160,9 @@ export const Group = (props: GroupProps) => {
           {/* the name gives way with "…"; the count beside it stays whole */}
           <span class="k2-gh-name">{props.title}</span>
           <Show when={props.count !== undefined}>
-            <span class="k2-gh-count">{props.count}</span>
+            <span class="k2-gh-count">
+              <Count value={props.count ?? ""} />
+            </span>
           </Show>
         </span>
         <Show when={meta() !== undefined}>

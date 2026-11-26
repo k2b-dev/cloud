@@ -231,10 +231,15 @@ the number as `meta`, the state chip in `end`, the deed as `action`.
 ### Table
 
 `columns: Column<T>[]`, `rows: T[]`, `label`. A column: `title`, `cell(row)`
-returning one value or `{ lines: [line, quietLine] }`, `align: "end"` for
-numbers and amounts, `width={{ min, default }}` (exactly that wide, cut text
-never widens it, grip in the head), `wrap` (one text column may take 3
-lines), `drop` (leaves on the phone), `sort` (its head is pressed to sort:
+returning one value, `{ lines: [line, quietLine] }`, or a person with lines
+(`{ avatar, lines: [name] }`: picture and lines, each cut with "…"; never an
+`Inline` of `Avatar` and `Text`), `align: "end"` for numbers and amounts,
+`numeric` for a time or date column at the start (both: tabular figures,
+never cut, the column at least as wide as its longest text value),
+`width={{ min, default }}` (exactly that wide, cut
+text never widens it, grip in the head), `wrap` (one text column may take 3
+lines), `drop` (leaves when the table has no room for it: one by one from
+the last such column, all of them in a column under 480 px), `sort` (its head is pressed to sort:
 `{ href }` to the page sorted so, with `onNavigate` to open it in place, or
 `{ onSort }` for a deed). The phone rows have no heads: a sort given by
 `href` stays in the address there; offer another order on the phone in the
@@ -297,6 +302,9 @@ line with `end` (such as a print button).
 out a little), `muted`, `tone` (`ok`, `warn`, `bad`, `ai`, `draft`), `href`
 (underlined words that lead somewhere; blue is only for the main action).
 Without `type`, text takes the role of its place.
+`mono` for text a machine wrote (a stack trace, a log message, a command):
+monospace 12/18, its line breaks and spaces kept, long lines wrapped at any
+sign.
 In a column it is a block with the text edge; in a bar or row it runs
 inline. Emphasis is a weight, never a size.
 
@@ -376,6 +384,13 @@ lines instead of cutting a thing.
   search), `ref` (the text field, to focus it), `end` (a symbol or a ghost
   icon button, such as the filter of a search), `disabled` (a grey well
   that takes no input; the browser leaves it out of a sent form).
+  The standard text-field attributes pass through and stand in the
+  server's markup, so a password manager reads them before the island
+  hydrates: `autocomplete` (`username`, `current-password`,
+  `new-password`, `one-time-code`, `off`), `maxLength`, `inputMode` (the
+  phone keyboard, such as `numeric` for a code), `spellcheck` and
+  `autocapitalize` (`false` and `off` for names, codes and keys). Never set
+  them through `ref` after hydration.
 - `Select`: `options` (strings or `{ value, label, disabled }`), `value`,
   `onChange`, `placeholder`, `disabled` (a grey well, the value still
   shown, while it cannot be changed).
@@ -400,7 +415,22 @@ lines instead of cutting a thing.
   `characters` (`digits` or `alphanumeric`), `autocomplete`
   (`one-time-code` by default; `off` for a code shown on another device),
   `disabled`.
-- `DateInput`: `value`, `onInput`, `placeholder`.
+- `DateInput`: `value` (a date key such as "2026-12-15", or as the locale
+  writes it), `onInput` (a date key, "" when emptied), `placeholder`. Typed
+  text ("24.11.2026", "heute", "+3") applies on Enter or leaving the field;
+  the calendar symbol opens `DatePicker` below the field. A form gets the
+  date key under `name`; text that is no date (also "2026-02-30") marks the
+  field and makes the form invalid. `timeZone` says which day "heute" is
+  ("UTC" by default); give the same zone on the server and in the island.
+- `DatePicker`: one month of days to pick from (a calendar grid: arrows,
+  PageUp/PageDown, Home/End, Enter; the locale's month names and first day of
+  the week; six weeks, so its height never changes). `value`, `onPick`,
+  `min`, `max`, `timeZone` (which day is today), `label`, `error`,
+  `onClear` ("Leeren"), `autoFocus`; `time` adds hour and minute as text in
+  the locale's clock (24 hours in German; arrows turn the part under the
+  caret; never the browser's time field), applied
+  with "Übernehmen". Use it inside a popover or sheet; a form field is
+  `DateInput`.
 - `Check`: `label`, `checked` (`true`, `false`, `"mixed"`), `switch`,
   `onChange`, `disabled` (dimmed).
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
