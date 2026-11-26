@@ -243,11 +243,14 @@ export default function VenueProgramme(props: Props) {
             <Bar
               start={
                 <Inline>
-                  <Show when={props.kiosk || (almost() === 0 && full() === 0)}>
-                    <Text weight="strong">
-                      {props.kiosk ? "Jetzt: Offene Holzwerkstatt · Werkraum" : `Heute ${events().length} Veranstaltungen`}
-                    </Text>
-                  </Show>
+                  {/* the statement names its day: its chips count today's rows, not the week's below */}
+                  <Text weight="strong">
+                    {props.kiosk
+                      ? "Jetzt: Offene Holzwerkstatt · Werkraum"
+                      : almost() + full() > 0
+                        ? "Heute"
+                        : `Heute ${events().length} Veranstaltungen`}
+                  </Text>
                   <Show when={almost() > 0}>
                     <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
                   </Show>
