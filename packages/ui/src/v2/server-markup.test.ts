@@ -77,7 +77,7 @@ test("a text field sends autocomplete, length, keyboard, spelling and capitals i
 // A page to read, not to arrange (a visitor page, a wall screen): a fixed width keeps the column, without a grip.
 test("a fixed width keeps a column and a table column without a grip", async () => {
   const { Table } = await import("./content");
-  const fixed = { min: 280, default: 360, fixed: true };
+  const fixed = { fixed: 360 };
   const panes = renderToString(() =>
     createComponent(Pane.Split, {
       get children() {
@@ -90,7 +90,7 @@ test("a fixed width keeps a column and a table column without a grip", async () 
   );
   expect(panes).toContain('class="k2-seam"');
   expect(panes).not.toContain("data-k2-grip");
-  const table = (width: typeof fixed) =>
+  const table = (width: { fixed: number } | { min: number; default: number }) =>
     renderToString(() =>
       createComponent(Table<{ name: string }>, {
         label: "Programm",
@@ -102,7 +102,7 @@ test("a fixed width keeps a column and a table column without a grip", async () 
       }),
     );
   expect(table(fixed)).not.toContain("k2-cgrip");
-  expect(table({ ...fixed, fixed: false })).toContain("k2-cgrip");
+  expect(table({ min: 280, default: 360 })).toContain("k2-cgrip");
   expect(table(fixed)).toContain("width:360px");
 });
 
