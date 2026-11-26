@@ -1,7 +1,7 @@
 import { apiClient } from "@k2b/cloud/clients/core";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { useLocale } from "@k2b/ui";
-import { Band, Button, Facts, Field, Input, Notice, Text } from "@k2b/ui/v2";
+import { Band, Button, Field, Input, Notice, Text } from "@k2b/ui/v2";
 import { createSignal, createUniqueId, Show } from "solid-js";
 import { signInAgainHref, signOutOthersRetryPath } from "../../sign-out-others";
 import { FormActions } from "../FormActions";
@@ -85,21 +85,20 @@ export default function NewPasswordForm(props: NewPasswordFormProps) {
             }}
           />
           <Band>
-            <Show when={!props.defaultUsername} fallback={<Facts items={[{ label: t().username, value: username() }]} />}>
-              <Field label={t().username} hint={t().organizationUsernameDescription}>
-                <Input
-                  form={formId}
-                  icon="user"
-                  value={username()}
-                  onInput={setUsername}
-                  placeholder={t().usernameShortPlaceholder}
-                  autocomplete="username"
-                  autocapitalize="off"
-                  spellcheck={false}
-                  autofocus
-                />
-              </Field>
-            </Show>
+            {/* the name from the link is only a suggestion: it stays in the field, where a wrong one can be corrected */}
+            <Field label={t().username} hint={t().organizationUsernameDescription}>
+              <Input
+                form={formId}
+                icon="user"
+                value={username()}
+                onInput={setUsername}
+                placeholder={t().usernameShortPlaceholder}
+                autocomplete="username"
+                autocapitalize="off"
+                spellcheck={false}
+                autofocus={!props.defaultUsername}
+              />
+            </Field>
             <Field label={t().currentPassword} hint={t().currentPasswordDescription}>
               <Input
                 form={formId}

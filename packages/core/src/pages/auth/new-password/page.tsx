@@ -7,6 +7,9 @@ import { VisitorPage } from "../../VisitorPage";
 import { authMessages } from "../messages";
 import NewPasswordForm from "./NewPasswordForm.island";
 
+/** The longest name the link may suggest: FreeIPA user names stay far below it. */
+const USERNAME_MAX = 255;
+
 /** Set new password page (for expired/temporary passwords). */
 export default ssr(async (c) => {
   const locale = getLocale(c);
@@ -14,7 +17,8 @@ export default ssr(async (c) => {
   const rawAppName = await coreSettings.get<string>("app.name");
   const appName = rawAppName || "My App";
   const params = new URL(c.req.url).searchParams;
-  const user = params.get("ipa-uid") ?? "";
+  // only a suggestion for the editable name field, bounded like a FreeIPA user name
+  const user = (params.get("ipa-uid") ?? "").slice(0, USERNAME_MAX);
   const redirectTo = normalizeRedirectTo(params.get("redirectTo"));
 
   c.get("page").title = t.setNewPassword;
