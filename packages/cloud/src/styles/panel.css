@@ -396,6 +396,11 @@ body:has(> [data-cloud-panel-page]) {
   --k2-edge: 16px;
 }
 
+/* A group stands on the panel's edge too: v2 gives it 20 px from 768 px, the panel 16 px at every width. */
+.cloud-panel-page.k2-ui .k2-group {
+  margin-inline: 16px;
+}
+
 /* The shell's consent question: one calm notice above the provider page, inset from the card edge like the
    tabs above it. The server draws it when the answer is missing, so hydration never moves it; the error line is
    reserved and fills in place. */
