@@ -44,7 +44,6 @@ describe("Photo editor on v2", () => {
     const html = renderToString(() => createComponent(ImageProcessor, {}));
 
     expect(html).toContain('data-k2-part="Workspace"');
-    expect(html).toContain("No image open yet");
     expect(html).toContain("Add images");
     expect(html).toContain("never uploaded");
     // no inspector and no export while nothing is open: no half of the page waits empty
@@ -55,9 +54,11 @@ describe("Photo editor on v2", () => {
   test("an open photo shows its name and size above the stage, the edit tab and the export in the head", () => {
     const html = renderView({ initialImages: [image] });
 
-    expect(html).toContain('data-k2-part="StatusRow"');
+    // one head row: the photo is the last step of the path, its size a fact in the inspector
+    expect(html).not.toContain('data-k2-part="StatusRow"');
+    expect(html.slice(html.indexOf('data-k2-part="Path"'))).toContain("invoice.png");
     expect(html).toContain("invoice.png");
-    expect(html).toMatch(/1200 × 800/);
+    expect(inspector(html)).toMatch(/1200 × 800 px/);
     expect(html).toContain('<img src="data:image/png;base64,aW1hZ2U=" alt="Preview"');
     expect(html).toContain('aria-label="Zoom out"');
     expect(html).toContain('aria-label="Fit image"');
@@ -66,7 +67,10 @@ describe("Photo editor on v2", () => {
     const controls = inspector(html);
     expect(controls).toMatch(/data-k2-part="Tabs" aria-label="Editor mode"/);
     expect(controls).toMatch(/aria-current="page"[^>]*>(?:(?!<\/button>).)*Edit</);
-    for (const title of ["Crop", "Transform", "Adjustments", "Presets", "Edits"]) expect(controls).toContain(`<h3>${title}</h3>`);
+    for (const title of ["Photo", "Transform", "Adjustments", "Presets", "Edits"]) expect(controls).toContain(`<h3>${title}</h3>`);
+    // the crop button names its group; no heading says the same word above it
+    expect(controls).not.toContain("<h3>Crop</h3>");
+    expect(controls).toMatch(/<span class="k2-btn-label">Crop<\/span>/);
     expect(controls).toContain('role="switch"');
     // the presets show themselves on the photo; the one that matches the look is pressed
     expect(controls.match(/aria-pressed="true"/g)).toHaveLength(1);

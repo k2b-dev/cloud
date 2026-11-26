@@ -10,6 +10,8 @@ import {
   Choice,
   Dialog,
   Empty,
+  type Fact,
+  Facts,
   Field,
   Inline,
   Input,
@@ -19,8 +21,6 @@ import {
   Pane,
   Progress,
   Section,
-  type StatusFact,
-  StatusRow,
   Tabs,
   Text,
 } from "@k2b/ui/v2";
@@ -85,9 +85,9 @@ const filterOf = (a: Pick<Adjustments, "brightness" | "contrast" | "saturation" 
 
 const sameLook = (a: Adjustments, preset: Preset) => ADJUSTMENT_KEYS.every((key) => Math.abs(a[key] - preset[key]) < 1e-9);
 
-// k2b-ui gap: a long StatusRow lead squeezes its facts to 0 px instead of cutting itself first; a file name is cut
-// in its middle here, so its start and its extension stay and the facts keep their room.
-const shortName = (name: string, max = 36) => (name.length <= max ? name : `${name.slice(0, max - 13)}…${name.slice(-12)}`);
+// k2b-ui gap: the last step of a head's Path does not give way to the head's actions (a long name cut the export
+// button at 1024 px); a file name is cut in its middle here, so its start and its extension stay.
+const shortName = (name: string, max = 40) => (name.length <= max ? name : `${name.slice(0, max - 15)}…${name.slice(-14)}`);
 
 /** A limit in pixels from a field: empty is no limit, anything else must be a whole positive number. */
 const pixels = (value: string): number | null | undefined => {
@@ -988,6 +988,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const stageMounted = (element: HTMLDivElement) => {
     stageRef = element;
     queueMicrotask(() => {
+      // a stage that left again before this turn (the page went) has nothing to measure
+      if (!element.isConnected) return;
       measureStage();
       measurePreviewViewport();
     });
@@ -998,21 +1000,23 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   // ====================================
 
   const busy = () => loadMutation.loading() || previewBusy() || cropBusy();
-  const lead = () => {
+  /** What is happening now, on the stage: a photo being opened, or photos being dragged over the page. */
+  const happening = () => {
     const load = currentLoad();
     if (load) return intakeT().loadingFile({ ...load, stage: intakeT()[load.stage] });
-    if (draggingFiles()) return t().dropToAdd;
-    const name = activeImage()?.name;
-    return name ? shortName(name) : t().noImagesYet;
+    return draggingFiles() ? t().dropToAdd : undefined;
   };
-  const facts = (): StatusFact[] => {
+  /** What the open photo is: its size, its file and where it stands among the open ones (the inspector's first facts). */
+  const facts = (): Fact[] => {
     const image = activeImage();
-    if (!image || currentLoad()) return [];
+    if (!image) return [];
     const { width, height } = image.source;
     return [
-      { value: `${width} × ${height}`, after: "px" },
-      ...(image.file ? [{ value: `${(image.file.size / 1024).toFixed(0)}`, after: "KB" }] : []),
-      ...(images().length > 1 ? [{ after: t().positionOf({ index: activeIndex() + 1, count: images().length }) }] : []),
+      { label: t().factSize, value: `${width} × ${height} px` },
+      ...(image.file ? [{ label: t().factFile, value: `${(image.file.size / 1024).toFixed(0)} KB` }] : []),
+      ...(images().length > 1
+        ? [{ label: t().factPosition, value: t().positionOf({ index: activeIndex() + 1, count: images().length }) }]
+        : []),
     ];
   };
   const imageDeeds = (index: number): MenuEntry[] => [
@@ -1057,6 +1061,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   return (
     <ToolsScreen
       tool="image"
+      item={activeImage() ? shortName(activeImage()!.name) : undefined}
       primary={
         hasImages()
           ? { label: t().exportAction, icon: "download", onClick: openExport, disabled: cropActive() || cropBusy() }
@@ -1077,7 +1082,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       }
     >
       <Pane.Split>
-        <Pane label={t().canvasLabel} status={<StatusRow lead={lead()} loading={busy()} facts={facts()} />}>
+        <Pane label={t().canvasLabel}>
           <Show
             when={hasImages()}
             fallback={
@@ -1085,7 +1090,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 {failureNotices()}
                 <Empty
                   icon="photo-plus"
-                  text={loadMutation.loading() ? t().addingImages : t().emptyText}
+                  text={loadMutation.loading() ? (happening() ?? t().addingImages) : t().emptyText}
                   action={{ label: t().addImages, icon: "photo-plus", onClick: () => void selectFiles() }}
                 />
                 <Band>
@@ -1102,8 +1107,35 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 ref={stageMounted}
                 style={{ display: "flex", "flex-direction": "column", height: "100%", background: "var(--k2-canvas)" }}
               >
-                {/* The zoom floats on the stage, at its top right, and stays while the photo scrolls under it. */}
+                {/* What is happening floats at the stage's top left, the zoom at its top right; both stay while the photo
+                    scrolls under them. */}
                 <div style={{ position: "relative", flex: "1 1 auto", "min-height": "0", display: "flex" }}>
+                  <Show when={happening()}>
+                    {(text) => (
+                      <p
+                        role="status"
+                        style={{
+                          position: "absolute",
+                          top: "12px",
+                          left: "12px",
+                          "z-index": "20",
+                          "max-width": "calc(100% - 220px)",
+                          margin: "0",
+                          padding: "6px 10px",
+                          "border-radius": "10px",
+                          background: "var(--k2-surface)",
+                          "box-shadow": "var(--k2-float)",
+                          font: "400 13px/20px var(--k2-font)",
+                          color: "var(--k2-text)",
+                          overflow: "hidden",
+                          "text-overflow": "ellipsis",
+                          "white-space": "nowrap",
+                        }}
+                      >
+                        {text()}
+                      </p>
+                    )}
+                  </Show>
                   <div
                     role="group"
                     aria-label={t().zoom}
@@ -1148,6 +1180,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     <Show when={busy()}>
                       <div
                         aria-hidden="true"
+                        data-stage-busy=""
                         style={{
                           position: "absolute",
                           inset: "0",
@@ -1549,11 +1582,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             </Show>
 
             <Show when={editorMode() === "edit"}>
-              <Section
-                icon="crop"
-                title={t().crop}
-                summary={cropActive() ? t().cropHint : activeImage()?.cropped ? t().croppedHint : undefined}
-              >
+              <Section icon="photo" title={t().factsTitle}>
+                <Facts items={facts()} />
+              </Section>
+              {/* The crop button names the group itself; a heading "Zuschneiden" above it would say the word twice. */}
+              <Band label={t().crop}>
                 <Inline>
                   <Show
                     when={cropActive()}
@@ -1594,7 +1627,14 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </Button>
                   </Show>
                 </Inline>
-              </Section>
+                <Show when={cropActive() ? t().cropHint : activeImage()?.cropped ? t().croppedHint : undefined}>
+                  {(hint) => (
+                    <Text type="meta" muted>
+                      {hint()}
+                    </Text>
+                  )}
+                </Show>
+              </Band>
 
               <Section icon="rotate" title={t().transform}>
                 {/* k2b-ui gap: no v2 slider (lane Y); the rotation keeps its slider, drawn here. */}

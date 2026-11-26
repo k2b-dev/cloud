@@ -6,7 +6,10 @@ export const imageProcessorMessages = i18n.define({
     en: {
       // Canvas and filmstrip
       canvasLabel: "Image processor canvas",
-      noImagesYet: "No image open yet",
+      factsTitle: "Photo",
+      factSize: "Size",
+      factFile: "File",
+      factPosition: "Position",
       emptyText: "Drop photos here or add them. They are edited in this browser and never uploaded.",
       staysInBrowser: "Photos stay in this browser: editing and export happen here, nothing is uploaded.",
       positionOf: ({ index, count }: { index: number; count: number }) => `image ${index} of ${count}`,
@@ -169,7 +172,10 @@ export const imageProcessorMessages = i18n.define({
     de: {
       // Canvas and filmstrip
       canvasLabel: "Zeichenfläche der Bildbearbeitung",
-      noImagesYet: "Noch kein Bild geöffnet",
+      factsTitle: "Foto",
+      factSize: "Größe",
+      factFile: "Datei",
+      factPosition: "Position",
       emptyText: "Leg Fotos hier ab oder füge sie hinzu. Sie werden in diesem Browser bearbeitet und nie hochgeladen.",
       staysInBrowser: "Fotos bleiben in diesem Browser: Bearbeitung und Export passieren hier, nichts wird hochgeladen.",
       positionOf: ({ index, count }) => `Bild ${index} von ${count}`,
