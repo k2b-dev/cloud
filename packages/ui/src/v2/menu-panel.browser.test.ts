@@ -296,6 +296,8 @@ test("on a wide screen the panel takes its menu's place, and its head leads back
   await withPage(async (page) => {
     await page.getByRole("button", { name: "Später" }).click();
     const menu = page.locator('[role="menu"]');
+    await menu.waitFor();
+    await settled(page);
     const before = await menu.boundingBox();
     await entry(page).click();
     await panel(page).waitFor();
