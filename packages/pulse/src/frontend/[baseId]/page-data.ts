@@ -13,6 +13,7 @@ import { readBasePolicy } from "../../service/base-policy";
 import { projectBases, projectSources, resolveBasePublicId, resolvePublicId } from "../../service/public-resources";
 import { savedQueries } from "../../service/saved-queries";
 import { baseSqlLimits } from "../../service/sql-service";
+import { navBases } from "../workspace/nav-bases";
 import { readWorkspacePathState } from "../workspace/routes";
 import type { PulseWorkspaceProps } from "../workspace/types";
 
@@ -66,7 +67,8 @@ export async function loadPulseWorkspacePageData<T extends AuthContext>(c: Conte
   // Settings have a page of their own now (settings.page.tsx); the views of a base need no policy or admin names.
   const props: PulseWorkspaceProps = {
     initialPermissions: { write: write?.ok ?? false, admin: admin?.ok ?? false },
-    initialBases: await projectBases(bases.ok ? bases.data : [base.data]),
+    // the sidebar lists at most NAV_BASES bases, so the page carries no more than that
+    initialBases: await projectBases(navBases(bases.ok ? bases.data : [base.data], baseId)),
     initialBaseId: publicBaseId,
     initialRouteState: route,
     initialSources: await projectSources(sources.data),
@@ -133,7 +135,7 @@ const loadBaseShell = async <T extends AuthContext>(c: Context<T>) => {
     pulseService.source.count(baseId, user),
   ]);
   if (!base.ok) return { kind: "error" as const, status: base.error.status };
-  const projected = await projectBases(bases.ok ? bases.data : [base.data]);
+  const projected = await projectBases(navBases(bases.ok ? bases.data : [base.data], baseId));
   const [current] = await projectBases([base.data]);
   return {
     kind: "ok" as const,

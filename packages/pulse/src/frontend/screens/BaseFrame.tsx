@@ -3,6 +3,7 @@ import { type Action, Bar, Menu, type MenuEntry, Nav, type NavGroup, Tabs, Works
 import type { JSX } from "solid-js";
 import type { PulseBase } from "../../contracts";
 import { usePulseMessages } from "../use-messages";
+import { navBases } from "../workspace/nav-bases";
 import { useScreenMessages } from "./messages";
 import { baseColor } from "./store-state";
 
@@ -30,14 +31,9 @@ type Props = {
   children: JSX.Element;
 };
 
-/** How many bases the sidebar lists; "Alle Basen" leads to the rest, so a person with many bases keeps a short page. */
-const NAV_BASES = 50;
-
 /** The sidebar of a base's pages: all bases first, then the bases (the open one always among them). */
 export const baseNavGroups = (bases: PulseBase[], currentId: string, words: { allBases: string; bases: string }): NavGroup[] => {
-  const shown = bases.slice(0, NAV_BASES);
-  const current = bases.find((base) => base.id === currentId);
-  if (current && !shown.includes(current)) shown.push(current);
+  const shown = navBases(bases, currentId);
   return [
     { items: [{ label: words.allBases, icon: "layout-grid", href: "/app/pulse" }] },
     {
