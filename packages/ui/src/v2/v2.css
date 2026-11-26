@@ -5366,6 +5366,29 @@
   container: k2-pane / inline-size;
 }
 @container k2-pane (max-width: 479px) {
+  /* Small tiles never stand one per row: two side by side, each with its name on up to two lines and its quiet line
+     cut with "…"; an odd last one keeps its half, and the deed after them takes its own line. */
+  .k2-ui .k2-tiles:not([data-variant]) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > .k2-tile {
+    height: auto;
+    min-height: 44px;
+    padding-block: 8px;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > .k2-tile .k2-tile-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .k2-ui .k2-tiles:not([data-variant]) > :not(.k2-tile) {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
   /* an entry of a digest puts its date, title, state and text one under the other: beside each other the text would
      break after every word (akte.html at 1024 px, where the record's main column is 400 px). The query is the pane's,
      so a digest finds its narrow form inside a `Pane`. */

@@ -3,6 +3,7 @@ import Folder from "../skills/k2b-ui/recipes/files";
 import SigninSettings from "../skills/k2b-ui/recipes/settings-page";
 import { LocaleProvider } from "../src/intl/locale";
 import {
+  AgendaTilesScreen,
   AreasMenuScreen,
   CanvasFillScreen,
   CellsScreen,
@@ -50,7 +51,8 @@ declare global {
       | "view-statement"
       | "section-foot"
       | "facts"
-      | "dialog-inline";
+      | "dialog-inline"
+      | "agenda";
     /** The height of the drawing right after the first render, before anything could measure it. */
     __k2FirstCanvas?: number;
   }
@@ -79,6 +81,8 @@ render(
         <EmptyWaysScreen />
       ) : which === "selection" ? (
         <SelectionScreen />
+      ) : which === "agenda" ? (
+        <AgendaTilesScreen />
       ) : which === "dialog-inline" ? (
         <DialogInlineScreen />
       ) : which === "facts" ? (

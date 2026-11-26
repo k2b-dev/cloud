@@ -24,6 +24,7 @@ import {
   Section,
   StatusRow,
   Text,
+  Tiles,
   Workspace,
 } from "../src/v2";
 import { defineListQuery, field, type ListQueryStateOf } from "../src/v2/list-query";
@@ -548,3 +549,52 @@ export const DialogInlineScreen = () => (
     </Dialog>
   </Workspace>
 );
+
+// Today in the spaces (Spaces home, W3 #4197): five short entries with the colour of their space, long names, and a
+// note of the notebook start page (W2) that opens in the page through a deed instead of an address.
+export const AgendaTilesScreen = () => {
+  const [opened, setOpened] = createSignal(0);
+  return (
+    <Workspace>
+      <Pane label="Heute">
+        <Section title="Heute in deinen Spaces" count={5}>
+          <Tiles
+            label="Heute"
+            items={[
+              {
+                icon: "calendar-event",
+                color: "#0284c7",
+                title: "Planung Küche Lindqvist mit Abnahme der Fronten",
+                meta: "09:15–09:30 · Werkstatt",
+                href: "#a",
+              },
+              {
+                icon: "checkbox",
+                color: "#16a34a",
+                title: "Angebot nachfassen",
+                meta: "bis 12:00 · Vertrieb und Kundenbetreuung Nord",
+                href: "#b",
+              },
+              { icon: "calendar-event", color: "#9333ea", title: "Lieferung Eiche", meta: "13:00 · Lager", href: "#c" },
+              {
+                icon: "checkbox",
+                color: "#0284c7",
+                title: "Rechnung 2026-114 prüfen und an die Buchhaltung geben",
+                meta: "heute · Werkstatt",
+                href: "#d",
+              },
+              {
+                icon: "note",
+                color: "#ea580c",
+                title: "Notiz zur Abnahme",
+                meta: "gestern · Notizbuch",
+                onOpen: () => setOpened(opened() + 1),
+              },
+            ]}
+          />
+          <Text>{`geöffnet: ${opened()}`}</Text>
+        </Section>
+      </Pane>
+    </Workspace>
+  );
+};

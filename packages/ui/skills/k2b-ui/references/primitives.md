@@ -120,7 +120,11 @@ or the home of a place.
 ### Tiles
 
 Like things to press, such as attachments: `items: { icon, title, meta?,
-href?, onNavigate?, color? }[]`, `more` (an action after them), `label`.
+href?, onNavigate?, onOpen?, color? }[]`, `more` (an action after them),
+`label`. `onOpen` opens a tile by a deed instead of an address (it is then a
+button). In a pane under 480 px they stand two by two, never one per row:
+the name on up to two lines, the quiet line cut with "…", an odd last one
+in its half.
 
 `variant="media"`: photos, pages and videos in a grid of at least 160 px.
 A tile adds `image` (its picture, 4:3), `kind` (`PDF`, a video's length),

@@ -40,7 +40,8 @@ type Case =
   | "view-statement"
   | "section-foot"
   | "facts"
-  | "dialog-inline";
+  | "dialog-inline"
+  | "agenda";
 
 let browser: Browser;
 let client: string;
@@ -1418,6 +1419,43 @@ test("in a dialog a line of things longer than its room wraps: every chip whole,
         expect({ wraps: found.wraps, whole: found.whole }).toEqual({ wraps: "wrap", whole: true });
         // six people do not fit on one line of a dialog on the phone
         if (width === 390) expect(found.lines).toBeGreaterThan(1);
+      },
+      width,
+    );
+});
+
+test("small tiles in a narrow pane stand two by two, never one per row: names on up to two lines, an odd last one keeps its half; a tile may open by a deed", async () => {
+  for (const width of [390, 1440])
+    await withPage(
+      "agenda",
+      async (page) => {
+        const found = await page.evaluate(() => {
+          const tiles = [...document.querySelectorAll<HTMLElement>(".k2-tiles > .k2-tile")];
+          const boxes = tiles.map((tile) => tile.getBoundingClientRect());
+          return {
+            rows: new Set(boxes.map((box) => Math.round(box.top))).size,
+            widths: [...new Set(boxes.map((box) => Math.round(box.width)))],
+            lastLeft: Math.round(boxes.at(-1)!.left - boxes[0]!.left),
+            // a name takes at most two lines and ends with "…" beyond them
+            names: tiles.map((tile) => {
+              const title = tile.querySelector<HTMLElement>(".k2-tile-title")!;
+              return Math.round(title.getBoundingClientRect().height / Number.parseFloat(getComputedStyle(title).lineHeight)) <= 2;
+            }),
+            deed: tiles.at(-1)!.querySelector(".k2-row-open")!.tagName,
+          };
+        });
+        expect(found.deed).toBe("BUTTON");
+        expect(found.names.every(Boolean)).toBe(true);
+        if (width === 390) {
+          expect(found.rows).toBe(3);
+          // equal halves, the fifth under the first in its half
+          expect(found.widths.length).toBe(1);
+          expect(found.lastLeft).toBe(0);
+        }
+        const layout = await measureV2Layout(page, { root: "[data-k2-workspace]" });
+        expect(layout.problems).toEqual([]);
+        await page.locator(".k2-tile button.k2-row-open").click();
+        expect(await page.getByText("geöffnet: 1").count()).toBe(1);
       },
       width,
     );
