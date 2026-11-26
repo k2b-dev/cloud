@@ -68,7 +68,7 @@ Something that opens in place, such as the answer to a question. Its content is 
 
 ## Not in v2 yet
 
-- Writing Markdown in place: the editor of `@k2b/editor` has no v2 form yet. Open it behind the deed "Bearbeiten".
+- The menus of the Markdown editor: inside a `Canvas` the editor and its toolbar follow v2 (see [Editor](/en/frontend/editor)), but its bubble menu, slash menu and toolbar menus still open with the v1 look.
 - A code block with highlighting, and an image or video viewer.
 - A chart with `v2.css` alone: without the `@k2b/ui` stylesheet and a `.k2b-ui` ancestor it has no size.
 - A loading or failed state as high as a drawing: `Loading` and `Failed` hold rows, so the page moves while a chart loads.
