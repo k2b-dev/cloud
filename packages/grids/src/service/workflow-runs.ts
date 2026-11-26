@@ -543,7 +543,12 @@ const statsCounts = (row: StatsSqlRow | undefined) => {
 export const getWorkflowRunStats = async (
   baseId: string,
   workflowIds: string[],
-  options: { window?: GridsWorkflowRunStatsWindow | null; timeZone?: string | null } = {},
+  options: {
+    window?: GridsWorkflowRunStatsWindow | null;
+    timeZone?: string | null;
+    /** The moment the window ends; the database's clock by default. A test pins it to a known day. */
+    now?: Date;
+  } = {},
 ): Promise<GridsWorkflowRunStats> => {
   const window = options.window ?? DEFAULT_STATS_WINDOW;
   const { bucket, stepSeconds } = SERIES_BUCKETS[window];
@@ -554,8 +559,9 @@ export const getWorkflowRunStats = async (
   const ids = toPgUuidArray(workflowIds);
   const windowSeconds = STATS_WINDOW_SECONDS[window];
   const timeZone = normalizeTimeZone(options.timeZone, "UTC");
-  const since = sql`(now() - (${windowSeconds} * interval '1 second'))`;
-  const localMidnight = sql`(date_trunc('day', now() AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`;
+  const now = options.now ? sql`${options.now.toISOString()}::timestamptz` : sql`now()`;
+  const since = sql`(${now} - (${windowSeconds} * interval '1 second'))`;
+  const localMidnight = sql`(date_trunc('day', ${now} AT TIME ZONE ${timeZone}) AT TIME ZONE ${timeZone})`;
   // Day buckets follow the viewer's calendar, so a day across a daylight-saving
   // switch has 23 or 25 hours. Shorter buckets bin absolute time from the
   // viewer's midnight: no hour repeats or disappears.
@@ -567,9 +573,9 @@ export const getWorkflowRunStats = async (
     bucket === "1d"
       ? sql`SELECT local_day AT TIME ZONE ${timeZone} AS start
             FROM generate_series(date_trunc('day', ${since} AT TIME ZONE ${timeZone}),
-                                 date_trunc('day', now() AT TIME ZONE ${timeZone}), interval '1 day') AS local_day`
+                                 date_trunc('day', ${now} AT TIME ZONE ${timeZone}), interval '1 day') AS local_day`
       : sql`SELECT start
-            FROM generate_series(${bucketStart(since)}, ${bucketStart(sql`now()`)}, ${stepSeconds} * interval '1 second') AS start`;
+            FROM generate_series(${bucketStart(since)}, ${bucketStart(now)}, ${stepSeconds} * interval '1 second') AS start`;
   const [row] = await sql<Array<StatsSqlRow & { by_workflow: unknown; series_points: unknown }>>`
     WITH scoped AS (
       SELECT id, workflow_id::text AS workflow_id, state, created_at, started_at, finished_at
@@ -586,7 +592,7 @@ export const getWorkflowRunStats = async (
                ELSE NULL
              END AS duration_ms
       FROM scoped
-      WHERE created_at >= ${since}
+      WHERE created_at >= ${since} AND created_at <= ${now}
     ),
     active AS (
       SELECT workflow_id, count(*)::int AS active
@@ -597,7 +603,7 @@ export const getWorkflowRunStats = async (
     failed_24h AS (
       SELECT count(*)::int AS failed_last_24h
       FROM scoped
-      WHERE state IN ('failed', 'needs_attention') AND created_at >= now() - interval '24 hours'
+      WHERE state IN ('failed', 'needs_attention') AND created_at >= ${now} - interval '24 hours'
     ),
     overall AS (
       SELECT count(*)::int AS total,

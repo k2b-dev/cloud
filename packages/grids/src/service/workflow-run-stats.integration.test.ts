@@ -228,4 +228,57 @@ describe("workflow run statistics integration", () => {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }
   });
+
+  postgresTest("a day across the end of summer time is one bucket of 25 hours, and its double hour two buckets", async () => {
+    const baseId = uuid();
+    const workflowId = uuid();
+    // Berlin leaves summer time on 25 October 2026: 03:00 CEST becomes 02:00 CET, the day has 25 hours.
+    const timeZone = "Europe/Berlin";
+    const hourMs = 60 * 60_000;
+    try {
+      await sql`
+        INSERT INTO grids.bases (id, short_id, name)
+        VALUES (${baseId}::uuid, ${testShortId()}, 'Workflow run series across summer time')
+      `;
+      await insertTestWorkflow({ id: workflowId, baseId, name: "Across the switch", shortId: testShortId(), enabled: true });
+      // 02:30 twice: once in summer time (00:30 UTC), once an hour later in winter time (01:30 UTC).
+      await insertTestWorkflowRun({ workflowId, baseId, state: "succeeded", createdAt: new Date("2026-10-25T00:30:00Z") });
+      await insertTestWorkflowRun({ workflowId, baseId, state: "failed", createdAt: new Date("2026-10-25T01:30:00Z") });
+      // 23:30 on the 25th (CET) and 00:30 on the 26th: the two sides of the long day's end.
+      await insertTestWorkflowRun({ workflowId, baseId, state: "succeeded", createdAt: new Date("2026-10-25T22:30:00Z") });
+      await insertTestWorkflowRun({ workflowId, baseId, state: "succeeded", createdAt: new Date("2026-10-25T23:30:00Z") });
+
+      // the window ends on a pinned moment, so the test does not depend on the day it runs
+      const week = await getWorkflowRunStats(baseId, [workflowId], { window: "7d", timeZone, now: new Date("2026-10-28T12:00:00Z") });
+      const days = week.series.points;
+      const longDay = days.findIndex((point) => point.start === "2026-10-24T22:00:00.000Z");
+      expect(longDay).toBeGreaterThan(0);
+      // Berlin midnight of the 25th (CEST) to midnight of the 26th (CET): 25 hours
+      expect(days[longDay + 1]!.start).toBe("2026-10-25T23:00:00.000Z");
+      expect(days[longDay]).toEqual({ start: "2026-10-24T22:00:00.000Z", total: 3, failed: 1 });
+      expect(days[longDay + 1]).toEqual({ start: "2026-10-25T23:00:00.000Z", total: 1, failed: 0 });
+      expect(days.reduce((sum, point) => sum + point.total, 0)).toBe(week.total);
+      expect(days.length).toBeLessThanOrEqual(maxSeriesPoints("7d"));
+
+      // hour buckets bin elapsed time: the repeated 02:00 hour is two buckets an hour apart, none repeats or is lost
+      const night = await getWorkflowRunStats(baseId, [workflowId], { window: "24h", timeZone, now: new Date("2026-10-25T12:00:00Z") });
+      const hours = night.series.points;
+      expect(hours).toHaveLength(25);
+      for (const [index, point] of hours.entries())
+        if (index > 0) expect(Date.parse(point.start) - Date.parse(hours[index - 1]!.start)).toBe(hourMs);
+      expect(hours.find((point) => point.start === "2026-10-25T00:00:00.000Z")).toEqual({
+        start: "2026-10-25T00:00:00.000Z",
+        total: 1,
+        failed: 0,
+      });
+      expect(hours.find((point) => point.start === "2026-10-25T01:00:00.000Z")).toEqual({
+        start: "2026-10-25T01:00:00.000Z",
+        total: 1,
+        failed: 1,
+      });
+    } finally {
+      await deleteTestWorkflowScope(baseId);
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
 });
