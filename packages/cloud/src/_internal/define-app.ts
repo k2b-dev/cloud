@@ -131,7 +131,7 @@ import { createHttpDrain } from "./http-drain";
 import { createInstallableRoutes } from "./installable-assets";
 import { installableHead, installableThemeScript } from "./installable-head";
 import { createPageResponses } from "./page-responses";
-import { pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
+import { pageScopeClass, pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
 import { getProcessSync, startProcessSync } from "./process-sync";
 import { readPwaStaticAssets } from "./pwa-assets";
 import { APP_READINESS_PATH, appReadinessResponse } from "./readiness";
@@ -628,6 +628,8 @@ export const defineApp = <
         appUi === "v2"
           ? [appAccentStyle(appAccent), appV2InkStyle(appAccent)].filter(Boolean).join(";") || undefined
           : appAccentStyle(appAccent);
+      // A v2 page without the shell links Core's v2.css alone when the registered Core serves it (else global.css).
+      const sheets = servedStylesheets(stylesheets, registeredCoreRoutes());
       const fixed = theme !== undefined;
       const resolved = theme ?? (themePreference === "light" || themePreference === "dark" ? themePreference : undefined);
       // App pages paint the canvas before any stylesheet and give it to the
@@ -680,10 +682,10 @@ export const defineApp = <
     <link rel="icon" href="${appFaviconHref(opts.id, faviconVersion)}">
     <style data-cloud-css-layers>@layer properties, theme, base, components, utilities;</style>
     ${FONT_PRELOAD_LINKS}
-    ${pageStylesheetLinks({ appStylesheet, appVersion, sharedVersion, stylesheets: servedStylesheets(stylesheets, registeredCoreRoutes()) })}${head.styles}
+    ${pageStylesheetLinks({ appStylesheet, appVersion, sharedVersion, stylesheets: sheets })}${head.styles}
     <script>${themeBootstrapScript}</script>${pageInstallable ? `<script>${installableThemeScript(pageInstallable)}</script>` : ""}
   </head>
-  <body class="k2b-ui${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">
+  <body class="k2b-ui${pageScopeClass(sheets)}${accentStyle ? " app-accent-scope" : ""}"${accentStyle ? ` style="${escapeHtml(accentStyle)}"` : ""}${appPrimary === "ai" ? ' data-k2b-primary="ai"' : ""} data-k2b-app-workspace-controller="global">
     ${body}
   </body>
   ${scripts}

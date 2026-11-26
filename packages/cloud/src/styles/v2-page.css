@@ -6,18 +6,22 @@
 @import "./v2-app-ink.css";
 @import "./minimal-layout.css";
 
-/* v2.css brings no reset of its own: the page has no margin, and the root takes the theme's colour scheme (scrollbars,
-   form controls) and surface, so a dark page never shows light scrollbars or a white overscroll. The v2 scope that
-   fills the page paints the same surface (minimal-layout.css). */
+/* v2.css brings no reset of its own. The body of such a page is a v2 scope (`pageScopeClass`): no margin, the theme's
+   surface and colour scheme from the v2 tokens; the browser paints the body's background over the whole canvas, so a
+   dark page has dark scrollbars and a dark overscroll. */
 body {
   margin: 0;
 }
 
-html {
-  color-scheme: light;
-  background-color: Canvas;
+body.k2-ui {
+  background-color: var(--k2-surface);
 }
 
-html.dark {
+/* The window's scrollbars follow the root's colour scheme. */
+html:has(> body.k2-ui) {
+  color-scheme: light;
+}
+
+html.dark:has(> body.k2-ui) {
   color-scheme: dark;
 }

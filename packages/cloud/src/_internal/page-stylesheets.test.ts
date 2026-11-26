@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
+import { pageScopeClass, pageStylesheetLinks, servedStylesheets } from "./page-stylesheets";
 
 const hrefs = (html: string) => [...html.matchAll(/href="([^"]+)"/g)].map((match) => match[1]);
 const input = { appStylesheet: "/public/venue/app.css", appVersion: "abc", sharedVersion: "sha-1" };
@@ -41,4 +41,9 @@ test("v2.css only when the registered Core serves it; an older Core keeps global
   expect(servedStylesheets("v2", [])).toBeUndefined();
   expect(servedStylesheets(undefined, core)).toBeUndefined();
   expect(hrefs(pageStylesheetLinks({ ...input, stylesheets: servedStylesheets("v2", olderCore) }))).toContain("/public/global.css?v=sha-1");
+});
+
+test("only a page on v2.css alone makes its body the v2 scope", () => {
+  expect(pageScopeClass("v2")).toBe(" k2-ui");
+  expect(pageScopeClass(undefined)).toBe("");
 });

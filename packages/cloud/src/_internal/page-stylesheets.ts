@@ -28,3 +28,9 @@ export const pageStylesheetLinks = (input: {
  */
 export const servedStylesheets = (requested: "v2" | undefined, coreRoutes: readonly string[]): "v2" | undefined =>
   requested === "v2" && coreRoutes.includes("/public/v2.css") ? "v2" : undefined;
+
+/**
+ * The body of a page on Core's v2.css alone is the v2 scope too: its surface and colour scheme come from the v2 tokens,
+ * and the browser paints the body's background over the whole canvas (overscroll included). Other pages keep their body.
+ */
+export const pageScopeClass = (stylesheets: "v2" | undefined): string => (stylesheets === "v2" ? " k2-ui" : "");

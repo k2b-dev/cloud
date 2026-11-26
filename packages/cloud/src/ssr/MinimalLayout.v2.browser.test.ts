@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
+import tailwind from "bun-plugin-tailwind";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -40,12 +41,18 @@ const render = (kiosk: boolean) => {
 };
 
 let browser: Browser;
-let css: string;
+// The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it (its body then is the v2 scope); beside an
+// older Core it keeps global.css. Both sheets render the same page.
+const sheets: Record<"v2.css" | "global.css", { css: string; body: string }> = {
+  "v2.css": { css: "", body: "k2b-ui k2-ui" },
+  "global.css": { css: "", body: "k2b-ui" },
+};
 beforeAll(async () => {
-  // The page loads Core's v2.css alone, as `MinimalLayout ui="v2"` links it: no global.css, no v1.
-  const build = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
-  if (!build.success) throw new AggregateError(build.logs, "Could not build v2.css.");
-  css = await build.outputs[0]!.text();
+  const v2 = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../styles/v2-page.css")] });
+  const global = await Bun.build({ entrypoints: [resolve(import.meta.dir, "../../../../styles.css")], plugins: [tailwind] });
+  for (const build of [v2, global]) if (!build.success) throw new AggregateError(build.logs, "Could not build the stylesheets.");
+  sheets["v2.css"].css = await v2.outputs[0]!.text();
+  sheets["global.css"].css = await global.outputs[0]!.text();
   browser = await launchBrowser();
 }, launchHookMs);
 afterAll(async () => {
@@ -82,38 +89,39 @@ describe("MinimalLayout ui v2", () => {
     expect(html).toContain("Imprint");
   });
 
-  for (const kiosk of [false, true])
-    for (const width of [1440, 390])
-      test(`${kiosk ? "kiosk" : "visitor page"} at ${width} px: clean, inside the window, the footer after it`, async () => {
-        const tab = await browser.newPage({ viewport: { width, height: 900 } });
-        try {
-          await tab.setContent(
-            `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
-              `<body class="k2b-ui">${render(kiosk).html}</body></html>`,
-          );
-          await settled(tab);
-          const outline = await describeV2Page(tab, "main");
-          expect(outline.includes("Problems (") ? outline : "").toBe("");
-          const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
-          expect(layout.problems).toEqual([]);
-          const boxes = await tab.evaluate(() => {
-            const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON() as DOMRect | undefined;
-            return {
-              main: box("main"),
-              footer: box("footer"),
-              scrollWidth: document.documentElement.scrollWidth,
-              scrollHeight: document.documentElement.scrollHeight,
-            };
-          });
-          expect(boxes.scrollWidth).toBeLessThanOrEqual(width);
-          if (kiosk) {
-            // A wall screen takes the whole window and scrolls inside; no footer.
-            expect(boxes.footer).toBeUndefined();
-            expect(Math.round(boxes.main!.height)).toBe(900);
-            expect(boxes.scrollHeight).toBeLessThanOrEqual(900);
-          } else expect(boxes.footer!.top).toBeGreaterThanOrEqual(boxes.main!.bottom - 0.5);
-        } finally {
-          await tab.close();
-        }
-      }, 30_000);
+  for (const sheet of ["v2.css", "global.css"] as const)
+    for (const kiosk of [false, true])
+      for (const width of [1440, 390])
+        test(`${sheet}: ${kiosk ? "kiosk" : "visitor page"} at ${width} px: clean, inside the window, the footer after it`, async () => {
+          const tab = await browser.newPage({ viewport: { width, height: 900 } });
+          try {
+            await tab.setContent(
+              `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${sheets[sheet].css}</style></head>` +
+                `<body class="${sheets[sheet].body}">${render(kiosk).html}</body></html>`,
+            );
+            await settled(tab);
+            const outline = await describeV2Page(tab, "main");
+            expect(outline.includes("Problems (") ? outline : "").toBe("");
+            const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
+            expect(layout.problems).toEqual([]);
+            const boxes = await tab.evaluate(() => {
+              const box = (selector: string) => document.querySelector(selector)?.getBoundingClientRect().toJSON() as DOMRect | undefined;
+              return {
+                main: box("main"),
+                footer: box("footer"),
+                scrollWidth: document.documentElement.scrollWidth,
+                scrollHeight: document.documentElement.scrollHeight,
+              };
+            });
+            expect(boxes.scrollWidth).toBeLessThanOrEqual(width);
+            if (kiosk) {
+              // A wall screen takes the whole window and scrolls inside; no footer.
+              expect(boxes.footer).toBeUndefined();
+              expect(Math.round(boxes.main!.height)).toBe(900);
+              expect(boxes.scrollHeight).toBeLessThanOrEqual(900);
+            } else expect(boxes.footer!.top).toBeGreaterThanOrEqual(boxes.main!.bottom - 0.5);
+          } finally {
+            await tab.close();
+          }
+        }, 30_000);
 });
