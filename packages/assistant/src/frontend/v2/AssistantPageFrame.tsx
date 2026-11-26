@@ -65,6 +65,16 @@ export default function AssistantPageFrame(frame: { w: AssistantWorkspaceParts }
         waitingCount: () => w.waiting().total,
         hasPersonalCode: () => Boolean(w.props.code?.has),
         placeChats: () => w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats ?? null,
+        anyChats: () => {
+          const counts = w.sidebar.data()?.counts ?? w.props.initialCounts;
+          const places = w.sidebar.data()?.placeChats ?? w.props.initialPlaceChats;
+          return (
+            w.conversations().length > 0 ||
+            (w.sidebar.data()?.doneCount ?? w.props.initialDoneCount) > 0 ||
+            (places?.total ?? 0) > 0 ||
+            Boolean(counts?.hasArchived)
+          );
+        },
         moreConversations: () => w.sidebar.data()?.moreConversations ?? w.props.initialMoreConversations ?? false,
         openConversation: w.openAndFocusConversation,
         openProject: w.openProject,

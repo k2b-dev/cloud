@@ -118,12 +118,14 @@
 }
 @container assistant-chat (min-width: 56rem) {
   .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) { --assistant-context-mode: column; }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol) {
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol:not([data-empty])) {
     --assistant-chat-context-width: 19.5rem;
   }
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-head { display: none; }
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]):has(> .assistant-context-boxcol:not([data-empty])) > .assistant-context-head {
+    display: none;
+  }
   /* Above the messages' full-width scrollport, which spans this column too; only the island takes the pointer. */
-  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol {
+  .k2b-ui .assistant-chat-layout:not([data-tabs="open"]) > .assistant-context-boxcol:not([data-empty]) {
     display: block;
     position: relative;
     z-index: 1;

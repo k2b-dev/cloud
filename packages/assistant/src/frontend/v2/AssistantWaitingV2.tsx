@@ -85,7 +85,8 @@ export default function AssistantWaitingV2(props: AssistantApprovalsViewProps & 
                   {/* k2b-ui gap: the shared approval list on v2 comes with #4200 (@k2b/cloud/approvals/v2); until then
                       v1's list draws itself here. Keyed by the page read, as in v1. */}
                   <Canvas label={t().waitingApprovals}>
-                    {/* Inside the drawing the list keeps the pane's text edge of 20 px. */}
+                    {/* Inside the drawing the list keeps the pane's text edge of 20 px. This padding and the Canvas go with #4200,
+                        whose v2 list stands on the pane's edge by itself. */}
                     <div style={{ padding: "0 20px" }}>
                       <Show when={approvals()} keyed>
                         {(current) => <Approvals app="assistant" initial={current} />}
