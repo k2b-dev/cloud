@@ -136,21 +136,6 @@ const keepRanges = (text: string) => text.replace(/(\d)–(\d)/g, "$1–\u2060$2
 
 const few = (seats: Seats) => seats.free > 0 && seats.free <= Math.max(3, seats.of / 10);
 
-/**
- * The seats: a chip in colour, sign and word only for what asks to act (booked out, almost full); the usual case is
- * quiet text, so the two exceptions stand out.
- */
-const seatsChip = (seats: Seats) =>
-  seats.free === 0 ? (
-    <Chip status="bad" icon="ban">
-      Ausgebucht
-    </Chip>
-  ) : few(seats) ? (
-    <Chip status="warn" icon="alert-triangle">{`Noch ${seats.free}`}</Chip>
-  ) : (
-    <Text muted>{`${seats.free} frei`}</Text>
-  );
-
 /** Beside the meter and its words, the chip names only the state: the free seats stand at the meter already. */
 const exceptionChip = (seats: Seats) =>
   seats.free === 0 ? (
@@ -162,6 +147,10 @@ const exceptionChip = (seats: Seats) =>
       knapp
     </Chip>
   );
+
+/** When and where, and on the wall screen what runs now, in its second line. */
+const when = (event: Listed, kiosk: boolean) =>
+  `${kiosk && event.key === "Heute-0" ? `läuft bis ${event.time.split("–")[1]}` : event.time} · ${event.room} · ${kinds[event.kind].label}`;
 
 type Listed = Event & { day: "Heute" | "Diese Woche"; key: string };
 const listed = (events: Event[], day: Listed["day"]): Listed[] => events.map((event, index) => ({ ...event, day, key: `${day}-${index}` }));
@@ -189,7 +178,7 @@ const programme = (events: Listed[], kiosk = false) => (
         title: "Veranstaltung",
         // a long title takes a second line before it is cut: a year range never breaks off in the middle
         wrap: true,
-        cell: (event) => ({ lines: [keepRanges(event.title), `${event.time} · ${event.room} · ${kinds[event.kind].label}`] }),
+        cell: (event) => ({ lines: [keepRanges(event.title), when(event, kiosk)] }),
       },
       {
         title: "Leitung",
@@ -214,18 +203,23 @@ const programme = (events: Listed[], kiosk = false) => (
               label={event.seats.free === 0 ? undefined : `${event.seats.free} frei`}
               status={load(event.seats)}
             />
-            {/* on the wall screen what runs now says so on its row; its seats matter less while it runs */}
-            <Show when={kiosk && event.key === "Heute-0"} fallback={<Show when={load(event.seats)}>{exceptionChip(event.seats)}</Show>}>
-              <Chip status="ok">läuft</Chip>
-            </Show>
+            <Show when={load(event.seats)}>{exceptionChip(event.seats)}</Show>
           </Inline>
         ),
       },
     ]}
     phone={(event) => ({
-      lines: [keepRanges(event.title), `${event.time} · ${event.room} · ${kinds[event.kind].label}`],
+      lines: [keepRanges(event.title), when(event, kiosk)],
       avatar: event.host,
-      marks: seatsChip(event.seats),
+      // the seats read as on the desktop: free seats in words, a chip only for the state
+      marks: (
+        <>
+          <Show when={event.seats.free > 0}>
+            <Text muted>{`${event.seats.free} frei`}</Text>
+          </Show>
+          <Show when={load(event.seats)}>{exceptionChip(event.seats)}</Show>
+        </>
+      ),
     })}
   />
 );
@@ -267,7 +261,7 @@ export default function VenueProgramme(props: Props) {
                   {/* the statement names its reference, and its chips count the rows the list shows */}
                   <Text weight="strong">Bis Sonntag</Text>
                   <Show when={almost() > 0}>
-                    <Chip status="warn" icon="alert-triangle">{`${almost()} fast voll`}</Chip>
+                    <Chip status="warn" icon="alert-triangle">{`${almost()} knapp`}</Chip>
                   </Show>
                   <Show when={full() > 0}>
                     <Chip status="bad" icon="ban">{`${full()} ausgebucht`}</Chip>
