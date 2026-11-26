@@ -2063,7 +2063,8 @@
 /* one primitive: the input and the mark of a Check, Choice or Switch */
 .k2-ui .k2-mark-input:focus-visible + .k2-check,
 .k2-ui .k2-mark-input:focus-visible + .k2-radio,
-.k2-ui .k2-mark-input:focus-visible + .k2-switch {
+.k2-ui .k2-mark-input:focus-visible + .k2-switch,
+.k2-ui .k2-choices[data-keyed] .k2-mark-input:focus + .k2-radio {
   box-shadow: 0 0 0 3px var(--k2-blue-ring);
 }
 .k2-ui .k2-choice {
@@ -2092,6 +2093,91 @@
 }
 .k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > :is(.k2-choice, .k2-choices) {
   padding-inline: var(--k2-edge);
+}
+/* the line of an option under its words: what it means, quiet */
+.k2-ui .k2-choice-text {
+  display: flex;
+  flex-direction: column;
+}
+.k2-ui .k2-choice-hint {
+  font: var(--k2-t-meta);
+  color: var(--k2-muted);
+}
+.k2-ui .k2-choice > .k2-icon {
+  font-size: 16px;
+  line-height: 20px;
+  color: var(--k2-muted);
+}
+/* A few kinds to compare as one connected row of cards: one frame, a hairline between them, the chosen one framed
+   blue on a blue tint with a tick at its end; a column on the phone. The radio stays, unseen, over the whole card. */
+.k2-ui .k2-choices[data-cards] {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  border: var(--k2-hairline);
+  border-radius: var(--k2-r-control);
+  overflow: hidden;
+  background: var(--k2-surface);
+}
+.k2-ui :is(.k2-scroll, .k2-band, .k2-sec, .k2-group, .k2-pane, .k2-dialog-body, .k2-pop-body) > .k2-choices[data-cards] {
+  padding-inline: 0;
+  margin-inline: var(--k2-edge);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice {
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 36px 12px 12px;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice + .k2-choice {
+  border-inline-start: var(--k2-hairline);
+}
+.k2-ui .k2-choices[data-cards] .k2-mark {
+  position: static;
+}
+.k2-ui .k2-choices[data-cards] .k2-radio {
+  display: none;
+}
+.k2-ui .k2-choices[data-cards] .k2-choice-text > :first-child {
+  font-weight: 500;
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) {
+  background: var(--k2-blue-tint);
+  box-shadow: inset 0 0 0 1px var(--k2-blue);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:focus-visible),
+.k2-ui .k2-choices[data-cards][data-keyed] > .k2-choice:has(.k2-mark-input:focus) {
+  box-shadow: inset 0 0 0 2px var(--k2-blue);
+}
+.k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) > .k2-icon {
+  color: var(--k2-blue-ink);
+}
+.k2-ui .k2-choice-on {
+  position: absolute;
+  top: 12px;
+  inset-inline-end: 12px;
+  color: var(--k2-blue-ink);
+  font-size: 16px;
+  line-height: 20px;
+}
+@media (forced-colors: active) {
+  .k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:checked) {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .k2-ui .k2-choices[data-cards] > .k2-choice:has(.k2-mark-input:focus-visible),
+  .k2-ui .k2-choices[data-cards][data-keyed] > .k2-choice:has(.k2-mark-input:focus) {
+    outline: 3px solid Highlight;
+    outline-offset: -3px;
+  }
+}
+@media not all and (min-width: 768px) {
+  .k2-ui .k2-choices[data-cards] {
+    grid-auto-flow: row;
+  }
+  .k2-ui .k2-choices[data-cards] > .k2-choice + .k2-choice {
+    border-inline-start: 0;
+    border-block-start: var(--k2-hairline);
+  }
 }
 .k2-ui .k2-input {
   height: var(--k2-h-control);

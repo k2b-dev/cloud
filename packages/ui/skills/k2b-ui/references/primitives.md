@@ -351,7 +351,10 @@ lines instead of cutting a thing.
 - `Choice`: a few visible options, one chosen: `name`, `options`, `value`,
   `label`, `onChange`, `disabled` (every option dimmed). With a `label` and no `Field` around it, it shows
   that label as a field of its own; inside a `Field` the field's label is
-  its question.
+  its question. An option may carry an `icon` and a one-line `hint` (its
+  words name it, the hint describes it). `cards` (one choice only) shows a
+  few kinds as one connected row of cards, the chosen one framed blue with
+  a tick, a column on the phone; still a radio group the arrows move.
 
 ## Components
 

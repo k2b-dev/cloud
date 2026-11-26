@@ -17,6 +17,7 @@ import { formatDateInput, parseDateInput } from "../inputs/date-input";
 import { dateKey, isCalendarDay, isDateKey } from "../inputs/date-picker";
 import { useLocale } from "../intl/locale";
 import { useCode } from "./behavior/code";
+import { focusFromKeyboard } from "./behavior/controls";
 import { useFilePick } from "./behavior/files";
 import { usePopover } from "./behavior/overlays";
 import { useColor, useRange } from "./behavior/pickers";
@@ -1191,7 +1192,19 @@ export const MarkCheck = (
 );
 
 /** An option of a `Choice`: words, or a value with its words and, for a person, their face before the words. */
-export type ChoiceOption = string | { value: string; label: string; person?: Person };
+export type ChoiceOption =
+  | string
+  | {
+      value: string;
+      /** The words of the option: its name. */
+      label: string;
+      /** A person whose face leads the words. */
+      person?: Person;
+      /** A symbol before the words (Tabler name), such as "webhook". */
+      icon?: string;
+      /** One line under the words that says what the option means; it describes the option, the words name it. */
+      hint?: string;
+    };
 
 export type ChoiceProps = {
   /** The name the choice is sent under in a form. */
@@ -1205,6 +1218,12 @@ export type ChoiceProps = {
 } & (
   | {
       multiple?: false;
+      /**
+       * The options as one connected row of cards, each with its symbol, its words and its `hint`, the chosen one framed
+       * blue with a tick: for a few kinds a person compares before choosing, such as the kind of a new source. A
+       * column on the phone. Still one radio group: the arrows move the choice.
+       */
+      cards?: boolean;
       /** The chosen value. */
       value?: string;
       /** Called with the value a person chose. */
@@ -1213,6 +1232,7 @@ export type ChoiceProps = {
   | {
       /** Several options may be chosen: boxes instead of points; the form sends one entry per chosen value. */
       multiple: true;
+      cards?: undefined;
       /** The chosen values. */
       value?: readonly string[];
       /** Called with all chosen values after each change. */
@@ -1260,6 +1280,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
     }
   };
   let group: HTMLDivElement | undefined;
+  // a focus the keyboard brought keeps its ring, also after the arrows moved it (WebKit drops :focus-visible then)
+  const [keyed, setKeyed] = createSignal(false);
   const onReset = (event: Event) => {
     if (!(event.target instanceof HTMLFormElement) || !group || !event.target.contains(group)) return;
     setOwn(initial);
@@ -1282,6 +1304,9 @@ const ChoiceGroup = (props: ChoiceProps) => {
       ref={group}
       class="k2-choices"
       data-k2-part="Choice"
+      data-cards={props.cards ? "" : undefined}
+      data-keyed={keyed() ? "" : undefined}
+      onFocusIn={() => setKeyed(focusFromKeyboard())}
       role={props.multiple ? "group" : "radiogroup"}
       aria-label={field ? undefined : props.label}
       aria-labelledby={field?.label}
@@ -1291,6 +1316,11 @@ const ChoiceGroup = (props: ChoiceProps) => {
       <For each={options()}>
         {(option, index) => {
           const on = () => chosen().includes(option.value);
+          // the words name the option and its line describes it: the radio says "Abruf", then what it means
+          const words = createUniqueId();
+          const line = createUniqueId();
+          const hint = "hint" in option ? option.hint : undefined;
+          const icon = "icon" in option ? option.icon : undefined;
           return (
             <label class="k2-choice" data-disabled={props.disabled ? "" : undefined}>
               <span class="k2-mark">
@@ -1299,6 +1329,8 @@ const ChoiceGroup = (props: ChoiceProps) => {
                   type={props.multiple ? "checkbox" : "radio"}
                   name={props.name}
                   value={option.value}
+                  aria-labelledby={words}
+                  aria-describedby={hint ? line : undefined}
                   checked={on()}
                   // points: the group is required; boxes: while none is chosen the first one says "choose at least one",
                   // so the form asks for one, and no box sounds mandatory on its own
@@ -1323,7 +1355,21 @@ const ChoiceGroup = (props: ChoiceProps) => {
                 </Show>
               </span>
               <Show when={"person" in option && option.person}>{(person) => <Avatar {...person()} decorative />}</Show>
-              <span class="k2-choice-text">{option.label}</span>
+              <Show when={icon}>{(name) => <Icon name={name()} />}</Show>
+              <span class="k2-choice-text">
+                <span id={words}>{option.label}</span>
+                <Show when={hint}>
+                  <span class="k2-choice-hint" id={line}>
+                    {hint}
+                  </span>
+                </Show>
+              </span>
+              {/* a chosen card says so with a tick too, not with its colour alone */}
+              <Show when={props.cards && on()}>
+                <span class="k2-choice-on">
+                  <Icon name="check" />
+                </span>
+              </Show>
             </label>
           );
         }}

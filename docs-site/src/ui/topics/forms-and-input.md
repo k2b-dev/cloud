@@ -41,6 +41,7 @@ The sign-in settings of an app: a field that goes back to its default through th
 - Inside a `Field` the field's label is its question.
 - People to choose show their face: give an option a `person`; the option is still named by its words.
 - With `multiple` several options can be chosen, as boxes; the form sends one entry for each.
+- Kinds that a person compares by what they mean, such as the kind of a new source, are `cards`: one connected row, each with an `icon`, its words and a one-line `hint`.
 
 ### Select
 
@@ -121,7 +122,7 @@ One thing on or off; `switch` when it acts at once.
 
 ### Choice
 
-One choice from a few options, all visible.
+One choice from a few options, all visible; `cards` shows a few kinds as one connected row of cards.
 
 <Props of="Choice" />
 
