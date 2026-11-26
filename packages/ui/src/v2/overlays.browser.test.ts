@@ -389,6 +389,98 @@ test("Dialog.confirm with two Workspaces: the first answers, the other takes ove
   );
 });
 
+test("Dialog.confirm with danger: the agreeing button is red with white words, the other keeps the focus", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2AskDanger?.());
+    const dialog = page.getByRole("alertdialog", { name: "Gerät entfernen?" });
+    await dialog.waitFor();
+    await settled(page);
+    const agree = dialog.getByRole("button", { name: "Entfernen" });
+    expect(await agree.getAttribute("data-danger")).toBe("");
+    const [fill, words] = await agree.evaluate((button) => [getComputedStyle(button).backgroundColor, getComputedStyle(button).color]);
+    expect(fill).toBe("rgb(185, 28, 28)");
+    expect(words).toBe("rgb(255, 255, 255)");
+    await page.keyboard.press("Escape");
+    expect(await answerOf(page, "page")).toBe("false");
+  });
+});
+
+for (const width of [1440, 390])
+  test(`stepwise dialog at ${width}: a shorter step keeps the height and the foot where they stood`, async () => {
+    await withPage(
+      async (page) => {
+        await page.evaluate(() => window.__k2Pair?.());
+        const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+        await dialog.waitFor();
+        await settled(page);
+        const [before, footBefore] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
+        // the keys go on: Enter on "Weiter", which leaves with the step; the focus stays in the dialog, never the page
+        await dialog.getByRole("button", { name: "Weiter" }).focus();
+        await page.keyboard.press("Enter");
+        await dialog.getByText("Gekoppelt.").waitFor();
+        await settled(page);
+        expect(await page.evaluate(() => document.querySelector(".k2-dialog")?.contains(document.activeElement))).toBe(true);
+        const [after, footAfter] = [await box(dialog), await box(dialog.locator('[data-slot="foot"] > .k2-bar'))];
+        expect(after.height).toBe(before.height);
+        expect(footAfter.y).toBe(footBefore.y);
+        expect(await problems(page, ".k2-dialog")).toEqual([]);
+        // opened again it starts from its first step's own height
+        await dialog.getByRole("button", { name: "Fertig" }).click();
+        await dialog.waitFor({ state: "hidden" });
+        await page.evaluate(() => window.__k2Pair?.());
+        await dialog.waitFor();
+        await settled(page);
+        expect((await box(dialog)).height).toBe(before.height);
+      },
+      { width, touch: width < 768 },
+    );
+  });
+
+test("stepwise dialog: when the foot's last action leaves with the focus and only text stays, the focus stays in the dialog", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await settled(page);
+    await dialog.getByRole("button", { name: "Weiter" }).focus();
+    await page.evaluate(() => window.__k2Waiting?.());
+    await dialog.getByText("Wartet auf das Gerät …").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => document.querySelector(".k2-dialog")?.contains(document.activeElement))).toBe(true);
+  });
+});
+
+test("dialog: a focused part that only moves (its list changes order) keeps the focus", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await page.evaluate(() => window.__k2Tools?.());
+    await dialog.getByRole("button", { name: "Code kopieren" }).focus();
+    await page.evaluate(() => window.__k2Reorder?.());
+    await page.waitForFunction(() => document.querySelector(".k2-dialog-body .k2-bar-end .k2-btn")?.textContent === "Code kopieren");
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement?.textContent)).toBe("Code kopieren");
+  });
+});
+
+test("stepwise dialog: a focus the person put away stays away when the content changes", async () => {
+  await withPage(async (page) => {
+    await page.evaluate(() => window.__k2Pair?.());
+    const dialog = page.getByRole("dialog", { name: "Gerät koppeln" });
+    await dialog.waitFor();
+    await settled(page);
+    await dialog.getByRole("button", { name: "Weiter" }).focus();
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await page.evaluate(() => window.__k2Note?.());
+    await dialog.getByText("Der Code gilt noch vier Minuten.").waitFor();
+    await settled(page);
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+  });
+});
+
 test("Dialog.confirm from another island (its own copy of the library): the page's Workspace answers", async () => {
   await withPage(async (page) => {
     const dialog = await askFrom(page, "island", "Aus der Insel?");

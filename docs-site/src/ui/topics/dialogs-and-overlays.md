@@ -40,13 +40,13 @@ Each part in one line. Props are generated from the types of `@k2b/ui/v2`, so th
 
 ### Dialog
 
-The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies.
+The one dialog: 480 px in the middle of the window, a sheet from the bottom below 768 px. Head, content and foot are parts of one thing; the content scrolls, and a hairline shows where more of it lies. A dialog of steps in one place (a code, then its confirmation) is `stepwise`: it keeps the height of its tallest step, so its foot does not jump.
 
 <Props of="Dialog" />
 
 ### Dialog.confirm
 
-`await Dialog.confirm({ title, confirm })` asks before something that cannot be taken back and resolves `true` when the person agrees. An alert dialog without a close button, never a sheet.
+`await Dialog.confirm({ title, confirm })` asks before something that cannot be taken back and resolves `true` when the person agrees. An alert dialog without a close button, never a sheet. With `danger` the agreeing button is red, for a deed that destroys.
 
 <Props of="ConfirmOptions" />
 

@@ -27,6 +27,12 @@ export type DialogProps = {
    * `true` by default.
    */
   dismissible?: boolean;
+  /**
+   * The dialog shows one step after another in the same place, such as a code and then its confirmation: while open it
+   * keeps the height of its tallest step so far, so a shorter step does not make it jump (its foot stays where it
+   * stood); never higher than the window. Without it the dialog follows its content.
+   */
+  stepwise?: boolean;
 };
 
 /** What takes the focus first in a dialog: a field, a link or a button in its content, else an action of its foot. */
@@ -95,11 +101,25 @@ export const Dialog = (props: DialogProps) => {
   };
   // The content's box keeps its height while its parts grow inside it (it scrolls), so the parts are watched too, and
   // parts that come later as well. Nothing is watched while the dialog is closed.
-  let watching: { sizes: ResizeObserver; parts: MutationObserver } | undefined;
+  let watching: { sizes: ResizeObserver; parts: MutationObserver; focus: MutationObserver } | undefined;
+  // A stepwise dialog keeps the height of its tallest step while it is open, so a shorter step does not make it jump
+  // (it would shrink and centre again); it never grows past the window. It starts anew when it opens again.
+  const keep = (body: HTMLElement) => {
+    const popup = body.parentElement;
+    if (!popup || !props.stepwise) return;
+    const kept = Number.parseFloat(popup.style.getPropertyValue("--k2-dialog-kept")) || 0;
+    const height = popup.getBoundingClientRect().height;
+    if (height > kept) popup.style.setProperty("--k2-dialog-kept", `${height}px`);
+  };
+  // listeners a watch adds once the dialog is on the page, removed with it
+  const onDone: (() => void)[] = [];
   const stop = () => {
     watching?.sizes.disconnect();
     watching?.parts.disconnect();
+    watching?.focus.disconnect();
     watching = undefined;
+    for (const done of onDone.splice(0)) done();
+    body?.parentElement?.style.removeProperty("--k2-dialog-kept");
   };
   onCleanup(stop);
   createEffect(() => {
@@ -108,7 +128,10 @@ export const Dialog = (props: DialogProps) => {
   const watch = (element: HTMLElement) => {
     body = element;
     stop();
-    const sizes = new ResizeObserver(() => measure(element));
+    const sizes = new ResizeObserver(() => {
+      measure(element);
+      keep(element);
+    });
     const observeAll = () => {
       sizes.disconnect();
       sizes.observe(element);
@@ -120,7 +143,45 @@ export const Dialog = (props: DialogProps) => {
     });
     observeAll();
     parts.observe(element, { childList: true });
-    watching = { sizes, parts };
+    // A part that leaves with the focus, such as "Weiter" when the next step comes, would drop the focus on the page
+    // behind the dialog: it goes to the first action of the foot instead, else the first control of the content, else
+    // the close button, else the dialog itself. Only a part that really left is repaired: a focus the person put away
+    // (a blur) stays away when the content changes.
+    let held: Element | undefined;
+    const hold = (event: FocusEvent) => {
+      if (event.target instanceof Element) held = event.target;
+    };
+    const focus = new MutationObserver((records) => {
+      const popup = element.parentElement;
+      const was = held;
+      if (!popup?.isConnected || !was) return;
+      if (document.activeElement && document.activeElement !== document.body) return;
+      // only a part that was taken out (itself or a part around it) is repaired; a part that was only moved (a list
+      // that changed its order takes it out and puts it back) gets its focus back
+      const takenOut = records.some((record) => [...record.removedNodes].some((node) => node === was || node.contains(was)));
+      if (!takenOut) return;
+      if (was.isConnected && popup.contains(was) && was instanceof HTMLElement) {
+        was.focus();
+        if (document.activeElement === was) return;
+      }
+      held = undefined;
+      const next = first(foot) ?? first(element) ?? popup.querySelector<HTMLElement>('[data-slot="head"] .k2-btn');
+      if (next) next.focus();
+      else {
+        popup.tabIndex = -1;
+        popup.focus();
+      }
+    });
+    watching = { sizes, parts, focus };
+    // the content's box is in its dialog only once the dialog is on the page
+    queueMicrotask(() => {
+      const popup = element.parentElement;
+      if (!popup || watching?.focus !== focus) return;
+      if (popup.contains(document.activeElement)) held = document.activeElement ?? undefined;
+      popup.addEventListener("focusin", hold);
+      focus.observe(popup, { childList: true, subtree: true });
+      onDone.push(() => popup.removeEventListener("focusin", hold));
+    });
     queueMicrotask(() => measure(element));
   };
   return (
@@ -167,6 +228,8 @@ export type ConfirmOptions = {
   confirm: string;
   /** The words of the other button; "Abbrechen" by default. */
   cancel?: string;
+  /** Agreeing destroys something (deletes, revokes, removes a device): the agreeing button is red. */
+  danger?: boolean;
 };
 
 /**
@@ -253,7 +316,13 @@ const ConfirmSurface = (props: { question: Question<ConfirmOptions> }) => {
             <parts.Close class="k2-btn" data-k2-part="Button">
               <span class="k2-btn-label">{parts.payload()?.cancel ?? t().cancel}</span>
             </parts.Close>
-            <parts.Close class="k2-btn" data-k2-part="Button" data-variant="primary" value="confirm">
+            <parts.Close
+              class="k2-btn"
+              data-k2-part="Button"
+              data-variant="primary"
+              data-danger={parts.payload()?.danger ? "" : undefined}
+              value="confirm"
+            >
               <span class="k2-btn-label">{parts.payload()?.confirm}</span>
             </parts.Close>
           </div>
