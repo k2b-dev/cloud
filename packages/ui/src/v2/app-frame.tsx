@@ -51,6 +51,12 @@ export type TabBarProps = {
    * tab, "More", opens a sheet with the others and their counts.
    */
   items: readonly TabBarItem[];
+  /**
+   * The bar steps aside for a screen of its own, such as one chat with its composer at the bottom edge. It stays in the
+   * page (as the `hidden` attribute, which a page script may also set on `.k2-tabbar`); floating notices then stand
+   * above the bottom safe area alone.
+   */
+  hidden?: boolean;
 };
 
 /** Tabs in the bar before "More" takes the fifth place. */
@@ -87,7 +93,7 @@ export const TabBar = (props: TabBarProps) => {
   const [open, setOpen] = createSignal(false);
   const restCurrent = () => rest().some((item) => item.current);
   return (
-    <nav class="k2-tabbar" data-k2-part="TabBar" aria-label={props.label}>
+    <nav class="k2-tabbar" data-k2-part="TabBar" aria-label={props.label} hidden={props.hidden || undefined}>
       <For each={shown()}>{(item) => <TabLink item={item} />}</For>
       <Show when={rest().length > 0}>
         <button
@@ -154,12 +160,14 @@ export const NoticeStack = (props: NoticeStackProps) => {
     const sizes = new ResizeObserver(() => measure());
     // The room is what the stack covers of the window above the tab bar: from its top to the window's end, less the
     // bar. A pane ends at the bar on the phone and near the window's end beside it, so the last row stays reachable.
-    // The bar is looked up each time, so a bar that comes later counts too, and its size is watched from then on.
+    // The bar is looked up each time, so a bar that comes later counts too, and its size is watched from then on; a
+    // hidden bar counts as none, the same bar the stylesheet places the stack above.
     const measure = () => {
       const bar = document.querySelector<HTMLElement>(".k2-tabbar");
       if (bar) sizes.observe(bar);
+      const shown = bar && !bar.hidden ? bar : undefined;
       const empty = !stack || stack.offsetHeight === 0;
-      const covered = empty ? 0 : innerHeight - stack!.getBoundingClientRect().top - (bar?.offsetHeight ?? 0);
+      const covered = empty ? 0 : innerHeight - stack!.getBoundingClientRect().top - (shown?.offsetHeight ?? 0);
       root.style.setProperty("--k2-notice-stack", `${Math.max(0, Math.ceil(covered))}px`);
     };
     // the stack grows and shrinks with its notices, and moves with the bar (a screen of its own hides it) and the window

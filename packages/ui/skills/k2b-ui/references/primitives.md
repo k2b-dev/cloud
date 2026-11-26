@@ -419,7 +419,10 @@ lines instead of cutting a thing.
   and "Mehr", which opens a sheet with the others and their counts and is
   the current tab while one of them is open (Escape and a place that opens in
   place close the sheet; the focus returns to "Mehr"). From
-  768 px it leaves and the app's `Nav` holds the places.
+  768 px it leaves and the app's `Nav` holds the places. `hidden` (or the
+  `hidden` attribute on `.k2-tabbar`) steps it aside for a screen of its own,
+  such as one chat with its composer at the bottom edge; floating notices
+  then stand above the safe area alone.
 - `Digest`: the newest few without lines: `items: { icon, color?, date,
   title, state: { icon, label, tone? }, text, href? }[]`.
 - `FilterBar`: the filters of a list as statements, in `Pane status` above
