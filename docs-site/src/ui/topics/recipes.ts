@@ -8,6 +8,7 @@ import * as formDetail from "../../../../packages/ui/skills/k2b-ui/recipes/form-
 import * as frame from "../../../../packages/ui/skills/k2b-ui/recipes/frame";
 import * as listDetail from "../../../../packages/ui/skills/k2b-ui/recipes/list-detail";
 import * as mail from "../../../../packages/ui/skills/k2b-ui/recipes/mail";
+import * as publicPage from "../../../../packages/ui/skills/k2b-ui/recipes/public-page";
 import * as record from "../../../../packages/ui/skills/k2b-ui/recipes/record";
 import * as recordGroups from "../../../../packages/ui/skills/k2b-ui/recipes/record-groups";
 import * as states from "../../../../packages/ui/skills/k2b-ui/recipes/states";
@@ -50,6 +51,7 @@ export const recipes = {
   frame,
   "list-detail": listDetail,
   mail,
+  "public-page": publicPage,
   record,
   "record-groups": recordGroups,
   states,

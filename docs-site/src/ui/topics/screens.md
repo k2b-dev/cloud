@@ -50,6 +50,15 @@ Complete screens with invented data. Each one is a recipe of the skill `k2b-ui`:
 
 <Example recipe="content" height="560" default="Text" />
 
+## A page for visitors
+
+A page without the Cloud shell, rendered with `MinimalLayout ui="v2"`: the brand
+in the head, one task as the primary, today first, and every entry with its type
+colour and its state in colour, sign and word. The `kiosk` state is the same page
+on a wall screen.
+
+<Example recipe="public-page" height="720" default="Programm" />
+
 ## Mail
 
 <Example recipe="mail" height="720" />
