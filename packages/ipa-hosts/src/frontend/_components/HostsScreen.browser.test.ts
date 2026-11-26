@@ -254,7 +254,7 @@ describe("Hosts on v2", () => {
       await deleting.tab.getByRole("button", { name: "Erneut versuchen" }).click();
       await deleting.tab.waitForURL((url) => !url.search.includes("host="));
       expect(deleting.calls).toEqual(["DELETE /api/ipa-hosts/db1.werkstatt.example", "DELETE /api/ipa-hosts/db1.werkstatt.example"]);
-      expect([...errors, ...deleting.errors].filter((error) => !error.includes("503"))).toEqual([]);
+      expect([...errors, ...deleting.errors]).toEqual([]);
     } finally {
       await deleting.context.close();
     }
@@ -322,7 +322,7 @@ describe("Hosts on v2", () => {
     try {
       await unread.tab.getByRole("button", { name: "Host-Synchronisierung" }).click();
       expect(await unread.tab.getByRole("dialog").getByRole("button", { name: "Speichern" }).isDisabled()).toBe(true);
-      expect([...errors, ...unread.errors].filter((error) => !error.includes("503"))).toEqual([]);
+      expect([...errors, ...unread.errors]).toEqual([]);
     } finally {
       await unread.context.close();
     }
