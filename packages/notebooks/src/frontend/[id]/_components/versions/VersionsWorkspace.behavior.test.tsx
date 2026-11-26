@@ -273,6 +273,41 @@ describe("version history restore", () => {
     expect(navigateTo).toHaveBeenCalledWith(buildNoteUrl("Book01", "Copy01"));
   });
 
+  test("the comparison reaches the newest 100 versions, also ones the list has not loaded", async () => {
+    respond = async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname.endsWith("/versions"))
+        return Response.json({
+          data: [
+            { id: "Version01", noteId: "Note01", createdBy: null, createdAt: "2026-08-11T10:00:00.000Z" },
+            { id: "Older01", noteId: "Note01", createdBy: null, createdAt: "2026-07-01T10:00:00.000Z" },
+          ],
+          pagination: { page: 1, per_page: 100, total: 2, total_pages: 1, has_next: false },
+        });
+      return Response.json({ contentMd: "Saved content", yjsSnapshot: "" });
+    };
+    mount();
+    await select();
+    button("Changes")!.click();
+    await waitFor(() => requests.some((request) => new URL(request.url).searchParams.get("per_page") === "100"));
+    const list = requests.find((request) => new URL(request.url).searchParams.get("per_page") === "100")!;
+    expect(new URL(list.url).pathname).toBe("/api/notebooks/Book01/notes/Note01/versions");
+    expect(new URL(list.url).searchParams.get("page")).toBe("1");
+    await flush();
+    button("Change")!.click();
+    // the comparison is one choice, so its entries are radios
+    await waitFor(() => dom.document.querySelectorAll('[role="menuitemradio"]').length > 0);
+    // the live note and the older version; the open one is not offered against itself
+    const live = [...dom.document.querySelectorAll('[role="menuitemradio"]')].find((entry) => entry.textContent?.includes("Current note"))!;
+    const entries = [...live.closest('[role="menu"]')!.querySelectorAll('[role="menuitemradio"]')].map((entry) => entry.textContent ?? "");
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toContain("Current note");
+    // choosing the older one closes the menu and compares with it, older first
+    live.closest('[role="menu"]')!.querySelectorAll<HTMLElement>('[role="menuitemradio"]')[1]!.click();
+    await waitFor(() => !dom.root.textContent?.includes("Current note"));
+    await flush();
+  });
+
   test("a version opens from its row into the address, and back closes it", async () => {
     dom.window.history.replaceState(null, "", buildVersionsUrl("Book01", "Note01"));
     mount(false, null);

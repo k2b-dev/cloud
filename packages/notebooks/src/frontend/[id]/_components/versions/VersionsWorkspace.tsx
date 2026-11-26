@@ -69,6 +69,8 @@ export type VersionsWorkspaceProps = {
 };
 
 const PER_PAGE = 20;
+/** The versions the comparison offers, as v1's version search did: the newest 100, one request. */
+const COMPARISON_LIMIT = 100;
 /** The live note, as the other side of a comparison. */
 const CURRENT_ID = "__current__";
 const VERSION_PARAM = "version";
@@ -215,21 +217,49 @@ export default function VersionsWorkspace(props: VersionsWorkspaceProps) {
   });
   const diffSummary = createMemo(() => summarizeDiff(diffRows()));
   // The other side of a comparison: the live note or any loaded version except the open one.
+  // The other side reaches the newest 100 versions, as v1 did, whatever the list has paged in; they load once, when
+  // the changes are first shown.
+  const comparisonVersions = query.create<string, NoteVersion[]>({
+    source: listSource,
+    enabled: () => previewMode() === "changes",
+    load: async (_source, { abortSignal }) => {
+      const response = await apiClient[":id"].notes[":noteId"].versions.$get(
+        { param: { id: notebookId(), noteId: props.noteId }, query: { page: "1", per_page: String(COMPARISON_LIMIT) } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(t().savedVersionsLoadFailed);
+      return ((await response.json()) as VersionPage).data;
+    },
+  });
+  const comparisonCandidates = createMemo(() => {
+    const byId = new Map<string, NoteVersion>();
+    for (const version of [...(comparisonVersions.data() ?? []), ...versions()]) byId.set(version.id, version);
+    return [...byId.values()]
+      .filter((version) => version.id !== selectedVersionId())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  });
+  // k2b-ui gap: Menu has no search, so the 100 versions are a plain list; lane N's `Menu search` (#4237) filters them.
   const comparisonChoices = (): MenuEntry[] => [
     {
       title: t().compareWith,
       choice: comparisonTarget().id,
       onChoose: (id) => {
-        const version = versions().find((entry) => entry.id === id);
+        const version = comparisonCandidates().find((entry) => entry.id === id);
         setComparisonTarget(version ? { id, label: formatDate(version.createdAt), createdAt: version.createdAt } : currentTarget());
       },
       items: [
         { label: t().currentNote, icon: "file-text", value: CURRENT_ID, meta: t().liveContent },
-        ...versions()
-          .filter((version) => version.id !== selectedVersionId())
-          .map((version) => ({ label: formatDate(version.createdAt), icon: "history", value: version.id })),
+        ...comparisonCandidates().map((version) => ({ label: formatDate(version.createdAt), icon: "history", value: version.id })),
       ],
     },
+    // a failed load keeps the live note and the loaded versions, and says so with its retry
+    ...(comparisonVersions.error()
+      ? [
+          "separator" as const,
+          { label: t().savedVersionsLoadFailed, icon: "alert-circle", disabled: true },
+          { label: t().retry, icon: "refresh", onClick: () => void comparisonVersions.refresh() },
+        ]
+      : []),
   ];
 
   // A version reads as Book does: note, heading and attachment links are references, and a query shows its definition.
