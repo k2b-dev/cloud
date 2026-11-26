@@ -740,12 +740,12 @@ const renderLinkedNotebook = async (
 };
 
 for (const [locale, line] of [
-  ["en", "1 of 20,000 notes · 0 links"],
-  ["de", "1 von 20.000 Notizen · 0 Verknüpfungen"],
+  ["en", "1 of 20,000 notes"],
+  ["de", "1 von 20.000 Notizen"],
 ]) {
-  test(`a large notebook's graph says from its first paint that it shows the pages around one page (${locale})`, async () => {
+  test(`a large notebook's graph list says in the server's markup that it holds the pages around one page (${locale})`, async () => {
     const html = await renderLinkedNotebook("write", "graph&list=1", locale, "write", { around: "note01", total: 20_000 });
-    // the line stands above the graph from the first paint, so nothing moves when the browser takes over
+    // the server renders the count, so it is there before the island and nothing moves when the island renders
     const [pane] = await select(html, '[data-k2-part="Pane"]');
     expect(pane?.text).toContain(line);
     const whole = await renderLinkedNotebook("write", "graph", locale);
