@@ -84,7 +84,7 @@ if (view === "folder" && path === "Alte Angebote") {
     visibility: "full" as const,
     source: "current" as const,
     name: "Alte Angebote",
-    path: `groups/werkstatt/${place}`,
+    path: `werkstatt/${place}`,
     root: "groups",
     baseId: "20000000-0000-4000-8000-000000000001",
     publicBaseId: fixtureBase.id,
@@ -106,6 +106,10 @@ if (view === "folder" && path === "Alte Angebote") {
       certainty: "verified",
       historyComplete: false,
       truncated: false,
+    },
+    contents: {
+      items: fixtureListing("plain", "Archiv/2025/Alte Angebote", { sort: "name", order: "asc", type: "all", groupFolders: true }),
+      next: null,
     },
   };
 }

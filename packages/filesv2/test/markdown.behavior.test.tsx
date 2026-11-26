@@ -65,12 +65,19 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
     dom.cleanup();
   };
   await flush();
+  // the draft's state is the chip beside the title: "Saved" for a moment after a save
+  const stateChip = () => dom.root.querySelector('[data-slot="status"] [data-k2-part="Chip"]')?.textContent?.trim();
   const editor = dom.root.querySelector<HTMLTextAreaElement>("textarea")!;
   expect(editor).not.toBeNull();
   expect(editor.value).toBe("hello");
+  // saving and closing are the deeds of the title row, no longer of the editor's toolbar
   const tools = [...dom.root.querySelectorAll<HTMLButtonElement>('[role="toolbar"] button')];
-  expect(tools.at(-1)!.getAttribute("aria-label")).toBe("Close");
-  expect(tools.at(-2)!.getAttribute("aria-label")).toBe("Save");
+  expect(tools.map((tool) => tool.getAttribute("aria-label"))).not.toContain("Close");
+  const row = dom.root.querySelector('[data-slot="status"]')!;
+  expect([...row.querySelectorAll("button")].map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim())).toEqual([
+    "Save",
+    "Close",
+  ]);
   expect(dom.root.textContent).not.toContain("Back to folder");
   expect(dom.root.querySelector('[data-variant="embedded"][data-fill="true"]')).not.toBeNull();
   expect(await guard!()).toBe(true);
@@ -80,7 +87,7 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
   expect(saves).toHaveLength(1);
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   expect(saves[0]).toMatchObject({ content: "my draft", options: { expectedRevision: "loaded-revision" } });
   expect(editor.value).toBe("my draft");
   expect(dom.root.textContent).toContain("The file changed");
@@ -112,16 +119,16 @@ test("Markdown saves the revision of loaded bytes and preserves a draft after co
   expect(dom.root.textContent).not.toContain("Unsaved changes");
   expect(await guard!()).toBe(true);
   expect(dom.root.querySelector('[role="toolbar"]')!.textContent).not.toContain("Saved");
-  expect(dom.root.querySelector(".ti-check")).not.toBeNull();
+  expect(stateChip()).toBe("Saved");
   editor.value = "next draft";
   editor.dispatchEvent(new Event("input", { bubbles: true }));
   await flush();
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   editor.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
   await flush();
-  expect(dom.root.querySelector(".ti-check")).not.toBeNull();
+  expect(stateChip()).toBe("Saved");
   await new Promise((resolve) => setTimeout(resolve, 1600));
-  expect(dom.root.querySelector(".ti-check")).toBeNull();
+  expect(stateChip()).not.toBe("Saved");
   dispose();
   expect(guard).toBeNull();
 });

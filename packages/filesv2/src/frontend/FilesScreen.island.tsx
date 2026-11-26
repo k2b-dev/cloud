@@ -50,8 +50,9 @@ import { baseLabel } from "./base-label";
 import { useBrowserMessages } from "./browser-messages";
 import { preferencesCookie, type ViewPreference, viewFor, withView } from "./browser-preferences";
 import { directoryContext, directoryPageCount, directoryPages } from "./directory-pages";
-import EntryDetail from "./EntryDetail";
+import EntryDetail, { FolderContents } from "./EntryDetail";
 import { entryMark, storageMark } from "./entry-mark";
+import { entryThumbnail } from "./entry-thumbnail";
 import { historyExecutionHref } from "./execution-url";
 import FavoritesPane from "./FavoritesPane";
 import { issueText } from "./feedback";
@@ -971,9 +972,12 @@ export default function FilesScreen(props: {
   };
   /** Who reaches the open folder: the team of a group storage or only this person, and the links among its entries. */
   const folderSharing = () => {
+    const shown = directory();
     const links = entries().reduce((sum, entry) => sum + (entry.facts?.links ?? 0), 0);
     const who = selected()?.kind === "groups" ? b().v2Team : b().onlyYou;
-    return links ? b().v2WhoAndLinks({ who, links }) : who;
+    // the links of the loaded rows: with more pages or a filter there can be more, so the count is a lower bound
+    const partial = !!shown?.next || Object.keys(folderState()?.filters ?? {}).length > 0;
+    return links ? b().v2WhoAndLinks({ who, links, more: partial ? "+" : "" }) : who;
   };
   const uploadAction = () => (canCreate() && !searching() ? { label: b().upload, icon: "upload", onClick: actions.pickFiles } : undefined);
 
@@ -1128,7 +1132,25 @@ export default function FilesScreen(props: {
               onOpen={(target) => void history().actions.onOpen(target)}
               historyHref={activityUrl({ q: moved.path.split("/").at(-1) ?? moved.path })}
               onNavigate={onNavigate}
-            />
+            >
+              {/* the folder at its new place, when it stays in this storage: its first entries, the way in is "Dorthin springen" */}
+              <Show when={moved.chain.endpoint?.baseId === selected()?.id && moved.chain.endpoint && selected()}>
+                {(base) => (
+                  <FolderContents
+                    base={base()}
+                    folder={{
+                      name: moved.chain.endpoint!.path.split("/").at(-1) ?? moved.chain.endpoint!.path,
+                      path: moved.chain.endpoint!.path,
+                      directory: true,
+                      size: 0,
+                      modified: moved.entry.time,
+                    }}
+                    initial={moved.contents ?? undefined}
+                    onNavigate={onNavigate}
+                  />
+                )}
+              </Show>
+            </MovedPane>
           )}
         </Show>
         <Show when={screen() === "favorites"}>
@@ -1349,7 +1371,7 @@ export default function FilesScreen(props: {
                             .filter(Boolean)
                             .join(" · "),
                         ],
-                        mark: entryMark(row.entry),
+                        mark: { ...entryMark(row.entry), image: entryThumbnail(selected()?.id, row.entry, "small") },
                         time: row.fresh ? b().justCreated : day().format(new Date(row.entry.modified)),
                       })}
                       columns={[
@@ -1357,7 +1379,8 @@ export default function FilesScreen(props: {
                           title: t().name,
                           width: { min: 160, default: 220 },
                           sort: sortTarget("name"),
-                          mark: (row) => entryMark(row.entry),
+                          // a photo shows itself as its mark, once the preview service has drawn it
+                          mark: (row) => ({ ...entryMark(row.entry), image: entryThumbnail(selected()?.id, row.entry, "small") }),
                           cell: (row) => (searching() ? { lines: [row.entry.name, placeOf(row.entry)] } : row.entry.name),
                         },
                         {
@@ -1421,6 +1444,7 @@ export default function FilesScreen(props: {
                       items={rows().map((row) => ({
                         key: row.key,
                         ...entryMark(row.entry),
+                        image: entryThumbnail(selected()?.id, row.entry, "large"),
                         title: row.entry.name,
                         meta: row.fresh ? b().justCreated : when(row.entry.modified),
                         people: row.entry.facts?.author ? [{ name: row.entry.facts.author.name }] : [],
@@ -1455,7 +1479,14 @@ export default function FilesScreen(props: {
           onNavigate,
         },
       };
-    return { icon: "folder", text: b().emptyTitle };
+    // an empty folder leads to its first files: dropped anywhere on the page, or chosen with "Hochladen"
+    return canCreate()
+      ? {
+          icon: "upload",
+          text: `${b().emptyTitle}. ${b().v2EmptyDrop}`,
+          action: { label: b().upload, icon: "upload", onClick: actions.pickFiles },
+        }
+      : { icon: "folder", text: b().emptyTitle };
   }
 
   /** A search waits in its shape while it runs, so the old results never stand under new words. */

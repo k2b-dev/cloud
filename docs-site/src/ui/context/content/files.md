@@ -172,7 +172,7 @@ type FileViewContent = {
 `getFileViewPreviewKind` returns the inferred `FileViewPreviewKind`.
 Both helpers apply the built-in size limits when `size` is supplied: 2 MiB for text, Markdown, JSON and delimited text; 25 MiB for images; 50 MiB for PDF, audio, and video. Unsupported or oversized files return `null` from `getFileViewPreviewKind` and `false` from `canPreviewFile`.
 Video means MP4, M4V, QuickTime (`.mov`), WebM, and Ogg video, by media type or extension. Whether a browser decodes one depends on its codec. A host that streams video by range can omit `size` to preview it at any size.
-`formatFileViewSize` produces the compact size label used by the preview.
+`formatFileViewSize(bytes, locale?)` produces the compact size label used by the preview, in steps of 1024: B, KB, MB, GB, TB. The next unit takes over as soon as the shown value would need four digits ("1 MB", never "1.000 KB"). With a locale the number follows that language and drops a trailing zero ("4,2 MB", "64 KB"); without one it keeps one decimal ("64.0 KB").
 
 Pass `renderers` to `FileView` or `FileBrowserPanel` to add
 application-specific renderers before the built-ins. Extensions are scoped to

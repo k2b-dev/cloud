@@ -59,6 +59,10 @@ const plain: FileEntry[] = [
   entry("Muster Arbeitsplatte Granit.jpg", false, 3_250_000, 72),
   entry("Skizze Hochschrank.png", false, 655_360, 74),
   entry("Rundgang Aufmaß.mp4", false, 171_966_464, 120),
+  // what the moved folder holds at its new place (an old address shows it under its card)
+  entry("Archiv/2025/Alte Angebote/Kalkulation Bad Weber.xlsx", false, 61_440, 400),
+  entry("Archiv/2025/Alte Angebote/Preisliste 2025.pdf", false, 318_000, 420),
+  entry("Archiv/2025/Alte Angebote/Rückruf Frau Okafor.md", false, 1_200, 430),
 ];
 
 /** What break-ui feeds a file list: very long names without breaks, one letter, emoji, other scripts, huge and empty files. */
@@ -177,7 +181,8 @@ const side = (path: string, directory = false): ActivitySide => ({
   visibility: "full",
   source: "current",
   name: path.split("/").at(-1)!,
-  path: `groups/werkstatt/${path}`,
+  // sides carry root-relative paths: the storage directory, then its folders
+  path: `werkstatt/${path}`,
   root: "groups",
   baseId: "20000000-0000-4000-8000-000000000001",
   publicBaseId: fixtureBase.id,
@@ -190,7 +195,8 @@ const side = (path: string, directory = false): ActivitySide => ({
 const gone = (path: string, directory = false): ActivitySide => ({
   visibility: "disappearance",
   name: path.split("/").at(-1)!,
-  path: `groups/werkstatt/${path}`,
+  // sides carry root-relative paths: the storage directory, then its folders
+  path: `werkstatt/${path}`,
   directory,
   publicBaseId: fixtureBase.id,
   relativePath: path,

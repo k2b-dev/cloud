@@ -20,9 +20,21 @@ describe("file kind and size labels", () => {
     expect(formatFileViewSize(64 * 1024, "de")).toBe("64 KB");
     expect(formatFileViewSize(64 * 1024)).toBe("64.0 KB");
     expect(formatFileViewSize(512, "en")).toBe("512 B");
-    // a value never needs four digits: the next unit takes over (break-ui 26.11.: "1.000 KB", "94.190,1 MB")
-    expect(formatFileViewSize(1_024_000, "de")).toBe("1 MB");
-    expect(formatFileViewSize(98_765_432_109, "de")).toBe("92 GB");
+    // a shown value never needs four digits: the next unit takes over (break-ui 26.11.: "1.000 KB", "94.190,1 MB")
+    for (const [bytes, de, en, plain] of [
+      [1_024_000, "1 MB", "1 MB", "1.0 MB"],
+      // the edges: 999.98 KB and 999.95 MB are shown rounded to 1000, so they are already the next unit
+      [1_023_980, "1 MB", "1 MB", "1.0 MB"],
+      [1_048_524_000, "1 GB", "1 GB", "1.0 GB"],
+      // just below an edge the unit stays: 999.9 KB
+      [1_023_898, "999,9 KB", "999.9 KB", "999.9 KB"],
+      [98_765_432_109, "92 GB", "92 GB", "92.0 GB"],
+      [5 * 1024 ** 4, "5 TB", "5 TB", "5.0 TB"],
+    ] as const) {
+      expect(formatFileViewSize(bytes, "de")).toBe(de);
+      expect(formatFileViewSize(bytes, "en")).toBe(en);
+      expect(formatFileViewSize(bytes)).toBe(plain);
+    }
   });
 
   test("the more-lines hint counts one line in the singular", () => {

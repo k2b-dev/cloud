@@ -92,7 +92,9 @@ export default function OverviewPane(props: {
       >
         {props.issues.map((issue) => (
           <Notice tone="warn" title={t()[issue.area]}>
-            {issueText(t(), issue.code)}
+            {/* an area that could not be read has no storage of its own in the list: the notice speaks of the area,
+                not of "the storage", so it never seems to mean a storage the list shows */}
+            {issueText(t(), issue.code) === t().unavailable ? b().v2AreaUnread({ area: t()[issue.area] }) : issueText(t(), issue.code)}
           </Notice>
         ))}
         <Section icon="folders" color={FILES_COLOR} title={b().storageSection} count={props.bases.length}>
@@ -160,7 +162,7 @@ export default function OverviewPane(props: {
                 items={recent()}
                 rowKey={(item) => item.key}
                 group={(item) => ({ key: item.day.key, label: item.day.label })}
-                row={(item) => <ActivityLineRow item={item} env={props.env} mode="me" bases={labels()} onToggle={toggle} />}
+                row={(item) => <ActivityLineRow item={item} env={props.env} mode="me" notes bases={labels()} onToggle={toggle} />}
               />
             </Show>
           </Show>

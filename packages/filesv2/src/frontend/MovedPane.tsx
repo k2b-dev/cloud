@@ -1,6 +1,6 @@
 import { useLocale } from "@k2b/ui";
 import { type Action, List, Notice, type OnNavigate, Pane, Row, StatusRow } from "@k2b/ui/v2";
-import { createMemo } from "solid-js";
+import { createMemo, type JSX } from "solid-js";
 import { entryMark } from "./entry-mark";
 import {
   actorOf,
@@ -29,6 +29,8 @@ export default function MovedPane(props: {
   onOpen: (target: HistoryTarget) => void;
   historyHref: string;
   onNavigate?: OnNavigate;
+  /** What the folder holds at its new place, under the card. */
+  children?: JSX.Element;
 }) {
   const h = useHistoryMessages();
   const locale = useLocale();
@@ -66,6 +68,7 @@ export default function MovedPane(props: {
         <Row mark={mark} lines={[name(), <SentenceText parts={now()} />]} action={jump()} />
         <Row avatar={personOf(actor())} lines={[<SentenceText parts={why()} />, props.oldAddress.join(" › ")]} action={history()} />
       </List>
+      {props.children}
     </Pane>
   );
 }

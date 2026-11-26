@@ -5,7 +5,14 @@ import type { BasesResult, DirectoryResult, EditorLaunch, EntryResult, FileEntry
 import type { ActivityFilters } from "./history-requests";
 
 /** An old folder address whose item the reader saw move away; shown instead of "not found". */
-export type MovedSnapshot = { baseId: string; path: string; entry: ActivityEntry; chain: ActivityChain };
+export type MovedSnapshot = {
+  baseId: string;
+  path: string;
+  entry: ActivityEntry;
+  chain: ActivityChain;
+  /** The first page of the folder at its new place, as the server read it; null when it could not. */
+  contents?: { items: FileEntry[]; next: string | null } | null;
+};
 
 /**
  * A folder page or a search page. A search that failed keeps its place with `failure`, the stable error code,

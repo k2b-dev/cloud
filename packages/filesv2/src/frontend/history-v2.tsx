@@ -176,8 +176,13 @@ export type ActivityRowProps = {
   row: HistoryRowModel;
   env: HistoryEnvironment;
   actions?: HistoryActions;
-  /** `me`: the person's own activity; the thing leads instead of the person, and the sentence starts with it. */
+  /** `me`: the person's own activity, so no row offers to contact its actor. */
   mode: "me" | "all";
+  /**
+   * Note style, the thing first and no actor, where the place already names the person ("Zuletzt von dir"). Activity
+   * names who acted on every row, also under "Ich": an assistant may have acted on the person's behalf.
+   */
+  notes?: boolean;
   /** A line inside an open run or batch: it leaves out what the run's line already says. */
   member?: "short";
   /** After its deed ran, so the list reads again. */
@@ -228,12 +233,11 @@ export function ActivityRow(props: ActivityRowProps) {
         },
   );
   const actor = createMemo(() => actorOf(entry(), h(), props.env));
-  // "Me" reads in note style, the thing first; an action without a note form keeps its full sentence.
+  // Notes read the thing first; an action without a note form keeps its full sentence.
   const linked = createMemo(
     () =>
-      (props.mode === "me" || props.member
-        ? noteSentence(props.row, h(), props.env, { links: true, short: props.member === "short" })
-        : null) ?? sentence(props.row, h(), props.env, { context: props.context ?? "activity", links: true }),
+      (props.notes || props.member ? noteSentence(props.row, h(), props.env, { links: true, short: props.member === "short" }) : null) ??
+      sentence(props.row, h(), props.env, { context: props.context ?? "activity", links: true }),
   );
   const mark = createMemo(() => {
     const value = subjectMark(entry());
@@ -340,6 +344,8 @@ export function ActivityLineRow(props: {
   env: HistoryEnvironment;
   actions?: HistoryActions;
   mode: "me" | "all";
+  /** Note style without the actor (see `ActivityRow`). */
+  notes?: boolean;
   /** The storages by their names, so an opened file says where it lies. */
   bases: readonly { id: string; label: string }[];
   onToggle: (key: string) => void;
@@ -371,6 +377,7 @@ export function ActivityLineRow(props: {
           env={props.env}
           actions={props.actions}
           mode={props.mode}
+          notes={props.notes}
           onChanged={props.onChanged}
           toggle={item.batch ? { ...item.batch, onToggle: () => props.onToggle(item.row.key) } : undefined}
         />

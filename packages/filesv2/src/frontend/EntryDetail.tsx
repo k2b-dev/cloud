@@ -89,7 +89,13 @@ export default function EntryDetail(props: EntryDetailProps) {
   const result = () => (details.data()?.key === source() && !details.error() ? details.data()?.result : undefined);
   const entry = () => result()?.entry;
   // The favorite as the server answered the last toggle, until the details read it again.
-  const favorite = createMemo(() => result()?.favorite ?? false);
+  // The star keeps the last answer for this entry while the details read again, so it neither blinks nor moves.
+  let lastFavorite = { path: props.path, value: false };
+  const favorite = createMemo(() => {
+    const value = result()?.favorite;
+    if (value !== undefined) lastFavorite = { path: props.path, value };
+    return lastFavorite.path === props.path ? lastFavorite.value : false;
+  });
   const entryRef = (item: FileEntry) => {
     const id = item.resourceId ?? result()?.resourceId ?? entryRefId(props.base.id, item.path);
     return id ? { type: ENTRY_TYPE, id } : null;
@@ -161,23 +167,25 @@ export default function EntryDetail(props: EntryDetailProps) {
           start={
             <Inline>
               <Text type="lead">{head()?.name ?? props.path.split("/").at(-1)}</Text>
-              <Show when={entry()}>
-                {(item) => (
-                  <Button
-                    variant="ghost"
-                    icon="star"
-                    label={favorite() ? t().removeFavorite : t().addFavorite}
-                    pressed={favorite()}
-                    disabled={busy()}
-                    onClick={() => void toggleFavorite(item(), !favorite())}
-                  />
-                )}
-              </Show>
+              {/* the star and "…" keep their place while the entry reads again; they wait until it is there */}
+              <Button
+                variant="ghost"
+                icon="star"
+                label={favorite() ? t().removeFavorite : t().addFavorite}
+                pressed={favorite()}
+                disabled={busy() || !entry()}
+                onClick={() => {
+                  const item = entry();
+                  if (item) void toggleFavorite(item, !favorite());
+                }}
+              />
             </Inline>
           }
           end={
             <>
-              <Show when={entry()}>{(item) => <Menu label={t().moreActions} items={menu(item())} />}</Show>
+              <Show when={entry()} fallback={<Button variant="ghost" icon="dots" label={t().moreActions} disabled />}>
+                {(item) => <Menu label={t().moreActions} items={menu(item())} />}
+              </Show>
               <Button variant="ghost" icon="x" label={t().close} href={props.closeHref} onNavigate={props.onNavigate} />
             </>
           }
@@ -233,7 +241,6 @@ function Loaded(
   const editable = () => props.actions.editable(props.item);
   const pictured = () => ["image", "pdf", "office"].includes(previewSource(props.item) ?? "");
   const hasPreview = () => !props.item.directory && (pictured() || !!previewKind(props.item));
-  const kind = () => (props.item.directory ? t().kindFolder : fileKindLabel({ name: props.item.name }, locale()));
   const modified = () =>
     props.history?.env
       ? formatWhen(props.item.modified, locale(), h(), props.history.env)
@@ -328,7 +335,6 @@ function Loaded(
       <Section icon="list-details" title={t().properties}>
         <Facts
           items={[
-            { label: t().kind, value: kind() },
             { label: t().location, value: `${baseLabel(props.base, t(), locale())} / ${props.item.path}` },
             { label: f().modified, value: changedBy() ? `${modified()} · ${changedBy()}` : modified() },
             ...(!props.item.directory ? [{ label: f().size, value: formatFileViewSize(props.item.size, locale()) }] : []),
@@ -367,13 +373,25 @@ function Loaded(
   );
 }
 
-/** The first entries of a folder, with a way to download each file; the folder itself shows the rest. */
-function FolderContents(props: { base: BaseSummary; folder: FileEntry; actions: FolderActions; onNavigate: OnNavigate }) {
+/**
+ * The first entries of a folder, with a way to download each file where deeds are given; the folder itself shows the
+ * rest. Also what an old folder address shows of the folder at its new place.
+ */
+export function FolderContents(props: {
+  base: BaseSummary;
+  folder: FileEntry;
+  actions?: FolderActions;
+  onNavigate: OnNavigate;
+  /** The server's first page, so the first picture has the entries without a loading state. */
+  initial?: { items: FileEntry[]; next: string | null };
+}) {
   const t = useBrowserMessages();
   const locale = useLocale();
   const key = () => JSON.stringify([props.base.id, props.base.locationKey, props.folder.path, props.folder.modified]);
+  const initial = props.initial ? { source: key(), data: { key: key(), ...props.initial } } : undefined;
   const contents = query.create({
     source: key,
+    initial,
     load: async (source, { abortSignal }) => {
       const response = await apiClient.bases[":baseId"].entries.$get(
         { param: { baseId: props.base.id }, query: { path: props.folder.path } },
@@ -413,13 +431,13 @@ function FolderContents(props: { base: BaseSummary; folder: FileEntry; actions: 
                   href={href(entry)}
                   onNavigate={props.onNavigate}
                   end={
-                    entry.directory ? undefined : (
+                    entry.directory || !props.actions ? undefined : (
                       <Button
                         variant="ghost"
                         icon="download"
                         label={t().downloadNamed(entry.name)}
                         disabled={props.actions.busy()}
-                        onClick={() => props.actions.startDownload([entry])}
+                        onClick={() => props.actions?.startDownload([entry])}
                       />
                     )
                   }

@@ -221,5 +221,15 @@ async function movedLookup(c: Parameters<typeof requestCall>[0], baseId: string,
   const entry = page ? movedEntry(page, path) : null;
   if (!entry) return null;
   const chain = await filesService.movementChain(requestCall(c), { activityId: entry.id, oldPath: path }).catch(() => null);
-  return chain ? { baseId, path, entry, chain } : null;
+  if (!chain) return null;
+  // what the folder holds at its new place in this storage, for the first picture; the page reads it again on failure
+  const endpoint = chain.endpoint;
+  const contents =
+    endpoint && endpoint.baseId === baseId
+      ? await filesService
+          .list(requestCall(c), { baseId, path: endpoint.path })
+          .then((page) => ({ items: page.items, next: page.next }))
+          .catch(() => null)
+      : null;
+  return { baseId, path, entry, chain, contents };
 }

@@ -250,7 +250,14 @@ const open = async (view: View, address: string, fixture: FixtureCase = "plain")
     if (url.pathname.startsWith(`${api}/shares/`) && url.pathname.endsWith("/access"))
       return route.fulfill({ json: fixtureShareAccess(url.searchParams.get("from") ?? "", url.searchParams.get("to") ?? "") });
     if (url.pathname === `${api}/recent`) return route.fulfill({ json: [] });
-    if (url.pathname.startsWith(`${api}/bases/demo/preview`)) return route.fulfill({ status: 404, body: "" });
+    // a photo's preview is an invented picture in its own colours; other kinds have none here
+    if (url.pathname.startsWith(`${api}/bases/demo/preview`)) {
+      const path = url.searchParams.get("path") ?? "";
+      if (!/\.(jpe?g|png)$/i.test(path)) return route.fulfill({ status: 404, json: { code: "preview_unavailable" } });
+      const hue = [...path].reduce((sum, sign) => sum + sign.charCodeAt(0), 0) % 360;
+      const picture = `<svg xmlns="http://www.w3.org/2000/svg" width="480" height="360" viewBox="0 0 480 360"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(${hue} 45% 78%)"/><stop offset="1" stop-color="hsl(${hue} 35% 52%)"/></linearGradient></defs><rect width="480" height="360" fill="url(#s)"/><rect x="60" y="150" width="360" height="170" rx="6" fill="hsl(${(hue + 30) % 360} 30% 40%)"/><rect x="90" y="180" width="140" height="110" fill="hsl(${(hue + 30) % 360} 25% 70%)"/><rect x="250" y="180" width="140" height="110" fill="hsl(${(hue + 30) % 360} 25% 66%)"/></svg>`;
+      return route.fulfill({ contentType: "image/svg+xml", body: picture });
+    }
     if (url.pathname === "/content")
       return route.fulfill({
         contentType: "text/plain; charset=utf-8",
@@ -369,6 +376,40 @@ describe("a folder of Files on v2", () => {
     }
   });
 
+  test('the detail\'s star and its "…" keep their place while the entry reads', async () => {
+    const { context, tab, errors } = await open(wide, "/app/filesv2?base=demo");
+    try {
+      // the entry's details answer only when the test lets them
+      let answer!: () => void;
+      const held = new Promise<void>((resolve) => {
+        answer = resolve;
+      });
+      await tab.route("**/api/filesv2/bases/demo/entry?*", async (route) => {
+        await held;
+        await route.fallback();
+      });
+      await rowLink(tab, "Notizen.md").click();
+      const head = tab.locator("[data-k2-part=Pane][data-detail] [data-slot=head]");
+      await head.getByText("Notizen.md").waitFor();
+      const places = () =>
+        Promise.all(
+          [head.getByRole("button", { name: "Zu Favoriten hinzufügen" }), head.getByRole("button", { name: "Weitere Aktionen" })].map(
+            (button) => button.boundingBox(),
+          ),
+        );
+      const before = await places();
+      expect(before.every(Boolean)).toBe(true);
+      expect(await head.getByRole("button", { name: "Zu Favoriten hinzufügen" }).isDisabled()).toBe(true);
+      answer();
+      await tab.getByText("Eigenschaften").waitFor();
+      expect(await head.getByRole("button", { name: "Zu Favoriten hinzufügen" }).isDisabled()).toBe(false);
+      expect(await places()).toEqual(before);
+      expect(errors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
+
   test("a column head sorts through the address, and a reload shows the same order", async () => {
     const { context, tab, errors, seen } = await open(wide, "/app/filesv2?base=demo");
     try {
@@ -419,15 +460,29 @@ describe("a folder of Files on v2", () => {
       await tab.getByRole("checkbox", { name: /Lieferplan\.pdf/ }).check();
       const status = tab.locator("[data-k2-part=StatusRow]");
       await status.getByText(/2 ausgewählt/).waitFor();
-      // a chosen row wears the selection's tint, an unchosen one none (the guard of #1543, now on the v2 table)
-      const fills = await tab.evaluate(() =>
-        [...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])")]
-          .slice(3, 6)
-          .map((row) => [row, row.querySelector("td")!].map((part) => getComputedStyle(part).backgroundColor).join(" ")),
-      );
-      // Ansicht and Bestand are not chosen, Budget is
-      expect(fills[0]).toBe(fills[1]);
-      expect(fills[2]).not.toBe(fills[0]);
+      // a chosen row wears the selection's tint, an unchosen one none, in light and in dark (the guard of #1543, now on
+      // the v2 table): Ansicht and Bestand are not chosen, Budget is
+      const tints: string[] = [];
+      for (const theme of ["light", "dark"]) {
+        await tab.evaluate((theme) => {
+          document.documentElement.className = theme;
+        }, theme);
+        await settled(tab);
+        const fills = await tab.evaluate(() =>
+          [...document.querySelectorAll("[data-k2-part=Table] tbody tr:not([data-group])")]
+            .slice(3, 6)
+            .map((row) => [row, row.querySelector("td")!].map((part) => getComputedStyle(part).backgroundColor).join(" ")),
+        );
+        expect(fills[0], theme).toBe(fills[1]);
+        expect(fills[2], theme).not.toBe(fills[0]);
+        tints.push(fills[2]!);
+      }
+      // the dark tint is a tint of its own, not the light one on a dark page
+      expect(tints[1]).not.toBe(tints[0]);
+      await tab.evaluate(() => {
+        document.documentElement.className = "light";
+      });
+      await settled(tab);
       for (const deed of ["Verschieben nach …", "In den Papierkorb"])
         expect(await status.getByRole("button", { name: deed }).count()).toBe(1);
       await shoot(tab, "04-selection-1440");
@@ -578,6 +633,8 @@ describe("a folder of Files on v2", () => {
           .evaluate((table) => Number(table.getAttribute("aria-rowcount")));
       const rendered = () => tab.locator("[data-k2-part=Table] tbody tr:not([data-group]) .k2-row-open").count();
       expect(await held()).toBeGreaterThanOrEqual(51);
+      // the head counts the links of the loaded page only, so with more pages it says so: a lower bound
+      expect(await tab.locator("[data-slot=head] [data-k2-part=Chip]").first().innerText()).toMatch(/^Team \+ \d+\+ Links$/);
       const nodes = await tab.evaluate(() => document.querySelectorAll("*").length);
       await shoot(tab, "08-huge-1440");
       const more = tab.getByRole("button", { name: "Mehr laden", exact: true });
@@ -701,9 +758,14 @@ describe("the views beside the folders on v2", () => {
       await tab.getByText("Alles gespeichert").first().waitFor();
       await shoot(tab, "16-editor-1440");
       await expectClean(tab);
+      // saving and closing are the deeds of the title row; saving waits for a change
+      const save = tab.locator("[data-slot=status]").getByRole("button", { name: "Speichern" });
+      expect(await save.isDisabled()).toBe(true);
+      expect(await tab.locator("[data-slot=status]").getByRole("button", { name: "Schließen" }).count()).toBe(1);
       await editor.click();
       await tab.keyboard.type(" Neu.");
       await tab.getByText("Ungespeicherte Änderungen").first().waitFor();
+      expect(await save.isDisabled()).toBe(false);
       await tab.locator("[data-k2-part=Nav]").getByRole("link", { name: "Favoriten" }).click();
       const question = tab.getByRole("dialog").or(tab.getByRole("alertdialog")).last();
       await question.waitFor();
@@ -728,6 +790,9 @@ describe("the views beside the folders on v2", () => {
     try {
       await tab.getByText("Dieser Ordner ist umgezogen", { exact: false }).first().waitFor();
       expect(await tab.getByRole("link", { name: /Verlauf ansehen/ }).count()).toBeGreaterThan(0);
+      // under the card, what the folder holds at its new place, each entry leading there
+      await tab.getByText("Preisliste 2025.pdf").waitFor();
+      expect(await tab.getByRole("link", { name: /Preisliste 2025\.pdf/ }).getAttribute("href")).toContain("Archiv%2F2025%2FAlte+Angebote");
       await shoot(tab, "17-moved-1440");
       await expectClean(tab);
       expect(errors).toEqual([]);

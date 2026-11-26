@@ -40,12 +40,18 @@ describe("Filesv2 server-rendered feedback", () => {
               path: "Old",
               entry: moved,
               chain: chain({ endpoint: { baseId: base.id, path: "New", itemId: null }, certainty: "verified" }),
+              // what the folder holds at its new place, read by the server with the move
+              contents: {
+                items: [{ name: "Offer.pdf", path: "New/Offer.pdf", directory: false, size: 2048, modified: "2026-10-19T10:00:00.000Z" }],
+                next: null,
+              },
             },
           }}
         />
       </LocaleProvider>
     ));
     expect(html).toContain("This folder has moved");
+    expect(html).toContain("Offer.pdf");
     expect(html).toContain('data-k2-part="Workspace"');
     expect(html).not.toContain("Files could not be loaded");
     expect(html).not.toContain("Try again");

@@ -464,7 +464,11 @@ export const browserMessages = i18n.define({
       v2Understood: "Understood",
       v2Close: "Close",
       v2SearchShort: "Search",
-      v2WhoAndLinks: (values: { who: string; links: number }) => `${values.who} + ${values.links} ${values.links === 1 ? "link" : "links"}`,
+      v2EmptyDrop: "Drop files here or upload them.",
+      v2AreaUnread: (values: { area: string }) =>
+        `The ${values.area} storages could not be read right now, so they are missing here. Try again later.`,
+      v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
+        `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "link" : "links"}`,
       v2SharesLead: (values: { count: number; more: string; active: number }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "link" : "links"} · ${values.active} active`,
       v2Accesses: "Opened",
@@ -484,7 +488,7 @@ export const browserMessages = i18n.define({
         values.count === 1 && !values.more ? "1 active link" : `${values.count}${values.more} active links`,
       v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 link shown" : `${values.count} links shown`),
       v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 storage location" : `${values.count} storage locations`),
-      v2Unreachable: "unreachable",
+      v2Unreachable: "unavailable",
     },
     de: {
       personal: "Persönlich",
@@ -949,7 +953,11 @@ export const browserMessages = i18n.define({
       v2Understood: "Verstanden",
       v2Close: "Schließen",
       v2SearchShort: "Suchen",
-      v2WhoAndLinks: (values: { who: string; links: number }) => `${values.who} + ${values.links} ${values.links === 1 ? "Link" : "Links"}`,
+      v2EmptyDrop: "Zieh Dateien hierher oder lade sie hoch.",
+      v2AreaUnread: (values: { area: string }) =>
+        `Die ${values.area}-Ablagen konnten gerade nicht gelesen werden und fehlen deshalb hier. Versuch es später noch einmal.`,
+      v2WhoAndLinks: (values: { who: string; links: number; more: string }) =>
+        `${values.who} + ${values.links}${values.more} ${values.links === 1 && !values.more ? "Link" : "Links"}`,
       v2SharesLead: (values: { count: number; more: string; active: number }) =>
         `${values.count}${values.more} ${values.count === 1 && !values.more ? "Link" : "Links"} · ${values.active} aktiv`,
       v2Accesses: "Geöffnet",
@@ -969,7 +977,7 @@ export const browserMessages = i18n.define({
         values.count === 1 && !values.more ? "1 aktiver Link" : `${values.count}${values.more} aktive Links`,
       v2SharesShown: (values: { count: number }) => (values.count === 1 ? "1 Link angezeigt" : `${values.count} Links angezeigt`),
       v2StorageCount: (values: { count: number }) => (values.count === 1 ? "1 Ablage" : `${values.count} Ablagen`),
-      v2Unreachable: "nicht erreichbar",
+      v2Unreachable: "nicht verfügbar",
     },
   },
 });

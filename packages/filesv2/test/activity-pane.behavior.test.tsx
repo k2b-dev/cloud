@@ -262,7 +262,8 @@ describe("Activity on UI v2", () => {
     expect(rows().map((row) => row.querySelector('[data-k2-part="Mark"]') !== null)).toEqual([true, true, true]);
     const order = ["Angebot.pdf", "Logo.svg", "Budget.xlsx"];
     expect(rows().map((row) => order.find((name) => row.textContent?.includes(name)))).toEqual(order);
-    expect(rowWith("Angebot.pdf")!.textContent).toContain("Angebot.pdf hochgeladen in Team Vertrieb › Kampagnen");
+    // "Ich" names who acted too: an assistant may act on the person's behalf (design review 26.11.)
+    expect(rowWith("Angebot.pdf")!.textContent).toContain("Valentin Kolb hat Angebot.pdf");
     expect(opener(rowWith("Logo.svg"))?.getAttribute("href")).toBe(
       "/app/filesv2?base=cloud%3Agroups%3Avertrieb&path=Grafik&file=Grafik%2FLogo.svg",
     );
