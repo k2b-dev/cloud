@@ -6,7 +6,7 @@ import { describeV2Page, measureV2Layout } from "@k2b/ui/v2/testing";
 import type { Browser } from "playwright";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
-import { launchBrowser, launchHookMs } from "../../../ui/test/browser";
+import { launchBrowser, launchHookMs, settled } from "../../../ui/test/browser";
 import { registerSsrTestPlugin } from "../../../ui/test/ssr-test-plugin";
 
 // A visitor page without the Cloud shell on v2: the k2b-ui "public page" recipe inside `MinimalLayout ui="v2"`. The
@@ -88,6 +88,7 @@ describe("MinimalLayout ui v2", () => {
             `<!doctype html><html lang="de"><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>${css}</style></head>` +
               `<body class="k2b-ui">${render(kiosk).html}</body></html>`,
           );
+          await settled(tab);
           const outline = await describeV2Page(tab, "main");
           expect(outline.includes("Problems (") ? outline : "").toBe("");
           const layout = await measureV2Layout(tab, { root: "[data-k2-workspace]" });
